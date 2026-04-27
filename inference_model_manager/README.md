@@ -67,3 +67,95 @@ Models default to BGR input (OpenCV convention). Pass `input_color_format` if yo
 | `cv2.imread()` | BGR | nothing (default) |
 | `PIL.Image` → `np.array()` | RGB | `input_color_format="rgb"` |
 | torch tensor (CHW) | RGB | nothing (tensor default is RGB) |
+
+## Registering a model in the registry
+
+Models in `inference-models` work standalone — no changes needed there. To make a model available through model manager (task dispatch, validation, typed serialization), add an entry to `registry_defaults.py`.
+
+### Case 1: Model inherits from a registered base class
+
+If your model inherits from `ObjectDetectionModel`, `ClassificationModel`, `InstanceSegmentationModel`, etc. — **nothing to do**. The registry matches by class name via MRO. Your model inherits the base class entry automatically.
+
+```python
+# inference_models/models/my_detector/my_detector.py
+class MyDetector(ObjectDetectionModel):
+    def infer(self, images, **kwargs):
+        ...
+```
+
+This works out of the box with `mm.process("my-detector", images=img)`.
+
+### Case 2: New base class or model with unique tasks
+
+Add entries to `_TASK_CONFIGS` in `registry_defaults.py`. Each entry is a tuple:
+
+```
+(task_name, method_name, is_default, param_names, validator_name, serializer_name, response_type)
+```
+
+Example — a model with two tasks:
+
+```python
+# In registry_defaults.py _TASK_CONFIGS dict:
+"MyCustomModel": [
+    ("generate", "generate_output", True, ["images", "prompt"],
+     "validate_images_and_prompt", "serialize_text",
+     "roboflow-text-v1"),
+    ("embed", "embed_images", False, ["images"],
+     "validate_images_required", "serialize_embeddings",
+     "roboflow-embeddings-compact-v1"),
+],
+```
+
+Fields:
+- **task_name** — what users pass as `task=` param (e.g. `mm.process("model", task="embed")`)
+- **method_name** — actual method on the model class to call (can differ from task_name)
+- **is_default** — exactly one task must be `True`; used when `task=None`
+- **param_names** — required params (for docs and validation)
+- **validator_name** — function from `validators.py` (e.g. `"validate_images_required"`)
+- **serializer_name** — function from `serializers_typed.py` (e.g. `"serialize_text"`)
+- **response_type** — type string for JSON response envelope
+
+### Case 3: Custom validator or serializer
+
+Add to `validators.py` or `serializers_typed.py`:
+
+```python
+# validators.py
+def validate_my_custom_input(kwargs: dict) -> dict:
+    if "images" not in kwargs:
+        raise ValueError("'images' required")
+    if "language" not in kwargs:
+        raise ValueError("'language' required for this model")
+    return kwargs
+```
+
+```python
+# serializers_typed.py
+def serialize_my_custom_output(output, model) -> dict:
+    return {
+        "type": "my-custom-output-v1",
+        "result": output.result,
+        "metadata": output.metadata,
+    }
+```
+
+Then reference by name in `_TASK_CONFIGS`:
+
+```python
+"MyCustomModel": [
+    ("infer", "infer", True, ["images", "language"],
+     "validate_my_custom_input", "serialize_my_custom_output",
+     "my-custom-output-v1"),
+],
+```
+
+### How it works
+
+Registration is lazy. Nothing is imported until `ModelManager.load()` is called. At that point:
+
+1. `AutoModel.resolve_class(model_id)` returns the model class
+2. `lazy_register(model_class)` walks the class MRO
+3. For each ancestor, checks if `cls.__name__` has an entry in `_TASK_CONFIGS`
+4. If found, registers the tasks (imports only validators/serializers — pure Python, no heavy deps)
+5. Subsequent `process()` calls use the registered entry for dispatch + serialization
