@@ -5,6 +5,27 @@ from concurrent.futures import Future
 from typing import Any, Dict, List, Optional
 
 
+def detect_max_batch_size(model) -> Optional[int]:
+    """Duck-type max batch size from a model instance.
+
+    Models use various attribute names. Returns None if not discoverable.
+    """
+    bs = (
+        getattr(model, "max_batch_size", None)
+        or getattr(model, "_max_batch_size", None)
+        or getattr(model, "_input_batch_size", None)
+    )
+    if bs is not None:
+        return bs
+    # TorchScript/TRT models store it in inference_config
+    cfg = getattr(model, "_inference_config", None)
+    if cfg is not None:
+        fwd = getattr(cfg, "forward_pass", None)
+        if fwd is not None:
+            return getattr(fwd, "static_batch_size", None)
+    return None
+
+
 class Backend(ABC):
     """Handle to a single loaded model.
 
