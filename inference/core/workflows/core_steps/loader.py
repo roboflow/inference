@@ -239,6 +239,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 impor
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v1 import (
+    KimiOpenRouterBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
     LlamaVisionBlockV1,
 )
@@ -273,9 +276,6 @@ from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
 )
 from inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
     Qwen36OpenRouterBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v1 import (
-    KimiOpenRouterBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
     Qwen3VLBlockV1,
