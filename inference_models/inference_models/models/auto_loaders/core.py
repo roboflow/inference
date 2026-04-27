@@ -443,7 +443,7 @@ class AutoModel:
             device: Target device (influences TRT/ONNX selection).
 
         Returns:
-            Model class (not instance). Has ``get_supported_tasks()`` classmethod.
+            Model class (not instance).
 
         Raises:
             ModelNotFoundError: If model_id doesn't exist.
