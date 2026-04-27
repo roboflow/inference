@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import numpy as np
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 
 
 class _DummyDetections:
@@ -14,12 +13,8 @@ class _DummyDetections:
         self.class_id = np.array([0], dtype=np.int64)
 
 
-class PassthroughModel(ManagedModel):
-    """Returns dummy detections instantly. No weights, no GPU."""
-
-    @classmethod
-    def get_supported_tasks(cls) -> dict[str, TaskSpec]:
-        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
+class PassthroughModel:
+    """Returns dummy detections instantly. No weights, no GPU, no base class."""
 
     @property
     def class_names(self):

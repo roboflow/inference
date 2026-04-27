@@ -1,12 +1,11 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Generic, List, Literal, Optional, Set, Tuple, Union
+from typing import Generic, List, Literal, Optional, Set, Tuple, Union
 
 import numpy as np
 import supervision as sv
 import torch
 
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.base.types import (
     InstancesRLEMasks,
     PreprocessedInputs,
@@ -89,12 +88,8 @@ class InstanceDetections:
 
 
 class InstanceSegmentationModel(
-    ManagedModel, ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
+    ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
 
     @classmethod
     @abstractmethod
@@ -112,11 +107,6 @@ class InstanceSegmentationModel(
     @abstractmethod
     def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
         pass
-
-    @property
-    def max_batch_size(self) -> Optional[int]:
-        """Maximum batch size the model supports, or ``None`` if unlimited."""
-        return getattr(self, "_max_batch_size", None)
 
     def infer(
         self,

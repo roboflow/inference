@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from threading import Lock
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -20,7 +20,6 @@ from inference_models.models.common.onnx import (
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -50,13 +49,7 @@ class L2CSGazeDetection:
     pitch: torch.Tensor
 
 
-class L2CSNetOnnx(ManagedModel):
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {
-            "infer": TaskSpec(method="infer", default=True, params=["images"]),
-        }
+class L2CSNetOnnx:
 
     @classmethod
     def from_pretrained(

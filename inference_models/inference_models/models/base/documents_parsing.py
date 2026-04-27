@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Generic, List, Optional, Tuple, Union
+from typing import Generic, List, Tuple, Union
 
 import numpy as np
 import torch
 
 from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.base.types import (
     PreprocessedInputs,
     PreprocessingMetadata,
@@ -14,12 +13,8 @@ from inference_models.models.base.types import (
 
 
 class StructuredOCRModel(
-    ManagedModel, ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
+    ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
 
     @classmethod
     @abstractmethod
@@ -30,11 +25,6 @@ class StructuredOCRModel(
     @abstractmethod
     def class_names(self) -> List[str]:
         pass
-
-    @property
-    def max_batch_size(self) -> Optional[int]:
-        """Maximum batch size the model supports, or ``None`` if unlimited."""
-        return getattr(self, "_max_batch_size", None)
 
     def infer(
         self,
@@ -76,20 +66,11 @@ class StructuredOCRModel(
         return self.infer(images, **kwargs)
 
 
-class TextOnlyOCRModel(ManagedModel, ABC, Generic[PreprocessedInputs, RawPrediction]):
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
+class TextOnlyOCRModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
     @classmethod
     @abstractmethod
     def from_pretrained(cls, model_name_or_path: str, **kwargs) -> "TextOnlyOCRModel":
         pass
-
-    @property
-    def max_batch_size(self) -> Optional[int]:
-        """Maximum batch size the model supports, or ``None`` if unlimited."""
-        return getattr(self, "_max_batch_size", None)
 
     def infer(
         self,

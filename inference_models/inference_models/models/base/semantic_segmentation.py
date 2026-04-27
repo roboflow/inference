@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Generic, List, Optional, Union
+from typing import Generic, List, Optional, Union
 
 import numpy as np
 import torch
 
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.base.types import (
     PreprocessedInputs,
     PreprocessingMetadata,
@@ -21,12 +20,8 @@ class SemanticSegmentationResult:
 
 
 class SemanticSegmentationModel(
-    ManagedModel, ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
+    ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
 
     @classmethod
     @abstractmethod
@@ -39,11 +34,6 @@ class SemanticSegmentationModel(
     @abstractmethod
     def class_names(self) -> List[str]:
         pass
-
-    @property
-    def max_batch_size(self) -> Optional[int]:
-        """Maximum batch size the model supports, or ``None`` if unlimited."""
-        return getattr(self, "_max_batch_size", None)
 
     def infer(
         self,

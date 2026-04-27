@@ -1,13 +1,12 @@
 from pathlib import Path
 from threading import RLock
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.errors import MissingDependencyError, ModelRuntimeError
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.common.model_packages import get_model_package_contents
 
 try:
@@ -21,15 +20,7 @@ except ImportError as import_error:
     ) from import_error
 
 
-class SAM2ForStream(ManagedModel):
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {
-            "prompt": TaskSpec(method="prompt", default=True, params=["images", "bboxes"]),
-            "track": TaskSpec(method="track", params=["images"]),
-        }
-
+class SAM2ForStream:
     @classmethod
     def from_pretrained(
         cls,

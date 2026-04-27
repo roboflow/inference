@@ -19,7 +19,6 @@ from inference_models.models.sam.cache import (
     SamLowResolutionMasksCacheNullObject,
 )
 from inference_models.models.sam.entities import SAMImageEmbeddings, SAMPrediction
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.utils.file_system import read_json
 
 T = TypeVar("T")
@@ -29,17 +28,7 @@ MAX_SAM_BATCH_SIZE = 8
 ArrayOrTensor = Union[np.ndarray, torch.Tensor]
 
 
-class SAMTorch(ManagedModel):
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {
-            "embed": TaskSpec(method="embed_images", default=True, params=["images"]),
-            "segment": TaskSpec(
-                method="segment_images",
-                params=["images", "embeddings", "point_coordinates", "point_labels", "boxes", "mask_input"],
-            ),
-        }
+class SAMTorch:
 
     @classmethod
     def from_pretrained(

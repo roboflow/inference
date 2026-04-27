@@ -1,6 +1,6 @@
 import os
 from threading import Lock
-from typing import Any, Dict, Final, FrozenSet, List, Optional, Tuple, Union
+from typing import Any, Final, FrozenSet, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -18,8 +18,6 @@ from inference_models.configuration import (
     INFERENCE_MODELS_GEMMA4_DEFAULT_TEMPERATURE,
     INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K,
     INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_P,
-    INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT,
-    INFERENCE_MODELS_GEMMA4_DEFAULT_SYSTEM_PROMPT,
 )
 from inference_models.entities import ColorFormat
 from inference_models.errors import InvalidModelInitParameterError
@@ -28,7 +26,6 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     parse_inference_config,
 )
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
@@ -102,14 +99,8 @@ def _to_pil_rgb(
     return Image.fromarray(arr).convert("RGB")
 
 
-class Gemma4HF(ManagedModel):
+class Gemma4HF:
     """Hugging Face Gemma 4 multimodal (vision + text) instruction-tuned models."""
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {
-            "prompt": TaskSpec(method="prompt", default=True, params=["images", "prompt"]),
-        }
 
     @classmethod
     def from_pretrained(
@@ -188,7 +179,7 @@ class Gemma4HF(ManagedModel):
         attn_implementation = _get_gemma4_attn_implementation(device)
 
         load_kw = dict(
-            torch_dtype="auto",
+            dtype="auto",
             device_map=device,
             trust_remote_code=trust_remote_code,
             local_files_only=local_files_only,
@@ -247,7 +238,7 @@ class Gemma4HF(ManagedModel):
         self._processor = processor
         self._inference_config = inference_config
         self._device = device
-        self.default_system_prompt = INFERENCE_MODELS_GEMMA4_DEFAULT_SYSTEM_PROMPT
+        self.default_system_prompt = "You are Gemma 4, a helpful multimodal assistant. Answer clearly and accurately."
         self._lock = Lock()
 
     def prompt(
@@ -311,15 +302,15 @@ class Gemma4HF(ManagedModel):
         pil_images = [_to_pil_rgb(img, input_color_format) for img in raw_list]
 
         if prompt is None:
-            prompt = INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT
+            prompt = "Describe what you see in this image."
             system_prompt = self.default_system_prompt
         else:
             split_prompt = prompt.split("<system_prompt>")
             if len(split_prompt) == 1:
-                prompt = split_prompt[0] or INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT
+                prompt = split_prompt[0] or "Describe what you see in this image."
                 system_prompt = self.default_system_prompt
             else:
-                prompt = split_prompt[0] or INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT
+                prompt = split_prompt[0] or "Describe what you see in this image."
                 system_prompt = split_prompt[1] or self.default_system_prompt
 
         user_content: List[dict] = [

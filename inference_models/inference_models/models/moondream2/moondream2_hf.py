@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass
 from threading import Lock
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -15,7 +15,6 @@ from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.pre_processing import images_to_pillow
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.utils.imports import import_class_from_file
 
 
@@ -62,17 +61,7 @@ def _recompute_non_persistent_buffers(model_dir: str, model) -> None:
     model.model.attn_mask = attn_mask.to(model.device)
 
 
-class MoonDream2HF(ManagedModel):
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {
-            "caption": TaskSpec(method="caption", default=True, params=["images"]),
-            "detect": TaskSpec(method="detect", params=["images", "classes"]),
-            "query": TaskSpec(method="query", params=["images", "prompt"]),
-            "point": TaskSpec(method="point", params=["images", "xy"]),
-            "encode": TaskSpec(method="encode_images", params=["images"]),
-        }
+class MoonDream2HF:
 
     @classmethod
     def from_pretrained(
