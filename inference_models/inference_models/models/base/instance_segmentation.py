@@ -18,7 +18,6 @@ import numpy as np
 import supervision as sv
 import torch
 
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.base.types import (
     InstancesRLEMasks,
     PreprocessedInputs,
@@ -204,12 +203,8 @@ class InstanceDetections:
 
 
 class InstanceSegmentationModel(
-    ManagedModel, ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
+    ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
 
     @classmethod
     @abstractmethod

@@ -137,7 +137,10 @@ def make_batch_decoder(
             for i, mv in enumerate(mvs):
                 if bytes(mv[:2]) == _JPEG_MAGIC:
                     jpeg_idx.append(i)
-                    # Zero-copy: frombuffer references the SHM memoryview directly
+                    # Zero-copy: frombuffer references the SHM memoryview directly.
+                    # PyTorch warns "buffer is not writable" because SHM is read-only,
+                    # but the tensor is only used as input to decode_jpeg (never written to).
+                    # Using bytearray(mv) would silence it but adds a full CPU memcpy per JPEG.
                     jpeg_bufs.append(torch.frombuffer(mv, dtype=torch.uint8))
                 else:
                     other_idx.append(i)

@@ -29,7 +29,6 @@ from inference_models.models.sam2.entities import (
     SAM2MaskCacheEntry,
     SAM2Prediction,
 )
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.utils.file_system import read_json
 
 ArrayOrTensor = Union[np.ndarray, torch.Tensor]
@@ -49,17 +48,7 @@ SUPPORTED_VERSIONS = {
 }
 
 
-class SAM2Torch(ManagedModel):
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {
-            "embed": TaskSpec(method="embed_images", default=True, params=["images"]),
-            "segment": TaskSpec(
-                method="segment_images",
-                params=["images", "embeddings", "point_coordinates", "point_labels", "boxes", "mask_input"],
-            ),
-        }
+class SAM2Torch:
 
     @classmethod
     def from_pretrained(

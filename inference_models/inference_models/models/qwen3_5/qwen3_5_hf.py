@@ -23,18 +23,11 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     parse_inference_config,
 )
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_models.models.qwen3vl.qwen3vl_hf import _get_qwen3vl_attn_implementation
 
 
-class Qwen35HF(ManagedModel):
+class Qwen35HF:
     default_dtype = torch.bfloat16
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {
-            "prompt": TaskSpec(method="prompt", default=True, params=["images", "prompt"]),
-        }
 
     @classmethod
     def from_pretrained(
