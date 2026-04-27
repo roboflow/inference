@@ -418,65 +418,6 @@ class AutoModel:
         console.print(table)
 
     @classmethod
-    def resolve_class(
-        cls,
-        model_id: str,
-        api_key: Optional[str] = None,
-        weights_provider: str = "roboflow",
-        backend: Optional[Union[str, List[str]]] = None,
-        device: Optional[str] = None,
-    ) -> type:
-        """Resolve model_id to model class WITHOUT loading or downloading.
-
-        Calls the Roboflow API (cached 24h) to get model metadata, negotiates
-        the best package, and returns the model class. No artifacts are downloaded
-        and no model is instantiated.
-
-        Useful for discovering model capabilities (e.g. ``supported_tasks``)
-        before committing to a load.
-
-        Args:
-            model_id: Model identifier (e.g. ``"yolov8n-640"``, ``"workspace/model/1"``).
-            api_key: Roboflow API key. Needed for custom models.
-            weights_provider: Weights provider name. Default ``"roboflow"``.
-            backend: Preferred backend(s). Default: auto-negotiate.
-            device: Target device (influences TRT/ONNX selection).
-
-        Returns:
-            Model class (not instance).
-
-        Raises:
-            ModelNotFoundError: If model_id doesn't exist.
-            ModelPackageAlternativesExhaustedError: If no compatible package found.
-        """
-        model_metadata = get_model_from_provider(
-            provider=weights_provider,
-            model_id=model_id,
-            api_key=api_key,
-        )
-        matching = negotiate_model_packages(
-            model_architecture=model_metadata.model_architecture,
-            task_type=model_metadata.task_type,
-            model_packages=model_metadata.model_packages,
-            requested_backends=backend,
-            device=device,
-        )
-        if not matching:
-            raise ModelPackageAlternativesExhaustedError(
-                f"No compatible model package found for '{model_id}'"
-            )
-        best = matching[0]
-        model_features = (
-            set(best.model_features.keys()) if best.model_features else None
-        )
-        return resolve_model_class(
-            model_architecture=model_metadata.model_architecture,
-            task_type=model_metadata.task_type,
-            backend=best.backend,
-            model_features=model_features,
-        )
-
-    @classmethod
     def from_pretrained(
         cls,
         model_id_or_path: str,

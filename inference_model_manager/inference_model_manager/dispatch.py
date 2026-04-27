@@ -20,22 +20,28 @@ def _get_registry():
     return registry
 
 
-def discover_tasks(
-    model_id: str,
-    api_key: str = "",
-    **resolve_kwargs,
-) -> Dict[str, Dict[str, Any]]:
-    """Discover supported tasks for a model_id WITHOUT loading the model.
+def discover_tasks_by_mro(mro_names: list[str]) -> Dict[str, Dict[str, Any]]:
+    """Discover supported tasks from MRO class name strings.
 
-    Resolves model_id → model class via AutoModel, then looks up registered
-    tasks in the registry. No download, no GPU, no instantiation.
+    Used for subprocess backends where model lives in worker process.
+    Matches names against registry configs.
     """
-    from inference_models.models.auto_loaders.core import AutoModel
+    from inference_model_manager.registry_defaults import _TASK_CONFIGS
 
-    model_class = AutoModel.resolve_class(
-        model_id, api_key=api_key, **resolve_kwargs
-    )
-    return list_tasks_for_class(model_class)
+    result: Dict[str, Dict[str, Any]] = {}
+    for name in mro_names:
+        config = _TASK_CONFIGS.get(name)
+        if config is None:
+            continue
+        for task_name, method, default, params, _v, _s, resp_type in config:
+            if task_name not in result:
+                result[task_name] = {
+                    "method": method,
+                    "default": default,
+                    "params": params,
+                    "response_type": resp_type,
+                }
+    return result
 
 
 def resolve_task(model: Any, task: Optional[str] = None) -> tuple[str, TaskEntry]:
