@@ -154,8 +154,9 @@ Then reference by name in `_TASK_CONFIGS`:
 
 Registration is lazy. Nothing is imported until `ModelManager.load()` is called. At that point:
 
-1. `AutoModel.resolve_class(model_id)` returns the model class
-2. `lazy_register(model_class)` walks the class MRO
-3. For each ancestor, checks if `cls.__name__` has an entry in `_TASK_CONFIGS`
-4. If found, registers the tasks (imports only validators/serializers — pure Python, no heavy deps)
-5. Subsequent `process()` calls use the registered entry for dispatch + serialization
+1. Backend loads the model (`AutoModel.from_pretrained` for direct, worker subprocess for subprocess)
+2. For direct backend: `lazy_register(type(model))` walks the class MRO
+3. For subprocess backend: worker sends MRO class names in READY pipe, `lazy_register_by_names(mro_names)` matches by string
+4. For each ancestor, checks if `cls.__name__` has an entry in `_TASK_CONFIGS`
+5. If found, registers the tasks (imports only validators/serializers — pure Python, no heavy deps)
+6. Subsequent `process()` calls use the registered entry for dispatch + serialization
