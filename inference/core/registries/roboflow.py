@@ -20,11 +20,13 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
+    SAM3_FINE_TUNED_MODELS_ENABLED,
     USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
     ModelArtefactError,
+    ModelDeploymentNotSupportedError,
     ModelNotRecognisedError,
     RoboflowAPINotAuthorizedError,
 )
@@ -74,6 +76,11 @@ STUB_VERSION_ID = "0"
 
 # In-process cache for model metadata to avoid Redis lock contention on every request.
 _in_process_metadata_cache = LRUCache(capacity=1000)
+
+FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
+    "Fine-tuned SAM3 models are not supported on this deployment. "
+    "Please use a workflow or self-host the server."
+)
 
 
 class RoboflowModelRegistry(ModelRegistry):
@@ -204,6 +211,11 @@ def get_model_type(
     )
 
     if cached_metadata is not None:
+        _ensure_model_supported_on_this_deployment(
+            model_id=model_id,
+            project_task_type=cached_metadata[0],
+            model_type=cached_metadata[1],
+        )
         return cached_metadata[0], cached_metadata[1]
     if version_id == STUB_VERSION_ID:
         if api_key is None:
@@ -261,6 +273,11 @@ def get_model_type(
 
     if model_type is None or project_task_type is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
+    _ensure_model_supported_on_this_deployment(
+        model_id=model_id,
+        project_task_type=project_task_type,
+        model_type=model_type,
+    )
     save_model_metadata_in_cache(
         dataset_id=dataset_id,
         version_id=version_id,
@@ -269,6 +286,22 @@ def get_model_type(
     )
 
     return project_task_type, model_type
+
+
+def _ensure_model_supported_on_this_deployment(
+    model_id: ModelID,
+    project_task_type: TaskType,
+    model_type: ModelType,
+) -> None:
+    if SAM3_FINE_TUNED_MODELS_ENABLED:
+        return None
+    if model_type != "sam3-large":
+        return None
+    if project_task_type != "instance-segmentation":
+        return None
+    if isinstance(model_id, str) and model_id.startswith("sam3/"):
+        return None
+    raise ModelDeploymentNotSupportedError(FINE_TUNED_SAM3_DEPLOYMENT_ERROR)
 
 
 def get_model_metadata_from_cache(

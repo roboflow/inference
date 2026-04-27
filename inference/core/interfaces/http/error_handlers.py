@@ -19,6 +19,7 @@ from inference.core.exceptions import (
     MissingApiKeyError,
     MissingServiceSecretError,
     ModelArtefactError,
+    ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
     OnnxProviderNotAvailable,
     PaymentRequiredError,
@@ -322,6 +323,12 @@ def with_route_exceptions(route):
                     "message": f"Could not negotiate model package - {error}",
                     "help_url": error.help_url,
                 },
+            )
+        except ModelDeploymentNotSupportedError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=501,
+                content={"message": str(error)},
             )
         except (
             InvalidEnvironmentVariableError,
@@ -753,6 +760,12 @@ def with_route_exceptions_async(route):
                     "message": f"Could not negotiate model package - {error}",
                     "help_url": error.help_url,
                 },
+            )
+        except ModelDeploymentNotSupportedError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=501,
+                content={"message": str(error)},
             )
         except (
             InvalidEnvironmentVariableError,
