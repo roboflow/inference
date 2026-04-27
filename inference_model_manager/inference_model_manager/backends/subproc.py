@@ -158,10 +158,15 @@ def _worker_main(
             gpu_device if (use_gpu and gpu_device) else ("cuda:0" if use_gpu else "cpu")
         )
         _log.info("Worker(%s): loading on %s", model_id, device)
-        model = AutoModel.from_pretrained(
-            model_id, api_key=api_key, device=device, **model_kwargs
-        )
-        _log.info("Worker(%s): model ready (%s)", model_id, type(model).__name__)
+        if os.environ.get("DEBUG_BENCHMARK_MODE"):
+            from inference_model_manager.backends.passthrough_model import PassthroughModel
+            model = PassthroughModel()
+            _log.info("Worker(%s): using PassthroughModel (benchmark mode)", model_id)
+        else:
+            model = AutoModel.from_pretrained(
+                model_id, api_key=api_key, device=device, **model_kwargs
+            )
+            _log.info("Worker(%s): model ready (%s)", model_id, type(model).__name__)
 
         batch_decode_fn = make_batch_decoder(device, use_nvjpeg=use_nvjpeg)
         pool = SHMPool.attach(shm_pool_name, n_slots=n_slots, input_mb=input_mb)
