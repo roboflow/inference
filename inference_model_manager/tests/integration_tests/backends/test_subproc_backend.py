@@ -200,7 +200,12 @@ class TestSubprocViaModelManager:
     ) -> None:
         result = subproc_manager.process("test-model", images=dog_image_numpy)
         assert result is not None
-        assert hasattr(result, "xyxy")
+        # process() returns typed dict from registry serializer
+        if isinstance(result, dict):
+            assert "type" in result
+            assert "xyxy" in result
+        else:
+            assert hasattr(result, "xyxy")
 
     def test_submit_returns_future(
         self, subproc_manager: ModelManager, dog_image_numpy: np.ndarray
@@ -208,7 +213,11 @@ class TestSubprocViaModelManager:
         f = subproc_manager.submit("test-model", raw_input=dog_image_numpy)
         result = f.result(timeout=30)
         assert result is not None
-        assert hasattr(result, "xyxy")
+        # submit() returns raw pickle — not serialized through registry
+        if isinstance(result, dict):
+            assert "xyxy" in result
+        else:
+            assert hasattr(result, "xyxy")
 
 
 @pytest.mark.slow

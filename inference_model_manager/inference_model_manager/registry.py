@@ -141,6 +141,32 @@ class ModelRegistry:
                 return class_entries[task_name]
         return None
 
+    def get_entry_by_mro_names(
+        self, mro_names: list[str], task_name: str
+    ) -> Optional[TaskEntry]:
+        """Look up TaskEntry by MRO class name strings (subprocess path).
+
+        Used when model instance is in worker process and parent only has
+        class name strings from the READY pipe message.
+        """
+        for name in mro_names:
+            for cls, class_entries in self._entries.items():
+                if cls.__name__ == name and task_name in class_entries:
+                    return class_entries[task_name]
+        return None
+
+    def get_default_task_by_mro_names(
+        self, mro_names: list[str]
+    ) -> Optional[str]:
+        """Find default task name by MRO class name strings."""
+        for name in mro_names:
+            for cls, class_entries in self._entries.items():
+                if cls.__name__ == name:
+                    for task_name, entry in class_entries.items():
+                        if entry.default:
+                            return task_name
+        return None
+
     def registered_classes(self) -> List[type]:
         """Return all classes with registered entries."""
         return list(self._entries.keys())

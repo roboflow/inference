@@ -189,6 +189,8 @@ def _worker_main(
                 "status": "READY",
                 "class_names": getattr(model, "class_names", None),
                 "max_batch_size": model_max_bs,
+                "model_class_name": type(model).__name__,
+                "model_mro_names": [cls.__name__ for cls in type(model).__mro__],
             }
         )
 
@@ -587,6 +589,8 @@ class SubprocessBackend(Backend):
 
         self._class_names = msg.get("class_names")
         self._max_batch_size_model = msg.get("max_batch_size")
+        self._model_class_name = msg.get("model_class_name")
+        self._model_mro_names = msg.get("model_mro_names", [])
         self._last_worker_activity = time.monotonic()
 
         logger.info(
