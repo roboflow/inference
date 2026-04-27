@@ -27,7 +27,8 @@ FLORENCE2_GROUNDED_CLASSIFICATION_WORKFLOW_DEFINITION = {
             "name": "model_1",
             "images": "$inputs.image",
             "model_id": "yolov8n-640",
-            "confidence_mode": "custom", "custom_confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/florence_2@v1",

@@ -197,6 +197,10 @@ SAM_PACKAGE_URL = (
 SAM2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam2.zip"
 )
+SAM2_VIDEO_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/"
+    "sam2video-small.zip"
+)
 
 RFDETR_NANO_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-t4-trt.zip"
 RFDETR_SEG_NANO_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-nano-t4-trt.zip"
@@ -1439,6 +1443,24 @@ def sam2_package() -> str:
     return download_model_package(
         model_package_zip_url=SAM2_PACKAGE_URL,
         package_name="sam2",
+    )
+
+
+@pytest.fixture(scope="module")
+def sam2_video_package() -> str:
+    """Streaming SAM2 via HuggingFace ``Sam2VideoModel``.
+
+    Expected contents of the zip (standard HF transformers export):
+
+    - ``config.json``
+    - ``preprocessor_config.json``
+    - ``model.safetensors`` (or sharded ``model-00001-of-NNNNN.safetensors``
+      + ``model.safetensors.index.json``)
+    - any additional processor files the published checkpoint ships.
+    """
+    return download_model_package(
+        model_package_zip_url=SAM2_VIDEO_PACKAGE_URL,
+        package_name="sam2video",
     )
 
 

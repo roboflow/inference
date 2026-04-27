@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 import torch
 
+from inference_models.models.common.rle_utils import coco_rle_masks_to_torch_mask
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -36,6 +38,55 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy(
     assert np.allclose(predictions[0].class_id[0].cpu().numpy(), [18], atol=1)
     assert np.allclose(predictions[0].confidence[0].cpu().numpy(), [0.5068], atol=0.001)
     assert 14800 <= predictions[0].mask[0].cpu().numpy().sum() <= 16100
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy_rle_variant(
+    asl_yolact_onnx_seg_static_bs_letterbox: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    from inference_models.models.yolact.yolact_instance_segmentation_onnx import (
+        YOLOACTForInstanceSegmentationOnnx,
+    )
+
+    model = YOLOACTForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolact_onnx_seg_static_bs_letterbox,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        mask_format="rle",
+    )
+    predictions_ref = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
+    decoded_mask = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[0].mask, device=torch.device("cpu")
+    )
+
+    # then
+    assert len(predictions) == 1
+    assert np.allclose(
+        predictions[0].xyxy[0].cpu().numpy(), [66, 167, 188, 373], atol=1
+    )
+    assert np.allclose(predictions[0].class_id[0].cpu().numpy(), [18], atol=1)
+    assert np.allclose(predictions[0].confidence[0].cpu().numpy(), [0.5068], atol=0.001)
+    assert 14800 <= decoded_mask.cpu().numpy().sum() <= 16100
+    assert np.allclose(
+        decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
+    )
 
 
 @pytest.mark.slow
@@ -77,6 +128,67 @@ def test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy_list(
     assert np.allclose(predictions[1].class_id[0].cpu().numpy(), [18], atol=1)
     assert np.allclose(predictions[1].confidence[0].cpu().numpy(), [0.5068], atol=0.001)
     assert 14800 <= predictions[1].mask[0].cpu().numpy().sum() <= 16100
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_seg_onnx_package_with_static_batch_size_and_letterbox_numpy_list_rle_variant(
+    asl_yolact_onnx_seg_static_bs_letterbox: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    from inference_models.models.yolact.yolact_instance_segmentation_onnx import (
+        YOLOACTForInstanceSegmentationOnnx,
+    )
+
+    model = YOLOACTForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolact_onnx_seg_static_bs_letterbox,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        mask_format="rle",
+    )
+    predictions_ref = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
+    decoded_mask_1 = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[0].mask, device=torch.device("cpu")
+    )
+    decoded_mask_2 = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[1].mask, device=torch.device("cpu")
+    )
+
+    # then
+    assert len(predictions) == 2
+    assert np.allclose(
+        predictions[0].xyxy[0].cpu().numpy(), [66, 167, 188, 373], atol=1
+    )
+    assert np.allclose(predictions[0].class_id[0].cpu().numpy(), [18], atol=1)
+    assert np.allclose(predictions[0].confidence[0].cpu().numpy(), [0.5068], atol=0.001)
+    assert 14800 <= decoded_mask_1.cpu().numpy().sum() <= 16100
+    assert np.allclose(
+        predictions[1].xyxy[0].cpu().numpy(), [66, 167, 188, 373], atol=1
+    )
+    assert np.allclose(predictions[1].class_id[0].cpu().numpy(), [18], atol=1)
+    assert np.allclose(predictions[1].confidence[0].cpu().numpy(), [0.5068], atol=0.001)
+    assert 14800 <= decoded_mask_2.cpu().numpy().sum() <= 16100
+    assert np.allclose(
+        decoded_mask_1.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
+    )
+    assert np.allclose(
+        decoded_mask_2.cpu().numpy(), predictions_ref[1].mask.cpu().numpy()
+    )
 
 
 @pytest.mark.slow

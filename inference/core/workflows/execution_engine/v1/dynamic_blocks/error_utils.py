@@ -14,27 +14,39 @@ _install_lock = threading.Lock()
 
 
 class _ThreadDispatchStream:
-    """Stream wrapper that dispatches writes to a per-thread StringIO buffer
-    when one is active, otherwise falls through to the original stream.
+    """Stream wrapper that tees writes into a per-thread StringIO buffer
+    (when one is active) while still forwarding them to the original stream.
 
-    This avoids the need for a global lock: each thread captures to its own
-    buffer independently, while threads that are not capturing see normal
-    stdout/stderr behaviour.
+    Threads that are not capturing see normal stdout/stderr behaviour; threads
+    that are capturing get both: the buffer keeps an in-memory copy for error
+    payloads, and the original stream still receives the bytes so ``print()``
+    output continues to reach Docker / the process stdout.
     """
 
     def __init__(self, original, attr_name: str):
         object.__setattr__(self, "_original", original)
         object.__setattr__(self, "_attr_name", attr_name)
 
-    def _get_target(self):
-        buf = getattr(_thread_local, self._attr_name, None)
-        return buf if buf is not None else self._original
+    def _get_buffer(self):
+        return getattr(_thread_local, self._attr_name, None)
 
     def write(self, data):
-        return self._get_target().write(data)
+        buf = self._get_buffer()
+        if buf is not None:
+            try:
+                buf.write(data)
+            except Exception:
+                pass
+        return self._original.write(data)
 
     def flush(self):
-        return self._get_target().flush()
+        buf = self._get_buffer()
+        if buf is not None:
+            try:
+                buf.flush()
+            except Exception:
+                pass
+        return self._original.flush()
 
     def fileno(self):
         return self._original.fileno()
@@ -43,7 +55,7 @@ class _ThreadDispatchStream:
         return self._original.isatty()
 
     def __getattr__(self, name):
-        return getattr(self._get_target(), name)
+        return getattr(self._original, name)
 
 
 def _install_dispatchers() -> None:

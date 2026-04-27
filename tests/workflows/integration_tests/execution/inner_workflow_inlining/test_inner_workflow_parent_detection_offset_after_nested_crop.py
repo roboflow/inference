@@ -15,7 +15,6 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.managers.base import ModelManager
-
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     child_dynamic_crop_from_parent_detections,
     execution_engine,
@@ -24,7 +23,8 @@ from tests.workflows.integration_tests.execution.inner_workflow_inlining._common
 
 def _infer_from_request_sync_factory(h: int, w: int):
     def infer_from_request_sync(
-        model_id: str, request: ObjectDetectionInferenceRequest,
+        model_id: str,
+        request: ObjectDetectionInferenceRequest,
     ):
         imgs = request.image if isinstance(request.image, list) else [request.image]
         assert len(imgs) == 1
@@ -100,7 +100,9 @@ def _nested_parent_workflow_crop_only(inner: dict) -> dict:
 
 
 def _nested_parent_workflow_with_detection_offset(
-    inner: dict, offset_x: int, offset_y: int,
+    inner: dict,
+    offset_x: int,
+    offset_y: int,
 ) -> dict:
     return {
         "version": "1.0",
@@ -169,7 +171,8 @@ def _flat_parent_workflow_crop_only() -> dict:
 
 
 def _flat_parent_workflow_with_detection_offset(
-    offset_x: int, offset_y: int,
+    offset_x: int,
+    offset_y: int,
 ) -> dict:
     return {
         "version": "1.0",
@@ -256,7 +259,9 @@ def test_inlined_crop_and_offset_match_nested_inner_workflow(
         nested_off = execution_engine(
             model_manager,
             _nested_parent_workflow_with_detection_offset(
-                inner, offset_x, offset_y,
+                inner,
+                offset_x,
+                offset_y,
             ),
         )
         flat_off = execution_engine(

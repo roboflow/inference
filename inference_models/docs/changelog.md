@@ -1,8 +1,46 @@
 # Changelog
 
+## `0.27.2`
+
+### Fixed
+
+- Temporarily disabled flash-attention in GLM-OCR for Jetsons, due to incompatibility detected
+before release.
+
+
+## `0.27.1`
+
+### Added
+
+- Improved logging for auto-negotiation of model packages.
+
+## `0.27.0`
+
+### Added
+
+- COCO RLE masks format for all instance segmentation predictions and all models 
+supported in the library were patched. `InstanceDetections` mask can now be `InstancesRLEMasks` object
+which follows the structure of `pycocotools` masks (providing memory-efficient alternative for dense
+representation). Clients who want to use the format, should pass `mask_format="rle"` to `**kwargs` of model
+forward pass.
+
+### Changed
+
+- The change with RLE masks format yielded change to base interface of Instance Segmentation models - 
+**new abstract property `supported_mask_formats` was added, which is a breaking change for local-code 
+instance-segmentation models.** We are not aware of anyone using the library in such mode currently, due 
+to the maturity of the library, so we are introducing this change, such that the interface does not 
+implicitly enforce supported format.
+
+- Representation of `InstanceDetections` changed - new `InstancesRLEMasks` format is now an alternative for 
+`torch.Tensor` used for `dense` mask representation. This change is considered **non-breaking**, as alternative 
+representation must be requested by the caller.
+
+---
 ## `0.26.1`
 
 ### Changed
+
 - For Roboflow weights provider, Roboflow License Server proxy transitioned into 
 Roboflow Secure Gateway, altering naming conventions of all helper functions which are 
 considered private interface of weights provider (hence should not be considered breaking 
