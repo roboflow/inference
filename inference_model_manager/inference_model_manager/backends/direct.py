@@ -77,7 +77,7 @@ class DirectBackend(Backend):
         self._device_str = self._detect_device()
 
         # Clamp batch size to model's limit
-        model_max = getattr(self._model, "max_batch_size", None)
+        model_max = getattr(self._model, "max_batch_size", None) or getattr(self._model, "_max_batch_size", None)
         if batch_max_size > 0 and model_max is not None:
             self._batch_max_size = min(batch_max_size, model_max)
         else:
@@ -351,7 +351,7 @@ class DirectBackend(Backend):
 
     @property
     def max_batch_size(self) -> Optional[int]:
-        return getattr(self._model, "max_batch_size", None)
+        return getattr(self._model, "max_batch_size", None) or getattr(self._model, "_max_batch_size", None)
 
     @property
     def queue_depth(self) -> int:

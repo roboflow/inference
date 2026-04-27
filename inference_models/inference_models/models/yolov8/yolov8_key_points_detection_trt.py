@@ -217,12 +217,6 @@ class YOLOv8ForKeyPointsDetectionTRT(
         self._parsed_key_points_metadata = parsed_key_points_metadata
         self._trt_config = trt_config
         self._device = device
-        if trt_config.static_batch_size is not None:
-            self._max_batch_size = trt_config.static_batch_size
-        elif trt_config.dynamic_batch_size_max is not None:
-            self._max_batch_size = trt_config.dynamic_batch_size_max
-        else:
-            self._max_batch_size = 1
         self._session_thread_lock = Lock()
         self.recommended_parameters = recommended_parameters
         self._key_points_classes_for_instances = torch.tensor(

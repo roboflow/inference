@@ -171,7 +171,7 @@ def _worker_main(
         batch_decode_fn = make_batch_decoder(device, use_nvjpeg=use_nvjpeg)
         pool = SHMPool.attach(shm_pool_name, n_slots=n_slots, input_mb=input_mb)
 
-        model_max_bs = getattr(model, "max_batch_size", None)
+        model_max_bs = getattr(model, "max_batch_size", None) or getattr(model, "_max_batch_size", None)
         effective_bs = model_max_bs if batch_max_size <= 0 else batch_max_size
         if model_max_bs is not None and effective_bs > model_max_bs:
             effective_bs = model_max_bs
