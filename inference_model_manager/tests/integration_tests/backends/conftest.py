@@ -5,9 +5,7 @@ import pytest
 import requests
 from filelock import FileLock
 
-ASSETS_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "assets"
-)
+ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 
 YOLOV8N_TS_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/"

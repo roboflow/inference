@@ -1,4 +1,5 @@
 """Unit tests for SubprocessBackend v2 helpers — _to_bytes, wire formats."""
+
 from __future__ import annotations
 
 import io
@@ -15,14 +16,14 @@ from inference_model_manager.backends.subproc import (
     _to_bytes,
 )
 
-
 # ---------------------------------------------------------------------------
 # _to_bytes
 # ---------------------------------------------------------------------------
 
+
 class TestToBytes:
     def test_bytes_passthrough(self) -> None:
-        data = b"\xff\xd8\xff"   # JPEG header
+        data = b"\xff\xd8\xff"  # JPEG header
         assert _to_bytes(data) == data
 
     def test_bytearray_passthrough(self) -> None:
@@ -66,10 +67,11 @@ class TestToBytes:
 # Wire format: T_SLOT_READY  [msg_type][slot_id(4B big-endian) | req_id(8B big-endian)]
 # ---------------------------------------------------------------------------
 
+
 class TestSlotReadyFormat:
     def test_pack_unpack_roundtrip(self) -> None:
         slot_id = 7
-        req_id  = 0xDEAD_BEEF_CAFE_1234
+        req_id = 0xDEAD_BEEF_CAFE_1234
 
         payload = struct.pack(">IQ", slot_id, req_id)
         assert len(payload) == 12, "T_SLOT_READY payload must be 12 bytes"
@@ -86,7 +88,7 @@ class TestSlotReadyFormat:
 
     def test_max_values(self) -> None:
         slot_id = 0xFFFF_FFFF
-        req_id  = 0xFFFF_FFFF_FFFF_FFFF
+        req_id = 0xFFFF_FFFF_FFFF_FFFF
         payload = struct.pack(">IQ", slot_id, req_id)
         s, r = struct.unpack(">IQ", payload)
         assert s == slot_id
@@ -100,18 +102,19 @@ class TestSlotReadyFormat:
 # Wire format: T_RESULT  [msg_type][req_id(8B) | slot_id(4B) | result_sz(4B)]
 # ---------------------------------------------------------------------------
 
+
 class TestResultFormat:
     def test_pack_unpack_roundtrip(self) -> None:
-        req_id    = 0xCAFE_BABE_0000_0001
-        slot_id   = 3
+        req_id = 0xCAFE_BABE_0000_0001
+        slot_id = 3
         result_sz = 1024
 
         payload = struct.pack(">QII", req_id, slot_id, result_sz)
         assert len(payload) == 16, "T_RESULT payload must be 16 bytes"
 
         r, s, sz = struct.unpack(">QII", payload)
-        assert r  == req_id
-        assert s  == slot_id
+        assert r == req_id
+        assert s == slot_id
         assert sz == result_sz
 
     def test_zero_result_sz_signals_error(self) -> None:
@@ -127,6 +130,7 @@ class TestResultFormat:
 # ---------------------------------------------------------------------------
 # Magic byte constant
 # ---------------------------------------------------------------------------
+
 
 class TestNumpyMagic:
     def test_magic_matches_npy_format(self) -> None:

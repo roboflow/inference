@@ -142,11 +142,15 @@ class TestModelManagerMultiInstance:
     ) -> None:
         mm = ModelManager()
         mm.load(
-            "yolov8n:0", api_key="", backend="direct",
+            "yolov8n:0",
+            api_key="",
+            backend="direct",
             model_id_or_path=yolov8n_model_path,
         )
         mm.load(
-            "yolov8n:1", api_key="", backend="direct",
+            "yolov8n:1",
+            api_key="",
+            backend="direct",
             model_id_or_path=yolov8n_model_path,
         )
 
@@ -167,11 +171,15 @@ class TestModelManagerMultiInstance:
     ) -> None:
         mm = ModelManager()
         mm.load(
-            "yolov8n:0", api_key="", backend="direct",
+            "yolov8n:0",
+            api_key="",
+            backend="direct",
             model_id_or_path=yolov8n_model_path,
         )
         mm.load(
-            "yolov8n:1", api_key="", backend="direct",
+            "yolov8n:1",
+            api_key="",
+            backend="direct",
             model_id_or_path=yolov8n_model_path,
         )
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
 from inference_model_manager.backends.direct import DirectBackend
 
 
@@ -45,6 +46,7 @@ class TestDirectBackendPipeline:
 
         backend.unload()
 
+
 @pytest.mark.slow
 @pytest.mark.torch_models
 class TestDirectBackendBatching:
@@ -55,8 +57,10 @@ class TestDirectBackendBatching:
     ) -> None:
         # given
         backend = DirectBackend(
-            yolov8n_model_path, api_key="",
-            batch_max_size=4, batch_max_delay_ms=50,
+            yolov8n_model_path,
+            api_key="",
+            batch_max_size=4,
+            batch_max_delay_ms=50,
         )
 
         # when — submit multiple items, BatchCollector groups them
@@ -142,9 +146,7 @@ class TestDirectBackendObservability:
 
         backend.unload()
 
-    def test_queue_depth_zero_without_batching(
-        self, yolov8n_model_path: str
-    ) -> None:
+    def test_queue_depth_zero_without_batching(self, yolov8n_model_path: str) -> None:
         # given
         backend = DirectBackend(yolov8n_model_path, api_key="")
 

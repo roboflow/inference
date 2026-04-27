@@ -85,6 +85,7 @@ _OFF_RESULT_SZ = 8
 
 class _SlotHeaderView:
     __slots__ = ("status", "result_size")
+
     def __init__(self, status: int, result_size: int) -> None:
         self.status = status
         self.result_size = result_size
@@ -97,6 +98,7 @@ def _read_slot_header(slot_id: int) -> _SlotHeaderView | None:
     status = _shm.buf[off + _OFF_STATUS]
     result_size = struct.unpack_from("<I", _shm.buf, off + _OFF_RESULT_SZ)[0]
     return _SlotHeaderView(status, result_size)
+
 
 # ---------------------------------------------------------------------------
 # Image format detection (magic bytes via ``filetype`` lib + numpy .npy)
@@ -239,10 +241,17 @@ def _dispatch(msg_type: bytes, frames: list[bytes]) -> None:
             _resolve(req_id, ("error", err))
 
         else:
-            logger.warning("_dispatch: unknown message type %r (frames=%d)", msg_type, len(frames))
+            logger.warning(
+                "_dispatch: unknown message type %r (frames=%d)", msg_type, len(frames)
+            )
 
     except (struct.error, IndexError):
-        logger.warning("_dispatch: malformed message type=%r frames=%d", msg_type, len(frames), exc_info=True)
+        logger.warning(
+            "_dispatch: malformed message type=%r frames=%d",
+            msg_type,
+            len(frames),
+            exc_info=True,
+        )
 
 
 def _resolve(req_id: int, value: tuple) -> None:
@@ -375,17 +384,23 @@ def _free_slot(slot_id: int) -> None:
         try:
             await _sock.send_multipart([_T_FREE, struct.pack(">I", slot_id)])
         except Exception:
-            logger.warning("_free_slot: failed to send FREE for slot %d", slot_id, exc_info=True)
+            logger.warning(
+                "_free_slot: failed to send FREE for slot %d", slot_id, exc_info=True
+            )
 
     task = asyncio.create_task(_send())
-    task.add_done_callback(lambda t: t.result() if not t.cancelled() and t.exception() is None else None)
+    task.add_done_callback(
+        lambda t: t.result() if not t.cancelled() and t.exception() is None else None
+    )
 
 
 def _write_input(slot_id: int, chunk: bytes | memoryview, offset: int) -> None:
     base = slot_id * _SLOT_TOTAL + _HEADER_SIZE
     end = base + offset + len(chunk)
     if base < 0 or end > len(_shm.buf):
-        raise ValueError(f"SHM write out of bounds: slot={slot_id} offset={offset} len={len(chunk)}")
+        raise ValueError(
+            f"SHM write out of bounds: slot={slot_id} offset={offset} len={len(chunk)}"
+        )
     _shm.buf[base + offset : end] = chunk
 
 
@@ -475,7 +490,10 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
     device = params.pop("device", "")
     fmt = params.pop("format", "pickle")  # "json" or "pickle"
     if fmt not in ("json", "pickle"):
-        return Response(status_code=400, content=f"Invalid format={fmt!r}; must be 'json' or 'pickle'".encode())
+        return Response(
+            status_code=400,
+            content=f"Invalid format={fmt!r}; must be 'json' or 'pickle'".encode(),
+        )
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
 
@@ -564,7 +582,9 @@ async def infer(request: Request, api_key: BearerToken) -> Response:
             try:
                 obj = pickle.loads(raw)
             except Exception:
-                return Response(status_code=500, content=b"result deserialization failed")
+                return Response(
+                    status_code=500, content=b"result deserialization failed"
+                )
             return Response(
                 content=serialize_json(obj),
                 media_type="application/json",
@@ -672,32 +692,26 @@ async def unload_model(request: Request, _token: BearerToken) -> Response:
 
 @app.get("/models/tasks")
 async def get_model_tasks(request: Request, api_key: BearerToken) -> Response:
-    """Discover supported tasks for a model WITHOUT loading it.
+    """Discover supported tasks for a loaded model.
 
-    Resolves model_id to model class via Roboflow API (cached 24h),
-    reads class-level ``get_supported_tasks()``. No download, no GPU.
+    Model must be loaded first (POST /models/load). Returns registered tasks
+    from the model registry.
 
     Headers:
         Authorization: Bearer <api_key>    Required.
 
     Query params:
-        model_id    Required.
+        model_id    Required. Must be already loaded.
     """
     model_id = request.query_params.get("model_id", "")
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
 
-    try:
-        from inference_model_manager.dispatch import discover_tasks
-
-        tasks = discover_tasks(model_id, api_key=api_key)
-    except Exception:
-        return Response(status_code=404, content=b"model not found or not compatible")
-
-    import orjson
-
+    # TODO: query MMP for loaded model's tasks via T_STATS or new message type.
+    # For now, return 501.
     return Response(
-        content=orjson.dumps(tasks),
+        status_code=501,
+        content=b'{"error_code":"NOT_IMPLEMENTED","description":"task discovery requires model to be loaded - endpoint not yet wired to MMP"}',
         media_type="application/json",
     )
 

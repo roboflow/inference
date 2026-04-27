@@ -43,8 +43,11 @@ def serialize_detections_compact(output: Any, model: Any) -> dict:
             "type": "roboflow-object-detection-compact-v1",
             "class_names": _class_names(model),
             "batch": [
-                {"xyxy": _to_list(d.xyxy), "class_id": _to_list(d.class_id),
-                 "confidence": _to_list(d.confidence)}
+                {
+                    "xyxy": _to_list(d.xyxy),
+                    "class_id": _to_list(d.class_id),
+                    "confidence": _to_list(d.confidence),
+                }
                 for d in output
             ],
         }
