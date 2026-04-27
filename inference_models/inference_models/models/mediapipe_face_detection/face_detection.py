@@ -59,6 +59,7 @@ class MediaPipeFaceDetector(
                 ),
                 running_mode=mp.tasks.vision.RunningMode.IMAGE,
             )
+        )
         return cls(
             face_detector=face_detector,
             recommended_parameters=recommended_parameters,
