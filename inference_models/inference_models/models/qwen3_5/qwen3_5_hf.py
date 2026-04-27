@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 from threading import Lock
@@ -24,6 +25,203 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.qwen3vl.qwen3vl_hf import _get_qwen3vl_attn_implementation
+
+logger = logging.getLogger(__name__)
+
+
+def _fixed_torch_chunk_gated_delta_rule(
+    query,
+    key,
+    value,
+    g,
+    beta,
+    chunk_size=64,
+    initial_state=None,
+    output_final_state=False,
+    use_qk_l2norm_in_kernel=False,
+):
+    """Fixed copy of transformers' torch_chunk_gated_delta_rule.
+
+    The upstream pure-PyTorch fallback allocates a state tensor on CPU then
+    moves it to GPU via ``.to(value)``, which triggers "illegal memory access"
+    on some GPU/driver combinations (observed on L40S + CUDA 12.8).
+
+    This version allocates directly on the correct device/dtype.
+    """
+    initial_dtype = query.dtype
+
+    if use_qk_l2norm_in_kernel:
+        inv_norm = torch.rsqrt((query * query).sum(dim=-1, keepdim=True) + 1e-6)
+        query = query * inv_norm
+        inv_norm = torch.rsqrt((key * key).sum(dim=-1, keepdim=True) + 1e-6)
+        key = key * inv_norm
+
+    query, key, value, beta, g = [
+        x.transpose(1, 2).contiguous().to(torch.float32)
+        for x in (query, key, value, beta, g)
+    ]
+
+    batch_size, num_heads, sequence_length, k_head_dim = key.shape
+    v_head_dim = value.shape[-1]
+    pad_size = (chunk_size - sequence_length % chunk_size) % chunk_size
+    query = torch.nn.functional.pad(query, (0, 0, 0, pad_size))
+    key = torch.nn.functional.pad(key, (0, 0, 0, pad_size))
+    value = torch.nn.functional.pad(value, (0, 0, 0, pad_size))
+    beta = torch.nn.functional.pad(beta, (0, pad_size))
+    g = torch.nn.functional.pad(g, (0, pad_size))
+    total_sequence_length = sequence_length + pad_size
+    scale = 1 / (query.shape[-1] ** 0.5)
+    query = query * scale
+
+    v_beta = value * beta.unsqueeze(-1)
+    k_beta = key * beta.unsqueeze(-1)
+    query, key, value, k_beta, v_beta = [
+        x.reshape(x.shape[0], x.shape[1], -1, chunk_size, x.shape[-1])
+        for x in (query, key, value, k_beta, v_beta)
+    ]
+    g = g.reshape(g.shape[0], g.shape[1], -1, chunk_size)
+    mask = torch.triu(
+        torch.ones(chunk_size, chunk_size, dtype=torch.bool, device=query.device),
+        diagonal=0,
+    )
+
+    g = g.cumsum(dim=-1)
+    decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)).tril().exp().float()).tril()
+    attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask).masked_fill(mask, 0)
+    for i in range(1, chunk_size):
+        row = attn[..., i, :i].clone()
+        sub = attn[..., :i, :i].clone()
+        attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
+    attn = attn + torch.eye(chunk_size, dtype=attn.dtype, device=attn.device)
+    value = attn @ v_beta
+    k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
+
+    # FIX: allocate directly on device instead of CPU .to(value)
+    last_recurrent_state = (
+        torch.zeros(
+            batch_size, num_heads, k_head_dim, v_head_dim,
+            dtype=value.dtype, device=value.device,
+        )
+        if initial_state is None
+        else initial_state.to(value)
+    )
+    core_attn_out = torch.zeros_like(value)
+    mask = torch.triu(
+        torch.ones(chunk_size, chunk_size, dtype=torch.bool, device=query.device),
+        diagonal=1,
+    )
+
+    for i in range(0, total_sequence_length // chunk_size):
+        q_i, k_i, v_i = query[:, :, i], key[:, :, i], value[:, :, i]
+        attn = (q_i @ k_i.transpose(-1, -2) * decay_mask[:, :, i]).masked_fill_(mask, 0)
+        v_prime = (k_cumdecay[:, :, i]) @ last_recurrent_state
+        v_new = v_i - v_prime
+        attn_inter = (q_i * g[:, :, i, :, None].exp()) @ last_recurrent_state
+        core_attn_out[:, :, i] = attn_inter + attn @ v_new
+        last_recurrent_state = (
+            last_recurrent_state * g[:, :, i, -1, None, None].exp()
+            + (k_i * (g[:, :, i, -1, None] - g[:, :, i]).exp()[..., None]).transpose(-1, -2) @ v_new
+        )
+
+    if not output_final_state:
+        last_recurrent_state = None
+    core_attn_out = core_attn_out.reshape(
+        core_attn_out.shape[0], core_attn_out.shape[1], -1, core_attn_out.shape[-1]
+    )
+    core_attn_out = core_attn_out[:, :, :sequence_length]
+    core_attn_out = core_attn_out.transpose(1, 2).contiguous().to(initial_dtype)
+    return core_attn_out, last_recurrent_state
+
+
+def _fixed_torch_recurrent_gated_delta_rule(
+    query,
+    key,
+    value,
+    g,
+    beta,
+    initial_state,
+    output_final_state,
+    use_qk_l2norm_in_kernel=False,
+):
+    """Fixed copy of transformers' torch_recurrent_gated_delta_rule.
+
+    Same CPU allocation bug as torch_chunk_gated_delta_rule — two
+    ``torch.zeros(...).to(value)`` calls that must allocate on device directly.
+    """
+    initial_dtype = query.dtype
+    if use_qk_l2norm_in_kernel:
+        inv_norm = torch.rsqrt((query * query).sum(dim=-1, keepdim=True) + 1e-6)
+        query = query * inv_norm
+        inv_norm = torch.rsqrt((key * key).sum(dim=-1, keepdim=True) + 1e-6)
+        key = key * inv_norm
+
+    query, key, value, beta, g = [
+        x.transpose(1, 2).contiguous().to(torch.float32)
+        for x in (query, key, value, beta, g)
+    ]
+
+    batch_size, num_heads, sequence_length, k_head_dim = key.shape
+    v_head_dim = value.shape[-1]
+    scale = 1 / (query.shape[-1] ** 0.5)
+    query = query * scale
+
+    # FIX: allocate directly on device instead of CPU .to(value)
+    core_attn_out = torch.zeros(
+        batch_size, num_heads, sequence_length, v_head_dim,
+        dtype=value.dtype, device=value.device,
+    )
+    last_recurrent_state = (
+        torch.zeros(
+            batch_size, num_heads, k_head_dim, v_head_dim,
+            dtype=value.dtype, device=value.device,
+        )
+        if initial_state is None
+        else initial_state.to(value)
+    )
+
+    for i in range(sequence_length):
+        q_t = query[:, :, i]
+        k_t = key[:, :, i]
+        v_t = value[:, :, i]
+        g_t = g[:, :, i].exp().unsqueeze(-1).unsqueeze(-1)
+        beta_t = beta[:, :, i].unsqueeze(-1)
+
+        last_recurrent_state = last_recurrent_state * g_t
+        kv_mem = (last_recurrent_state * k_t.unsqueeze(-1)).sum(dim=-2)
+        delta = (v_t - kv_mem) * beta_t
+        last_recurrent_state = last_recurrent_state + k_t.unsqueeze(-1) * delta.unsqueeze(-2)
+        core_attn_out[:, :, i] = (last_recurrent_state * q_t.unsqueeze(-1)).sum(dim=-2)
+
+    if not output_final_state:
+        last_recurrent_state = None
+    core_attn_out = core_attn_out.transpose(1, 2).contiguous().to(initial_dtype)
+    return core_attn_out, last_recurrent_state
+
+
+def _patch_model_linear_attn_layers(model: Qwen3_5ForConditionalGeneration):
+    """Replace gated delta rule fallbacks on all linear attention layers if fla is missing."""
+    try:
+        from transformers.utils.import_utils import is_flash_linear_attention_available
+
+        if is_flash_linear_attention_available():
+            return
+    except ImportError:
+        pass
+
+    logger.warning(
+        "flash-linear-attention (fla) is not installed. Using fixed "
+        "torch fallbacks to avoid CUDA illegal memory access. "
+        "Install fla for optimal Qwen3.5 performance: "
+        "pip install 'flash-linear-attention>=0.4.0,<0.5.0'"
+    )
+    patched = 0
+    for module in model.modules():
+        if hasattr(module, "chunk_gated_delta_rule"):
+            module.chunk_gated_delta_rule = _fixed_torch_chunk_gated_delta_rule
+            patched += 1
+        if hasattr(module, "recurrent_gated_delta_rule"):
+            module.recurrent_gated_delta_rule = _fixed_torch_recurrent_gated_delta_rule
+    logger.info("Patched %d linear attention layers", patched)
 
 
 class Qwen35HF:
@@ -88,6 +286,8 @@ class Qwen35HF:
                 attn_implementation=attn_implementation,
             )
             model = base_model.eval().to(cls.default_dtype)
+
+        _patch_model_linear_attn_layers(model)
 
         # Load processor with chat_template if available
         # Check both root and base/ directory for chat_template.jinja
