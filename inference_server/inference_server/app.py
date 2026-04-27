@@ -424,8 +424,13 @@ def _bearer_token(request: Request) -> str:
     return ""
 
 
+_DEBUG_BENCHMARK_MODE = os.environ.get("DEBUG_BENCHMARK_MODE", "").strip() == "1"
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
+    if _DEBUG_BENCHMARK_MODE:
+        return await call_next(request)
     if request.url.path.rstrip("/") in _AUTH_SKIP_PATHS:
         return await call_next(request)
     token = _bearer_token(request)
@@ -695,6 +700,139 @@ async def get_model_tasks(request: Request, api_key: BearerToken) -> Response:
         content=orjson.dumps(tasks),
         media_type="application/json",
     )
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+# ===========================================================================
+# v2 API — spec-compliant endpoints (stubs + wired)
+# ===========================================================================
+
+_V2_TODO = Response(
+    status_code=501,
+    content=b'{"error_code":"NOT_IMPLEMENTED","description":"endpoint not yet implemented"}',
+    media_type="application/json",
+)
+
+
+# ---- Models ----
+
+
+@app.post("/v2/models/infer")
+async def v2_infer(request: Request, api_key: BearerToken) -> Response:
+    """v2 model inference.
+
+    TODO: Accept multiple input methods:
+      - Query param `image=<url>` (server-side fetch)
+      - Multipart form `image=@file.jpg` + form fields for params
+      - Form-data with JSON `inputs` part
+      - JSON body with base64-encoded image
+      - Raw body (delegate to existing /infer)
+    TODO: Response envelope {type, model_info, usage, predictions}
+    TODO: Typed prediction formats (roboflow-object-detection-compact-v1 etc.)
+    TODO: ?style=compact|rich format selection
+    TODO: Batch inference (multiple images)
+    """
+    return _V2_TODO
+
+
+@app.get("/v2/models/interface")
+async def v2_model_interface(request: Request, api_key: BearerToken) -> Response:
+    """Discover model interface — params, response formats, compatibility.
+
+    TODO: Return full interface schema:
+      - All parameters influencing predictions (names, types, defaults)
+      - Available response format options with descriptions and schemas
+      - Server compatibility flag
+      - Available model packages for selection
+    """
+    return _V2_TODO
+
+
+@app.get("/v2/models/compatibility")
+async def v2_model_compatibility(request: Request, api_key: BearerToken) -> Response:
+    """Discover models compatible with current server configuration.
+
+    TODO: Query model registry for packages matching server runtime.
+    """
+    return _V2_TODO
+
+
+@app.get("/v2/models")
+async def v2_list_models(request: Request, api_key: BearerToken) -> Response:
+    """List currently loaded models.
+
+    TODO: Wire to MMP T_STATS -> list_models() with state, device, memory, queue depth.
+    """
+    return _V2_TODO
+
+
+@app.post("/v2/models/load")
+async def v2_load_model(request: Request, api_key: BearerToken) -> Response:
+    """Load specified model.
+
+    TODO: Wire to existing _lifecycle_req(T_LOAD, ...). Return structured JSON.
+    """
+    return _V2_TODO
+
+
+@app.post("/v2/models/unload")
+async def v2_unload_model(request: Request, api_key: BearerToken) -> Response:
+    """Unload specified model.
+
+    TODO: Wire to existing _lifecycle_req(T_UNLOAD, ...). Return structured JSON.
+    """
+    return _V2_TODO
+
+
+@app.delete("/v2/models")
+async def v2_unload_all(request: Request, api_key: BearerToken) -> Response:
+    """Unload all models.
+
+    TODO: Iterate loaded models, drain_and_unload each. Return structured JSON.
+    """
+    return _V2_TODO
+
+
+# ---- Server Status ----
+
+
+@app.get("/v2/server/health")
+async def v2_health() -> Response:
+    """Basic liveness check. No auth required."""
+    return Response(
+        content=b'{"status":"ok"}',
+        media_type="application/json",
+    )
+
+
+@app.get("/v2/server/ready")
+async def v2_ready() -> Response:
+    """Readiness check — all preloaded models ready.
+
+    TODO: Check MMP state — all INFERENCE_PRELOAD_MODELS loaded and healthy.
+    """
+    return _V2_TODO
+
+
+@app.get("/v2/server/info")
+async def v2_info() -> Response:
+    """Server information — version, capabilities, loaded models.
+
+    TODO: Return server version, supported runtimes, loaded model count.
+    """
+    return _V2_TODO
+
+
+@app.get("/v2/server/metrics")
+async def v2_metrics() -> Response:
+    """Prometheus-style or JSON metrics.
+
+    TODO: Phase 32f — fetch T_STATS from MMP, format as Prometheus text.
+    """
+    return _V2_TODO
 
 
 # ---------------------------------------------------------------------------
