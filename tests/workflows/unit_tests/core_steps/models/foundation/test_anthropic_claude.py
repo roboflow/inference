@@ -74,6 +74,7 @@ def test_claude_step_validation_when_prompt_is_given_directly() -> None:
 @pytest.mark.parametrize(
     "model_version",
     [
+        "claude-opus-4-7",
         "claude-sonnet-4-5",
         "claude-haiku-4-5",
         "claude-opus-4-5",
@@ -336,6 +337,7 @@ def test_claude_step_validation_with_structured_answering() -> None:
 
 def test_max_output_tokens_mapping() -> None:
     # then - verify all models have max_output_tokens defined
+    assert MAX_OUTPUT_TOKENS["claude-opus-4-7"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-sonnet-4-5"] == 64000
     assert MAX_OUTPUT_TOKENS["claude-haiku-4-5"] == 64000
     assert MAX_OUTPUT_TOKENS["claude-opus-4-5"] == 64000
@@ -347,6 +349,7 @@ def test_max_output_tokens_mapping() -> None:
 
 def test_exact_model_versions_mapping() -> None:
     # then - verify all models have exact versions defined
+    assert EXACT_MODEL_VERSIONS["claude-opus-4-7"] == "claude-opus-4-7"
     assert EXACT_MODEL_VERSIONS["claude-sonnet-4-5"] == "claude-sonnet-4-5-20250929"
     assert EXACT_MODEL_VERSIONS["claude-haiku-4-5"] == "claude-haiku-4-5-20251001"
     assert EXACT_MODEL_VERSIONS["claude-opus-4-5"] == "claude-opus-4-5-20251101"

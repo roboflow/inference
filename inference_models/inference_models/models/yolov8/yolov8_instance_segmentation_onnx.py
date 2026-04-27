@@ -1,11 +1,12 @@
 from threading import Lock
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
 
 from inference_models import (
     InstanceDetections,
+    InstanceSegmentationMaskFormat,
     InstanceSegmentationModel,
     PreProcessingOverrides,
 )
@@ -18,11 +19,12 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,
     MissingDependencyError,
+    ModelInputError,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
@@ -37,18 +39,18 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
-    align_instance_segmentation_results,
-    crop_masks_to_boxes,
+    ConfidenceFilter,
     post_process_nms_fused_model_output,
-    preprocess_segmentation_masks,
     run_nms_for_instance_segmentation,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.yolov8.common import prepare_dense_masks, prepare_rle_masks
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -79,6 +81,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv8ForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
@@ -148,6 +151,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -158,6 +162,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -166,10 +171,15 @@ class YOLOv8ForInstanceSegmentationOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
         return self._class_names
+
+    @property
+    def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
+        return {"dense", "rle"}
 
     def pre_process(
         self,
@@ -205,14 +215,31 @@ class YOLOv8ForInstanceSegmentationOnnx(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
         masks_smoothing_enabled: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED,
         masks_binarization_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD,
+        mask_format: InstanceSegmentationMaskFormat = "dense",
         **kwargs,
     ) -> List[InstanceDetections]:
+        if mask_format not in self.supported_mask_formats:
+            raise ModelInputError(
+                message=f"YOLOv8 / YOLOv11 / YOLOv12  Instance Segmentation models support the following mask "
+                f"formats: {self.supported_mask_formats}. Requested format: {mask_format} "
+                f"is not supported. If you see this error while running on Roboflow platform, "
+                f"contact support or raise an issue at https://github.com/roboflow/inference/issues. "
+                f"When running locally - please verify your integration to make sure that appropriate "
+                f"value of `mask_format` parameter is set.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        )
+        confidence = confidence_filter.get_threshold(self.class_names)
         instances, protos = model_results
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
@@ -226,43 +253,18 @@ class YOLOv8ForInstanceSegmentationOnnx(
                 max_detections=max_detections,
                 class_agnostic=class_agnostic_nms,
             )
-        final_results = []
-        for image_bboxes, image_protos, image_meta in zip(
-            nms_results, protos, pre_processing_meta
-        ):
-            pre_processed_masks = preprocess_segmentation_masks(
-                protos=image_protos,
-                masks_in=image_bboxes[:, 6:],
+        if mask_format == "dense":
+            return prepare_dense_masks(
+                nms_results=nms_results,
+                protos=protos,
+                pre_processing_meta=pre_processing_meta,
+                masks_smoothing_enabled=masks_smoothing_enabled,
+                masks_binarization_threshold=masks_binarization_threshold,
             )
-            if masks_smoothing_enabled:
-                pre_processed_masks = torch.nn.functional.sigmoid(pre_processed_masks)
-            cropped_masks = crop_masks_to_boxes(
-                image_bboxes[:, :4], pre_processed_masks
-            )
-            padding = (
-                image_meta.pad_left,
-                image_meta.pad_top,
-                image_meta.pad_right,
-                image_meta.pad_bottom,
-            )
-            aligned_boxes, aligned_masks = align_instance_segmentation_results(
-                image_bboxes=image_bboxes,
-                masks=cropped_masks,
-                padding=padding,
-                scale_height=image_meta.scale_height,
-                scale_width=image_meta.scale_width,
-                original_size=image_meta.original_size,
-                size_after_pre_processing=image_meta.size_after_pre_processing,
-                inference_size=image_meta.inference_size,
-                static_crop_offset=image_meta.static_crop_offset,
-                binarization_threshold=masks_binarization_threshold,
-            )
-            final_results.append(
-                InstanceDetections(
-                    xyxy=aligned_boxes[:, :4].round().int(),
-                    class_id=aligned_boxes[:, 5].int(),
-                    confidence=aligned_boxes[:, 4],
-                    mask=aligned_masks,
-                )
-            )
-        return final_results
+        return prepare_rle_masks(
+            nms_results=nms_results,
+            protos=protos,
+            pre_processing_meta=pre_processing_meta,
+            masks_smoothing_enabled=masks_smoothing_enabled,
+            masks_binarization_threshold=masks_binarization_threshold,
+        )

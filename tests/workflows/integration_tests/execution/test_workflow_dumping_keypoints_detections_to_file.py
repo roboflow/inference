@@ -20,7 +20,7 @@ WORKFLOW_WITH_KEYPOINTS_DETECTION_AND_FILE_SINK = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_keypoint_detection_model@v1",
+            "type": "roboflow_core/roboflow_keypoint_detection_model@v3",
             "name": "model",
             "images": "$inputs.image",
             "model_id": "yolov8n-pose-640",

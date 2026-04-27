@@ -8,6 +8,7 @@ using web endpoints for better security and no size limitations.
 import base64
 import json
 import os
+import sys
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -351,6 +352,15 @@ class ModalExecutor:
                     stdout=result.get("stdout"),
                     stderr=result.get("stderr"),
                 )
+
+            stdout = result.get("stdout")
+            stderr = result.get("stderr")
+            if stdout:
+                sys.stdout.write(stdout)
+                sys.stdout.flush()
+            if stderr:
+                sys.stderr.write(stderr)
+                sys.stderr.flush()
 
             # Get the result and deserialize from JSON
             json_result = result.get("result", "{}")
