@@ -82,7 +82,9 @@ _NP_MAGIC = b"\x93NUMPY"  # first 6 bytes of every np.save() file
 
 class _InferenceError:
     """Sentinel for failed inference — distinguishes from legitimate None result."""
+
     __slots__ = ("message",)
+
     def __init__(self, message: str) -> None:
         self.message = message
 
@@ -159,7 +161,10 @@ def _worker_main(
         )
         _log.info("Worker(%s): loading on %s", model_id, device)
         if os.environ.get("DEBUG_BENCHMARK_MODE"):
-            from inference_model_manager.backends.passthrough_model import PassthroughModel
+            from inference_model_manager.backends.passthrough_model import (
+                PassthroughModel,
+            )
+
             model = PassthroughModel()
             _log.info("Worker(%s): using PassthroughModel (benchmark mode)", model_id)
         else:
@@ -172,6 +177,7 @@ def _worker_main(
         pool = SHMPool.attach(shm_pool_name, n_slots=n_slots, input_mb=input_mb)
 
         from inference_model_manager.backends.base import detect_max_batch_size
+
         model_max_bs = detect_max_batch_size(model)
         effective_bs = model_max_bs if batch_max_size <= 0 else batch_max_size
         if model_max_bs is not None and effective_bs > model_max_bs:
@@ -413,7 +419,11 @@ def _process_slots(
 
     for (slot_id, req_id, _), result in zip(good_batch, results):
         if result is None or isinstance(result, _InferenceError):
-            err_msg = result.message if isinstance(result, _InferenceError) else "inference returned None"
+            err_msg = (
+                result.message
+                if isinstance(result, _InferenceError)
+                else "inference returned None"
+            )
             _write_error_to_slot(pool, slot_id, err_msg)
             try:
                 sock.send_multipart(
@@ -435,11 +445,14 @@ def _process_slots(
         if len(data) > len(mv):
             log.error(
                 "Worker: result %d B exceeds slot capacity %d B for slot %d — marking error",
-                len(data), len(mv), slot_id,
+                len(data),
+                len(mv),
+                slot_id,
             )
             mv.release()
             _write_error_to_slot(
-                pool, slot_id,
+                pool,
+                slot_id,
                 f"result {len(data)}B exceeds slot capacity {len(mv)}B",
             )
             try:
@@ -628,7 +641,9 @@ class SubprocessBackend(Backend):
     # Orchestrated-mode API (called by MMP)
     # ------------------------------------------------------------------
 
-    def signal_slot(self, slot_id: int, req_id: int, params_bytes: bytes = b"{}") -> None:
+    def signal_slot(
+        self, slot_id: int, req_id: int, params_bytes: bytes = b"{}"
+    ) -> None:
         """Enqueue T_SLOT_READY for the recv thread to send. Thread-safe."""
         if self._recv_dead:
             raise RuntimeError(
@@ -668,7 +683,11 @@ class SubprocessBackend(Backend):
                 slot_id, req_id, params_bytes = item
                 try:
                     self._zmq_sock.send_multipart(
-                        [_MSG_SLOT_READY, struct.pack(">IQ", slot_id, req_id), params_bytes]
+                        [
+                            _MSG_SLOT_READY,
+                            struct.pack(">IQ", slot_id, req_id),
+                            params_bytes,
+                        ]
                     )
                 except zmq.ZMQError:
                     return

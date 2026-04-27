@@ -15,9 +15,8 @@ import pytest
 
 from inference_model_manager.model_manager import ModelManager
 from inference_model_manager.registry_defaults import registry as _registry
-from inference_model_manager.validators import validate_passthrough
 from inference_model_manager.serializers_typed import serialize_passthrough
-
+from inference_model_manager.validators import validate_passthrough
 
 # ─── Fake model + backend ──────────────────────────────────────────
 
@@ -36,8 +35,11 @@ class FakeModel:
 
 # Register FakeModel in registry so dispatch can find it.
 _registry.register(
-    FakeModel, "infer",
-    method="infer", default=True, params=["images"],
+    FakeModel,
+    "infer",
+    method="infer",
+    default=True,
+    params=["images"],
     validator=validate_passthrough,
     serializer=serialize_passthrough,
     response_type="roboflow-generic-v1",
@@ -193,7 +195,10 @@ class TestModelManagerInference:
         mm.load("model-a", api_key="")
         result = mm.process("model-a", images="some_image")
 
-        assert result == {"type": "roboflow-generic-v1", "data": {"prediction": "fake", "model_id": "model-a"}}
+        assert result == {
+            "type": "roboflow-generic-v1",
+            "data": {"prediction": "fake", "model_id": "model-a"},
+        }
         assert backends["model-a"]._fake_model._inference_count == 1
 
     def test_process_missing_model_raises(self):
@@ -218,11 +223,12 @@ class TestModelManagerInference:
         _patch_create_backend(mm, backends)
 
         mm.load("model-a", api_key="")
-        result = asyncio.run(
-            mm.process_async("model-a", images="some_image")
-        )
+        result = asyncio.run(mm.process_async("model-a", images="some_image"))
 
-        assert result == {"type": "roboflow-generic-v1", "data": {"prediction": "fake", "model_id": "model-a"}}
+        assert result == {
+            "type": "roboflow-generic-v1",
+            "data": {"prediction": "fake", "model_id": "model-a"},
+        }
 
     def test_infer_routes_to_correct_model(self):
         mm = ModelManager()
@@ -286,6 +292,7 @@ class TestModelManagerObservability:
         with pytest.raises(KeyError, match="not loaded"):
             mm.model_stats("nonexistent")
 
+
 class TestModelManagerThreadSafety:
 
     def test_concurrent_loads(self):
@@ -300,8 +307,7 @@ class TestModelManagerThreadSafety:
                 errors.append(e)
 
         threads = [
-            threading.Thread(target=load_model, args=(f"model-{i}",))
-            for i in range(10)
+            threading.Thread(target=load_model, args=(f"model-{i}",)) for i in range(10)
         ]
         for t in threads:
             t.start()
@@ -347,7 +353,8 @@ class TestModelManagerBackendCreation:
 
         mm = ModelManager()
         mm.load(
-            "model-a", api_key="test-key",
+            "model-a",
+            api_key="test-key",
             backend="direct",
             device="cuda:1",
             batch_max_size=16,

@@ -1,4 +1,5 @@
 """Unit tests for launcher.py — launch_inprocess, launch_orchestrated, launch()."""
+
 from __future__ import annotations
 
 import os
@@ -6,20 +7,20 @@ import threading
 
 import pytest
 
+from inference_model_manager.model_manager import ModelManager
 from inference_server.launcher import (
-    LaunchHandle,
     _MODE_INPROCESS,
     _MODE_ORCHESTRATED,
+    LaunchHandle,
     launch,
     launch_inprocess,
     launch_orchestrated,
 )
-from inference_model_manager.model_manager import ModelManager
-
 
 # ---------------------------------------------------------------------------
 # launch_inprocess
 # ---------------------------------------------------------------------------
+
 
 class TestLaunchInprocess:
     def test_returns_model_manager(self) -> None:
@@ -39,10 +40,13 @@ class TestLaunchInprocess:
 # launch_orchestrated
 # ---------------------------------------------------------------------------
 
+
 class TestLaunchOrchestrated:
     def test_returns_launch_handle(self) -> None:
         handle = launch_orchestrated(
-            n_slots=4, input_mb=1.0,  mmp_start_timeout=5.0,
+            n_slots=4,
+            input_mb=1.0,
+            mmp_start_timeout=5.0,
         )
         try:
             assert isinstance(handle, LaunchHandle)
@@ -51,7 +55,9 @@ class TestLaunchOrchestrated:
 
     def test_mmp_addr_populated(self) -> None:
         handle = launch_orchestrated(
-            n_slots=4, input_mb=1.0,  mmp_start_timeout=5.0,
+            n_slots=4,
+            input_mb=1.0,
+            mmp_start_timeout=5.0,
         )
         try:
             assert handle.mmp_addr is not None
@@ -61,7 +67,9 @@ class TestLaunchOrchestrated:
 
     def test_shm_name_populated(self) -> None:
         handle = launch_orchestrated(
-            n_slots=4, input_mb=1.0,  mmp_start_timeout=5.0,
+            n_slots=4,
+            input_mb=1.0,
+            mmp_start_timeout=5.0,
         )
         try:
             assert handle.shm_name is not None
@@ -71,7 +79,9 @@ class TestLaunchOrchestrated:
 
     def test_manager_attribute_is_model_manager(self) -> None:
         handle = launch_orchestrated(
-            n_slots=4, input_mb=1.0,  mmp_start_timeout=5.0,
+            n_slots=4,
+            input_mb=1.0,
+            mmp_start_timeout=5.0,
         )
         try:
             assert isinstance(handle.manager, ModelManager)
@@ -80,7 +90,9 @@ class TestLaunchOrchestrated:
 
     def test_mmp_thread_alive_after_launch(self) -> None:
         handle = launch_orchestrated(
-            n_slots=4, input_mb=1.0,  mmp_start_timeout=5.0,
+            n_slots=4,
+            input_mb=1.0,
+            mmp_start_timeout=5.0,
         )
         try:
             assert handle._thread.is_alive()
@@ -89,7 +101,9 @@ class TestLaunchOrchestrated:
 
     def test_shutdown_stops_thread(self) -> None:
         handle = launch_orchestrated(
-            n_slots=4, input_mb=1.0,  mmp_start_timeout=5.0,
+            n_slots=4,
+            input_mb=1.0,
+            mmp_start_timeout=5.0,
         )
         thread = handle._thread
         handle.shutdown(timeout=10.0)
@@ -98,7 +112,8 @@ class TestLaunchOrchestrated:
     def test_custom_mmp_addr(self) -> None:
         # Use INFERENCE_ZMQ_TRANSPORT=tcp to get a deterministic tcp addr
         handle = launch_orchestrated(
-            n_slots=4, input_mb=1.0, 
+            n_slots=4,
+            input_mb=1.0,
             mmp_addr="tcp://127.0.0.1:19876",
             mmp_start_timeout=5.0,
         )
@@ -109,7 +124,9 @@ class TestLaunchOrchestrated:
 
     def test_repr(self) -> None:
         handle = launch_orchestrated(
-            n_slots=4, input_mb=1.0,  mmp_start_timeout=5.0,
+            n_slots=4,
+            input_mb=1.0,
+            mmp_start_timeout=5.0,
         )
         try:
             r = repr(handle)
@@ -123,6 +140,7 @@ class TestLaunchOrchestrated:
 # launch() unified entry point
 # ---------------------------------------------------------------------------
 
+
 class TestLaunch:
     def test_inprocess_returns_model_manager(self) -> None:
         result = launch(_MODE_INPROCESS)
@@ -131,7 +149,9 @@ class TestLaunch:
     def test_orchestrated_returns_launch_handle(self) -> None:
         handle = launch(
             _MODE_ORCHESTRATED,
-            n_slots=4, input_mb=1.0,  mmp_start_timeout=5.0,
+            n_slots=4,
+            input_mb=1.0,
+            mmp_start_timeout=5.0,
         )
         try:
             assert isinstance(handle, LaunchHandle)
@@ -154,7 +174,7 @@ class TestLaunch:
 
     def test_env_var_selects_orchestrated(self, monkeypatch) -> None:
         monkeypatch.setenv("INFERENCE_DEPLOYMENT_MODE", _MODE_ORCHESTRATED)
-        handle = launch(n_slots=4, input_mb=1.0,  mmp_start_timeout=5.0)
+        handle = launch(n_slots=4, input_mb=1.0, mmp_start_timeout=5.0)
         try:
             assert isinstance(handle, LaunchHandle)
         finally:

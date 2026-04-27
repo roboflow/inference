@@ -7,20 +7,20 @@ import time
 import pytest
 
 from inference_model_manager.backends.utils.shm_pool import (
-    SHMPool,
-    SlotHeader,
-    SlotStatus,
     _HEADER_SIZE,
     _OFF_ERROR,
     _OFF_INPUT_SZ,
     _OFF_RESULT_SZ,
     _OFF_STATUS,
+    SHMPool,
+    SlotHeader,
+    SlotStatus,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_pool(n_slots=4, input_mb=1.0) -> SHMPool:
     return SHMPool.create(n_slots=n_slots, input_mb=input_mb)
@@ -30,6 +30,7 @@ def _make_pool(n_slots=4, input_mb=1.0) -> SHMPool:
 # Header size
 # ---------------------------------------------------------------------------
 
+
 def test_header_size_is_64():
     assert _HEADER_SIZE == 64
 
@@ -37,6 +38,7 @@ def test_header_size_is_64():
 # ---------------------------------------------------------------------------
 # Create / close
 # ---------------------------------------------------------------------------
+
 
 def test_create_and_close():
     pool = _make_pool()
@@ -59,6 +61,7 @@ def test_all_slots_free_after_create():
 # ---------------------------------------------------------------------------
 # Slot allocation
 # ---------------------------------------------------------------------------
+
 
 def test_alloc_and_free_single():
     pool = _make_pool(n_slots=2)
@@ -99,9 +102,7 @@ def test_alloc_timeout_when_exhausted():
 def test_attach_cannot_alloc():
     pool = _make_pool(n_slots=2)
     try:
-        attached = SHMPool.attach(
-            pool.name, n_slots=2, input_mb=1.0
-        )
+        attached = SHMPool.attach(pool.name, n_slots=2, input_mb=1.0)
         try:
             with pytest.raises(RuntimeError, match="creator"):
                 attached.alloc_slot()
@@ -114,9 +115,7 @@ def test_attach_cannot_alloc():
 def test_attach_cannot_free():
     pool = _make_pool(n_slots=2)
     try:
-        attached = SHMPool.attach(
-            pool.name, n_slots=2, input_mb=1.0
-        )
+        attached = SHMPool.attach(pool.name, n_slots=2, input_mb=1.0)
         try:
             with pytest.raises(RuntimeError, match="creator"):
                 attached.free_slot(0)
@@ -130,6 +129,7 @@ def test_attach_cannot_free():
 # Header round-trip
 # ---------------------------------------------------------------------------
 
+
 def test_mark_allocated_header():
     pool = _make_pool()
     try:
@@ -138,10 +138,10 @@ def test_mark_allocated_header():
         pool.mark_allocated(slot, request_id=req_id)
 
         hdr = pool.read_header(slot)
-        assert hdr.status      == SlotStatus.ALLOCATED
-        assert hdr.request_id  == req_id
-        assert hdr.error_code  == 0
-        assert hdr.input_size  == 0
+        assert hdr.status == SlotStatus.ALLOCATED
+        assert hdr.request_id == req_id
+        assert hdr.error_code == 0
+        assert hdr.input_size == 0
         assert hdr.result_size == 0
         assert hdr.timestamp_ns > 0
     finally:
@@ -156,7 +156,7 @@ def test_mark_written_header():
         pool.mark_written(slot, input_size=12345)
 
         hdr = pool.read_header(slot)
-        assert hdr.status     == SlotStatus.WRITTEN
+        assert hdr.status == SlotStatus.WRITTEN
         assert hdr.input_size == 12345
     finally:
         pool.close()
@@ -170,7 +170,7 @@ def test_mark_processing_header():
         pool.mark_processing(slot, owner_pid=os.getpid())
 
         hdr = pool.read_header(slot)
-        assert hdr.status    == SlotStatus.PROCESSING
+        assert hdr.status == SlotStatus.PROCESSING
         assert hdr.owner_pid == os.getpid()
     finally:
         pool.close()
@@ -184,7 +184,7 @@ def test_mark_done_header():
         pool.mark_done(slot, result_size=42)
 
         hdr = pool.read_header(slot)
-        assert hdr.status      == SlotStatus.DONE
+        assert hdr.status == SlotStatus.DONE
         assert hdr.result_size == 42
     finally:
         pool.close()
@@ -197,7 +197,7 @@ def test_mark_error_header():
         pool.mark_error(slot, error_code=7)
 
         hdr = pool.read_header(slot)
-        assert hdr.status     == SlotStatus.ERROR
+        assert hdr.status == SlotStatus.ERROR
         assert hdr.error_code == 7
     finally:
         pool.close()
@@ -211,7 +211,7 @@ def test_free_slot_zeros_header():
         pool.free_slot(slot)
 
         hdr = pool.read_header(slot)
-        assert hdr.status     == SlotStatus.FREE
+        assert hdr.status == SlotStatus.FREE
         assert hdr.request_id == 0
     finally:
         pool.close()
@@ -220,6 +220,7 @@ def test_free_slot_zeros_header():
 # ---------------------------------------------------------------------------
 # Offset math — must match app.py arithmetic
 # ---------------------------------------------------------------------------
+
 
 def test_data_memoryview_offset():
     """data_memoryview base == slot_id * slot_bytes + HEADER_SIZE."""
@@ -261,6 +262,7 @@ def test_slots_do_not_overlap():
 # Data round-trip through SHM
 # ---------------------------------------------------------------------------
 
+
 def test_write_read_input_data():
     pool = _make_pool(n_slots=2, input_mb=1.0)
     try:
@@ -289,6 +291,7 @@ def test_write_read_result_data():
 # Attach
 # ---------------------------------------------------------------------------
 
+
 def test_attach_sees_data_written_by_creator():
     pool = _make_pool(n_slots=2, input_mb=1.0)
     try:
@@ -297,12 +300,10 @@ def test_attach_sees_data_written_by_creator():
         data = b"cross-process data"
         pool.data_memoryview(slot)[: len(data)] = data
 
-        attached = SHMPool.attach(
-            pool.name, n_slots=2, input_mb=1.0
-        )
+        attached = SHMPool.attach(pool.name, n_slots=2, input_mb=1.0)
         try:
             hdr = attached.read_header(slot)
-            assert hdr.status     == SlotStatus.ALLOCATED
+            assert hdr.status == SlotStatus.ALLOCATED
             assert hdr.request_id == 42
             readback = bytes(attached.data_memoryview(slot)[: len(data)])
             assert readback == data
@@ -315,6 +316,7 @@ def test_attach_sees_data_written_by_creator():
 # ---------------------------------------------------------------------------
 # Stale slot detection
 # ---------------------------------------------------------------------------
+
 
 def test_stale_slots_empty_when_all_free():
     pool = _make_pool(n_slots=4)

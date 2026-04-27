@@ -11,10 +11,10 @@ import torch
 
 from inference_server.serializers import serialize_json
 
-
 # ---------------------------------------------------------------------------
 # Fake dataclasses matching inference_models types
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class FakeDetections:
@@ -51,6 +51,7 @@ class FakeSemanticSegResult:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestSerializeDetections:
     def test_basic_detections(self):

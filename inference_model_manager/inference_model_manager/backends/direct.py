@@ -71,13 +71,16 @@ class DirectBackend(Backend):
             # Ensure GPU memory freed if model partially loaded
             self._model = None
             raise
-        self._gpu_memory_delta_mb = (self._gpu_mem_snapshot() - gpu_before) / (1024 * 1024)
+        self._gpu_memory_delta_mb = (self._gpu_mem_snapshot() - gpu_before) / (
+            1024 * 1024
+        )
         self._state_value = "loaded"
 
         self._device_str = self._detect_device()
 
         # Clamp batch size to model's limit
         from inference_model_manager.backends.base import detect_max_batch_size
+
         model_max = detect_max_batch_size(self._model)
         if batch_max_size > 0 and model_max is not None:
             self._batch_max_size = min(batch_max_size, model_max)
@@ -353,6 +356,7 @@ class DirectBackend(Backend):
     @property
     def max_batch_size(self) -> Optional[int]:
         from inference_model_manager.backends.base import detect_max_batch_size
+
         return detect_max_batch_size(self._model)
 
     @property
@@ -369,7 +373,9 @@ class DirectBackend(Backend):
         """
         try:
             import os
+
             import pynvml
+
             pynvml.nvmlInit()
             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
             for proc in pynvml.nvmlDeviceGetComputeRunningProcesses(handle):
@@ -379,6 +385,7 @@ class DirectBackend(Backend):
             pass
         try:
             import torch
+
             if torch.cuda.is_available():
                 return torch.cuda.memory_allocated()
         except Exception:
@@ -411,8 +418,12 @@ class DirectBackend(Backend):
             ),
             "latency_p50_ms": _pct(50),
             "latency_p99_ms": _pct(99),
-            "gpu_memory_mb": self._gpu_memory_delta_mb if self._state_value != "sleeping" else 0.0,
-            "cpu_pinned_memory_mb": self._gpu_memory_delta_mb if self._state_value == "sleeping" else 0.0,
+            "gpu_memory_mb": (
+                self._gpu_memory_delta_mb if self._state_value != "sleeping" else 0.0
+            ),
+            "cpu_pinned_memory_mb": (
+                self._gpu_memory_delta_mb if self._state_value == "sleeping" else 0.0
+            ),
             "inference_count": self._inference_count,
             "error_count": self._error_count,
             "last_inference_ts": self._last_inference_ts,

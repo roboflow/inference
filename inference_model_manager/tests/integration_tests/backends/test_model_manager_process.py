@@ -18,7 +18,6 @@ import zmq
 
 from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 from inference_model_manager.model_manager_process import (
-    ModelManagerProcess,
     T_ALLOC,
     T_ALLOC_OK,
     T_ENSURE_LOADED,
@@ -28,14 +27,15 @@ from inference_model_manager.model_manager_process import (
     T_MODEL_READY,
     T_RESULT_READY,
     T_SUBMIT,
+    ModelManagerProcess,
 )
 
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
 
-_TEST_INPUT_MB  = 0.1   # 100 KB — tiny for tests
-_TIMEOUT_S      = 5.0   # max seconds any single recv should take
+_TEST_INPUT_MB = 0.1  # 100 KB — tiny for tests
+_TIMEOUT_S = 5.0  # max seconds any single recv should take
 
 
 def _rand_addr() -> str:
@@ -51,15 +51,15 @@ class _MMPHarness:
     """Starts MMP in a background asyncio thread; provides sync ZMQ client."""
 
     def __init__(self, n_slots: int = 8):
-        self._bind_addr  = _rand_addr()
-        self._ready      = threading.Event()
-        self._mmp        = ModelManagerProcess(
+        self._bind_addr = _rand_addr()
+        self._ready = threading.Event()
+        self._mmp = ModelManagerProcess(
             n_slots=n_slots,
             input_mb=_TEST_INPUT_MB,
             stale_reap_interval_s=1.0,
             stale_slot_max_age_s=2.0,
         )
-        self._thread     = threading.Thread(
+        self._thread = threading.Thread(
             target=self._run_loop, daemon=True, name="mmp-test-loop"
         )
         self._thread.start()
@@ -68,7 +68,7 @@ class _MMPHarness:
         # After MMP starts, read actual bound address (port 0 → real port)
         self.addr = self._mmp.bound_addr or self._bind_addr
 
-        self._ctx    = zmq.Context()
+        self._ctx = zmq.Context()
         self._dealer = self._ctx.socket(zmq.DEALER)
         self._dealer.setsockopt(zmq.RCVTIMEO, int(_TIMEOUT_S * 1000))
         self._dealer.setsockopt(zmq.LINGER, 0)
@@ -102,18 +102,18 @@ class _MMPHarness:
     # --- protocol helpers ---
 
     def ensure_loaded(self, flavor: str, wait_ms: int = 5000) -> bytes:
-        rid     = _req_id()
+        rid = _req_id()
         flavor_b = flavor.encode()
-        payload  = struct.pack(">QIH", rid, wait_ms, len(flavor_b)) + flavor_b
+        payload = struct.pack(">QIH", rid, wait_ms, len(flavor_b)) + flavor_b
         self.send(T_ENSURE_LOADED, payload)
         msg_type, frame = self.recv()
         return msg_type
 
     def alloc(self, flavor: str) -> tuple[int, int]:
         """Returns (req_id, slot_id)."""
-        rid      = _req_id()
+        rid = _req_id()
         flavor_b = flavor.encode()
-        payload  = struct.pack(">QH", rid, len(flavor_b)) + flavor_b
+        payload = struct.pack(">QH", rid, len(flavor_b)) + flavor_b
         self.send(T_ALLOC, payload)
         msg_type, frame = self.recv()
         assert msg_type == T_ALLOC_OK, f"expected T_ALLOC_OK, got {msg_type!r}"
@@ -133,9 +133,8 @@ class _MMPHarness:
             pool.close()
 
         flavor_b = flavor.encode()
-        header   = (
-            struct.pack(">QIIH", req_id, slot_id, len(data), len(flavor_b))
-            + flavor_b
+        header = (
+            struct.pack(">QIIH", req_id, slot_id, len(data), len(flavor_b)) + flavor_b
         )
         self.send(T_SUBMIT, header)
 
@@ -153,11 +152,14 @@ class _MockBackend:
     """Simulates SubprocessBackend: calls mmp.on_result() from a thread."""
 
     def __init__(self, mmp: ModelManagerProcess, result_bytes: bytes = b"ok"):
-        self._mmp          = mmp
+        self._mmp = mmp
         self._result_bytes = result_bytes
 
-    def signal_slot(self, slot_id: int, req_id: int, params_bytes: bytes = b"{}") -> None:
+    def signal_slot(
+        self, slot_id: int, req_id: int, params_bytes: bytes = b"{}"
+    ) -> None:
         """Write fake result to SHM slot, call on_result from a thread."""
+
         def _do() -> None:
             # Write result into the SHM pool's result area
             pool = SHMPool.attach(
@@ -179,6 +181,7 @@ class _MockBackend:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def harness():
     h = _MMPHarness()
@@ -189,6 +192,7 @@ def harness():
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestEnsureLoaded:
     def test_model_ready_when_preregistered(self):
@@ -215,15 +219,15 @@ class TestEnsureLoaded:
         results: queue.Queue = queue.Queue()
 
         def _client() -> None:
-            ctx    = zmq.Context()
-            sock   = ctx.socket(zmq.DEALER)
+            ctx = zmq.Context()
+            sock = ctx.socket(zmq.DEALER)
             sock.setsockopt(zmq.RCVTIMEO, int(_TIMEOUT_S * 1000))
             sock.setsockopt(zmq.LINGER, 0)
             sock.setsockopt(zmq.IDENTITY, uuid.uuid4().bytes)
             sock.connect(h.addr)
-            rid      = _req_id()
+            rid = _req_id()
             flavor_b = b"shared-model"
-            payload  = struct.pack(">QIH", rid, 5000, len(flavor_b)) + flavor_b
+            payload = struct.pack(">QIH", rid, 5000, len(flavor_b)) + flavor_b
             sock.send_multipart([T_ENSURE_LOADED, payload])
             try:
                 parts = sock.recv_multipart()
@@ -272,9 +276,9 @@ class TestAlloc:
         for _ in range(harness.mmp._n_slots):
             harness.alloc("m")
         # Next alloc should get T_ERROR
-        rid      = _req_id()
+        rid = _req_id()
         flavor_b = b"m"
-        payload  = struct.pack(">QH", rid, len(flavor_b)) + flavor_b
+        payload = struct.pack(">QH", rid, len(flavor_b)) + flavor_b
         harness.send(T_ALLOC, payload)
         msg_type, _ = harness.recv()
         assert msg_type == T_ERROR
@@ -393,6 +397,7 @@ class TestStaleReaper:
 
         class _StuckBackend:
             """signal_slot does nothing — simulates a crashed worker."""
+
             def signal_slot(self, slot_id, req_id, params_bytes=b"{}"):
                 pass  # never calls on_result
 
