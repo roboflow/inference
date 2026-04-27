@@ -20,6 +20,7 @@ from inference.core.utils.file_system import (
     dump_text_lines_atomic,
     read_json,
     read_text_file,
+    safe_path_join,
 )
 
 
@@ -138,7 +139,7 @@ def save_text_lines_in_cache(
 
 def get_cache_file_path(file: str, model_id: Optional[str] = None) -> str:
     cache_dir = get_cache_dir(model_id=model_id)
-    return os.path.join(cache_dir, file)
+    return safe_path_join(cache_dir, file)
 
 
 def _rmtree_onerror(func, path, exc_info):
@@ -234,5 +235,5 @@ def clear_cache(model_id: Optional[str] = None, delete_from_disk: bool = True) -
 
 def get_cache_dir(model_id: Optional[str] = None) -> str:
     if model_id is not None:
-        return os.path.join(MODEL_CACHE_DIR, model_id)
+        return safe_path_join(MODEL_CACHE_DIR, model_id)
     return MODEL_CACHE_DIR

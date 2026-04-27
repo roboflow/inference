@@ -3,9 +3,14 @@ import os
 import os.path
 import re
 import tempfile
+from hashlib import sha1
 from typing import List, Optional, Union
 
 _pattern = re.compile(r"[^A-Za-z0-9_-]")
+
+MAX_PATH_SEGMENT_BYTES = 255
+TRUNCATED_PATH_SEGMENT_PREFIX_BYTES = 200
+TRUNCATED_PATH_SEGMENT_HASH_CHARS = 12
 
 
 class AtomicPath:
@@ -173,3 +178,32 @@ def ensure_write_is_allowed(path: str, allow_override: bool) -> None:
 def sanitize_path_segment(path_segment: str) -> str:
     # Keep only letters, numbers, underscores and dashes
     return _pattern.sub("_", path_segment)
+
+
+def hash_truncate_path_segment(path_segment: str) -> str:
+    if len(os.fsencode(path_segment)) <= MAX_PATH_SEGMENT_BYTES:
+        return path_segment
+    encoded_segment = os.fsencode(path_segment)
+    digest = sha1(encoded_segment).hexdigest()[:TRUNCATED_PATH_SEGMENT_HASH_CHARS]
+    suffix = f"_{digest}"
+    prefix_length = min(
+        TRUNCATED_PATH_SEGMENT_PREFIX_BYTES,
+        MAX_PATH_SEGMENT_BYTES - len(os.fsencode(suffix)),
+    )
+    prefix = encoded_segment[:prefix_length].decode("utf-8", errors="ignore")
+    return f"{prefix}{suffix}"
+
+
+def truncate_path_segments(path: str) -> str:
+    drive, path_without_drive = os.path.splitdrive(path)
+    if os.altsep is not None:
+        path_without_drive = path_without_drive.replace(os.altsep, os.sep)
+    safe_segments = [
+        hash_truncate_path_segment(segment) if segment else segment
+        for segment in path_without_drive.split(os.sep)
+    ]
+    return drive + os.sep.join(safe_segments)
+
+
+def safe_path_join(*path_segments: str) -> str:
+    return truncate_path_segments(os.path.join(*path_segments))

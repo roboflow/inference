@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from inference.core.env import MODEL_CACHE_DIR, USE_INFERENCE_MODELS
 from inference.core.roboflow_api import MODEL_TYPE_KEY, PROJECT_TASK_TYPE_KEY
+from inference.core.utils.file_system import safe_path_join
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +66,14 @@ def is_model_cached(model_id: str) -> bool:
     """
     if not USE_INFERENCE_MODELS:
         # Only check the traditional layout when inference-models is disabled.
-        traditional_path = os.path.join(MODEL_CACHE_DIR, model_id)
+        traditional_path = safe_path_join(MODEL_CACHE_DIR, model_id)
         return os.path.isdir(traditional_path) and _has_non_hidden_children(
             traditional_path
         )
 
     # When inference-models is enabled, check both layouts — models cached
     # before the migration still sit in the traditional tree.
-    traditional_path = os.path.join(MODEL_CACHE_DIR, model_id)
+    traditional_path = safe_path_join(MODEL_CACHE_DIR, model_id)
     if os.path.isdir(traditional_path) and _has_non_hidden_children(traditional_path):
         return True
 

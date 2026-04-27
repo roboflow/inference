@@ -2,11 +2,13 @@ import json
 import os
 import os.path
 import tempfile
+from hashlib import sha1
 
 import pytest
 from humanfriendly.testing import touch
 
 from inference.core.utils.file_system import (
+    MAX_PATH_SEGMENT_BYTES,
     AtomicPath,
     dump_bytes,
     dump_bytes_atomic,
@@ -16,8 +18,10 @@ from inference.core.utils.file_system import (
     dump_text_lines_atomic,
     ensure_parent_dir_exists,
     ensure_write_is_allowed,
+    hash_truncate_path_segment,
     read_json,
     read_text_file,
+    safe_path_join,
 )
 
 
@@ -339,6 +343,48 @@ def test_ensure_parent_dir_exists_when_dir_does_not_exist(empty_local_dir: str) 
 
     # then
     assert os.listdir(empty_local_dir) == ["some"]
+
+
+def test_hash_truncate_path_segment_when_segment_fits_os_limit() -> None:
+    # given
+    segment = "workspace"
+
+    # when
+    result = hash_truncate_path_segment(path_segment=segment)
+
+    # then
+    assert result == segment
+
+
+def test_hash_truncate_path_segment_when_segment_exceeds_os_limit() -> None:
+    # given
+    segment = "a" * 300
+
+    # when
+    result = hash_truncate_path_segment(path_segment=segment)
+
+    # then
+    assert result == f"{'a' * 200}_{sha1(segment.encode()).hexdigest()[:12]}"
+    assert len(os.fsencode(result)) <= MAX_PATH_SEGMENT_BYTES
+
+
+def test_safe_path_join_truncates_long_path_segments(empty_local_dir: str) -> None:
+    # given
+    segment = "find-" + ("class-" * 60) + "instant-1"
+    expected_segment = hash_truncate_path_segment(path_segment=segment)
+
+    # when
+    result = safe_path_join(empty_local_dir, "huizen", segment, "model_type.json")
+
+    # then
+    assert result == os.path.join(
+        empty_local_dir, "huizen", expected_segment, "model_type.json"
+    )
+    assert all(
+        len(os.fsencode(path_segment)) <= MAX_PATH_SEGMENT_BYTES
+        for path_segment in result.split(os.sep)
+        if path_segment
+    )
 
 
 @pytest.mark.parametrize("allow_override", [True, False])

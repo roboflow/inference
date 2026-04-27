@@ -20,6 +20,7 @@ from inference.core.cache.model_artifacts import (
     save_json_in_cache,
     save_text_lines_in_cache,
 )
+from inference.core.utils.file_system import hash_truncate_path_segment
 from tests.inference.unit_tests.core.utils.test_file_system import (
     assert_bytes_file_content_correct,
     assert_text_file_content_correct,
@@ -270,6 +271,22 @@ def test_get_cache_dir_when_model_id_given() -> None:
 
     # then
     assert result == "/some/cache/yolo/3"
+
+
+@mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", "/some/cache")
+def test_get_cache_dir_when_model_id_has_long_segment() -> None:
+    # given
+    long_model_slug = "find-" + ("class-" * 60) + "instant-1"
+
+    # when
+    result = get_cache_dir(model_id=f"workspace/{long_model_slug}")
+
+    # then
+    assert result == os.path.join(
+        "/some/cache",
+        "workspace",
+        hash_truncate_path_segment(path_segment=long_model_slug),
+    )
 
 
 @mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", "/some/cache")

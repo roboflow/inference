@@ -42,7 +42,7 @@ from inference.core.roboflow_api import (
     get_roboflow_model_data,
     get_roboflow_workspace,
 )
-from inference.core.utils.file_system import dump_json, read_json
+from inference.core.utils.file_system import dump_json, read_json, safe_path_join
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.models.aliases import resolve_roboflow_model_alias
 
@@ -381,7 +381,7 @@ def _save_model_metadata_in_cache(
 def construct_model_type_cache_path(
     dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
 ) -> str:
-    cache_dir = os.path.join(
+    cache_dir = safe_path_join(
         MODEL_CACHE_DIR, dataset_id, version_id if version_id else ""
     )
-    return os.path.join(cache_dir, "model_type.json")
+    return safe_path_join(cache_dir, "model_type.json")

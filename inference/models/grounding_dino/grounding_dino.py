@@ -47,6 +47,7 @@ BertModel.get_extended_attention_mask = _patched_get_extended_attention_mask
 
 from groundingdino.util.inference import Model
 
+from inference.core.cache.model_artifacts import get_cache_dir
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.responses.inference import (
@@ -54,7 +55,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import CLASS_AGNOSTIC_NMS, MODEL_CACHE_DIR
+from inference.core.env import CLASS_AGNOSTIC_NMS
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_bgr, xyxy_to_xywh
 
@@ -78,7 +79,7 @@ class GroundingDINO(RoboflowCoreModel):
 
         super().__init__(*args, model_id=model_id, **kwargs)
 
-        GROUNDING_DINO_CACHE_DIR = os.path.join(MODEL_CACHE_DIR, model_id)
+        GROUNDING_DINO_CACHE_DIR = get_cache_dir(model_id=model_id)
 
         import groundingdino.config as _gd_config
 
