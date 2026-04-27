@@ -1,21 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Literal, Optional, Union
+from typing import List, Literal, Union
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 
-
-class TextImageEmbeddingModel(ManagedModel, ABC):
-
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {
-            "embed_images": TaskSpec(method="embed_images", default=True, params=["images"]),
-            "embed_text": TaskSpec(method="embed_text", params=["texts"]),
-        }
+class TextImageEmbeddingModel(ABC):
 
     @classmethod
     @abstractmethod
@@ -23,11 +14,6 @@ class TextImageEmbeddingModel(ManagedModel, ABC):
         cls, model_name_or_path: str, **kwargs
     ) -> "TextImageEmbeddingModel":
         pass
-
-    @property
-    def max_batch_size(self) -> Optional[int]:
-        """Maximum batch size the model supports, or ``None`` if unlimited."""
-        return getattr(self, "_max_batch_size", None)
 
     def compare_embeddings(
         self,

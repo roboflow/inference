@@ -10,7 +10,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, List, Literal, Optional
 
 from inference_model_manager.backends.base import Backend
-from inference_model_manager.dispatch import invoke_task
+from inference_model_manager.dispatch import invoke_task, resolve_task, _get_registry
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +159,19 @@ class ModelManager:
                 batch_max_delay_ms=batch_max_delay_ms,
                 **kwargs,
             )
+            # Store model class for registry lookup (needed for subprocess
+            # where model instance lives in worker, not in parent process).
+            # Also lazily registers the class in the model registry.
+            try:
+                from inference_models.models.auto_loaders.core import AutoModel
+                b._model_class = AutoModel.resolve_class(
+                    load_target, api_key=api_key,
+                )
+                from inference_model_manager.registry_defaults import lazy_register
+                lazy_register(b._model_class)
+            except Exception:
+                logger.warning("Failed to resolve model class for '%s'", load_target, exc_info=True)
+                b._model_class = None
             self._backends[model_id] = b
 
         # Warmup outside the lock — model is registered, other models can load
@@ -273,8 +286,8 @@ class ModelManager:
     ) -> Any:
         """Process a task on a loaded model. Blocks until result is ready.
 
-        Uses the model's ``supported_tasks`` property to resolve ``task`` to
-        the correct method. If ``task`` is None, the default task is used.
+        Uses the model registry to resolve ``task`` to the correct method.
+        If ``task`` is None, the default task is used.
 
         For direct backends, calls the model method in-process.
         For subprocess backends, submits via SHM and waits for result.
@@ -296,7 +309,29 @@ class ModelManager:
 
         if hasattr(backend, "submit_slot"):
             raw_input = kwargs.pop("images", None)
-            return self.submit(model_id, task=task, raw_input=raw_input, **kwargs).result()
+            result = self.submit(model_id, task=task, raw_input=raw_input, **kwargs).result()
+            # Serialize subprocess result through registry (use model_class, not instance)
+            model_class = getattr(backend, "_model_class", None)
+            if model_class is not None:
+                reg = _get_registry()
+                # Resolve default task name if not specified
+                if task is None:
+                    from inference_model_manager.dispatch import _entries_for_class
+                    entries = _entries_for_class(model_class, reg)
+                    defaults = [n for n, e in entries.items() if e.default]
+                    task_name = defaults[0] if defaults else "infer"
+                else:
+                    task_name = task
+                entry = reg.get_entry_for_class(model_class, task_name)
+                if entry is not None:
+                    return entry.serializer(result, backend)
+            return result
+
+        # Resolve task (validates it exists, raises ValueError if not)
+        task_name, _entry = resolve_task(backend.model, task)
+
+        # Validate kwargs through registry (if entry exists)
+        kwargs = _get_registry().validate(backend.model, task_name, kwargs)
 
         t0 = time.monotonic()
         try:
@@ -305,7 +340,10 @@ class ModelManager:
             backend.record_inference(t0, error=True)
             raise
         backend.record_inference(t0, error=False)
-        return result
+
+        # Serialize through registry (if entry exists)
+        typed = _get_registry().serialize(backend.model, task_name, result)
+        return typed if typed is not None else result
 
     async def process_async(
         self, model_id: str, task: Optional[str] = None, **kwargs: Any

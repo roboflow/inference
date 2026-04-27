@@ -1,7 +1,7 @@
-"""Task dispatch and discovery for ManagedModel.
+"""Task dispatch and discovery — delegates to model registry.
 
-- **Dispatch**: resolve task name → model method, call it.
-- **Discovery**: resolve model_id → model class → supported tasks (no loading).
+- **Dispatch**: resolve task name → model method via registry, call it.
+- **Discovery**: resolve model_id → model class → registered tasks (no loading).
 """
 
 from __future__ import annotations
@@ -9,9 +9,15 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
+from inference_model_manager.registry import TaskEntry
 
 logger = logging.getLogger(__name__)
+
+
+def _get_registry():
+    """Lazy import to avoid heavy imports at module level."""
+    from inference_model_manager.registry_defaults import registry
+    return registry
 
 
 def discover_tasks(
@@ -21,107 +27,109 @@ def discover_tasks(
 ) -> Dict[str, Dict[str, Any]]:
     """Discover supported tasks for a model_id WITHOUT loading the model.
 
-    Resolves model_id → model class via AutoModel's resolution chain
-    (Roboflow API call, cached 24h), then reads ``get_supported_tasks()``
-    classmethod. No download, no GPU, no instantiation.
-
-    Args:
-        model_id: Model identifier (e.g. ``"yolov8n-640"``, ``"workspace/model/1"``).
-        api_key: Roboflow API key (needed for custom models).
-        **resolve_kwargs: Forwarded to AutoModel resolution (device, backend, etc.).
-
-    Returns:
-        Dict mapping task name → {"method", "default", "params"}.
-
-    Raises:
-        RuntimeError: If model_id cannot be resolved.
+    Resolves model_id → model class via AutoModel, then looks up registered
+    tasks in the registry. No download, no GPU, no instantiation.
     """
     from inference_models.models.auto_loaders.core import AutoModel
 
     model_class = AutoModel.resolve_class(
         model_id, api_key=api_key, **resolve_kwargs
     )
-    return list_tasks(model_class)
+    return list_tasks_for_class(model_class)
 
 
-def resolve_task(model: ManagedModel, task: Optional[str] = None) -> TaskSpec:
-    """Resolve task name to TaskSpec.
+def resolve_task(model: Any, task: Optional[str] = None) -> tuple[str, TaskEntry]:
+    """Resolve task name to (task_name, TaskEntry) via registry.
 
     Args:
-        model: Model instance (must have ``supported_tasks`` property).
-        task: Task name. ``None`` → default task.
+        model: Model instance.
+        task: Task name. None → default task for this model's class.
 
     Returns:
-        TaskSpec for the resolved task.
+        Tuple of (resolved_task_name, TaskEntry).
 
     Raises:
-        ValueError: If task not found or no default task defined.
+        ValueError: If task not found or no default task registered.
     """
-    tasks = model.supported_tasks
+    from inference_model_manager.registry_defaults import lazy_register
+    lazy_register(type(model))
+
+    registry = _get_registry()
+    tasks = _entries_for_model(model, registry)
 
     if task is None:
-        defaults = [t for t in tasks.values() if t.default]
+        defaults = [(n, e) for n, e in tasks.items() if e.default]
         if not defaults:
             raise ValueError(
-                f"Model {type(model).__name__} has no default task. "
+                f"No default task registered for {type(model).__name__}. "
                 f"Available tasks: {list(tasks.keys())}"
             )
         return defaults[0]
 
     if task not in tasks:
         raise ValueError(
-            f"Task '{task}' not supported by {type(model).__name__}. "
+            f"Task '{task}' not registered for {type(model).__name__}. "
             f"Available tasks: {list(tasks.keys())}"
         )
-    return tasks[task]
+    return task, tasks[task]
 
 
 def invoke_task(
-    model: ManagedModel,
+    model: Any,
     task: Optional[str] = None,
     **kwargs: Any,
 ) -> Any:
-    """Resolve task and call the corresponding method on the model.
+    """Resolve task via registry and call the model method.
 
-    Args:
-        model: Model instance.
-        task: Task name. ``None`` → default task.
-        **kwargs: Passed to the model method.
-
-    Returns:
-        Whatever the model method returns.
-
-    Raises:
-        ValueError: If task not found or required params missing.
+    Returns whatever the model method returns.
     """
-    spec = resolve_task(model, task)
-    method = getattr(model, spec.method, None)
+    task_name, entry = resolve_task(model, task)
+    method = getattr(model, entry.method, None)
     if method is None:
         raise ValueError(
-            f"Model {type(model).__name__} declares task '{task or 'default'}' "
-            f"with method '{spec.method}' but method does not exist"
+            f"Model {type(model).__name__} has no method '{entry.method}' "
+            f"(registered for task '{task_name}')"
         )
     return method(**kwargs)
 
 
-def list_tasks(model_or_class) -> Dict[str, Dict[str, Any]]:
-    """Return human-readable task info for a model instance or class.
+def list_tasks(model: Any) -> Dict[str, Dict[str, Any]]:
+    """Return human-readable task info for a model instance."""
+    registry = _get_registry()
+    tasks = _entries_for_model(model, registry)
+    return _entries_to_dict(tasks)
 
-    Args:
-        model_or_class: ManagedModel instance OR class.
 
-    Returns:
-        Dict mapping task name → {"method", "default", "params"}.
-    """
-    if isinstance(model_or_class, type):
-        tasks = model_or_class.get_supported_tasks()
-    else:
-        tasks = model_or_class.supported_tasks
+def list_tasks_for_class(model_class: type) -> Dict[str, Dict[str, Any]]:
+    """Return human-readable task info for a model class (no instance needed)."""
+    registry = _get_registry()
+    tasks = _entries_for_class(model_class, registry)
+    return _entries_to_dict(tasks)
+
+
+def _entries_for_model(model: Any, registry) -> Dict[str, TaskEntry]:
+    """Collect all registered tasks for a model instance, following MRO."""
+    return _entries_for_class(type(model), registry)
+
+
+def _entries_for_class(model_class: type, registry) -> Dict[str, TaskEntry]:
+    """Collect all registered tasks for a model class, following MRO."""
+    result: Dict[str, TaskEntry] = {}
+    for cls in model_class.__mro__:
+        class_entries = registry._entries.get(cls, {})
+        for name, entry in class_entries.items():
+            if name not in result:
+                result[name] = entry
+    return result
+
+
+def _entries_to_dict(tasks: Dict[str, TaskEntry]) -> Dict[str, Dict[str, Any]]:
     return {
         name: {
-            "method": spec.method,
-            "default": spec.default,
-            "params": spec.params,
+            "method": entry.method,
+            "default": entry.default,
+            "params": entry.params,
+            "response_type": entry.response_type,
         }
-        for name, spec in tasks.items()
+        for name, entry in tasks.items()
     }

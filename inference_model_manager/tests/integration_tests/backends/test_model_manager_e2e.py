@@ -17,7 +17,15 @@ from inference_model_manager.model_manager import ModelManager
 
 def _assert_detections(result: Any) -> None:
     """Validate result is Detections (or list of Detections) with correct shape."""
-    # process returns List[Detections]; submit/subprocess may return single Detections
+    # process() returns typed dict from registry serializer
+    if isinstance(result, dict):
+        assert "type" in result
+        assert "roboflow-" in result["type"]
+        if "xyxy" in result:
+            assert result["xyxy"].ndim == 2
+            assert result["xyxy"].shape[1] == 4
+        return
+    # submit() / subprocess may return raw Detections (not serialized)
     if isinstance(result, list):
         assert len(result) > 0
         det = result[0]
@@ -87,7 +95,7 @@ class TestModelManagerDirectE2E:
         mm = ModelManager()
         mm.load(yolov8n_model_path, api_key="", backend="direct")
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             mm.process_async(yolov8n_model_path, images=dog_image_numpy)
         )
 
@@ -181,44 +189,29 @@ class TestModelManagerMultiInstance:
 @pytest.mark.slow
 @pytest.mark.torch_models
 class TestModelManagerSubprocessE2E:
-    """ModelManager + SubprocessBackend with real model."""
+    """ModelManager + SubprocessBackend with real model.
 
-    def test_load_and_infer(
+    Combined into one test to avoid 7s model load per test.
+    """
+
+    def test_process_submit_stats(
         self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
     ) -> None:
         mm = ModelManager()
         mm.load(yolov8n_model_path, api_key="", backend="subprocess")
 
+        # process()
         result = mm.process(yolov8n_model_path, images=dog_image_numpy)
-
         _assert_detections(result)
 
-        mm.shutdown()
-
-    def test_submit_future(
-        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
-    ) -> None:
-        mm = ModelManager()
-        mm.load(yolov8n_model_path, api_key="", backend="subprocess")
-
+        # submit() → Future
         future = mm.submit(yolov8n_model_path, images=dog_image_numpy)
-        result = future.result(timeout=30)
+        _assert_detections(future.result(timeout=30))
 
-        _assert_detections(result)
-
-        mm.shutdown()
-
-    def test_stats_after_inference(
-        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
-    ) -> None:
-        mm = ModelManager()
-        mm.load(yolov8n_model_path, api_key="", backend="subprocess")
-        mm.process(yolov8n_model_path, images=dog_image_numpy)
-
+        # stats after 2 inferences
         s = mm.model_stats(yolov8n_model_path)
-
         assert s["state"] == "loaded"
-        assert s["inference_count"] == 1
+        assert s["inference_count"] == 2
 
         mm.shutdown()
 

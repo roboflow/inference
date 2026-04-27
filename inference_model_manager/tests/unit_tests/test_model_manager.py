@@ -13,27 +13,35 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from inference_models.models.base.task_dispatch import ManagedModel, TaskSpec
 from inference_model_manager.model_manager import ModelManager
+from inference_model_manager.registry_defaults import registry as _registry
+from inference_model_manager.validators import validate_passthrough
+from inference_model_manager.serializers_typed import serialize_passthrough
 
 
 # ─── Fake model + backend ──────────────────────────────────────────
 
 
-class FakeModel(ManagedModel):
-    """Minimal ManagedModel for unit tests."""
+class FakeModel:
+    """Minimal model for unit tests. No base class needed."""
 
     def __init__(self, model_id: str):
         self.model_id = model_id
         self._inference_count = 0
 
-    @classmethod
-    def get_supported_tasks(cls) -> Dict[str, TaskSpec]:
-        return {"infer": TaskSpec(method="infer", default=True, params=["images"])}
-
     def infer(self, images=None, **kwargs) -> Any:
         self._inference_count += 1
         return {"prediction": "fake", "model_id": self.model_id}
+
+
+# Register FakeModel in registry so dispatch can find it.
+_registry.register(
+    FakeModel, "infer",
+    method="infer", default=True, params=["images"],
+    validator=validate_passthrough,
+    serializer=serialize_passthrough,
+    response_type="roboflow-generic-v1",
+)
 
 
 class FakeBackend:
@@ -185,7 +193,7 @@ class TestModelManagerInference:
         mm.load("model-a", api_key="")
         result = mm.process("model-a", images="some_image")
 
-        assert result == {"prediction": "fake", "model_id": "model-a"}
+        assert result == {"type": "roboflow-generic-v1", "data": {"prediction": "fake", "model_id": "model-a"}}
         assert backends["model-a"]._fake_model._inference_count == 1
 
     def test_process_missing_model_raises(self):
@@ -210,11 +218,11 @@ class TestModelManagerInference:
         _patch_create_backend(mm, backends)
 
         mm.load("model-a", api_key="")
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             mm.process_async("model-a", images="some_image")
         )
 
-        assert result == {"prediction": "fake", "model_id": "model-a"}
+        assert result == {"type": "roboflow-generic-v1", "data": {"prediction": "fake", "model_id": "model-a"}}
 
     def test_infer_routes_to_correct_model(self):
         mm = ModelManager()
@@ -227,8 +235,8 @@ class TestModelManagerInference:
         r_a = mm.process("model-a", images="img")
         r_b = mm.process("model-b", images="img")
 
-        assert r_a["model_id"] == "model-a"
-        assert r_b["model_id"] == "model-b"
+        assert r_a["data"]["model_id"] == "model-a"
+        assert r_b["data"]["model_id"] == "model-b"
         assert backends["model-a"]._fake_model._inference_count == 1
         assert backends["model-b"]._fake_model._inference_count == 1
 
