@@ -27,7 +27,8 @@ TWO_STAGE_WORKFLOW_WITH_FLOW_CONTROL = {
             "name": "breds_classification",
             "image": "$steps.cropping.crops",
             "model_id": "dog-breed-xpaq6/1",
-            "confidence_mode": "custom", "custom_confidence": 0.09,
+            "confidence_mode": "custom",
+            "custom_confidence": 0.09,
         },
         {
             "type": "roboflow_core/continue_if@v1",

@@ -15,8 +15,8 @@ from inference_models.configuration import (
 from inference_models.entities import Confidence, ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.auto_loaders.entities import AnyModel
-from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.owlv2.entities import (
     ImageEmbeddings,
     ReferenceExamplesEmbeddings,

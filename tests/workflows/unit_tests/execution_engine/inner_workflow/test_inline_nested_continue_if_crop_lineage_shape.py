@@ -213,7 +213,10 @@ def test_nested_continue_if_inner_workflow_inlined_raw_definition_shape() -> Non
     assert inlined_breds["image"] == "$steps.cropping.crops"
 
     assert inlined_continue_if["type"] == inner_continue_if["type"]
-    assert inlined_continue_if["condition_statement"] == inner_continue_if["condition_statement"]
+    assert (
+        inlined_continue_if["condition_statement"]
+        == inner_continue_if["condition_statement"]
+    )
     assert inlined_continue_if["evaluation_parameters"] == {
         "predictions": "$steps.nested_inner_workflow__breds_classification.predictions",
     }

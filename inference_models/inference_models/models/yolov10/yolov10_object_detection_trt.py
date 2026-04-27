@@ -11,7 +11,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
@@ -254,12 +254,18 @@ class YOLOv10ForObjectDetectionTRT(
         )
         threshold = confidence_filter.get_threshold(self.class_names)
         if isinstance(threshold, torch.Tensor):
-            threshold = threshold.to(dtype=model_results.dtype, device=model_results.device)
+            threshold = threshold.to(
+                dtype=model_results.dtype, device=model_results.device
+            )
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             results = []
             for image_result, metadata in zip(model_results, pre_processing_meta):
-                mask = image_result[:, 4] > (threshold[image_result[:, 5].long()] if isinstance(threshold, torch.Tensor) else threshold)
+                mask = image_result[:, 4] > (
+                    threshold[image_result[:, 5].long()]
+                    if isinstance(threshold, torch.Tensor)
+                    else threshold
+                )
                 filtered = image_result[mask][:max_detections]
                 rescaled = rescale_image_detections(
                     image_detections=filtered,
