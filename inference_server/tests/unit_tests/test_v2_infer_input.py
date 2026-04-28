@@ -1,15 +1,13 @@
-"""Unit tests for v2 infer input extraction (multipart, JSON+base64, raw)."""
+"""Unit tests for v2 infer input extraction (multipart, JSON+base64, raw, batch)."""
 
 from __future__ import annotations
 
 import base64
-import io
-import json
 
 import pytest
-import pytest_asyncio
 
-# Minimal JPEG (smallest valid JPEG — 2x1 red pixel)
+
+# Minimal JPEG (smallest valid JPEG — JFIF header + EOI)
 _JPEG = bytes([
     0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
     0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
@@ -17,7 +15,6 @@ _JPEG = bytes([
 
 
 class _FakeUploadFile:
-    """Mimics Starlette UploadFile for form.get('image')."""
     def __init__(self, data: bytes):
         self._data = data
 
@@ -26,8 +23,6 @@ class _FakeUploadFile:
 
 
 class _FakeRequest:
-    """Mimics Starlette Request with configurable content-type, body, form."""
-
     def __init__(self, content_type: str = "", body: bytes = b"", form_data=None, json_body=None):
         self.headers = {"content-type": content_type}
         self._body = body
@@ -35,7 +30,7 @@ class _FakeRequest:
         self._json_body = json_body
 
     async def form(self):
-        return self._form_data or {}
+        return self._form_data or _FakeFormData({})
 
     async def json(self):
         if self._json_body is not None:
@@ -47,109 +42,141 @@ class _FakeRequest:
             yield self._body
 
 
+class _FakeFormData(dict):
+    def multi_items(self):
+        for k, v in self.items():
+            if isinstance(v, list):
+                for item in v:
+                    yield k, item
+            else:
+                yield k, v
+
+
+# ---------------------------------------------------------------------------
+# Single-image tests
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.asyncio
 async def test_raw_body():
-    from inference_server.routers.v2_models import _extract_image_and_params
+    from inference_server.routers.v2_models import _extract_images_and_params
 
     req = _FakeRequest(content_type="image/jpeg", body=_JPEG)
-    img, params, err = await _extract_image_and_params(req)
+    imgs, params, err = await _extract_images_and_params(req)
     assert err is None
-    assert img == _JPEG
+    assert len(imgs) == 1
+    assert imgs[0] == _JPEG
     assert params == {}
 
 
 @pytest.mark.asyncio
-async def test_multipart_form():
-    from inference_server.routers.v2_models import _extract_image_and_params
+async def test_multipart_form_single():
+    from inference_server.routers.v2_models import _extract_images_and_params
 
-    form = _FakeFormData({
-        "image": _FakeUploadFile(_JPEG),
-        "confidence": "0.5",
-    })
+    form = _FakeFormData({"image": _FakeUploadFile(_JPEG), "confidence": "0.5"})
     req = _FakeRequest(content_type="multipart/form-data", form_data=form)
-    img, params, err = await _extract_image_and_params(req)
+    imgs, params, err = await _extract_images_and_params(req)
     assert err is None
-    assert img == _JPEG
+    assert len(imgs) == 1
+    assert imgs[0] == _JPEG
     assert params["confidence"] == "0.5"
 
 
 @pytest.mark.asyncio
 async def test_multipart_form_with_inputs_json():
-    from inference_server.routers.v2_models import _extract_image_and_params
+    from inference_server.routers.v2_models import _extract_images_and_params
 
     form = _FakeFormData({
         "image": _FakeUploadFile(_JPEG),
         "inputs": '{"confidence": 0.3, "iou": 0.5}',
     })
     req = _FakeRequest(content_type="multipart/form-data", form_data=form)
-    img, params, err = await _extract_image_and_params(req)
+    imgs, params, err = await _extract_images_and_params(req)
     assert err is None
-    assert img == _JPEG
+    assert len(imgs) == 1
     assert params["confidence"] == 0.3
     assert params["iou"] == 0.5
 
 
 @pytest.mark.asyncio
 async def test_multipart_form_missing_image():
-    from inference_server.routers.v2_models import _extract_image_and_params
+    from inference_server.routers.v2_models import _extract_images_and_params
 
     form = _FakeFormData({"confidence": "0.5"})
     req = _FakeRequest(content_type="multipart/form-data", form_data=form)
-    img, params, err = await _extract_image_and_params(req)
+    imgs, params, err = await _extract_images_and_params(req)
     assert err is not None
     assert err.status_code == 400
 
 
 @pytest.mark.asyncio
-async def test_json_base64():
-    from inference_server.routers.v2_models import _extract_image_and_params
+async def test_json_base64_single():
+    from inference_server.routers.v2_models import _extract_images_and_params
 
     b64 = base64.b64encode(_JPEG).decode()
-    body = {
-        "inputs": {
-            "image": {"type": "base64", "value": b64},
-            "confidence": 0.5,
-        }
-    }
+    body = {"inputs": {"image": {"type": "base64", "value": b64}, "confidence": 0.5}}
     req = _FakeRequest(content_type="application/json", json_body=body)
-    img, params, err = await _extract_image_and_params(req)
+    imgs, params, err = await _extract_images_and_params(req)
     assert err is None
-    assert img == _JPEG
+    assert len(imgs) == 1
+    assert imgs[0] == _JPEG
     assert params["confidence"] == 0.5
 
 
 @pytest.mark.asyncio
 async def test_json_missing_image():
-    from inference_server.routers.v2_models import _extract_image_and_params
+    from inference_server.routers.v2_models import _extract_images_and_params
 
     body = {"inputs": {"confidence": 0.5}}
     req = _FakeRequest(content_type="application/json", json_body=body)
-    img, params, err = await _extract_image_and_params(req)
+    imgs, params, err = await _extract_images_and_params(req)
     assert err is not None
     assert err.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_json_invalid_base64():
-    from inference_server.routers.v2_models import _extract_image_and_params
+    from inference_server.routers.v2_models import _extract_images_and_params
 
     body = {"inputs": {"image": {"type": "base64", "value": "!!!===not valid base64===!!!"}}}
     req = _FakeRequest(content_type="application/json", json_body=body)
-    img, params, err = await _extract_image_and_params(req)
-    # base64.b64decode is lenient; if it somehow decodes, image_bytes won't be valid
-    # but extraction itself may succeed — that's OK, format check happens downstream
-    # Test that at minimum no crash occurs
+    imgs, params, err = await _extract_images_and_params(req)
+    # base64.b64decode is lenient — no crash is the requirement
     assert err is None or err.status_code == 400
 
 
-class _FakeFormData(dict):
-    """Dict that also supports multi_items() like Starlette FormData."""
-    def multi_items(self):
-        for k, v in self.items():
-            if isinstance(v, _FakeUploadFile):
-                yield k, v
-            else:
-                yield k, v
+# ---------------------------------------------------------------------------
+# Batch tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_multipart_form_batch():
+    from inference_server.routers.v2_models import _extract_images_and_params
+
+    jpeg2 = _JPEG + b"\x00"  # slightly different
+    form = _FakeFormData({"image": [_FakeUploadFile(_JPEG), _FakeUploadFile(jpeg2)]})
+    req = _FakeRequest(content_type="multipart/form-data", form_data=form)
+    imgs, params, err = await _extract_images_and_params(req)
+    assert err is None
+    assert len(imgs) == 2
+    assert imgs[0] == _JPEG
+    assert imgs[1] == jpeg2
+
+
+@pytest.mark.asyncio
+async def test_json_base64_batch():
+    from inference_server.routers.v2_models import _extract_images_and_params
+
+    b64 = base64.b64encode(_JPEG).decode()
+    body = {"inputs": {"image": [
+        {"type": "base64", "value": b64},
+        {"type": "base64", "value": b64},
+    ]}}
+    req = _FakeRequest(content_type="application/json", json_body=body)
+    imgs, params, err = await _extract_images_and_params(req)
+    assert err is None
+    assert len(imgs) == 2
 
 
 # ---------------------------------------------------------------------------
