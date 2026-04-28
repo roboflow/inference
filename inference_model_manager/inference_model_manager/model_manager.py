@@ -219,6 +219,9 @@ class ModelManager:
             from inference_model_manager.backends.subproc import SubprocessBackend
 
             pool = self._ensure_pool()
+            kwargs.pop("shm_pool_name", None)
+            kwargs.pop("n_slots", None)
+            kwargs.pop("input_mb", None)
             return SubprocessBackend(
                 model_id,
                 api_key,
