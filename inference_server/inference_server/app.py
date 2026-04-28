@@ -31,6 +31,13 @@ from inference_server.routers import infer, v2_models, v2_server
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
+    # Keep multipart uploads in memory — Starlette default is 1MB, which causes
+    # disk rollover (write + read) for typical image uploads (2-10MB).
+    from starlette.formparsers import MultiPartParser
+    MultiPartParser.spool_max_size = int(os.environ.get(
+        "INFERENCE_MULTIPART_SPOOL_MB", "32"
+    )) * 1024 * 1024
+
     identity = f"uv_{os.getpid()}_{uuid.uuid4().hex[:8]}".encode()
 
     state.ctx = zmq.asyncio.Context()
