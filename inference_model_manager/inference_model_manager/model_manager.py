@@ -449,8 +449,10 @@ class ModelManager:
         mro_names = getattr(backend, "_model_mro_names", None)
         if mro_names:
             from inference_model_manager.dispatch import list_tasks_by_mro_names
+
             return list_tasks_by_mro_names(mro_names)
         from inference_model_manager.dispatch import list_tasks
+
         return list_tasks(backend.model)
 
     # ------------------------------------------------------------------

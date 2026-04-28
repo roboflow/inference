@@ -22,9 +22,11 @@ def test_list_tasks_by_mro_names_unknown_class():
 def test_list_tasks_by_mro_names_walks_mro():
     """Should match on any ancestor in the MRO list."""
     lazy_register_by_names(["ObjectDetectionModel"])
-    tasks = list_tasks_by_mro_names([
-        "YOLOv8ForObjectDetectionTorchScript",
-        "ObjectDetectionModel",
-        "object",
-    ])
+    tasks = list_tasks_by_mro_names(
+        [
+            "YOLOv8ForObjectDetectionTorchScript",
+            "ObjectDetectionModel",
+            "object",
+        ]
+    )
     assert "infer" in tasks

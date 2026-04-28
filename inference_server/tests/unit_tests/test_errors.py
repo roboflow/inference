@@ -16,7 +16,9 @@ def test_basic_error():
 
 
 def test_error_with_follow_up():
-    resp = error_response(404, "NOT_FOUND", "model not loaded", follow_up="load it first")
+    resp = error_response(
+        404, "NOT_FOUND", "model not loaded", follow_up="load it first"
+    )
     body = json.loads(resp.body)
     assert body["actionable_follow_up"] == "load it first"
 

@@ -19,19 +19,19 @@ from inference_server.serializers import serialize_json
 
 logger = logging.getLogger(__name__)
 from inference_model_manager.serializers_typed import (
-    serialize_detections_compact,
     serialize_classification_compact,
-    serialize_multilabel_classification_compact,
-    serialize_instance_segmentation_compact,
-    serialize_semantic_segmentation_compact,
-    serialize_keypoints_compact,
-    serialize_embeddings,
-    serialize_text,
-    serialize_depth_compact,
-    serialize_passthrough,
-    serialize_detections_rich,
     serialize_classification_rich,
+    serialize_depth_compact,
+    serialize_detections_compact,
+    serialize_detections_rich,
+    serialize_embeddings,
+    serialize_instance_segmentation_compact,
     serialize_instance_segmentation_rich,
+    serialize_keypoints_compact,
+    serialize_multilabel_classification_compact,
+    serialize_passthrough,
+    serialize_semantic_segmentation_compact,
+    serialize_text,
 )
 
 router = APIRouter(prefix="/v2/models")
@@ -76,13 +76,16 @@ _class_names_cache: dict[str, list | None] = {}
 
 class _ModelProxy:
     """Lightweight proxy providing class_names for typed serializers."""
+
     __slots__ = ("class_names",)
 
     def __init__(self, class_names: list | None):
         self.class_names = class_names
 
 
-def _typed_serialize(predictions: object, class_names: list | None, style: str = "rich") -> object:
+def _typed_serialize(
+    predictions: object, class_names: list | None, style: str = "rich"
+) -> object:
     proxy = _ModelProxy(class_names)
     if isinstance(predictions, list) and predictions:
         cls_name = type(predictions[0]).__name__
@@ -109,33 +112,44 @@ _URL_FETCH_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
 async def _fetch_image_from_url(url: str) -> tuple[Optional[bytes], Optional[Response]]:
     """Fetch image bytes from URL. Returns (bytes, None) or (None, error_response)."""
     if not url.startswith(("http://", "https://")):
-        return None, error_response(400, "INVALID_URL", "image URL must start with http:// or https://")
+        return None, error_response(
+            400, "INVALID_URL", "image URL must start with http:// or https://"
+        )
     timeout = aiohttp.ClientTimeout(total=_URL_FETCH_TIMEOUT_S)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as resp:
                 if resp.status != 200:
                     return None, error_response(
-                        502, "URL_FETCH_FAILED",
+                        502,
+                        "URL_FETCH_FAILED",
                         f"fetching image URL returned status {resp.status}",
                     )
                 content_length = resp.content_length or 0
                 if content_length > _URL_FETCH_MAX_BYTES:
                     return None, error_response(
-                        413, "URL_IMAGE_TOO_LARGE",
+                        413,
+                        "URL_IMAGE_TOO_LARGE",
                         f"image at URL exceeds {_URL_FETCH_MAX_BYTES // (1024*1024)}MB limit",
                     )
                 data = await resp.read()
                 if len(data) > _URL_FETCH_MAX_BYTES:
                     return None, error_response(
-                        413, "URL_IMAGE_TOO_LARGE",
+                        413,
+                        "URL_IMAGE_TOO_LARGE",
                         f"image at URL exceeds {_URL_FETCH_MAX_BYTES // (1024*1024)}MB limit",
                     )
                 return data, None
     except asyncio.TimeoutError:
-        return None, error_response(504, "URL_FETCH_TIMEOUT", f"fetching image URL timed out after {_URL_FETCH_TIMEOUT_S}s")
+        return None, error_response(
+            504,
+            "URL_FETCH_TIMEOUT",
+            f"fetching image URL timed out after {_URL_FETCH_TIMEOUT_S}s",
+        )
     except aiohttp.ClientError as exc:
-        return None, error_response(502, "URL_FETCH_FAILED", f"fetching image URL failed: {exc}")
+        return None, error_response(
+            502, "URL_FETCH_FAILED", f"fetching image URL failed: {exc}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +157,9 @@ async def _fetch_image_from_url(url: str) -> tuple[Optional[bytes], Optional[Res
 # ---------------------------------------------------------------------------
 
 
-async def _extract_images_and_params(request: Request) -> tuple[list[bytes], dict, Optional[Response]]:
+async def _extract_images_and_params(
+    request: Request,
+) -> tuple[list[bytes], dict, Optional[Response]]:
     """Extract image bytes (possibly multiple) and extra params from request body.
 
     Supports:
@@ -154,7 +170,9 @@ async def _extract_images_and_params(request: Request) -> tuple[list[bytes], dic
     Returns (images_list, extra_params, error_response).
     If error_response is not None, return it immediately.
     """
-    content_type = (request.headers.get("content-type") or "").lower().split(";")[0].strip()
+    content_type = (
+        (request.headers.get("content-type") or "").lower().split(";")[0].strip()
+    )
 
     # --- Multipart form ---
     if content_type == "multipart/form-data":
@@ -172,8 +190,14 @@ async def _extract_images_and_params(request: Request) -> tuple[list[bytes], dic
             elif isinstance(value, str):
                 extra_params[key] = value
         if not images:
-            return [], {}, error_response(
-                400, "MISSING_IMAGE", "multipart form must include at least one 'image' file part"
+            return (
+                [],
+                {},
+                error_response(
+                    400,
+                    "MISSING_IMAGE",
+                    "multipart form must include at least one 'image' file part",
+                ),
             )
         return images, extra_params, None
 
@@ -182,16 +206,30 @@ async def _extract_images_and_params(request: Request) -> tuple[list[bytes], dic
         try:
             body = await request.json()
         except Exception:
-            return [], {}, error_response(400, "INVALID_JSON", "request body is not valid JSON")
+            return (
+                [],
+                {},
+                error_response(400, "INVALID_JSON", "request body is not valid JSON"),
+            )
 
         inputs = body.get("inputs", {})
         if not isinstance(inputs, dict):
-            return [], {}, error_response(400, "INVALID_INPUTS", "'inputs' must be an object")
+            return (
+                [],
+                {},
+                error_response(400, "INVALID_INPUTS", "'inputs' must be an object"),
+            )
 
         image_spec = inputs.pop("image", None)
         if image_spec is None:
-            return [], {}, error_response(
-                400, "MISSING_IMAGE", "JSON body must include inputs.image",
+            return (
+                [],
+                {},
+                error_response(
+                    400,
+                    "MISSING_IMAGE",
+                    "JSON body must include inputs.image",
+                ),
             )
 
         # Normalize to list
@@ -199,14 +237,27 @@ async def _extract_images_and_params(request: Request) -> tuple[list[bytes], dic
         images = []
         for i, spec in enumerate(specs):
             if not isinstance(spec, dict) or spec.get("type") != "base64":
-                return [], {}, error_response(
-                    400, "INVALID_IMAGE",
-                    f"inputs.image[{i}] must be {{\"type\": \"base64\", \"value\": \"...\"}}",
+                return (
+                    [],
+                    {},
+                    error_response(
+                        400,
+                        "INVALID_IMAGE",
+                        f'inputs.image[{i}] must be {{"type": "base64", "value": "..."}}',
+                    ),
                 )
             try:
                 images.append(base64.b64decode(spec["value"]))
             except Exception:
-                return [], {}, error_response(400, "DECODE_FAILED", f"base64 decode failed for inputs.image[{i}]")
+                return (
+                    [],
+                    {},
+                    error_response(
+                        400,
+                        "DECODE_FAILED",
+                        f"base64 decode failed for inputs.image[{i}]",
+                    ),
+                )
 
         return images, inputs, None
 
@@ -233,11 +284,15 @@ async def _submit_one_slot(
     try:
         slot_id = await state.alloc_slot(model_id, instance)
     except (asyncio.TimeoutError, RuntimeError):
-        return None, error_response(503, "SERVER_BUSY", "no slots available, try again", follow_up="retry in 1s")
+        return None, error_response(
+            503, "SERVER_BUSY", "no slots available, try again", follow_up="retry in 1s"
+        )
 
     try:
         state.write_input(slot_id, image_bytes, 0)
-        result = await state.submit_and_wait(slot_id, model_id, instance, len(image_bytes), params)
+        result = await state.submit_and_wait(
+            slot_id, model_id, instance, len(image_bytes), params
+        )
 
         if result[0] == "error":
             return None, error_response(500, "INFERENCE_FAILED", "inference failed")
@@ -250,14 +305,18 @@ async def _submit_one_slot(
         if hdr is not None and hdr.status == state.SLOT_STATUS_ERROR:
             err_msg = "inference failed"
             if hdr.result_size > 0:
-                err_msg = state.read_result(result_slot_id, hdr.result_size).decode("utf-8", errors="replace")
+                err_msg = state.read_result(result_slot_id, hdr.result_size).decode(
+                    "utf-8", errors="replace"
+                )
             return None, error_response(500, "INFERENCE_FAILED", err_msg)
 
         raw = state.read_result(result_slot_id, result_sz)
         try:
             return pickle.loads(raw), None
         except Exception:
-            return None, error_response(500, "DESERIALIZATION_FAILED", "result deserialization failed")
+            return None, error_response(
+                500, "DESERIALIZATION_FAILED", "result deserialization failed"
+            )
 
     except asyncio.TimeoutError:
         return None, error_response(504, "TIMEOUT", "inference timeout")
@@ -301,9 +360,15 @@ async def _infer_images(
 
     for i, img in enumerate(images):
         if len(img) > state.SHM_DATA_SIZE:
-            return error_response(413, "PAYLOAD_TOO_LARGE", f"image[{i}] exceeds slot size")
+            return error_response(
+                413, "PAYLOAD_TOO_LARGE", f"image[{i}] exceeds slot size"
+            )
         if not state.looks_like_image(img):
-            return error_response(415, "UNSUPPORTED_FORMAT", f"image[{i}] is not a recognized image format")
+            return error_response(
+                415,
+                "UNSUPPORTED_FORMAT",
+                f"image[{i}] is not a recognized image format",
+            )
 
     if len(images) == 1:
         predictions, err = await _submit_one_slot(images[0], model_id, instance, params)
@@ -387,7 +452,9 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
     status = await state.ensure_loaded(model_id, instance, api_key, device)
     if status[0] == "load_timeout":
         return error_response(
-            503, "MODEL_LOADING", "model loading, try again shortly",
+            503,
+            "MODEL_LOADING",
+            "model loading, try again shortly",
             follow_up="retry after Retry-After seconds",
             headers={"Retry-After": str(status[1])},
         )
@@ -420,7 +487,9 @@ async def v2_model_interface(
     model_info = models.get(model_id)
     if model_info is None:
         return error_response(
-            404, "MODEL_NOT_LOADED", f"model '{model_id}' is not loaded",
+            404,
+            "MODEL_NOT_LOADED",
+            f"model '{model_id}' is not loaded",
             follow_up="load the model first via POST /v2/models/load",
         )
 

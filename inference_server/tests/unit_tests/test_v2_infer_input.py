@@ -6,12 +6,33 @@ import base64
 
 import pytest
 
-
 # Minimal JPEG (smallest valid JPEG — JFIF header + EOI)
-_JPEG = bytes([
-    0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
-    0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
-])
+_JPEG = bytes(
+    [
+        0xFF,
+        0xD8,
+        0xFF,
+        0xE0,
+        0x00,
+        0x10,
+        0x4A,
+        0x46,
+        0x49,
+        0x46,
+        0x00,
+        0x01,
+        0x01,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0xFF,
+        0xD9,
+    ]
+)
 
 
 class _FakeUploadFile:
@@ -23,7 +44,9 @@ class _FakeUploadFile:
 
 
 class _FakeRequest:
-    def __init__(self, content_type: str = "", body: bytes = b"", form_data=None, json_body=None):
+    def __init__(
+        self, content_type: str = "", body: bytes = b"", form_data=None, json_body=None
+    ):
         self.headers = {"content-type": content_type}
         self._body = body
         self._form_data = form_data
@@ -86,10 +109,12 @@ async def test_multipart_form_single():
 async def test_multipart_form_with_inputs_json():
     from inference_server.routers.v2_models import _extract_images_and_params
 
-    form = _FakeFormData({
-        "image": _FakeUploadFile(_JPEG),
-        "inputs": '{"confidence": 0.3, "iou": 0.5}',
-    })
+    form = _FakeFormData(
+        {
+            "image": _FakeUploadFile(_JPEG),
+            "inputs": '{"confidence": 0.3, "iou": 0.5}',
+        }
+    )
     req = _FakeRequest(content_type="multipart/form-data", form_data=form)
     imgs, params, err = await _extract_images_and_params(req)
     assert err is None
@@ -138,7 +163,9 @@ async def test_json_missing_image():
 async def test_json_invalid_base64():
     from inference_server.routers.v2_models import _extract_images_and_params
 
-    body = {"inputs": {"image": {"type": "base64", "value": "!!!===not valid base64===!!!"}}}
+    body = {
+        "inputs": {"image": {"type": "base64", "value": "!!!===not valid base64===!!!"}}
+    }
     req = _FakeRequest(content_type="application/json", json_body=body)
     imgs, params, err = await _extract_images_and_params(req)
     # base64.b64decode is lenient — no crash is the requirement
@@ -169,10 +196,14 @@ async def test_json_base64_batch():
     from inference_server.routers.v2_models import _extract_images_and_params
 
     b64 = base64.b64encode(_JPEG).decode()
-    body = {"inputs": {"image": [
-        {"type": "base64", "value": b64},
-        {"type": "base64", "value": b64},
-    ]}}
+    body = {
+        "inputs": {
+            "image": [
+                {"type": "base64", "value": b64},
+                {"type": "base64", "value": b64},
+            ]
+        }
+    }
     req = _FakeRequest(content_type="application/json", json_body=body)
     imgs, params, err = await _extract_images_and_params(req)
     assert err is None
@@ -197,6 +228,8 @@ async def test_fetch_image_from_url_invalid_scheme():
 async def test_fetch_image_from_url_bad_domain():
     from inference_server.routers.v2_models import _fetch_image_from_url
 
-    _, err = await _fetch_image_from_url("https://this-domain-does-not-exist-12345.invalid/img.jpg")
+    _, err = await _fetch_image_from_url(
+        "https://this-domain-does-not-exist-12345.invalid/img.jpg"
+    )
     assert err is not None
     assert err.status_code in (502, 504)
