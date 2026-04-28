@@ -31,6 +31,9 @@ from inference_server.routers import infer, v2_models, v2_server
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
+    # Re-read env vars set by server.py (before uvicorn forked this worker)
+    state.init_from_env()
+
     # Keep multipart uploads in memory — Starlette default is 1MB, which causes
     # disk rollover (write + read) for typical image uploads (2-10MB).
     from starlette.formparsers import MultiPartParser
