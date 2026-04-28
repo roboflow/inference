@@ -36,7 +36,9 @@ async def v2_ready() -> Response:
             m = models.get(mid, {})
             if m.get("state") != "loaded":
                 return error_response(
-                    503, "MODEL_NOT_READY", f"model {mid} not ready",
+                    503,
+                    "MODEL_NOT_READY",
+                    f"model {mid} not ready",
                     follow_up="wait for model to finish loading",
                 )
 
