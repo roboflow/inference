@@ -640,97 +640,6 @@ async def _fetch_stats(timeout_s: float = 5.0) -> dict:
     return {}
 
 
-@app.post("/models/load")
-async def load_model(request: Request, api_key: BearerToken) -> Response:
-    """Trigger model load on MMP.
-
-    Headers:
-        Authorization: Bearer <api_key>    Required.
-
-    Query params:
-        model_id    Required.
-    """
-    params = dict(request.query_params)
-    model_id = params.get("model_id", "")
-    if not model_id:
-        return Response(status_code=400, content=b"model_id query param required")
-
-    mid_bytes = model_id.encode()
-    key_bytes = api_key.encode()
-    payload = (
-        struct.pack(">H", len(mid_bytes))
-        + mid_bytes
-        + struct.pack(">H", len(key_bytes))
-        + key_bytes
-    )
-
-    try:
-        result = await _lifecycle_req(_T_LOAD, payload)
-    except asyncio.TimeoutError:
-        return Response(status_code=504, content=b"load request timeout")
-
-    if result[0] == "error":
-        return Response(status_code=500, content=b"load failed")
-    return Response(status_code=200, content=f"load triggered: {model_id}".encode())
-
-
-@app.post("/models/unload")
-async def unload_model(request: Request, _token: BearerToken) -> Response:
-    """Trigger model unload on MMP.
-
-    Headers:
-        Authorization: Bearer <api_key>    Required.
-
-    Query params:
-        model_id    Required.
-    """
-    params = dict(request.query_params)
-    model_id = params.get("model_id", "")
-    if not model_id:
-        return Response(status_code=400, content=b"model_id query param required")
-
-    mid_bytes = model_id.encode()
-    payload = struct.pack(">H", len(mid_bytes)) + mid_bytes
-
-    try:
-        result = await _lifecycle_req(_T_UNLOAD, payload)
-    except asyncio.TimeoutError:
-        return Response(status_code=504, content=b"unload request timeout")
-
-    if result[0] == "error":
-        return Response(status_code=500, content=b"unload failed")
-    return Response(status_code=200, content=f"unloaded: {model_id}".encode())
-
-
-# ---------------------------------------------------------------------------
-# Discovery endpoint
-# ---------------------------------------------------------------------------
-
-
-@app.get("/models/tasks")
-async def get_model_tasks(request: Request, api_key: BearerToken) -> Response:
-    """Discover supported tasks for a loaded model.
-
-    Model must be loaded first (POST /models/load). Returns registered tasks
-    from the model registry.
-
-    Headers:
-        Authorization: Bearer <api_key>    Required.
-
-    Query params:
-        model_id    Required. Must be already loaded.
-    """
-    model_id = request.query_params.get("model_id", "")
-    if not model_id:
-        return Response(status_code=400, content=b"model_id query param required")
-
-    # TODO: query MMP for loaded model's tasks via T_STATS or new message type.
-    # For now, return 501.
-    return Response(
-        status_code=501,
-        content=b'{"error_code":"NOT_IMPLEMENTED","description":"task discovery requires model to be loaded - endpoint not yet wired to MMP"}',
-        media_type="application/json",
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -793,38 +702,100 @@ async def v2_model_compatibility(request: Request, api_key: BearerToken) -> Resp
 
 @app.get("/v2/models")
 async def v2_list_models(request: Request, api_key: BearerToken) -> Response:
-    """List currently loaded models.
+    """List currently loaded models with state, device, memory, queue depth."""
+    try:
+        stats = await _fetch_stats(timeout_s=5.0)
+    except (asyncio.TimeoutError, Exception):
+        return Response(status_code=503, content=b'{"error":"stats_unavailable"}', media_type="application/json")
 
-    TODO: Wire to MMP T_STATS -> list_models() with state, device, memory, queue depth.
-    """
-    return _V2_TODO
+    models = stats.get("models", {})
+    return Response(
+        content=json.dumps({"models": models}).encode(),
+        media_type="application/json",
+    )
 
 
 @app.post("/v2/models/load")
 async def v2_load_model(request: Request, api_key: BearerToken) -> Response:
-    """Load specified model.
+    """Load specified model."""
+    model_id = request.query_params.get("model_id", "")
+    if not model_id:
+        return Response(status_code=400, content=b'{"error_code":"MISSING_PARAM","description":"model_id query param required"}', media_type="application/json")
 
-    TODO: Wire to existing _lifecycle_req(T_LOAD, ...). Return structured JSON.
-    """
-    return _V2_TODO
+    mid_bytes = model_id.encode()
+    key_bytes = api_key.encode()
+    payload = (
+        struct.pack(">H", len(mid_bytes))
+        + mid_bytes
+        + struct.pack(">H", len(key_bytes))
+        + key_bytes
+    )
+
+    try:
+        result = await _lifecycle_req(_T_LOAD, payload)
+    except asyncio.TimeoutError:
+        return Response(status_code=504, content=b'{"error_code":"TIMEOUT","description":"load request timeout"}', media_type="application/json")
+
+    if result[0] == "error":
+        return Response(status_code=500, content=b'{"error_code":"LOAD_FAILED","description":"model load failed"}', media_type="application/json")
+    return Response(
+        content=json.dumps({"model_id": model_id, "status": "loaded"}).encode(),
+        media_type="application/json",
+    )
 
 
 @app.post("/v2/models/unload")
 async def v2_unload_model(request: Request, api_key: BearerToken) -> Response:
-    """Unload specified model.
+    """Unload specified model."""
+    model_id = request.query_params.get("model_id", "")
+    if not model_id:
+        return Response(status_code=400, content=b'{"error_code":"MISSING_PARAM","description":"model_id query param required"}', media_type="application/json")
 
-    TODO: Wire to existing _lifecycle_req(T_UNLOAD, ...). Return structured JSON.
-    """
-    return _V2_TODO
+    mid_bytes = model_id.encode()
+    payload = struct.pack(">H", len(mid_bytes)) + mid_bytes
+
+    try:
+        result = await _lifecycle_req(_T_UNLOAD, payload)
+    except asyncio.TimeoutError:
+        return Response(status_code=504, content=b'{"error_code":"TIMEOUT","description":"unload request timeout"}', media_type="application/json")
+
+    if result[0] == "error":
+        return Response(status_code=500, content=b'{"error_code":"UNLOAD_FAILED","description":"model unload failed"}', media_type="application/json")
+    return Response(
+        content=json.dumps({"model_id": model_id, "status": "unloaded"}).encode(),
+        media_type="application/json",
+    )
 
 
 @app.delete("/v2/models")
 async def v2_unload_all(request: Request, api_key: BearerToken) -> Response:
-    """Unload all models.
+    """Unload all models."""
+    try:
+        stats = await _fetch_stats(timeout_s=5.0)
+    except (asyncio.TimeoutError, Exception):
+        return Response(status_code=503, content=b'{"error":"stats_unavailable"}', media_type="application/json")
 
-    TODO: Iterate loaded models, drain_and_unload each. Return structured JSON.
-    """
-    return _V2_TODO
+    models = stats.get("models", {})
+    errors = []
+    for model_id in list(models.keys()):
+        mid_bytes = model_id.encode()
+        payload = struct.pack(">H", len(mid_bytes)) + mid_bytes
+        try:
+            result = await _lifecycle_req(_T_UNLOAD, payload, timeout_s=10.0)
+            if result[0] == "error":
+                errors.append(model_id)
+        except asyncio.TimeoutError:
+            errors.append(model_id)
+
+    if errors:
+        return Response(
+            content=json.dumps({"status": "partial", "failed": errors}).encode(),
+            media_type="application/json",
+        )
+    return Response(
+        content=json.dumps({"status": "all_unloaded", "count": len(models)}).encode(),
+        media_type="application/json",
+    )
 
 
 # ---- Server Status ----
