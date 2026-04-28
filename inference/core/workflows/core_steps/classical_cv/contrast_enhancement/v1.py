@@ -8,14 +8,19 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.execution_engine.entities.types import IMAGE_KIND, Selector
+from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
+    Selector,
+)
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Enhance image contrast by normalizing the histogram to use the full dynamic range."
+SHORT_DESCRIPTION: str = (
+    "Enhance image contrast by normalizing the histogram to use the full dynamic range."
+)
 LONG_DESCRIPTION = """
 Enhance image contrast using histogram normalization (the algorithm from GIMP's Auto Levels). This block stretches the image histogram to use the full available range [0-255], improving visibility of features with low contrast.
 
@@ -165,21 +170,29 @@ def enhance_contrast(
     np_img = image.numpy_image.copy()
     clip_pct = float(clip_limit) / 100.0
     contrast_mult = float(contrast_multiplier)
-    gamma_val = 1.0 / 1.3 if normalize_brightness else 1.0  # Midtone brightening when enabled
+    gamma_val = (
+        1.0 / 1.3 if normalize_brightness else 1.0
+    )  # Midtone brightening when enabled
 
     # Handle different image formats
     if len(np_img.shape) == 2:
         # Grayscale
-        return _enhance_channel_contrast(image, np_img, clip_pct, contrast_mult, gamma_val)
+        return _enhance_channel_contrast(
+            image, np_img, clip_pct, contrast_mult, gamma_val
+        )
     elif np_img.shape[2] == 1:
         # Single channel
         np_img = np_img[:, :, 0]
-        return _enhance_channel_contrast(image, np_img, clip_pct, contrast_mult, gamma_val)
+        return _enhance_channel_contrast(
+            image, np_img, clip_pct, contrast_mult, gamma_val
+        )
     elif np_img.shape[2] == 4:
         # BGRA: enhance BGR separately, keep alpha
         bgr = np_img[:, :, :3]
         alpha = np_img[:, :, 3:4]
-        enhanced_bgr = _enhance_multichannel_contrast(bgr, clip_pct, contrast_mult, gamma_val)
+        enhanced_bgr = _enhance_multichannel_contrast(
+            bgr, clip_pct, contrast_mult, gamma_val
+        )
         enhanced_img = np.concatenate([enhanced_bgr, alpha], axis=2)
         return WorkflowImageData(
             parent_metadata=image.parent_metadata,
@@ -187,7 +200,9 @@ def enhance_contrast(
         )
     else:
         # BGR
-        enhanced_img = _enhance_multichannel_contrast(np_img, clip_pct, contrast_mult, gamma_val)
+        enhanced_img = _enhance_multichannel_contrast(
+            np_img, clip_pct, contrast_mult, gamma_val
+        )
         return WorkflowImageData(
             parent_metadata=image.parent_metadata,
             numpy_image=enhanced_img.astype(np.uint8),

@@ -8,14 +8,19 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.execution_engine.entities.types import IMAGE_KIND, Selector
+from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
+    Selector,
+)
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Smooth the image while preserving edges using bilateral filtering."
+SHORT_DESCRIPTION: str = (
+    "Smooth the image while preserving edges using bilateral filtering."
+)
 LONG_DESCRIPTION = """
 Apply bilateral filtering to denoise an image while preserving sharp edges. Unlike Gaussian blur which blurs everything uniformly, bilateral filtering considers both spatial distance and intensity difference, making it ideal for preprocessing when you need to remove noise without softening important boundaries.
 
