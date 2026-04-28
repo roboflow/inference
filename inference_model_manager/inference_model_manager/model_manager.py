@@ -439,12 +439,18 @@ class ModelManager:
     def get_supported_tasks(self, model_id: str) -> Dict[str, Any]:
         """Return supported tasks for a loaded model.
 
+        Works for both DirectBackend (has model instance) and
+        SubprocessBackend (has MRO class names from worker READY pipe).
+
         Raises:
             KeyError: If model_id is not loaded.
         """
-        from inference_model_manager.dispatch import list_tasks
-
         backend = self._get_backend(model_id)
+        mro_names = getattr(backend, "_model_mro_names", None)
+        if mro_names:
+            from inference_model_manager.dispatch import list_tasks_by_mro_names
+            return list_tasks_by_mro_names(mro_names)
+        from inference_model_manager.dispatch import list_tasks
         return list_tasks(backend.model)
 
     # ------------------------------------------------------------------

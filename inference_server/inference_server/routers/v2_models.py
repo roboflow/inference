@@ -41,11 +41,44 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
 async def v2_model_interface(
     request: Request, api_key: str = Depends(_bearer_token)
 ) -> Response:
-    """Discover model interface — params, response formats, compatibility.
+    """Discover model interface — supported tasks, params, response types.
 
-    TODO: Return full interface schema.
+    Model must be loaded first. Returns tasks from model registry.
+
+    Query params:
+        model_id    Required. Must be already loaded.
     """
-    return _V2_TODO
+    model_id = request.query_params.get("model_id", "")
+    if not model_id:
+        return Response(
+            status_code=400,
+            content=b'{"error_code":"MISSING_PARAM","description":"model_id query param required"}',
+            media_type="application/json",
+        )
+
+    try:
+        stats = await state.fetch_stats(timeout_s=5.0)
+    except (asyncio.TimeoutError, Exception):
+        return Response(
+            status_code=503,
+            content=b'{"error":"stats_unavailable"}',
+            media_type="application/json",
+        )
+
+    models = stats.get("mmp_models", {})
+    model_info = models.get(model_id)
+    if model_info is None:
+        return Response(
+            status_code=404,
+            content=json.dumps({"error_code": "MODEL_NOT_LOADED", "description": f"model '{model_id}' is not loaded"}).encode(),
+            media_type="application/json",
+        )
+
+    tasks = model_info.get("tasks", {})
+    return Response(
+        content=json.dumps({"model_id": model_id, "tasks": tasks}).encode(),
+        media_type="application/json",
+    )
 
 
 @router.get("/compatibility")
