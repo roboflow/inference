@@ -29,6 +29,9 @@ from inference_model_manager.serializers_typed import (
     serialize_text,
     serialize_depth_compact,
     serialize_passthrough,
+    serialize_detections_rich,
+    serialize_classification_rich,
+    serialize_instance_segmentation_rich,
 )
 
 router = APIRouter(prefix="/v2/models")
@@ -49,7 +52,7 @@ def _bearer_token(request: Request) -> str:
 # Typed serialization helper
 # ---------------------------------------------------------------------------
 
-_SERIALIZER_BY_TYPE: dict[str, Any] = {
+_COMPACT_SERIALIZERS: dict[str, Any] = {
     "Detections": serialize_detections_compact,
     "ClassificationPrediction": serialize_classification_compact,
     "MultiLabelClassificationPrediction": serialize_multilabel_classification_compact,
@@ -58,6 +61,14 @@ _SERIALIZER_BY_TYPE: dict[str, Any] = {
     "KeypointsPrediction": serialize_keypoints_compact,
     "EmbeddingResult": serialize_embeddings,
     "DepthEstimationPrediction": serialize_depth_compact,
+}
+
+_RICH_SERIALIZERS: dict[str, Any] = {
+    "Detections": serialize_detections_rich,
+    "ClassificationPrediction": serialize_classification_rich,
+    "MultiLabelClassificationPrediction": serialize_classification_rich,
+    "InstanceSegmentationPrediction": serialize_instance_segmentation_rich,
+    # Types without a rich variant fall back to compact
 }
 
 _class_names_cache: dict[str, list | None] = {}
@@ -71,13 +82,15 @@ class _ModelProxy:
         self.class_names = class_names
 
 
-def _typed_serialize(predictions: object, class_names: list | None) -> object:
+def _typed_serialize(predictions: object, class_names: list | None, style: str = "rich") -> object:
     proxy = _ModelProxy(class_names)
     if isinstance(predictions, list) and predictions:
         cls_name = type(predictions[0]).__name__
     else:
         cls_name = type(predictions).__name__
-    serializer = _SERIALIZER_BY_TYPE.get(cls_name)
+
+    serializers = _RICH_SERIALIZERS if style == "rich" else _COMPACT_SERIALIZERS
+    serializer = serializers.get(cls_name) or _COMPACT_SERIALIZERS.get(cls_name)
     if serializer is not None:
         return serializer(predictions, proxy)
     if isinstance(predictions, str):
@@ -257,10 +270,11 @@ def _build_envelope(
     predictions_list: list,
     model_id: str,
     task: Optional[str],
+    style: str = "rich",
 ) -> Response:
     """Wrap typed predictions in v2 response envelope."""
     class_names = _class_names_cache.get(model_id)
-    typed = [_typed_serialize(p, class_names) for p in predictions_list]
+    typed = [_typed_serialize(p, class_names, style=style) for p in predictions_list]
     envelope = {
         "type": "roboflow-inference-server-response-v1",
         "model_info": {"model_id": model_id, "task": task},
@@ -279,6 +293,7 @@ async def _infer_images(
     instance: str,
     task: Optional[str],
     params: dict,
+    style: str = "rich",
 ) -> Response:
     """Infer on one or more images. Returns v2 envelope with N predictions."""
     if not images:
@@ -294,11 +309,11 @@ async def _infer_images(
         predictions, err = await _submit_one_slot(images[0], model_id, instance, params)
         if err is not None:
             return err
-        return _build_envelope([predictions], model_id, task)
+        return _build_envelope([predictions], model_id, task, style=style)
 
     # Batch: submit all concurrently
-    tasks = [_submit_one_slot(img, model_id, instance, params) for img in images]
-    results = await asyncio.gather(*tasks)
+    slot_tasks = [_submit_one_slot(img, model_id, instance, params) for img in images]
+    results = await asyncio.gather(*slot_tasks)
 
     predictions_list = []
     for predictions, err in results:
@@ -306,7 +321,7 @@ async def _infer_images(
             return err
         predictions_list.append(predictions)
 
-    return _build_envelope(predictions_list, model_id, task)
+    return _build_envelope(predictions_list, model_id, task, style=style)
 
 
 # ---------------------------------------------------------------------------
@@ -337,14 +352,12 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
     task = params.pop("task", None)
     instance = params.pop("instance", "")
     device = params.pop("device", "")
-    style = params.pop("style", "compact")
+    style = params.pop("style", "rich")
 
     if not model_id:
         return error_response(400, "MISSING_PARAM", "model_id query param required")
     if style not in ("compact", "rich"):
         return error_response(400, "INVALID_PARAM", "style must be 'compact' or 'rich'")
-    if style == "rich":
-        return error_response(501, "NOT_IMPLEMENTED", "rich format not yet implemented")
 
     if task:
         params["task"] = task
@@ -381,7 +394,7 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
     if status[0] == "error":
         return error_response(500, "LOAD_FAILED", "model load failed")
 
-    return await _infer_images(images, model_id, instance, task, params)
+    return await _infer_images(images, model_id, instance, task, params, style=style)
 
 
 # ---------------------------------------------------------------------------
