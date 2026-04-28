@@ -14,6 +14,7 @@ def _build_mask_edge_snap_workflow() -> dict:
         "version": "1.0",
         "inputs": [
             {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowInstanceSegmentation", "name": "segmentation"},
             {
                 "type": "WorkflowParameter",
                 "name": "pixel_tolerance",
