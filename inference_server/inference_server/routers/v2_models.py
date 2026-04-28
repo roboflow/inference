@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import logging
 import pickle
 import struct
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Request, Response
 
 from inference_server import state
 from inference_server.errors import error_response
 from inference_server.serializers import serialize_json
+
+logger = logging.getLogger(__name__)
 from inference_model_manager.serializers_typed import (
     serialize_detections_compact,
     serialize_classification_compact,
@@ -81,52 +85,100 @@ def _typed_serialize(predictions: object, class_names: list | None) -> object:
 
 
 # ---------------------------------------------------------------------------
-# POST /v2/models/infer
+# Input extraction — detect Content-Type, produce image bytes + extra params
 # ---------------------------------------------------------------------------
 
 
-@router.post("/infer")
-async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> Response:
-    """v2 model inference — structured JSON response with typed predictions.
+async def _extract_image_and_params(request: Request) -> tuple[Optional[bytes], dict, Optional[Response]]:
+    """Extract image bytes and extra params from request body.
 
-    Query params:
-        model_id    Required.
-        task        Optional. Task name (default task if omitted).
-        instance    Optional. Multi-instance routing.
-        device      Optional. Device hint for cold-path load.
-        style       Optional. "compact" (default) or "rich" (501 for now).
-        *           Additional params forwarded to backend.
+    Supports:
+      - Raw body (image/jpeg, image/png, application/octet-stream)
+      - Multipart form (image= file part, optional scalar fields, optional inputs= JSON part)
+      - JSON body with base64 image ({"inputs": {"image": {"type": "base64", "value": "..."}, ...}})
 
-    Body:
-        Raw image bytes (Content-Type: image/jpeg etc.).
-        TODO: multipart form, base64 JSON, URL-based input.
+    Returns (image_bytes, extra_params, error_response).
+    If error_response is not None, return it immediately.
     """
-    params = dict(request.query_params)
-    model_id = params.pop("model_id", "")
-    task = params.pop("task", None)
-    instance = params.pop("instance", "")
-    device = params.pop("device", "")
-    style = params.pop("style", "compact")
+    content_type = (request.headers.get("content-type") or "").lower().split(";")[0].strip()
 
-    if not model_id:
-        return error_response(400, "MISSING_PARAM", "model_id query param required")
-    if style not in ("compact", "rich"):
-        return error_response(400, "INVALID_PARAM", "style must be 'compact' or 'rich'")
-    if style == "rich":
-        return error_response(501, "NOT_IMPLEMENTED", "rich format not yet implemented")
+    # --- Multipart form ---
+    if content_type == "multipart/form-data":
+        form = await request.form()
+        image_part = form.get("image")
+        if image_part is None:
+            return None, {}, error_response(
+                400, "MISSING_IMAGE", "multipart form must include 'image' file part"
+            )
+        image_bytes = await image_part.read()
+        extra_params: dict = {}
+        # Scalar form fields → params
+        for key, value in form.multi_items():
+            if key == "image":
+                continue
+            if key == "inputs" and isinstance(value, str):
+                try:
+                    extra_params.update(json.loads(value))
+                except json.JSONDecodeError:
+                    logger.warning("v2_infer: invalid JSON in 'inputs' form field")
+            elif isinstance(value, str):
+                extra_params[key] = value
+        return image_bytes, extra_params, None
 
-    if task:
-        params["task"] = task
+    # --- JSON body with base64 ---
+    if content_type == "application/json":
+        try:
+            body = await request.json()
+        except Exception:
+            return None, {}, error_response(400, "INVALID_JSON", "request body is not valid JSON")
 
-    status = await state.ensure_loaded(model_id, instance, api_key, device)
-    if status[0] == "load_timeout":
-        return error_response(
-            503, "MODEL_LOADING", "model loading, try again shortly",
-            follow_up="retry after Retry-After seconds",
-            headers={"Retry-After": str(status[1])},
-        )
-    if status[0] == "error":
-        return error_response(500, "LOAD_FAILED", "model load failed")
+        inputs = body.get("inputs", {})
+        if not isinstance(inputs, dict):
+            return None, {}, error_response(400, "INVALID_INPUTS", "'inputs' must be an object")
+
+        image_spec = inputs.pop("image", None)
+        if image_spec is None:
+            return None, {}, error_response(
+                400, "MISSING_IMAGE", "JSON body must include inputs.image",
+            )
+        if not isinstance(image_spec, dict) or image_spec.get("type") != "base64":
+            return None, {}, error_response(
+                400, "INVALID_IMAGE", "inputs.image must be {\"type\": \"base64\", \"value\": \"...\"}",
+            )
+        try:
+            image_bytes = base64.b64decode(image_spec["value"])
+        except Exception:
+            return None, {}, error_response(400, "DECODE_FAILED", "base64 decode failed for inputs.image")
+
+        return image_bytes, inputs, None
+
+    # --- Raw body (default) ---
+    chunks = []
+    async for chunk in request.stream():
+        chunks.append(chunk)
+    image_bytes = b"".join(chunks) if chunks else b""
+    return image_bytes, {}, None
+
+
+# ---------------------------------------------------------------------------
+# SHM round-trip: write image → submit → read result → build envelope
+# ---------------------------------------------------------------------------
+
+
+async def _infer_single(
+    image_bytes: bytes,
+    model_id: str,
+    instance: str,
+    task: Optional[str],
+    params: dict,
+) -> Response:
+    """Write image to SHM slot, submit, read result, return v2 envelope Response."""
+    if not image_bytes:
+        return error_response(400, "EMPTY_BODY", "no image data provided")
+    if len(image_bytes) > state.SHM_DATA_SIZE:
+        return error_response(413, "PAYLOAD_TOO_LARGE", "image exceeds slot size")
+    if not state.looks_like_image(image_bytes):
+        return error_response(415, "UNSUPPORTED_FORMAT", "body is not a recognized image format")
 
     try:
         slot_id = await state.alloc_slot(model_id, instance)
@@ -134,16 +186,9 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
         return error_response(503, "SERVER_BUSY", "no slots available, try again", follow_up="retry in 1s")
 
     try:
-        pos = 0
-        async for chunk in request.stream():
-            if pos + len(chunk) > state.SHM_DATA_SIZE:
-                return error_response(413, "PAYLOAD_TOO_LARGE", "image exceeds slot size")
-            if pos == 0 and not state.looks_like_image(chunk):
-                return error_response(415, "UNSUPPORTED_FORMAT", "body is not a recognized image format")
-            state.write_input(slot_id, chunk, pos)
-            pos += len(chunk)
+        state.write_input(slot_id, image_bytes, 0)
 
-        result = await state.submit_and_wait(slot_id, model_id, instance, pos, params)
+        result = await state.submit_and_wait(slot_id, model_id, instance, len(image_bytes), params)
 
         if result[0] == "error":
             return error_response(500, "INFERENCE_FAILED", "inference failed")
@@ -185,6 +230,65 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
 
     finally:
         state.free_slot(slot_id)
+
+
+# ---------------------------------------------------------------------------
+# POST /v2/models/infer
+# ---------------------------------------------------------------------------
+
+
+@router.post("/infer")
+async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> Response:
+    """v2 model inference — structured JSON response with typed predictions.
+
+    Query params:
+        model_id    Required.
+        task        Optional. Task name (default task if omitted).
+        instance    Optional. Multi-instance routing.
+        device      Optional. Device hint for cold-path load.
+        style       Optional. "compact" (default) or "rich" (501 for now).
+        *           Additional params forwarded to backend.
+
+    Body (one of):
+        - Raw image bytes (image/jpeg, image/png, application/octet-stream)
+        - Multipart form: image= file part, optional scalar fields, optional inputs= JSON part
+        - JSON: {"inputs": {"image": {"type": "base64", "value": "..."}, ...}}
+    """
+    params = dict(request.query_params)
+    model_id = params.pop("model_id", "")
+    task = params.pop("task", None)
+    instance = params.pop("instance", "")
+    device = params.pop("device", "")
+    style = params.pop("style", "compact")
+
+    if not model_id:
+        return error_response(400, "MISSING_PARAM", "model_id query param required")
+    if style not in ("compact", "rich"):
+        return error_response(400, "INVALID_PARAM", "style must be 'compact' or 'rich'")
+    if style == "rich":
+        return error_response(501, "NOT_IMPLEMENTED", "rich format not yet implemented")
+
+    if task:
+        params["task"] = task
+
+    # Extract image bytes from request (handles raw, multipart, JSON+base64)
+    image_bytes, extra_params, err = await _extract_image_and_params(request)
+    if err is not None:
+        return err
+    params.update(extra_params)
+
+    # Ensure model loaded
+    status = await state.ensure_loaded(model_id, instance, api_key, device)
+    if status[0] == "load_timeout":
+        return error_response(
+            503, "MODEL_LOADING", "model loading, try again shortly",
+            follow_up="retry after Retry-After seconds",
+            headers={"Retry-After": str(status[1])},
+        )
+    if status[0] == "error":
+        return error_response(500, "LOAD_FAILED", "model load failed")
+
+    return await _infer_single(image_bytes, model_id, instance, task, params)
 
 
 # ---------------------------------------------------------------------------
