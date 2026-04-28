@@ -180,6 +180,93 @@ def serialize_depth_compact(output: Any, model: Any) -> dict:
     }
 
 
+# ===========================================================================
+# Rich serializers (per-object dicts, human-readable)
+# ===========================================================================
+
+
+def _to_py(val: Any) -> Any:
+    """Convert tensor/numpy scalar to Python float/int for JSON."""
+    if hasattr(val, "item"):
+        return val.item()
+    return val
+
+
+def serialize_detections_rich(output: Any, model: Any) -> dict:
+    """Detections → roboflow-object-detection-rich-v1"""
+    output = _unwrap_batch(output)
+    names = _class_names(model)
+
+    def _det(d, i):
+        xyxy = d.xyxy[i]
+        det = {
+            "left_top": [_to_py(xyxy[0]), _to_py(xyxy[1])],
+            "right_bottom": [_to_py(xyxy[2]), _to_py(xyxy[3])],
+            "confidence": _to_py(d.confidence[i]),
+            "class_id": _to_py(d.class_id[i]),
+        }
+        if names and int(det["class_id"]) < len(names):
+            det["class_name"] = names[int(det["class_id"])]
+        return det
+
+    if isinstance(output, list):
+        return {
+            "type": "roboflow-object-detection-rich-v1",
+            "batch": [
+                {"detections": [_det(d, i) for i in range(len(d.xyxy))]}
+                for d in output
+            ],
+        }
+    return {
+        "type": "roboflow-object-detection-rich-v1",
+        "detections": [_det(output, i) for i in range(len(output.xyxy))],
+    }
+
+
+def serialize_classification_rich(output: Any, model: Any) -> dict:
+    """ClassificationPrediction → roboflow-classification-rich-v1"""
+    names = _class_names(model)
+    candidates = []
+    for i in range(len(output.confidence)):
+        c = {
+            "class_id": _to_py(output.class_id[i]) if hasattr(output.class_id, "__len__") else _to_py(output.class_id),
+            "confidence": _to_py(output.confidence[i]),
+        }
+        cid = int(c["class_id"])
+        if names and cid < len(names):
+            c["class_name"] = names[cid]
+        candidates.append(c)
+    candidates.sort(key=lambda x: x["confidence"], reverse=True)
+    return {
+        "type": "roboflow-classification-rich-v1",
+        "candidates": candidates,
+        "top": candidates[:1],
+    }
+
+
+def serialize_instance_segmentation_rich(output: Any, model: Any) -> dict:
+    """InstanceDetections → roboflow-instance-segmentation-rich-v1"""
+    names = _class_names(model)
+    detections = []
+    for i in range(len(output.xyxy)):
+        xyxy = output.xyxy[i]
+        det = {
+            "left_top": [_to_py(xyxy[0]), _to_py(xyxy[1])],
+            "right_bottom": [_to_py(xyxy[2]), _to_py(xyxy[3])],
+            "confidence": _to_py(output.confidence[i]),
+            "class_id": _to_py(output.class_id[i]),
+        }
+        if names and int(det["class_id"]) < len(names):
+            det["class_name"] = names[int(det["class_id"])]
+        if hasattr(output, "mask") and output.mask is not None:
+            det["mask"] = _to_list(output.mask[i])
+        detections.append(det)
+    return {
+        "type": "roboflow-instance-segmentation-rich-v1",
+        "detections": detections,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Generic passthrough (for unregistered models)
 # ---------------------------------------------------------------------------
