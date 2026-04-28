@@ -15,6 +15,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Runtime extras — each pulls the matching inference-model-manager (→ inference-models) variant
+torch-cpu = ["inference-model-manager[torch-cpu]"]
+torch-cu118 = ["inference-model-manager[torch-cu118]"]
+torch-cu124 = ["inference-model-manager[torch-cu124]"]
+torch-cu126 = ["inference-model-manager[torch-cu126]"]
+torch-cu128 = ["inference-model-manager[torch-cu128]"]
+torch-cu130 = ["inference-model-manager[torch-cu130]"]
+torch-jp6-cu126 = ["inference-model-manager[torch-jp6-cu126]"]
+onnx-cpu = ["inference-model-manager[onnx-cpu]"]
+onnx-cu118 = ["inference-model-manager[onnx-cu118]"]
+onnx-cu12 = ["inference-model-manager[onnx-cu12]"]
+onnx-jp6-cu126 = ["inference-model-manager[onnx-jp6-cu126]"]
 test = [
   "pytest>=8.0.0",
   "pytest-timeout>=2.3.0",

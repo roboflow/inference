@@ -14,6 +14,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Runtime extras — each pulls the matching inference-models variant
+torch-cpu = ["inference-models[torch-cpu]"]
+torch-cu118 = ["inference-models[torch-cu118]"]
+torch-cu124 = ["inference-models[torch-cu124]"]
+torch-cu126 = ["inference-models[torch-cu126]"]
+torch-cu128 = ["inference-models[torch-cu128]"]
+torch-cu130 = ["inference-models[torch-cu130]"]
+torch-jp6-cu126 = ["inference-models[torch-jp6-cu126]"]
+onnx-cpu = ["inference-models[onnx-cpu]"]
+onnx-cu118 = ["inference-models[onnx-cu118]"]
+onnx-cu12 = ["inference-models[onnx-cu12]"]
+onnx-jp6-cu126 = ["inference-models[onnx-jp6-cu126]"]
 cuda = [
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
   "nvidia-ml-py>=12.0.0",
