@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request, Response
 
 from inference_server import state
+from inference_server.errors import error_response
 from inference_server.serializers import serialize_json
 from inference_model_manager.serializers_typed import (
     serialize_detections_compact,
@@ -43,7 +44,6 @@ def _bearer_token(request: Request) -> str:
 # Typed serialization helper
 # ---------------------------------------------------------------------------
 
-# Map prediction class name → compact serializer
 _SERIALIZER_BY_TYPE: dict[str, Any] = {
     "Detections": serialize_detections_compact,
     "ClassificationPrediction": serialize_classification_compact,
@@ -55,7 +55,6 @@ _SERIALIZER_BY_TYPE: dict[str, Any] = {
     "DepthEstimationPrediction": serialize_depth_compact,
 }
 
-# class_names cache — populated from MMP stats on each v2 infer request
 _class_names_cache: dict[str, list | None] = {}
 
 
@@ -68,15 +67,11 @@ class _ModelProxy:
 
 
 def _typed_serialize(predictions: object, class_names: list | None) -> object:
-    """Typed serialization by prediction class name, fallback to passthrough."""
     proxy = _ModelProxy(class_names)
-
-    # List of predictions (batch result)
     if isinstance(predictions, list) and predictions:
         cls_name = type(predictions[0]).__name__
     else:
         cls_name = type(predictions).__name__
-
     serializer = _SERIALIZER_BY_TYPE.get(cls_name)
     if serializer is not None:
         return serializer(predictions, proxy)
@@ -114,114 +109,61 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
     style = params.pop("style", "compact")
 
     if not model_id:
-        return Response(
-            status_code=400,
-            content=b'{"error_code":"MISSING_PARAM","description":"model_id query param required"}',
-            media_type="application/json",
-        )
+        return error_response(400, "MISSING_PARAM", "model_id query param required")
     if style not in ("compact", "rich"):
-        return Response(
-            status_code=400,
-            content=b'{"error_code":"INVALID_PARAM","description":"style must be compact or rich"}',
-            media_type="application/json",
-        )
+        return error_response(400, "INVALID_PARAM", "style must be 'compact' or 'rich'")
     if style == "rich":
-        return Response(
-            status_code=501,
-            content=b'{"error_code":"NOT_IMPLEMENTED","description":"rich format not yet implemented"}',
-            media_type="application/json",
-        )
+        return error_response(501, "NOT_IMPLEMENTED", "rich format not yet implemented")
 
     if task:
         params["task"] = task
 
-    # 1. Ensure model loaded
     status = await state.ensure_loaded(model_id, instance, api_key, device)
     if status[0] == "load_timeout":
-        return Response(
-            status_code=503,
+        return error_response(
+            503, "MODEL_LOADING", "model loading, try again shortly",
+            follow_up="retry after Retry-After seconds",
             headers={"Retry-After": str(status[1])},
-            content=b'{"error_code":"MODEL_LOADING","description":"model loading, try again shortly"}',
-            media_type="application/json",
         )
     if status[0] == "error":
-        return Response(
-            status_code=500,
-            content=b'{"error_code":"LOAD_FAILED","description":"model load failed"}',
-            media_type="application/json",
-        )
+        return error_response(500, "LOAD_FAILED", "model load failed")
 
-    # 2. Alloc SHM slot
     try:
         slot_id = await state.alloc_slot(model_id, instance)
     except (asyncio.TimeoutError, RuntimeError):
-        return Response(
-            status_code=503,
-            content=b'{"error_code":"SERVER_BUSY","description":"no slots available, try again"}',
-            media_type="application/json",
-        )
+        return error_response(503, "SERVER_BUSY", "no slots available, try again", follow_up="retry in 1s")
 
     try:
-        # 3. Stream body into SHM
         pos = 0
         async for chunk in request.stream():
             if pos + len(chunk) > state.SHM_DATA_SIZE:
-                return Response(
-                    status_code=413,
-                    content=b'{"error_code":"PAYLOAD_TOO_LARGE","description":"image exceeds slot size"}',
-                    media_type="application/json",
-                )
+                return error_response(413, "PAYLOAD_TOO_LARGE", "image exceeds slot size")
             if pos == 0 and not state.looks_like_image(chunk):
-                return Response(
-                    status_code=415,
-                    content=b'{"error_code":"UNSUPPORTED_FORMAT","description":"body is not a recognized image format"}',
-                    media_type="application/json",
-                )
+                return error_response(415, "UNSUPPORTED_FORMAT", "body is not a recognized image format")
             state.write_input(slot_id, chunk, pos)
             pos += len(chunk)
 
-        # 4. Submit and wait
         result = await state.submit_and_wait(slot_id, model_id, instance, pos, params)
 
         if result[0] == "error":
-            return Response(
-                status_code=500,
-                content=b'{"error_code":"INFERENCE_FAILED","description":"inference failed"}',
-                media_type="application/json",
-            )
+            return error_response(500, "INFERENCE_FAILED", "inference failed")
         if result[0] != "result":
-            return Response(
-                status_code=500,
-                content=b'{"error_code":"INTERNAL_ERROR","description":"unexpected result type"}',
-                media_type="application/json",
-            )
+            return error_response(500, "INTERNAL_ERROR", "unexpected result type")
 
         _, result_slot_id, result_sz = result
 
-        # Check error slot
         hdr = state.read_slot_header(result_slot_id)
         if hdr is not None and hdr.status == state.SLOT_STATUS_ERROR:
             err_msg = "inference failed"
             if hdr.result_size > 0:
-                err_msg = state.read_result(result_slot_id, hdr.result_size).decode(
-                    "utf-8", errors="replace"
-                )
-            return Response(
-                status_code=500,
-                content=json.dumps({"error_code": "INFERENCE_FAILED", "description": err_msg}).encode(),
-                media_type="application/json",
-            )
+                err_msg = state.read_result(result_slot_id, hdr.result_size).decode("utf-8", errors="replace")
+            return error_response(500, "INFERENCE_FAILED", err_msg)
 
-        # 5. Deserialize + typed serialization + envelope
         raw = state.read_result(result_slot_id, result_sz)
         try:
             predictions = pickle.loads(raw)
         except Exception:
-            return Response(
-                status_code=500,
-                content=b'{"error_code":"DESERIALIZATION_FAILED","description":"result deserialization failed"}',
-                media_type="application/json",
-            )
+            return error_response(500, "DESERIALIZATION_FAILED", "result deserialization failed")
 
         class_names = _class_names_cache.get(model_id)
         typed_predictions = _typed_serialize(predictions, class_names)
@@ -239,51 +181,37 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
         )
 
     except asyncio.TimeoutError:
-        return Response(
-            status_code=504,
-            content=b'{"error_code":"TIMEOUT","description":"inference timeout"}',
-            media_type="application/json",
-        )
+        return error_response(504, "TIMEOUT", "inference timeout")
 
     finally:
         state.free_slot(slot_id)
+
+
+# ---------------------------------------------------------------------------
+# GET /v2/models/interface
+# ---------------------------------------------------------------------------
 
 
 @router.get("/interface")
 async def v2_model_interface(
     request: Request, api_key: str = Depends(_bearer_token)
 ) -> Response:
-    """Discover model interface — supported tasks, params, response types.
-
-    Model must be loaded first. Returns tasks from model registry.
-
-    Query params:
-        model_id    Required. Must be already loaded.
-    """
+    """Discover model interface — supported tasks, params, response types."""
     model_id = request.query_params.get("model_id", "")
     if not model_id:
-        return Response(
-            status_code=400,
-            content=b'{"error_code":"MISSING_PARAM","description":"model_id query param required"}',
-            media_type="application/json",
-        )
+        return error_response(400, "MISSING_PARAM", "model_id query param required")
 
     try:
         stats = await state.fetch_stats(timeout_s=5.0)
     except (asyncio.TimeoutError, Exception):
-        return Response(
-            status_code=503,
-            content=b'{"error":"stats_unavailable"}',
-            media_type="application/json",
-        )
+        return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
     models = stats.get("mmp_models", {})
     model_info = models.get(model_id)
     if model_info is None:
-        return Response(
-            status_code=404,
-            content=json.dumps({"error_code": "MODEL_NOT_LOADED", "description": f"model '{model_id}' is not loaded"}).encode(),
-            media_type="application/json",
+        return error_response(
+            404, "MODEL_NOT_LOADED", f"model '{model_id}' is not loaded",
+            follow_up="load the model first via POST /v2/models/load",
         )
 
     tasks = model_info.get("tasks", {})
@@ -291,6 +219,11 @@ async def v2_model_interface(
         content=json.dumps({"model_id": model_id, "tasks": tasks}).encode(),
         media_type="application/json",
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /v2/models/compatibility
+# ---------------------------------------------------------------------------
 
 
 @router.get("/compatibility")
@@ -304,6 +237,11 @@ async def v2_model_compatibility(
     return _V2_TODO
 
 
+# ---------------------------------------------------------------------------
+# GET /v2/models (list)
+# ---------------------------------------------------------------------------
+
+
 @router.get("")
 async def v2_list_models(
     request: Request, api_key: str = Depends(_bearer_token)
@@ -312,17 +250,18 @@ async def v2_list_models(
     try:
         stats = await state.fetch_stats(timeout_s=5.0)
     except (asyncio.TimeoutError, Exception):
-        return Response(
-            status_code=503,
-            content=b'{"error":"stats_unavailable"}',
-            media_type="application/json",
-        )
+        return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
     models = stats.get("mmp_models", {})
     return Response(
         content=json.dumps({"models": models}).encode(),
         media_type="application/json",
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /v2/models/load
+# ---------------------------------------------------------------------------
 
 
 @router.post("/load")
@@ -332,11 +271,7 @@ async def v2_load_model(
     """Load specified model."""
     model_id = request.query_params.get("model_id", "")
     if not model_id:
-        return Response(
-            status_code=400,
-            content=b'{"error_code":"MISSING_PARAM","description":"model_id query param required"}',
-            media_type="application/json",
-        )
+        return error_response(400, "MISSING_PARAM", "model_id query param required")
 
     mid_bytes = model_id.encode()
     key_bytes = api_key.encode()
@@ -350,22 +285,19 @@ async def v2_load_model(
     try:
         result = await state.lifecycle_req(state.T_LOAD, payload)
     except asyncio.TimeoutError:
-        return Response(
-            status_code=504,
-            content=b'{"error_code":"TIMEOUT","description":"load request timeout"}',
-            media_type="application/json",
-        )
+        return error_response(504, "TIMEOUT", "load request timeout")
 
     if result[0] == "error":
-        return Response(
-            status_code=500,
-            content=b'{"error_code":"LOAD_FAILED","description":"model load failed"}',
-            media_type="application/json",
-        )
+        return error_response(500, "LOAD_FAILED", "model load failed")
     return Response(
         content=json.dumps({"model_id": model_id, "status": "loaded"}).encode(),
         media_type="application/json",
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /v2/models/unload
+# ---------------------------------------------------------------------------
 
 
 @router.post("/unload")
@@ -375,11 +307,7 @@ async def v2_unload_model(
     """Unload specified model."""
     model_id = request.query_params.get("model_id", "")
     if not model_id:
-        return Response(
-            status_code=400,
-            content=b'{"error_code":"MISSING_PARAM","description":"model_id query param required"}',
-            media_type="application/json",
-        )
+        return error_response(400, "MISSING_PARAM", "model_id query param required")
 
     mid_bytes = model_id.encode()
     payload = struct.pack(">H", len(mid_bytes)) + mid_bytes
@@ -387,22 +315,19 @@ async def v2_unload_model(
     try:
         result = await state.lifecycle_req(state.T_UNLOAD, payload)
     except asyncio.TimeoutError:
-        return Response(
-            status_code=504,
-            content=b'{"error_code":"TIMEOUT","description":"unload request timeout"}',
-            media_type="application/json",
-        )
+        return error_response(504, "TIMEOUT", "unload request timeout")
 
     if result[0] == "error":
-        return Response(
-            status_code=500,
-            content=b'{"error_code":"UNLOAD_FAILED","description":"model unload failed"}',
-            media_type="application/json",
-        )
+        return error_response(500, "UNLOAD_FAILED", "model unload failed")
     return Response(
         content=json.dumps({"model_id": model_id, "status": "unloaded"}).encode(),
         media_type="application/json",
     )
+
+
+# ---------------------------------------------------------------------------
+# DELETE /v2/models (unload all)
+# ---------------------------------------------------------------------------
 
 
 @router.delete("")
@@ -413,11 +338,7 @@ async def v2_unload_all(
     try:
         stats = await state.fetch_stats(timeout_s=5.0)
     except (asyncio.TimeoutError, Exception):
-        return Response(
-            status_code=503,
-            content=b'{"error":"stats_unavailable"}',
-            media_type="application/json",
-        )
+        return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
     models = stats.get("mmp_models", {})
     errors = []
