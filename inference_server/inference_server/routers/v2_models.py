@@ -10,6 +10,7 @@ import pickle
 import struct
 from typing import Any, Optional
 
+import aiohttp
 from fastapi import APIRouter, Depends, Request, Response
 
 from inference_server import state
@@ -82,6 +83,46 @@ def _typed_serialize(predictions: object, class_names: list | None) -> object:
     if isinstance(predictions, str):
         return serialize_text(predictions, proxy)
     return serialize_passthrough(predictions, proxy)
+
+
+# ---------------------------------------------------------------------------
+# URL image fetch
+# ---------------------------------------------------------------------------
+
+_URL_FETCH_TIMEOUT_S = 10
+_URL_FETCH_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+async def _fetch_image_from_url(url: str) -> tuple[Optional[bytes], Optional[Response]]:
+    """Fetch image bytes from URL. Returns (bytes, None) or (None, error_response)."""
+    if not url.startswith(("http://", "https://")):
+        return None, error_response(400, "INVALID_URL", "image URL must start with http:// or https://")
+    timeout = aiohttp.ClientTimeout(total=_URL_FETCH_TIMEOUT_S)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    return None, error_response(
+                        502, "URL_FETCH_FAILED",
+                        f"fetching image URL returned status {resp.status}",
+                    )
+                content_length = resp.content_length or 0
+                if content_length > _URL_FETCH_MAX_BYTES:
+                    return None, error_response(
+                        413, "URL_IMAGE_TOO_LARGE",
+                        f"image at URL exceeds {_URL_FETCH_MAX_BYTES // (1024*1024)}MB limit",
+                    )
+                data = await resp.read()
+                if len(data) > _URL_FETCH_MAX_BYTES:
+                    return None, error_response(
+                        413, "URL_IMAGE_TOO_LARGE",
+                        f"image at URL exceeds {_URL_FETCH_MAX_BYTES // (1024*1024)}MB limit",
+                    )
+                return data, None
+    except asyncio.TimeoutError:
+        return None, error_response(504, "URL_FETCH_TIMEOUT", f"fetching image URL timed out after {_URL_FETCH_TIMEOUT_S}s")
+    except aiohttp.ClientError as exc:
+        return None, error_response(502, "URL_FETCH_FAILED", f"fetching image URL failed: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -249,10 +290,11 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
         style       Optional. "compact" (default) or "rich" (501 for now).
         *           Additional params forwarded to backend.
 
-    Body (one of):
-        - Raw image bytes (image/jpeg, image/png, application/octet-stream)
+    Image input (one of):
+        - Query param: image=<URL> (server fetches, max 50MB, 10s timeout)
+        - Raw body: image/jpeg, image/png, application/octet-stream
         - Multipart form: image= file part, optional scalar fields, optional inputs= JSON part
-        - JSON: {"inputs": {"image": {"type": "base64", "value": "..."}, ...}}
+        - JSON body: {"inputs": {"image": {"type": "base64", "value": "..."}, ...}}
     """
     params = dict(request.query_params)
     model_id = params.pop("model_id", "")
@@ -271,10 +313,18 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
     if task:
         params["task"] = task
 
-    # Extract image bytes from request (handles raw, multipart, JSON+base64)
-    image_bytes, extra_params, err = await _extract_image_and_params(request)
-    if err is not None:
-        return err
+    # URL-based input: image=<url> in query params takes priority over body
+    image_url = params.pop("image", None)
+    if image_url and image_url.startswith(("http://", "https://")):
+        image_bytes, err = await _fetch_image_from_url(image_url)
+        if err is not None:
+            return err
+        extra_params = {}
+    else:
+        # Extract image bytes from request body (raw, multipart, JSON+base64)
+        image_bytes, extra_params, err = await _extract_image_and_params(request)
+        if err is not None:
+            return err
     params.update(extra_params)
 
     # Ensure model loaded
