@@ -92,6 +92,9 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
 
         _t3 = time.monotonic()
 
+        if pos == 0:
+            logger.error("infer: body stream produced 0 bytes for slot %d, model=%s", slot_id, model_id)
+
         result = await state.submit_and_wait(slot_id, model_id, instance, pos, params)
         _t4 = time.monotonic()
 

@@ -344,7 +344,7 @@ def _process_slots(
                 decode_errors[i] = True
 
     # Raw image bytes (JPEG + non-JPEG) — single batch_decode_fn call
-    raw_indices = [i for i, npy in enumerate(is_npy) if not npy]
+    raw_indices = [i for i, npy in enumerate(is_npy) if not npy and not decode_errors[i]]
     if raw_indices:
         try:
             raw_decoded = batch_decode_fn([mvs[i] for i in raw_indices])
