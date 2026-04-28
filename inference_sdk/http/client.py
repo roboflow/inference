@@ -743,17 +743,18 @@ class InferenceHTTPClient:
             "model_id": model_id_to_be_used,
         }
         endpoint = NEW_INFERENCE_ENDPOINTS[model_description.task_type]
-        payload.update(
+        body_params, query_params = (
             self.__inference_configuration.to_api_call_parameters(
                 client_mode=self.__client_mode,
                 task_type=model_description.task_type,
             )
         )
+        payload.update(body_params)
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
             headers=DEFAULT_HEADERS,
-            parameters=None,
+            parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
@@ -791,17 +792,18 @@ class InferenceHTTPClient:
             "model_id": model_id_to_be_used,
         }
         endpoint = NEW_INFERENCE_ENDPOINTS[model_description.task_type]
-        payload.update(
+        body_params, query_params = (
             self.__inference_configuration.to_api_call_parameters(
                 client_mode=self.__client_mode,
                 task_type=model_description.task_type,
             )
         )
+        payload.update(body_params)
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
             headers=DEFAULT_HEADERS,
-            parameters=None,
+            parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
