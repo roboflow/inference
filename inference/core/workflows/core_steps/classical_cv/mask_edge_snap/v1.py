@@ -20,7 +20,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Refine instance segmentation masks by snapping edges to detected boundaries."
+SHORT_DESCRIPTION: str = (
+    "Refine instance segmentation masks by snapping edges to detected boundaries."
+)
 LONG_DESCRIPTION = """
 Refine instance segmentation masks by snapping contour points to Sobel edges within a band around the predicted boundary. This block improves segmentation accuracy by adjusting mask edges to align with detected image features.
 
@@ -336,9 +338,7 @@ def refine_masks(
         for m in segmentation.mask:
             m_uint8 = m.astype(np.uint8)
             if m_uint8.shape[:2] != (H, W):
-                m_uint8 = cv2.resize(
-                    m_uint8, (W, H), interpolation=cv2.INTER_NEAREST
-                )
+                m_uint8 = cv2.resize(m_uint8, (W, H), interpolation=cv2.INTER_NEAREST)
             inner_i = cv2.erode(m_uint8, band_kernel)
             outer_i = cv2.dilate(m_uint8, band_kernel)
             boundary_band_pre = np.maximum(
@@ -430,9 +430,7 @@ def refine_masks(
     for mask in segmentation.mask:
         mask_uint8 = mask.astype(np.uint8)
         if mask_uint8.shape[:2] != (H, W):
-            mask_uint8 = cv2.resize(
-                mask_uint8, (W, H), interpolation=cv2.INTER_NEAREST
-            )
+            mask_uint8 = cv2.resize(mask_uint8, (W, H), interpolation=cv2.INTER_NEAREST)
 
         dist = cv2.distanceTransform(mask_uint8, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
         mask_dilated = cv2.dilate(mask_uint8, np.ones((3, 3), np.uint8))
