@@ -68,9 +68,7 @@ def test_classical_cv_preprocessing_pipeline_with_color_image(
     # Add some noise
     np.random.seed(42)
     noise = np.random.randint(-20, 20, (200, 200, 3), dtype=np.int16)
-    noisy_image = np.clip(base_image.astype(np.int16) + noise, 0, 255).astype(
-        np.uint8
-    )
+    noisy_image = np.clip(base_image.astype(np.int16) + noise, 0, 255).astype(np.uint8)
 
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -124,9 +122,9 @@ def test_classical_cv_preprocessing_pipeline_with_grayscale_image(
     grayscale_image = np.ones((150, 150), dtype=np.uint8) * 80
     np.random.seed(42)
     noise = np.random.randint(-15, 15, (150, 150), dtype=np.int16)
-    noisy_grayscale = np.clip(
-        grayscale_image.astype(np.int16) + noise, 0, 255
-    ).astype(np.uint8)
+    noisy_grayscale = np.clip(grayscale_image.astype(np.int16) + noise, 0, 255).astype(
+        np.uint8
+    )
 
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -280,9 +278,7 @@ def test_classical_cv_preprocessing_pipeline_all_intermediate_outputs(
     test_image = np.ones((150, 150, 3), dtype=np.uint8) * 90
     np.random.seed(42)
     noise = np.random.randint(-10, 10, (150, 150, 3), dtype=np.int16)
-    noisy_image = np.clip(test_image.astype(np.int16) + noise, 0, 255).astype(
-        np.uint8
-    )
+    noisy_image = np.clip(test_image.astype(np.int16) + noise, 0, 255).astype(np.uint8)
 
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
