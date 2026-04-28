@@ -1,13 +1,12 @@
 """Integration tests for v2 server endpoints with real MMP.
 
-Starts MMP in a background thread, manually inits app ZMQ + SHM globals
+Starts MMP in a background thread, manually inits state module globals
 (simulating what lifespan does), then uses httpx AsyncClient as ASGI transport.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import threading
 import uuid
@@ -58,15 +57,13 @@ def mmp_harness():
 
 @pytest_asyncio.fixture()
 async def client(mmp_harness):
-    """Async httpx client with manually initialized app globals."""
+    """Async httpx client with manually initialized state globals."""
+    import inference_server.state as st
     import inference_server.app as app_mod
 
     app_mod._DEBUG_BENCHMARK_MODE = True
-    app_mod._MMP_ADDR = mmp_harness.addr
-    app_mod._SHM_NAME = mmp_harness.shm_name
-    app_mod._SHM_DATA_SIZE = int(_TEST_INPUT_MB * 1024 * 1024)
 
-    # Manually init globals (same as lifespan)
+    # Manually init state globals (same as lifespan)
     identity = f"test_{os.getpid()}_{uuid.uuid4().hex[:8]}".encode()
     ctx = zmq.asyncio.Context()
     sock = ctx.socket(zmq.DEALER)
@@ -78,11 +75,11 @@ async def client(mmp_harness):
 
     shm = SharedMemory(name=mmp_harness.shm_name, create=False)
 
-    app_mod._ctx = ctx
-    app_mod._sock = sock
-    app_mod._shm = shm
-    app_mod._pending = {}
-    app_mod._recv_task = asyncio.create_task(app_mod._recv_loop(), name="zmq-recv-test")
+    st.ctx = ctx
+    st.sock = sock
+    st.shm = shm
+    st.pending = {}
+    st.recv_task = asyncio.create_task(st.recv_loop(), name="zmq-recv-test")
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app_mod.app),
@@ -90,9 +87,9 @@ async def client(mmp_harness):
     ) as c:
         yield c
 
-    app_mod._recv_task.cancel()
+    st.recv_task.cancel()
     try:
-        await app_mod._recv_task
+        await st.recv_task
     except asyncio.CancelledError:
         pass
     sock.close()
