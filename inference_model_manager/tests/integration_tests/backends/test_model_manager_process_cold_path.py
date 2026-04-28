@@ -65,11 +65,19 @@ def _req_id() -> int:
 class _MockManager:
     """Duck-type compatible with ModelManager for Phase 4 tests."""
 
-    def __init__(self):
+    def __init__(self, n_slots: int = 8, input_mb: float = _TEST_INPUT_MB):
         self.loaded: dict[str, bytes] = {}  # flavor → result_bytes
         self.slept: set[str] = set()
         self.calls: list[str] = []  # log of method calls
         self._mmp: ModelManagerProcess | None = None
+        self._n_slots = n_slots
+        self._input_mb = input_mb
+        self._pool = None
+
+    def _ensure_pool(self):
+        if self._pool is None:
+            from inference_model_manager.backends.utils.shm_pool import SHMPool
+            self._pool = SHMPool.create(self._n_slots, self._input_mb)
 
     def set_mmp(self, mmp: ModelManagerProcess) -> None:
         self._mmp = mmp
@@ -155,10 +163,11 @@ class _MMPHarness:
             input_mb=_TEST_INPUT_MB,
             stale_reap_interval_s=1.0,
             stale_slot_max_age_s=2.0,
-            manager=manager,
         )
-        if manager is not None and hasattr(manager, "set_mmp"):
-            manager.set_mmp(self._mmp)
+        if manager is not None:
+            self._mmp._manager = manager
+            if hasattr(manager, "set_mmp"):
+                manager.set_mmp(self._mmp)
         self._thread = threading.Thread(
             target=self._run_loop, daemon=True, name="mmp-cold-test"
         )
@@ -470,8 +479,8 @@ class TestLRUEviction:
             n_slots=4,
             input_mb=_TEST_INPUT_MB,
             evict_threshold=0.0,  # always evict
-            manager=mgr,
         )
+        mmp._manager = mgr  # swap in mock for this test
         from inference_model_manager.model_manager_process import ModelState
 
         mmp._models["m"] = ModelState(loaded=True)

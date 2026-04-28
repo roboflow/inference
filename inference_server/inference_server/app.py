@@ -41,6 +41,12 @@ async def _lifespan(_: FastAPI):
         "INFERENCE_MULTIPART_SPOOL_MB", "32"
     )) * 1024 * 1024
 
+    import logging as _log
+    _log.getLogger(__name__).warning(
+        "[LIFESPAN] pid=%d MMP_ADDR=%s SHM_NAME=%s SHM_DATA_SIZE=%d SLOT_TOTAL=%d",
+        os.getpid(), state.MMP_ADDR, state.SHM_NAME, state.SHM_DATA_SIZE, state.SLOT_TOTAL,
+    )
+
     identity = f"uv_{os.getpid()}_{uuid.uuid4().hex[:8]}".encode()
 
     state.ctx = zmq.asyncio.Context()
