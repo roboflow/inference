@@ -34,7 +34,7 @@ async def v2_ready() -> Response:
     preload_raw = os.environ.get("INFERENCE_PRELOAD_MODELS", "").strip()
     if preload_raw:
         preload_ids = {m.strip() for m in preload_raw.split(",") if m.strip()}
-        models = stats.get("models", {})
+        models = stats.get("mmp_models", {})
         for mid in preload_ids:
             m = models.get(mid, {})
             if m.get("state") != "loaded":
@@ -61,7 +61,7 @@ async def v2_info() -> Response:
     except (asyncio.TimeoutError, Exception):
         stats = {}
 
-    models = stats.get("models", {})
+    models = stats.get("mmp_models", {})
     info = {
         "server": "inference-server",
         "models_loaded": len(models),
