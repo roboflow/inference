@@ -740,6 +740,11 @@ class ModelManagerProcess:
                     entry["worker_pid"] = getattr(backend, "worker_pid", None)
                 except Exception:
                     pass
+            if self._manager is not None:
+                try:
+                    entry["tasks"] = self._manager.get_supported_tasks(f)
+                except Exception:
+                    pass
             model_stats[f] = entry
 
         snapshot.update(
