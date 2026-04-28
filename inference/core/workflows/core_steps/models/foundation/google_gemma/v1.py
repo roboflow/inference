@@ -4,8 +4,7 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from openai import OpenAI
-from openai._types import NOT_GIVEN
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
@@ -34,6 +33,16 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+MODEL_VERSION_MAPPING = {
+    "Gemma 4 31B - OpenRouter": "google/gemma-4-31b-it",
+    "Gemma 4 26B A4B - OpenRouter": "google/gemma-4-26b-a4b-it",
+}
+
+ModelVersion = Literal[
+    "Gemma 4 31B - OpenRouter",
+    "Gemma 4 26B A4B - OpenRouter",
+]
+
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
     "ocr",
@@ -43,6 +52,7 @@ SUPPORTED_TASK_TYPES_LIST = [
     "visual-question-answering",
     "caption",
     "detailed-caption",
+    "object-detection",
 ]
 SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
 
@@ -56,13 +66,30 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 
 
 LONG_DESCRIPTION = f"""
-Ask a question to OpenAI's GPT models with vision capabilities (including GPT-4o and GPT-5).
+Ask a question to Google's Gemma model with vision capabilities.
 
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
+#### 🛠️ API providers and model variants
+
+Gemma is exposed via [OpenRouter API](https://openrouter.ai/) and we require
+passing an [OpenRouter API Key](https://openrouter.ai/docs/api-keys) to run.
+
+Pick a specific model version from the `model_version` dropdown - new Gemma releases
+will be added to this list as they become available on OpenRouter.
+
+!!! warning "API Usage Charges"
+
+    OpenRouter is an external third party providing access to the model and incurring charges on the usage.
+    Please check pricing on [openrouter.ai](https://openrouter.ai/) before use.
+
+#### 💡 Further reading and Acceptable Use Policy
+
+!!! warning "Model license"
+
+    Check the [Gemma Terms of Use](https://ai.google.dev/gemma/terms) before use.
 """
 
 
@@ -76,6 +103,7 @@ TASKS_REQUIRING_PROMPT = {
 TASKS_REQUIRING_CLASSES = {
     "classification",
     "multi-label-classification",
+    "object-detection",
 }
 
 TASKS_REQUIRING_OUTPUT_STRUCTURE = {
@@ -86,25 +114,23 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "OpenAI",
-            "version": "v2",
-            "short_description": "Run OpenAI's GPT-4 with vision capabilities.",
+            "name": "Google Gemma",
+            "version": "v1",
+            "short_description": "Run Google's Gemma model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
-            "license": "Apache-2.0",
+            "license": "Gemma Terms of Use",
             "block_type": "model",
-            "search_keywords": ["LMM", "VLM", "ChatGPT", "GPT", "OpenAI"],
+            "search_keywords": ["LMM", "VLM", "Gemma", "Google", "OpenRouter"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
             "ui_manifest": {
                 "section": "model",
-                "icon": "fal fa-atom",
-                "blockPriority": 5,
-                "popular": True,
+                "icon": "fa-brands fa-google",
             },
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/open_ai@v2"]
+    type: Literal["roboflow_core/google_gemma@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -113,15 +139,16 @@ class BlockManifest(WorkflowBlockManifest):
             "values_metadata": RELEVANT_TASKS_METADATA,
             "recommended_parsers": {
                 "structured-answering": "roboflow_core/json_parser@v1",
-                "classification": "roboflow_core/vlm_as_classifier@v1",
-                "multi-label-classification": "roboflow_core/vlm_as_classifier@v1",
+                "classification": "roboflow_core/vlm_as_classifier@v2",
+                "multi-label-classification": "roboflow_core/vlm_as_classifier@v2",
+                "object-detection": "roboflow_core/vlm_as_detector@v2",
             },
             "always_visible": True,
         },
     )
     prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
-        description="Text prompt to the OpenAI model",
+        description="Text prompt to the Gemma model",
         examples=["my prompt", "$inputs.prompt"],
         json_schema_extra={
             "relevant_for": {
@@ -157,52 +184,36 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
-        description="Your OpenAI API key",
-        examples=["xxx-xxx", "$inputs.openai_api_key"],
+        description="Your OpenRouter API key",
+        examples=["xxx-xxx", "$inputs.open_router_api_key"],
         private=True,
     )
     model_version: Union[
         Selector(kind=[STRING_KIND]),
         Literal[
-            "gpt-4.1",
-            "gpt-4.1-mini",
-            "gpt-4.1-nano",
-            "gpt-4o",
-            "gpt-4o-mini",
-            "gpt-5",
-            "gpt-5.4",
-            "gpt-5.4-mini",
-            "gpt-5.4-nano",
-            "gpt-5.5",
+            "Gemma 4 31B - OpenRouter",
+            "Gemma 4 26B A4B - OpenRouter",
         ],
     ] = Field(
-        default="gpt-4o",
+        default="Gemma 4 31B - OpenRouter",
         description="Model to be used",
-        examples=["gpt-4o", "$inputs.openai_model"],
-    )
-    image_detail: Union[
-        Selector(kind=[STRING_KIND]), Literal["auto", "high", "low"]
-    ] = Field(
-        default="auto",
-        description="Indicates the image's quality, with 'high' suggesting it is of high resolution and should be processed or displayed with high fidelity.",
-        examples=["auto", "high", "low"],
+        examples=["Gemma 4 31B - OpenRouter", "$inputs.gemma_model"],
     )
     max_tokens: int = Field(
-        default=450,
+        default=500,
         description="Maximum number of tokens the model can generate in it's response.",
+        gt=1,
     )
-    temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
-        default=None,
+    temperature: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=0.1,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
         'random / "creative" the generations are.',
-        ge=0.0,
-        le=2.0,
     )
     max_concurrent_requests: Optional[int] = Field(
         default=None,
         description="Number of concurrent requests that can be executed by block when batch of input images provided. "
         "If not given - block defaults to value configured globally in Workflows Execution Engine. "
-        "Please restrict if you hit OpenAI limits.",
+        "Please restrict if you hit limits.",
     )
 
     @model_validator(mode="after")
@@ -228,6 +239,17 @@ class BlockManifest(WorkflowBlockManifest):
     def get_air_gapped_availability(cls) -> AirGappedAvailability:
         return AirGappedAvailability(available=False, reason="requires_internet")
 
+    @field_validator("temperature")
+    @classmethod
+    def validate_temperature(cls, value: Union[str, float]) -> Union[str, float]:
+        if isinstance(value, str):
+            return value
+        if value < 0.0 or value > 2.0:
+            raise ValueError(
+                "'temperature' parameter required to be in range [0.0, 2.0]"
+            )
+        return value
+
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images"]
@@ -243,22 +265,20 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.4.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
-class OpenAIBlockV2(WorkflowBlock):
+class GoogleGemmaBlockV1(WorkflowBlock):
 
     def __init__(
         self,
         model_manager: ModelManager,
-        api_key: Optional[str],
     ):
         self._model_manager = model_manager
-        self._api_key = api_key
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["model_manager"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -276,22 +296,20 @@ class OpenAIBlockV2(WorkflowBlock):
         output_structure: Optional[Dict[str, str]],
         classes: Optional[List[str]],
         api_key: str,
-        model_version: str,
-        image_detail: Literal["low", "high", "auto"],
+        model_version: ModelVersion,
         max_tokens: int,
-        temperature: Optional[float],
+        temperature: float,
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
-        raw_outputs = run_gpt_4v_llm_prompting(
+        raw_outputs = run_gemma_llm_prompting(
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
-            openai_api_key=api_key,
-            gpt_model_version=model_version,
-            gpt_image_detail=image_detail,
+            gemma_api_key=api_key,
+            gemma_model_version=model_version,
             max_tokens=max_tokens,
             temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
@@ -301,22 +319,26 @@ class OpenAIBlockV2(WorkflowBlock):
         ]
 
 
-def run_gpt_4v_llm_prompting(
+def run_gemma_llm_prompting(
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
-    openai_api_key: Optional[str],
-    gpt_model_version: str,
-    gpt_image_detail: Literal["auto", "high", "low"],
+    gemma_api_key: Optional[str],
+    gemma_model_version: ModelVersion,
     max_tokens: int,
-    temperature: Optional[int],
+    temperature: float,
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
-    gpt4_prompts = []
+    model_version_id = MODEL_VERSION_MAPPING.get(gemma_model_version)
+    if model_version_id is None:
+        raise ValueError(
+            f"Invalid model name: '{gemma_model_version}'. Please use one of {list(MODEL_VERSION_MAPPING.keys())}."
+        )
+    gemma_prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
         base64_image = base64.b64encode(
@@ -327,38 +349,37 @@ def run_gpt_4v_llm_prompting(
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
-            gpt_image_detail=gpt_image_detail,
         )
-        gpt4_prompts.append(generated_prompt)
-    return execute_gpt_4v_requests(
-        openai_api_key=openai_api_key,
-        gpt4_prompts=gpt4_prompts,
-        gpt_model_version=gpt_model_version,
+        gemma_prompts.append(generated_prompt)
+    return execute_gemma_requests(
+        gemma_api_key=gemma_api_key,
+        gemma_prompts=gemma_prompts,
+        model_version_id=model_version_id,
         max_tokens=max_tokens,
         temperature=temperature,
         max_concurrent_requests=max_concurrent_requests,
     )
 
 
-def execute_gpt_4v_requests(
-    openai_api_key: str,
-    gpt4_prompts: List[List[dict]],
-    gpt_model_version: str,
+def execute_gemma_requests(
+    gemma_api_key: str,
+    gemma_prompts: List[List[dict]],
+    model_version_id: str,
     max_tokens: int,
-    temperature: Optional[float],
+    temperature: float,
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
-    client = OpenAI(api_key=openai_api_key)
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=gemma_api_key)
     tasks = [
         partial(
-            execute_gpt_4v_request,
+            execute_gemma_request,
             client=client,
             prompt=prompt,
-            gpt_model_version=gpt_model_version,
+            gemma_model_version=model_version_id,
             max_tokens=max_tokens,
             temperature=temperature,
         )
-        for prompt in gpt4_prompts
+        for prompt in gemma_prompts
     ]
     max_workers = (
         max_concurrent_requests
@@ -370,28 +391,32 @@ def execute_gpt_4v_requests(
     )
 
 
-def execute_gpt_4v_request(
+def execute_gemma_request(
     client: OpenAI,
     prompt: List[dict],
-    gpt_model_version: str,
+    gemma_model_version: str,
     max_tokens: int,
-    temperature: Optional[float],
+    temperature: float,
 ) -> str:
-    if temperature is None:
-        temperature = NOT_GIVEN
     response = client.chat.completions.create(
-        model=gpt_model_version,
+        model=gemma_model_version,
         messages=prompt,
         max_tokens=max_tokens,
         temperature=temperature,
     )
+    if response.choices is None:
+        error_detail = getattr(response, "error", {}).get("message", "N/A")
+        raise RuntimeError(
+            "OpenRouter provider failed in delivering response. This issue happens from time "
+            "to time - raise issue to OpenRouter if that's problematic for you. "
+            f"Details: {error_detail}"
+        )
     return response.choices[0].message.content
 
 
 def prepare_unconstrained_prompt(
     base64_image: str,
     prompt: str,
-    gpt_image_detail: str,
     **kwargs,
 ) -> List[dict]:
     return [
@@ -403,7 +428,6 @@ def prepare_unconstrained_prompt(
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": gpt_image_detail,
                     },
                 },
             ],
@@ -412,7 +436,7 @@ def prepare_unconstrained_prompt(
 
 
 def prepare_classification_prompt(
-    base64_image: str, classes: List[str], gpt_image_detail: str, **kwargs
+    base64_image: str, classes: List[str], **kwargs
 ) -> List[dict]:
     serialised_classes = ", ".join(classes)
     return [
@@ -422,7 +446,8 @@ def prepare_classification_prompt(
             "You are only allowed to produce JSON document in Markdown ```json [...]``` markers. "
             'Expected structure of json: {"class_name": "class-name", "confidence": 0.4}. '
             "`class-name` must be one of the class names defined by user. You are only allowed to return "
-            "single JSON document, even if there are potentially multiple classes. You are not allowed to return list.",
+            "single JSON document, even if there are potentially multiple classes. You are not allowed to return list. "
+            "You cannot discuss the result, you are only allowed to return JSON document.",
         },
         {
             "role": "user",
@@ -435,7 +460,6 @@ def prepare_classification_prompt(
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": gpt_image_detail,
                     },
                 },
             ],
@@ -444,7 +468,7 @@ def prepare_classification_prompt(
 
 
 def prepare_multi_label_classification_prompt(
-    base64_image: str, classes: List[str], gpt_image_detail: str, **kwargs
+    base64_image: str, classes: List[str], **kwargs
 ) -> List[dict]:
     serialised_classes = ", ".join(classes)
     return [
@@ -456,7 +480,7 @@ def prepare_multi_label_classification_prompt(
             '{"class": "class-name-2", "confidence": 0.7}]}. '
             "`class-name-X` must be one of the class names defined by user and `confidence` is a float value in range "
             "0.0-1.0 that represent how sure you are that the class is present in the image. Only return class names "
-            "that are visible.",
+            "that are visible. You cannot discuss the result, you are only allowed to return JSON document.",
         },
         {
             "role": "user",
@@ -469,7 +493,6 @@ def prepare_multi_label_classification_prompt(
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": gpt_image_detail,
                     },
                 },
             ],
@@ -477,9 +500,7 @@ def prepare_multi_label_classification_prompt(
     ]
 
 
-def prepare_vqa_prompt(
-    base64_image: str, prompt: str, gpt_image_detail: str, **kwargs
-) -> List[dict]:
+def prepare_vqa_prompt(base64_image: str, prompt: str, **kwargs) -> List[dict]:
     return [
         {
             "role": "system",
@@ -495,7 +516,6 @@ def prepare_vqa_prompt(
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": gpt_image_detail,
                     },
                 },
             ],
@@ -503,9 +523,7 @@ def prepare_vqa_prompt(
     ]
 
 
-def prepare_ocr_prompt(
-    base64_image: str, gpt_image_detail: str, **kwargs
-) -> List[dict]:
+def prepare_ocr_prompt(base64_image: str, **kwargs) -> List[dict]:
     return [
         {
             "role": "system",
@@ -520,7 +538,6 @@ def prepare_ocr_prompt(
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": gpt_image_detail,
                     },
                 },
             ],
@@ -529,7 +546,7 @@ def prepare_ocr_prompt(
 
 
 def prepare_caption_prompt(
-    base64_image: str, gpt_image_detail: str, short_description: bool, **kwargs
+    base64_image: str, short_description: bool, **kwargs
 ) -> List[dict]:
     caption_detail_level = "Caption should be short."
     if not short_description:
@@ -547,7 +564,6 @@ def prepare_caption_prompt(
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": gpt_image_detail,
                     },
                 },
             ],
@@ -556,7 +572,7 @@ def prepare_caption_prompt(
 
 
 def prepare_structured_answering_prompt(
-    base64_image: str, output_structure: Dict[str, str], gpt_image_detail: str, **kwargs
+    base64_image: str, output_structure: Dict[str, str], **kwargs
 ) -> List[dict]:
     output_structure_serialised = json.dumps(output_structure, indent=4)
     return [
@@ -579,7 +595,40 @@ def prepare_structured_answering_prompt(
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": gpt_image_detail,
+                    },
+                },
+            ],
+        },
+    ]
+
+
+def prepare_object_detection_prompt(
+    base64_image: str, classes: List[str], **kwargs
+) -> List[dict]:
+    serialised_classes = ", ".join(classes)
+    return [
+        {
+            "role": "system",
+            "content": "You act as object-detection model. You must provide reasonable predictions. "
+            "You are only allowed to produce JSON document in Markdown ```json``` markers. "
+            'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, '
+            '"class_name": "my-class-X", "confidence": 0.7}]}. '
+            "`my-class-X` must be one of the class names defined by user. All coordinates must be in range 0.0-1.0, "
+            "representing percentage of image dimensions. `confidence` is a value in range 0.0-1.0 representing your "
+            "confidence in prediction. You should detect all instances of classes provided by user. "
+            "You cannot discuss the result, you are only allowed to return JSON document.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"List of all classes to be recognised by model: {serialised_classes}",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
                     },
                 },
             ],
@@ -596,4 +645,5 @@ PROMPT_BUILDERS = {
     "classification": prepare_classification_prompt,
     "multi-label-classification": prepare_multi_label_classification_prompt,
     "structured-answering": prepare_structured_answering_prompt,
+    "object-detection": prepare_object_detection_prompt,
 }
