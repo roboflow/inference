@@ -130,15 +130,15 @@ async def _fetch_image_from_url(url: str) -> tuple[Optional[bytes], Optional[Res
 # ---------------------------------------------------------------------------
 
 
-async def _extract_image_and_params(request: Request) -> tuple[Optional[bytes], dict, Optional[Response]]:
-    """Extract image bytes and extra params from request body.
+async def _extract_images_and_params(request: Request) -> tuple[list[bytes], dict, Optional[Response]]:
+    """Extract image bytes (possibly multiple) and extra params from request body.
 
     Supports:
-      - Raw body (image/jpeg, image/png, application/octet-stream)
-      - Multipart form (image= file part, optional scalar fields, optional inputs= JSON part)
-      - JSON body with base64 image ({"inputs": {"image": {"type": "base64", "value": "..."}, ...}})
+      - Raw body (image/jpeg, image/png, application/octet-stream) — single image
+      - Multipart form — one or more image= file parts + optional scalar fields + optional inputs= JSON part
+      - JSON body — base64 image(s): single {"type":"base64","value":"..."} or list of them
 
-    Returns (image_bytes, extra_params, error_response).
+    Returns (images_list, extra_params, error_response).
     If error_response is not None, return it immediately.
     """
     content_type = (request.headers.get("content-type") or "").lower().split(";")[0].strip()
@@ -146,59 +146,63 @@ async def _extract_image_and_params(request: Request) -> tuple[Optional[bytes], 
     # --- Multipart form ---
     if content_type == "multipart/form-data":
         form = await request.form()
-        image_part = form.get("image")
-        if image_part is None:
-            return None, {}, error_response(
-                400, "MISSING_IMAGE", "multipart form must include 'image' file part"
-            )
-        image_bytes = await image_part.read()
+        images: list[bytes] = []
         extra_params: dict = {}
-        # Scalar form fields → params
         for key, value in form.multi_items():
             if key == "image":
-                continue
-            if key == "inputs" and isinstance(value, str):
+                images.append(await value.read())
+            elif key == "inputs" and isinstance(value, str):
                 try:
                     extra_params.update(json.loads(value))
                 except json.JSONDecodeError:
                     logger.warning("v2_infer: invalid JSON in 'inputs' form field")
             elif isinstance(value, str):
                 extra_params[key] = value
-        return image_bytes, extra_params, None
+        if not images:
+            return [], {}, error_response(
+                400, "MISSING_IMAGE", "multipart form must include at least one 'image' file part"
+            )
+        return images, extra_params, None
 
     # --- JSON body with base64 ---
     if content_type == "application/json":
         try:
             body = await request.json()
         except Exception:
-            return None, {}, error_response(400, "INVALID_JSON", "request body is not valid JSON")
+            return [], {}, error_response(400, "INVALID_JSON", "request body is not valid JSON")
 
         inputs = body.get("inputs", {})
         if not isinstance(inputs, dict):
-            return None, {}, error_response(400, "INVALID_INPUTS", "'inputs' must be an object")
+            return [], {}, error_response(400, "INVALID_INPUTS", "'inputs' must be an object")
 
         image_spec = inputs.pop("image", None)
         if image_spec is None:
-            return None, {}, error_response(
+            return [], {}, error_response(
                 400, "MISSING_IMAGE", "JSON body must include inputs.image",
             )
-        if not isinstance(image_spec, dict) or image_spec.get("type") != "base64":
-            return None, {}, error_response(
-                400, "INVALID_IMAGE", "inputs.image must be {\"type\": \"base64\", \"value\": \"...\"}",
-            )
-        try:
-            image_bytes = base64.b64decode(image_spec["value"])
-        except Exception:
-            return None, {}, error_response(400, "DECODE_FAILED", "base64 decode failed for inputs.image")
 
-        return image_bytes, inputs, None
+        # Normalize to list
+        specs = image_spec if isinstance(image_spec, list) else [image_spec]
+        images = []
+        for i, spec in enumerate(specs):
+            if not isinstance(spec, dict) or spec.get("type") != "base64":
+                return [], {}, error_response(
+                    400, "INVALID_IMAGE",
+                    f"inputs.image[{i}] must be {{\"type\": \"base64\", \"value\": \"...\"}}",
+                )
+            try:
+                images.append(base64.b64decode(spec["value"]))
+            except Exception:
+                return [], {}, error_response(400, "DECODE_FAILED", f"base64 decode failed for inputs.image[{i}]")
 
-    # --- Raw body (default) ---
+        return images, inputs, None
+
+    # --- Raw body (default) — single image ---
     chunks = []
     async for chunk in request.stream():
         chunks.append(chunk)
     image_bytes = b"".join(chunks) if chunks else b""
-    return image_bytes, {}, None
+    return [image_bytes] if image_bytes else [], {}, None
 
 
 # ---------------------------------------------------------------------------
@@ -206,35 +210,26 @@ async def _extract_image_and_params(request: Request) -> tuple[Optional[bytes], 
 # ---------------------------------------------------------------------------
 
 
-async def _infer_single(
+async def _submit_one_slot(
     image_bytes: bytes,
     model_id: str,
     instance: str,
-    task: Optional[str],
     params: dict,
-) -> Response:
-    """Write image to SHM slot, submit, read result, return v2 envelope Response."""
-    if not image_bytes:
-        return error_response(400, "EMPTY_BODY", "no image data provided")
-    if len(image_bytes) > state.SHM_DATA_SIZE:
-        return error_response(413, "PAYLOAD_TOO_LARGE", "image exceeds slot size")
-    if not state.looks_like_image(image_bytes):
-        return error_response(415, "UNSUPPORTED_FORMAT", "body is not a recognized image format")
-
+) -> tuple[Optional[object], Optional[Response]]:
+    """Alloc slot, write image, submit, read result. Returns (predictions, None) or (None, error)."""
     try:
         slot_id = await state.alloc_slot(model_id, instance)
     except (asyncio.TimeoutError, RuntimeError):
-        return error_response(503, "SERVER_BUSY", "no slots available, try again", follow_up="retry in 1s")
+        return None, error_response(503, "SERVER_BUSY", "no slots available, try again", follow_up="retry in 1s")
 
     try:
         state.write_input(slot_id, image_bytes, 0)
-
         result = await state.submit_and_wait(slot_id, model_id, instance, len(image_bytes), params)
 
         if result[0] == "error":
-            return error_response(500, "INFERENCE_FAILED", "inference failed")
+            return None, error_response(500, "INFERENCE_FAILED", "inference failed")
         if result[0] != "result":
-            return error_response(500, "INTERNAL_ERROR", "unexpected result type")
+            return None, error_response(500, "INTERNAL_ERROR", "unexpected result type")
 
         _, result_slot_id, result_sz = result
 
@@ -243,34 +238,75 @@ async def _infer_single(
             err_msg = "inference failed"
             if hdr.result_size > 0:
                 err_msg = state.read_result(result_slot_id, hdr.result_size).decode("utf-8", errors="replace")
-            return error_response(500, "INFERENCE_FAILED", err_msg)
+            return None, error_response(500, "INFERENCE_FAILED", err_msg)
 
         raw = state.read_result(result_slot_id, result_sz)
         try:
-            predictions = pickle.loads(raw)
+            return pickle.loads(raw), None
         except Exception:
-            return error_response(500, "DESERIALIZATION_FAILED", "result deserialization failed")
-
-        class_names = _class_names_cache.get(model_id)
-        typed_predictions = _typed_serialize(predictions, class_names)
-
-        envelope = {
-            "type": "roboflow-inference-server-response-v1",
-            "model_info": {"model_id": model_id, "task": task},
-            "usage": {},
-            "predictions": typed_predictions if isinstance(typed_predictions, list) else [typed_predictions],
-        }
-
-        return Response(
-            content=json.dumps(envelope, default=str).encode(),
-            media_type="application/json",
-        )
+            return None, error_response(500, "DESERIALIZATION_FAILED", "result deserialization failed")
 
     except asyncio.TimeoutError:
-        return error_response(504, "TIMEOUT", "inference timeout")
+        return None, error_response(504, "TIMEOUT", "inference timeout")
 
     finally:
         state.free_slot(slot_id)
+
+
+def _build_envelope(
+    predictions_list: list,
+    model_id: str,
+    task: Optional[str],
+) -> Response:
+    """Wrap typed predictions in v2 response envelope."""
+    class_names = _class_names_cache.get(model_id)
+    typed = [_typed_serialize(p, class_names) for p in predictions_list]
+    envelope = {
+        "type": "roboflow-inference-server-response-v1",
+        "model_info": {"model_id": model_id, "task": task},
+        "usage": {},
+        "predictions": typed,
+    }
+    return Response(
+        content=json.dumps(envelope, default=str).encode(),
+        media_type="application/json",
+    )
+
+
+async def _infer_images(
+    images: list[bytes],
+    model_id: str,
+    instance: str,
+    task: Optional[str],
+    params: dict,
+) -> Response:
+    """Infer on one or more images. Returns v2 envelope with N predictions."""
+    if not images:
+        return error_response(400, "EMPTY_BODY", "no image data provided")
+
+    for i, img in enumerate(images):
+        if len(img) > state.SHM_DATA_SIZE:
+            return error_response(413, "PAYLOAD_TOO_LARGE", f"image[{i}] exceeds slot size")
+        if not state.looks_like_image(img):
+            return error_response(415, "UNSUPPORTED_FORMAT", f"image[{i}] is not a recognized image format")
+
+    if len(images) == 1:
+        predictions, err = await _submit_one_slot(images[0], model_id, instance, params)
+        if err is not None:
+            return err
+        return _build_envelope([predictions], model_id, task)
+
+    # Batch: submit all concurrently
+    tasks = [_submit_one_slot(img, model_id, instance, params) for img in images]
+    results = await asyncio.gather(*tasks)
+
+    predictions_list = []
+    for predictions, err in results:
+        if err is not None:
+            return err
+        predictions_list.append(predictions)
+
+    return _build_envelope(predictions_list, model_id, task)
 
 
 # ---------------------------------------------------------------------------
@@ -290,11 +326,11 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
         style       Optional. "compact" (default) or "rich" (501 for now).
         *           Additional params forwarded to backend.
 
-    Image input (one of):
-        - Query param: image=<URL> (server fetches, max 50MB, 10s timeout)
-        - Raw body: image/jpeg, image/png, application/octet-stream
-        - Multipart form: image= file part, optional scalar fields, optional inputs= JSON part
-        - JSON body: {"inputs": {"image": {"type": "base64", "value": "..."}, ...}}
+    Image input (one of, supports batch via repeated image param/parts):
+        - Query param: image=<URL> (server fetches, max 50MB, 10s timeout). Repeat for batch.
+        - Raw body: image/jpeg, image/png, application/octet-stream (single image only)
+        - Multipart form: image= file parts (one or more), optional scalar fields, optional inputs= JSON part
+        - JSON body: {"inputs": {"image": <spec_or_list>, ...}} where spec is {"type":"base64","value":"..."}
     """
     params = dict(request.query_params)
     model_id = params.pop("model_id", "")
@@ -313,16 +349,23 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
     if task:
         params["task"] = task
 
-    # URL-based input: image=<url> in query params takes priority over body
-    image_url = params.pop("image", None)
-    if image_url and image_url.startswith(("http://", "https://")):
-        image_bytes, err = await _fetch_image_from_url(image_url)
-        if err is not None:
-            return err
+    # URL-based input: image=<url> in query params (supports batch via repeated param)
+    image_urls = request.query_params.getlist("image")
+    image_urls = [u for u in image_urls if u.startswith(("http://", "https://"))]
+    params.pop("image", None)
+
+    if image_urls:
+        fetch_tasks = [_fetch_image_from_url(u) for u in image_urls]
+        fetch_results = await asyncio.gather(*fetch_tasks)
+        images = []
+        for img_bytes, err in fetch_results:
+            if err is not None:
+                return err
+            images.append(img_bytes)
         extra_params = {}
     else:
-        # Extract image bytes from request body (raw, multipart, JSON+base64)
-        image_bytes, extra_params, err = await _extract_image_and_params(request)
+        # Extract from request body (raw, multipart, JSON+base64)
+        images, extra_params, err = await _extract_images_and_params(request)
         if err is not None:
             return err
     params.update(extra_params)
@@ -338,7 +381,7 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
     if status[0] == "error":
         return error_response(500, "LOAD_FAILED", "model load failed")
 
-    return await _infer_single(image_bytes, model_id, instance, task, params)
+    return await _infer_images(images, model_id, instance, task, params)
 
 
 # ---------------------------------------------------------------------------
