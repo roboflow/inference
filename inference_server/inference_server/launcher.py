@@ -137,13 +137,12 @@ def launch_orchestrated(
     from inference_model_manager.backends.utils.transport import zmq_addr as _zmq_addr
     from inference_model_manager.model_manager_process import ModelManagerProcess
 
-    manager = ModelManager(max_pinned_memory_mb=max_pinned_memory_mb)
     bind_addr = mmp_addr or _zmq_addr("mmprocess")
 
     mmp = ModelManagerProcess(
         n_slots=n_slots,
         input_mb=input_mb,
-        manager=manager,
+        max_pinned_memory_mb=max_pinned_memory_mb,
         evict_threshold=gpu_eviction_threshold,
         evict_check_interval_s=evict_check_interval_s,
         stale_reap_interval_s=stale_reap_interval_s,
@@ -173,7 +172,7 @@ def launch_orchestrated(
     logger.info("MMP started: addr=%s  shm=%s  slots=%d", bind_addr, shm_name, n_slots)
 
     return LaunchHandle(
-        manager=manager,
+        manager=mmp.manager,
         mmp=mmp,
         mmp_addr=bind_addr,
         shm_name=shm_name,
