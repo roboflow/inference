@@ -744,7 +744,12 @@ class ModelManagerProcess:
                 try:
                     entry["tasks"] = self._manager.get_supported_tasks(f)
                 except Exception:
-                    pass
+                    logger.debug("MMP: failed to get tasks for '%s'", f, exc_info=True)
+            if backend is not None:
+                try:
+                    entry["class_names"] = backend.class_names
+                except Exception:
+                    logger.debug("MMP: failed to get class_names for '%s'", f, exc_info=True)
             model_stats[f] = entry
 
         snapshot.update(
