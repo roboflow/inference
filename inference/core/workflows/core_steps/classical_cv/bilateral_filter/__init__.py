@@ -1,0 +1,1 @@
+# Bilateral filter block
