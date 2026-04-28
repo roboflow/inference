@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1 import (
     ContrastEnhancementBlock,
@@ -27,7 +28,7 @@ class TestContrastEnhancementManifest:
         assert manifest.clip_limit == 0
 
     def test_contrast_enhancement_validation_when_invalid_image_is_given(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             ContrastEnhancementManifest.model_validate(
                 {
                     "type": "roboflow_core/contrast_enhancement@v1",

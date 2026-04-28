@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import pytest
 
@@ -32,7 +34,7 @@ WORKFLOW_WITH_CLASSICAL_CV_PREPROCESSING = {
             "type": "roboflow_core/morphological_transformation@v2",
             "name": "enhance_structures",
             "image": "$steps.denoise.image",
-            "operation": "opening_then_closing",
+            "operation": "Opening then Closing",
             "kernel_size": 5,
         },
     ],
@@ -223,12 +225,12 @@ def test_classical_cv_preprocessing_pipeline_with_bgra_image(
 @pytest.mark.parametrize(
     "operation",
     [
-        "opening",
-        "closing",
-        "opening_then_closing",
-        "gradient",
-        "top_hat",
-        "black_hat",
+        "Opening",
+        "Closing",
+        "Opening then Closing",
+        "Gradient",
+        "Top Hat",
+        "Black Hat",
     ],
 )
 def test_classical_cv_preprocessing_pipeline_with_different_operations(
@@ -241,7 +243,7 @@ def test_classical_cv_preprocessing_pipeline_with_different_operations(
     # given
     test_image = np.ones((100, 100, 3), dtype=np.uint8) * 120
 
-    workflow_def = WORKFLOW_WITH_CLASSICAL_CV_PREPROCESSING.copy()
+    workflow_def = copy.deepcopy(WORKFLOW_WITH_CLASSICAL_CV_PREPROCESSING)
     # Update the morphological operation
     workflow_def["steps"][2]["operation"] = operation
 

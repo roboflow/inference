@@ -192,15 +192,15 @@ def apply_bilateral_filter(
     if len(np_img.shape) == 2:
         # Grayscale
         filtered = cv2.bilateralFilter(np_img, d, sigma_c, sigma_s)
-        return WorkflowImageData(
-            parent_metadata=image.parent_metadata,
+        return WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
             numpy_image=filtered,
         )
     elif np_img.shape[2] == 1:
         # Single channel
         filtered = cv2.bilateralFilter(np_img[:, :, 0], d, sigma_c, sigma_s)
-        return WorkflowImageData(
-            parent_metadata=image.parent_metadata,
+        return WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
             numpy_image=filtered,
         )
     elif np_img.shape[2] == 4:
@@ -209,14 +209,14 @@ def apply_bilateral_filter(
         alpha = np_img[:, :, 3:4]
         filtered_bgr = cv2.bilateralFilter(bgr, d, sigma_c, sigma_s)
         filtered_img = np.concatenate([filtered_bgr, alpha], axis=2)
-        return WorkflowImageData(
-            parent_metadata=image.parent_metadata,
+        return WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
             numpy_image=filtered_img,
         )
     else:
         # BGR
         filtered = cv2.bilateralFilter(np_img, d, sigma_c, sigma_s)
-        return WorkflowImageData(
-            parent_metadata=image.parent_metadata,
+        return WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
             numpy_image=filtered,
         )

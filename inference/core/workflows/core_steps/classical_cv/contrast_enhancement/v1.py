@@ -193,8 +193,8 @@ def enhance_contrast(
             bgr, clip_pct, contrast_mult, gamma_val
         )
         enhanced_img = np.concatenate([enhanced_bgr, alpha], axis=2)
-        return WorkflowImageData(
-            parent_metadata=image.parent_metadata,
+        return WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
             numpy_image=enhanced_img.astype(np.uint8),
         )
     else:
@@ -202,8 +202,8 @@ def enhance_contrast(
         enhanced_img = _enhance_multichannel_contrast(
             np_img, clip_pct, contrast_mult, gamma_val
         )
-        return WorkflowImageData(
-            parent_metadata=image.parent_metadata,
+        return WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
             numpy_image=enhanced_img.astype(np.uint8),
         )
 
@@ -248,8 +248,8 @@ def _enhance_channel_contrast(
 
     normalized = np.clip(normalized, 0, 255).astype(np.uint8)
 
-    return WorkflowImageData(
-        parent_metadata=image.parent_metadata,
+    return WorkflowImageData.copy_and_replace(
+        origin_image_data=image,
         numpy_image=normalized,
     )
 
