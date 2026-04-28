@@ -106,7 +106,7 @@ async def v2_list_models(
             media_type="application/json",
         )
 
-    models = stats.get("models", {})
+    models = stats.get("mmp_models", {})
     return Response(
         content=json.dumps({"models": models}).encode(),
         media_type="application/json",
@@ -207,7 +207,7 @@ async def v2_unload_all(
             media_type="application/json",
         )
 
-    models = stats.get("models", {})
+    models = stats.get("mmp_models", {})
     errors = []
     for model_id in list(models.keys()):
         mid_bytes = model_id.encode()

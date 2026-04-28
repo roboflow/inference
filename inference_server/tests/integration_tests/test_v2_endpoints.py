@@ -126,3 +126,98 @@ async def test_metrics_returns_json(client):
     assert resp.status_code == 200
     body = resp.json()
     assert isinstance(body, dict)
+
+
+# ---------------------------------------------------------------------------
+# v2 model lifecycle (load / list / interface / unload / delete)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_load_lists_unload(client):
+    """Load → list (present) → unload → list (gone)."""
+    # Load (stub mode — no real model, but MMP tracks it)
+    resp = await client.post("/v2/models/load?model_id=test-model")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["model_id"] == "test-model"
+
+    # List — model should appear as loaded
+    resp = await client.get("/v2/models")
+    assert resp.status_code == 200
+    models = resp.json()["models"]
+    assert "test-model" in models
+    assert models["test-model"]["loaded"] is True
+
+    # Unload
+    resp = await client.post("/v2/models/unload?model_id=test-model")
+    assert resp.status_code == 200
+
+    # List — model should be unloaded
+    resp = await client.get("/v2/models")
+    assert resp.status_code == 200
+    models = resp.json()["models"]
+    assert models.get("test-model", {}).get("loaded") is not True
+
+
+@pytest.mark.asyncio
+async def test_unload_all(client):
+    """Load two models → delete all → list empty."""
+    await client.post("/v2/models/load?model_id=model-a")
+    await client.post("/v2/models/load?model_id=model-b")
+
+    resp = await client.get("/v2/models")
+    models = resp.json()["models"]
+    assert models["model-a"]["loaded"] is True
+    assert models["model-b"]["loaded"] is True
+
+    resp = await client.delete("/v2/models")
+    assert resp.status_code == 200
+
+    resp = await client.get("/v2/models")
+    models = resp.json()["models"]
+    loaded = {k: v for k, v in models.items() if v.get("loaded")}
+    assert len(loaded) == 0
+
+
+@pytest.mark.asyncio
+async def test_load_missing_model_id(client):
+    resp = await client.post("/v2/models/load")
+    assert resp.status_code == 400
+    assert "model_id" in resp.json()["description"]
+
+
+@pytest.mark.asyncio
+async def test_unload_missing_model_id(client):
+    resp = await client.post("/v2/models/unload")
+    assert resp.status_code == 400
+    assert "model_id" in resp.json()["description"]
+
+
+@pytest.mark.asyncio
+async def test_interface_model_not_loaded(client):
+    """Interface for unloaded model → 404."""
+    resp = await client.get("/v2/models/interface?model_id=nonexistent")
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "MODEL_NOT_LOADED"
+
+
+@pytest.mark.asyncio
+async def test_interface_missing_model_id(client):
+    resp = await client.get("/v2/models/interface")
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_interface_stub_loaded_model(client):
+    """Stub-loaded model has no registry entry → tasks empty."""
+    await client.post("/v2/models/load?model_id=stub-for-interface")
+
+    resp = await client.get("/v2/models/interface?model_id=stub-for-interface")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["model_id"] == "stub-for-interface"
+    assert isinstance(body["tasks"], dict)
+
+    # Cleanup
+    await client.post("/v2/models/unload?model_id=stub-for-interface")
