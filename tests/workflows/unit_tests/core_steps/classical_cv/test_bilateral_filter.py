@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.classical_cv.bilateral_filter.v1 import (
     BilateralFilterBlock,
@@ -31,7 +32,7 @@ class TestBilateralFilterManifest:
         assert manifest.sigma_space == 75
 
     def test_bilateral_filter_validation_when_invalid_image_is_given(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             BilateralFilterManifest.model_validate(
                 {
                     "type": "roboflow_core/bilateral_filter@v1",
@@ -57,9 +58,7 @@ class TestBilateralFilterManifest:
 
         block = BilateralFilterBlock()
 
-        result = block.run(
-            image=image_data, diameter=9, sigma_color=75, sigma_space=75
-        )
+        result = block.run(image=image_data, diameter=9, sigma_color=75, sigma_space=75)
 
         assert "image" in result
         filtered = result["image"]
@@ -81,9 +80,7 @@ class TestBilateralFilterManifest:
 
         block = BilateralFilterBlock()
 
-        result = block.run(
-            image=image_data, diameter=9, sigma_color=75, sigma_space=75
-        )
+        result = block.run(image=image_data, diameter=9, sigma_color=75, sigma_space=75)
 
         assert "image" in result
         filtered = result["image"]
@@ -101,9 +98,7 @@ class TestBilateralFilterManifest:
 
         block = BilateralFilterBlock()
 
-        result = block.run(
-            image=image_data, diameter=9, sigma_color=75, sigma_space=75
-        )
+        result = block.run(image=image_data, diameter=9, sigma_color=75, sigma_space=75)
 
         assert "image" in result
         filtered = result["image"]
@@ -121,9 +116,7 @@ class TestBilateralFilterManifest:
 
         block = BilateralFilterBlock()
 
-        result = block.run(
-            image=image_data, diameter=5, sigma_color=75, sigma_space=75
-        )
+        result = block.run(image=image_data, diameter=5, sigma_color=75, sigma_space=75)
 
         assert "image" in result
         filtered = result["image"]
@@ -175,9 +168,7 @@ class TestBilateralFilterManifest:
 
         block = BilateralFilterBlock()
 
-        result = block.run(
-            image=image_data, diameter=9, sigma_color=75, sigma_space=75
-        )
+        result = block.run(image=image_data, diameter=9, sigma_color=75, sigma_space=75)
 
         assert "image" in result
         filtered = result["image"]
@@ -194,9 +185,7 @@ class TestBilateralFilterManifest:
 
         block = BilateralFilterBlock()
 
-        result = block.run(
-            image=image_data, diameter=9, sigma_color=75, sigma_space=75
-        )
+        result = block.run(image=image_data, diameter=9, sigma_color=75, sigma_space=75)
 
         assert "image" in result
         filtered = result["image"]
@@ -210,7 +199,7 @@ class TestBilateralFilterManifest:
 
     def test_bilateral_filter_validation_diameter_range(self):
         # Test that diameter must be in valid range
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             BilateralFilterManifest.model_validate(
                 {
                     "type": "roboflow_core/bilateral_filter@v1",
@@ -224,7 +213,7 @@ class TestBilateralFilterManifest:
 
     def test_bilateral_filter_validation_sigma_color_range(self):
         # Test that sigma_color must be in valid range
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             BilateralFilterManifest.model_validate(
                 {
                     "type": "roboflow_core/bilateral_filter@v1",

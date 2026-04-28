@@ -36,7 +36,9 @@ def test_morphological_transformation_v2_validation_when_valid_manifest_is_given
     )
 
 
-def test_morphological_transformation_v2_validation_when_invalid_image_is_given() -> None:
+def test_morphological_transformation_v2_validation_when_invalid_image_is_given() -> (
+    None
+):
     # given
     data = {
         "type": "roboflow_core/morphological_transformation@v2",
@@ -116,8 +118,9 @@ def test_morphological_transformation_v2_block_with_bgra_input() -> None:
     # then
     assert output is not None
     result_image = output.get("image").numpy_image
-    # Should output BGR (3 channels), not BGRA
-    assert result_image.shape == (100, 100, 3)
+    # Should preserve BGRA format (4 channels), including alpha
+    assert result_image.shape == (100, 100, 4)
+    assert result_image.dtype == np.uint8
 
 
 def test_morphological_transformation_v2_block_opening_operation() -> None:

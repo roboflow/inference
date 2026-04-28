@@ -35,7 +35,7 @@ This block applies morphological transformations directly to color images (BGR o
 2. Ensures image is in color format (if grayscale, converts to BGR for consistent color output)
 3. Creates a square structuring element (kernel) of specified kernel_size
 4. Applies the selected morphological operation to all channels simultaneously
-5. Preserves the color format throughout the transformation
+5. Preserves the color format throughout the transformation (including alpha channel for BGRA images)
 6. Returns the morphologically transformed color image
 
 Supported operations:
@@ -158,8 +158,9 @@ class MorphologicalTransformationBlockV2(WorkflowBlock):
 def apply_morphological_operation(
     img: np.ndarray, kernel_size: int, operation: str
 ) -> np.ndarray:
-    """Apply morphological operation to color image, preserving color format."""
-    # Ensure image is in color format
+    """Apply morphological operation to color image, preserving color format and alpha channel."""
+    # Save alpha channel if present
+    alpha = None
     if len(img.shape) == 2:
         # Grayscale to BGR
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
@@ -167,7 +168,8 @@ def apply_morphological_operation(
         # Single channel to BGR
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     elif img.shape[2] == 4:
-        # BGRA to BGR
+        # BGRA: extract alpha, work on BGR only
+        alpha = img[:, :, 3:4]
         img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
@@ -195,5 +197,9 @@ def apply_morphological_operation(
         raise ValueError(
             f"Invalid operation: {operation}. Supported operations are 'Erosion', 'Dilation', 'Opening', 'Closing', 'Opening then Closing', 'Gradient', 'Top Hat', 'Black Hat'."
         )
+
+    # Re-attach alpha if it was present
+    if alpha is not None:
+        result = np.concatenate([result, alpha], axis=2)
 
     return result
