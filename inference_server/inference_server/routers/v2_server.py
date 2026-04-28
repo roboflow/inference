@@ -9,6 +9,7 @@ import os
 from fastapi import APIRouter, Response
 
 from inference_server import state
+from inference_server.errors import error_response
 
 router = APIRouter(prefix="/v2/server")
 
@@ -25,11 +26,7 @@ async def v2_ready() -> Response:
     try:
         stats = await state.fetch_stats(timeout_s=3.0)
     except (asyncio.TimeoutError, Exception):
-        return Response(
-            status_code=503,
-            content=b'{"ready":false,"reason":"stats_unavailable"}',
-            media_type="application/json",
-        )
+        return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
     preload_raw = os.environ.get("INFERENCE_PRELOAD_MODELS", "").strip()
     if preload_raw:
@@ -38,16 +35,9 @@ async def v2_ready() -> Response:
         for mid in preload_ids:
             m = models.get(mid, {})
             if m.get("state") != "loaded":
-                return Response(
-                    status_code=503,
-                    content=json.dumps(
-                        {
-                            "ready": False,
-                            "reason": f"model {mid} not ready",
-                            "state": m.get("state"),
-                        }
-                    ).encode(),
-                    media_type="application/json",
+                return error_response(
+                    503, "MODEL_NOT_READY", f"model {mid} not ready",
+                    follow_up="wait for model to finish loading",
                 )
 
     return Response(content=b'{"ready":true}', media_type="application/json")
@@ -82,10 +72,6 @@ async def v2_metrics() -> Response:
     try:
         stats = await state.fetch_stats(timeout_s=3.0)
     except (asyncio.TimeoutError, Exception):
-        return Response(
-            status_code=503,
-            content=b'{"error":"stats_unavailable"}',
-            media_type="application/json",
-        )
+        return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
     return Response(content=json.dumps(stats).encode(), media_type="application/json")
