@@ -81,6 +81,9 @@ from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 imp
 from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
     MaskAreaMeasurementBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1 import (
+    MaskEdgeSnapBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1 import (
     MorphologicalTransformationBlockV1,
 )
@@ -924,6 +927,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
         MaskAreaMeasurementBlockV1,
+        MaskEdgeSnapBlockV1,
         ContrastEnhancementBlock,
         BilateralFilterBlock,
         MorphologicalTransformationBlockV2,
