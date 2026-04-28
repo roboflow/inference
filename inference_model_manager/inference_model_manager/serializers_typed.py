@@ -213,8 +213,7 @@ def serialize_detections_rich(output: Any, model: Any) -> dict:
         return {
             "type": "roboflow-object-detection-rich-v1",
             "batch": [
-                {"detections": [_det(d, i) for i in range(len(d.xyxy))]}
-                for d in output
+                {"detections": [_det(d, i) for i in range(len(d.xyxy))]} for d in output
             ],
         }
     return {
@@ -229,7 +228,11 @@ def serialize_classification_rich(output: Any, model: Any) -> dict:
     candidates = []
     for i in range(len(output.confidence)):
         c = {
-            "class_id": _to_py(output.class_id[i]) if hasattr(output.class_id, "__len__") else _to_py(output.class_id),
+            "class_id": (
+                _to_py(output.class_id[i])
+                if hasattr(output.class_id, "__len__")
+                else _to_py(output.class_id)
+            ),
             "confidence": _to_py(output.confidence[i]),
         }
         cid = int(c["class_id"])

@@ -749,7 +749,9 @@ class ModelManagerProcess:
                 try:
                     entry["class_names"] = backend.class_names
                 except Exception:
-                    logger.debug("MMP: failed to get class_names for '%s'", f, exc_info=True)
+                    logger.debug(
+                        "MMP: failed to get class_names for '%s'", f, exc_info=True
+                    )
             model_stats[f] = entry
 
         snapshot.update(
