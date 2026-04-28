@@ -135,6 +135,10 @@ _T_OK = b"\x40"
 # uvicorn → MMP (lifecycle)
 _T_LOAD = b"\x20"
 _T_UNLOAD = b"\x21"
+_T_STATS = b"\x30"
+
+# MMP → uvicorn (stats)
+_T_STATS_RESP = b"\x41"
 
 # Wire formats (big-endian):
 #   _T_ALLOC:         Q H N    req_id(8) flavor_len(2) flavor(N)
@@ -239,6 +243,11 @@ def _dispatch(msg_type: bytes, frames: list[bytes]) -> None:
             req_id = struct.unpack(">Q", frames[0][:8])[0]
             err = frames[0][8] if len(frames[0]) > 8 else 0
             _resolve(req_id, ("error", err))
+
+        elif msg_type == _T_STATS_RESP:
+            req_id, json_len = struct.unpack_from(">QI", frames[0])
+            json_bytes = frames[0][12 : 12 + json_len]
+            _resolve(req_id, ("stats", json_bytes))
 
         else:
             logger.warning(
@@ -623,6 +632,14 @@ async def _lifecycle_req(msg_type: bytes, payload: bytes, timeout_s: float = 30.
         raise
 
 
+async def _fetch_stats(timeout_s: float = 5.0) -> dict:
+    """Request T_STATS from MMP, return parsed JSON dict."""
+    result = await _lifecycle_req(_T_STATS, b"", timeout_s=timeout_s)
+    if result[0] == "stats":
+        return json.loads(result[1])
+    return {}
+
+
 @app.post("/models/load")
 async def load_model(request: Request, api_key: BearerToken) -> Response:
     """Trigger model load on MMP.
@@ -824,29 +841,70 @@ async def v2_health() -> Response:
 
 @app.get("/v2/server/ready")
 async def v2_ready() -> Response:
-    """Readiness check — all preloaded models ready.
+    """Readiness check — all preloaded models loaded and healthy."""
+    try:
+        stats = await _fetch_stats(timeout_s=3.0)
+    except (asyncio.TimeoutError, Exception):
+        return Response(
+            status_code=503,
+            content=b'{"ready":false,"reason":"stats_unavailable"}',
+            media_type="application/json",
+        )
 
-    TODO: Check MMP state — all INFERENCE_PRELOAD_MODELS loaded and healthy.
-    """
-    return _V2_TODO
+    preload_raw = os.environ.get("INFERENCE_PRELOAD_MODELS", "").strip()
+    if preload_raw:
+        preload_ids = {m.strip() for m in preload_raw.split(",") if m.strip()}
+        models = stats.get("models", {})
+        for mid in preload_ids:
+            m = models.get(mid, {})
+            if m.get("state") != "loaded":
+                return Response(
+                    status_code=503,
+                    content=json.dumps({"ready": False, "reason": f"model {mid} not ready", "state": m.get("state")}).encode(),
+                    media_type="application/json",
+                )
+
+    return Response(
+        content=b'{"ready":true}',
+        media_type="application/json",
+    )
 
 
 @app.get("/v2/server/info")
 async def v2_info() -> Response:
-    """Server information — version, capabilities, loaded models.
+    """Server information — version, loaded model count, capabilities."""
+    try:
+        stats = await _fetch_stats(timeout_s=3.0)
+    except (asyncio.TimeoutError, Exception):
+        stats = {}
 
-    TODO: Return server version, supported runtimes, loaded model count.
-    """
-    return _V2_TODO
+    models = stats.get("models", {})
+    info = {
+        "server": "inference-server",
+        "models_loaded": len(models),
+        "models": {mid: {"state": m.get("state"), "device": m.get("device")} for mid, m in models.items()},
+    }
+    return Response(
+        content=json.dumps(info).encode(),
+        media_type="application/json",
+    )
 
 
 @app.get("/v2/server/metrics")
 async def v2_metrics() -> Response:
-    """Prometheus-style or JSON metrics.
+    """JSON metrics from MMP stats snapshot.
 
-    TODO: Phase 32f — fetch T_STATS from MMP, format as Prometheus text.
+    TODO: Phase 32f — add Prometheus text format option via Accept header.
     """
-    return _V2_TODO
+    try:
+        stats = await _fetch_stats(timeout_s=3.0)
+    except (asyncio.TimeoutError, Exception):
+        return Response(status_code=503, content=b'{"error":"stats_unavailable"}', media_type="application/json")
+
+    return Response(
+        content=json.dumps(stats).encode(),
+        media_type="application/json",
+    )
 
 
 # ---------------------------------------------------------------------------
