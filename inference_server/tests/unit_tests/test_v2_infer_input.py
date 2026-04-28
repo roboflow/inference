@@ -150,3 +150,26 @@ class _FakeFormData(dict):
                 yield k, v
             else:
                 yield k, v
+
+
+# ---------------------------------------------------------------------------
+# URL fetch tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_invalid_scheme():
+    from inference_server.routers.v2_models import _fetch_image_from_url
+
+    _, err = await _fetch_image_from_url("ftp://example.com/image.jpg")
+    assert err is not None
+    assert err.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_bad_domain():
+    from inference_server.routers.v2_models import _fetch_image_from_url
+
+    _, err = await _fetch_image_from_url("https://this-domain-does-not-exist-12345.invalid/img.jpg")
+    assert err is not None
+    assert err.status_code in (502, 504)
