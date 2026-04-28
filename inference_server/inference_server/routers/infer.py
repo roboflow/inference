@@ -80,6 +80,8 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
 
     try:
         pos = 0
+        logger.warning("[DBG] starting body stream for slot %d, content-length=%s",
+                       slot_id, request.headers.get("content-length", "MISSING"))
         async for chunk in request.stream():
             if pos + len(chunk) > state.SHM_DATA_SIZE:
                 return Response(status_code=413, content=b"payload too large")
@@ -92,6 +94,7 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
 
         _t3 = time.monotonic()
 
+        logger.warning("[DBG] body stream done: pos=%d bytes for slot %d", pos, slot_id)
         if pos == 0:
             logger.error("infer: body stream produced 0 bytes for slot %d, model=%s", slot_id, model_id)
 

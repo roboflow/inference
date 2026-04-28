@@ -25,18 +25,31 @@ logger = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 
-MMP_ADDR = os.environ.get("INFERENCE_MMP_ADDR") or zmq_addr("mmprocess")
-SHM_NAME = os.environ.get("INFERENCE_SHM_NAME", "inference_pool")
-SHM_DATA_SIZE = int(os.environ.get("INFERENCE_SHM_DATA_SIZE", str(25 * 1024 * 1024)))
 LOAD_WAIT_S = float(os.environ.get("INFERENCE_LOAD_WAIT_S", "10.0"))
 INFER_TIMEOUT_S = float(os.environ.get("INFERENCE_INFER_TIMEOUT_S", "30.0"))
 ALLOC_TIMEOUT_S = float(os.environ.get("INFERENCE_ALLOC_TIMEOUT_S", "2.0"))
 
-# SHM slot layout (must match shm_pool.py):
-#   [HEADER 64B | DATA SHM_DATA_SIZE]
+# SHM slot layout constants. MMP_ADDR, SHM_NAME, SHM_DATA_SIZE are set
+# by server.py AFTER import but BEFORE uvicorn forks workers. With fork,
+# module globals are copied at fork time — so these must be re-read from
+# env in init_from_env() which runs in the lifespan (per-worker).
 HEADER_SIZE = 64
-SLOT_TOTAL = HEADER_SIZE + SHM_DATA_SIZE
 SLOT_STATUS_ERROR = 5  # SlotStatus.ERROR
+
+# Mutable — set by init_from_env() at lifespan start
+MMP_ADDR: str = ""
+SHM_NAME: str = ""
+SHM_DATA_SIZE: int = 0
+SLOT_TOTAL: int = 0
+
+
+def init_from_env() -> None:
+    """Re-read config from env. Called once per worker in lifespan."""
+    global MMP_ADDR, SHM_NAME, SHM_DATA_SIZE, SLOT_TOTAL
+    MMP_ADDR = os.environ.get("INFERENCE_MMP_ADDR") or zmq_addr("mmprocess")
+    SHM_NAME = os.environ.get("INFERENCE_SHM_NAME", "inference_pool")
+    SHM_DATA_SIZE = int(os.environ.get("INFERENCE_SHM_DATA_SIZE", str(25 * 1024 * 1024)))
+    SLOT_TOTAL = HEADER_SIZE + SHM_DATA_SIZE
 _OFF_STATUS = 0
 _OFF_RESULT_SZ = 8
 
