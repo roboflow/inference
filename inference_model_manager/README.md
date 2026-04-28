@@ -2,6 +2,32 @@
 
 Manages model lifecycle (load, unload, evict) and dispatches inference requests. Sits between your code and `inference-models` — you don't call models directly.
 
+## Install
+
+Requires Python 3.10–3.12. From this directory:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install uv
+
+# For development: install inference-models editable first
+# uv pip install -e "../inference_models"
+
+# CPU (torch + ONNX)
+uv pip install -e ".[torch-cpu,onnx-cpu]"
+
+# CUDA 12.4
+uv pip install -e ".[torch-cu124,onnx-cu12]"
+
+# CUDA 12.6 + TRT (Jetson JP6)
+uv pip install -e ".[torch-jp6-cu126,onnx-jp6-cu126]"
+```
+
+Extras cascade to `inference-models`.
+
+## Backends
+
 Two backends:
 
 - **Direct** — model runs in your process. Simple, good for scripts and notebooks.
