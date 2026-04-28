@@ -203,18 +203,12 @@ class TestEnsureLoaded:
         h.teardown()
         assert msg == T_MODEL_READY
 
-    def test_model_ready_after_stub_load(self):
-        """Unknown flavor → stub load → T_MODEL_READY."""
-        h = _MMPHarness()
-        msg = h.ensure_loaded("unknown-model", wait_ms=3000)
-        h.teardown()
-        assert msg == T_MODEL_READY
-
     def test_multiple_waiters_all_notified(self):
-        """Two concurrent T_ENSURE_LOADED for same unloaded model → both get T_MODEL_READY."""
+        """Two concurrent T_ENSURE_LOADED for same pre-registered model → both get T_MODEL_READY."""
         import queue
 
         h = _MMPHarness()
+        h.mmp.register_backend("shared-model", _MockBackend(h.mmp))
 
         results: queue.Queue = queue.Queue()
 

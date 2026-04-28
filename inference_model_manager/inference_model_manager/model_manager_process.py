@@ -50,6 +50,7 @@ import zmq.asyncio
 
 from inference_model_manager.backends.utils.shm_pool import SHMPool
 from inference_model_manager.backends.utils.transport import zmq_addr
+from inference_model_manager.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
 
@@ -256,22 +257,20 @@ class ModelManagerProcess:
         evict_check_interval_s: float = 5.0,
         monitor_interval_s: float = 5.0,
         idle_timeout_s: float = 300.0,
-        manager: Optional[Any] = None,
         decoder: str = "imagecodecs",
         batch_max_size: int = 0,
         batch_max_wait_ms: float = 5.0,
+        max_pinned_memory_mb: int = 0,
     ) -> None:
         """
         Args:
-            manager: Optional ModelManager (or duck-type compatible) for real
-                model loading (Phase 4).  ``None`` → stub load mode: flavors
-                are marked loaded immediately without a real model, so
-                T_ENSURE_LOADED waiters get T_MODEL_READY but T_SUBMIT returns
-                T_ERROR (no backend).  Useful for tests and hot-path benchmarks.
+            n_slots: SHM pool slot count.
+            input_mb: MB per slot data area.
             decoder: Image decoder for SubprocessBackend workers.
                 ``"imagecodecs"`` (default, CPU) or ``"nvjpeg"`` (GPU).
-            batch_max_size: Max images per worker batch (default: 8).
-            batch_max_wait_ms: Max ms to wait for a full batch (default: 5.0).
+            batch_max_size: Max images per worker batch (0 = model default).
+            batch_max_wait_ms: Max ms to wait for a full batch.
+            max_pinned_memory_mb: Passed to ModelManager for CPU pinned memory budget.
         """
         self._n_slots = n_slots
         self._input_mb = input_mb
@@ -284,8 +283,11 @@ class ModelManagerProcess:
         self._evict_check_interval_s = evict_check_interval_s
         self._monitor_interval_s = monitor_interval_s
         self._idle_timeout_s = idle_timeout_s
-        self._manager = manager
-        self._own_manager = False  # set True only if we created it
+        self._manager = ModelManager(
+            n_slots=n_slots,
+            input_mb=input_mb,
+            max_pinned_memory_mb=max_pinned_memory_mb,
+        )
 
         self._pool: Optional[SHMPool] = None
         self._router: Optional[zmq.asyncio.Socket] = None
@@ -318,6 +320,10 @@ class ModelManagerProcess:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    @property
+    def manager(self) -> ModelManager:
+        return self._manager
 
     @property
     def shm_name(self) -> Optional[str]:
@@ -371,8 +377,10 @@ class ModelManagerProcess:
         self._loop = asyncio.get_running_loop()
         self._running = True
 
-        # Create SHM pool
-        self._pool = SHMPool.create(self._n_slots, self._input_mb)
+        # SHM pool — owned by ModelManager, shared with MMP and workers.
+        # One pool, one owner (ModelManager), one source of truth.
+        self._manager._ensure_pool()
+        self._pool = self._manager._pool
         logger.info(
             "MMP: SHM pool ready  name=%s  slots=%d  data=%.0fMB",
             self._pool.name,
@@ -421,11 +429,8 @@ class ModelManagerProcess:
             await self._drain_pending()
             self._router.close()
             ctx.term()
-            self._pool.close()
             self._pool = None
             self._router = None
-            if self._own_manager and self._manager is not None:
-                self._manager.shutdown()
             logger.info("MMP: shut down")
 
     def stop(self) -> None:
@@ -633,13 +638,28 @@ class ModelManagerProcess:
             api_key = frame[off + 2 : off + 2 + klen].decode(errors="replace")
 
         fs = self._models.setdefault(model_id, ModelState())
-        if not fs.loaded and not fs.loading:
+        if fs.loaded:
+            await self._send(identity, T_OK, struct.pack(">Q", req_id))
+            return
+
+        if not fs.loading:
             fs.loading = True
-            asyncio.create_task(
-                self._load_model(model_id, api_key=api_key),
-                name=f"mmp-load-{model_id}",
+            try:
+                await self._load_model(model_id, api_key=api_key)
+            except Exception:
+                await self._send(
+                    identity, T_ERROR, struct.pack(">QB", req_id, _ERR_LOAD_FAILED)
+                )
+                return
+
+        # Check if load succeeded
+        fs = self._models.get(model_id)
+        if fs and fs.loaded:
+            await self._send(identity, T_OK, struct.pack(">Q", req_id))
+        else:
+            await self._send(
+                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_LOAD_FAILED)
             )
-        await self._send(identity, T_OK, struct.pack(">Q", req_id))
 
     # ------------------------------------------------------------------
     # T_UNLOAD (admin)
@@ -893,9 +913,6 @@ class ModelManagerProcess:
                         model_id_or_path=model_id_or_path,
                         backend="subprocess",
                         device=device or None,
-                        shm_pool_name=self._pool.name,
-                        n_slots=self._n_slots,
-                        input_mb=self._input_mb,
                         decoder=self._decoder,
                         batch_max_size=self._batch_max_size,
                         batch_max_delay_ms=self._batch_max_wait_ms,
