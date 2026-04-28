@@ -470,9 +470,7 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
 
 
 @router.get("/interface")
-async def v2_model_interface(
-    request: Request, api_key: str = Depends(_bearer_token)
-) -> Response:
+async def v2_model_interface(request: Request) -> Response:
     """Discover model interface — supported tasks, params, response types."""
     model_id = request.query_params.get("model_id", "")
     if not model_id:
@@ -506,9 +504,7 @@ async def v2_model_interface(
 
 
 @router.get("/compatibility")
-async def v2_model_compatibility(
-    request: Request, api_key: str = Depends(_bearer_token)
-) -> Response:
+async def v2_model_compatibility() -> Response:
     """Discover models compatible with current server configuration.
 
     TODO: Query model registry for packages matching server runtime.
@@ -522,9 +518,7 @@ async def v2_model_compatibility(
 
 
 @router.get("")
-async def v2_list_models(
-    request: Request, api_key: str = Depends(_bearer_token)
-) -> Response:
+async def v2_list_models() -> Response:
     """List currently loaded models with state, device, memory, queue depth."""
     try:
         stats = await state.fetch_stats(timeout_s=5.0)
@@ -580,9 +574,7 @@ async def v2_load_model(
 
 
 @router.post("/unload")
-async def v2_unload_model(
-    request: Request, api_key: str = Depends(_bearer_token)
-) -> Response:
+async def v2_unload_model(request: Request) -> Response:
     """Unload specified model."""
     model_id = request.query_params.get("model_id", "")
     if not model_id:
@@ -610,9 +602,7 @@ async def v2_unload_model(
 
 
 @router.delete("")
-async def v2_unload_all(
-    request: Request, api_key: str = Depends(_bearer_token)
-) -> Response:
+async def v2_unload_all() -> Response:
     """Unload all models."""
     try:
         stats = await state.fetch_stats(timeout_s=5.0)

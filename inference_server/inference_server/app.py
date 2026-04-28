@@ -18,7 +18,7 @@ from multiprocessing.shared_memory import SharedMemory
 
 import zmq
 import zmq.asyncio
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Response
 
 from inference_server import state
 from inference_server.auth import validate_api_key
@@ -84,26 +84,56 @@ _AUTH_SKIP_PATHS = frozenset(
 _DEBUG_BENCHMARK_MODE = os.environ.get("DEBUG_BENCHMARK_MODE", "").strip() == "1"
 
 
-@app.middleware("http")
-async def auth_middleware(request: Request, call_next):
-    if _DEBUG_BENCHMARK_MODE:
-        return await call_next(request)
-    if request.url.path.rstrip("/") in _AUTH_SKIP_PATHS:
-        return await call_next(request)
-    token = _bearer_token(request)
-    if not token:
-        return Response(
-            status_code=401, content=b"Authorization: Bearer <api_key> header required"
+class _AuthMiddleware:
+    """ASGI middleware for auth — does NOT buffer the request body.
+
+    Starlette's @app.middleware("http") with call_next consumes the body
+    stream before passing to the route, breaking request.stream() in endpoints.
+    This raw ASGI middleware avoids that by passing receive through untouched.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        if _DEBUG_BENCHMARK_MODE:
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "").rstrip("/")
+        if path in _AUTH_SKIP_PATHS:
+            await self.app(scope, receive, send)
+            return
+
+        # Extract Bearer token from headers
+        headers = dict(
+            (k.decode("latin-1").lower(), v.decode("latin-1"))
+            for k, v in scope.get("headers", [])
         )
-    valid, _ = await validate_api_key(token)
-    if not valid:
-        return Response(status_code=403, content=b"Invalid API key")
-    return await call_next(request)
+        auth = headers.get("authorization", "")
+        token = auth[7:] if auth.startswith("Bearer ") else ""
+
+        if not token:
+            response = Response(
+                status_code=401, content=b"Authorization: Bearer <api_key> header required"
+            )
+            await response(scope, receive, send)
+            return
+
+        valid, _ = await validate_api_key(token)
+        if not valid:
+            response = Response(status_code=403, content=b"Invalid API key")
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
 
 
-def _bearer_token(request: Request) -> str:
-    auth = request.headers.get("authorization", "")
-    return auth[7:] if auth.startswith("Bearer ") else ""
+app.add_middleware(_AuthMiddleware)
 
 
 # ---------------------------------------------------------------------------
