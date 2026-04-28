@@ -40,7 +40,13 @@ async def v2_ready() -> Response:
             if m.get("state") != "loaded":
                 return Response(
                     status_code=503,
-                    content=json.dumps({"ready": False, "reason": f"model {mid} not ready", "state": m.get("state")}).encode(),
+                    content=json.dumps(
+                        {
+                            "ready": False,
+                            "reason": f"model {mid} not ready",
+                            "state": m.get("state"),
+                        }
+                    ).encode(),
                     media_type="application/json",
                 )
 
@@ -59,7 +65,10 @@ async def v2_info() -> Response:
     info = {
         "server": "inference-server",
         "models_loaded": len(models),
-        "models": {mid: {"state": m.get("state"), "device": m.get("device")} for mid, m in models.items()},
+        "models": {
+            mid: {"state": m.get("state"), "device": m.get("device")}
+            for mid, m in models.items()
+        },
     }
     return Response(content=json.dumps(info).encode(), media_type="application/json")
 
@@ -73,6 +82,10 @@ async def v2_metrics() -> Response:
     try:
         stats = await state.fetch_stats(timeout_s=3.0)
     except (asyncio.TimeoutError, Exception):
-        return Response(status_code=503, content=b'{"error":"stats_unavailable"}', media_type="application/json")
+        return Response(
+            status_code=503,
+            content=b'{"error":"stats_unavailable"}',
+            media_type="application/json",
+        )
 
     return Response(content=json.dumps(stats).encode(), media_type="application/json")

@@ -14,16 +14,15 @@ import asyncio
 import os
 import uuid
 from contextlib import asynccontextmanager
+from multiprocessing.shared_memory import SharedMemory
 
 import zmq
 import zmq.asyncio
 from fastapi import FastAPI, Request, Response
-from multiprocessing.shared_memory import SharedMemory
 
 from inference_server import state
 from inference_server.auth import validate_api_key
 from inference_server.routers import infer, v2_models, v2_server
-
 
 # ---------------------------------------------------------------------------
 # Lifespan — initialize per-process ZMQ + SHM
@@ -64,14 +63,16 @@ async def _lifespan(_: FastAPI):
 
 app = FastAPI(lifespan=_lifespan)
 
-_AUTH_SKIP_PATHS = frozenset({
-    "/",
-    "/docs",
-    "/redoc",
-    "/openapi.json",
-    "/v2/server/health",
-    "/v2/server/ready",
-})
+_AUTH_SKIP_PATHS = frozenset(
+    {
+        "/",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/v2/server/health",
+        "/v2/server/ready",
+    }
+)
 
 _DEBUG_BENCHMARK_MODE = os.environ.get("DEBUG_BENCHMARK_MODE", "").strip() == "1"
 
@@ -84,7 +85,9 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     token = _bearer_token(request)
     if not token:
-        return Response(status_code=401, content=b"Authorization: Bearer <api_key> header required")
+        return Response(
+            status_code=401, content=b"Authorization: Bearer <api_key> header required"
+        )
     valid, _ = await validate_api_key(token)
     if not valid:
         return Response(status_code=403, content=b"Invalid API key")

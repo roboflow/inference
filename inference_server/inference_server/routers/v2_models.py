@@ -38,7 +38,9 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
 
 
 @router.get("/interface")
-async def v2_model_interface(request: Request, api_key: str = Depends(_bearer_token)) -> Response:
+async def v2_model_interface(
+    request: Request, api_key: str = Depends(_bearer_token)
+) -> Response:
     """Discover model interface — params, response formats, compatibility.
 
     TODO: Return full interface schema.
@@ -47,7 +49,9 @@ async def v2_model_interface(request: Request, api_key: str = Depends(_bearer_to
 
 
 @router.get("/compatibility")
-async def v2_model_compatibility(request: Request, api_key: str = Depends(_bearer_token)) -> Response:
+async def v2_model_compatibility(
+    request: Request, api_key: str = Depends(_bearer_token)
+) -> Response:
     """Discover models compatible with current server configuration.
 
     TODO: Query model registry for packages matching server runtime.
@@ -56,12 +60,18 @@ async def v2_model_compatibility(request: Request, api_key: str = Depends(_beare
 
 
 @router.get("")
-async def v2_list_models(request: Request, api_key: str = Depends(_bearer_token)) -> Response:
+async def v2_list_models(
+    request: Request, api_key: str = Depends(_bearer_token)
+) -> Response:
     """List currently loaded models with state, device, memory, queue depth."""
     try:
         stats = await state.fetch_stats(timeout_s=5.0)
     except (asyncio.TimeoutError, Exception):
-        return Response(status_code=503, content=b'{"error":"stats_unavailable"}', media_type="application/json")
+        return Response(
+            status_code=503,
+            content=b'{"error":"stats_unavailable"}',
+            media_type="application/json",
+        )
 
     models = stats.get("models", {})
     return Response(
@@ -71,11 +81,17 @@ async def v2_list_models(request: Request, api_key: str = Depends(_bearer_token)
 
 
 @router.post("/load")
-async def v2_load_model(request: Request, api_key: str = Depends(_bearer_token)) -> Response:
+async def v2_load_model(
+    request: Request, api_key: str = Depends(_bearer_token)
+) -> Response:
     """Load specified model."""
     model_id = request.query_params.get("model_id", "")
     if not model_id:
-        return Response(status_code=400, content=b'{"error_code":"MISSING_PARAM","description":"model_id query param required"}', media_type="application/json")
+        return Response(
+            status_code=400,
+            content=b'{"error_code":"MISSING_PARAM","description":"model_id query param required"}',
+            media_type="application/json",
+        )
 
     mid_bytes = model_id.encode()
     key_bytes = api_key.encode()
@@ -89,10 +105,18 @@ async def v2_load_model(request: Request, api_key: str = Depends(_bearer_token))
     try:
         result = await state.lifecycle_req(state.T_LOAD, payload)
     except asyncio.TimeoutError:
-        return Response(status_code=504, content=b'{"error_code":"TIMEOUT","description":"load request timeout"}', media_type="application/json")
+        return Response(
+            status_code=504,
+            content=b'{"error_code":"TIMEOUT","description":"load request timeout"}',
+            media_type="application/json",
+        )
 
     if result[0] == "error":
-        return Response(status_code=500, content=b'{"error_code":"LOAD_FAILED","description":"model load failed"}', media_type="application/json")
+        return Response(
+            status_code=500,
+            content=b'{"error_code":"LOAD_FAILED","description":"model load failed"}',
+            media_type="application/json",
+        )
     return Response(
         content=json.dumps({"model_id": model_id, "status": "loaded"}).encode(),
         media_type="application/json",
@@ -100,11 +124,17 @@ async def v2_load_model(request: Request, api_key: str = Depends(_bearer_token))
 
 
 @router.post("/unload")
-async def v2_unload_model(request: Request, api_key: str = Depends(_bearer_token)) -> Response:
+async def v2_unload_model(
+    request: Request, api_key: str = Depends(_bearer_token)
+) -> Response:
     """Unload specified model."""
     model_id = request.query_params.get("model_id", "")
     if not model_id:
-        return Response(status_code=400, content=b'{"error_code":"MISSING_PARAM","description":"model_id query param required"}', media_type="application/json")
+        return Response(
+            status_code=400,
+            content=b'{"error_code":"MISSING_PARAM","description":"model_id query param required"}',
+            media_type="application/json",
+        )
 
     mid_bytes = model_id.encode()
     payload = struct.pack(">H", len(mid_bytes)) + mid_bytes
@@ -112,10 +142,18 @@ async def v2_unload_model(request: Request, api_key: str = Depends(_bearer_token
     try:
         result = await state.lifecycle_req(state.T_UNLOAD, payload)
     except asyncio.TimeoutError:
-        return Response(status_code=504, content=b'{"error_code":"TIMEOUT","description":"unload request timeout"}', media_type="application/json")
+        return Response(
+            status_code=504,
+            content=b'{"error_code":"TIMEOUT","description":"unload request timeout"}',
+            media_type="application/json",
+        )
 
     if result[0] == "error":
-        return Response(status_code=500, content=b'{"error_code":"UNLOAD_FAILED","description":"model unload failed"}', media_type="application/json")
+        return Response(
+            status_code=500,
+            content=b'{"error_code":"UNLOAD_FAILED","description":"model unload failed"}',
+            media_type="application/json",
+        )
     return Response(
         content=json.dumps({"model_id": model_id, "status": "unloaded"}).encode(),
         media_type="application/json",
@@ -123,12 +161,18 @@ async def v2_unload_model(request: Request, api_key: str = Depends(_bearer_token
 
 
 @router.delete("")
-async def v2_unload_all(request: Request, api_key: str = Depends(_bearer_token)) -> Response:
+async def v2_unload_all(
+    request: Request, api_key: str = Depends(_bearer_token)
+) -> Response:
     """Unload all models."""
     try:
         stats = await state.fetch_stats(timeout_s=5.0)
     except (asyncio.TimeoutError, Exception):
-        return Response(status_code=503, content=b'{"error":"stats_unavailable"}', media_type="application/json")
+        return Response(
+            status_code=503,
+            content=b'{"error":"stats_unavailable"}',
+            media_type="application/json",
+        )
 
     models = stats.get("models", {})
     errors = []

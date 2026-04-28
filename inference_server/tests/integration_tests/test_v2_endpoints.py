@@ -10,6 +10,7 @@ import asyncio
 import os
 import threading
 import uuid
+from multiprocessing.shared_memory import SharedMemory
 
 import httpx
 import pytest
@@ -18,8 +19,6 @@ import zmq
 import zmq.asyncio
 
 from inference_model_manager.model_manager_process import ModelManagerProcess
-from multiprocessing.shared_memory import SharedMemory
-
 
 _TEST_INPUT_MB = 0.1
 _TIMEOUT_S = 5.0
@@ -58,8 +57,8 @@ def mmp_harness():
 @pytest_asyncio.fixture()
 async def client(mmp_harness):
     """Async httpx client with manually initialized state globals."""
-    import inference_server.state as st
     import inference_server.app as app_mod
+    import inference_server.state as st
 
     app_mod._DEBUG_BENCHMARK_MODE = True
 

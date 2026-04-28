@@ -271,7 +271,9 @@ def write_input(slot_id: int, chunk: bytes | memoryview, offset: int) -> None:
     base = slot_id * SLOT_TOTAL + HEADER_SIZE
     end = base + offset + len(chunk)
     if base < 0 or end > len(shm.buf):
-        raise ValueError(f"SHM write out of bounds: slot={slot_id} offset={offset} len={len(chunk)}")
+        raise ValueError(
+            f"SHM write out of bounds: slot={slot_id} offset={offset} len={len(chunk)}"
+        )
     shm.buf[base + offset : end] = chunk
 
 

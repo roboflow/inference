@@ -46,7 +46,10 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
     device = params.pop("device", "")
     fmt = params.pop("format", "pickle")
     if fmt not in ("json", "pickle"):
-        return Response(status_code=400, content=f"Invalid format={fmt!r}; must be 'json' or 'pickle'".encode())
+        return Response(
+            status_code=400,
+            content=f"Invalid format={fmt!r}; must be 'json' or 'pickle'".encode(),
+        )
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
 
@@ -55,14 +58,22 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
     status = await state.ensure_loaded(model_id, instance, api_key, device)
     _t1 = time.monotonic()
     if status[0] == "load_timeout":
-        return Response(status_code=503, headers={"Retry-After": str(status[1])}, content=b"model loading, try again shortly")
+        return Response(
+            status_code=503,
+            headers={"Retry-After": str(status[1])},
+            content=b"model loading, try again shortly",
+        )
     if status[0] == "error":
         return Response(status_code=500, content=b"model load failed")
 
     try:
         slot_id = await state.alloc_slot(model_id, instance)
     except asyncio.TimeoutError:
-        return Response(status_code=503, headers={"Retry-After": "1"}, content=b"server busy, try again")
+        return Response(
+            status_code=503,
+            headers={"Retry-After": "1"},
+            content=b"server busy, try again",
+        )
     except RuntimeError:
         return Response(status_code=503, content=b"server busy, try again")
     _t2 = time.monotonic()
@@ -73,7 +84,9 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
             if pos + len(chunk) > state.SHM_DATA_SIZE:
                 return Response(status_code=413, content=b"payload too large")
             if pos == 0 and not state.looks_like_image(chunk):
-                return Response(status_code=415, content=b"body is not a recognized image format")
+                return Response(
+                    status_code=415, content=b"body is not a recognized image format"
+                )
             state.write_input(slot_id, chunk, pos)
             pos += len(chunk)
 
@@ -84,8 +97,12 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
 
         logger.debug(
             "[TIMING] ensure=%.1fms alloc=%.1fms stream=%.1fms infer=%.1fms total=%.1fms body=%dB",
-            (_t1 - _t0) * 1000, (_t2 - _t1) * 1000, (_t3 - _t2) * 1000,
-            (_t4 - _t3) * 1000, (_t4 - _t0) * 1000, pos,
+            (_t1 - _t0) * 1000,
+            (_t2 - _t1) * 1000,
+            (_t3 - _t2) * 1000,
+            (_t4 - _t3) * 1000,
+            (_t4 - _t0) * 1000,
+            pos,
         )
 
         if result[0] == "error":
@@ -98,7 +115,9 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
         hdr = state.read_slot_header(result_slot_id)
         if hdr is not None and hdr.status == state.SLOT_STATUS_ERROR:
             if hdr.result_size > 0:
-                err_msg = state.read_result(result_slot_id, hdr.result_size).decode("utf-8", errors="replace")
+                err_msg = state.read_result(result_slot_id, hdr.result_size).decode(
+                    "utf-8", errors="replace"
+                )
             else:
                 err_msg = "inference failed"
             return Response(status_code=500, content=err_msg.encode())
@@ -109,7 +128,9 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
             try:
                 obj = pickle.loads(raw)
             except Exception:
-                return Response(status_code=500, content=b"result deserialization failed")
+                return Response(
+                    status_code=500, content=b"result deserialization failed"
+                )
             return Response(content=serialize_json(obj), media_type="application/json")
 
         return Response(content=raw, media_type="application/octet-stream")
