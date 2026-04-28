@@ -236,6 +236,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
     GoogleGeminiBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 import (
+    GoogleGemmaBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
@@ -280,6 +283,9 @@ from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
+    SegmentAnything2VideoBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
     SegmentAnything3BlockV1,
 )
@@ -316,11 +322,17 @@ from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
     RoboflowInstanceSegmentationModelBlockV2,
 )
+from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
+    RoboflowInstanceSegmentationModelBlockV3,
+)
 from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
     RoboflowKeypointDetectionModelBlockV1,
 )
 from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2 import (
     RoboflowKeypointDetectionModelBlockV2,
+)
+from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3 import (
+    RoboflowKeypointDetectionModelBlockV3,
 )
 from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1 import (
     RoboflowClassificationModelBlockV1,
@@ -328,11 +340,17 @@ from inference.core.workflows.core_steps.models.roboflow.multi_class_classificat
 from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2 import (
     RoboflowClassificationModelBlockV2,
 )
+from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3 import (
+    RoboflowClassificationModelBlockV3,
+)
 from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
     RoboflowMultiLabelClassificationModelBlockV1,
 )
 from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
     RoboflowMultiLabelClassificationModelBlockV2,
+)
+from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
+    RoboflowMultiLabelClassificationModelBlockV3,
 )
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 import (
     RoboflowObjectDetectionModelBlockV1,
@@ -340,8 +358,14 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 imp
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
     RoboflowObjectDetectionModelBlockV2,
 )
+from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 import (
+    RoboflowObjectDetectionModelBlockV3,
+)
 from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
     RoboflowSemanticSegmentationModelBlockV1,
+)
+from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2 import (
+    RoboflowSemanticSegmentationModelBlockV2,
 )
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
@@ -821,6 +845,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV1,
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
+        SegmentAnything2VideoBlockV1,
         SegmentAnything3BlockV1,
         SegmentAnything3BlockV2,
         SegmentAnything3BlockV3,
@@ -858,11 +883,17 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         WebhookSinkBlockV1,
         VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
+        RoboflowInstanceSegmentationModelBlockV3,
         RoboflowSemanticSegmentationModelBlockV1,
+        RoboflowSemanticSegmentationModelBlockV2,
         RoboflowKeypointDetectionModelBlockV2,
+        RoboflowKeypointDetectionModelBlockV3,
         RoboflowClassificationModelBlockV2,
+        RoboflowClassificationModelBlockV3,
         RoboflowMultiLabelClassificationModelBlockV2,
+        RoboflowMultiLabelClassificationModelBlockV3,
         RoboflowObjectDetectionModelBlockV2,
+        RoboflowObjectDetectionModelBlockV3,
         VLMAsClassifierBlockV2,
         VLMAsDetectorBlockV2,
         IdentifyOutliersBlockV1,
@@ -873,6 +904,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TwilioSMSNotificationBlockV2,
         GazeBlockV1,
         LlamaVisionBlockV1,
+        GoogleGemmaBlockV1,
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,

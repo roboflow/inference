@@ -14,7 +14,6 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.managers.base import ModelManager
-
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     child_dynamic_crop_from_parent_detections,
     execution_engine,
@@ -23,7 +22,8 @@ from tests.workflows.integration_tests.execution.inner_workflow_inlining._common
 
 def _infer_from_request_sync_factory(h: int, w: int):
     def infer_from_request_sync(
-        model_id: str, request: ObjectDetectionInferenceRequest,
+        model_id: str,
+        request: ObjectDetectionInferenceRequest,
     ):
         imgs = request.image if isinstance(request.image, list) else [request.image]
         assert len(imgs) == 1, f"Mock Expected 1 image, got {len(imgs)}"
@@ -73,7 +73,7 @@ def _nested_workflow(inner: dict) -> dict:
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "general_detection",
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",
@@ -104,7 +104,7 @@ def _flat_workflow() -> dict:
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "general_detection",
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",
@@ -134,7 +134,9 @@ def _assert_crop_predictions_equal(crop_preds: list) -> None:
     ]
     assert isinstance(crop_preds, list)
     assert len(crop_preds) == 3
-    for det, (det_id, class_name, class_id, conf, expected_xyxy) in zip(crop_preds, expected):
+    for det, (det_id, class_name, class_id, conf, expected_xyxy) in zip(
+        crop_preds, expected
+    ):
         assert isinstance(det, sv.Detections)
         assert len(det) == 1
         assert det["detection_id"][0] == det_id

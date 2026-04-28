@@ -570,3 +570,27 @@ def test_trt_package_torch_batch(
         expected_xyxy.cpu(),
         atol=5,
     )
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_per_class_confidence_filters_detections(
+    yolo_nas_coin_counting_trt_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.models.yolonas.yolonas_object_detection_trt import (
+        YOLONasForObjectDetectionTRT,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLONasForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=yolo_nas_coin_counting_trt_package,
+        engine_host_code_allowed=True,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[1]: 1.01},
+    )
+    predictions = model(coins_counting_image_numpy, confidence="best")
+    assert 1 not in predictions[0].class_id.cpu().tolist()

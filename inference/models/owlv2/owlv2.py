@@ -53,6 +53,9 @@ from inference.core.utils.image_utils import (
     extract_image_payload_and_type,
     load_image_rgb,
 )
+from inference_models.models.owlv2.owlv2_hf import (
+    monkey_patch_vision_encoder_before_compilation,
+)
 
 CPU_IMAGE_EMBED_CACHE_SIZE = OWLV2_CPU_IMAGE_CACHE_SIZE
 PRELOADED_HF_MODELS = {}
@@ -120,6 +123,7 @@ class Owlv2Singleton:
 
             if OWLV2_COMPILE_MODEL:
                 torch._dynamo.config.suppress_errors = True
+                model = monkey_patch_vision_encoder_before_compilation(model)
                 model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
             instance.model = model
             cls._instances[huggingface_id] = instance
@@ -177,7 +181,10 @@ def dummy_infer(hf_id: str):
     singleton = Owlv2Singleton(hf_id)
     model = singleton.model
     processor = Owlv2Processor.from_pretrained(hf_id)
-    image_size = tuple(processor.image_processor.size.values())
+    image_size = (
+        processor.image_processor.size.height,
+        processor.image_processor.size.width,
+    )
     image_mean = torch.tensor(processor.image_processor.image_mean, device=DEVICE).view(
         1, 3, 1, 1
     )
@@ -392,7 +399,10 @@ class OwlV2(RoboflowInferenceModel):
             self.version_id = owlv2_model_id_chunks[1]
         hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(hf_id)
-        self.image_size = tuple(processor.image_processor.size.values())
+        self.image_size = (
+            processor.image_processor.size.height,
+            processor.image_processor.size.width,
+        )
         self.image_mean = torch.tensor(
             processor.image_processor.image_mean, device=DEVICE
         ).view(1, 3, 1, 1)

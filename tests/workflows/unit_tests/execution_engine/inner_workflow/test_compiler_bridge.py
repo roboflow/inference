@@ -12,7 +12,9 @@ def test_validate_inner_workflow_composition_rejects_non_object_step() -> None:
     definition = {
         "version": "1.0",
         "inputs": [],
-        "steps": [{"name": "a", "type": "roboflow_core/roboflow_object_detection_model@v1"}],
+        "steps": [
+            {"name": "a", "type": "roboflow_core/roboflow_object_detection_model@v1"}
+        ],
         "outputs": [],
     }
     validate_inner_workflow_composition_from_raw_workflow_definition(definition)

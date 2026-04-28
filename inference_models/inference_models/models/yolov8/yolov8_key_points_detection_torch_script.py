@@ -19,7 +19,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD,
     INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (
@@ -31,6 +31,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_key_points_metadata,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     post_process_nms_fused_model_output,
     rescale_key_points_detections,
     run_nms_for_key_points_detection,
@@ -39,6 +40,7 @@ from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_models.models.common.torch import generate_batch_chunks
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 class YOLOv8ForKeyPointsDetectionTorchScript(
@@ -50,6 +52,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv8ForKeyPointsDetectionTorchScript":
         model_package_content = get_model_package_contents(
@@ -107,6 +110,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
             device=device,
             parsed_key_points_metadata=parsed_key_points_metadata,
             skeletons=skeletons,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -117,6 +121,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         device: torch.device,
         parsed_key_points_metadata: List[List[str]],
         skeletons: List[List[Tuple[int, int]]],
+        recommended_parameters=None,
     ):
         self._model = model
         self._inference_config = inference_config
@@ -124,6 +129,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         self._skeletons = skeletons
         self._device = device
         self._parsed_key_points_metadata = parsed_key_points_metadata
+        self.recommended_parameters = recommended_parameters
         self._key_points_classes_for_instances = torch.tensor(
             [len(e) for e in self._parsed_key_points_metadata], device=device
         )
@@ -182,13 +188,19 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
         key_points_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        )
+        confidence = confidence_filter.get_threshold(self.class_names)
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
                 output=model_results, conf_thresh=confidence
