@@ -2,6 +2,7 @@ import copy
 
 import numpy as np
 import pytest
+import supervision as sv
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
@@ -53,6 +54,61 @@ WORKFLOW_WITH_CLASSICAL_CV_PREPROCESSING = {
             "type": "InferenceImage",
             "name": "denoised",
             "selector": "$steps.denoise.image",
+        },
+    ],
+}
+
+WORKFLOW_WITH_EDGE_SNAP = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "InferenceImage", "name": "image"},
+        {"type": "InferenceInstanceSegmentation", "name": "segmentation"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/contrast_enhancement@v1",
+            "name": "enhance_contrast",
+            "image": "$inputs.image",
+            "clip_limit": 0,
+            "contrast_multiplier": 1.5,
+            "normalize_brightness": True,
+        },
+        {
+            "type": "roboflow_core/bilateral_filter@v1",
+            "name": "denoise",
+            "image": "$steps.enhance_contrast.image",
+            "diameter": 9,
+            "sigma_color": 75,
+            "sigma_space": 75,
+        },
+        {
+            "type": "roboflow_core/morphological_transformation@v2",
+            "name": "enhance_structures",
+            "image": "$steps.denoise.image",
+            "operation": "Opening then Closing",
+            "kernel_size": 5,
+        },
+        {
+            "type": "roboflow_core/mask_edge_snap@v1",
+            "name": "refine_edges",
+            "image": "$steps.enhance_structures.image",
+            "segmentation": "$inputs.segmentation",
+            "pixel_tolerance": 15,
+            "sigma": 1.0,
+            "min_contour_area": 50,
+            "dilation_iterations": 2,
+        },
+    ],
+    "outputs": [
+        {
+            "type": "InferenceInstanceSegmentation",
+            "name": "refined_segmentation",
+            "selector": "$steps.refine_edges.refined_segmentation",
+        },
+        {
+            "type": "InferenceImage",
+            "name": "preprocessed_image",
+            "selector": "$steps.enhance_structures.image",
         },
     ],
 }
@@ -318,3 +374,103 @@ def test_classical_cv_preprocessing_pipeline_all_intermediate_outputs(
     assert contrast_enhanced.shape == original.shape
     assert denoised.shape == original.shape
     assert preprocessed.shape == original.shape
+
+
+def test_edge_snap_cv_pipeline_with_segmentation(
+    model_manager: ModelManager,
+) -> None:
+    """
+    Test the complete edge snap pipeline with preprocessing and mask refinement.
+    Verifies that the preprocessing and edge refinement work together correctly.
+    """
+    # given - Create a test image with a synthetic object
+    test_image = np.ones((200, 200, 3), dtype=np.uint8) * 100
+    # Add a rectangle-like object
+    test_image[50:150, 50:150] = 150
+    # Add some noise
+    np.random.seed(42)
+    noise = np.random.randint(-20, 20, (200, 200, 3), dtype=np.int16)
+    noisy_image = np.clip(
+        test_image.astype(np.int16) + noise, 0, 255
+    ).astype(np.uint8)
+
+    # Create synthetic segmentation with a mask
+    mask = np.zeros((200, 200), dtype=np.uint8)
+    mask[50:150, 50:150] = 1  # Simple rectangular mask
+
+    detections = sv.Detections(
+        xyxy=np.array([[50, 50, 150, 150]]),
+        confidence=np.array([0.95]),
+        class_id=np.array([0]),
+        mask=mask[np.newaxis, :, :],
+    )
+
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_EDGE_SNAP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": noisy_image, "segmentation": detections},
+    )
+
+    # then
+    assert result is not None
+    assert "refined_segmentation" in result
+    assert "preprocessed_image" in result
+
+    refined_seg = result["refined_segmentation"]
+    preprocessed = result["preprocessed_image"]
+
+    # Verify outputs
+    assert refined_seg is not None
+    assert preprocessed.shape == noisy_image.shape
+    assert preprocessed.dtype == np.uint8
+
+    # Verify that refined_segmentation has masks
+    assert hasattr(refined_seg, "mask")
+    assert refined_seg.mask is not None or len(refined_seg.mask) == 0
+
+
+def test_edge_snap_cv_pipeline_with_empty_segmentation(
+    model_manager: ModelManager,
+) -> None:
+    """
+    Test the edge snap pipeline with empty segmentation.
+    Verifies that the pipeline handles empty predictions gracefully.
+    """
+    # given - Create a simple test image
+    test_image = np.ones((150, 150, 3), dtype=np.uint8) * 120
+
+    # Create empty detections
+    detections = sv.Detections.empty()
+
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_EDGE_SNAP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": test_image, "segmentation": detections},
+    )
+
+    # then
+    assert result is not None
+    assert "refined_segmentation" in result
+    preprocessed = result["preprocessed_image"]
+
+    # Verify preprocessing still works
+    assert preprocessed.shape == test_image.shape
+    assert preprocessed.dtype == np.uint8
