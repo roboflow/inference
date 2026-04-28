@@ -66,9 +66,6 @@ from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 im
 from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
     DominantColorBlockV1,
 )
-from inference.core.workflows.core_steps.classical_cv.edge_refinement.v1 import (
-    EdgeRefinementBlockV1,
-)
 from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
     ImageBlurBlockV1,
 )
@@ -782,7 +779,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ColorVisualizationBlockV1,
         ConvertGrayscaleBlockV1,
         ContrastEqualizationBlockV1,
-        EdgeRefinementBlockV1,
         CornerVisualizationBlockV1,
         CropVisualizationBlockV1,
         DetectionsConsensusBlockV1,
