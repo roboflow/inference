@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torch
 import torch.nn.functional as F
@@ -19,32 +19,12 @@ def box_cxcywh_to_xyxy(x):
 def select_topk_predictions(
     logits_sigmoid: torch.Tensor,
     bboxes_cxcywh: torch.Tensor,
-    num_select: int,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Topk-flat across (queries x classes) for one image.
-
-    Matches rf-detr-internal training-time `PostProcess` and SAB benchmarks:
-    flatten the (Q, C) sigmoid score matrix, take the top `num_select` entries,
-    derive the (query, class) index per pick, and gather the corresponding
-    cxcywh bbox per pick. A single query can contribute multiple detections
-    if more than one of its class scores ranks in the global topk.
-
-    Args:
-        logits_sigmoid: per-image sigmoid scores, shape (Q, C).
-        bboxes_cxcywh: per-image normalized cxcywh boxes, shape (Q, 4).
-        num_select: max number of (query, class) pairs to keep. Capped at Q*C.
-
-    Returns:
-        scores: top-K scores in descending order, shape (K,).
-        top_classes: class index for each pick, shape (K,).
-        gathered_bboxes_cxcywh: bboxes gathered by query index, shape (K, 4).
-        query_indices: query each pick came from, shape (K,). Useful for
-            downstream gather of per-query auxiliaries (e.g. masks).
-    """
-    num_classes = logits_sigmoid.shape[1]
+    """Topk-flat across (Q, C) sigmoid scores; cap = Q (= rf-detr-internal's
+    `num_select == num_queries`). Returns (scores, classes, bboxes, query_idx)."""
+    num_queries, num_classes = logits_sigmoid.shape
     flat_scores = logits_sigmoid.reshape(-1)
-    num_to_select = min(num_select, flat_scores.shape[0])
-    scores, topk_indexes = torch.topk(flat_scores, num_to_select)
+    scores, topk_indexes = torch.topk(flat_scores, num_queries)
     query_indices = topk_indexes // num_classes
     top_classes = topk_indexes % num_classes
     gathered_bboxes = bboxes_cxcywh[query_indices]
@@ -53,10 +33,6 @@ def select_topk_predictions(
 
 class PostProcess(nn.Module):
     """This module converts the model's output into the format expected by the coco api"""
-
-    def __init__(self, num_select=300) -> None:
-        super().__init__()
-        self.num_select = num_select
 
     @torch.no_grad()
     def forward(self, outputs, target_sizes):
@@ -80,7 +56,6 @@ class PostProcess(nn.Module):
                 select_topk_predictions(
                     logits_sigmoid=prob[i],
                     bboxes_cxcywh=out_bbox[i],
-                    num_select=self.num_select,
                 )
             )
             boxes_xyxy = box_cxcywh_to_xyxy(gathered_bboxes_cxcywh)

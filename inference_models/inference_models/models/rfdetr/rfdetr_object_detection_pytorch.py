@@ -10,7 +10,6 @@ from inference_models import Detections, ObjectDetectionModel, PreProcessingOver
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
-    INFERENCE_MODELS_RFDETR_DEFAULT_NUM_SELECT,
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
@@ -164,7 +163,7 @@ class RFDetrForObjectDetectionTorch(
         model = build_model(config=model_config)
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
-        post_processor = PostProcess(num_select=INFERENCE_MODELS_RFDETR_DEFAULT_NUM_SELECT)
+        post_processor = PostProcess()
         return cls(
             model=model,
             class_names=class_names,
@@ -271,7 +270,7 @@ class RFDetrForObjectDetectionTorch(
             )
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
-        post_processor = PostProcess(num_select=INFERENCE_MODELS_RFDETR_DEFAULT_NUM_SELECT)
+        post_processor = PostProcess()
         return cls(
             model=model,
             class_names=class_names,

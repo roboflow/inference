@@ -4,9 +4,6 @@ import torch
 from torchvision.transforms import functional
 
 from inference_models import Detections, InstanceDetections, InstancesRLEMasks
-from inference_models.configuration import (
-    INFERENCE_MODELS_RFDETR_DEFAULT_NUM_SELECT,
-)
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.roboflow.model_packages import (
@@ -67,7 +64,6 @@ def post_process_object_detection_results(
         predicted_confidence, top_classes, image_bboxes, _ = select_topk_predictions(
             logits_sigmoid=image_logits,
             bboxes_cxcywh=image_bboxes,
-            num_select=INFERENCE_MODELS_RFDETR_DEFAULT_NUM_SELECT,
         )
         if classes_re_mapping is not None:
             remapping_mask = torch.isin(
@@ -147,7 +143,6 @@ def post_process_instance_segmentation_results(
         confidence, top_classes, image_bboxes, query_indices = select_topk_predictions(
             logits_sigmoid=image_logits,
             bboxes_cxcywh=image_bboxes,
-            num_select=INFERENCE_MODELS_RFDETR_DEFAULT_NUM_SELECT,
         )
         image_masks = image_masks[query_indices]
         if classes_re_mapping is not None:
@@ -243,7 +238,6 @@ def post_process_instance_segmentation_results_to_rle_masks(
         confidence, top_classes, image_bboxes, query_indices = select_topk_predictions(
             logits_sigmoid=image_logits,
             bboxes_cxcywh=image_bboxes,
-            num_select=INFERENCE_MODELS_RFDETR_DEFAULT_NUM_SELECT,
         )
         image_masks = image_masks[query_indices]
         if classes_re_mapping is not None:
