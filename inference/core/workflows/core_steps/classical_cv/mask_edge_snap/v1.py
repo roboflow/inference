@@ -115,6 +115,7 @@ This block refines segmentation masks through a sophisticated multi-step pipelin
 class MaskEdgeSnapManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/mask_edge_snap@v1"]
     model_config = ConfigDict(
+        arbitrary_types_allowed=True,
         json_schema_extra={
             "name": "Mask Edge Snap",
             "version": "v1",
@@ -138,11 +139,9 @@ class MaskEdgeSnapManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
 
-    segmentation: Union[
-        sv.Detections, Selector(kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND])
-    ] = Field(
+    segmentation: Union[str, sv.Detections] = Field(
         title="Segmentation",
-        description="Instance segmentation predictions with mask field populated. Each mask contour will be snapped to detected edges. If empty, segmentation is passed through unchanged.",
+        description="Instance segmentation predictions with mask field populated. Each mask contour will be snapped to detected edges. If empty, segmentation is passed through unchanged. Can be a reference string like '$steps.segmentation_model.predictions' or a supervision.Detections object.",
         examples=["$steps.segmentation_model.predictions", "$inputs.segmentation"],
     )
 
