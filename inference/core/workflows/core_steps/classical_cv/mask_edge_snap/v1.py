@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type
+from typing import List, Literal, Optional, Type, Union
 
 import cv2
 import numpy as np
@@ -138,10 +138,12 @@ class MaskEdgeSnapManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
 
-    segmentation: Selector(kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]) = Field(
+    segmentation: Union[
+        sv.Detections, Selector(kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND])
+    ] = Field(
         title="Segmentation",
         description="Instance segmentation predictions with mask field populated. Each mask contour will be snapped to detected edges. If empty, segmentation is passed through unchanged.",
-        examples=["$steps.segmentation_model.predictions"],
+        examples=["$steps.segmentation_model.predictions", "$inputs.segmentation"],
     )
 
     pixel_tolerance: int = Field(
