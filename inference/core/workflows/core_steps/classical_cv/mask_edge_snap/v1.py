@@ -106,7 +106,7 @@ This block refines segmentation masks through a sophisticated multi-step pipelin
 **Gaussian Blur**
     For grainy or noisy surfaces (welds, machined metal, biological tissue), blur before edge detection to suppress per-pixel noise. A 5x5 kernel with sigma 1.0 is a sensible default; increase to 7x7 or 9x9 for very noisy imagery. Don't over-blur — strong blur rounds off corners and softens real boundaries, leading to boundary positions that are biased inward.
 
-**Bilateral Filter**
+**Bilateral Blur**
     Better than Gaussian when the image has both noise AND important sharp edges (e.g. textured fabric on a clean background). Slower, but preserves edges while denoising flat regions.
 
 **Contrast Enhancement**
