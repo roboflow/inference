@@ -373,9 +373,7 @@ def test_edge_snap_cv_pipeline_with_segmentation(
     # Add some noise
     np.random.seed(42)
     noise = np.random.randint(-20, 20, (200, 200, 3), dtype=np.int16)
-    noisy_image = np.clip(
-        test_image.astype(np.int16) + noise, 0, 255
-    ).astype(np.uint8)
+    noisy_image = np.clip(test_image.astype(np.int16) + noise, 0, 255).astype(np.uint8)
 
     # Create synthetic segmentation with a mask
     mask = np.zeros((200, 200), dtype=np.uint8)
