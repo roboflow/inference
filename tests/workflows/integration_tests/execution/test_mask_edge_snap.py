@@ -329,11 +329,11 @@ def test_mask_edge_snap_workflow_with_strict_parameters(
 
 
 @pytest.mark.slow
-def test_mask_edge_snap_workflow_with_batch_input(
+def test_mask_edge_snap_workflow_with_different_mask_sizes(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
 ) -> None:
-    """Test Mask Edge Snap workflow with batch input (multiple images)."""
+    """Test Mask Edge Snap workflow with masks of different sizes."""
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -346,24 +346,28 @@ def test_mask_edge_snap_workflow_with_batch_input(
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
 
-    # Create batch of images and masks
-    batch_images = np.array([dogs_image, dogs_image])  # 2 copies
-
+    # Create masks with different sizes
     h, w = dogs_image.shape[:2]
-    mask = np.zeros((h, w), dtype=bool)
-    mask[50:150, 100:200] = True
+
+    # Small mask
+    small_mask = np.zeros((h, w), dtype=bool)
+    small_mask[100:120, 150:170] = True
+
+    # Medium mask
+    medium_mask = np.zeros((h, w), dtype=bool)
+    medium_mask[50:200, 100:300] = True
 
     segmentation = sv.Detections(
-        xyxy=np.array([[100.0, 50.0, 200.0, 150.0]]),
-        mask=np.array([mask]),
-        confidence=np.array([0.9]),
-        class_id=np.array([0]),
+        xyxy=np.array([[150.0, 100.0, 170.0, 120.0], [100.0, 50.0, 300.0, 200.0]]),
+        mask=np.array([small_mask, medium_mask]),
+        confidence=np.array([0.9, 0.85]),
+        class_id=np.array([0, 1]),
     )
 
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": batch_images,
+            "image": dogs_image,
             "segmentation": segmentation,
             "pixel_tolerance": 15,
             "sigma": 1.0,
@@ -376,11 +380,13 @@ def test_mask_edge_snap_workflow_with_batch_input(
 
     # then
     assert isinstance(result, list), "Expected result to be list"
-    assert len(result) == 2, "Two images provided - two outputs expected"
-    for output in result:
-        assert "result" in output
-        assert "refined_segmentation" in output["result"]
-        assert "edges" in output["result"]
+    assert len(result) == 1, "Single image provided - single output expected"
+    output = result[0]["result"]
+    assert "refined_segmentation" in output
+    assert "edges" in output
+    refined = output["refined_segmentation"]
+    assert len(refined) == 2, "Both masks should be refined"
+    assert refined.mask.shape[0] == 2
 
 
 def _build_mask_edge_snap_with_morphological_preprocessing_workflow() -> dict:
