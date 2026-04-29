@@ -236,17 +236,24 @@ def apply_bilateral_filter(
             filtered_r = cv2.bilateralFilter(
                 bgr_premultiplied[:, :, 2].astype(np.uint8), d, sigma_c, sigma_s
             ).astype(np.float32)
-            filtered_alpha = cv2.bilateralFilter(
-                (alpha * 255.0).astype(np.uint8), d, sigma_c, sigma_s
-            ).astype(np.float32) / 255.0
+            filtered_alpha = (
+                cv2.bilateralFilter(
+                    (alpha * 255.0).astype(np.uint8), d, sigma_c, sigma_s
+                ).astype(np.float32)
+                / 255.0
+            )
 
             # Stack filtered channels
-            filtered_bgr_premult = np.stack([filtered_b, filtered_g, filtered_r], axis=2)
+            filtered_bgr_premult = np.stack(
+                [filtered_b, filtered_g, filtered_r], axis=2
+            )
 
             # Un-premultiply: divide by alpha to recover original color space
             # Avoid division by zero by adding small epsilon
             epsilon = 1e-6
-            filtered_bgr = filtered_bgr_premult / (filtered_alpha[:, :, np.newaxis] + epsilon)
+            filtered_bgr = filtered_bgr_premult / (
+                filtered_alpha[:, :, np.newaxis] + epsilon
+            )
 
             # Clamp to valid range and convert back to uint8
             filtered_bgr = np.clip(filtered_bgr, 0, 255).astype(np.uint8)
