@@ -309,6 +309,29 @@ def test_direct_request_raises_when_choices_none(mock_openai_cls):
         )
 
 
+@patch("inference.core.workflows.core_steps.common.openrouter.OpenAI")
+def test_direct_request_raises_when_message_content_is_none(mock_openai_cls):
+    """OpenRouter can return a non-empty `choices` list with `message.content`
+    None (e.g. when the model only emits tool calls or reasoning tokens)."""
+    response = MagicMock()
+    choice = MagicMock()
+    choice.message.content = None
+    response.choices = [choice]
+    client = MagicMock()
+    client.chat.completions.create.return_value = response
+    mock_openai_cls.return_value = client
+
+    with pytest.raises(RuntimeError, match="missing message.content"):
+        _execute_direct_openrouter_request(
+            api_key="sk-or-v1",
+            model="m",
+            messages=[],
+            max_tokens=1,
+            temperature=0.0,
+            privacy_level="deny",
+        )
+
+
 # ---------------------------------------------------------------------------
 # validate_task_type_required_fields
 # ---------------------------------------------------------------------------

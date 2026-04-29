@@ -12,6 +12,7 @@ from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
     MODEL_VARIANTS,
     QwenVlmBlockV1,
     _build_native_prompt,
+    _coerce_native_response_to_str,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
@@ -104,7 +105,11 @@ def test_build_native_prompt_unconstrained_uses_user_prompt():
         output_structure=None,
         classes=None,
     )
-    assert out == "What's in here?<system_prompt>You are a helpful assistant."
+    user, _, system = out.partition("<system_prompt>")
+    assert user == "What's in here?"
+    # System prompt identity-primes the model as Qwen, matching the legacy
+    # native qwen v1 blocks (some Qwen variants are sensitive to identity priming).
+    assert "Qwen" in system
 
 
 def test_build_native_prompt_classification_uses_classes():
@@ -128,6 +133,34 @@ def test_build_native_prompt_unknown_task_raises():
             output_structure=None,
             classes=None,
         )
+
+
+# ---------------------------------------------------------------------------
+# Native response coercion (downstream parsers expect strings)
+# ---------------------------------------------------------------------------
+
+
+def test_coerce_native_response_strings_pass_through():
+    assert _coerce_native_response_to_str("hello") == "hello"
+
+
+def test_coerce_native_response_dict_with_answer_returns_answer():
+    out = _coerce_native_response_to_str({"thinking": "...", "answer": "yes"})
+    assert out == "yes"
+
+
+def test_coerce_native_response_dict_without_answer_returns_json():
+    out = _coerce_native_response_to_str({"foo": "bar"})
+    assert "foo" in out and "bar" in out
+
+
+def test_coerce_native_response_none_returns_empty_string():
+    assert _coerce_native_response_to_str(None) == ""
+
+
+def test_coerce_native_response_other_types_serialized_to_json():
+    out = _coerce_native_response_to_str(42)
+    assert out == "42"
 
 
 # ---------------------------------------------------------------------------

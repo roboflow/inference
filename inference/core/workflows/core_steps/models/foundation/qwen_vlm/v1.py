@@ -223,6 +223,28 @@ _SYSTEM_DETECTION = (
 )
 
 
+def _coerce_native_response_to_str(response: Any) -> str:
+    """Normalize a native Qwen prediction.response into a string for the
+    block's `output` field.
+
+    Some Qwen variants return a ``{"thinking": "...", "answer": "..."}`` dict
+    when reasoning is enabled. Strip the thinking and surface only the answer
+    (matching the v1 native qwen blocks' behavior). For any other non-string
+    type, JSON-serialize so downstream parsers (`vlm_as_classifier@v2`,
+    `json_parser@v1`) get a string they can parse.
+    """
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict):
+        answer = response.get("answer")
+        if isinstance(answer, str) and answer:
+            return answer
+        return json.dumps(response)
+    if response is None:
+        return ""
+    return json.dumps(response, default=str)
+
+
 def _build_native_prompt(
     task_type: str,
     prompt: Optional[str],
@@ -235,8 +257,15 @@ def _build_native_prompt(
     native qwen convention.
     """
     if task_type == "unconstrained":
-        user_text = prompt or "Describe what's in this image."
-        system_text = "You are a helpful assistant."
+        # Manifest validation guarantees `prompt` is non-None for unconstrained,
+        # so no fallback default is needed. Identity-prime the model as Qwen-VL
+        # to match the legacy v1 native qwen blocks (some Qwen variants are
+        # sensitive to identity priming).
+        user_text = prompt or ""
+        system_text = (
+            "You are a Qwen vision-language model that can answer questions "
+            "about any image."
+        )
     elif task_type == "ocr":
         user_text = "Extract the text from this image."
         system_text = _SYSTEM_OCR
@@ -675,12 +704,7 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_id, request=request
             )
-            response = prediction.response
-            # Some Qwen variants return a {"thinking": ..., "answer": ...} dict
-            # when reasoning is on; drop the thinking and surface only the answer.
-            if isinstance(response, dict):
-                response = response.get("answer", "") or json.dumps(response)
-            outputs.append(response)
+            outputs.append(_coerce_native_response_to_str(prediction.response))
         return outputs
 
     def _run_native_remotely(
@@ -712,9 +736,5 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
                 kwargs["max_new_tokens"] = max_new_tokens
             result = client.infer_lmm(**kwargs)
             response_text = result.get("response", result)
-            if isinstance(response_text, dict):
-                response_text = response_text.get("answer", "") or json.dumps(
-                    response_text
-                )
-            outputs.append(response_text)
+            outputs.append(_coerce_native_response_to_str(response_text))
         return outputs

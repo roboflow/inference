@@ -260,6 +260,11 @@ _PROXY_ERROR_HANDLERS: Dict[int, Callable[[Exception], None]] = {
     403: _build_proxy_error_handler(403),
     413: _build_proxy_error_handler(413),
     429: _build_proxy_error_handler(429),
+    # 502 = OpenRouter upstream failure surfaced by the Roboflow proxy. Map
+    # it through the same handler so the upstream provider's error message
+    # is preserved in the workflow result.
+    502: _build_proxy_error_handler(502),
+    503: _build_proxy_error_handler(503),
 }
 
 
@@ -335,7 +340,14 @@ def _execute_direct_openrouter_request(
             "happens from time to time - raise issue to OpenRouter if that's "
             f"problematic for you. Details: {error_detail}"
         )
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    if content is None:
+        raise RuntimeError(
+            "OpenRouter response missing message.content. This can happen "
+            "when the model returns only tool calls or reasoning tokens. "
+            "Try a different prompt or model."
+        )
+    return content
 
 
 # ---------------------------------------------------------------------------
