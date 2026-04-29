@@ -144,14 +144,17 @@ def test_classical_cv_preprocessing_pipeline_with_color_image(
     )
 
     # then
-    assert result is not None
-    assert "preprocessed_image" in result
-    assert "contrast_enhanced" in result
-    assert "denoised" in result
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    assert "preprocessed_image" in result_dict
+    assert "contrast_enhanced" in result_dict
+    assert "denoised" in result_dict
 
-    preprocessed = result["preprocessed_image"]
-    contrast_enhanced = result["contrast_enhanced"]
-    denoised = result["denoised"]
+    # Extract numpy arrays from WorkflowImageData objects
+    preprocessed = result_dict["preprocessed_image"].numpy_image
+    contrast_enhanced = result_dict["contrast_enhanced"].numpy_image
+    denoised = result_dict["denoised"].numpy_image
 
     # Verify output dimensions match input
     assert preprocessed.shape == noisy_image.shape
@@ -200,8 +203,10 @@ def test_classical_cv_preprocessing_pipeline_with_grayscale_image(
     )
 
     # then
-    assert result is not None
-    preprocessed = result["preprocessed_image"]
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    preprocessed = result_dict["preprocessed_image"].numpy_image
 
     assert preprocessed.shape[:2] == noisy_grayscale.shape
     assert preprocessed.dtype == np.uint8
@@ -235,8 +240,10 @@ def test_classical_cv_preprocessing_pipeline_with_high_contrast_image(
     )
 
     # then
-    assert result is not None
-    preprocessed = result["preprocessed_image"]
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    preprocessed = result_dict["preprocessed_image"].numpy_image
 
     # Output should still match input dimensions
     assert preprocessed.shape == high_contrast_image.shape
@@ -270,8 +277,10 @@ def test_classical_cv_preprocessing_pipeline_with_bgra_image(
     )
 
     # then
-    assert result is not None
-    preprocessed = result["preprocessed_image"]
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    preprocessed = result_dict["preprocessed_image"].numpy_image
 
     # Verify BGRA shape is preserved
     assert preprocessed.shape == bgra_image.shape
@@ -319,8 +328,10 @@ def test_classical_cv_preprocessing_pipeline_with_different_operations(
     )
 
     # then
-    assert result is not None
-    preprocessed = result["preprocessed_image"]
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    preprocessed = result_dict["preprocessed_image"].numpy_image
     assert preprocessed.shape == test_image.shape
     assert preprocessed.dtype == np.uint8
 
@@ -354,16 +365,18 @@ def test_classical_cv_preprocessing_pipeline_all_intermediate_outputs(
     )
 
     # then - Verify all outputs are present
-    assert result is not None
-    assert "preprocessed_image" in result
-    assert "contrast_enhanced" in result
-    assert "denoised" in result
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    assert "preprocessed_image" in result_dict
+    assert "contrast_enhanced" in result_dict
+    assert "denoised" in result_dict
 
     # Verify each output represents a processing stage
     original = noisy_image
-    contrast_enhanced = result["contrast_enhanced"]
-    denoised = result["denoised"]
-    preprocessed = result["preprocessed_image"]
+    contrast_enhanced = result_dict["contrast_enhanced"].numpy_image
+    denoised = result_dict["denoised"].numpy_image
+    preprocessed = result_dict["preprocessed_image"].numpy_image
 
     # Each stage should produce different results
     assert not np.array_equal(original, contrast_enhanced)
@@ -421,12 +434,14 @@ def test_edge_snap_cv_pipeline_with_segmentation(
     )
 
     # then
-    assert result is not None
-    assert "refined_segmentation" in result
-    assert "preprocessed_image" in result
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    assert "refined_segmentation" in result_dict
+    assert "preprocessed_image" in result_dict
 
-    refined_seg = result["refined_segmentation"]
-    preprocessed = result["preprocessed_image"]
+    refined_seg = result_dict["refined_segmentation"]
+    preprocessed = result_dict["preprocessed_image"].numpy_image
 
     # Verify outputs
     assert refined_seg is not None
@@ -467,9 +482,11 @@ def test_edge_snap_cv_pipeline_with_empty_segmentation(
     )
 
     # then
-    assert result is not None
-    assert "refined_segmentation" in result
-    preprocessed = result["preprocessed_image"]
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    assert "refined_segmentation" in result_dict
+    preprocessed = result_dict["preprocessed_image"].numpy_image
 
     # Verify preprocessing still works
     assert preprocessed.shape == test_image.shape
