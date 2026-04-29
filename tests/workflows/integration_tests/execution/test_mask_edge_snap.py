@@ -14,7 +14,7 @@ def _build_mask_edge_snap_workflow() -> dict:
         "version": "1.0",
         "inputs": [
             {"type": "InferenceImage", "name": "image"},
-            {"type": "InferenceInstanceSegmentation", "name": "segmentation"},
+            {"type": "InferenceParameter", "name": "segmentation"},
             {
                 "type": "WorkflowParameter",
                 "name": "pixel_tolerance",
@@ -389,7 +389,7 @@ def _build_mask_edge_snap_with_morphological_preprocessing_workflow() -> dict:
         "version": "1.0",
         "inputs": [
             {"type": "InferenceImage", "name": "image"},
-            {"type": "InferenceInstanceSegmentation", "name": "segmentation"},
+            {"type": "InferenceParameter", "name": "segmentation"},
         ],
         "steps": [
             {
