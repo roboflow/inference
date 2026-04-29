@@ -45,9 +45,6 @@ from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlock
 from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 import (
     BackgroundSubtractionBlockV1,
 )
-from inference.core.workflows.core_steps.classical_cv.bilateral_filter.v1 import (
-    BilateralFilterBlock,
-)
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
@@ -929,7 +926,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         MaskAreaMeasurementBlockV1,
         MaskEdgeSnapBlockV1,
         ContrastEnhancementBlock,
-        BilateralFilterBlock,
         MorphologicalTransformationBlockV2,
     ]
     if SAM3_3D_OBJECTS_ENABLED:

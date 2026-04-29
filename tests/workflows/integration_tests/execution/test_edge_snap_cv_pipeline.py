@@ -284,7 +284,7 @@ def test_classical_cv_preprocessing_pipeline_with_different_operations(
 
     workflow_def = copy.deepcopy(WORKFLOW_WITH_CLASSICAL_CV_PREPROCESSING)
     # Update the morphological operation
-    workflow_def["steps"][2]["operation"] = operation
+    workflow_def["steps"][1]["operation"] = operation
 
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
