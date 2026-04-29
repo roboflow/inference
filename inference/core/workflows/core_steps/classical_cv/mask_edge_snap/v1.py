@@ -508,6 +508,18 @@ def refine_masks(
     refined_masks = []
     TANGENT_WINDOW = 5
 
+    # Precompute distance-related arrays for vectorized candidate search
+    if tol >= 1:
+        distances = np.arange(1, tol + 1, dtype=np.float32)
+        proximity_per_distance = 1.0 - distances / (tol + 1.0)
+        distances_tiled = np.tile(distances, 2)
+        proximity_tiled = np.tile(proximity_per_distance, 2)
+        sign_offsets = np.array([1.0, -1.0], dtype=np.float32)
+    else:
+        distances_tiled = np.empty(0, dtype=np.float32)
+        proximity_tiled = np.empty(0, dtype=np.float32)
+        sign_offsets = np.empty(0, dtype=np.float32)
+
     for mask in segmentation.mask:
         mask_uint8 = mask.astype(np.uint8)
         if mask_uint8.shape[:2] != (H, W):
@@ -531,35 +543,68 @@ def refine_masks(
             n_pts = mc_pts.shape[0]
             refined_pts = mc_pts.copy()
 
-            for i in range(n_pts):
-                px, py = mc_pts[i]
+            if n_pts == 0:
+                continue
 
-                prev_pt = mc_pts[(i - TANGENT_WINDOW) % n_pts]
-                next_pt = mc_pts[(i + TANGENT_WINDOW) % n_pts]
-                tangent = next_pt - prev_pt
-                t_len = np.linalg.norm(tangent)
-                if t_len < 1e-6:
-                    continue
-                tangent /= t_len
-                nx, ny = -tangent[1], tangent[0]
+            # Compute tangents and normals in batch for all contour points
+            indices = np.arange(n_pts)
+            prev_indices = (indices - TANGENT_WINDOW) % n_pts
+            next_indices = (indices + TANGENT_WINDOW) % n_pts
 
-                best_score = 0.0
-                best_pt = None
+            tangents = mc_pts[next_indices] - mc_pts[prev_indices]
+            tangent_lengths = np.hypot(tangents[:, 0], tangents[:, 1])
+            valid_tangent = tangent_lengths >= 1e-6
 
-                for sign in (1.0, -1.0):
-                    for d in range(1, tol + 1):
-                        sx = int(round(px + sign * nx * d))
-                        sy = int(round(py + sign * ny * d))
-                        if 0 <= sx < W and 0 <= sy < H and valid_snap[sy, sx]:
-                            mag = float(magnitude[sy, sx])
-                            proximity = 1.0 - d / (tol + 1)
-                            score = mag * proximity
-                            if score > best_score:
-                                best_score = score
-                                best_pt = (sx, sy)
+            # Compute normalized tangents (avoid division by zero)
+            inv_lengths = np.zeros_like(tangent_lengths)
+            inv_lengths[valid_tangent] = 1.0 / tangent_lengths[valid_tangent]
 
-                if best_pt is not None:
-                    refined_pts[i] = best_pt
+            normals_x = -tangents[:, 1] * inv_lengths
+            normals_y = tangents[:, 0] * inv_lengths
+
+            # Vectorized candidate search for each point
+            if tol >= 1:
+                for i in range(n_pts):
+                    if not valid_tangent[i]:
+                        continue
+
+                    px, py = mc_pts[i]
+                    nx, ny = normals_x[i], normals_y[i]
+
+                    # Generate all candidate positions (both directions, all distances)
+                    offsets = sign_offsets[:, None] * distances[None, :]
+                    candidate_x = np.rint(px + nx * offsets).astype(np.int32).ravel()
+                    candidate_y = np.rint(py + ny * offsets).astype(np.int32).ravel()
+
+                    # Filter candidates by image bounds
+                    in_bounds = (
+                        (candidate_x >= 0)
+                        & (candidate_x < W)
+                        & (candidate_y >= 0)
+                        & (candidate_y < H)
+                    )
+                    if not np.any(in_bounds):
+                        continue
+
+                    # Filter by valid snap region
+                    valid_candidates = valid_snap[
+                        candidate_y[in_bounds], candidate_x[in_bounds]
+                    ]
+                    if not np.any(valid_candidates):
+                        continue
+
+                    # Score remaining candidates
+                    valid_indices = np.nonzero(in_bounds)[0][valid_candidates]
+                    magnitudes = magnitude[
+                        candidate_y[valid_indices], candidate_x[valid_indices]
+                    ]
+                    proximities = proximity_tiled[valid_indices]
+                    scores = magnitudes * proximities
+
+                    # Select best candidate
+                    best_idx = valid_indices[np.argmax(scores)]
+                    refined_pts[i, 0] = candidate_x[best_idx]
+                    refined_pts[i, 1] = candidate_y[best_idx]
 
             refined_contour = refined_pts.reshape(-1, 1, 2).astype(np.int32)
             cv2.fillPoly(new_mask, [refined_contour], color=1)
@@ -567,6 +612,7 @@ def refine_masks(
         refined_masks.append(new_mask.astype(bool))
 
     refined_masks_np = np.stack(refined_masks, axis=0)
+
     refined_detections = sv.Detections(
         xyxy=segmentation.xyxy.copy(),
         mask=refined_masks_np,
