@@ -41,17 +41,17 @@ WORKFLOW_WITH_CLASSICAL_CV_PREPROCESSING = {
     ],
     "outputs": [
         {
-            "type": "InferenceImage",
+            "type": "JsonField",
             "name": "preprocessed_image",
             "selector": "$steps.enhance_structures.image",
         },
         {
-            "type": "InferenceImage",
+            "type": "JsonField",
             "name": "contrast_enhanced",
             "selector": "$steps.enhance_contrast.image",
         },
         {
-            "type": "InferenceImage",
+            "type": "JsonField",
             "name": "denoised",
             "selector": "$steps.denoise.image",
         },
@@ -62,7 +62,7 @@ WORKFLOW_WITH_EDGE_SNAP = {
     "version": "1.0",
     "inputs": [
         {"type": "InferenceImage", "name": "image"},
-        {"type": "InferenceInstanceSegmentation", "name": "segmentation"},
+        {"type": "InferenceParameter", "name": "segmentation"},
     ],
     "steps": [
         {
@@ -101,12 +101,12 @@ WORKFLOW_WITH_EDGE_SNAP = {
     ],
     "outputs": [
         {
-            "type": "InferenceInstanceSegmentation",
+            "type": "JsonField",
             "name": "refined_segmentation",
             "selector": "$steps.refine_edges.refined_segmentation",
         },
         {
-            "type": "InferenceImage",
+            "type": "JsonField",
             "name": "preprocessed_image",
             "selector": "$steps.enhance_structures.image",
         },
