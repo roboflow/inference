@@ -217,17 +217,15 @@ def _enhance_channel_contrast(
 ) -> WorkflowImageData:
     """Enhance contrast of a single grayscale channel."""
     channel_float = channel.astype(np.float32)
-
-    # Compute histogram percentiles for clipping
-    flat = channel_float.flatten()
     if clip_pct > 0:
-        lower_pct = clip_pct * 100
-        upper_pct = 100 - clip_pct * 100
-        v_min = np.percentile(flat, lower_pct)
-        v_max = np.percentile(flat, upper_pct)
+        # Use quantile with pre-computed percentiles (faster than percentile)
+        quantiles = np.array([clip_pct, 1.0 - clip_pct], dtype=np.float32)
+        v_min, v_max = np.quantile(channel_float, quantiles)
     else:
-        v_min = flat.min()
-        v_max = flat.max()
+        v_min = channel_float.min()
+        v_max = channel_float.max()
+
+    # Avoid division by zero
 
     # Avoid division by zero
     if v_max <= v_min:
@@ -261,21 +259,20 @@ def _enhance_multichannel_contrast(
     gamma_val: float,
 ) -> np.ndarray:
     """Enhance contrast of each color channel independently."""
-    enhanced = np.zeros_like(image, dtype=np.float32)
+    num_channels = image.shape[2]
+    enhanced = np.empty_like(image, dtype=np.float32)
 
-    for c in range(image.shape[2]):
+    for c in range(num_channels):
         channel = image[:, :, c].astype(np.float32)
-
-        # Compute histogram percentiles for clipping
-        flat = channel.flatten()
         if clip_pct > 0:
-            lower_pct = clip_pct * 100
-            upper_pct = 100 - clip_pct * 100
-            v_min = np.percentile(flat, lower_pct)
-            v_max = np.percentile(flat, upper_pct)
+            # Use quantile with pre-computed percentiles (faster than percentile)
+            quantiles = np.array([clip_pct, 1.0 - clip_pct], dtype=np.float32)
+            v_min, v_max = np.quantile(channel, quantiles)
         else:
-            v_min = flat.min()
-            v_max = flat.max()
+            v_min = channel.min()
+            v_max = channel.max()
+
+        # Avoid division by zero
 
         # Avoid division by zero
         if v_max > v_min:
