@@ -87,9 +87,6 @@ class DirectBackend(Backend):
         else:
             self._batch_max_size = batch_max_size
 
-        # Device tracking for sleep/wake
-        self._sleep_device = None
-
         # Stats
         self._inference_count = 0
         self._error_count = 0
@@ -266,64 +263,6 @@ class DirectBackend(Backend):
             self._batch_collector = None
         del self._model
         self._model = None
-        self._sleep_device = None
-
-    def sleep(self) -> Optional[int]:
-        if self._state_value != "loaded":
-            raise RuntimeError(
-                f"Cannot sleep: state is '{self._state_value}', expected 'loaded'"
-            )
-        if self._batch_collector is not None:
-            if self._batch_collector.queue_depth > 0:
-                raise RuntimeError("Cannot sleep with pending batched requests")
-            self._batch_collector.stop(drain=True)
-            self._batch_collector = None
-        import torch
-
-        params = (
-            list(self._model.parameters()) if hasattr(self._model, "parameters") else []
-        )
-        buffers = list(self._model.buffers()) if hasattr(self._model, "buffers") else []
-        if not params and not buffers:
-            return None
-
-        self._sleep_device = params[0].device if params else buffers[0].device
-        pinned_bytes = 0
-        for p in params:
-            p.data = p.data.cpu().pin_memory()
-            pinned_bytes += p.numel() * p.element_size()
-        for b in buffers:
-            b.data = b.data.cpu().pin_memory()
-            pinned_bytes += b.numel() * b.element_size()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        self._state_value = "sleeping"
-        return pinned_bytes
-
-    def wake(self) -> None:
-        if self._state_value != "sleeping":
-            raise RuntimeError(
-                f"Cannot wake: state is '{self._state_value}', expected 'sleeping'"
-            )
-        import torch
-
-        device = self._sleep_device or torch.device(self._device_str or "cuda")
-        params = (
-            list(self._model.parameters()) if hasattr(self._model, "parameters") else []
-        )
-        buffers = list(self._model.buffers()) if hasattr(self._model, "buffers") else []
-        for p in params:
-            p.data = p.data.to(device, non_blocking=True)
-        for b in buffers:
-            b.data = b.data.to(device, non_blocking=True)
-        if torch.cuda.is_available():
-            torch.cuda.synchronize(device)
-        self._device_str = str(device)
-        self._sleep_device = None
-        self._state_value = "loaded"
-
-        if self._batch_max_size > 1 and self._batch_collector is None:
-            self._batch_collector = self._create_batch_collector()
 
     # ------------------------------------------------------------------
     # Observability
@@ -335,8 +274,6 @@ class DirectBackend(Backend):
 
     @property
     def device(self) -> str:
-        if self._state_value == "sleeping":
-            return "cpu"
         return self._device_str or "cpu"
 
     @property
@@ -347,7 +284,7 @@ class DirectBackend(Backend):
 
     @property
     def is_healthy(self) -> bool:
-        return self._model is not None and self._state_value in ("loaded", "sleeping")
+        return self._model is not None and self._state_value == "loaded"
 
     @property
     def is_accepting(self) -> bool:
@@ -418,12 +355,7 @@ class DirectBackend(Backend):
             ),
             "latency_p50_ms": _pct(50),
             "latency_p99_ms": _pct(99),
-            "gpu_memory_mb": (
-                self._gpu_memory_delta_mb if self._state_value != "sleeping" else 0.0
-            ),
-            "cpu_pinned_memory_mb": (
-                self._gpu_memory_delta_mb if self._state_value == "sleeping" else 0.0
-            ),
+            "gpu_memory_mb": self._gpu_memory_delta_mb,
             "inference_count": self._inference_count,
             "error_count": self._error_count,
             "last_inference_ts": self._last_inference_ts,

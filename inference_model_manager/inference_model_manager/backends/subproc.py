@@ -898,13 +898,6 @@ class SubprocessBackend(Backend):
 
         logger.info("SubprocessBackend(%s): unloaded", self._model_id)
 
-    def sleep(self) -> Optional[int]:
-        return None  # Issue #8: not yet implemented
-
-    def wake(self) -> None:
-        raise RuntimeError(
-            "SubprocessBackend.sleep/wake not yet implemented (Issue #8)"
-        )
 
     # ------------------------------------------------------------------
     # Observability
