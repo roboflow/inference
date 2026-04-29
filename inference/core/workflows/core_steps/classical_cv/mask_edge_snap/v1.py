@@ -10,15 +10,15 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    ANY_DATA_AS_SELECTED_ELEMENT,
+    FLOAT_KIND,
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    FLOAT_KIND,
+    KIND_KEY,
     REFERENCE_KEY,
     SELECTED_ELEMENT_KEY,
-    KIND_KEY,
     SELECTOR_POINTS_TO_BATCH_KEY,
-    ANY_DATA_AS_SELECTED_ELEMENT,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -161,6 +161,18 @@ class MaskEdgeSnapManifest(WorkflowBlockManifest):
         examples=["$steps.segmentation_model.predictions", "$inputs.segmentation"],
         json_schema_extra=_segmentation_json_schema_extra,
     )
+
+    @field_validator("segmentation")
+    @classmethod
+    def validate_segmentation(
+        cls, value: Union[str, sv.Detections]
+    ) -> Union[str, sv.Detections]:
+        if isinstance(value, str):
+            if not value.startswith("$"):
+                raise ValueError(
+                    f"segmentation must be a workflow reference starting with '$' or a supervision.Detections object, got: {value}"
+                )
+        return value
 
     pixel_tolerance: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=15,
