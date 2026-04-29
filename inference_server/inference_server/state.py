@@ -48,8 +48,12 @@ def init_from_env() -> None:
     global MMP_ADDR, SHM_NAME, SHM_DATA_SIZE, SLOT_TOTAL
     MMP_ADDR = os.environ.get("INFERENCE_MMP_ADDR") or zmq_addr("mmprocess")
     SHM_NAME = os.environ.get("INFERENCE_SHM_NAME", "inference_pool")
-    SHM_DATA_SIZE = int(os.environ.get("INFERENCE_SHM_DATA_SIZE", str(25 * 1024 * 1024)))
+    SHM_DATA_SIZE = int(
+        os.environ.get("INFERENCE_SHM_DATA_SIZE", str(25 * 1024 * 1024))
+    )
     SLOT_TOTAL = HEADER_SIZE + SHM_DATA_SIZE
+
+
 _OFF_STATUS = 0
 _OFF_RESULT_SZ = 8
 
