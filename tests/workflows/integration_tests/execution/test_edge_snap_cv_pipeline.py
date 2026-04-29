@@ -24,17 +24,9 @@ WORKFLOW_WITH_CLASSICAL_CV_PREPROCESSING = {
             "normalize_brightness": True,
         },
         {
-            "type": "roboflow_core/bilateral_filter@v1",
-            "name": "denoise",
-            "image": "$steps.enhance_contrast.image",
-            "diameter": 9,
-            "sigma_color": 75,
-            "sigma_space": 75,
-        },
-        {
             "type": "roboflow_core/morphological_transformation@v2",
             "name": "enhance_structures",
-            "image": "$steps.denoise.image",
+            "image": "$steps.enhance_contrast.image",
             "operation": "Opening then Closing",
             "kernel_size": 5,
         },
@@ -49,11 +41,6 @@ WORKFLOW_WITH_CLASSICAL_CV_PREPROCESSING = {
             "type": "JsonField",
             "name": "contrast_enhanced",
             "selector": "$steps.enhance_contrast.image",
-        },
-        {
-            "type": "JsonField",
-            "name": "denoised",
-            "selector": "$steps.denoise.image",
         },
     ],
 }
@@ -74,17 +61,9 @@ WORKFLOW_WITH_EDGE_SNAP = {
             "normalize_brightness": True,
         },
         {
-            "type": "roboflow_core/bilateral_filter@v1",
-            "name": "denoise",
-            "image": "$steps.enhance_contrast.image",
-            "diameter": 9,
-            "sigma_color": 75,
-            "sigma_space": 75,
-        },
-        {
             "type": "roboflow_core/morphological_transformation@v2",
             "name": "enhance_structures",
-            "image": "$steps.denoise.image",
+            "image": "$steps.enhance_contrast.image",
             "operation": "Opening then Closing",
             "kernel_size": 5,
         },
@@ -149,27 +128,22 @@ def test_classical_cv_preprocessing_pipeline_with_color_image(
     result_dict = result[0]
     assert "preprocessed_image" in result_dict
     assert "contrast_enhanced" in result_dict
-    assert "denoised" in result_dict
 
     # Extract numpy arrays from WorkflowImageData objects
     preprocessed = result_dict["preprocessed_image"].numpy_image
     contrast_enhanced = result_dict["contrast_enhanced"].numpy_image
-    denoised = result_dict["denoised"].numpy_image
 
     # Verify output dimensions match input
     assert preprocessed.shape == noisy_image.shape
     assert contrast_enhanced.shape == noisy_image.shape
-    assert denoised.shape == noisy_image.shape
 
     # Verify data types
     assert preprocessed.dtype == np.uint8
     assert contrast_enhanced.dtype == np.uint8
-    assert denoised.dtype == np.uint8
 
     # Verify that preprocessing actually changed the image
     assert not np.array_equal(preprocessed, noisy_image)
     assert not np.array_equal(contrast_enhanced, noisy_image)
-    assert not np.array_equal(denoised, contrast_enhanced)
 
 
 def test_classical_cv_preprocessing_pipeline_with_grayscale_image(
@@ -370,22 +344,18 @@ def test_classical_cv_preprocessing_pipeline_all_intermediate_outputs(
     result_dict = result[0]
     assert "preprocessed_image" in result_dict
     assert "contrast_enhanced" in result_dict
-    assert "denoised" in result_dict
 
     # Verify each output represents a processing stage
     original = noisy_image
     contrast_enhanced = result_dict["contrast_enhanced"].numpy_image
-    denoised = result_dict["denoised"].numpy_image
     preprocessed = result_dict["preprocessed_image"].numpy_image
 
     # Each stage should produce different results
     assert not np.array_equal(original, contrast_enhanced)
-    assert not np.array_equal(contrast_enhanced, denoised)
-    assert not np.array_equal(denoised, preprocessed)
+    assert not np.array_equal(contrast_enhanced, preprocessed)
 
     # But all should have same shape and dtype
     assert contrast_enhanced.shape == original.shape
-    assert denoised.shape == original.shape
     assert preprocessed.shape == original.shape
 
 
