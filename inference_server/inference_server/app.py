@@ -37,9 +37,10 @@ async def _lifespan(_: FastAPI):
     # Keep multipart uploads in memory — Starlette default is 1MB, which causes
     # disk rollover (write + read) for typical image uploads (2-10MB).
     from starlette.formparsers import MultiPartParser
-    MultiPartParser.spool_max_size = int(os.environ.get(
-        "INFERENCE_MULTIPART_SPOOL_MB", "32"
-    )) * 1024 * 1024
+
+    MultiPartParser.spool_max_size = (
+        int(os.environ.get("INFERENCE_MULTIPART_SPOOL_MB", "32")) * 1024 * 1024
+    )
 
     identity = f"uv_{os.getpid()}_{uuid.uuid4().hex[:8]}".encode()
 
@@ -122,7 +123,8 @@ class _AuthMiddleware:
 
         if not token:
             response = Response(
-                status_code=401, content=b"Authorization: Bearer <api_key> header required"
+                status_code=401,
+                content=b"Authorization: Bearer <api_key> header required",
             )
             await response(scope, receive, send)
             return
