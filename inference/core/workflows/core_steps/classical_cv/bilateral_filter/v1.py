@@ -74,7 +74,7 @@ This means edges (where intensity changes sharply) naturally receive less smooth
 
 - **Computational cost**: Bilateral filtering is approximately O(n * d^2) where n is the number of pixels and d is diameter. It's significantly slower than Gaussian blur — typical 640x480 image with diameter=9 takes ~100-200ms.
 - **Disk I/O bottleneck**: With large images (>4K), memory bandwidth can be limiting
-- **Preserve alpha channel**: For BGRA input, alpha channel is passed through unchanged
+- **Alpha channel handling**: For BGRA input, the alpha channel is premultiplied before filtering and un-premultiplied after. This ensures semi-transparent pixels don't overstate their weight in the bilateral filter, and the transparency map is smoothed consistently with the color signals.
 - **Parameter tuning**: Start with diameter=9, sigma_color=75, sigma_space=75, then adjust:
   - Increase sigma_color if edges are still too noisy
   - Increase diameter if you need more smoothing in flat regions
@@ -204,15 +204,62 @@ def apply_bilateral_filter(
             numpy_image=filtered,
         )
     elif np_img.shape[2] == 4:
-        # BGRA: filter BGR separately, keep alpha
-        bgr = np_img[:, :, :3]
-        alpha = np_img[:, :, 3:4]
-        filtered_bgr = cv2.bilateralFilter(bgr, d, sigma_c, sigma_s)
-        filtered_img = np.concatenate([filtered_bgr, alpha], axis=2)
-        return WorkflowImageData.copy_and_replace(
-            origin_image_data=image,
-            numpy_image=filtered_img,
-        )
+        # BGRA: check if alpha is uniform (all fully opaque)
+        alpha_channel = np_img[:, :, 3]
+        if np.all(alpha_channel == 255):
+            # Fully opaque: filter BGR directly as 3-channel image (faster)
+            bgr = np_img[:, :, :3]
+            filtered_bgr = cv2.bilateralFilter(bgr, d, sigma_c, sigma_s)
+            filtered_img = np.concatenate(
+                [filtered_bgr, alpha_channel[:, :, np.newaxis]], axis=2
+            )
+            return WorkflowImageData.copy_and_replace(
+                origin_image_data=image,
+                numpy_image=filtered_img,
+            )
+        else:
+            # Variable alpha: premultiply, filter each channel separately, then un-premultiply
+            # This ensures semi-transparent pixels don't overstate their weight in the filter
+            bgr = np_img[:, :, :3].astype(np.float32)
+            alpha = alpha_channel.astype(np.float32) / 255.0  # 2D array
+
+            # Premultiply: scale color by alpha so transparent pixels have less influence
+            bgr_premultiplied = bgr * alpha[:, :, np.newaxis]
+
+            # Filter each channel separately (OpenCV only supports 1 or 3 channels)
+            filtered_b = cv2.bilateralFilter(
+                bgr_premultiplied[:, :, 0].astype(np.uint8), d, sigma_c, sigma_s
+            ).astype(np.float32)
+            filtered_g = cv2.bilateralFilter(
+                bgr_premultiplied[:, :, 1].astype(np.uint8), d, sigma_c, sigma_s
+            ).astype(np.float32)
+            filtered_r = cv2.bilateralFilter(
+                bgr_premultiplied[:, :, 2].astype(np.uint8), d, sigma_c, sigma_s
+            ).astype(np.float32)
+            filtered_alpha = cv2.bilateralFilter(
+                (alpha * 255.0).astype(np.uint8), d, sigma_c, sigma_s
+            ).astype(np.float32) / 255.0
+
+            # Stack filtered channels
+            filtered_bgr_premult = np.stack([filtered_b, filtered_g, filtered_r], axis=2)
+
+            # Un-premultiply: divide by alpha to recover original color space
+            # Avoid division by zero by adding small epsilon
+            epsilon = 1e-6
+            filtered_bgr = filtered_bgr_premult / (filtered_alpha[:, :, np.newaxis] + epsilon)
+
+            # Clamp to valid range and convert back to uint8
+            filtered_bgr = np.clip(filtered_bgr, 0, 255).astype(np.uint8)
+            filtered_alpha = (np.clip(filtered_alpha, 0, 1) * 255).astype(np.uint8)
+
+            # Expand alpha back to 4th channel dimension
+            filtered_img = np.concatenate(
+                [filtered_bgr, filtered_alpha[:, :, np.newaxis]], axis=2
+            )
+            return WorkflowImageData.copy_and_replace(
+                origin_image_data=image,
+                numpy_image=filtered_img,
+            )
     else:
         # BGR
         filtered = cv2.bilateralFilter(np_img, d, sigma_c, sigma_s)
