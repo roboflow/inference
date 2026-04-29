@@ -116,6 +116,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "MoonshotAI Kimi",
             "version": "v1",
+            "deprecated": True,
+            "deprecation_message": "Use the MoonshotAI Kimi v2 block, which adds a Roboflow-managed API key option and user-selectable privacy controls.",
             "short_description": "Run Moonshot AI Kimi vision-language models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Moonshot AI Kimi License",

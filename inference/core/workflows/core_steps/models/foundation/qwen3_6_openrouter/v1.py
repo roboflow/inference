@@ -122,6 +122,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Qwen 3.6 API",
             "version": "v1",
+            "deprecated": True,
+            "deprecation_message": "Use the unified Qwen-VL block (`roboflow_core/qwen_vlm@v1`), which combines all Qwen variants (native + OpenRouter) with managed-key passthrough and privacy controls.",
             "short_description": "Run Qwen 3.6 vision-language models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Qwen License",

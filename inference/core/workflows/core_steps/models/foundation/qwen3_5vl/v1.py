@@ -42,6 +42,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Qwen3.5-VL",
             "version": "v1",
+            "deprecated": True,
+            "deprecation_message": "Use the unified Qwen-VL block (`roboflow_core/qwen_vlm@v1`), which exposes Qwen 3.5 VL alongside other Qwen variants and the OpenRouter passthrough.",
             "short_description": "Run Qwen3.5-VL on an image.",
             "long_description": (
                 "This workflow block runs Qwen3.5-VL—a vision language model that accepts an image "

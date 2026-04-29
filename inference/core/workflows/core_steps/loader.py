@@ -236,14 +236,23 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 import (
     GoogleGemmaBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemma.v2 import (
+    GoogleGemmaBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v1 import (
     KimiOpenRouterBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v2 import (
+    KimiOpenrouterBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
     LlamaVisionBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.llama_vision.v2 import (
+    LlamaVisionBlockV2,
 )
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
@@ -282,6 +291,9 @@ from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
 )
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
+    QwenVlmBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
     SegPreviewBlockV1,
@@ -909,14 +921,18 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TwilioSMSNotificationBlockV2,
         GazeBlockV1,
         LlamaVisionBlockV1,
+        LlamaVisionBlockV2,
         GoogleGemmaBlockV1,
+        GoogleGemmaBlockV2,
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
         Qwen35VLBlockV1,
         Qwen35OpenRouterBlockV1,
         Qwen36OpenRouterBlockV1,
+        QwenVlmBlockV1,
         KimiOpenRouterBlockV1,
+        KimiOpenrouterBlockV2,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
