@@ -15,6 +15,7 @@ from inference_models import (
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_RFDETR_DEFAULT_NUM_SELECT,
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
@@ -171,7 +172,7 @@ class RFDetrForInstanceSegmentationTorch(
         model = build_model(config=model_config)
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
-        post_processor = PostProcess()
+        post_processor = PostProcess(num_select=INFERENCE_MODELS_RFDETR_DEFAULT_NUM_SELECT)
         return cls(
             model=model,
             class_names=class_names,
@@ -278,7 +279,7 @@ class RFDetrForInstanceSegmentationTorch(
             )
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
-        post_processor = PostProcess()
+        post_processor = PostProcess(num_select=INFERENCE_MODELS_RFDETR_DEFAULT_NUM_SELECT)
         return cls(
             model=model,
             class_names=class_names,

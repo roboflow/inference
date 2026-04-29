@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -14,6 +14,41 @@ def box_cxcywh_to_xyxy(x):
         (y_c + 0.5 * h.clamp(min=0.0)),
     ]
     return torch.stack(b, dim=-1)
+
+
+def select_topk_predictions(
+    logits_sigmoid: torch.Tensor,
+    bboxes_cxcywh: torch.Tensor,
+    num_select: int,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Topk-flat across (queries x classes) for one image.
+
+    Matches rf-detr-internal training-time `PostProcess` and SAB benchmarks:
+    flatten the (Q, C) sigmoid score matrix, take the top `num_select` entries,
+    derive the (query, class) index per pick, and gather the corresponding
+    cxcywh bbox per pick. A single query can contribute multiple detections
+    if more than one of its class scores ranks in the global topk.
+
+    Args:
+        logits_sigmoid: per-image sigmoid scores, shape (Q, C).
+        bboxes_cxcywh: per-image normalized cxcywh boxes, shape (Q, 4).
+        num_select: max number of (query, class) pairs to keep. Capped at Q*C.
+
+    Returns:
+        scores: top-K scores in descending order, shape (K,).
+        top_classes: class index for each pick, shape (K,).
+        gathered_bboxes_cxcywh: bboxes gathered by query index, shape (K, 4).
+        query_indices: query each pick came from, shape (K,). Useful for
+            downstream gather of per-query auxiliaries (e.g. masks).
+    """
+    num_classes = logits_sigmoid.shape[1]
+    flat_scores = logits_sigmoid.reshape(-1)
+    num_to_select = min(num_select, flat_scores.shape[0])
+    scores, topk_indexes = torch.topk(flat_scores, num_to_select)
+    query_indices = topk_indexes // num_classes
+    top_classes = topk_indexes % num_classes
+    gathered_bboxes = bboxes_cxcywh[query_indices]
+    return scores, top_classes, gathered_bboxes, query_indices
 
 
 class PostProcess(nn.Module):
@@ -39,45 +74,30 @@ class PostProcess(nn.Module):
         assert target_sizes.shape[1] == 2
 
         prob = out_logits.sigmoid()
-        topk_values, topk_indexes = torch.topk(
-            prob.view(out_logits.shape[0], -1), self.num_select, dim=1
-        )
-        scores = topk_values
-        topk_boxes = topk_indexes // out_logits.shape[2]
-        labels = topk_indexes % out_logits.shape[2]
-        boxes = box_cxcywh_to_xyxy(out_bbox)
-        boxes = torch.gather(boxes, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4))
-
-        # and from relative [0, 1] to absolute [0, height] coordinates
-        img_h, img_w = target_sizes.unbind(1)
-        scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
-        boxes = boxes * scale_fct[:, None, :]
-
         results = []
-        if out_masks is not None:
-            for i in range(out_masks.shape[0]):
-                res_i = {"scores": scores[i], "labels": labels[i], "boxes": boxes[i]}
-                k_idx = topk_boxes[i]
-                masks_i = torch.gather(
-                    out_masks[i],
-                    0,
-                    k_idx.unsqueeze(-1)
-                    .unsqueeze(-1)
-                    .repeat(1, out_masks.shape[-2], out_masks.shape[-1]),
-                )  # [K, Hm, Wm]
+        for i in range(prob.shape[0]):
+            scores, labels, gathered_bboxes_cxcywh, query_indices = (
+                select_topk_predictions(
+                    logits_sigmoid=prob[i],
+                    bboxes_cxcywh=out_bbox[i],
+                    num_select=self.num_select,
+                )
+            )
+            boxes_xyxy = box_cxcywh_to_xyxy(gathered_bboxes_cxcywh)
+            img_h, img_w = target_sizes[i].unbind(0)
+            scale_fct = torch.stack([img_w, img_h, img_w, img_h])
+            boxes_xyxy = boxes_xyxy * scale_fct
+            res_i = {"scores": scores, "labels": labels, "boxes": boxes_xyxy}
+            if out_masks is not None:
+                masks_i = out_masks[i][query_indices]  # [K, Hm, Wm]
                 h, w = target_sizes[i].tolist()
                 masks_i = F.interpolate(
                     masks_i.unsqueeze(1),
                     size=(int(h), int(w)),
                     mode="bilinear",
                     align_corners=False,
-                )  # [K,1,H,W]
+                )  # [K, 1, H, W]
                 res_i["masks"] = masks_i > 0.0
-                results.append(res_i)
-        else:
-            results = [
-                {"scores": s, "labels": l, "boxes": b}
-                for s, l, b in zip(scores, labels, boxes)
-            ]
+            results.append(res_i)
 
         return results
