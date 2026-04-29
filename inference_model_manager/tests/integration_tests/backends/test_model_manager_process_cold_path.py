@@ -77,6 +77,7 @@ class _MockManager:
     def _ensure_pool(self):
         if self._pool is None:
             from inference_model_manager.backends.utils.shm_pool import SHMPool
+
             self._pool = SHMPool.create(self._n_slots, self._input_mb)
 
     def set_mmp(self, mmp: ModelManagerProcess) -> None:
