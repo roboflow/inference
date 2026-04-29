@@ -874,8 +874,8 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         xyxy = prediction.xyxy
 
         # calculate centers
-        (x1, y1, x2, y2) = tuple(xyxy[0])
-        (image_height, image_width) = tuple(image_dimensions[0])
+        x1, y1, x2, y2 = tuple(xyxy[0])
+        image_height, image_width = tuple(image_dimensions[0])
         center_point = (x1 + (x2 - x1) / 2, y1 + (y2 - y1) / 2)
 
         # calculate deltas from center and edge
