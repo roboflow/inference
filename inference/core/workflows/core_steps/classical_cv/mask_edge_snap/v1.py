@@ -1,9 +1,9 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import Annotated, List, Literal, Optional, Type, Union
 
 import cv2
 import numpy as np
 import supervision as sv
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field, StringConstraints, field_validator
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -12,6 +12,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INTEGER_KIND,
+    FLOAT_KIND,
+    REFERENCE_KEY,
+    SELECTED_ELEMENT_KEY,
+    KIND_KEY,
+    SELECTOR_POINTS_TO_BATCH_KEY,
+    ANY_DATA_AS_SELECTED_ELEMENT,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -111,6 +118,15 @@ This block refines segmentation masks through a sophisticated multi-step pipelin
 **Order matters**: Blur first, then contrast adjustment if needed. Reverse causes contrast adjustment to amplify the noise before blur can suppress it.
 """
 
+# Custom type for segmentation that accepts both selector strings and Detections objects
+# This includes the proper json_schema_extra to tell the workflow engine to resolve selectors
+_segmentation_json_schema_extra = {
+    REFERENCE_KEY: True,
+    SELECTED_ELEMENT_KEY: ANY_DATA_AS_SELECTED_ELEMENT,
+    KIND_KEY: [INSTANCE_SEGMENTATION_PREDICTION_KIND.dict()],
+    SELECTOR_POINTS_TO_BATCH_KEY: "dynamic",
+}
+
 
 class MaskEdgeSnapManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/mask_edge_snap@v1"]
@@ -129,7 +145,7 @@ class MaskEdgeSnapManifest(WorkflowBlockManifest):
                 "blockPriority": 12,
                 "opencv": True,
             },
-        }
+        },
     )
 
     image: Selector(kind=[IMAGE_KIND]) = Field(
@@ -143,49 +159,94 @@ class MaskEdgeSnapManifest(WorkflowBlockManifest):
         title="Segmentation",
         description="Instance segmentation predictions with mask field populated. Each mask contour will be snapped to detected edges. If empty, segmentation is passed through unchanged. Can be a reference string like '$steps.segmentation_model.predictions' or a supervision.Detections object.",
         examples=["$steps.segmentation_model.predictions", "$inputs.segmentation"],
+        json_schema_extra=_segmentation_json_schema_extra,
     )
 
-    pixel_tolerance: int = Field(
+    pixel_tolerance: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=15,
-        ge=1,
-        le=100,
         description="Maximum perpendicular distance (pixels) from each contour point to candidate edges during snapping. Typical: 5-15 for tight predictions, 20-50 for rough ones. Too small: real edges outside range get missed. Too large: snap can wander to unrelated edges.",
     )
 
-    sigma: float = Field(
+    sigma: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=1.0,
-        ge=0.01,
-        le=10.0,
         description="Strictness multiplier for adaptive Sobel threshold (local_mean + sigma * local_std). Lower (0.1-0.5): permissive, good for low-contrast. Higher (1.0-2.0): strict, only strongest edges. Tune this AFTER other parameters.",
     )
 
-    min_contour_area: float = Field(
+    min_contour_area: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=50.0,
-        ge=0.0,
-        le=10000.0,
         description="Minimum enclosed-polygon area for edge components to keep. Small (10-50): keeps fragmented edges. Large (200-1000): aggressive noise rejection. Scales roughly with dilation_iterations.",
     )
 
-    dilation_iterations: int = Field(
+    dilation_iterations: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=2,
-        ge=0,
-        le=20,
         description="Morphological closing iterations to bridge gaps in thresholded edge map. Each iteration bridges ~2px gaps. 0: no closing. 1-2: hairline gaps. 3-5: visible dashes. 10+: aggressive merging.",
     )
 
-    boundary_band_width: int = Field(
+    boundary_band_width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=15,
-        ge=1,
-        le=100,
         description="Half-width (pixels) of search band around segmentation contour. Sets maximum distance between predicted boundary and true boundary that can be corrected. Should generally be >= pixel_tolerance.",
     )
 
-    adaptive_window_size: int = Field(
+    adaptive_window_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=41,
-        ge=3,
-        le=201,
         description="Side length of local-statistics window for adaptive threshold. Small (15-25): fine local sensitivity, can pick noise. Default 41: balanced. Large (81-121): smooth field, closer to global thresholding. Should be ~5-10% of smaller image dimension.",
     )
+
+    @field_validator("pixel_tolerance")
+    @classmethod
+    def validate_pixel_tolerance(cls, value: Union[int, str]) -> Union[int, str]:
+        if isinstance(value, int) and (value < 1 or value > 100):
+            raise ValueError(
+                "pixel_tolerance must be between 1 and 100, got: {}".format(value)
+            )
+        return value
+
+    @field_validator("sigma")
+    @classmethod
+    def validate_sigma(cls, value: Union[float, str]) -> Union[float, str]:
+        if isinstance(value, float) and (value < 0.01 or value > 10.0):
+            raise ValueError(
+                "sigma must be between 0.01 and 10.0, got: {}".format(value)
+            )
+        return value
+
+    @field_validator("min_contour_area")
+    @classmethod
+    def validate_min_contour_area(cls, value: Union[float, str]) -> Union[float, str]:
+        if isinstance(value, float) and (value < 0.0 or value > 10000.0):
+            raise ValueError(
+                "min_contour_area must be between 0.0 and 10000.0, got: {}".format(
+                    value
+                )
+            )
+        return value
+
+    @field_validator("dilation_iterations")
+    @classmethod
+    def validate_dilation_iterations(cls, value: Union[int, str]) -> Union[int, str]:
+        if isinstance(value, int) and (value < 0 or value > 20):
+            raise ValueError(
+                "dilation_iterations must be between 0 and 20, got: {}".format(value)
+            )
+        return value
+
+    @field_validator("boundary_band_width")
+    @classmethod
+    def validate_boundary_band_width(cls, value: Union[int, str]) -> Union[int, str]:
+        if isinstance(value, int) and (value < 1 or value > 100):
+            raise ValueError(
+                "boundary_band_width must be between 1 and 100, got: {}".format(value)
+            )
+        return value
+
+    @field_validator("adaptive_window_size")
+    @classmethod
+    def validate_adaptive_window_size(cls, value: Union[int, str]) -> Union[int, str]:
+        if isinstance(value, int) and (value < 3 or value > 201):
+            raise ValueError(
+                "adaptive_window_size must be between 3 and 201, got: {}".format(value)
+            )
+        return value
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -324,8 +385,15 @@ def refine_masks(
         gray = np_img[:, :, 0]
     elif np_img.shape[2] == 4:
         gray = cv2.cvtColor(np_img, cv2.COLOR_BGRA2GRAY)
-    else:
+    elif np_img.shape[2] == 3:
         gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY)
+    else:
+        # For any other case, try to convert assuming BGR
+        try:
+            gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY)
+        except cv2.error:
+            # If conversion fails, take first channel
+            gray = np_img[:, :, 0] if len(np_img.shape) >= 3 else np_img.copy()
 
     tol = int(pixel_tolerance)
     band_radius = max(1, int(boundary_band_width))
