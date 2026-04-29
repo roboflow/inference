@@ -114,9 +114,7 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
         service_secret=None,
     )
     model_manager.infer_from_request_sync.assert_called_once()
-    assert (
-        model_manager.infer_from_request_sync.call_args.args[0] == "florence-2-base"
-    )
+    assert model_manager.infer_from_request_sync.call_args.args[0] == "florence-2-base"
     inference_request = model_manager.infer_from_request_sync.call_args.args[1]
     assert inference_request.model_id == "florence-2-base"
     assert inference_request.api_key == "query-api-key"

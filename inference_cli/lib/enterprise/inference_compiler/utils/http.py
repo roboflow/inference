@@ -30,7 +30,7 @@ def upload_file_to_cloud(
             response = requests.put(url, headers=headers, data=f)
             response.raise_for_status()
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-        raise RetryError(f"Connectivity error")
+        raise RetryError("Connectivity error")
     handle_response_errors(response=response)
 
 

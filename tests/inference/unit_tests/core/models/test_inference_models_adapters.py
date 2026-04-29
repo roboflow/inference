@@ -3,10 +3,15 @@
 import pytest
 import torch
 
+from inference.core.exceptions import PostProcessingError
 from inference.core.models.inference_models_adapters import (
+    prepare_classification_response,
     prepare_multi_label_classification_response,
 )
-from inference_models import MultiLabelClassificationPrediction
+from inference_models import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
+)
 
 
 def test_prepare_multi_label_response_uses_class_ids_for_predicted_classes() -> None:
@@ -46,3 +51,38 @@ def test_prepare_multi_label_response_uses_class_ids_for_predicted_classes() -> 
     assert r.predictions["d"].confidence == pytest.approx(0.9)
     # Only the model's filtered class_ids show up in predicted_classes.
     assert r.predicted_classes == ["c"]
+
+
+def test_prepare_classification_response_flattens_singleton_output_dimensions() -> None:
+    class_names = ["cat", "dog"]
+    prediction = ClassificationPrediction(
+        class_id=torch.tensor([[1]], dtype=torch.long),
+        confidence=torch.tensor([[[0.1, 0.9]]]),
+    )
+
+    results = prepare_classification_response(
+        post_processed_predictions=prediction,
+        image_sizes=[(10, 20)],
+        class_names=class_names,
+        confidence_threshold=0.0,
+    )
+
+    assert len(results) == 1
+    assert results[0].top == "dog"
+    assert results[0].confidence == pytest.approx(0.9)
+    assert [p.class_name for p in results[0].predictions] == ["dog", "cat"]
+
+
+def test_prepare_classification_response_fails_on_class_count_mismatch() -> None:
+    prediction = ClassificationPrediction(
+        class_id=torch.tensor([0], dtype=torch.long),
+        confidence=torch.tensor([[0.7]]),
+    )
+
+    with pytest.raises(PostProcessingError, match="class names metadata"):
+        prepare_classification_response(
+            post_processed_predictions=prediction,
+            image_sizes=[(10, 20)],
+            class_names=["cat", "dog"],
+            confidence_threshold=0.0,
+        )

@@ -16,7 +16,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
@@ -36,11 +36,10 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
-from inference_models.weights_providers.entities import RecommendedParameters
 from inference_models.models.common.trt import (
     TRTCudaGraphCache,
     establish_trt_cuda_graph_cache,
@@ -48,6 +47,7 @@ from inference_models.models.common.trt import (
     infer_from_trt_engine,
     load_trt_model,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import tensorrt as trt
@@ -459,7 +459,9 @@ class VITForMultiLabelClassificationTRT(
         )
         threshold = confidence_filter.get_threshold(self.class_names)
         if isinstance(threshold, torch.Tensor):
-            threshold = threshold.to(dtype=model_results.dtype, device=model_results.device)
+            threshold = threshold.to(
+                dtype=model_results.dtype, device=model_results.device
+            )
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             if self._inference_config.post_processing.fused:

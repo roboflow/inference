@@ -1,4 +1,5 @@
-from typing import List, Literal, Optional, Type, Union
+import json
+from typing import Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -17,6 +18,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
+    LANGUAGE_MODEL_OUTPUT_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
     ImageInputField,
@@ -29,15 +31,28 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceHTTPClient
 
+STRUCTURED_ANSWERING_PROMPT_TEMPLATE = (
+    "You are supposed to produce responses in JSON wrapped in Markdown markers: "
+    "```json\nyour-response\n```. Below is a dictionary with keys and values. "
+    "Each key must be present in your response. Values represent descriptions "
+    "for JSON fields to be generated. Provide only JSON Markdown in response.\n\n"
+    "Specification of requirements regarding output fields:\n{output_structure}"
+)
+
 TASK_TYPE_TO_PROMPT = {
     "text-recognition": "Text Recognition:",
     "table-recognition": "Table Recognition:",
     "formula-recognition": "Formula Recognition:",
+    "structured-answering": None,
     "custom": None,
 }
 
 TaskType = Literal[
-    "text-recognition", "table-recognition", "formula-recognition", "custom"
+    "text-recognition",
+    "table-recognition",
+    "formula-recognition",
+    "structured-answering",
+    "custom",
 ]
 
 TASKS_METADATA = {
@@ -53,6 +68,10 @@ TASKS_METADATA = {
         "name": "Formula Recognition",
         "description": "Recognizes mathematical formulas and equations.",
     },
+    "structured-answering": {
+        "name": "Structured Output",
+        "description": "Extract values into a JSON document with a user-defined schema.",
+    },
     "custom": {
         "name": "Custom Prompt",
         "description": "Provide your own prompt for specialized recognition tasks.",
@@ -60,6 +79,7 @@ TASKS_METADATA = {
 }
 
 TASKS_REQUIRING_PROMPT = {"custom"}
+TASKS_REQUIRING_OUTPUT_STRUCTURE = {"structured-answering"}
 
 LONG_DESCRIPTION = """
 Recognize text in images using GLM-OCR, a vision language model by Zhipu AI specialized
@@ -74,7 +94,9 @@ GLM-OCR supports three built-in recognition modes:
 - **Table Recognition** — Recognizes table structures and content.
 
 You can also select **Custom Prompt** to provide your own prompt for specialized
-recognition tasks.
+recognition tasks, or **Structured Output** to extract values from the image
+into a JSON document with a user-defined schema (pair with the JSON Parser
+block to materialize the keys as workflow outputs).
 
 This block pairs well with detection models and DynamicCropBlock to isolate regions of
 interest before running OCR. For example, use an object detection model to find labels
@@ -92,6 +114,9 @@ class BlockManifest(WorkflowBlockManifest):
         description="Recognition task to perform. Determines the prompt sent to GLM-OCR.",
         json_schema_extra={
             "values_metadata": TASKS_METADATA,
+            "recommended_parsers": {
+                "structured-answering": "roboflow_core/json_parser@v1",
+            },
             "always_visible": True,
         },
     )
@@ -103,6 +128,20 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "task_type": {"values": TASKS_REQUIRING_PROMPT, "required": True},
+            },
+        },
+    )
+    output_structure: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Dictionary describing the structure of the expected JSON response. "
+        "Keys are the JSON field names; values describe what the model should put in each field.",
+        examples=[{"my_key": "description"}, "$inputs.output_structure"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": TASKS_REQUIRING_OUTPUT_STRUCTURE,
+                    "required": True,
+                },
             },
         },
     )
@@ -151,6 +190,13 @@ class BlockManifest(WorkflowBlockManifest):
     def validate_prompt(self) -> "BlockManifest":
         if self.task_type == "custom" and not self.prompt:
             raise ValueError("`prompt` is required when task_type is 'custom'.")
+        if (
+            self.task_type in TASKS_REQUIRING_OUTPUT_STRUCTURE
+            and not self.output_structure
+        ):
+            raise ValueError(
+                f"`output_structure` is required when task_type is '{self.task_type}'."
+            )
         return self
 
     @classmethod
@@ -158,8 +204,10 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="parsed_output",
-                kind=[STRING_KIND],
-                description="The recognized text from the image.",
+                kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND],
+                description="The recognized text from the image. For "
+                "`structured-answering` this is a JSON-in-Markdown document "
+                "ready to be fed into the JSON Parser block.",
             ),
         ]
 
@@ -172,9 +220,17 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-def _resolve_prompt(task_type: str, prompt: Optional[str]) -> str:
+def _resolve_prompt(
+    task_type: str,
+    prompt: Optional[str],
+    output_structure: Optional[Dict[str, str]],
+) -> str:
     if task_type == "custom":
         return prompt
+    if task_type == "structured-answering":
+        return STRUCTURED_ANSWERING_PROMPT_TEMPLATE.format(
+            output_structure=json.dumps(output_structure, indent=4),
+        )
     return TASK_TYPE_TO_PROMPT[task_type]
 
 
@@ -203,9 +259,10 @@ class GLMOCRBlockV1(WorkflowBlock):
         model_version: str,
         task_type: str,
         prompt: Optional[str],
+        output_structure: Optional[Dict[str, str]] = None,
         max_new_tokens: Optional[int] = None,
     ) -> BlockResult:
-        resolved_prompt = _resolve_prompt(task_type, prompt)
+        resolved_prompt = _resolve_prompt(task_type, prompt, output_structure)
         if self._step_execution_mode == StepExecutionMode.LOCAL:
             return self.run_locally(
                 images=images,

@@ -14,7 +14,8 @@ WORKFLOW_DEFINITION = {
             "name": "multi_label",
             "images": "$inputs.image",
             "model_id": "animal-classification-9lufm/1",
-            "confidence_mode": "custom", "custom_confidence": 0.2,
+            "confidence_mode": "custom",
+            "custom_confidence": 0.2,
         },
         {
             "type": "roboflow_core/property_definition@v1",
