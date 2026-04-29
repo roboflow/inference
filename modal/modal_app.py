@@ -22,8 +22,36 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     capture_output,
 )
 
-# Create the Modal App
-app = modal.App("webexec")
+# Deploy-time configuration.
+#
+# Defaults preserve the legacy single-region deployment:
+#     app name "webexec", cloud "aws", region "us-east-1".
+#
+# To add a regional deploy, set WEBEXEC_REGIONAL=true and the cloud + region:
+#     WEBEXEC_REGIONAL=true \
+#         WEBEXEC_DEPLOY_CLOUD=aws \
+#         WEBEXEC_DEPLOY_REGION=eu-west-1 \
+#         python modal/deploy_modal_app.py
+# which deploys to ``webexec-aws-eu-west-1`` on aws/eu-west-1. The client
+# picks which deploy to dial from its own MODAL_CLOUD_PROVIDER +
+# MODAL_REGION (see inference/core/workflows/.../modal_executor.py and
+# inference/core/interfaces/webrtc_worker/region_presets.py).
+WEBEXEC_DEPLOY_CLOUD = os.getenv("WEBEXEC_DEPLOY_CLOUD", "aws").lower().strip()
+WEBEXEC_DEPLOY_REGION = os.getenv("WEBEXEC_DEPLOY_REGION", "us-east-1")
+_WEBEXEC_REGIONAL = os.getenv("WEBEXEC_REGIONAL", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+    "t",
+)
+_WEBEXEC_APP_NAME = (
+    f"webexec-{WEBEXEC_DEPLOY_CLOUD}-{WEBEXEC_DEPLOY_REGION}"
+    if _WEBEXEC_REGIONAL
+    else "webexec"
+)
+
+app = modal.App(_WEBEXEC_APP_NAME)
 
 
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
@@ -67,8 +95,8 @@ def get_inference_image():
     timeout=700,
     enable_memory_snapshot=True,  # Enable memory snapshotting for faster cold starts
     scaledown_window=60,
-    cloud="aws",
-    region="us-east-1",
+    cloud=WEBEXEC_DEPLOY_CLOUD,
+    region=WEBEXEC_DEPLOY_REGION,
     buffer_containers=1,
     allow_concurrent_inputs=10,
 )

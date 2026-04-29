@@ -71,6 +71,45 @@ from inference.core.workflows.core_steps.common.deserializers import (
 )
 
 
+_DEFAULT_WEBEXEC_APP_NAME = "webexec"
+
+
+def _resolve_webexec_app_name() -> str:
+    """Pick the webexec app name to dial based on the worker's cloud+region.
+
+    Convention: when ``WEBEXEC_REGIONAL`` is true, the client dials
+    ``webexec-<cloud>-<region>`` (e.g. ``webexec-aws-eu-west-1``) so it
+    hits a same-cloud, same-region deploy. ``cloud`` is derived from
+    ``MODAL_CLOUD_PROVIDER`` (e.g. ``CLOUD_PROVIDER_AWS`` -> ``aws``) and
+    ``region`` from ``MODAL_REGION``. Otherwise (``WEBEXEC_REGIONAL`` is
+    false, or either env var is missing) it falls back to the legacy
+    ``webexec`` app (single-region, us-east-1) and logs a warning so the
+    miss-routing is visible.
+    """
+    from inference.core.env import WEBEXEC_REGIONAL
+
+    if not WEBEXEC_REGIONAL:
+        return _DEFAULT_WEBEXEC_APP_NAME
+
+    raw_cloud = os.environ.get("MODAL_CLOUD_PROVIDER", "")
+    cloud = raw_cloud.removeprefix("CLOUD_PROVIDER_").lower()
+    region = os.environ.get("MODAL_REGION", "")
+    if not cloud or not region:
+        logger.warning(
+            "[webexec] WEBEXEC_REGIONAL=true but cloud/region missing "
+            "(MODAL_CLOUD_PROVIDER=%r MODAL_REGION=%r); "
+            "falling back to legacy %r",
+            raw_cloud,
+            region,
+            _DEFAULT_WEBEXEC_APP_NAME,
+        )
+        return _DEFAULT_WEBEXEC_APP_NAME
+
+    name = f"{_DEFAULT_WEBEXEC_APP_NAME}-{cloud}-{region}"
+    logger.info("[webexec] dialing %s (cloud=%s region=%s)", name, cloud, region)
+    return name
+
+
 def _compute_code_hash(code_str: str, imports: Optional[list]) -> str:
     """Stable hash for a python block's code + imports.
 
@@ -282,7 +321,7 @@ class ModalExecutor:
                 self._base_url = env_url
             else:
                 workspace = MODAL_WORKSPACE_NAME
-                app_name = "webexec"
+                app_name = _resolve_webexec_app_name()
                 class_name = "executor"
                 method_name = "execute-block"
 
@@ -690,7 +729,8 @@ class WebSocketModalExecutor:
             base = env_url.rstrip("/")
         else:
             workspace = MODAL_WORKSPACE_NAME
-            label = "webexec-executor-wsapp"
+            app_name = _resolve_webexec_app_name()
+            label = f"{app_name}-executor-wsapp"
             if len(label) > 56:
                 h = hashlib.sha256(label.encode()).hexdigest()[:6]
                 label = f"{label[:56]}-{h}"
