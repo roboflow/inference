@@ -1,5 +1,11 @@
 # Changelog
 
+## `0.27.3`
+
+### Fixed
+
+- RFDetrForObjectDetection{ONNX,TRT} post-processing now uses topk-flat across (queries × classes) via shared select_topk_predictions, matching training-time PostProcess and the existing pytorch + instance-segmentation paths; fixes a cross-backend divergence at low confidence thresholds.
+
 ## `0.27.2`
 
 ### Fixed
