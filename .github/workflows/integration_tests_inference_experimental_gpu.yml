@@ -79,7 +79,8 @@ jobs:
               cuda-nvcc-12-5 \
               cuda-profiler-api-12-5 \
               libcurand-dev-12-5 \
-              libvips-dev
+              libvips-dev \
+              libgles2-mesa
 
           sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
           sudo chown -R $(whoami):$(whoami) ~/apt-cache
