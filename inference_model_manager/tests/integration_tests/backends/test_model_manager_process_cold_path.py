@@ -2,11 +2,10 @@
 
 Tests:
   - T_STATS returns JSON snapshot
-  - T_LOAD / T_UNLOAD / T_SLEEP / T_WAKE lifecycle messages
+  - T_LOAD / T_UNLOAD lifecycle messages
   - _load_flavor calls manager.load() when manager is provided
   - register_backend triggered after mock load
   - _lru_evictable_model picks LRU correctly
-  - eviction updates ModelState.sleeping
 """
 
 from __future__ import annotations
@@ -31,12 +30,10 @@ from inference_model_manager.model_manager_process import (
     T_MODEL_READY,
     T_OK,
     T_RESULT_READY,
-    T_SLEEP,
     T_STATS,
     T_STATS_RESP,
     T_SUBMIT,
     T_UNLOAD,
-    T_WAKE,
     ModelManagerProcess,
 )
 
@@ -67,7 +64,7 @@ class _MockManager:
 
     def __init__(self, n_slots: int = 8, input_mb: float = _TEST_INPUT_MB):
         self.loaded: dict[str, bytes] = {}  # flavor → result_bytes
-        self.slept: set[str] = set()
+
         self.calls: list[str] = []  # log of method calls
         self._mmp: ModelManagerProcess | None = None
         self._n_slots = n_slots
@@ -107,14 +104,6 @@ class _MockManager:
     ) -> None:
         self.calls.append(f"unload:{model_id}:drain={drain}")
         self.loaded.pop(model_id, None)
-
-    def sleep(self, model_id: str) -> None:
-        self.calls.append(f"sleep:{model_id}")
-        self.slept.add(model_id)
-
-    def wake(self, model_id: str) -> None:
-        self.calls.append(f"wake:{model_id}")
-        self.slept.discard(model_id)
 
     def stats(self) -> dict:
         return {"gpus": [], "models_loaded": list(self.loaded.keys())}
@@ -453,16 +442,6 @@ class TestLRUEviction:
         mmp._model_access["b"] = now
         assert mmp._pick_eviction_candidate() is None
 
-    def test_eviction_skips_sleeping(self):
-        mmp = self._make_mmp()
-        from inference_model_manager.model_manager_process import ModelState
-
-        mmp._models["a"] = ModelState(loaded=False, sleeping=True)
-        mmp._models["b"] = ModelState(loaded=True)
-        mmp._model_access["a"] = 1.0
-        mmp._model_access["b"] = 1.0  # cold
-        assert mmp._pick_eviction_candidate() == "b"
-
     def test_eviction_skips_in_flight(self):
         mmp = self._make_mmp()
         from inference_model_manager.model_manager_process import ModelState
@@ -489,4 +468,3 @@ class TestLRUEviction:
         mmp._check_and_evict()
         assert "unload:m:drain=True" in mgr.calls
         assert mmp._models["m"].loaded is False
-        assert mmp._models["m"].sleeping is False

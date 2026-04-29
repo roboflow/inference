@@ -66,8 +66,7 @@ class ModelManager:
     ) -> None:
         """
         Args:
-            max_pinned_memory_mb: Maximum CPU pinned memory for sleeping models.
-                0 = no sleeping tier (models go straight from loaded to unloaded).
+            max_pinned_memory_mb: Reserved for future use.
             n_slots: SHM slots for subprocess backends (shared pool).
             input_mb: MB per slot data area.
         """
@@ -501,7 +500,7 @@ class ModelManager:
         """Health status for a model.
 
         Returns one of: 'not_loaded', 'loading', 'loaded', 'draining',
-        'sleeping', 'unhealthy'.
+        'unhealthy'.
         """
         backend = self._backends.get(model_id)
         if backend is None:

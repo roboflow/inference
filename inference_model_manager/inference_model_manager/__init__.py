@@ -1,7 +1,7 @@
 """
 Public API of the ``inference-model-manager`` package.
 
-The model manager orchestrates model lifecycle (load/unload/sleep/wake),
+The model manager orchestrates model lifecycle (load/unload/evict),
 SHM-based zero-copy transport, subprocess worker management, and batched
 GPU inference.
 

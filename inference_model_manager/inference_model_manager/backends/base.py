@@ -115,29 +115,6 @@ class Backend(ABC):
         """
         self.unload()
 
-    @abstractmethod
-    def sleep(self) -> Optional[int]:
-        """Offload model weights to CPU pinned memory, freeing VRAM.
-
-        Returns the number of bytes of CPU pinned memory now used,
-        or None if sleeping is not supported by this backend.
-
-        Raises:
-            RuntimeError: If the backend has in-flight requests.
-        """
-        ...
-
-    @abstractmethod
-    def wake(self) -> None:
-        """Reload weights from CPU pinned memory back to GPU.
-
-        Blocks until the model is ready to serve again.
-
-        Raises:
-            RuntimeError: If the backend is not in sleeping state.
-        """
-        ...
-
     # ------------------------------------------------------------------
     # Observability
     # ------------------------------------------------------------------
@@ -151,7 +128,7 @@ class Backend(ABC):
     @property
     @abstractmethod
     def state(self) -> str:
-        """Current state: 'loading', 'loaded', 'sleeping', 'unhealthy'."""
+        """Current state: 'loading', 'loaded', 'draining', 'unhealthy'."""
         ...
 
     @property
