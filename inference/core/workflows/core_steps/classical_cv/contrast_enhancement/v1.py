@@ -267,15 +267,13 @@ def _enhance_multichannel_contrast(
         channel = image[:, :, c].astype(np.float32)
 
         # Compute histogram percentiles for clipping
-        flat = channel.flatten()
         if clip_pct > 0:
             lower_pct = clip_pct * 100
             upper_pct = 100 - clip_pct * 100
-            v_min = np.percentile(flat, lower_pct)
-            v_max = np.percentile(flat, upper_pct)
+            v_min, v_max = np.quantile(channel, [lower_pct / 100, upper_pct / 100])
         else:
-            v_min = flat.min()
-            v_max = flat.max()
+            v_min = channel.min()
+            v_max = channel.max()
 
         # Avoid division by zero
         if v_max > v_min:
