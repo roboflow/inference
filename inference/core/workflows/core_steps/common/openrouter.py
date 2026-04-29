@@ -305,8 +305,21 @@ def _execute_proxied_openrouter_request(
     message = choices[0].get("message") or {}
     content = message.get("content")
     if content is None:
+        # Reasoning models (Kimi K2.x, some Qwen 3.5/3.6 variants) emit all
+        # of their tokens as `reasoning` and run out before producing visible
+        # `content` if `max_tokens` is too low. Surface a hint so users know
+        # how to recover instead of just raising "missing content".
+        finish = choices[0].get("finish_reason")
+        hint = (
+            " The model may be a reasoning model that ran out of tokens "
+            "during its internal thinking step. Try increasing `max_tokens` "
+            "(e.g. 1000+) or pick a non-reasoning model variant."
+            if finish == "length"
+            else ""
+        )
         raise RuntimeError(
             "OpenRouter response missing message.content via Roboflow proxy."
+            + hint
         )
     return content
 
@@ -342,10 +355,20 @@ def _execute_direct_openrouter_request(
         )
     content = response.choices[0].message.content
     if content is None:
+        # Reasoning models can burn all of `max_tokens` on internal thinking
+        # before producing user-visible content. The OpenAI SDK populates
+        # `finish_reason` on the choice; "length" means we ran out.
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+        hint = (
+            " The model may be a reasoning model that ran out of tokens "
+            "during its internal thinking step. Try increasing `max_tokens` "
+            "(e.g. 1000+) or pick a non-reasoning model variant."
+            if finish_reason == "length"
+            else " This can happen when the model returns only tool calls "
+            "or reasoning tokens. Try a different prompt or model."
+        )
         raise RuntimeError(
-            "OpenRouter response missing message.content. This can happen "
-            "when the model returns only tool calls or reasoning tokens. "
-            "Try a different prompt or model."
+            "OpenRouter response missing message.content." + hint
         )
     return content
 

@@ -32,7 +32,7 @@ def test_manifest_defaults_include_managed_key_and_deny_privacy():
     )
     assert manifest.api_key == "rf_key:account"
     assert manifest.privacy_level == "deny"
-    assert manifest.model_version == "11B (Free) - OpenRouter"
+    assert manifest.model_version == "11B - OpenRouter"
 
 
 def test_manifest_rejects_invalid_temperature():
@@ -61,7 +61,7 @@ def test_run_uses_correct_openrouter_slug(mock_execute):
         classes=None,
         api_key="rf_key:account",
         privacy_level="zdr",
-        model_version="90B (Regular) - OpenRouter",
+        model_version="11B - OpenRouter",
         max_tokens=128,
         temperature=0.2,
         max_concurrent_requests=None,
@@ -69,7 +69,7 @@ def test_run_uses_correct_openrouter_slug(mock_execute):
 
     assert (
         mock_execute.call_args.kwargs["model"]
-        == MODEL_VERSION_MAPPING["90B (Regular) - OpenRouter"]
-        == "meta-llama/llama-3.2-90b-vision-instruct"
+        == MODEL_VERSION_MAPPING["11B - OpenRouter"]
+        == "meta-llama/llama-3.2-11b-vision-instruct"
     )
     assert mock_execute.call_args.kwargs["privacy_level"] == "zdr"

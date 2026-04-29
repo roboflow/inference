@@ -141,10 +141,10 @@ MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
         "backend": "openrouter",
         "model_id": "qwen/qwen3.6-plus",
     },
-    "Qwen 3.6 Max Preview - OpenRouter": {
-        "backend": "openrouter",
-        "model_id": "qwen/qwen3.6-max-preview",
-    },
+    # Note: Qwen 3.6 Max Preview is intentionally excluded — it's a text-only
+    # model on OpenRouter (no image-input endpoints), so it can't satisfy a
+    # VLM block. If/when OpenRouter ships a vision-capable Max variant, add
+    # it back here.
 }
 
 ModelVersion = Literal[tuple(MODEL_VARIANTS.keys())]

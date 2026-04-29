@@ -30,19 +30,15 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+# OpenRouter currently only ships one Llama 3.2 vision variant (the paid 11B).
+# The :free tier and the 90B variant that the v1 block listed have all been
+# removed from OpenRouter's catalog (verified against /api/v1/models on the
+# branch's E2E test). We only ship the variant that actually responds.
 MODEL_VERSION_MAPPING = {
-    "11B (Free) - OpenRouter": "meta-llama/llama-3.2-11b-vision-instruct:free",
-    "11B (Regular) - OpenRouter": "meta-llama/llama-3.2-11b-vision-instruct",
-    "90B (Free) - OpenRouter": "meta-llama/llama-3.2-90b-vision-instruct:free",
-    "90B (Regular) - OpenRouter": "meta-llama/llama-3.2-90b-vision-instruct",
+    "11B - OpenRouter": "meta-llama/llama-3.2-11b-vision-instruct",
 }
 
-ModelVersion = Literal[
-    "11B (Free) - OpenRouter",
-    "11B (Regular) - OpenRouter",
-    "90B (Free) - OpenRouter",
-    "90B (Regular) - OpenRouter",
-]
+ModelVersion = Literal["11B - OpenRouter"]
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 
@@ -151,9 +147,9 @@ class BlockManifest(OpenRouterBlockManifestMixin):
         },
     )
     model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
-        default="11B (Free) - OpenRouter",
+        default="11B - OpenRouter",
         description="Model to be used",
-        examples=["11B (Free) - OpenRouter", "$inputs.llama_model"],
+        examples=["11B - OpenRouter", "$inputs.llama_model"],
     )
 
     @model_validator(mode="after")
