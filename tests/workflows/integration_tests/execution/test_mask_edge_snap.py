@@ -389,6 +389,7 @@ def _build_mask_edge_snap_with_morphological_preprocessing_workflow() -> dict:
         "version": "1.0",
         "inputs": [
             {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowInstanceSegmentation", "name": "segmentation"},
         ],
         "steps": [
             {
