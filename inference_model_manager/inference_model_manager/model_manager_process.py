@@ -14,7 +14,7 @@ Hot-path protocol (uvicorn ↔ MMP, ZMQ DEALER/ROUTER, no empty delimiter):
   uvicorn reads SHM slot, sends T_FREE  →  MMP frees slot
 
 Lifecycle API (admin ↔ MMP, same ROUTER):
-  T_LOAD / T_UNLOAD / T_SLEEP / T_WAKE / T_STATS
+  T_LOAD / T_UNLOAD / T_STATS
 
 Run standalone::
 
@@ -74,8 +74,6 @@ T_ERROR = b"\xFF"
 # Lifecycle API (admin → MMP)
 T_LOAD = b"\x20"
 T_UNLOAD = b"\x21"
-T_SLEEP = b"\x22"
-T_WAKE = b"\x23"
 T_STATS = b"\x30"
 
 # Lifecycle replies (MMP → admin)
@@ -217,7 +215,6 @@ class ModelState:
 
     loaded: bool = False
     loading: bool = False
-    sleeping: bool = False  # DEPRECATED — kept for stats compat, always False
     # Each waiter: (uvicorn_identity, req_id, deadline_monotonic_s)
     load_waiters: list[tuple[bytes, int, float]] = field(default_factory=list)
 
@@ -347,7 +344,6 @@ class ModelManagerProcess:
         fs = self._models.setdefault(model_id, ModelState())
         fs.loading = False
         fs.loaded = True
-        fs.sleeping = False
         # Prevent immediate eviction — treat load time as first access
         self._model_access.setdefault(model_id, time.monotonic())
 
@@ -506,10 +502,6 @@ class ModelManagerProcess:
                 await self._handle_load(identity, data)
             elif msg_type == T_UNLOAD:
                 await self._handle_unload(identity, data)
-            elif msg_type == T_SLEEP:
-                await self._handle_sleep(identity, data)
-            elif msg_type == T_WAKE:
-                await self._handle_wake(identity, data)
             elif msg_type == T_STATS:
                 await self._handle_stats(identity, data)
             else:
@@ -680,7 +672,6 @@ class ModelManagerProcess:
             fs = self._models.get(model_id)
             if fs:
                 fs.loaded = False
-                fs.sleeping = False
                 fs.loading = False
             self._backends.pop(model_id, None)
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
@@ -689,30 +680,6 @@ class ModelManagerProcess:
             await self._send(
                 identity, T_ERROR, struct.pack(">QB", req_id, _ERR_NOT_LOADED)
             )
-
-    # ------------------------------------------------------------------
-    # T_SLEEP / T_WAKE — removed in Phase 18.
-    # Eviction uses unload(drain=True) instead.  Keep handlers so
-    # old clients get a clear error rather than a silent drop.
-    # ------------------------------------------------------------------
-
-    async def _handle_sleep(self, identity: bytes, data: list[bytes]) -> None:
-        if not data or len(data[0]) < 10:
-            return
-        req_id = struct.unpack_from(">Q", data[0])[0]
-        logger.warning("MMP: T_SLEEP not supported — use T_UNLOAD instead")
-        await self._send(
-            identity, T_ERROR, struct.pack(">QB", req_id, _ERR_LOAD_FAILED)
-        )
-
-    async def _handle_wake(self, identity: bytes, data: list[bytes]) -> None:
-        if not data or len(data[0]) < 10:
-            return
-        req_id = struct.unpack_from(">Q", data[0])[0]
-        logger.warning("MMP: T_WAKE not supported — use T_ENSURE_LOADED instead")
-        await self._send(
-            identity, T_ERROR, struct.pack(">QB", req_id, _ERR_LOAD_FAILED)
-        )
 
     # ------------------------------------------------------------------
     # T_STATS — snapshot reply
@@ -743,16 +710,37 @@ class ModelManagerProcess:
             while req_times and req_times[0] < cutoff:
                 req_times.pop(0)
 
+            backend = self._backends.get(f)
+
+            if fs.loading:
+                model_state = "loading"
+            elif backend is not None:
+                try:
+                    model_state = backend.state
+                except Exception:
+                    model_state = "loaded" if fs.loaded else "unloaded"
+            elif fs.loaded:
+                model_state = "loaded"
+            else:
+                model_state = "unloaded"
+
+            device = None
+            if backend is not None:
+                try:
+                    device = backend.device
+                except Exception:
+                    pass
+
             entry: dict[str, Any] = {
+                "state": model_state,
+                "device": device,
                 "loaded": fs.loaded,
-                "sleeping": fs.sleeping,
                 "loading": fs.loading,
                 "last_access_ts": last_access,
                 "idle_s": round(idle_s, 1) if idle_s is not None else None,
                 "is_cold": idle_s is not None and idle_s > self._idle_timeout_s,
                 "request_rate_60s": len(req_times),
             }
-            backend = self._backends.get(f)
             if backend is not None:
                 try:
                     entry["queue_depth"] = backend.queue_depth
@@ -866,7 +854,7 @@ class ModelManagerProcess:
             self._pool.free_slot(slot_id)
 
     # ------------------------------------------------------------------
-    # Cold path — load / wake
+    # Cold path — load
     # ------------------------------------------------------------------
 
     def _is_cuda_oom(self, exc: BaseException) -> bool:
@@ -1108,7 +1096,6 @@ class ModelManagerProcess:
             if fs:
                 fs.loaded = False
                 fs.loading = False
-                fs.sleeping = False
             self._backends.pop(model_id, None)
             self._model_access.pop(model_id, None)
             self._model_request_times.pop(model_id, None)
@@ -1127,7 +1114,7 @@ class ModelManagerProcess:
         candidates = [
             f
             for f, fs in self._models.items()
-            if fs.loaded and not fs.sleeping and f not in in_flight
+            if fs.loaded and f not in in_flight
         ]
         if not candidates:
             return None
