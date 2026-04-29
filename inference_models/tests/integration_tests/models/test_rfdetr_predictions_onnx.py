@@ -26,7 +26,19 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_numpy(
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         torch.tensor(
-            [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
+            [
+                0.8575,
+                0.8568,
+                0.8105,
+                0.7940,
+                0.7364,
+                0.6872,
+                0.6419,
+                0.5810,
+                0.5425,
+                0.5340,
+                0.5133,
+            ]
         ).cpu(),
         atol=0.01,
     )
@@ -41,6 +53,8 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_numpy(
             [1247, 2055, 1430, 2227],
             [1087, 2342, 1264, 2524],
             [919, 1835, 1102, 2009],
+            [919, 1835, 1102, 2009],
+            [1247, 2055, 1430, 2227],
         ],
         dtype=torch.int32,
     )
@@ -76,14 +90,38 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_batch_numpy(
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         torch.tensor(
-            [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
+            [
+                0.8575,
+                0.8568,
+                0.8105,
+                0.7940,
+                0.7364,
+                0.6872,
+                0.6419,
+                0.5810,
+                0.5425,
+                0.5340,
+                0.5133,
+            ]
         ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         torch.tensor(
-            [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
+            [
+                0.8575,
+                0.8568,
+                0.8105,
+                0.7940,
+                0.7364,
+                0.6872,
+                0.6419,
+                0.5810,
+                0.5425,
+                0.5340,
+                0.5133,
+            ]
         ).cpu(),
         atol=0.01,
     )
@@ -98,6 +136,8 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_batch_numpy(
             [1247, 2055, 1430, 2227],
             [1087, 2342, 1264, 2524],
             [919, 1835, 1102, 2009],
+            [919, 1835, 1102, 2009],
+            [1247, 2055, 1430, 2227],
         ],
         dtype=torch.int32,
     )
@@ -136,7 +176,19 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch(
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         torch.tensor(
-            [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
+            [
+                0.8575,
+                0.8568,
+                0.8105,
+                0.7940,
+                0.7364,
+                0.6872,
+                0.6419,
+                0.5810,
+                0.5425,
+                0.5340,
+                0.5133,
+            ]
         ).cpu(),
         atol=0.01,
     )
@@ -151,6 +203,8 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch(
             [1247, 2055, 1430, 2227],
             [1087, 2342, 1264, 2524],
             [919, 1835, 1102, 2009],
+            [919, 1835, 1102, 2009],
+            [1247, 2055, 1430, 2227],
         ],
         dtype=torch.int32,
     )
@@ -186,14 +240,38 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         torch.tensor(
-            [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
+            [
+                0.8575,
+                0.8568,
+                0.8105,
+                0.7940,
+                0.7364,
+                0.6872,
+                0.6419,
+                0.5810,
+                0.5425,
+                0.5340,
+                0.5133,
+            ]
         ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         torch.tensor(
-            [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
+            [
+                0.8575,
+                0.8568,
+                0.8105,
+                0.7940,
+                0.7364,
+                0.6872,
+                0.6419,
+                0.5810,
+                0.5425,
+                0.5340,
+                0.5133,
+            ]
         ).cpu(),
         atol=0.01,
     )
@@ -208,6 +286,8 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
             [1247, 2055, 1430, 2227],
             [1087, 2342, 1264, 2524],
             [919, 1835, 1102, 2009],
+            [919, 1835, 1102, 2009],
+            [1247, 2055, 1430, 2227],
         ],
         dtype=torch.int32,
     )
