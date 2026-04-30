@@ -341,6 +341,8 @@ class ModelManagerProcess:
         self._backends[model_id] = backend
         if hasattr(backend, "set_on_result_callback"):
             backend.set_on_result_callback(self.on_result)
+        if hasattr(backend, "set_on_death_callback"):
+            backend.set_on_death_callback(self._on_backend_death)
         fs = self._models.setdefault(model_id, ModelState())
         fs.loading = False
         fs.loaded = True
@@ -359,6 +361,30 @@ class ModelManagerProcess:
             self._loop.call_soon_threadsafe(
                 self._on_result_on_loop, req_id, slot_id, result_sz
             )
+
+    def _on_backend_death(self, model_id: str) -> None:
+        """Called by SubprocessBackend recv thread when worker dies.
+
+        Thread-safe. Schedules reload on the event loop.
+        """
+        logger.warning("MMP: backend '%s' died, scheduling reload", model_id)
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._schedule_reload, model_id)
+
+    def _schedule_reload(self, model_id: str) -> None:
+        """Mark model as loading and trigger _load_model. Runs on event loop."""
+        fs = self._models.get(model_id)
+        if fs is None:
+            return
+        if fs.loading:
+            return  # already reloading
+        fs.loaded = False
+        fs.loading = True
+        logger.info("MMP: reloading '%s' after worker death", model_id)
+        asyncio.create_task(
+            self._load_model(model_id),
+            name=f"mmp-reload-{model_id}",
+        )
 
     # ------------------------------------------------------------------
     # Main async entry point
@@ -801,10 +827,19 @@ class ModelManagerProcess:
             logger.warning("MMP: no backend for '%s', req_id=%d", model_id, req_id)
             self._on_result_on_loop(req_id, slot_id, 0)
             return
+        if not backend.is_healthy:
+            logger.warning(
+                "MMP: backend '%s' unhealthy, triggering reload (req_id=%d)",
+                model_id, req_id,
+            )
+            self._schedule_reload(model_id)
+            self._on_result_on_loop(req_id, slot_id, 0)
+            return
         try:
             backend.signal_slot(slot_id, req_id, params_bytes)
         except Exception:
             logger.exception("MMP: signal_slot raised for '%s'", model_id)
+            self._schedule_reload(model_id)
             self._on_result_on_loop(req_id, slot_id, 0)
 
     # ------------------------------------------------------------------
