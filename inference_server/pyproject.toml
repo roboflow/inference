@@ -30,6 +30,7 @@ onnx-cu12 = ["inference-model-manager[onnx-cu12]"]
 onnx-jp6-cu126 = ["inference-model-manager[onnx-jp6-cu126]"]
 mediapipe = ["inference-model-manager[mediapipe]"]
 trt10 = ["inference-model-manager[trt10]"]
+cuda = ["inference-model-manager[cuda]"]
 test = [
   "pytest>=8.0.0",
   "pytest-timeout>=2.3.0",
