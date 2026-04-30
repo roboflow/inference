@@ -10,6 +10,7 @@ from typing import Callable, Dict, Optional
 from inference.core import logger
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    DEBUG_WEBRTC_PROCESSING_LATENCY,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     LOG_LEVEL,
     MODAL_TOKEN_ID,
@@ -107,6 +108,43 @@ def check_nvidia_smi_gpu() -> str:
         return gpu
     except subprocess.CalledProcessError:
         return ""
+
+
+def probe_pyav_video_encoders() -> Dict[str, str]:
+    try:
+        import av
+    except Exception as exc:
+        return {"pyav": f"unavailable ({exc.__class__.__name__}: {exc})"}
+
+    encoder_support = {
+        "pyav": getattr(av, "__version__", "unknown"),
+    }
+    for encoder_name in (
+        "h264",
+        "libx264",
+        "h264_nvenc",
+        "hevc",
+        "libx265",
+        "hevc_nvenc",
+    ):
+        try:
+            codec = av.Codec(encoder_name, "w")
+            encoder_support[encoder_name] = (
+                f"available ({codec.name}: {codec.long_name})"
+            )
+        except Exception as exc:
+            encoder_support[encoder_name] = (
+                f"unavailable ({exc.__class__.__name__}: {exc})"
+            )
+    return encoder_support
+
+
+def log_video_encoder_support(context: str) -> None:
+    logger.warning(
+        "[WEBRTC_ENCODER_SUPPORT] context=%s pyav_encoders=%s",
+        context,
+        probe_pyav_video_encoders(),
+    )
 
 
 if modal is not None:
@@ -221,6 +259,7 @@ if modal is not None:
             "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS": str(
                 WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS
             ),
+            "DEBUG_WEBRTC_PROCESSING_LATENCY": str(DEBUG_WEBRTC_PROCESSING_LATENCY),
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
@@ -288,7 +327,14 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
+            function_started_at = time.perf_counter()
+            workspace_started_at = time.perf_counter()
             _workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
+            if DEBUG_WEBRTC_PROCESSING_LATENCY:
+                logger.warning(
+                    "[WEBRTC_MODAL_TIMING] container workspace_lookup_ms=%.1f",
+                    (time.perf_counter() - workspace_started_at) * 1000,
+                )
 
             workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
@@ -375,6 +421,13 @@ if modal is not None:
 
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
+                if DEBUG_WEBRTC_PROCESSING_LATENCY:
+                    logger.warning(
+                        "[WEBRTC_MODAL_TIMING] container send_answer_ms=%.1f "
+                        "exception_type=%s",
+                        (time.perf_counter() - function_started_at) * 1000,
+                        obj.exception_type,
+                    )
                 if obj.error_message:
                     logger.error(
                         "Error: %s (%s)", obj.error_message, obj.exception_type
@@ -406,6 +459,7 @@ if modal is not None:
             )
 
             try:
+                run_started_at = time.perf_counter()
                 asyncio.run(
                     run_rtc_peer_connection_with_watchdog(
                         webrtc_request=webrtc_request,
@@ -414,6 +468,13 @@ if modal is not None:
                         watchdog=watchdog,
                     )
                 )
+                if DEBUG_WEBRTC_PROCESSING_LATENCY:
+                    logger.warning(
+                        "[WEBRTC_MODAL_TIMING] container rtc_run_ms=%.1f "
+                        "total_ms=%.1f",
+                        (time.perf_counter() - run_started_at) * 1000,
+                        (time.perf_counter() - function_started_at) * 1000,
+                    )
             except modal.exception.InputCancellation:
                 logger.warning("Modal function was cancelled")
             except asyncio.CancelledError as exc:
@@ -493,6 +554,7 @@ if modal is not None:
             # TODO: pre-load models on CPU
             logger.info("Starting CPU container")
             self._gpu = "CPU"
+            log_video_encoder_support(context="modal_cpu_start")
             self._cold_start = False
 
     @app.cls(
@@ -518,6 +580,7 @@ if modal is not None:
             warmup_cuda(max_retries=10, retry_delay=0.5)
             self._gpu = check_nvidia_smi_gpu()
             logger.info("Starting GPU container on %s", self._gpu)
+            log_video_encoder_support(context="modal_gpu_start")
             logger.info("Preload hf ids: %s", self.preload_hf_ids)
             logger.info("Preload models: %s", self.preload_models)
             if self.preload_hf_ids:
@@ -556,14 +619,21 @@ if modal is not None:
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
     ) -> WebRTCWorkerResult:
+        started_at = time.perf_counter()
         requested_gpu: Optional[str] = None
         requested_ram_mb: Optional[int] = None
         requested_cpu_cores: Optional[int] = None
+        plan_started_at = time.perf_counter()
         webrtc_plans: Optional[Dict[str, WebRTCPlan]] = (
             usage_collector._plan_details.get_webrtc_plans(
                 api_key=webrtc_request.api_key
             )
         )
+        if DEBUG_WEBRTC_PROCESSING_LATENCY:
+            logger.warning(
+                "[WEBRTC_MODAL_TIMING] launcher plan_lookup_ms=%.1f",
+                (time.perf_counter() - plan_started_at) * 1000,
+            )
         if webrtc_plans and webrtc_request.requested_plan:
             if webrtc_request.requested_plan not in webrtc_plans:
                 raise RoboflowAPIUnsuccessfulRequestError(
@@ -588,10 +658,18 @@ if modal is not None:
             requested_gpu = webrtc_plans[webrtc_request.requested_plan].gpu
 
         # https://modal.com/docs/reference/modal.Client#from_credentials
+        client_started_at = time.perf_counter()
         client = modal.Client.from_credentials(
             token_id=WEBRTC_MODAL_TOKEN_ID,
             token_secret=WEBRTC_MODAL_TOKEN_SECRET,
         )
+        if DEBUG_WEBRTC_PROCESSING_LATENCY:
+            logger.warning(
+                "[WEBRTC_MODAL_TIMING] launcher client_create_ms=%.1f",
+                (time.perf_counter() - client_started_at) * 1000,
+            )
+        app_lookup_started_at = time.perf_counter()
+        app_deployed = False
         try:
             modal.App.lookup(
                 name=WEBRTC_MODAL_APP_NAME, client=client, create_if_missing=False
@@ -599,8 +677,19 @@ if modal is not None:
         except modal.exception.NotFoundError:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client, tag=docker_tag)
+            app_deployed = True
+        if DEBUG_WEBRTC_PROCESSING_LATENCY:
+            logger.warning(
+                "[WEBRTC_MODAL_TIMING] launcher app_lookup_ms=%.1f deployed=%s",
+                (time.perf_counter() - app_lookup_started_at) * 1000,
+                app_deployed,
+            )
 
+        metadata_started_at = time.perf_counter()
         workspace_id = webrtc_request.workflow_configuration.workspace_name
+        had_workflow_spec = bool(
+            webrtc_request.workflow_configuration.workflow_specification
+        )
         if not workspace_id:
             workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
             webrtc_request.workflow_configuration.workspace_name = workspace_id
@@ -611,6 +700,13 @@ if modal is not None:
                 workflow_id=webrtc_request.workflow_configuration.workflow_id,
                 workflow_version_id=webrtc_request.workflow_configuration.workflow_version_id,
             )
+        if DEBUG_WEBRTC_PROCESSING_LATENCY:
+            logger.warning(
+                "[WEBRTC_MODAL_TIMING] launcher request_metadata_ms=%.1f "
+                "had_workflow_spec=%s",
+                (time.perf_counter() - metadata_started_at) * 1000,
+                had_workflow_spec,
+            )
         tags = {"tag": docker_tag}
         if workspace_id:
             tags["workspace_id"] = workspace_id
@@ -618,6 +714,7 @@ if modal is not None:
         # TODO: tag function run
 
         # Modal parametrization
+        preload_started_at = time.perf_counter()
         preload_hf_ids = ""
         if WEBRTC_MODAL_PRELOAD_HF_IDS and workflow_contains_instant_model(
             workflow_specification=webrtc_request.workflow_configuration.workflow_specification
@@ -632,6 +729,14 @@ if modal is not None:
         ):
             logger.info("Parametrized preload models: %s", WEBRTC_MODAL_PRELOAD_MODELS)
             preload_models = WEBRTC_MODAL_PRELOAD_MODELS
+        if DEBUG_WEBRTC_PROCESSING_LATENCY:
+            logger.warning(
+                "[WEBRTC_MODAL_TIMING] launcher preload_params_ms=%.1f "
+                "preload_hf=%s preload_models=%s",
+                (time.perf_counter() - preload_started_at) * 1000,
+                bool(preload_hf_ids),
+                bool(preload_models),
+            )
 
         if requested_gpu:
             RTCPeerConnectionModal = RTCPeerConnectionModalGPU
@@ -639,11 +744,18 @@ if modal is not None:
             RTCPeerConnectionModal = RTCPeerConnectionModalCPU
 
         # https://modal.com/docs/reference/modal.Cls#from_name
+        hydrate_started_at = time.perf_counter()
         deployed_cls = modal.Cls.from_name(
             app_name=app.name,
             name=RTCPeerConnectionModal.__name__,
         )
         deployed_cls.hydrate(client=client)
+        if DEBUG_WEBRTC_PROCESSING_LATENCY:
+            logger.warning(
+                "[WEBRTC_MODAL_TIMING] launcher cls_hydrate_ms=%.1f class=%s",
+                (time.perf_counter() - hydrate_started_at) * 1000,
+                RTCPeerConnectionModal.__name__,
+            )
         if webrtc_request.processing_timeout is None:
             webrtc_request.processing_timeout = WEBRTC_MODAL_FUNCTION_MAX_TIME_LIMIT
             logger.warning("No timeout specified, using max timeout")
@@ -655,6 +767,7 @@ if modal is not None:
         cls_with_options = deployed_cls.with_options(
             timeout=webrtc_request.processing_timeout,
         )
+        options_started_at = time.perf_counter()
         if requested_gpu is not None:
             logger.info(
                 "Spawning webrtc modal function with gpu %s",
@@ -694,24 +807,55 @@ if modal is not None:
             preload_hf_ids=preload_hf_ids,
             preload_models=preload_models,
         )
+        if DEBUG_WEBRTC_PROCESSING_LATENCY:
+            logger.warning(
+                "[WEBRTC_MODAL_TIMING] launcher options_ms=%.1f requested_gpu=%s "
+                "requested_region=%s requested_ram_mb=%s requested_cpu_cores=%s",
+                (time.perf_counter() - options_started_at) * 1000,
+                requested_gpu,
+                webrtc_request.requested_region,
+                requested_ram_mb,
+                requested_cpu_cores,
+            )
         # https://modal.com/docs/reference/modal.Queue#ephemeral
+        queue_started_at = time.perf_counter()
         with modal.Queue.ephemeral(client=client) as q:
+            if DEBUG_WEBRTC_PROCESSING_LATENCY:
+                logger.warning(
+                    "[WEBRTC_MODAL_TIMING] launcher queue_create_ms=%.1f",
+                    (time.perf_counter() - queue_started_at) * 1000,
+                )
             logger.info(
                 "Spawning webrtc modal function from %s into modal app %s",
                 RTCPeerConnectionModal.__name__,
                 app.name,
             )
             # https://modal.com/docs/reference/modal.Function#spawn
+            function_spawn_started_at = time.perf_counter()
             function_call: modal.FunctionCall = (
                 rtc_modal_obj.rtc_peer_connection_modal.spawn(
                     webrtc_request=webrtc_request,
                     q=q,
                 )
             )
+            if DEBUG_WEBRTC_PROCESSING_LATENCY:
+                logger.warning(
+                    "[WEBRTC_MODAL_TIMING] launcher function_spawn_ms=%.1f",
+                    (time.perf_counter() - function_spawn_started_at) * 1000,
+                )
             try:
+                answer_started_at = time.perf_counter()
                 answer = WebRTCWorkerResult.model_validate(
                     q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
                 )
+                if DEBUG_WEBRTC_PROCESSING_LATENCY:
+                    logger.warning(
+                        "[WEBRTC_MODAL_TIMING] launcher answer_wait_ms=%.1f "
+                        "total_ms=%.1f exception_type=%s",
+                        (time.perf_counter() - answer_started_at) * 1000,
+                        (time.perf_counter() - started_at) * 1000,
+                        answer.exception_type,
+                    )
             except Empty:
                 logger.error("Modal function call timed out, terminating containers")
                 function_call.cancel(terminate_containers=True)

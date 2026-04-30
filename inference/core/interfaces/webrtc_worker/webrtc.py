@@ -28,6 +28,7 @@ from pydantic import ValidationError
 
 from inference.core import logger
 from inference.core.env import (
+    DEBUG_WEBRTC_PROCESSING_LATENCY,
     WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
@@ -48,6 +49,10 @@ from inference.core.interfaces.stream.inference_pipeline import InferencePipelin
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCData,
     WorkflowConfiguration,
+)
+from inference.aiortc_tuning import (
+    apply_aiortc_bitrate_limits,
+    prefer_h264_for_peer_connection,
 )
 from inference.core.interfaces.webrtc_worker.entities import (
     DataOutputMode,
@@ -78,9 +83,11 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.usage_tracking.collector import usage_collector
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
+apply_aiortc_bitrate_limits()
 
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
+WEBRTC_TIMING_SAMPLE_EVERY_N = 30
 
 
 def create_chunked_binary_message(
@@ -234,6 +241,7 @@ class VideoFrameProcessor:
         realtime_processing: bool = True,
         is_preview: bool = False,
     ):
+        init_started_at = time.perf_counter()
         self._file_processing = False
         self._loop = asyncio_loop
         self._termination_date = termination_date
@@ -282,8 +290,15 @@ class VideoFrameProcessor:
                 f"data_output must be list or None, got {type(data_output).__name__}"
             )
 
+        validate_started_at = time.perf_counter()
         self._validate_output_fields(workflow_configuration)
+        if DEBUG_WEBRTC_PROCESSING_LATENCY:
+            logger.warning(
+                "[WEBRTC_INIT_TIMING] video_processor validate_outputs_ms=%.1f",
+                (time.perf_counter() - validate_started_at) * 1000,
+            )
 
+        pipeline_started_at = time.perf_counter()
         self._inference_pipeline = InferencePipeline.init_with_workflow(
             video_reference=VideoFrameProducer,
             workflow_specification=workflow_configuration.workflow_specification,
@@ -299,6 +314,16 @@ class VideoFrameProcessor:
             _is_preview=is_preview,
             workflow_version_id=workflow_configuration.workflow_version_id,
         )
+        if DEBUG_WEBRTC_PROCESSING_LATENCY:
+            logger.warning(
+                "[WEBRTC_INIT_TIMING] video_processor pipeline_init_ms=%.1f "
+                "total_ms=%.1f has_video_track=%s stream_output=%s data_mode=%s",
+                (time.perf_counter() - pipeline_started_at) * 1000,
+                (time.perf_counter() - init_started_at) * 1000,
+                has_video_track,
+                stream_output,
+                self._data_mode,
+            )
 
     def set_track(self, track: MediaStreamTrack, rotation_code: Optional[int] = None):
         if not self.track:
@@ -734,6 +759,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             self.stream_output = ""
 
     async def recv(self):
+        recv_start = time.perf_counter()
         # Silencing swscaler warnings in multi-threading environment
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
@@ -751,7 +777,9 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
                 raise MediaStreamError("Track not available after wait")
 
         # Optional ACK pacing: block producing the next frame if we're too far ahead.
+        ack_wait_start = time.perf_counter()
         await self._wait_for_ack_window(next_frame_id=self._received_frames + 1)
+        ack_wait_ms = (time.perf_counter() - ack_wait_start) * 1000
 
         if self._check_termination():
             logger.warning("[RECV] Termination triggered, closing gracefully")
@@ -773,7 +801,9 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
                 )
 
         try:
+            track_recv_start = time.perf_counter()
             frame: VideoFrame = await self.track.recv()
+            track_recv_ms = (time.perf_counter() - track_recv_start) * 1000
         except MediaStreamError:
             logger.info("[RECV] Track ended after %d frames", self._received_frames)
             await self._send_processing_complete()
@@ -787,6 +817,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         if self.stream_output is None and frame_id == 1:
             await self._auto_detect_stream_output(frame, frame_id)
 
+        process_start = time.perf_counter()
         workflow_output, new_frame, errors = await self._process_frame_async(
             frame=frame,
             frame_id=frame_id,
@@ -794,14 +825,39 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             render_output=True,
             include_errors_on_frame=True,
         )
+        process_ms = (time.perf_counter() - process_start) * 1000
 
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
 
+        data_output_start = time.perf_counter()
         await self._send_data_output(workflow_output, frame_timestamp, frame, errors)
+        data_output_ms = (time.perf_counter() - data_output_start) * 1000
 
         if errors:
             logger.warning("[RECV] Frame %d errors: %s", frame_id, errors)
+
+        if DEBUG_WEBRTC_PROCESSING_LATENCY and (
+            frame_id <= 3 or frame_id % max(1, WEBRTC_TIMING_SAMPLE_EVERY_N) == 0
+        ):
+            logger.warning(
+                "[WEBRTC_RECV_TIMING] frame=%d input=%dx%d output=%dx%d ack_wait_ms=%.1f track_recv_ms=%.1f process_ms=%.1f data_output_ms=%.1f total_ms=%.1f measured_fps=%.1f",
+                frame_id,
+                frame.width,
+                frame.height,
+                new_frame.width,
+                new_frame.height,
+                ack_wait_ms,
+                track_recv_ms,
+                process_ms,
+                data_output_ms,
+                (time.perf_counter() - recv_start) * 1000,
+                (
+                    self._fps_monitor.fps
+                    if len(self._fps_monitor.all_timestamps) > 1
+                    else 0.0
+                ),
+            )
 
         return new_frame
 
@@ -838,6 +894,7 @@ async def init_rtc_peer_connection_with_loop(
     heartbeat_callback: Optional[Callable[[], None]] = None,
     connection_established_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
+    session_started_at = time.perf_counter()
     logger.info(
         "=" * 60 + "\n"
         "[WEBRTC_SESSION] STARTING NEW SESSION\n"
@@ -902,6 +959,7 @@ async def init_rtc_peer_connection_with_loop(
     else:
         data_fields = webrtc_request.data_output
 
+    processor_started_at = time.perf_counter()
     try:
         should_send_video = stream_mode != StreamOutputMode.NO_VIDEO
 
@@ -1021,6 +1079,16 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
 
+    if DEBUG_WEBRTC_PROCESSING_LATENCY:
+        logger.warning(
+            "[WEBRTC_INIT_TIMING] init_loop processor_init_ms=%.1f "
+            "total_so_far_ms=%.1f should_send_video=%s stream_mode=%s",
+            (time.perf_counter() - processor_started_at) * 1000,
+            (time.perf_counter() - session_started_at) * 1000,
+            should_send_video,
+            stream_mode,
+        )
+
     if webrtc_request.webrtc_config is not None:
         ice_servers = []
         for ice_server in webrtc_request.webrtc_config.iceServers:
@@ -1042,10 +1110,18 @@ async def init_rtc_peer_connection_with_loop(
                     )
     else:
         ice_servers = None
+    peer_connection_started_at = time.perf_counter()
     peer_connection = RTCPeerConnectionWithLoop(
         configuration=RTCConfiguration(iceServers=ice_servers) if ice_servers else None,
         asyncio_loop=asyncio_loop,
     )
+    if DEBUG_WEBRTC_PROCESSING_LATENCY:
+        logger.warning(
+            "[WEBRTC_INIT_TIMING] init_loop peer_connection_create_ms=%.1f "
+            "ice_servers=%d",
+            (time.perf_counter() - peer_connection_started_at) * 1000,
+            len(ice_servers) if ice_servers else 0,
+        )
 
     relay = MediaRelay()
 
@@ -1294,15 +1370,36 @@ async def init_rtc_peer_connection_with_loop(
 
         video_processor.data_channel = channel
 
+    set_remote_started_at = time.perf_counter()
     await peer_connection.setRemoteDescription(
         RTCSessionDescription(
             sdp=webrtc_request.webrtc_offer.sdp, type=webrtc_request.webrtc_offer.type
         )
     )
+    set_remote_ms = (time.perf_counter() - set_remote_started_at) * 1000
+    prefer_h264_for_peer_connection(peer_connection)
+    create_answer_started_at = time.perf_counter()
     answer = await peer_connection.createAnswer()
+    create_answer_ms = (time.perf_counter() - create_answer_started_at) * 1000
+    set_local_started_at = time.perf_counter()
     await peer_connection.setLocalDescription(answer)
+    set_local_ms = (time.perf_counter() - set_local_started_at) * 1000
 
+    ice_wait_started_at = time.perf_counter()
     await _wait_ice_complete(peer_connection, timeout=2.0)
+    ice_wait_ms = (time.perf_counter() - ice_wait_started_at) * 1000
+
+    if DEBUG_WEBRTC_PROCESSING_LATENCY:
+        logger.warning(
+            "[WEBRTC_INIT_TIMING] init_loop answer_ready total_ms=%.1f "
+            "set_remote_ms=%.1f create_answer_ms=%.1f set_local_ms=%.1f "
+            "ice_wait_ms=%.1f",
+            (time.perf_counter() - session_started_at) * 1000,
+            set_remote_ms,
+            create_answer_ms,
+            set_local_ms,
+            ice_wait_ms,
+        )
 
     logger.info(
         "Initialized RTC peer connection with loop (status: %s), sending answer",

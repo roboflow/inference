@@ -160,6 +160,7 @@ from inference.core.env import (
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
     CORRELATION_ID_HEADER,
+    DEBUG_WEBRTC_PROCESSING_LATENCY,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DEPTH_ESTIMATION_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
@@ -2122,6 +2123,7 @@ class HttpInterface(BaseInterface):
                 request: WebRTCWorkerRequest,
                 r: Request,
             ) -> InitializeWebRTCResponse:
+                endpoint_started_at = time.perf_counter()
                 if str(r.headers.get("origin")).lower() == BUILDER_ORIGIN.lower():
                     if re.search(
                         r"^https://[^.]+\.roboflow\.[^./]+/", str(r.url).lower()
@@ -2129,10 +2131,26 @@ class HttpInterface(BaseInterface):
                         request.is_preview = True
 
                 logger.debug("Received initialise_webrtc_worker request")
-                worker_result: WebRTCWorkerResult = await start_worker(
-                    webrtc_request=request,
-                )
+                worker_started_at = time.perf_counter()
+                try:
+                    worker_result: WebRTCWorkerResult = await start_worker(
+                        webrtc_request=request,
+                    )
+                finally:
+                    if DEBUG_WEBRTC_PROCESSING_LATENCY:
+                        logger.warning(
+                            "[WEBRTC_INIT_TIMING] endpoint start_worker_ms=%.1f "
+                            "total_so_far_ms=%.1f",
+                            (time.perf_counter() - worker_started_at) * 1000,
+                            (time.perf_counter() - endpoint_started_at) * 1000,
+                        )
                 if worker_result.exception_type is not None:
+                    if DEBUG_WEBRTC_PROCESSING_LATENCY:
+                        logger.warning(
+                            "[WEBRTC_INIT_TIMING] endpoint exception_type=%s total_ms=%.1f",
+                            worker_result.exception_type,
+                            (time.perf_counter() - endpoint_started_at) * 1000,
+                        )
                     if worker_result.exception_type == "WorkflowSyntaxError":
                         # Reconstruct exception from serialized worker result.
                         # We dynamically create an exception class to preserve
@@ -2184,6 +2202,11 @@ class HttpInterface(BaseInterface):
                     )
                     raise exc
                 logger.debug("Returning initialise_webrtc_worker response")
+                if DEBUG_WEBRTC_PROCESSING_LATENCY:
+                    logger.warning(
+                        "[WEBRTC_INIT_TIMING] endpoint response_ready total_ms=%.1f",
+                        (time.perf_counter() - endpoint_started_at) * 1000,
+                    )
                 return InitializeWebRTCResponse(
                     context=CommandContext(),
                     status=OperationStatus.SUCCESS,

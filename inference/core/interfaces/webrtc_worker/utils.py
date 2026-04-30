@@ -23,6 +23,8 @@ from inference.usage_tracking.collector import usage_collector
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
+WEBRTC_TIMING_SAMPLE_EVERY_N = 30
+
 
 def detect_image_output(
     workflow_output: Dict[str, Union[WorkflowImageData, Any]],
@@ -55,10 +57,18 @@ def process_frame(
     Optional[VideoFrame],
     List[str],
 ]:
+    profile_frame = DEBUG_WEBRTC_PROCESSING_LATENCY and (
+        frame_id <= 3 or frame_id % max(1, WEBRTC_TIMING_SAMPLE_EVERY_N) == 0
+    )
+    total_start = time.perf_counter()
+
+    decode_start = time.perf_counter()
     np_image = frame.to_ndarray(format="bgr24")
+    decode_ms = (time.perf_counter() - decode_start) * 1000
     workflow_output: Dict[str, Union[WorkflowImageData, Any]] = {}
     errors = []
 
+    workflow_start = time.perf_counter()
     try:
         video_frame = InferenceVideoFrame(
             image=np_image,
@@ -72,19 +82,50 @@ def process_frame(
     except Exception as e:
         logger.exception("Error in workflow processing")
         errors.append(str(e))
+    workflow_ms = (time.perf_counter() - workflow_start) * 1000
 
     if not render_output:
+        if profile_frame:
+            logger.warning(
+                "[WEBRTC_TIMING] frame=%d input=%dx%d decode_ms=%.1f workflow_ms=%.1f total_ms=%.1f render=false",
+                frame_id,
+                frame.width,
+                frame.height,
+                decode_ms,
+                workflow_ms,
+                (time.perf_counter() - total_start) * 1000,
+            )
         return workflow_output, None, errors
+
+    extract_ms = 0.0
+    overlay_ms = 0.0
+    frame_build_ms = 0.0
 
     if stream_output is None:
         errors.append("stream_output is required when render_output=True")
-        return (
-            workflow_output,
-            VideoFrame.from_ndarray(np_image, format="bgr24"),
-            errors,
-        )
+        frame_build_start = time.perf_counter()
+        output_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
+        frame_build_ms = (time.perf_counter() - frame_build_start) * 1000
+        if profile_frame:
+            logger.warning(
+                "[WEBRTC_TIMING] frame=%d input=%dx%d output=%dx%d decode_ms=%.1f workflow_ms=%.1f extract_ms=%.1f overlay_ms=%.1f frame_build_ms=%.1f total_ms=%.1f errors=%d",
+                frame_id,
+                frame.width,
+                frame.height,
+                output_frame.width,
+                output_frame.height,
+                decode_ms,
+                workflow_ms,
+                extract_ms,
+                overlay_ms,
+                frame_build_ms,
+                (time.perf_counter() - total_start) * 1000,
+                len(errors),
+            )
+        return workflow_output, output_frame, errors
 
     result_np_image: Optional[np.ndarray] = None
+    extract_start = time.perf_counter()
     try:
         result_np_image = get_frame_from_workflow_output(
             workflow_output=workflow_output,
@@ -100,17 +141,36 @@ def process_frame(
         logger.exception("Error extracting visual output")
         result_np_image = np_image
         errors.append(str(e))
+    extract_ms = (time.perf_counter() - extract_start) * 1000
 
     if include_errors_on_frame and errors:
+        overlay_start = time.perf_counter()
         result_np_image = overlay_text_on_np_frame(
             frame=result_np_image,
             text=errors,
         )
-    return (
-        workflow_output,
-        VideoFrame.from_ndarray(result_np_image, format="bgr24"),
-        errors,
-    )
+        overlay_ms = (time.perf_counter() - overlay_start) * 1000
+
+    frame_build_start = time.perf_counter()
+    output_frame = VideoFrame.from_ndarray(result_np_image, format="bgr24")
+    frame_build_ms = (time.perf_counter() - frame_build_start) * 1000
+    if profile_frame:
+        logger.warning(
+            "[WEBRTC_TIMING] frame=%d input=%dx%d output=%dx%d decode_ms=%.1f workflow_ms=%.1f extract_ms=%.1f overlay_ms=%.1f frame_build_ms=%.1f total_ms=%.1f errors=%d",
+            frame_id,
+            frame.width,
+            frame.height,
+            output_frame.width,
+            output_frame.height,
+            decode_ms,
+            workflow_ms,
+            extract_ms,
+            overlay_ms,
+            frame_build_ms,
+            (time.perf_counter() - total_start) * 1000,
+            len(errors),
+        )
+    return workflow_output, output_frame, errors
 
 
 def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
