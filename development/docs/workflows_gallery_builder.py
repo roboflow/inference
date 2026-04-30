@@ -234,7 +234,7 @@ def generate_preview_iframe(workflow_name_in_app: str, workflow_definition: dict
     )
     human_readable_name = workflow_name_in_app.replace("-", " ")
     return (
-        f'<div style="height: 768px;">'
+        f'<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;">'
         f'<iframe src="https://app.roboflow.com/workflows/embed/{iframe_token}?showGraph=true" '
         f'loading="lazy" title="Roboflow Workflow for {human_readable_name}"'
         f' style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>'
