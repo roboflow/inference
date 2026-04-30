@@ -116,10 +116,20 @@ class PolygonAnnotator(BaseAnnotator):
                 )
             else:
                 mask = detections.mask[detection_idx]
-                for polygon in mask_to_polygons(mask=mask):
+
+                # Crop mask to bounding box — findContours only scans the detection
+                # area instead of the full frame
+                x1, y1, x2, y2 = detections.xyxy[detection_idx].astype(int)
+                mask_crop = mask[y1:y2, x1:x2]
+
+                polygons = list(mask_to_polygons(mask=mask_crop))
+
+                for polygon in polygons:
+                    # Offset polygon points back to full-frame coordinates
+                    full_polygon = (polygon + np.array([[x1, y1]])).astype(np.int32)
                     scene = draw_polygon(
                         scene=scene,
-                        polygon=polygon,
+                        polygon=full_polygon,
                         color=color,
                         thickness=self.thickness,
                     )
