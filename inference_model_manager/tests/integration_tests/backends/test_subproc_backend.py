@@ -142,6 +142,7 @@ class TestSubprocBackendObservability:
         _submit_via_pool(shared_pool, subproc_backend, dog_image_numpy).result(
             timeout=30
         )
+        subproc_backend.refresh_worker_stats(timeout_s=2.0)
         s = subproc_backend.stats()
         assert s["backend_type"] == "subprocess"
         assert s["transport"] == "shm_pool"

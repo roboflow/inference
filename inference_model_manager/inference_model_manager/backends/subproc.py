@@ -63,8 +63,11 @@ _MSG_SLOT_READY = b"\x01"  # parent→worker: struct.pack(">IQ", slot_id, req_id
 _MSG_RESULT = (
     b"\x02"  # worker→parent: struct.pack(">QII", req_id, slot_id, result_sz) [16 B]
 )
-_MSG_HEARTBEAT = b"\x03"  # worker→parent: keepalive (no payload)
+_MSG_HEARTBEAT = b"\x03"  # worker→parent: keepalive + JSON stats payload
 _MSG_SHUTDOWN = b"\x04"  # parent→worker: stop gracefully (no payload)
+_MSG_STATS_REQ = b"\x05"  # parent→worker: force stats refresh (no payload)
+
+_STATS_SENTINEL = "STATS"  # sentinel for outbound queue → sends _MSG_STATS_REQ
 
 _HEARTBEAT_INTERVAL_S = 2.0
 _WORKER_HEARTBEAT_TIMEOUT = 30.0  # seconds of silence → unhealthy
@@ -252,6 +255,16 @@ def _worker_loop(
     batch_start = 0.0
     last_heartbeat = time.monotonic()
 
+    # Worker-side stats — updated by _process_slots, read by _MSG_STATS_REQ
+    worker_stats: dict[str, Any] = {
+        "inference_count": 0,
+        "error_count": 0,
+        "batch_count": 0,
+        "latencies": deque(maxlen=1000),  # end-to-end per-batch (seconds)
+        "batch_sizes": deque(maxlen=1000),
+        "start_ts": time.monotonic(),
+    }
+
     while True:
         # Compute poll timeout
         now = time.monotonic()
@@ -279,13 +292,28 @@ def _worker_loop(
                 if not pending:
                     batch_start = time.monotonic()
                 pending.append((slot_id, req_id, params_bytes))
+            elif msg == _MSG_STATS_REQ:
+                try:
+                    sock.send_multipart(
+                        [
+                            _MSG_HEARTBEAT,
+                            _build_worker_stats_payload(worker_stats),
+                        ]
+                    )
+                except zmq.ZMQError:
+                    break
         else:
-            # Timeout while idle → heartbeat
+            # Timeout while idle → heartbeat with stats
             if not pending:
                 now = time.monotonic()
                 if now - last_heartbeat >= _HEARTBEAT_INTERVAL_S:
                     try:
-                        sock.send_multipart([_MSG_HEARTBEAT, b""])
+                        sock.send_multipart(
+                            [
+                                _MSG_HEARTBEAT,
+                                _build_worker_stats_payload(worker_stats),
+                            ]
+                        )
                     except zmq.ZMQError:
                         break
                     last_heartbeat = now
@@ -295,9 +323,40 @@ def _worker_loop(
         if pending and (
             len(pending) >= batch_max_size or (now - batch_start) >= batch_max_wait_s
         ):
-            _process_slots(model, pool, pending, sock, batch_decode_fn, log)
+            _process_slots(
+                model, pool, pending, sock, batch_decode_fn, log, worker_stats
+            )
             pending.clear()
             batch_start = 0.0
+
+
+def _build_worker_stats_payload(worker_stats: dict) -> bytes:
+    """Build JSON stats payload for heartbeat."""
+    lats = list(worker_stats["latencies"])
+    lats.sort()
+    bs = list(worker_stats["batch_sizes"])
+    uptime = time.monotonic() - worker_stats["start_ts"]
+    infer_count = worker_stats["inference_count"]
+
+    def _pct(p: float) -> float:
+        if not lats:
+            return 0.0
+        idx = min(int(len(lats) * p / 100), len(lats) - 1)
+        return lats[idx] * 1000
+
+    return json.dumps(
+        {
+            "inference_count": infer_count,
+            "error_count": worker_stats["error_count"],
+            "batch_count": worker_stats["batch_count"],
+            "throughput_fps": infer_count / max(uptime, 1e-6),
+            "latency_p50_ms": _pct(50),
+            "latency_p95_ms": _pct(95),
+            "latency_p99_ms": _pct(99),
+            "avg_batch_size": sum(bs) / len(bs) if bs else 0.0,
+            "uptime_s": round(uptime, 1),
+        }
+    ).encode()
 
 
 def _process_slots(
@@ -307,9 +366,12 @@ def _process_slots(
     sock,
     batch_decode_fn,
     log,
+    worker_stats: dict,
 ) -> None:
     """Process a batch of (slot_id, req_id, params_bytes), write results to SHM, send T_RESULT."""
     import zmq
+
+    t0 = time.monotonic()
 
     # Parse per-slot params
     slot_params: list[dict] = []
@@ -419,6 +481,9 @@ def _process_slots(
             for i in indices:
                 results[i] = _InferenceError(str(exc))
 
+    n_ok = 0
+    n_err = len(error_indices) if error_indices else 0
+
     for (slot_id, req_id, _), result in zip(good_batch, results):
         if result is None or isinstance(result, _InferenceError):
             err_msg = (
@@ -433,6 +498,7 @@ def _process_slots(
                 )
             except zmq.ZMQError:
                 return
+            n_err += 1
             continue
 
         # Move tensors to CPU before pickle — result travels through SHM (CPU
@@ -463,6 +529,7 @@ def _process_slots(
                 )
             except zmq.ZMQError:
                 pass
+            n_err += 1
             continue
         mv[: len(data)] = data
         mv.release()
@@ -473,6 +540,15 @@ def _process_slots(
             )
         except zmq.ZMQError:
             return
+        n_ok += 1
+
+    # Update worker stats
+    elapsed = time.monotonic() - t0
+    worker_stats["inference_count"] += n_ok
+    worker_stats["error_count"] += n_err
+    worker_stats["batch_count"] += 1
+    worker_stats["latencies"].append(elapsed)
+    worker_stats["batch_sizes"].append(len(batch))
 
 
 # ---------------------------------------------------------------------------
@@ -616,13 +692,6 @@ class SubprocessBackend(Backend):
             self._device_str,
         )
 
-        # ── Stats ─────────────────────────────────────────────────────
-        self._inference_count = 0
-        self._error_count = 0
-        self._last_inference_ts = 0.0
-        self._start_ts = time.monotonic()
-        self._latencies: deque[float] = deque(maxlen=1000)
-
         # ── Recv thread ───────────────────────────────────────────────
         # All ZMQ socket I/O runs here.  Other threads communicate via _outbound.
         self._outbound: queue.Queue = queue.Queue()
@@ -632,6 +701,8 @@ class SubprocessBackend(Backend):
         self._on_death_callback: Optional[Callable] = on_death_callback
         self._recv_running = True
         self._recv_dead = False
+        self._worker_stats: dict[str, Any] = {}  # latest snapshot from worker
+        self._worker_stats_event: Optional[threading.Event] = None
         self._recv_thread = threading.Thread(
             target=self._recv_loop,
             daemon=True,
@@ -665,6 +736,22 @@ class SubprocessBackend(Backend):
         """Set MMP callback: called with model_id when worker dies."""
         self._on_death_callback = callback
 
+    def refresh_worker_stats(self, timeout_s: float = 1.0) -> dict[str, Any]:
+        """Request fresh stats from worker. Blocks up to timeout_s.
+
+        Returns latest worker stats dict (may be stale if worker is busy).
+        Thread-safe — sends via outbound queue, recv thread handles response.
+        """
+        if self._recv_dead:
+            return self._worker_stats
+        evt = threading.Event()
+        self._worker_stats_event = evt
+        # Enqueue stats request — recv thread sends _MSG_STATS_REQ
+        self._outbound.put(_STATS_SENTINEL)
+        evt.wait(timeout=timeout_s)
+        self._worker_stats_event = None
+        return self._worker_stats
+
     # ------------------------------------------------------------------
     # Recv thread — sole owner of _zmq_sock
     # ------------------------------------------------------------------
@@ -688,6 +775,12 @@ class SubprocessBackend(Backend):
                     except Exception:
                         pass
                     return
+                if item is _STATS_SENTINEL:
+                    try:
+                        self._zmq_sock.send_multipart([_MSG_STATS_REQ, b""])
+                    except zmq.ZMQError:
+                        pass
+                    continue
                 slot_id, req_id, params_bytes = item
                 try:
                     self._zmq_sock.send_multipart(
@@ -722,7 +815,14 @@ class SubprocessBackend(Backend):
             msg = frames[0]
 
             if msg == _MSG_HEARTBEAT:
-                pass  # timestamp already updated
+                if len(frames) > 1 and frames[1]:
+                    try:
+                        self._worker_stats = json.loads(frames[1])
+                    except Exception:
+                        pass
+                    evt = self._worker_stats_event
+                    if evt is not None:
+                        evt.set()
             elif msg == _MSG_RESULT and len(frames) > 1 and len(frames[1]) == 16:
                 req_id, slot_id, result_sz = struct.unpack(">QII", frames[1])
                 self._handle_result(req_id, slot_id, result_sz)
@@ -811,24 +911,10 @@ class SubprocessBackend(Backend):
         If ``future`` is provided, it will be resolved when the worker
         sends T_RESULT for this slot.
         """
-        if future is not None:
-            t0 = time.monotonic()
-            future.add_done_callback(lambda f: self._record_inference(t0, f))
-
         with self._slot_lock:
             self._slot_futures[slot_id] = (req_id, future)
 
         self.signal_slot(slot_id, req_id, params_bytes)
-
-    def _record_inference(self, t0: float, future: Future) -> None:
-        elapsed = time.monotonic() - t0
-        self._inference_count += 1
-        self._last_inference_ts = t0
-        self._latencies.append(elapsed)
-        if future.cancelled():
-            self._error_count += 1
-        elif future.exception() is not None:
-            self._error_count += 1
 
     def infer_sync(self, raw_input: Any, **kwargs) -> Any:
         raise RuntimeError(
@@ -950,14 +1036,7 @@ class SubprocessBackend(Backend):
             return len(self._slot_futures)
 
     def stats(self) -> Dict[str, Any]:
-        sorted_lats = sorted(self._latencies) if self._latencies else []
-
-        def _pct(p: float) -> float:
-            if not sorted_lats:
-                return 0.0
-            idx = min(int(len(sorted_lats) * p / 100), len(sorted_lats) - 1)
-            return sorted_lats[idx] * 1000
-
+        ws = self._worker_stats
         return {
             "model_id": self._model_id,
             "backend_type": "subprocess",
@@ -967,16 +1046,15 @@ class SubprocessBackend(Backend):
             "is_accepting": self.is_accepting,
             "queue_depth": self.queue_depth,
             "max_batch_size": self.max_batch_size,
-            "throughput_fps": (
-                self._inference_count / max(time.monotonic() - self._start_ts, 1e-6)
-            ),
-            "latency_p50_ms": _pct(50),
-            "latency_p99_ms": _pct(99),
-            "gpu_memory_mb": 0.0,
-            "cpu_pinned_memory_mb": 0.0,
-            "inference_count": self._inference_count,
-            "error_count": self._error_count,
-            "last_inference_ts": self._last_inference_ts,
+            "throughput_fps": ws.get("throughput_fps", 0.0),
+            "latency_p50_ms": ws.get("latency_p50_ms", 0.0),
+            "latency_p95_ms": ws.get("latency_p95_ms", 0.0),
+            "latency_p99_ms": ws.get("latency_p99_ms", 0.0),
+            "inference_count": ws.get("inference_count", 0),
+            "error_count": ws.get("error_count", 0),
+            "batch_count": ws.get("batch_count", 0),
+            "avg_batch_size": ws.get("avg_batch_size", 0.0),
+            "worker_uptime_s": ws.get("uptime_s", 0.0),
             "worker_alive": self._worker.is_alive(),
             "shm_pool_name": self._pool.name,
             "model_class_name": self._model_class_name,

@@ -481,8 +481,10 @@ class ModelManager:
         }
 
     def model_stats(self, model_id: str) -> Dict[str, Any]:
-        """Stats for a single model."""
+        """Stats for a single model. Forces worker stats refresh for subprocess backends."""
         backend = self._get_backend(model_id)
+        if hasattr(backend, "refresh_worker_stats"):
+            backend.refresh_worker_stats(timeout_s=1.0)
         s = backend.stats()
         s["model_id"] = model_id
         return s
