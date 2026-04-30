@@ -151,6 +151,8 @@ class _MMPHarness:
 class _MockBackend:
     """Simulates SubprocessBackend: calls mmp.on_result() from a thread."""
 
+    is_healthy = True
+
     def __init__(self, mmp: ModelManagerProcess, result_bytes: bytes = b"ok"):
         self._mmp = mmp
         self._result_bytes = result_bytes
@@ -335,6 +337,8 @@ class TestFullLifecycle:
         result_ready = threading.Event()
 
         class _SlowBackend:
+            is_healthy = True
+
             def signal_slot(self, slot_id, req_id, params_bytes=b"{}"):
                 def _do():
                     pool = SHMPool.attach(
