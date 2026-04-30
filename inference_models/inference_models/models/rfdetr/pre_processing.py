@@ -110,6 +110,7 @@ def pre_process_network_input(
                 image_pre_processing=image_pre_processing,
                 network_input=network_input,
                 target_size=target_size,
+                input_color_mode=input_color_mode,
                 pre_processing_overrides=pre_processing_overrides,
             )
         elif isinstance(img, (np.ndarray, torch.Tensor)):
@@ -155,10 +156,7 @@ def _pre_process_numpy(
     size_after_pre_processing = ImageDimensions(
         width=image.shape[1], height=image.shape[0]
     )
-    if (
-        input_color_mode is not None
-        and input_color_mode != network_input.color_mode
-    ):
+    if input_color_mode != network_input.color_mode:
         image = image[:, :, ::-1]
     pil = Image.fromarray(np.ascontiguousarray(image))
     resized = TF.resize(pil, (target_size.height, target_size.width))
@@ -177,6 +175,7 @@ def _pre_process_tensor(
     image_pre_processing: ImagePreProcessing,
     network_input: NetworkInputDefinition,
     target_size: ImageDimensions,
+    input_color_mode: Optional[ColorMode],
     pre_processing_overrides: Optional[PreProcessingOverrides],
 ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
     """Float-tensor branch: tensor F.resize matching predict()'s tensor branch.
@@ -197,6 +196,8 @@ def _pre_process_tensor(
     size_after_pre_processing = ImageDimensions(
         width=image.shape[3], height=image.shape[2]
     )
+    if input_color_mode != network_input.color_mode:
+        image = image[:, [2, 1, 0], :, :]
     resized = TF.resize(image, (target_size.height, target_size.width))
     if resized.shape[0] == 1:
         resized = resized.squeeze(0)
