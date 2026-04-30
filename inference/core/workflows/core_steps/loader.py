@@ -476,6 +476,9 @@ from inference.core.workflows.core_steps.transformations.image_slicer.v1 import 
 from inference.core.workflows.core_steps.transformations.image_slicer.v2 import (
     ImageSlicerBlockV2,
 )
+from inference.core.workflows.core_steps.transformations.per_class_confidence_filter.v1 import (
+    PerClassConfidenceFilterBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
 )
@@ -744,6 +747,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
         DetectionOffsetBlockV1,
+        PerClassConfidenceFilterBlockV1,
         DepthEstimationBlockV1,
         ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
