@@ -328,6 +328,7 @@ import time
 
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
+from inference_sdk.http.entities import Confidence
 
 try:
     from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
@@ -2401,6 +2402,8 @@ class HttpInterface(BaseInterface):
                 def load_model(model_id):
                     t_start = time.perf_counter()
                     de_aliased = resolve_roboflow_model_alias(model_id=model_id)
+                    model_id_alias = model_id if de_aliased != model_id else None
+                    loaded_model_id = model_id_alias or de_aliased
                     logger.info(
                         f"Preload: starting model load for '{model_id}' (resolved: '{de_aliased}')"
                     )
@@ -2408,6 +2411,7 @@ class HttpInterface(BaseInterface):
                         self.model_manager.add_model(
                             de_aliased,
                             PRELOAD_API_KEY,
+                            model_id_alias=model_id_alias,
                         )
                         load_time = time.perf_counter() - t_start
                         logger.info(
@@ -2427,7 +2431,7 @@ class HttpInterface(BaseInterface):
                         and model_id in PINNED_MODELS
                         and hasattr(self.model_manager, "pin_model")
                     ):
-                        self.model_manager.pin_model(de_aliased)
+                        self.model_manager.pin_model(loaded_model_id)
 
                 all_models = list(
                     dict.fromkeys((PRELOAD_MODELS or []) + (PINNED_MODELS or []))
@@ -3845,9 +3849,14 @@ class HttpInterface(BaseInterface):
                     None,
                     description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                 ),
-                confidence: float = Query(
+                confidence: Confidence = Query(
                     0.4,
-                    description="The confidence threshold used to filter out predictions",
+                    description=(
+                        "The confidence threshold used to filter out predictions. "
+                        'Pass a float in [0, 1], or "best" to use F1-optimal '
+                        'thresholds from model evaluation, or "default" to use '
+                        "the model's built-in default."
+                    ),
                 ),
                 keypoint_confidence: float = Query(
                     0.0,
@@ -3955,11 +3964,12 @@ class HttpInterface(BaseInterface):
                     f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
                 )
                 model_id = f"{dataset_id}/{version_id}"
-                if confidence >= 1:
-                    confidence /= 100
-                if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
-                    # allowing lower confidence results in RAM usage explosion
-                    confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
+                if isinstance(confidence, (int, float)):
+                    if confidence >= 1:
+                        confidence /= 100
+                    if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
+                        # allowing lower confidence results in RAM usage explosion
+                        confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
 
                 if overlap >= 1:
                     overlap /= 100

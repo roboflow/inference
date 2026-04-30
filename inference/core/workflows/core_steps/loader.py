@@ -54,6 +54,9 @@ from inference.core.workflows.core_steps.classical_cv.camera_focus.v2 import (
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1 import (
+    ContrastEnhancementBlock,
+)
 from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
     ContrastEqualizationBlockV1,
 )
@@ -75,8 +78,14 @@ from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 imp
 from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
     MaskAreaMeasurementBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1 import (
+    MaskEdgeSnapBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1 import (
     MorphologicalTransformationBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v2 import (
+    MorphologicalTransformationBlockV2,
 )
 from inference.core.workflows.core_steps.classical_cv.motion_detection.v1 import (
     MotionDetectionBlockV1,
@@ -919,6 +928,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
         MaskAreaMeasurementBlockV1,
+        MaskEdgeSnapBlockV1,
+        ContrastEnhancementBlock,
+        MorphologicalTransformationBlockV2,
     ]
     if SAM3_3D_OBJECTS_ENABLED:
         blocks.append(SegmentAnything3_3D_ObjectsBlockV1)
