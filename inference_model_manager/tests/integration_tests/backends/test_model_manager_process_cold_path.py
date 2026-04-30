@@ -118,6 +118,11 @@ class _MockBackend:
     def __init__(self, mmp: ModelManagerProcess, result_bytes: bytes = b"ok"):
         self._mmp = mmp
         self._result = result_bytes
+        self._healthy = True
+
+    @property
+    def is_healthy(self) -> bool:
+        return self._healthy
 
     def signal_slot(
         self, slot_id: int, req_id: int, params_bytes: bytes = b"{}"
@@ -468,3 +473,110 @@ class TestLRUEviction:
         mmp._check_and_evict()
         assert "unload:m:drain=True" in mgr.calls
         assert mmp._models["m"].loaded is False
+
+
+# ---------------------------------------------------------------------------
+# Worker auto-restart tests
+# ---------------------------------------------------------------------------
+
+
+class TestWorkerAutoRestart:
+    """Tests for auto-restart when a subprocess backend worker dies."""
+
+    def _make_mmp(self) -> ModelManagerProcess:
+        return ModelManagerProcess(
+            n_slots=4,
+            input_mb=_TEST_INPUT_MB,
+        )
+
+    def _make_reload_mmp(self):
+        """MMP with _load_model stubbed and running event loop for create_task."""
+        mmp = self._make_mmp()
+        mmp._reload_calls = []
+
+        async def _fake_load(model_id, **kw):
+            mmp._reload_calls.append(model_id)
+
+        mmp._load_model = _fake_load
+        return mmp
+
+    def _run_with_loop(self, mmp, fn):
+        """Run fn() inside an event loop so asyncio.create_task works."""
+        async def _run():
+            mmp._loop = asyncio.get_running_loop()
+            fn()
+            await asyncio.sleep(0)  # let tasks run
+
+        asyncio.run(_run())
+        mmp._loop = None
+
+    def test_schedule_reload_marks_loading(self):
+        mmp = self._make_reload_mmp()
+        from inference_model_manager.model_manager_process import ModelState
+
+        mmp._models["m"] = ModelState(loaded=True)
+
+        self._run_with_loop(mmp, lambda: mmp._schedule_reload("m"))
+        assert mmp._models["m"].loaded is False
+        assert mmp._models["m"].loading is True
+        assert "m" in mmp._reload_calls
+
+    def test_schedule_reload_idempotent(self):
+        mmp = self._make_reload_mmp()
+        from inference_model_manager.model_manager_process import ModelState
+
+        mmp._models["m"] = ModelState(loaded=False, loading=True)
+
+        self._run_with_loop(mmp, lambda: mmp._schedule_reload("m"))
+        # Already loading — should not fire _load_model again
+        assert mmp._reload_calls == []
+
+    def test_schedule_reload_noop_for_unknown_model(self):
+        mmp = self._make_reload_mmp()
+
+        self._run_with_loop(mmp, lambda: mmp._schedule_reload("nonexistent"))
+        assert mmp._reload_calls == []
+
+    def test_forward_to_unhealthy_backend_triggers_reload(self):
+        mmp = self._make_reload_mmp()
+        from inference_model_manager.model_manager_process import ModelState
+
+        mmp._models["m"] = ModelState(loaded=True)
+        backend = _MockBackend(mmp)
+        backend._healthy = False
+        mmp._backends["m"] = backend
+        mmp._model_access["m"] = 1.0
+        # Simulate a real pending request so _on_result_on_loop doesn't hit pool
+        mmp._pending[99] = (b"test_identity", 0, "m")
+
+        self._run_with_loop(
+            mmp, lambda: mmp._forward_to_backend("m", slot_id=0, req_id=99)
+        )
+        assert mmp._models["m"].loaded is False
+        assert mmp._models["m"].loading is True
+        assert "m" in mmp._reload_calls
+
+    def test_forward_to_healthy_backend_does_not_reload(self):
+        mmp = self._make_reload_mmp()
+        from inference_model_manager.model_manager_process import ModelState
+
+        mmp._models["m"] = ModelState(loaded=True)
+        mmp._model_access["m"] = 1.0
+
+        # Lightweight mock — just records signal_slot calls, no SHM
+        class _NoopBackend:
+            is_healthy = True
+            signals = []
+            def signal_slot(self, slot_id, req_id, params_bytes=b"{}"):
+                self.signals.append((slot_id, req_id))
+
+        backend = _NoopBackend()
+        mmp._backends["m"] = backend
+
+        self._run_with_loop(
+            mmp, lambda: mmp._forward_to_backend("m", slot_id=0, req_id=99)
+        )
+        assert mmp._models["m"].loaded is True
+        assert mmp._models["m"].loading is False
+        assert mmp._reload_calls == []
+        assert backend.signals == [(0, 99)]
