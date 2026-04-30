@@ -199,7 +199,7 @@ def _collect_gpu_stats(
                     result["per_model_gpu_mb"][flavor] = round(pid_mem_mb[pid], 1)
 
     except Exception:
-        pass
+        logger.error("_collect_gpu_stats: pynvml unavailable or failed", exc_info=True)
 
     return result
 
@@ -603,7 +603,6 @@ class ModelManagerProcess:
             return
 
         self._pool.mark_allocated(slot_id, req_id)
-        self._pending[req_id] = (identity, slot_id, model_id)
         await self._send(identity, T_ALLOC_OK, struct.pack(">QI", req_id, slot_id))
 
     # ------------------------------------------------------------------
