@@ -150,9 +150,29 @@ def make_batch_decoder(
 
             # One decode_jpeg call for all JPEGs in the batch
             if jpeg_bufs:
-                decoded = _tvio.decode_jpeg(jpeg_bufs, device=torch_device)
-                for i, t in zip(jpeg_idx, decoded):
-                    out[i] = t
+                try:
+                    decoded = _tvio.decode_jpeg(jpeg_bufs, device=torch_device)
+                    for i, t in zip(jpeg_idx, decoded):
+                        out[i] = t
+                except Exception:
+                    log.warning(
+                        "nvjpeg batch decode failed for %d JPEG(s), "
+                        "falling back to CPU imagecodecs",
+                        len(jpeg_bufs),
+                    )
+                    for i in jpeg_idx:
+                        try:
+                            raw = bytes(mvs[i])
+                            img = _ic.imread(raw)
+                            out[i] = (
+                                torch.from_numpy(np.ascontiguousarray(img))
+                                .permute(2, 0, 1)
+                                .to(torch_device)
+                            )
+                        except Exception:
+                            log.exception(
+                                "CPU fallback decode also failed for slot index %d", i
+                            )
 
             # Non-JPEG: imagecodecs (or HEIF fallback) per image → CHW RGB tensor
             for i, mv in zip(other_idx, other_mvs):
