@@ -22,7 +22,19 @@ def detect_max_batch_size(model) -> Optional[int]:
     if cfg is not None:
         fwd = getattr(cfg, "forward_pass", None)
         if fwd is not None:
-            return getattr(fwd, "static_batch_size", None)
+            sbs = getattr(fwd, "static_batch_size", None)
+            if sbs is not None:
+                return sbs
+            mdb = getattr(fwd, "max_dynamic_batch_size", None)
+            if mdb is not None:
+                return mdb
+    # TRT config (separate from inference_config)
+    trt_cfg = getattr(model, "_trt_config", None)
+    if trt_cfg is not None:
+        sbs = getattr(trt_cfg, "static_batch_size", None)
+        if sbs is not None:
+            return sbs
+        return getattr(trt_cfg, "dynamic_batch_size_max", None)
     return None
 
 
