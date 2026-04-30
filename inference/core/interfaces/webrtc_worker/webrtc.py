@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextlib
 import datetime
 import gzip
 import json
@@ -88,6 +89,115 @@ apply_aiortc_bitrate_limits()
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 WEBRTC_TIMING_SAMPLE_EVERY_N = 30
+WEBRTC_STATS_LOG_INTERVAL_SECONDS = 5.0
+
+
+async def _log_peer_connection_stats(
+    peer_connection: RTCPeerConnection,
+    video_processor: "VideoFrameProcessor",
+) -> None:
+    previous_bytes_sent: Dict[str, int] = {}
+    previous_packets_received: Dict[str, int] = {}
+    previous_frames_received = 0
+    previous_sample_at = time.perf_counter()
+
+    while peer_connection.connectionState != "closed":
+        await asyncio.sleep(WEBRTC_STATS_LOG_INTERVAL_SECONDS)
+        now = time.perf_counter()
+        elapsed = max(now - previous_sample_at, 0.001)
+        previous_sample_at = now
+
+        try:
+            stats = await peer_connection.getStats()
+        except Exception as error:
+            logger.warning("[WEBRTC_STATS] failed to collect stats: %s", error)
+            continue
+
+        outbound_video = []
+        inbound_video = []
+        remote_inbound = []
+        transport = []
+
+        for stats_id, stat in stats.items():
+            stat_type = getattr(stat, "type", "")
+            kind = getattr(stat, "kind", "")
+
+            if stat_type == "outbound-rtp" and kind == "video":
+                bytes_sent = getattr(stat, "bytesSent", 0)
+                previous = previous_bytes_sent.get(stats_id)
+                previous_bytes_sent[stats_id] = bytes_sent
+                if previous is None:
+                    continue
+                kbps = (bytes_sent - previous) * 8 / elapsed / 1000
+                outbound_video.append(
+                    "ssrc=%s kbps=%.0f packets=%s bytes=%s"
+                    % (
+                        getattr(stat, "ssrc", "?"),
+                        kbps,
+                        getattr(stat, "packetsSent", "?"),
+                        bytes_sent,
+                    )
+                )
+            elif stat_type == "inbound-rtp" and kind == "video":
+                packets_received = getattr(stat, "packetsReceived", 0)
+                previous = previous_packets_received.get(stats_id)
+                previous_packets_received[stats_id] = packets_received
+                if previous is None:
+                    continue
+                packets_per_second = (packets_received - previous) / elapsed
+                inbound_video.append(
+                    "ssrc=%s packets_per_s=%.0f packets=%s lost=%s jitter=%s"
+                    % (
+                        getattr(stat, "ssrc", "?"),
+                        packets_per_second,
+                        packets_received,
+                        getattr(stat, "packetsLost", "?"),
+                        getattr(stat, "jitter", "?"),
+                    )
+                )
+            elif stat_type == "remote-inbound-rtp" and kind == "video":
+                remote_inbound.append(
+                    "ssrc=%s lost=%s fraction_lost=%s rtt=%s"
+                    % (
+                        getattr(stat, "ssrc", "?"),
+                        getattr(stat, "packetsLost", "?"),
+                        getattr(stat, "fractionLost", "?"),
+                        getattr(stat, "roundTripTime", "?"),
+                    )
+                )
+            elif stat_type == "transport":
+                transport.append(
+                    "bytes_sent=%s bytes_received=%s packets_sent=%s packets_received=%s"
+                    % (
+                        getattr(stat, "bytesSent", "?"),
+                        getattr(stat, "bytesReceived", "?"),
+                        getattr(stat, "packetsSent", "?"),
+                        getattr(stat, "packetsReceived", "?"),
+                    )
+                )
+
+        frames_received = getattr(video_processor, "_received_frames", 0)
+        received_fps = (frames_received - previous_frames_received) / elapsed
+        previous_frames_received = frames_received
+        data_channel = getattr(video_processor, "data_channel", None)
+        buffered_amount = (
+            getattr(data_channel, "bufferedAmount", None) if data_channel else None
+        )
+
+        logger.warning(
+            "[WEBRTC_STATS] state=%s ice=%s received_frames=%d received_fps=%.1f "
+            "data_buffered=%s outbound_video=[%s] inbound_video=[%s] "
+            "remote_inbound=[%s] transport=[%s]",
+            peer_connection.connectionState,
+            peer_connection.iceConnectionState,
+            frames_received,
+            received_fps,
+            buffered_amount,
+            "; ".join(outbound_video) or "warming",
+            "; ".join(inbound_video) or "warming",
+            "; ".join(remote_inbound) or "none",
+            "; ".join(transport) or "none",
+        )
 
 
 def create_chunked_binary_message(
@@ -1416,7 +1526,20 @@ async def init_rtc_peer_connection_with_loop(
     )
 
     logger.info("Answer sent, waiting for termination event")
+    stats_task: Optional[asyncio.Task] = None
+    if DEBUG_WEBRTC_PROCESSING_LATENCY:
+        stats_task = asyncio.create_task(
+            _log_peer_connection_stats(
+                peer_connection=peer_connection,
+                video_processor=video_processor,
+            )
+        )
+
     await terminate_event.wait()
+    if stats_task is not None:
+        stats_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await stats_task
     logger.info("Termination event received, closing WebRTC connection")
     if player:
         logger.info("Stopping player")

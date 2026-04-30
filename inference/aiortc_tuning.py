@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any, Dict
 
 
@@ -46,6 +47,44 @@ def apply_aiortc_bitrate_limits() -> None:
         h264_applied,
         vp8_applied,
     )
+    _patch_encoder_bitrate_logging(h264.H264Encoder, "h264")
+    _patch_encoder_bitrate_logging(vpx.Vp8Encoder, "vp8")
+
+
+def _patch_encoder_bitrate_logging(encoder_cls: Any, codec_name: str) -> None:
+    if getattr(encoder_cls, "_roboflow_bitrate_logging_patched", False):
+        return
+
+    target_bitrate_property = encoder_cls.target_bitrate
+    getter = target_bitrate_property.fget
+    setter = target_bitrate_property.fset
+    if getter is None or setter is None:
+        return
+
+    def target_bitrate(self: Any, bitrate: int) -> None:
+        previous_bitrate = getter(self)
+        setter(self, bitrate)
+        applied_bitrate = getter(self)
+        now = time.monotonic()
+        last_logged_at = getattr(self, "_roboflow_last_bitrate_log_at", 0.0)
+        last_logged_bitrate = getattr(self, "_roboflow_last_logged_bitrate", None)
+        should_log = (
+            last_logged_bitrate != applied_bitrate
+            or (now - last_logged_at) >= 5.0
+        )
+        if should_log:
+            LOGGER.warning(
+                "[WEBRTC_BITRATE] codec=%s requested_bps=%s applied_bps=%s previous_bps=%s",
+                codec_name,
+                bitrate,
+                applied_bitrate,
+                previous_bitrate,
+            )
+            self._roboflow_last_bitrate_log_at = now
+            self._roboflow_last_logged_bitrate = applied_bitrate
+
+    encoder_cls.target_bitrate = property(getter, target_bitrate)
+    encoder_cls._roboflow_bitrate_logging_patched = True
 
 
 def prefer_h264_for_peer_connection(peer_connection: Any) -> bool:
