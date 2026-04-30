@@ -10,10 +10,8 @@ from inference_cli.lib.container_adapter import (
 )
 from inference_cli.lib.tunnel_adapter import start_tunnel, stop_tunnel_container
 
-server_app = typer.Typer(
-    help="""Commands for running the inference server locally. \n 
-    Supported devices targets are x86 CPU, ARM64 CPU, and NVIDIA GPU."""
-)
+server_app = typer.Typer(help="""Commands for running the inference server locally. \n 
+    Supported devices targets are x86 CPU, ARM64 CPU, and NVIDIA GPU.""")
 
 
 @server_app.command()
