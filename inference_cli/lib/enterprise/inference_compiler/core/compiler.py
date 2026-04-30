@@ -1,3 +1,4 @@
+import logging
 import tempfile
 from functools import partial
 from typing import Optional
@@ -25,6 +26,8 @@ from inference_cli.lib.enterprise.inference_compiler.utils.logging import (
 )
 from inference_models.weights_providers.core import get_model_from_provider
 from inference_models.weights_providers.entities import ModelMetadata
+
+logger = logging.getLogger("inference_cli.inference_compiler")
 
 REGISTERED_COMPILATION_HANDLERS = {
     "yolov8": partial(
@@ -121,8 +124,14 @@ def compile_model(
         style="bold green4",
         console=console,
     )
+    logger.info(
+        "Starting compilation: model_id=%s, trt_forward_compatible=%s, trt_same_cc_compatible=%s",
+        model_id,
+        trt_forward_compatible,
+        trt_same_cc_compatible,
+    )
     models_service_client = ModelsServiceClient.init(api_key=api_key)
-    print_to_console(message="Retrieving Model metadata...", console=console)
+    print_to_console(message="Retrieving model metadata...", console=console)
     model_metadata = get_model_from_provider(
         model_id=model_id,
         provider="roboflow",

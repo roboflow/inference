@@ -142,3 +142,50 @@ def test_contextvar_set_and_get() -> None:
         assert retrieved is collector
     finally:
         remote_processing_times.reset(token)
+
+
+def test_snapshot_summary_does_not_clear_entries() -> None:
+    # given
+    collector = RemoteProcessingTimeCollector()
+    collector.add(0.5, model_id="yolov8")
+    collector.add(0.3, model_id="clip")
+
+    # when
+    total, detail = collector.snapshot_summary()
+
+    # then
+    assert abs(total - 0.8) < 1e-9
+    parsed = json.loads(detail)
+    assert parsed == [
+        {"m": "yolov8", "t": 0.5},
+        {"m": "clip", "t": 0.3},
+    ]
+    assert collector.snapshot_entries() == [("yolov8", 0.5), ("clip", 0.3)]
+
+
+def test_collector_tracks_remote_model_ids() -> None:
+    # given
+    collector = RemoteProcessingTimeCollector()
+
+    # when
+    collector.add_model_id("model-a/1")
+    collector.add_model_ids(["model-b/2", "model-a/1", "", "unknown"])
+
+    # then
+    assert collector.snapshot_model_ids() == {"model-a/1", "model-b/2"}
+
+
+def test_collector_tracks_remote_cold_start_metadata() -> None:
+    # given
+    collector = RemoteProcessingTimeCollector()
+
+    # when
+    collector.record_cold_start(load_time=0.4, model_id="model-a/1")
+    collector.record_cold_start(load_time=0.2, model_id=None, count=1)
+
+    # then
+    assert collector.has_cold_start_data() is True
+    assert collector.snapshot_cold_start_entries() == [("model-a/1", 0.4)]
+    assert collector.snapshot_cold_start_count() == 2
+    assert abs(collector.snapshot_cold_start_total_load_time() - 0.6) < 1e-9
+    assert collector.snapshot_model_ids() == {"model-a/1"}

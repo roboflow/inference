@@ -16,7 +16,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLO26_DEFAULT_KEY_POINTS_THRESHOLD,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,

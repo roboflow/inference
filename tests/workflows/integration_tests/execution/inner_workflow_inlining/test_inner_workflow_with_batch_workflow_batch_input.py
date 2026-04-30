@@ -5,7 +5,6 @@ Equivalence for ``test_inner_workflow_with_batch_workflow_batch_input``.
 from typing import Any, Dict
 
 from inference.core.managers.base import ModelManager
-
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     echo_child_workflow,
     execution_engine,

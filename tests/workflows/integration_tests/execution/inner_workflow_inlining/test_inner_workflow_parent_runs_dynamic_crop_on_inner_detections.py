@@ -19,7 +19,6 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.managers.base import ModelManager
-
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     child_detection_only_for_parent_dynamic_crop,
     execution_engine,
@@ -151,7 +150,9 @@ def _assert_crop_predictions_equal(crop_preds: list) -> None:
     ]
     assert isinstance(crop_preds, list)
     assert len(crop_preds) == 3
-    for det, (det_id, class_name, class_id, conf, expected_xyxy) in zip(crop_preds, expected):
+    for det, (det_id, class_name, class_id, conf, expected_xyxy) in zip(
+        crop_preds, expected
+    ):
         assert isinstance(det, sv.Detections)
         assert len(det) == 1
         assert det["detection_id"][0] == det_id

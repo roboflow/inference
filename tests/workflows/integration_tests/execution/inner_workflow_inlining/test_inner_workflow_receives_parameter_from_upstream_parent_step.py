@@ -6,7 +6,6 @@ binding from ``$steps.prepare`` vs inlining with the same selector on child data
 from typing import Any, Dict
 
 from inference.core.managers.base import ModelManager
-
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     echo_child_workflow,
     execution_engine,

@@ -50,15 +50,14 @@ def test_ocsort_block() -> None:
     assert len(frame3_result["already_seen_instances"]) == 3
 
 
-
 def test_ocsort_input_and_output_kinds_match() -> None:
     """Trackers are pass-through: output kinds must equal input kinds."""
     input_kinds = manifest_accepted_kind_names(OCSORTManifest, field_name="detections")
     for output_def in OCSORTManifest.describe_outputs():
         output_kinds = {k.name for k in output_def.kind}
-        assert output_kinds == input_kinds, (
-            f"Output '{output_def.name}' kinds {output_kinds} != input kinds {input_kinds}"
-        )
+        assert (
+            output_kinds == input_kinds
+        ), f"Output '{output_def.name}' kinds {output_kinds} != input kinds {input_kinds}"
 
 
 def test_ocsort_outputs_superset_of_predictions_visualization_kinds() -> None:
@@ -66,6 +65,4 @@ def test_ocsort_outputs_superset_of_predictions_visualization_kinds() -> None:
     for output_def in OCSORTManifest.describe_outputs():
         tracker_kinds = {k.name for k in output_def.kind}
         missing = viz_kinds - tracker_kinds
-        assert not missing, (
-            f"Output '{output_def.name}' missing kinds {missing}"
-        )
+        assert not missing, f"Output '{output_def.name}' missing kinds {missing}"

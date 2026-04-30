@@ -6,7 +6,6 @@ nested ``inner_workflow`` vs child steps inlined at the parent level.
 from typing import Any, Dict
 
 from inference.core.managers.base import ModelManager
-
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     echo_child_workflow,
     execution_engine,
@@ -74,9 +73,7 @@ def test_inlined_echo_steps_match_inner_workflow_result(
     model_manager: ModelManager,
 ) -> None:
     inner = echo_child_workflow()
-    nested_engine = execution_engine(
-        model_manager, _nested_parent_workflow(inner)
-    )
+    nested_engine = execution_engine(model_manager, _nested_parent_workflow(inner))
     flat_engine = execution_engine(
         model_manager, _flat_parent_workflow_equivalent_to_binding()
     )

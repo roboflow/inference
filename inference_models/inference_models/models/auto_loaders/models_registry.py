@@ -410,6 +410,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.sam2_rt.sam2_pytorch",
         class_name="SAM2ForStream",
     ),
+    ("sam2video", INSTANCE_SEGMENTATION_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.sam2_video.sam2_video_hf",
+        class_name="SAM2Video",
+    ),
     ("deep-lab-v3-plus", SEMANTIC_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_torch",
         class_name="DeepLabV3PlusForSemanticSegmentationTorch",

@@ -7,6 +7,7 @@ from typing import Any, List, Optional, Tuple, Union
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
+from pycocotools import mask as mask_utils
 
 from inference.core.entities.requests import (
     ClassificationInferenceRequest,
@@ -18,6 +19,7 @@ from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
+    InstanceSegmentationRLEPrediction,
     Keypoint,
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
@@ -36,10 +38,11 @@ from inference.core.env import (
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
 )
+from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
-from inference.core.utils.postprocess import masks2poly
+from inference.core.utils.postprocess import mask2poly, masks2poly
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import (
@@ -57,10 +60,8 @@ from inference_models import (
     PreProcessingOverrides,
     SemanticSegmentationModel,
 )
-from inference_models.models.base.semantic_segmentation import (
-    SemanticSegmentationResult,
-)
-from inference_models.models.base.types import PreprocessingMetadata
+from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
+from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
@@ -277,6 +278,8 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
         )
         kwargs["pre_processing_overrides"] = pre_processing_overrides
+        if "rle" in self._model.supported_mask_formats:
+            kwargs["mask_format"] = "rle"
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -304,6 +307,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         preprocess_return_metadata: PreprocessingMetadata,
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
+        return_in_rle = kwargs.get("response_mask_format") == "rle"
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
@@ -316,14 +320,27 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
             xyxy = det.xyxy.detach().cpu().numpy()
             confs = det.confidence.detach().cpu().numpy()
-            masks = det.mask.detach().cpu().numpy()
-            polys = masks2poly(masks)
+            if isinstance(det.mask, torch.Tensor):
+                masks = det.mask.detach().cpu().numpy()
+                if return_in_rle:
+                    polys_or_rles = [
+                        torch_mask_to_coco_rle(mask=mask) for mask in masks
+                    ]
+                else:
+                    polys_or_rles = masks2poly(masks)
+            else:
+                if return_in_rle:
+                    polys_or_rles = det.mask.to_coco_rle_masks()
+                else:
+                    polys_or_rles = rle_masks2poly(det.mask)
             class_ids = det.class_id.detach().cpu().numpy()
 
-            predictions: List[InstanceSegmentationPrediction] = []
+            predictions: List[
+                Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
+            ] = []
 
-            for (x1, y1, x2, y2), mask_as_poly, conf, class_id in zip(
-                xyxy, polys, confs, class_ids
+            for (x1, y1, x2, y2), mask_as_poly_or_rle, conf, class_id in zip(
+                xyxy, polys_or_rles, confs, class_ids
             ):
                 cx = (float(x1) + float(x2)) / 2.0
                 cy = (float(y1) + float(y2)) / 2.0
@@ -340,20 +357,39 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     and class_name not in kwargs["class_filter"]
                 ):
                     continue
-                predictions.append(
-                    InstanceSegmentationPrediction(
-                        x=cx,
-                        y=cy,
-                        width=w,
-                        height=h,
-                        confidence=float(conf),
-                        points=[
-                            Point(x=point[0], y=point[1]) for point in mask_as_poly
-                        ],
-                        **{"class": class_name},
-                        class_id=class_id_int,
+                if not return_in_rle:
+                    predictions.append(
+                        InstanceSegmentationPrediction(
+                            x=cx,
+                            y=cy,
+                            width=w,
+                            height=h,
+                            confidence=float(conf),
+                            points=[
+                                Point(x=point[0], y=point[1])
+                                for point in mask_as_poly_or_rle
+                            ],
+                            **{"class": class_name},
+                            class_id=class_id_int,
+                        )
                     )
-                )
+                else:
+                    if isinstance(mask_as_poly_or_rle["counts"], bytes):
+                        mask_as_poly_or_rle["counts"] = mask_as_poly_or_rle[
+                            "counts"
+                        ].decode("ascii")
+                    predictions.append(
+                        InstanceSegmentationRLEPrediction(
+                            x=cx,
+                            y=cy,
+                            width=w,
+                            height=h,
+                            confidence=float(conf),
+                            rle=mask_as_poly_or_rle,
+                            **{"class": class_name},
+                            class_id=class_id_int,
+                        )
+                    )
 
             responses.append(
                 InstanceSegmentationInferenceResponse(
@@ -394,6 +430,21 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             inference_response=inference_response,
             colors=class_id_2_color,
         )
+
+
+def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
+    segments = []
+    h, w = masks.image_size
+    for counts in masks.masks:
+        rle_dict = {"size": [h, w], "counts": counts}
+        decoded_rle = np.ascontiguousarray(
+            mask_utils.decode(rle_dict)
+        )  # (H, W) uint8, already C-contiguous
+        if not np.any(decoded_rle):
+            segments.append(np.zeros((0, 2), dtype=np.float32))
+            continue
+        segments.append(mask2poly(decoded_rle))
+    return segments
 
 
 class InferenceModelsKeyPointsDetectionAdapter(Model):
@@ -767,12 +818,17 @@ def prepare_multi_label_classification_response(
     """
     results = []
     for prediction, image_size in zip(post_processed_predictions, image_sizes):
+        class_confidences = _reshape_classification_confidences(
+            confidence=prediction.confidence.cpu(),
+            expected_num_images=1,
+            class_names=class_names,
+        )[0].tolist()
         image_predictions_dict = {
             class_names[class_id]: {
                 "confidence": confidence,
                 "class_id": class_id,
             }
-            for class_id, confidence in enumerate(prediction.confidence.cpu().tolist())
+            for class_id, confidence in enumerate(class_confidences)
         }
         predicted_classes = [
             class_names[class_id] for class_id in prediction.class_ids.tolist()
@@ -795,9 +851,12 @@ def prepare_classification_response(
     confidence_threshold: float,
 ) -> List[ClassificationInferenceResponse]:
     responses = []
-    for classes_confidence, image_size in zip(
-        post_processed_predictions.confidence.cpu().tolist(), image_sizes
-    ):
+    batch_confidences = _reshape_classification_confidences(
+        confidence=post_processed_predictions.confidence.cpu(),
+        expected_num_images=len(image_sizes),
+        class_names=class_names,
+    )
+    for classes_confidence, image_size in zip(batch_confidences.tolist(), image_sizes):
         individual_classes_predictions = []
         for i, cls_name in enumerate(class_names):
             class_score = float(classes_confidence[i])
@@ -829,6 +888,26 @@ def prepare_classification_response(
         )
         responses.append(response)
     return responses
+
+
+def _reshape_classification_confidences(
+    confidence: torch.Tensor,
+    expected_num_images: int,
+    class_names: List[str],
+) -> torch.Tensor:
+    expected_num_classes = len(class_names)
+    expected_num_scores = expected_num_images * expected_num_classes
+    actual_num_scores = confidence.numel()
+    if actual_num_scores != expected_num_scores:
+        raise PostProcessingError(
+            "Classification model output has shape "
+            f"{tuple(confidence.shape)} containing {actual_num_scores} confidence "
+            f"score(s), but response metadata expects {expected_num_images} image(s) "
+            f"x {expected_num_classes} class name(s) = {expected_num_scores} score(s). "
+            "This usually means the model package class names metadata does not match "
+            "the classifier head."
+        )
+    return confidence.reshape(expected_num_images, expected_num_classes)
 
 
 def draw_predictions(inference_request, inference_response, class_names: List[str]):

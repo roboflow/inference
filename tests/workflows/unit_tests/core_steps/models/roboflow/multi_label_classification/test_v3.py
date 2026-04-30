@@ -50,7 +50,9 @@ def test_multi_label_classification_model_validation_when_required_field_is_not_
         _ = BlockManifest.model_validate(data)
 
 
-def test_multi_label_classification_model_validation_when_invalid_type_provided() -> None:
+def test_multi_label_classification_model_validation_when_invalid_type_provided() -> (
+    None
+):
     # given
     data = {
         "type": "invalid",
@@ -64,7 +66,9 @@ def test_multi_label_classification_model_validation_when_invalid_type_provided(
         _ = BlockManifest.model_validate(data)
 
 
-def test_multi_label_classification_model_validation_when_model_id_has_invalid_type() -> None:
+def test_multi_label_classification_model_validation_when_model_id_has_invalid_type() -> (
+    None
+):
     # given
     data = {
         "type": "roboflow_core/roboflow_multi_label_classification_model@v3",
@@ -114,7 +118,9 @@ def test_multi_label_classification_model_validation_when_custom_mode_missing_cu
 
 
 @pytest.mark.parametrize("mode", ["best", "default", "custom"])
-def test_multi_label_classification_model_accepts_all_confidence_modes(mode: str) -> None:
+def test_multi_label_classification_model_accepts_all_confidence_modes(
+    mode: str,
+) -> None:
     # given
     data = {
         "type": "roboflow_core/roboflow_multi_label_classification_model@v3",

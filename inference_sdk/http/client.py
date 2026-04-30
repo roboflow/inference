@@ -1,4 +1,3 @@
-import logging
 from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
@@ -18,12 +17,7 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError, Response
 
-from inference_sdk.config import (
-    EXECUTION_ID_HEADER,
-    PROCESSING_TIME_HEADER,
-    execution_id,
-    remote_processing_times,
-)
+from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -56,6 +50,8 @@ from inference_sdk.http.utils.aliases import (
 from inference_sdk.http.utils.executors import (
     UNKNOWN_MODEL_ID,
     RequestMethod,
+    collect_remote_processing_metadata_from_headers,
+    collect_remote_processing_metadata_from_response,
     execute_requests_packages,
     execute_requests_packages_async,
     send_post_request,
@@ -112,25 +108,14 @@ if TYPE_CHECKING:
     from inference_sdk.webrtc.client import WebRTCClient
 
 
-logger = logging.getLogger(__name__)
-
-
 def _collect_processing_time_from_response(
     response: requests.Response,
     model_id: str = UNKNOWN_MODEL_ID,
 ) -> None:
-    collector = remote_processing_times.get()
-    if collector is None:
-        return
-    pt = response.headers.get(PROCESSING_TIME_HEADER)
-    if pt is not None:
-        try:
-            collector.add(float(pt), model_id=model_id)
-        except (ValueError, TypeError):
-            logger.warning(
-                "Malformed %s header value; could not parse as float",
-                PROCESSING_TIME_HEADER,
-            )
+    collect_remote_processing_metadata_from_response(
+        response=response,
+        model_id=model_id,
+    )
 
 
 def wrap_errors(function: callable) -> callable:
@@ -764,11 +749,12 @@ class InferenceHTTPClient:
                 task_type=model_description.task_type,
             )
         )
+        query_params = self.__inference_configuration.to_api_v1_query_parameters()
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
             headers=DEFAULT_HEADERS,
-            parameters=None,
+            parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
@@ -812,11 +798,12 @@ class InferenceHTTPClient:
                 task_type=model_description.task_type,
             )
         )
+        query_params = self.__inference_configuration.to_api_v1_query_parameters()
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
             headers=DEFAULT_HEADERS,
-            parameters=None,
+            parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
@@ -1406,6 +1393,10 @@ class InferenceHTTPClient:
                 headers=DEFAULT_HEADERS,
             ) as response:
                 response.raise_for_status()
+                collect_remote_processing_metadata_from_headers(
+                    headers=response.headers,
+                    fallback_model_id=clip_version or "clip",
+                )
                 response_payload = await response.json()
         return unwrap_single_element_list(sequence=response_payload)
 
@@ -1545,6 +1536,10 @@ class InferenceHTTPClient:
                 headers=DEFAULT_HEADERS,
             ) as response:
                 response.raise_for_status()
+                collect_remote_processing_metadata_from_headers(
+                    headers=response.headers,
+                    fallback_model_id=clip_version or "clip",
+                )
                 return await response.json()
 
     @wrap_errors

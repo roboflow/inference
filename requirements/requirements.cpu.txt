@@ -1,3 +1,3 @@
 onnxruntime>=1.15.1,<1.22.0
 nvidia-ml-py<13.0.0
-inference-models[torch-cpu,onnx-cpu]~=0.26.1  # keep in sync between requirements.gpu.txt, requirements.cpu.txt, requirements.vino.txt
+inference-models[torch-cpu,onnx-cpu]~=0.27.2  # keep in sync between requirements.gpu.txt, requirements.cpu.txt, requirements.vino.txt

@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, List, Optional, Union
+from typing import Any, ClassVar, List, Literal, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, validator
@@ -237,6 +237,14 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
         default=0.0,
         examples=[0.5],
         description="The amount to tradeoff between 0='fast' and 1='accurate'",
+    )
+    response_mask_format: Literal["polygon", "rle"] = Field(
+        default="polygon",
+        examples=["rle"],
+        description="Requested output mask format - `polygon` is the default Roboflow format, which however is "
+        "not capable representing certain shapes - RLE is compact and more standard representation, yet "
+        "require special decoding on the caller side - currently supported in `opt-in` mode when server is "
+        "running with `USE_INFERENCE_MODELS=True` - otherwise it's ignored.",
     )
 
 

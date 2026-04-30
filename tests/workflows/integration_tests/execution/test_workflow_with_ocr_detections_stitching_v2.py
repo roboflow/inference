@@ -27,7 +27,8 @@ WORKFLOW_STITCHING_OCR_DETECTIONS_TOLERANCE = {
             "name": "ocr_detection",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence_mode": "custom", "custom_confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/stitch_ocr_detections@v2",
@@ -69,7 +70,8 @@ WORKFLOW_STITCHING_OCR_DETECTIONS_OTSU = {
             "name": "ocr_detection",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence_mode": "custom", "custom_confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/stitch_ocr_detections@v2",
@@ -111,7 +113,8 @@ WORKFLOW_STITCHING_OCR_DETECTIONS_COLLIMATE = {
             "name": "ocr_detection",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence_mode": "custom", "custom_confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/stitch_ocr_detections@v2",

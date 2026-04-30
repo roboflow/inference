@@ -1,3 +1,4 @@
+import logging
 from enum import Enum
 from typing import Annotated, Optional
 
@@ -8,7 +9,12 @@ from inference_cli.lib.container_adapter import get_image, pull_image
 from inference_cli.lib.env import ROBOFLOW_API_KEY
 from inference_cli.lib.utils import read_env_file
 
-inference_compiler_app = typer.Typer(name="Inference compiler")
+logger = logging.getLogger("inference_cli.inference_compiler")
+
+inference_compiler_app = typer.Typer(
+    name="Inference compiler",
+    help="Compile Roboflow models into optimized TensorRT engines for GPU-accelerated inference on NVIDIA GPUs and Jetson devices.",
+)
 
 
 class CompilationMode(str, Enum):
@@ -22,7 +28,13 @@ def compiler_callback():
     pass
 
 
-@inference_compiler_app.command(name="compile-model")
+@inference_compiler_app.command(
+    name="compile-model",
+    help="Compile an ONNX model from Roboflow into a TensorRT engine optimized for your GPU. "
+    "The compiled engine is registered back to the Roboflow platform so it can be served to "
+    "matching devices automatically. Compilation can run in-process (requires TensorRT and "
+    "inference-models) or inside a Docker container.",
+)
 def compile_model(
     model_id: Annotated[
         str,
@@ -37,68 +49,67 @@ def compile_model(
         typer.Option(
             "--api-key",
             "-a",
-            help="Roboflow API key for your workspace. If not given - env variable `ROBOFLOW_API_KEY` will be used",
+            help="Roboflow API key for your workspace. If not provided, the `ROBOFLOW_API_KEY` environment variable is used.",
         ),
     ] = None,
     debug_mode: Annotated[
         bool,
         typer.Option(
             "--debug-mode/--no-debug-mode",
-            help="Flag enabling errors stack traces to be displayed (helpful for debugging)",
+            help="Display full stack traces on errors.",
         ),
     ] = False,
     trt_forward_compatible: Annotated[
         bool,
         typer.Option(
             "--trt-forward-compatible/--no-trt-forward-compatible",
-            help="Flag to decide if forward-compatibility mode in TRT compilation should be enabled",
+            help="Enable TensorRT forward-compatibility mode, allowing engines to run on newer TRT versions.",
         ),
     ] = False,
     trt_same_cc_compatible: Annotated[
         bool,
         typer.Option(
             "--trt-same-cc-compatible/--no-trt-same-cc-compatible",
-            help="Flag to decide if engine should be compiled to be compatible with devices sharing the same CUDA CC "
-            "to the one running compilation procedure",
+            help="Compile the engine to be portable across GPUs with the same CUDA compute capability.",
         ),
     ] = False,
     compilation_mode: Annotated[
         CompilationMode,
         typer.Option(
             "--compilation-mode",
-            help="Selection of compilation mode - `container` runs the procedure inside `inference` server, "
-            "`python` runs in-process. `auto` (default) inspect environment dependencies to verify if "
-            "the procedure can be run in-process, if not - offloading to the server.",
+            help="Selection of compilation mode. `container` runs the procedure inside an Inference server container, "
+            "`python` runs in-process. `auto` (default) inspects environment dependencies to verify if "
+            "the procedure can run in-process; if not, it offloads to the container.",
         ),
     ] = CompilationMode.AUTO,
     image: Annotated[
         Optional[str],
         typer.Option(
             "--image",
-            help="Point specific docker image you would like to run with command (useful for development of custom "
-            "builds of inference server)",
+            help="Specify a Docker image to use for compilation (useful for custom builds of the Inference server).",
         ),
     ] = None,
     use_local_images: Annotated[
         bool,
         typer.Option(
             "--use-local-images/--not-use-local-images",
-            help="Flag to allow using local images (if set False image is always attempted to be pulled)",
+            help="Allow using local Docker images. If false, the image is always pulled from the registry.",
         ),
     ] = False,
     env_file_path: Annotated[
         Optional[str],
         typer.Option(
             "--env-file-path",
-            help="Path to key-value .env file to inject into compilation container (if you run in Python package, "
-            "just export variables to env)",
+            help="Path to a key-value .env file to inject into the compilation container. "
+            "For Python mode, export the variables to your environment instead.",
         ),
     ] = None,
 ) -> None:
     console = Console()
     console.print(
-        "You are running component licensed under Roboflow Enterprise License - please acknowledge the "
-        "terms of use: https://github.com/roboflow/inference/blob/main/inference/enterprise/LICENSE.txt",
+        "Inference Compiler is licensed under the Roboflow Enterprise License. "
+        "By continuing, you acknowledge the terms of use: "
+        "https://github.com/roboflow/inference/blob/main/inference/enterprise/LICENSE.txt",
     )
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -151,9 +162,12 @@ def compilation_to_run_in_container(
         import inference_models
 
     except Exception as error:
+        logger.info(
+            "Could not import inference-models, offloading to container: %s", error
+        )
         console.print(
-            "Inference compiler running in `auto` mode could not import `inference-models`, which is required "
-            f"to compile package in process - offloading to container. Error: {error}",
+            "Compiler running in `auto` mode could not import `inference-models`, which is required "
+            f"to compile in-process. Offloading to container. Error: {error}",
         )
         return True
     try:
@@ -168,9 +182,10 @@ def compilation_to_run_in_container(
             x_ray_result.trt_python_package_available
         ), "TensorRT Python package not detected"
     except Exception as error:
+        logger.info("TensorRT not available, offloading to container: %s", error)
         console.print(
-            "Inference compiler running in `auto` mode could not import `tensorrt`, which is required "
-            f"to compile package in process - offloading to container. Error: {error}",
+            "Compiler running in `auto` mode could not import `tensorrt`, which is required "
+            f"to compile in-process. Offloading to container. Error: {error}",
         )
         return True
     return False
@@ -192,9 +207,9 @@ def run_compilation_in_container(
         image = get_image()
     if "-cpu" in image:
         raise ValueError(
-            "Attempted to run compilation using `inference-server` CPU image, which does not support TRT compilation. "
-            "This error may be result of pointing invalid docker image with `--image` parameter or image "
-            "auto-selection choice, due to lack of GPU detected."
+            "Attempted to run compilation using an Inference server CPU image, which does not support TRT compilation. "
+            "This may be caused by specifying an invalid Docker image with the `--image` parameter, or by "
+            "automatic image selection when no GPU is detected."
         )
     is_gpu = "gpu" in image and "jetson" not in image
     is_jetson = "jetson" in image
@@ -209,7 +224,13 @@ def run_compilation_in_container(
         privileged = True
         docker_run_kwargs = {"runtime": "nvidia"}
     pull_image(image, use_local_images=use_local_images)
-    console.print("Starting model compilation inside docker container")
+    logger.info(
+        "Starting container compilation: image=%s, is_gpu=%s, is_jetson=%s",
+        image,
+        is_gpu,
+        is_jetson,
+    )
+    console.print("Starting model compilation inside Docker container")
     command = build_container_command(
         model_id=model_id,
         api_key=api_key,
@@ -286,6 +307,7 @@ def run_compilation_in_python(
     trt_same_cc_compatible: bool = False,
     console: Optional[Console] = None,
 ) -> None:
+    logger.info("Running compilation in-process (Python mode)")
     from inference_cli.lib.enterprise.inference_compiler.core import compiler
 
     compiler.compile_model(
