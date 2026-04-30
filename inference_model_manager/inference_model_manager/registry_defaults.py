@@ -28,15 +28,66 @@ _registered_classes: set[int] = set()
 
 # Each entry: (task_name, method, default, params, validator_name, serializer_name, response_type)
 # validator_name/serializer_name are looked up from the modules at registration time.
+#
+# params: dict[str, dict] — each param has "type", "required", and optionally "default".
+# Base class entries provide a fallback. Concrete class entries (matched first via MRO)
+# can override with richer params. To add a new model: add an entry keyed by its class name.
 
-_TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] = {
-    # --- Object Detection ---
+# --- Reusable param fragments ---
+
+_P_IMAGES = {"images": {"type": "image", "required": True}}
+_P_IMAGES_CLASSES = {
+    "images": {"type": "image", "required": True},
+    "classes": {"type": "list[str]", "required": True},
+}
+_P_IMAGES_PROMPT = {
+    "images": {"type": "image", "required": True},
+    "prompt": {"type": "str", "required": True},
+}
+_P_TEXTS = {"texts": {"type": "list[str]", "required": True}}
+_P_EMBEDDINGS_POINTS = {
+    "embeddings": {"type": "tensor", "required": True},
+    "points": {"type": "list", "required": True},
+}
+
+# Common kwargs for object detection models
+_K_OD = {
+    "confidence": {"type": "float", "required": False, "default": 0.4},
+    "iou_threshold": {"type": "float", "required": False, "default": 0.3},
+    "max_detections": {"type": "int", "required": False, "default": 300},
+    "class_agnostic_nms": {"type": "bool", "required": False, "default": False},
+}
+
+# Instance segmentation adds mask params
+_K_ISEG = {
+    **_K_OD,
+    "masks_smoothing_enabled": {"type": "bool", "required": False, "default": True},
+    "masks_binarization_threshold": {"type": "float", "required": False, "default": 0.5},
+}
+
+# Keypoints adds threshold
+_K_KP = {
+    **_K_OD,
+    "key_points_threshold": {"type": "float", "required": False, "default": 0.0},
+}
+
+
+def _p(*dicts: dict) -> dict:
+    """Merge param dicts."""
+    r: dict = {}
+    for d in dicts:
+        r.update(d)
+    return r
+
+
+_TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
+    # --- Object Detection (base — fallback for all OD models) ---
     "ObjectDetectionModel": [
         (
             "infer",
             "infer",
             True,
-            ["images"],
+            _p(_P_IMAGES, _K_OD),
             "validate_images_required",
             "serialize_detections_compact",
             "roboflow-object-detection-compact-v1",
@@ -47,7 +98,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "infer",
             "infer",
             True,
-            ["images", "classes"],
+            _p(_P_IMAGES_CLASSES, _K_OD),
             "validate_images_and_classes",
             "serialize_detections_compact",
             "roboflow-object-detection-compact-v1",
@@ -59,7 +110,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "infer",
             "infer",
             True,
-            ["images"],
+            _p(_P_IMAGES),
             "validate_images_required",
             "serialize_classification_compact",
             "roboflow-classification-compact-v1",
@@ -70,7 +121,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "infer",
             "infer",
             True,
-            ["images"],
+            _p(_P_IMAGES),
             "validate_images_required",
             "serialize_multilabel_classification_compact",
             "roboflow-classification-compact-v1",
@@ -82,7 +133,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "infer",
             "infer",
             True,
-            ["images"],
+            _p(_P_IMAGES, _K_ISEG),
             "validate_images_required",
             "serialize_instance_segmentation_compact",
             "roboflow-instance-segmentation-compact-v1",
@@ -94,7 +145,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "infer",
             "infer",
             True,
-            ["images"],
+            _p(_P_IMAGES),
             "validate_images_required",
             "serialize_semantic_segmentation_compact",
             "roboflow-semantic-segmentation-compact-v1",
@@ -106,7 +157,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "infer",
             "infer",
             True,
-            ["images"],
+            _p(_P_IMAGES, _K_KP),
             "validate_images_required",
             "serialize_keypoints_compact",
             "roboflow-keypoints-compact-v1",
@@ -118,7 +169,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "infer",
             "infer",
             True,
-            ["images"],
+            _p(_P_IMAGES),
             "validate_images_required",
             "serialize_depth_compact",
             "roboflow-depth-compact-v1",
@@ -130,7 +181,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "infer",
             "infer",
             True,
-            ["images"],
+            _p(_P_IMAGES),
             "validate_images_required",
             "serialize_text",
             "roboflow-text-v1",
@@ -142,7 +193,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "embed_images",
             "embed_images",
             True,
-            ["images"],
+            _p(_P_IMAGES),
             "validate_images_required",
             "serialize_embeddings",
             "roboflow-embeddings-compact-v1",
@@ -151,7 +202,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "embed_text",
             "embed_text",
             False,
-            ["texts"],
+            _p(_P_TEXTS),
             "validate_texts_required",
             "serialize_embeddings",
             "roboflow-embeddings-compact-v1",
@@ -163,7 +214,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "infer",
             "infer",
             True,
-            ["images"],
+            _p(_P_IMAGES),
             "validate_images_required",
             "serialize_detections_compact",
             "roboflow-object-detection-compact-v1",
@@ -175,7 +226,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "prompt",
             "prompt",
             True,
-            ["images", "prompt"],
+            _p(_P_IMAGES_PROMPT),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -186,7 +237,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "prompt",
             "prompt",
             True,
-            ["images", "prompt"],
+            _p(_P_IMAGES_PROMPT),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -197,7 +248,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "prompt",
             "prompt",
             True,
-            ["images", "prompt"],
+            _p(_P_IMAGES_PROMPT),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -208,7 +259,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "prompt",
             "prompt",
             True,
-            ["images", "prompt"],
+            _p(_P_IMAGES_PROMPT),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -219,7 +270,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "prompt",
             "prompt",
             True,
-            ["images", "prompt"],
+            _p(_P_IMAGES_PROMPT),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -230,7 +281,7 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
             "prompt",
             "prompt",
             True,
-            ["images", "prompt"],
+            _p(_P_IMAGES_PROMPT),
             "validate_images_and_prompt",
             "serialize_text",
             "roboflow-text-v1",
@@ -238,278 +289,54 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, list[str], str, str, str]]] 
     ],
     # --- Florence2 ---
     "Florence2HF": [
-        (
-            "caption",
-            "caption_image",
-            True,
-            ["images"],
-            "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "detect",
-            "detect_objects",
-            False,
-            ["images"],
-            "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "ocr",
-            "ocr_image",
-            False,
-            ["images"],
-            "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "parse_document",
-            "parse_document",
-            False,
-            ["images"],
-            "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "prompt",
-            "prompt",
-            False,
-            ["images", "prompt"],
-            "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "segment_phrase",
-            "segment_phrase",
-            False,
-            ["images", "prompt"],
-            "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "ground_phrase",
-            "ground_phrase",
-            False,
-            ["images", "prompt"],
-            "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "classify_region",
-            "classify_image_region",
-            False,
-            ["images", "prompt"],
-            "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "caption_region",
-            "caption_image_region",
-            False,
-            ["images", "prompt"],
-            "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "ocr_region",
-            "ocr_image_region",
-            False,
-            ["images", "prompt"],
-            "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "segment_region",
-            "segment_region",
-            False,
-            ["images", "prompt"],
-            "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
+        ("caption", "caption_image", True, _p(_P_IMAGES), "validate_images_required", "serialize_text", "roboflow-text-v1"),
+        ("detect", "detect_objects", False, _p(_P_IMAGES), "validate_images_required", "serialize_text", "roboflow-text-v1"),
+        ("ocr", "ocr_image", False, _p(_P_IMAGES), "validate_images_required", "serialize_text", "roboflow-text-v1"),
+        ("parse_document", "parse_document", False, _p(_P_IMAGES), "validate_images_required", "serialize_text", "roboflow-text-v1"),
+        ("prompt", "prompt", False, _p(_P_IMAGES_PROMPT), "validate_images_and_prompt", "serialize_text", "roboflow-text-v1"),
+        ("segment_phrase", "segment_phrase", False, _p(_P_IMAGES_PROMPT), "validate_images_and_prompt", "serialize_text", "roboflow-text-v1"),
+        ("ground_phrase", "ground_phrase", False, _p(_P_IMAGES_PROMPT), "validate_images_and_prompt", "serialize_text", "roboflow-text-v1"),
+        ("classify_region", "classify_image_region", False, _p(_P_IMAGES_PROMPT), "validate_images_and_prompt", "serialize_text", "roboflow-text-v1"),
+        ("caption_region", "caption_image_region", False, _p(_P_IMAGES_PROMPT), "validate_images_and_prompt", "serialize_text", "roboflow-text-v1"),
+        ("ocr_region", "ocr_image_region", False, _p(_P_IMAGES_PROMPT), "validate_images_and_prompt", "serialize_text", "roboflow-text-v1"),
+        ("segment_region", "segment_region", False, _p(_P_IMAGES_PROMPT), "validate_images_and_prompt", "serialize_text", "roboflow-text-v1"),
     ],
     # --- SAM ---
     "SAMTorch": [
-        (
-            "embed",
-            "embed_images",
-            True,
-            ["images"],
-            "validate_images_required",
-            "serialize_embeddings",
-            "roboflow-embeddings-compact-v1",
-        ),
-        (
-            "segment",
-            "segment_images",
-            False,
-            ["embeddings", "points"],
-            "validate_passthrough",
-            "serialize_instance_segmentation_compact",
-            "roboflow-instance-segmentation-compact-v1",
-        ),
+        ("embed", "embed_images", True, _p(_P_IMAGES), "validate_images_required", "serialize_embeddings", "roboflow-embeddings-compact-v1"),
+        ("segment", "segment_images", False, _p(_P_EMBEDDINGS_POINTS), "validate_passthrough", "serialize_instance_segmentation_compact", "roboflow-instance-segmentation-compact-v1"),
     ],
     "SAM2Torch": [
-        (
-            "embed",
-            "embed_images",
-            True,
-            ["images"],
-            "validate_images_required",
-            "serialize_embeddings",
-            "roboflow-embeddings-compact-v1",
-        ),
-        (
-            "segment",
-            "segment_images",
-            False,
-            ["embeddings", "points"],
-            "validate_passthrough",
-            "serialize_instance_segmentation_compact",
-            "roboflow-instance-segmentation-compact-v1",
-        ),
+        ("embed", "embed_images", True, _p(_P_IMAGES), "validate_images_required", "serialize_embeddings", "roboflow-embeddings-compact-v1"),
+        ("segment", "segment_images", False, _p(_P_EMBEDDINGS_POINTS), "validate_passthrough", "serialize_instance_segmentation_compact", "roboflow-instance-segmentation-compact-v1"),
     ],
     # --- Moondream2 ---
     "MoonDream2HF": [
-        (
-            "caption",
-            "caption",
-            True,
-            ["images"],
-            "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "detect",
-            "detect",
-            False,
-            ["images"],
-            "validate_images_required",
-            "serialize_detections_compact",
-            "roboflow-object-detection-compact-v1",
-        ),
-        (
-            "query",
-            "query",
-            False,
-            ["images", "prompt"],
-            "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "point",
-            "point",
-            False,
-            ["images", "prompt"],
-            "validate_images_and_prompt",
-            "serialize_detections_compact",
-            "roboflow-object-detection-compact-v1",
-        ),
-        (
-            "encode",
-            "encode_images",
-            False,
-            ["images"],
-            "validate_images_required",
-            "serialize_embeddings",
-            "roboflow-embeddings-compact-v1",
-        ),
+        ("caption", "caption", True, _p(_P_IMAGES), "validate_images_required", "serialize_text", "roboflow-text-v1"),
+        ("detect", "detect", False, _p(_P_IMAGES), "validate_images_required", "serialize_detections_compact", "roboflow-object-detection-compact-v1"),
+        ("query", "query", False, _p(_P_IMAGES_PROMPT), "validate_images_and_prompt", "serialize_text", "roboflow-text-v1"),
+        ("point", "point", False, _p(_P_IMAGES_PROMPT), "validate_images_and_prompt", "serialize_detections_compact", "roboflow-object-detection-compact-v1"),
+        ("encode", "encode_images", False, _p(_P_IMAGES), "validate_images_required", "serialize_embeddings", "roboflow-embeddings-compact-v1"),
     ],
     # --- GlmOCR ---
     "GlmOcrHF": [
-        (
-            "recognize_text",
-            "recognize_text",
-            True,
-            ["images"],
-            "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "recognize_table",
-            "recognize_table",
-            False,
-            ["images"],
-            "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "recognize_formula",
-            "recognize_formula",
-            False,
-            ["images"],
-            "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "prompt",
-            "prompt",
-            False,
-            ["images", "prompt"],
-            "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
+        ("recognize_text", "recognize_text", True, _p(_P_IMAGES), "validate_images_required", "serialize_text", "roboflow-text-v1"),
+        ("recognize_table", "recognize_table", False, _p(_P_IMAGES), "validate_images_required", "serialize_text", "roboflow-text-v1"),
+        ("recognize_formula", "recognize_formula", False, _p(_P_IMAGES), "validate_images_required", "serialize_text", "roboflow-text-v1"),
+        ("prompt", "prompt", False, _p(_P_IMAGES_PROMPT), "validate_images_and_prompt", "serialize_text", "roboflow-text-v1"),
     ],
     # --- SAM2 RT (streaming) ---
     "SAM2ForStream": [
-        (
-            "prompt",
-            "prompt",
-            True,
-            ["images", "prompt"],
-            "validate_images_and_prompt",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
-        (
-            "track",
-            "track",
-            False,
-            ["images"],
-            "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
+        ("prompt", "prompt", True, _p(_P_IMAGES_PROMPT), "validate_images_and_prompt", "serialize_text", "roboflow-text-v1"),
+        ("track", "track", False, _p(_P_IMAGES), "validate_images_required", "serialize_text", "roboflow-text-v1"),
     ],
     # --- Text-only OCR ---
     "TextOnlyOCRModel": [
-        (
-            "infer",
-            "infer",
-            True,
-            ["images"],
-            "validate_images_required",
-            "serialize_text",
-            "roboflow-text-v1",
-        ),
+        ("infer", "infer", True, _p(_P_IMAGES), "validate_images_required", "serialize_text", "roboflow-text-v1"),
     ],
     # --- Passthrough (benchmark) ---
     "PassthroughModel": [
-        (
-            "infer",
-            "infer",
-            True,
-            ["images"],
-            "validate_passthrough",
-            "serialize_detections_compact",
-            "roboflow-object-detection-compact-v1",
-        ),
+        ("infer", "infer", True, _p(_P_IMAGES), "validate_passthrough", "serialize_detections_compact", "roboflow-object-detection-compact-v1"),
     ],
 }
 

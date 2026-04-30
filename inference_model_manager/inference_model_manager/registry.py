@@ -27,8 +27,8 @@ class TaskEntry:
     default: bool
     """True if this is the default task for the model class."""
 
-    params: list
-    """Parameter names the method accepts (for docs / validation)."""
+    params: dict
+    """Parameter definitions: {name: {type, required, default?}} for docs / validation."""
 
     validator: Callable[[dict], dict]
     """(kwargs) → validated kwargs. Raises ValueError on bad input."""
@@ -57,7 +57,7 @@ class ModelRegistry:
         *,
         method: Optional[str] = None,
         default: bool = False,
-        params: Optional[list] = None,
+        params: Optional[dict] = None,
         validator: Callable[[dict], dict],
         serializer: Callable[[Any, Any], dict],
         response_type: str,
@@ -78,7 +78,7 @@ class ModelRegistry:
         entry = TaskEntry(
             method=method or task_name,
             default=default,
-            params=params or [],
+            params=params or {},
             validator=validator,
             serializer=serializer,
             response_type=response_type,

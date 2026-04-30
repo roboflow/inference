@@ -116,7 +116,7 @@ This works out of the box with `mm.process("my-detector", images=img)`.
 Add entries to `_TASK_CONFIGS` in `registry_defaults.py`. Each entry is a tuple:
 
 ```
-(task_name, method_name, is_default, param_names, validator_name, serializer_name, response_type)
+(task_name, method_name, is_default, params_dict, validator_name, serializer_name, response_type)
 ```
 
 Example — a model with two tasks:
@@ -124,12 +124,28 @@ Example — a model with two tasks:
 ```python
 # In registry_defaults.py _TASK_CONFIGS dict:
 "MyCustomModel": [
-    ("generate", "generate_output", True, ["images", "prompt"],
+    ("generate", "generate_output", True,
+     {
+         "images": {"type": "image", "required": True},
+         "prompt": {"type": "str", "required": True},
+         "temperature": {"type": "float", "required": False, "default": 0.7},
+     },
      "validate_images_and_prompt", "serialize_text",
      "roboflow-text-v1"),
-    ("embed", "embed_images", False, ["images"],
+    ("embed", "embed_images", False,
+     {"images": {"type": "image", "required": True}},
      "validate_images_required", "serialize_embeddings",
      "roboflow-embeddings-compact-v1"),
+],
+```
+
+Reusable param fragments (`_P_IMAGES`, `_P_IMAGES_PROMPT`, `_K_OD`, etc.) are defined at the top of `registry_defaults.py`. Use `_p()` to merge them:
+
+```python
+"MyDetector": [
+    ("infer", "infer", True, _p(_P_IMAGES, _K_OD),
+     "validate_images_required", "serialize_detections_compact",
+     "roboflow-object-detection-compact-v1"),
 ],
 ```
 
@@ -137,10 +153,12 @@ Fields:
 - **task_name** — what users pass as `task=` param (e.g. `mm.process("model", task="embed")`)
 - **method_name** — actual method on the model class to call (can differ from task_name)
 - **is_default** — exactly one task must be `True`; used when `task=None`
-- **param_names** — required params (for docs and validation)
+- **params_dict** — `{name: {type, required, default?}}` — exposed in stats/interface for API discovery
 - **validator_name** — function from `validators.py` (e.g. `"validate_images_required"`)
 - **serializer_name** — function from `serializers_typed.py` (e.g. `"serialize_text"`)
 - **response_type** — type string for JSON response envelope
+
+If your model inherits from a registered base class but has different params (e.g. different defaults), add a concrete class entry — MRO picks it up first.
 
 ### Case 3: Custom validator or serializer
 
