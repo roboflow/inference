@@ -718,13 +718,19 @@ class ModelManagerProcess:
         )
         # Start from cached monitoring snapshot (includes psutil/GPU from last poll)
         snapshot: dict[str, Any] = dict(self._stats_snapshot)
-        # Overlay with fresh manager stats and live MMP state
+        # Overlay with manager stats (skip 'models' — mmp_models is the source of truth)
         if self._manager is not None:
             try:
-                snapshot.update(self._manager.stats())
+                mgr_stats = self._manager.stats()
+                mgr_stats.pop("models", None)
+                snapshot.update(mgr_stats)
             except Exception:
                 pass
         now = time.monotonic()
+        # Per-model pending count from _pending
+        pending_per_model: dict[str, int] = {}
+        for _, _, mid in self._pending.values():
+            pending_per_model[mid] = pending_per_model.get(mid, 0) + 1
         model_stats: dict[str, Any] = {}
         for f, fs in self._models.items():
             last_access = self._model_access.get(f)
@@ -766,9 +772,9 @@ class ModelManagerProcess:
                 "is_cold": idle_s is not None and idle_s > self._idle_timeout_s,
                 "request_rate_60s": len(req_times),
             }
+            entry["queue_depth"] = pending_per_model.get(f, 0)
             if backend is not None:
                 try:
-                    entry["queue_depth"] = backend.queue_depth
                     entry["worker_alive"] = backend.is_healthy
                     entry["worker_pid"] = getattr(backend, "worker_pid", None)
                     entry["model_class_name"] = getattr(
