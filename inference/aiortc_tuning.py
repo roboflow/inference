@@ -17,6 +17,10 @@ VP8_BITRATES = {
     "MAX_BITRATE": 8_000_000,
 }
 
+BROWSER_INPUT_REMB_START_BITRATE = 6_000_000
+BROWSER_INPUT_REMB_MIN_BITRATE = 2_000_000
+BROWSER_INPUT_REMB_MAX_BITRATE = 12_000_000
+
 
 def _apply_codec_bitrates(
     module: Any,
@@ -49,6 +53,7 @@ def apply_aiortc_bitrate_limits() -> None:
     )
     _patch_encoder_bitrate_logging(h264.H264Encoder, "h264")
     _patch_encoder_bitrate_logging(vpx.Vp8Encoder, "vp8")
+    _patch_receiver_remb_estimator()
 
 
 def _patch_encoder_bitrate_logging(encoder_cls: Any, codec_name: str) -> None:
@@ -85,6 +90,87 @@ def _patch_encoder_bitrate_logging(encoder_cls: Any, codec_name: str) -> None:
 
     encoder_cls.target_bitrate = property(getter, target_bitrate)
     encoder_cls._roboflow_bitrate_logging_patched = True
+
+
+def _patch_receiver_remb_estimator() -> None:
+    import aiortc.rate as rate
+
+    estimator_cls = rate.RemoteBitrateEstimator
+    if getattr(estimator_cls, "_roboflow_remb_tuning_patched", False):
+        return
+
+    original_init = estimator_cls.__init__
+    original_add = estimator_cls.add
+
+    def __init__(self: Any) -> None:
+        original_init(self)
+        now_ms = int(time.time() * 1000)
+        self.rate_control.set_estimate(BROWSER_INPUT_REMB_START_BITRATE, now_ms)
+        self.rate_control.latest_estimated_throughput = (
+            BROWSER_INPUT_REMB_START_BITRATE
+        )
+        self._roboflow_last_remb_log_at = 0.0
+        self._roboflow_last_logged_remb_bitrate = None
+        LOGGER.warning(
+            "[WEBRTC_REMB] seeded receiver estimate start_bps=%s min_bps=%s max_bps=%s",
+            BROWSER_INPUT_REMB_START_BITRATE,
+            BROWSER_INPUT_REMB_MIN_BITRATE,
+            BROWSER_INPUT_REMB_MAX_BITRATE,
+        )
+
+    def add(
+        self: Any,
+        arrival_time_ms: int,
+        abs_send_time: int,
+        payload_size: int,
+        ssrc: int,
+    ) -> Any:
+        remb = original_add(
+            self,
+            arrival_time_ms,
+            abs_send_time,
+            payload_size,
+            ssrc,
+        )
+        if remb is None:
+            return None
+
+        requested_bitrate, ssrcs = remb
+        applied_bitrate = min(
+            max(requested_bitrate, BROWSER_INPUT_REMB_MIN_BITRATE),
+            BROWSER_INPUT_REMB_MAX_BITRATE,
+        )
+        if applied_bitrate != requested_bitrate:
+            self.rate_control.current_bitrate = applied_bitrate
+
+        now = time.monotonic()
+        last_logged_at = getattr(self, "_roboflow_last_remb_log_at", 0.0)
+        last_logged_bitrate = getattr(self, "_roboflow_last_logged_remb_bitrate", None)
+        should_log = (
+            last_logged_bitrate != applied_bitrate
+            or (now - last_logged_at) >= 5.0
+        )
+        if should_log:
+            LOGGER.warning(
+                "[WEBRTC_REMB] requested_bps=%s applied_bps=%s ssrcs=%s",
+                requested_bitrate,
+                applied_bitrate,
+                ssrcs,
+            )
+            self._roboflow_last_remb_log_at = now
+            self._roboflow_last_logged_remb_bitrate = applied_bitrate
+
+        return applied_bitrate, ssrcs
+
+    estimator_cls.__init__ = __init__
+    estimator_cls.add = add
+    estimator_cls._roboflow_remb_tuning_patched = True
+    LOGGER.warning(
+        "Applied aiortc WebRTC receiver REMB tuning: start_bps=%s min_bps=%s max_bps=%s",
+        BROWSER_INPUT_REMB_START_BITRATE,
+        BROWSER_INPUT_REMB_MIN_BITRATE,
+        BROWSER_INPUT_REMB_MAX_BITRATE,
+    )
 
 
 def prefer_h264_for_peer_connection(peer_connection: Any) -> bool:
