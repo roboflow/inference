@@ -980,6 +980,7 @@ class SubprocessBackend(Backend):
             "last_inference_ts": self._last_inference_ts,
             "worker_alive": self._worker.is_alive(),
             "shm_pool_name": self._pool.name,
+            "model_class_name": self._model_class_name,
         }
 
     @property
