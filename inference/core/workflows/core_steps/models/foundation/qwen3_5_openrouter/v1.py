@@ -34,13 +34,21 @@ from inference.core.workflows.prototypes.block import (
 )
 
 MODEL_VERSION_MAPPING = {
-    "Gemma 4 31B - OpenRouter": "google/gemma-4-31b-it",
-    "Gemma 4 26B A4B - OpenRouter": "google/gemma-4-26b-a4b-it",
+    "Qwen 3.5 9B - OpenRouter": "qwen/qwen3.5-9b",
+    "Qwen 3.5 27B - OpenRouter": "qwen/qwen3.5-27b",
+    "Qwen 3.5 122B A10B - OpenRouter": "qwen/qwen3.5-122b-a10b",
+    "Qwen 3.5 397B A17B - OpenRouter": "qwen/qwen3.5-397b-a17b",
+    "Qwen 3.5 Flash 02-23 - OpenRouter": "qwen/qwen3.5-flash-02-23",
+    "Qwen 3.5 Plus 20260420 - OpenRouter": "qwen/qwen3.5-plus-20260420",
 }
 
 ModelVersion = Literal[
-    "Gemma 4 31B - OpenRouter",
-    "Gemma 4 26B A4B - OpenRouter",
+    "Qwen 3.5 9B - OpenRouter",
+    "Qwen 3.5 27B - OpenRouter",
+    "Qwen 3.5 122B A10B - OpenRouter",
+    "Qwen 3.5 397B A17B - OpenRouter",
+    "Qwen 3.5 Flash 02-23 - OpenRouter",
+    "Qwen 3.5 Plus 20260420 - OpenRouter",
 ]
 
 SUPPORTED_TASK_TYPES_LIST = [
@@ -66,7 +74,7 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 
 
 LONG_DESCRIPTION = f"""
-Ask a question to Google's Gemma model with vision capabilities.
+Ask a question to Qwen 3.5 vision-language models served via OpenRouter.
 
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
@@ -74,10 +82,10 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 #### 🛠️ API providers and model variants
 
-Gemma is exposed via [OpenRouter API](https://openrouter.ai/) and we require
+Qwen 3.5 is exposed via [OpenRouter API](https://openrouter.ai/) and we require
 passing an [OpenRouter API Key](https://openrouter.ai/docs/api-keys) to run.
 
-Pick a specific model version from the `model_version` dropdown - new Gemma releases
+Pick a specific model version from the `model_version` dropdown - new Qwen 3.5 releases
 will be added to this list as they become available on OpenRouter.
 
 !!! warning "API Usage Charges"
@@ -89,7 +97,7 @@ will be added to this list as they become available on OpenRouter.
 
 !!! warning "Model license"
 
-    Check the [Gemma Terms of Use](https://ai.google.dev/gemma/terms) before use.
+    Check the [Qwen license terms](https://huggingface.co/Qwen) before use.
 """
 
 
@@ -114,23 +122,23 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Google Gemma API",
+            "name": "Qwen 3.5 API",
             "version": "v1",
-            "short_description": "Run Google's Gemma model with vision capabilities via OpenRouter.",
+            "short_description": "Run Qwen 3.5 vision-language models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
-            "license": "Gemma Terms of Use",
+            "license": "Qwen License",
             "block_type": "model",
-            "search_keywords": ["LMM", "VLM", "Gemma", "Google", "OpenRouter"],
+            "search_keywords": ["LMM", "VLM", "Qwen", "Qwen 3.5", "OpenRouter"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
             "ui_manifest": {
                 "section": "model",
-                "icon": "fa-brands fa-google",
+                "icon": "fal fa-atom",
             },
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/google_gemma@v1"]
+    type: Literal["roboflow_core/qwen3_5_openrouter@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -148,7 +156,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
-        description="Text prompt to the Gemma model",
+        description="Text prompt to the Qwen 3.5 model",
         examples=["my prompt", "$inputs.prompt"],
         json_schema_extra={
             "relevant_for": {
@@ -191,13 +199,17 @@ class BlockManifest(WorkflowBlockManifest):
     model_version: Union[
         Selector(kind=[STRING_KIND]),
         Literal[
-            "Gemma 4 31B - OpenRouter",
-            "Gemma 4 26B A4B - OpenRouter",
+            "Qwen 3.5 9B - OpenRouter",
+            "Qwen 3.5 27B - OpenRouter",
+            "Qwen 3.5 122B A10B - OpenRouter",
+            "Qwen 3.5 397B A17B - OpenRouter",
+            "Qwen 3.5 Flash 02-23 - OpenRouter",
+            "Qwen 3.5 Plus 20260420 - OpenRouter",
         ],
     ] = Field(
-        default="Gemma 4 31B - OpenRouter",
+        default="Qwen 3.5 27B - OpenRouter",
         description="Model to be used",
-        examples=["Gemma 4 31B - OpenRouter", "$inputs.gemma_model"],
+        examples=["Qwen 3.5 27B - OpenRouter", "$inputs.qwen_model"],
     )
     max_tokens: int = Field(
         default=500,
@@ -268,7 +280,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class GoogleGemmaBlockV1(WorkflowBlock):
+class Qwen35OpenRouterBlockV1(WorkflowBlock):
 
     def __init__(
         self,
@@ -302,14 +314,14 @@ class GoogleGemmaBlockV1(WorkflowBlock):
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
-        raw_outputs = run_gemma_llm_prompting(
+        raw_outputs = run_qwen_llm_prompting(
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
-            gemma_api_key=api_key,
-            gemma_model_version=model_version,
+            qwen_api_key=api_key,
+            qwen_model_version=model_version,
             max_tokens=max_tokens,
             temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
@@ -319,26 +331,26 @@ class GoogleGemmaBlockV1(WorkflowBlock):
         ]
 
 
-def run_gemma_llm_prompting(
+def run_qwen_llm_prompting(
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
-    gemma_api_key: Optional[str],
-    gemma_model_version: ModelVersion,
+    qwen_api_key: Optional[str],
+    qwen_model_version: ModelVersion,
     max_tokens: int,
     temperature: float,
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
-    model_version_id = MODEL_VERSION_MAPPING.get(gemma_model_version)
+    model_version_id = MODEL_VERSION_MAPPING.get(qwen_model_version)
     if model_version_id is None:
         raise ValueError(
-            f"Invalid model name: '{gemma_model_version}'. Please use one of {list(MODEL_VERSION_MAPPING.keys())}."
+            f"Invalid model name: '{qwen_model_version}'. Please use one of {list(MODEL_VERSION_MAPPING.keys())}."
         )
-    gemma_prompts = []
+    qwen_prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
         base64_image = base64.b64encode(
@@ -350,10 +362,10 @@ def run_gemma_llm_prompting(
             output_structure=output_structure,
             classes=classes,
         )
-        gemma_prompts.append(generated_prompt)
-    return execute_gemma_requests(
-        gemma_api_key=gemma_api_key,
-        gemma_prompts=gemma_prompts,
+        qwen_prompts.append(generated_prompt)
+    return execute_qwen_requests(
+        qwen_api_key=qwen_api_key,
+        qwen_prompts=qwen_prompts,
         model_version_id=model_version_id,
         max_tokens=max_tokens,
         temperature=temperature,
@@ -361,25 +373,25 @@ def run_gemma_llm_prompting(
     )
 
 
-def execute_gemma_requests(
-    gemma_api_key: str,
-    gemma_prompts: List[List[dict]],
+def execute_qwen_requests(
+    qwen_api_key: str,
+    qwen_prompts: List[List[dict]],
     model_version_id: str,
     max_tokens: int,
     temperature: float,
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
-    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=gemma_api_key)
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=qwen_api_key)
     tasks = [
         partial(
-            execute_gemma_request,
+            execute_qwen_request,
             client=client,
             prompt=prompt,
-            gemma_model_version=model_version_id,
+            qwen_model_version=model_version_id,
             max_tokens=max_tokens,
             temperature=temperature,
         )
-        for prompt in gemma_prompts
+        for prompt in qwen_prompts
     ]
     max_workers = (
         max_concurrent_requests
@@ -391,15 +403,15 @@ def execute_gemma_requests(
     )
 
 
-def execute_gemma_request(
+def execute_qwen_request(
     client: OpenAI,
     prompt: List[dict],
-    gemma_model_version: str,
+    qwen_model_version: str,
     max_tokens: int,
     temperature: float,
 ) -> str:
     response = client.chat.completions.create(
-        model=gemma_model_version,
+        model=qwen_model_version,
         messages=prompt,
         max_tokens=max_tokens,
         temperature=temperature,

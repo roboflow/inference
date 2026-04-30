@@ -34,13 +34,13 @@ from inference.core.workflows.prototypes.block import (
 )
 
 MODEL_VERSION_MAPPING = {
-    "Gemma 4 31B - OpenRouter": "google/gemma-4-31b-it",
-    "Gemma 4 26B A4B - OpenRouter": "google/gemma-4-26b-a4b-it",
+    "Kimi K2.5 - OpenRouter": "moonshotai/kimi-k2.5",
+    "Kimi K2.6 - OpenRouter": "moonshotai/kimi-k2.6",
 }
 
 ModelVersion = Literal[
-    "Gemma 4 31B - OpenRouter",
-    "Gemma 4 26B A4B - OpenRouter",
+    "Kimi K2.5 - OpenRouter",
+    "Kimi K2.6 - OpenRouter",
 ]
 
 SUPPORTED_TASK_TYPES_LIST = [
@@ -66,7 +66,7 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 
 
 LONG_DESCRIPTION = f"""
-Ask a question to Google's Gemma model with vision capabilities.
+Ask a question to Moonshot AI Kimi vision-language models served via OpenRouter.
 
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
@@ -74,10 +74,10 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 #### 🛠️ API providers and model variants
 
-Gemma is exposed via [OpenRouter API](https://openrouter.ai/) and we require
+Kimi is exposed via [OpenRouter API](https://openrouter.ai/) and we require
 passing an [OpenRouter API Key](https://openrouter.ai/docs/api-keys) to run.
 
-Pick a specific model version from the `model_version` dropdown - new Gemma releases
+Pick a specific model version from the `model_version` dropdown - new Kimi releases
 will be added to this list as they become available on OpenRouter.
 
 !!! warning "API Usage Charges"
@@ -89,7 +89,7 @@ will be added to this list as they become available on OpenRouter.
 
 !!! warning "Model license"
 
-    Check the [Gemma Terms of Use](https://ai.google.dev/gemma/terms) before use.
+    Check the [Moonshot AI Kimi license terms](https://huggingface.co/moonshotai) before use.
 """
 
 
@@ -114,23 +114,23 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Google Gemma API",
+            "name": "MoonshotAI Kimi",
             "version": "v1",
-            "short_description": "Run Google's Gemma model with vision capabilities via OpenRouter.",
+            "short_description": "Run Moonshot AI Kimi vision-language models via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
-            "license": "Gemma Terms of Use",
+            "license": "Moonshot AI Kimi License",
             "block_type": "model",
-            "search_keywords": ["LMM", "VLM", "Gemma", "Google", "OpenRouter"],
+            "search_keywords": ["LMM", "VLM", "Kimi", "Moonshot", "OpenRouter"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
             "ui_manifest": {
                 "section": "model",
-                "icon": "fa-brands fa-google",
+                "icon": "fal fa-atom",
             },
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/google_gemma@v1"]
+    type: Literal["roboflow_core/kimi_openrouter@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -148,7 +148,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
-        description="Text prompt to the Gemma model",
+        description="Text prompt to the Kimi model",
         examples=["my prompt", "$inputs.prompt"],
         json_schema_extra={
             "relevant_for": {
@@ -191,13 +191,13 @@ class BlockManifest(WorkflowBlockManifest):
     model_version: Union[
         Selector(kind=[STRING_KIND]),
         Literal[
-            "Gemma 4 31B - OpenRouter",
-            "Gemma 4 26B A4B - OpenRouter",
+            "Kimi K2.5 - OpenRouter",
+            "Kimi K2.6 - OpenRouter",
         ],
     ] = Field(
-        default="Gemma 4 31B - OpenRouter",
+        default="Kimi K2.6 - OpenRouter",
         description="Model to be used",
-        examples=["Gemma 4 31B - OpenRouter", "$inputs.gemma_model"],
+        examples=["Kimi K2.6 - OpenRouter", "$inputs.kimi_model"],
     )
     max_tokens: int = Field(
         default=500,
@@ -268,7 +268,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class GoogleGemmaBlockV1(WorkflowBlock):
+class KimiOpenRouterBlockV1(WorkflowBlock):
 
     def __init__(
         self,
@@ -302,14 +302,14 @@ class GoogleGemmaBlockV1(WorkflowBlock):
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
-        raw_outputs = run_gemma_llm_prompting(
+        raw_outputs = run_kimi_llm_prompting(
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
-            gemma_api_key=api_key,
-            gemma_model_version=model_version,
+            kimi_api_key=api_key,
+            kimi_model_version=model_version,
             max_tokens=max_tokens,
             temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
@@ -319,26 +319,26 @@ class GoogleGemmaBlockV1(WorkflowBlock):
         ]
 
 
-def run_gemma_llm_prompting(
+def run_kimi_llm_prompting(
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
-    gemma_api_key: Optional[str],
-    gemma_model_version: ModelVersion,
+    kimi_api_key: Optional[str],
+    kimi_model_version: ModelVersion,
     max_tokens: int,
     temperature: float,
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
-    model_version_id = MODEL_VERSION_MAPPING.get(gemma_model_version)
+    model_version_id = MODEL_VERSION_MAPPING.get(kimi_model_version)
     if model_version_id is None:
         raise ValueError(
-            f"Invalid model name: '{gemma_model_version}'. Please use one of {list(MODEL_VERSION_MAPPING.keys())}."
+            f"Invalid model name: '{kimi_model_version}'. Please use one of {list(MODEL_VERSION_MAPPING.keys())}."
         )
-    gemma_prompts = []
+    kimi_prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
         base64_image = base64.b64encode(
@@ -350,10 +350,10 @@ def run_gemma_llm_prompting(
             output_structure=output_structure,
             classes=classes,
         )
-        gemma_prompts.append(generated_prompt)
-    return execute_gemma_requests(
-        gemma_api_key=gemma_api_key,
-        gemma_prompts=gemma_prompts,
+        kimi_prompts.append(generated_prompt)
+    return execute_kimi_requests(
+        kimi_api_key=kimi_api_key,
+        kimi_prompts=kimi_prompts,
         model_version_id=model_version_id,
         max_tokens=max_tokens,
         temperature=temperature,
@@ -361,25 +361,25 @@ def run_gemma_llm_prompting(
     )
 
 
-def execute_gemma_requests(
-    gemma_api_key: str,
-    gemma_prompts: List[List[dict]],
+def execute_kimi_requests(
+    kimi_api_key: str,
+    kimi_prompts: List[List[dict]],
     model_version_id: str,
     max_tokens: int,
     temperature: float,
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
-    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=gemma_api_key)
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=kimi_api_key)
     tasks = [
         partial(
-            execute_gemma_request,
+            execute_kimi_request,
             client=client,
             prompt=prompt,
-            gemma_model_version=model_version_id,
+            kimi_model_version=model_version_id,
             max_tokens=max_tokens,
             temperature=temperature,
         )
-        for prompt in gemma_prompts
+        for prompt in kimi_prompts
     ]
     max_workers = (
         max_concurrent_requests
@@ -391,15 +391,15 @@ def execute_gemma_requests(
     )
 
 
-def execute_gemma_request(
+def execute_kimi_request(
     client: OpenAI,
     prompt: List[dict],
-    gemma_model_version: str,
+    kimi_model_version: str,
     max_tokens: int,
     temperature: float,
 ) -> str:
     response = client.chat.completions.create(
-        model=gemma_model_version,
+        model=kimi_model_version,
         messages=prompt,
         max_tokens=max_tokens,
         temperature=temperature,
