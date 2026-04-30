@@ -502,6 +502,7 @@ class TestWorkerAutoRestart:
 
     def _run_with_loop(self, mmp, fn):
         """Run fn() inside an event loop so asyncio.create_task works."""
+
         async def _run():
             mmp._loop = asyncio.get_running_loop()
             fn()
@@ -567,6 +568,7 @@ class TestWorkerAutoRestart:
         class _NoopBackend:
             is_healthy = True
             signals = []
+
             def signal_slot(self, slot_id, req_id, params_bytes=b"{}"):
                 self.signals.append((slot_id, req_id))
 
