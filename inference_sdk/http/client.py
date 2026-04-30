@@ -749,11 +749,12 @@ class InferenceHTTPClient:
                 task_type=model_description.task_type,
             )
         )
+        query_params = self.__inference_configuration.to_api_v1_query_parameters()
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
             headers=DEFAULT_HEADERS,
-            parameters=None,
+            parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
@@ -797,11 +798,12 @@ class InferenceHTTPClient:
                 task_type=model_description.task_type,
             )
         )
+        query_params = self.__inference_configuration.to_api_v1_query_parameters()
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
             headers=DEFAULT_HEADERS,
-            parameters=None,
+            parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
