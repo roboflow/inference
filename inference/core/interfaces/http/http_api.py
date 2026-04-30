@@ -328,6 +328,7 @@ import time
 
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
+from inference_sdk.http.entities import Confidence
 
 try:
     from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
@@ -3848,9 +3849,14 @@ class HttpInterface(BaseInterface):
                     None,
                     description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                 ),
-                confidence: float = Query(
+                confidence: Confidence = Query(
                     0.4,
-                    description="The confidence threshold used to filter out predictions",
+                    description=(
+                        "The confidence threshold used to filter out predictions. "
+                        'Pass a float in [0, 1], or "best" to use F1-optimal '
+                        'thresholds from model evaluation, or "default" to use '
+                        "the model's built-in default."
+                    ),
                 ),
                 keypoint_confidence: float = Query(
                     0.0,
@@ -3958,11 +3964,12 @@ class HttpInterface(BaseInterface):
                     f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
                 )
                 model_id = f"{dataset_id}/{version_id}"
-                if confidence >= 1:
-                    confidence /= 100
-                if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
-                    # allowing lower confidence results in RAM usage explosion
-                    confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
+                if isinstance(confidence, (int, float)):
+                    if confidence >= 1:
+                        confidence /= 100
+                    if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
+                        # allowing lower confidence results in RAM usage explosion
+                        confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
 
                 if overlap >= 1:
                     overlap /= 100
