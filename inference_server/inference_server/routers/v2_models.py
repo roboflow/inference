@@ -6,12 +6,15 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import pickle
 import struct
+import time
 from typing import Any, Optional
 
 import aiohttp
 from fastapi import APIRouter, Depends, Request, Response
+from starlette.requests import ClientDisconnect
 
 from inference_server import state
 from inference_server.errors import error_response
@@ -279,22 +282,64 @@ async def _submit_one_slot(
     model_id: str,
     instance: str,
     params: dict,
+    *,
+    request: Optional[Request] = None,
+    _t_body_extract_ms: float = 0.0,
+    _t_ensure_loaded_ms: float = 0.0,
 ) -> tuple[Optional[object], Optional[Response]]:
     """Alloc slot, write image, submit, read result. Returns (predictions, None) or (None, error)."""
+    _T = state.TIMING
+    if _T:
+        _t0 = time.monotonic()
+
     try:
         slot_id = await state.alloc_slot(model_id, instance)
     except (asyncio.TimeoutError, RuntimeError):
+        if _T:
+            state.pipeline_record({
+                "timestamp": time.time(), "worker_pid": os.getpid(),
+                "endpoint": "/v2/models/infer", "payload_bytes": len(image_bytes),
+                "status": 503,
+                "body_extract_ms": _t_body_extract_ms,
+                "ensure_loaded_ms": _t_ensure_loaded_ms,
+                "zmq_alloc_ms": (time.monotonic() - _t0) * 1000,
+                "shm_write_ms": 0, "zmq_submit_ms": 0, "zmq_result_wait_ms": 0,
+                "result_read_ms": 0, "serialize_ms": 0,
+                "total_ms": (time.monotonic() - _t0) * 1000,
+            })
         return None, error_response(
             503, "SERVER_BUSY", "no slots available, try again", follow_up="retry in 1s"
         )
 
+    if _T:
+        _t_alloc = time.monotonic()
+
     try:
         state.write_input(slot_id, image_bytes, 0)
+        if _T:
+            _t_write = time.monotonic()
+
         result = await state.submit_and_wait(
-            slot_id, model_id, instance, len(image_bytes), params
+            slot_id, model_id, instance, len(image_bytes), params, request=request
         )
+        if _T:
+            _t_result = time.monotonic()
 
         if result[0] == "error":
+            if _T:
+                state.pipeline_record({
+                    "timestamp": time.time(), "worker_pid": os.getpid(),
+                    "endpoint": "/v2/models/infer", "payload_bytes": len(image_bytes),
+                    "status": 500,
+                    "body_extract_ms": _t_body_extract_ms,
+                    "ensure_loaded_ms": _t_ensure_loaded_ms,
+                    "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
+                    "shm_write_ms": (_t_write - _t_alloc) * 1000,
+                    "zmq_submit_ms": 0,
+                    "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
+                    "result_read_ms": 0, "serialize_ms": 0,
+                    "total_ms": (_t_result - _t0) * 1000,
+                })
             return None, error_response(500, "INFERENCE_FAILED", "inference failed")
         if result[0] != "result":
             return None, error_response(500, "INTERNAL_ERROR", "unexpected result type")
@@ -308,18 +353,68 @@ async def _submit_one_slot(
                 err_msg = state.read_result(result_slot_id, hdr.result_size).decode(
                     "utf-8", errors="replace"
                 )
+            if _T:
+                state.pipeline_record({
+                    "timestamp": time.time(), "worker_pid": os.getpid(),
+                    "endpoint": "/v2/models/infer", "payload_bytes": len(image_bytes),
+                    "status": 500,
+                    "body_extract_ms": _t_body_extract_ms,
+                    "ensure_loaded_ms": _t_ensure_loaded_ms,
+                    "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
+                    "shm_write_ms": (_t_write - _t_alloc) * 1000,
+                    "zmq_submit_ms": 0,
+                    "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
+                    "result_read_ms": 0, "serialize_ms": 0,
+                    "total_ms": (time.monotonic() - _t0) * 1000,
+                })
             return None, error_response(500, "INFERENCE_FAILED", err_msg)
 
         raw = state.read_result(result_slot_id, result_sz)
+
         try:
-            return pickle.loads(raw), None
+            obj = pickle.loads(raw)
         except Exception:
             return None, error_response(
                 500, "DESERIALIZATION_FAILED", "result deserialization failed"
             )
 
+        if _T:
+            _t_end = time.monotonic()
+            state.pipeline_record({
+                "timestamp": time.time(), "worker_pid": os.getpid(),
+                "endpoint": "/v2/models/infer", "payload_bytes": len(image_bytes),
+                "status": 200,
+                "body_extract_ms": _t_body_extract_ms,
+                "ensure_loaded_ms": _t_ensure_loaded_ms,
+                "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
+                "shm_write_ms": (_t_write - _t_alloc) * 1000,
+                "zmq_submit_ms": 0,
+                "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
+                "result_read_ms": (_t_end - _t_result) * 1000,
+                "serialize_ms": 0,
+                "total_ms": (_t_end - _t0) * 1000,
+            })
+        return obj, None
+
     except asyncio.TimeoutError:
+        if _T:
+            state.pipeline_record({
+                "timestamp": time.time(), "worker_pid": os.getpid(),
+                "endpoint": "/v2/models/infer", "payload_bytes": len(image_bytes),
+                "status": 504,
+                "body_extract_ms": _t_body_extract_ms,
+                "ensure_loaded_ms": _t_ensure_loaded_ms,
+                "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
+                "shm_write_ms": 0, "zmq_submit_ms": 0,
+                "zmq_result_wait_ms": (time.monotonic() - _t_alloc) * 1000,
+                "result_read_ms": 0, "serialize_ms": 0,
+                "total_ms": (time.monotonic() - _t0) * 1000,
+            })
         return None, error_response(504, "TIMEOUT", "inference timeout")
+
+    except state._ClientDisconnected:
+        logger.debug("[v2_slot] client disconnected during inference wait, slot=%d", slot_id)
+        return None, Response(status_code=499)
 
     finally:
         state.free_slot(slot_id)
@@ -353,6 +448,9 @@ async def _infer_images(
     task: Optional[str],
     params: dict,
     style: str = "rich",
+    request: Optional[Request] = None,
+    _t_body_extract_ms: float = 0.0,
+    _t_ensure_loaded_ms: float = 0.0,
 ) -> Response:
     """Infer on one or more images. Returns v2 envelope with N predictions."""
     if not images:
@@ -371,13 +469,26 @@ async def _infer_images(
             )
 
     if len(images) == 1:
-        predictions, err = await _submit_one_slot(images[0], model_id, instance, params)
+        predictions, err = await _submit_one_slot(
+            images[0], model_id, instance, params,
+            request=request,
+            _t_body_extract_ms=_t_body_extract_ms,
+            _t_ensure_loaded_ms=_t_ensure_loaded_ms,
+        )
         if err is not None:
             return err
         return _build_envelope([predictions], model_id, task, style=style)
 
     # Batch: submit all concurrently
-    slot_tasks = [_submit_one_slot(img, model_id, instance, params) for img in images]
+    slot_tasks = [
+        _submit_one_slot(
+            img, model_id, instance, params,
+            request=request,
+            _t_body_extract_ms=_t_body_extract_ms,
+            _t_ensure_loaded_ms=_t_ensure_loaded_ms,
+        )
+        for img in images
+    ]
     results = await asyncio.gather(*slot_tasks)
 
     predictions_list = []
@@ -432,24 +543,36 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
     image_urls = [u for u in image_urls if u.startswith(("http://", "https://"))]
     params.pop("image", None)
 
-    if image_urls:
-        fetch_tasks = [_fetch_image_from_url(u) for u in image_urls]
-        fetch_results = await asyncio.gather(*fetch_tasks)
-        images = []
-        for img_bytes, err in fetch_results:
+    _t_body_start = time.monotonic()
+
+    try:
+        if image_urls:
+            fetch_tasks = [_fetch_image_from_url(u) for u in image_urls]
+            fetch_results = await asyncio.gather(*fetch_tasks)
+            images = []
+            for img_bytes, err in fetch_results:
+                if err is not None:
+                    return err
+                images.append(img_bytes)
+            extra_params = {}
+        else:
+            # Extract from request body (raw, multipart, JSON+base64)
+            images, extra_params, err = await _extract_images_and_params(request)
             if err is not None:
                 return err
-            images.append(img_bytes)
-        extra_params = {}
-    else:
-        # Extract from request body (raw, multipart, JSON+base64)
-        images, extra_params, err = await _extract_images_and_params(request)
-        if err is not None:
-            return err
-    params.update(extra_params)
+        params.update(extra_params)
+    except ClientDisconnect:
+        logger.debug("[v2_infer] client disconnected during body extraction")
+        return Response(status_code=499)
+
+    _t_body_done = time.monotonic()
+    _t_body_extract_ms = (_t_body_done - _t_body_start) * 1000
 
     # Ensure model loaded
     status = await state.ensure_loaded(model_id, instance, api_key, device)
+    _t_ensure_done = time.monotonic()
+    _t_ensure_loaded_ms = (_t_ensure_done - _t_body_done) * 1000
+
     if status[0] == "load_timeout":
         return error_response(
             503,
@@ -461,7 +584,12 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
     if status[0] == "error":
         return error_response(500, "LOAD_FAILED", "model load failed")
 
-    return await _infer_images(images, model_id, instance, task, params, style=style)
+    return await _infer_images(
+        images, model_id, instance, task, params, style=style,
+        request=request,
+        _t_body_extract_ms=_t_body_extract_ms,
+        _t_ensure_loaded_ms=_t_ensure_loaded_ms,
+    )
 
 
 # ---------------------------------------------------------------------------

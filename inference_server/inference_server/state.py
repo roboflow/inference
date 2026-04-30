@@ -7,11 +7,15 @@ Routers import from here to access MMP communication primitives.
 from __future__ import annotations
 
 import asyncio
+import csv
 import json
 import logging
 import os
 import struct
+import threading
+import time
 import uuid
+from collections import deque
 from multiprocessing.shared_memory import SharedMemory
 from typing import Optional
 
@@ -257,6 +261,7 @@ async def submit_and_wait(
     instance: str,
     input_sz: int,
     params: dict,
+    request=None,
 ) -> tuple:
     req_id = new_req_id()
     mid = routing_key(model_id, instance).encode()
@@ -265,10 +270,47 @@ async def submit_and_wait(
     fut = make_future(req_id)
     await sock.send_multipart([T_SUBMIT, header, params_json])
     try:
+        if request is not None:
+            # Race inference future against client disconnect
+            return await _wait_with_disconnect(fut, request)
         return await asyncio.wait_for(fut, timeout=INFER_TIMEOUT_S)
     except asyncio.TimeoutError:
         drop_future(req_id)
         raise
+    except _ClientDisconnected:
+        drop_future(req_id)
+        raise
+
+
+class _ClientDisconnected(Exception):
+    """Raised when client disconnects during submit_and_wait."""
+
+
+async def _wait_with_disconnect(fut: asyncio.Future, request) -> tuple:
+    """Wait for inference result, but bail early if client disconnects."""
+
+    async def _poll_disconnect():
+        while True:
+            if await request.is_disconnected():
+                return True
+            await asyncio.sleep(0.5)
+
+    disconnect_task = asyncio.ensure_future(_poll_disconnect())
+    infer_task = asyncio.ensure_future(asyncio.wait_for(fut, timeout=INFER_TIMEOUT_S))
+
+    done, pending_tasks = await asyncio.wait(
+        [disconnect_task, infer_task], return_when=asyncio.FIRST_COMPLETED
+    )
+
+    for t in pending_tasks:
+        t.cancel()
+
+    if disconnect_task in done:
+        # Client gone — inference may still complete (slot freed by caller)
+        raise _ClientDisconnected()
+
+    # Inference completed (or timed out) — propagate result or exception
+    return infer_task.result()
 
 
 def free_slot(slot_id: int) -> None:
@@ -320,3 +362,76 @@ async def fetch_stats(timeout_s: float = 5.0) -> dict:
     if result[0] == "stats":
         return json.loads(result[1])
     return {}
+
+
+# ---------------------------------------------------------------------------
+# Pipeline timing CSV
+# ---------------------------------------------------------------------------
+
+_PIPELINE_CSV = os.environ.get("INFERENCE_PIPELINE_CSV", "")
+_PIPELINE_FLUSH_INTERVAL_S = float(os.environ.get("INFERENCE_PIPELINE_FLUSH_S", "5.0"))
+TIMING = bool(_PIPELINE_CSV)
+
+_CSV_FIELDS = [
+    "timestamp",
+    "worker_pid",
+    "endpoint",
+    "payload_bytes",
+    "status",
+    "body_extract_ms",
+    "ensure_loaded_ms",
+    "zmq_alloc_ms",
+    "shm_write_ms",
+    "zmq_submit_ms",
+    "zmq_result_wait_ms",
+    "result_read_ms",
+    "serialize_ms",
+    "total_ms",
+]
+
+_pipeline_buffer: deque[dict] = deque()
+_pipeline_lock = threading.Lock()
+_pipeline_thread: Optional[threading.Thread] = None
+
+
+def pipeline_record(rec: dict) -> None:
+    """Append a timing record. No-op if INFERENCE_PIPELINE_CSV not set."""
+    if not _PIPELINE_CSV:
+        return
+    with _pipeline_lock:
+        _pipeline_buffer.append(rec)
+
+
+def start_pipeline_csv_writer() -> None:
+    """Start background thread that flushes pipeline records to CSV."""
+    global _pipeline_thread
+    if not _PIPELINE_CSV:
+        return
+    if _pipeline_thread is not None:
+        return
+
+    csv_path = _PIPELINE_CSV
+
+    # Write header only if file doesn't exist or is empty
+    write_header = not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0
+    if write_header:
+        with open(csv_path, "w", newline="") as f:
+            csv.DictWriter(f, fieldnames=_CSV_FIELDS).writeheader()
+
+    def _writer():
+        while True:
+            time.sleep(_PIPELINE_FLUSH_INTERVAL_S)
+            with _pipeline_lock:
+                batch = list(_pipeline_buffer)
+                _pipeline_buffer.clear()
+            if not batch:
+                continue
+            with open(csv_path, "a", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=_CSV_FIELDS, extrasaction="ignore")
+                for rec in batch:
+                    w.writerow(rec)
+
+    _pipeline_thread = threading.Thread(target=_writer, daemon=True, name="pipeline-csv")
+    _pipeline_thread.start()
+    logger.info("Pipeline CSV writer started: %s (flush every %.1fs)",
+                csv_path, _PIPELINE_FLUSH_INTERVAL_S)

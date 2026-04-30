@@ -55,6 +55,7 @@ async def _lifespan(_: FastAPI):
     state.shm = SharedMemory(name=state.SHM_NAME, create=False)
     state.pending = {}
     state.recv_task = asyncio.create_task(state.recv_loop(), name="zmq-recv")
+    state.start_pipeline_csv_writer()
 
     yield
 
