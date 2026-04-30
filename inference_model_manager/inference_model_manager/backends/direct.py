@@ -359,6 +359,7 @@ class DirectBackend(Backend):
             "inference_count": self._inference_count,
             "error_count": self._error_count,
             "last_inference_ts": self._last_inference_ts,
+            "model_class_name": type(self._model).__name__ if self._model else None,
         }
 
     @property
