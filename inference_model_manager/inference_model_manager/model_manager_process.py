@@ -771,7 +771,9 @@ class ModelManagerProcess:
                     entry["queue_depth"] = backend.queue_depth
                     entry["worker_alive"] = backend.is_healthy
                     entry["worker_pid"] = getattr(backend, "worker_pid", None)
-                    entry["model_class_name"] = getattr(backend, "_model_class_name", None)
+                    entry["model_class_name"] = getattr(
+                        backend, "_model_class_name", None
+                    )
                 except Exception:
                     pass
             if self._manager is not None:
@@ -830,7 +832,8 @@ class ModelManagerProcess:
         if not backend.is_healthy:
             logger.warning(
                 "MMP: backend '%s' unhealthy, triggering reload (req_id=%d)",
-                model_id, req_id,
+                model_id,
+                req_id,
             )
             self._schedule_reload(model_id)
             self._on_result_on_loop(req_id, slot_id, 0)
@@ -1147,9 +1150,7 @@ class ModelManagerProcess:
         now = time.monotonic()
         in_flight = {mid for _, _, mid in self._pending.values()}
         candidates = [
-            f
-            for f, fs in self._models.items()
-            if fs.loaded and f not in in_flight
+            f for f, fs in self._models.items() if fs.loaded and f not in in_flight
         ]
         if not candidates:
             return None

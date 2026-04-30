@@ -915,7 +915,6 @@ class SubprocessBackend(Backend):
 
         logger.info("SubprocessBackend(%s): unloaded", self._model_id)
 
-
     # ------------------------------------------------------------------
     # Observability
     # ------------------------------------------------------------------
