@@ -73,7 +73,6 @@ from inference.core.roboflow_api import (
     get_roboflow_model_data,
 )
 from inference.core.telemetry import set_span_attribute, start_span
-from inference.core.utils.file_system import safe_path_join
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import letterbox_image, prepare
@@ -139,7 +138,9 @@ class RoboflowInferenceModel(Model):
         self.dataset_id, self.version_id = get_model_id_chunks(model_id=model_id)
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
-        self.cache_dir = safe_path_join(cache_dir_root, self.endpoint)
+        self.cache_dir = get_cache_dir(
+            model_id=self.endpoint, cache_dir_root=cache_dir_root
+        )
         self.keypoints_metadata: Optional[dict] = None
         initialise_cache(model_id=self.endpoint)
 

@@ -2,12 +2,12 @@ import json
 import os
 import os.path
 import tempfile
-from hashlib import sha1
 
 import pytest
 from humanfriendly.testing import touch
 
 from inference.core.utils.file_system import (
+    MAX_PATH_BYTES,
     MAX_PATH_SEGMENT_BYTES,
     AtomicPath,
     dump_bytes,
@@ -18,10 +18,9 @@ from inference.core.utils.file_system import (
     dump_text_lines_atomic,
     ensure_parent_dir_exists,
     ensure_write_is_allowed,
-    hash_truncate_path_segment,
+    path_fits_os_limits,
     read_json,
     read_text_file,
-    safe_path_join,
 )
 
 
@@ -345,46 +344,42 @@ def test_ensure_parent_dir_exists_when_dir_does_not_exist(empty_local_dir: str) 
     assert os.listdir(empty_local_dir) == ["some"]
 
 
-def test_hash_truncate_path_segment_when_segment_fits_os_limit() -> None:
+def test_path_fits_os_limits_when_path_is_within_limits(empty_local_dir: str) -> None:
     # given
-    segment = "workspace"
+    path = os.path.join(empty_local_dir, "workspace", "model_type.json")
 
     # when
-    result = hash_truncate_path_segment(path_segment=segment)
+    result = path_fits_os_limits(path=path)
 
     # then
-    assert result == segment
+    assert result is True
 
 
-def test_hash_truncate_path_segment_when_segment_exceeds_os_limit() -> None:
+def test_path_fits_os_limits_when_segment_exceeds_os_limit(
+    empty_local_dir: str,
+) -> None:
     # given
-    segment = "a" * 300
+    path = os.path.join(empty_local_dir, "a" * (MAX_PATH_SEGMENT_BYTES + 1))
 
     # when
-    result = hash_truncate_path_segment(path_segment=segment)
+    result = path_fits_os_limits(path=path)
 
     # then
-    assert result == f"{'a' * 200}_{sha1(segment.encode()).hexdigest()[:12]}"
-    assert len(os.fsencode(result)) <= MAX_PATH_SEGMENT_BYTES
+    assert result is False
 
 
-def test_safe_path_join_truncates_long_path_segments(empty_local_dir: str) -> None:
+def test_path_fits_os_limits_when_total_path_exceeds_os_limit(
+    empty_local_dir: str,
+) -> None:
     # given
-    segment = "find-" + ("class-" * 60) + "instant-1"
-    expected_segment = hash_truncate_path_segment(path_segment=segment)
+    segments_count = (MAX_PATH_BYTES // len("segment/")) + 1
+    long_path = os.path.join(empty_local_dir, *["segment"] * segments_count)
 
     # when
-    result = safe_path_join(empty_local_dir, "huizen", segment, "model_type.json")
+    result = path_fits_os_limits(path=long_path)
 
     # then
-    assert result == os.path.join(
-        empty_local_dir, "huizen", expected_segment, "model_type.json"
-    )
-    assert all(
-        len(os.fsencode(path_segment)) <= MAX_PATH_SEGMENT_BYTES
-        for path_segment in result.split(os.sep)
-        if path_segment
-    )
+    assert result is False
 
 
 @pytest.mark.parametrize("allow_override", [True, False])

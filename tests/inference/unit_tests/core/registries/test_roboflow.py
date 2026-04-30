@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from inference.core.cache import model_artifacts
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import ModelType, TaskType
 from inference.core.exceptions import MissingApiKeyError, ModelNotRecognisedError
@@ -218,7 +219,7 @@ def test_save_and_load_model_metadata_in_cache_when_instant_model_slug_is_long(
 
     # when
     with mock.patch.object(
-        roboflow, "MODEL_CACHE_DIR", empty_local_dir
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
     ), mock.patch.object(roboflow, "LAMBDA", True):
         save_model_metadata_in_cache(
             dataset_id=dataset_id,

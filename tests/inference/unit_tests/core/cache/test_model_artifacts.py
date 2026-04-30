@@ -19,8 +19,9 @@ from inference.core.cache.model_artifacts import (
     save_bytes_in_cache,
     save_json_in_cache,
     save_text_lines_in_cache,
+    slugify_model_id_to_cache_key,
 )
-from inference.core.utils.file_system import hash_truncate_path_segment
+from inference.core.utils.file_system import MAX_PATH_SEGMENT_BYTES
 from tests.inference.unit_tests.core.utils.test_file_system import (
     assert_bytes_file_content_correct,
     assert_text_file_content_correct,
@@ -277,16 +278,45 @@ def test_get_cache_dir_when_model_id_given() -> None:
 def test_get_cache_dir_when_model_id_has_long_segment() -> None:
     # given
     long_model_slug = "find-" + ("class-" * 60) + "instant-1"
+    model_id = f"workspace/{long_model_slug}"
 
     # when
-    result = get_cache_dir(model_id=f"workspace/{long_model_slug}")
+    result = get_cache_dir(model_id=model_id)
 
     # then
     assert result == os.path.join(
-        "/some/cache",
-        "workspace",
-        hash_truncate_path_segment(path_segment=long_model_slug),
+        "/some/cache", slugify_model_id_to_cache_key(model_id=model_id)
     )
+    assert len(os.fsencode(os.path.basename(result))) <= MAX_PATH_SEGMENT_BYTES
+
+
+@mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", "/some/cache")
+def test_get_cache_dir_when_model_id_has_too_many_segments() -> None:
+    # given
+    model_id = "/".join(["segment"] * 700)
+
+    # when
+    result = get_cache_dir(model_id=model_id)
+
+    # then
+    assert result == os.path.join(
+        "/some/cache", slugify_model_id_to_cache_key(model_id=model_id)
+    )
+
+
+@mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", "/some/cache")
+def test_get_cache_dir_when_model_id_points_outside_cache_root() -> None:
+    # given
+    model_id = "../outside"
+
+    # when
+    result = get_cache_dir(model_id=model_id)
+
+    # then
+    assert result == os.path.join(
+        "/some/cache", slugify_model_id_to_cache_key(model_id=model_id)
+    )
+    assert os.path.commonpath(["/some/cache", result]) == "/some/cache"
 
 
 @mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", "/some/cache")
