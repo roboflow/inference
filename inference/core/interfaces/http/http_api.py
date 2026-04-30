@@ -2402,6 +2402,8 @@ class HttpInterface(BaseInterface):
                 def load_model(model_id):
                     t_start = time.perf_counter()
                     de_aliased = resolve_roboflow_model_alias(model_id=model_id)
+                    model_id_alias = model_id if de_aliased != model_id else None
+                    loaded_model_id = model_id_alias or de_aliased
                     logger.info(
                         f"Preload: starting model load for '{model_id}' (resolved: '{de_aliased}')"
                     )
@@ -2409,6 +2411,7 @@ class HttpInterface(BaseInterface):
                         self.model_manager.add_model(
                             de_aliased,
                             PRELOAD_API_KEY,
+                            model_id_alias=model_id_alias,
                         )
                         load_time = time.perf_counter() - t_start
                         logger.info(
@@ -2428,7 +2431,7 @@ class HttpInterface(BaseInterface):
                         and model_id in PINNED_MODELS
                         and hasattr(self.model_manager, "pin_model")
                     ):
-                        self.model_manager.pin_model(de_aliased)
+                        self.model_manager.pin_model(loaded_model_id)
 
                 all_models = list(
                     dict.fromkeys((PRELOAD_MODELS or []) + (PINNED_MODELS or []))
