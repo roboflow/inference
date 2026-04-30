@@ -499,8 +499,9 @@ class SubprocessBackend(Backend):
         # Worker batching
         batch_max_size: int = _DEFAULT_BATCH_MAX_SIZE,
         batch_max_delay_ms: float = _DEFAULT_BATCH_MAX_WAIT_MS,
-        # Orchestrated-mode callback
+        # Orchestrated-mode callbacks
         on_result_callback: Optional[Callable] = None,
+        on_death_callback: Optional[Callable] = None,
         # Device
         device: Optional[str] = None,
         use_gpu: Optional[bool] = None,
@@ -628,6 +629,7 @@ class SubprocessBackend(Backend):
         self._slot_futures: Dict[int, tuple] = {}  # slot_id → (req_id, Future)
         self._slot_lock = threading.Lock()
         self._on_result_callback: Optional[Callable] = on_result_callback
+        self._on_death_callback: Optional[Callable] = on_death_callback
         self._recv_running = True
         self._recv_dead = False
         self._recv_thread = threading.Thread(
@@ -658,6 +660,10 @@ class SubprocessBackend(Backend):
     def set_on_result_callback(self, callback: Callable[[int, int, int], None]) -> None:
         """Set MMP callback: called on each T_RESULT from worker."""
         self._on_result_callback = callback
+
+    def set_on_death_callback(self, callback: Callable[[str], None]) -> None:
+        """Set MMP callback: called with model_id when worker dies."""
+        self._on_death_callback = callback
 
     # ------------------------------------------------------------------
     # Recv thread — sole owner of _zmq_sock
@@ -730,6 +736,7 @@ class SubprocessBackend(Backend):
             self._worker.exitcode,
         )
         self._state_value = "unhealthy"
+        self._recv_dead = True
 
         with self._slot_lock:
             pending = list(self._slot_futures.items())
@@ -751,6 +758,16 @@ class SubprocessBackend(Backend):
                         "during worker-death cleanup",
                         self._model_id,
                     )
+
+        # Notify MMP to trigger reload
+        if self._on_death_callback is not None:
+            try:
+                self._on_death_callback(self._model_id)
+            except Exception:
+                logger.exception(
+                    "SubprocessBackend(%s): on_death_callback raised",
+                    self._model_id,
+                )
 
     def _handle_result(self, req_id: int, slot_id: int, result_sz: int) -> None:
         """Called from recv thread on each T_RESULT."""
