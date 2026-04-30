@@ -56,6 +56,8 @@ from inference_models.weights_providers.entities import (
     Quantization,
 )
 
+logger = logging.getLogger("inference_cli.inference_compiler")
+
 
 def safe_negotiate_model_packages(
     model_metadata: ModelMetadata,
@@ -84,14 +86,12 @@ def safe_negotiate_model_packages(
         raise error
     except NoModelPackagesAvailableError as error:
         raise LackOfSourcePackageError(
-            "Could not find model package which could serve as compilation source."
+            "Could not find a model package to use as a compilation source."
         ) from error
     except Exception as error:
-        logging.exception(
-            f"Error when selecting model packages for compilation - {error}"
-        )
+        logger.exception("Error selecting model packages for compilation")
         raise PackageNegotiationError(
-            "Error when selecting model packages for compilation."
+            "Error selecting model packages for compilation."
         ) from error
 
 
@@ -134,7 +134,7 @@ def download_model_package(
     }
     if any(f not in file_mapping for f in expected_files):
         raise CorruptedPackageError(
-            f"At least one of the files {expected_files} missing in model package {model_package.package_id}"
+            f"At least one of the required files {expected_files} is missing from model package {model_package.package_id}"
         )
     try:
         os.makedirs(package_dir, exist_ok=True)
@@ -144,11 +144,11 @@ def download_model_package(
             verbose=True,
         )
     except Exception as error:
-        logging.exception(
-            f"Error when downloading model package: {model_package.package_id}"
+        logger.exception(
+            "Error downloading model package: %s", model_package.package_id
         )
         raise PackageDownloadError(
-            f"Could not download model package - error {error}"
+            f"Could not download model package: {error}"
         ) from error
     if verify_model is not None:
         try:
@@ -164,7 +164,7 @@ def download_model_package(
             raise error
         except Exception as error:
             raise ModelVerificationError(
-                "Could not successfully verify correctness of model compilation"
+                "Could not verify compiled model correctness"
             ) from error
     return file_mapping
 
@@ -201,6 +201,15 @@ def execute_compilation(
     console: Optional[Console] = None,
 ) -> Tuple[str, TRTConfig, ModelPackageRegistrationResponse]:
     runtime_xray = x_ray_runtime_environment()
+    logger.info(
+        "Runtime environment: gpu=%s, cc=%s, cuda=%s, trt=%s, driver=%s, l4t=%s",
+        runtime_xray.gpu_devices[0] if runtime_xray.gpu_devices else "unknown",
+        runtime_xray.gpu_devices_cc[0] if runtime_xray.gpu_devices_cc else "unknown",
+        runtime_xray.cuda_version,
+        runtime_xray.trt_version,
+        runtime_xray.driver_version,
+        runtime_xray.l4t_version,
+    )
     os.makedirs(compilation_directory, exist_ok=True)
     engine_builder = EngineBuilder(workspace=workspace_size_gb)
     engine_builder.create_network(onnx_path=onnx_path)
@@ -278,14 +287,14 @@ def execute_compilation(
     except RequestError as error:
         if error.status_code == 409:
             raise AlreadyCompiledError("Model package already compiled.")
-        logging.exception("Could not stat-create model package")
+        logger.exception("Could not pre-register model package")
         raise CompiledPackageRegistrationError(
-            f"Could not register model package - {error}"
+            f"Could not register model package: {error}"
         ) from error
     except Exception as error:
-        logging.exception("Error while registering model package")
+        logger.exception("Error while registering model package")
         raise CompiledPackageRegistrationError(
-            f"Could not register model package - {error}"
+            f"Could not register model package: {error}"
         ) from error
     compilation_features = {
         "modelArchitecture": model_architecture,
@@ -330,14 +339,14 @@ def execute_compilation(
     except RequestError as error:
         if error.status_code == 409:
             raise AlreadyCompiledError("Model package already compiled.")
-        logging.exception("Could not stat-create model package")
+        logger.exception("Could not register model package after compilation")
         raise CompiledPackageRegistrationError(
-            f"Could not register model package - {error}"
+            f"Could not register model package: {error}"
         ) from error
     except Exception as error:
-        logging.exception("Error while registering model package")
+        logger.exception("Error while registering model package")
         raise CompiledPackageRegistrationError(
-            f"Could not register model package - {error}"
+            f"Could not register model package: {error}"
         ) from error
 
 
@@ -367,13 +376,15 @@ def register_model_package_artefacts(
             confirmations=confirmations,
             seal_model_package=True,
         )
-        logging.info(
-            f"Registered package with id: {registration_response.model_package_id} "
-            f"for model: {registration_response.model_id}"
+        logger.info(
+            "Registered package %s for model %s",
+            registration_response.model_package_id,
+            registration_response.model_id,
         )
     except Exception as error:
-        logging.exception(
-            f"Could not register artefacts for package {registration_response.model_package_id}"
+        logger.exception(
+            "Could not register artefacts for package %s",
+            registration_response.model_package_id,
         )
         raise CompiledPackageRegistrationError(
             f"Could not register artefacts for package {registration_response.model_package_id}"

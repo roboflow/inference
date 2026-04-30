@@ -1,4 +1,7 @@
-from inference.core.workflows.core_steps.trackers.sort.v1 import SORTBlockV1, SORTManifest
+from inference.core.workflows.core_steps.trackers.sort.v1 import (
+    SORTBlockV1,
+    SORTManifest,
+)
 from inference.core.workflows.core_steps.visualizations.common.base import (
     PredictionsVisualizationManifest,
 )
@@ -44,15 +47,14 @@ def test_sort_block() -> None:
     assert len(frame3_result["already_seen_instances"]) == 3
 
 
-
 def test_sort_input_and_output_kinds_match() -> None:
     """Trackers are pass-through: output kinds must equal input kinds."""
     input_kinds = manifest_accepted_kind_names(SORTManifest, field_name="detections")
     for output_def in SORTManifest.describe_outputs():
         output_kinds = {k.name for k in output_def.kind}
-        assert output_kinds == input_kinds, (
-            f"Output '{output_def.name}' kinds {output_kinds} != input kinds {input_kinds}"
-        )
+        assert (
+            output_kinds == input_kinds
+        ), f"Output '{output_def.name}' kinds {output_kinds} != input kinds {input_kinds}"
 
 
 def test_sort_outputs_superset_of_predictions_visualization_kinds() -> None:
@@ -60,6 +62,4 @@ def test_sort_outputs_superset_of_predictions_visualization_kinds() -> None:
     for output_def in SORTManifest.describe_outputs():
         tracker_kinds = {k.name for k in output_def.kind}
         missing = viz_kinds - tracker_kinds
-        assert not missing, (
-            f"Output '{output_def.name}' missing kinds {missing}"
-        )
+        assert not missing, f"Output '{output_def.name}' missing kinds {missing}"

@@ -130,7 +130,7 @@ class FakeMQTTBroker:
         if self._conn is not None:
             raise ValueError("Connection is already open")
 
-        (conn, address) = self._sock.accept()
+        conn, address = self._sock.accept()
         conn.settimeout(1)
         self._conn = conn
         while len(self.messages) < self.messages_count_to_wait_for:

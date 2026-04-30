@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Union
 
 from rich.console import Console, JustifyMethod
@@ -8,6 +9,8 @@ from inference_models.models.auto_loaders.presentation_utils import (
 )
 from inference_models.weights_providers.entities import ModelMetadata
 
+logger = logging.getLogger("inference_cli.inference_compiler")
+
 
 def print_to_console(
     message: str,
@@ -17,6 +20,7 @@ def print_to_console(
 ) -> None:
     if console is None:
         return None
+    logger.info(message)
     console.print(message, style=style, justify=justify)
 
 
@@ -25,6 +29,14 @@ def print_model_info(
     model_metadata: ModelMetadata,
     console: Optional[Console] = None,
 ) -> None:
+    logger.info(
+        "Model info: id=%s, architecture=%s, variant=%s, task=%s, packages=%d",
+        model_metadata.model_id,
+        model_metadata.model_architecture,
+        model_metadata.model_variant,
+        model_metadata.task_type,
+        len(model_metadata.model_packages),
+    )
     if console is None:
         return None
     table = render_table_with_model_overview(

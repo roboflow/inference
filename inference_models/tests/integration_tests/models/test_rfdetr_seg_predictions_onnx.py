@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 import torch
 
+from inference_models.models.common.rle_utils import coco_rle_masks_to_torch_mask
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -28,6 +30,40 @@ def test_package_with_stretch_against_numpy_input(
         predictions[0].xyxy.cpu().numpy(), np.array([[134, 324, 1265, 558]]), atol=1
     )
     assert 206000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 207000
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_package_with_stretch_against_numpy_input_rle_variant(
+    snake_image_numpy: np.ndarray,
+    snakes_rfdetr_seg_onnx_static_bs_stretch_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx import (
+        RFDetrForInstanceSegmentationOnnx,
+    )
+
+    model = RFDetrForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_onnx_static_bs_stretch_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(snake_image_numpy, confidence=0.5, mask_format="rle")
+    decoded_mask = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[0].mask, device=torch.device("cpu")
+    )
+    predictions_ref = model(snake_image_numpy, confidence=0.5, mask_format="dense")
+
+    # then
+    assert len(predictions) == 1
+    assert np.allclose(
+        predictions[0].xyxy.cpu().numpy(), np.array([[134, 324, 1265, 558]]), atol=1
+    )
+    assert 206000 <= np.sum(decoded_mask.cpu().numpy()) <= 207000
+    assert np.allclose(
+        decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
+    )
 
 
 @pytest.mark.slow
@@ -59,6 +95,52 @@ def test_package_with_stretch_against_numpy_list_input(
         predictions[1].xyxy.cpu().numpy(), np.array([[134, 324, 1265, 558]]), atol=1
     )
     assert 206000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 207000
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_package_with_stretch_against_numpy_list_input_rle_variant(
+    snake_image_numpy: np.ndarray,
+    snakes_rfdetr_seg_onnx_static_bs_stretch_package: str,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx import (
+        RFDetrForInstanceSegmentationOnnx,
+    )
+
+    model = RFDetrForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=snakes_rfdetr_seg_onnx_static_bs_stretch_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(
+        [snake_image_numpy, snake_image_numpy], confidence=0.5, mask_format="rle"
+    )
+    predictions_ref = model([snake_image_numpy, snake_image_numpy], confidence=0.5)
+    decoded_mask_1 = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[0].mask, device=torch.device("cpu")
+    )
+    decoded_mask_2 = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[1].mask, device=torch.device("cpu")
+    )
+
+    # then
+    assert len(predictions) == 2
+    assert np.allclose(
+        predictions[0].xyxy.cpu().numpy(), np.array([[134, 324, 1265, 558]]), atol=1
+    )
+    assert 206000 <= np.sum(decoded_mask_1.cpu().numpy()) <= 207000
+    assert np.allclose(
+        predictions[1].xyxy.cpu().numpy(), np.array([[134, 324, 1265, 558]]), atol=1
+    )
+    assert 206000 <= np.sum(decoded_mask_2.cpu().numpy()) <= 207000
+    assert np.allclose(
+        decoded_mask_1.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
+    )
+    assert np.allclose(
+        decoded_mask_2.cpu().numpy(), predictions_ref[1].mask.cpu().numpy()
+    )
 
 
 @pytest.mark.slow

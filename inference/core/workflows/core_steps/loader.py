@@ -54,6 +54,9 @@ from inference.core.workflows.core_steps.classical_cv.camera_focus.v2 import (
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1 import (
+    ContrastEnhancementBlock,
+)
 from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
     ContrastEqualizationBlockV1,
 )
@@ -75,8 +78,14 @@ from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 imp
 from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
     MaskAreaMeasurementBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1 import (
+    MaskEdgeSnapBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1 import (
     MorphologicalTransformationBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v2 import (
+    MorphologicalTransformationBlockV2,
 )
 from inference.core.workflows.core_steps.classical_cv.motion_detection.v1 import (
     MotionDetectionBlockV1,
@@ -233,8 +242,14 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
     GoogleGeminiBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 import (
+    GoogleGemmaBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v1 import (
+    KimiOpenRouterBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
     LlamaVisionBlockV1,
@@ -262,8 +277,14 @@ from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
+    Qwen35OpenRouterBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
     Qwen35VLBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
+    Qwen36OpenRouterBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
     Qwen3VLBlockV1,
@@ -276,6 +297,9 @@ from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
+    SegmentAnything2VideoBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
     SegmentAnything3BlockV1,
@@ -460,6 +484,9 @@ from inference.core.workflows.core_steps.transformations.image_slicer.v1 import 
 )
 from inference.core.workflows.core_steps.transformations.image_slicer.v2 import (
     ImageSlicerBlockV2,
+)
+from inference.core.workflows.core_steps.transformations.per_class_confidence_filter.v1 import (
+    PerClassConfidenceFilterBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
@@ -729,6 +756,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
         DetectionOffsetBlockV1,
+        PerClassConfidenceFilterBlockV1,
         DepthEstimationBlockV1,
         ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
@@ -835,6 +863,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV1,
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
+        SegmentAnything2VideoBlockV1,
         SegmentAnything3BlockV1,
         SegmentAnything3BlockV2,
         SegmentAnything3BlockV3,
@@ -893,10 +922,14 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TwilioSMSNotificationBlockV2,
         GazeBlockV1,
         LlamaVisionBlockV1,
+        GoogleGemmaBlockV1,
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
         Qwen35VLBlockV1,
+        Qwen35OpenRouterBlockV1,
+        Qwen36OpenRouterBlockV1,
+        KimiOpenRouterBlockV1,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
@@ -907,6 +940,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
         MaskAreaMeasurementBlockV1,
+        MaskEdgeSnapBlockV1,
+        ContrastEnhancementBlock,
+        MorphologicalTransformationBlockV2,
     ]
     if SAM3_3D_OBJECTS_ENABLED:
         blocks.append(SegmentAnything3_3D_ObjectsBlockV1)

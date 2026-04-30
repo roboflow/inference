@@ -16,7 +16,6 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
-    DEVICE,
     DISABLED_INFERENCE_MODELS_BACKENDS,
     MAX_DETECTIONS,
     OWLV2_COMPILE_MODEL,
@@ -43,7 +42,10 @@ from inference_models.models.owlv2.entities import (
     ReferenceBoundingBox,
     ReferenceExample,
 )
-from inference_models.models.owlv2.owlv2_hf import OWLv2HF
+from inference_models.models.owlv2.owlv2_hf import (
+    OWLv2HF,
+    monkey_patch_vision_encoder_before_compilation,
+)
 
 PRELOADED_HF_MODELS = {}
 
@@ -96,6 +98,9 @@ class Owlv2AdapterSingleton:
             if OWLV2_COMPILE_MODEL:
                 logger.info("Compiling OWLv2 model %s", huggingface_id)
                 torch._dynamo.config.suppress_errors = True
+                model._model = monkey_patch_vision_encoder_before_compilation(
+                    model._model
+                )
                 model._model.owlv2.vision_model = torch.compile(
                     model._model.owlv2.vision_model
                 )

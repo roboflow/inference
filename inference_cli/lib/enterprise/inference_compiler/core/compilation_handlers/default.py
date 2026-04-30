@@ -45,6 +45,8 @@ from inference_cli.lib.enterprise.inference_compiler.utils.logging import (
 )
 from inference_models.weights_providers.entities import ModelMetadata
 
+logger = logging.getLogger("inference_cli.inference_compiler")
+
 
 def compile_and_register_default_model(
     model_metadata: ModelMetadata,
@@ -68,7 +70,7 @@ def compile_and_register_default_model(
         expected_files.append(KEYPOINTS_METADATA_FILE)
     if package_with_dynamic_batch_size is not None:
         print_to_console(
-            message="Detected model package with dynamic input dimensions - downloading...",
+            message="Found model package with dynamic input dimensions, downloading...",
             console=console,
         )
         package_files = download_model_package(
@@ -81,7 +83,7 @@ def compile_and_register_default_model(
         )
     else:
         print_to_console(
-            message="Detected model package with static input dimensions - downloading...",
+            message="Found model package with static input dimensions, downloading...",
             console=console,
         )
         package_files = download_model_package(
@@ -226,7 +228,7 @@ def compile_and_register_default_model_trt_variant(
         )
         return None
     if verify_model is not None:
-        print_to_console(message="Verification of the artefacts...", console=console)
+        print_to_console(message="Verifying compiled artefacts...", console=console)
         verify_model_package(
             model_metadata=model_metadata,
             model_package_id=registration_response.model_package_id,
@@ -248,7 +250,7 @@ def compile_and_register_default_model_trt_variant(
         models_service_client=models_service_client,
     )
     print_to_console(
-        message="Successfully trained and registered model package", console=console
+        message="Successfully compiled and registered model package", console=console
     )
 
 
@@ -264,7 +266,7 @@ def verify_model_package(
 ) -> None:
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            logging.info(f"Verifying model package {model_package_id}...")
+            logger.info("Verifying model package %s", model_package_id)
             adjusted_inference_config_path = os.path.join(
                 tmp_dir, INFERENCE_CONFIG_FILE
             )
@@ -291,12 +293,12 @@ def verify_model_package(
                 )
                 os.symlink(keypoints_metadata_path, local_keypoints_metadata_path)
             verify_model(tmp_dir)
-            logging.info(f"Model package {model_package_id} verified.")
+            logger.info("Model package %s verified", model_package_id)
     except ModelVerificationError as error:
         raise error
     except Exception as error:
         raise ModelVerificationError(
-            "Could not successfully verify correctness of model compilation"
+            "Could not verify compiled model correctness"
         ) from error
 
 
@@ -344,8 +346,9 @@ def register_default_model_package_artefacts(
                 calculate_local_file_md5(file_path=keypoints_metadata_path),
             )
     except Exception as error:
-        logging.exception(
-            f"Could not register artefacts for package {registration_response.model_package_id}"
+        logger.exception(
+            "Could not register artefacts for package %s",
+            registration_response.model_package_id,
         )
         raise CompiledPackageRegistrationError(
             f"Could not register artefacts for package {registration_response.model_package_id}"

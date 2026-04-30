@@ -5,7 +5,6 @@ Equivalence for ``test_parent_combines_outputs_from_two_parallel_inner_workflows
 from typing import Any, Dict
 
 from inference.core.managers.base import ModelManager
-
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     echo_child_workflow,
     execution_engine,

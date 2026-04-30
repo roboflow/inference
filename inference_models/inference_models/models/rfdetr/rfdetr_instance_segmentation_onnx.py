@@ -1,11 +1,12 @@
 import threading
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
 
 from inference_models import (
     InstanceDetections,
+    InstanceSegmentationMaskFormat,
     InstanceSegmentationModel,
     PreProcessingOverrides,
 )
@@ -13,10 +14,11 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
+    ModelInputError,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
@@ -30,15 +32,16 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
 from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
+    post_process_instance_segmentation_results_to_rle_masks,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
-from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -48,7 +51,7 @@ try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message="Running YOLOv8 model with ONNX backend requires pycuda installation, which is brought with "
+        message="Running RFDetr model with ONNX backend requires pycuda installation, which is brought with "
         "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
         "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
         " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
@@ -183,6 +186,10 @@ class RFDetrForInstanceSegmentationOnnx(
     def class_names(self) -> List[str]:
         return self._class_names
 
+    @property
+    def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
+        return {"dense", "rle"}
+
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
@@ -218,21 +225,43 @@ class RFDetrForInstanceSegmentationOnnx(
         model_results: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
         confidence: Confidence = "default",
+        mask_format: InstanceSegmentationMaskFormat = "dense",
         **kwargs,
     ) -> List[InstanceDetections]:
+        if mask_format not in self.supported_mask_formats:
+            raise ModelInputError(
+                message=f"RFDetr Instance Segmentation models support the following mask "
+                f"formats: {self.supported_mask_formats}. Requested format: {mask_format} "
+                f"is not supported. If you see this error while running on Roboflow platform, "
+                f"contact support or raise an issue at https://github.com/roboflow/inference/issues. "
+                f"When running locally - please verify your integration to make sure that appropriate "
+                f"value of `mask_format` parameter is set.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
         confidence_filter = ConfidenceFilter(
             confidence=confidence,
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         )
         bboxes, logits, masks = model_results
-        results = post_process_instance_segmentation_results(
-            bboxes=bboxes,
-            logits=logits,
-            masks=masks,
-            pre_processing_meta=pre_processing_meta,
-            threshold=confidence_filter.get_threshold(self.class_names),
-            num_classes=len(self.class_names),
-            classes_re_mapping=self._classes_re_mapping,
-        )
+        if mask_format == "dense":
+            results = post_process_instance_segmentation_results(
+                bboxes=bboxes,
+                logits=logits,
+                masks=masks,
+                pre_processing_meta=pre_processing_meta,
+                threshold=confidence_filter.get_threshold(self.class_names),
+                num_classes=len(self.class_names),
+                classes_re_mapping=self._classes_re_mapping,
+            )
+        else:
+            results = post_process_instance_segmentation_results_to_rle_masks(
+                bboxes=bboxes,
+                logits=logits,
+                masks=masks,
+                pre_processing_meta=pre_processing_meta,
+                threshold=confidence_filter.get_threshold(self.class_names),
+                num_classes=len(self.class_names),
+                classes_re_mapping=self._classes_re_mapping,
+            )
         return results

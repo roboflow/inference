@@ -6,7 +6,6 @@ two-level ``inner_workflow`` nesting vs a single inlined ``pick`` step.
 from typing import Any, Dict
 
 from inference.core.managers.base import ModelManager
-
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     echo_child_workflow,
     execution_engine,

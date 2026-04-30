@@ -168,7 +168,9 @@ to assign detailed class for each dog instance.
     workflow_definition=DETECTION_PLUS_CLASSIFICATION_WORKFLOW_V2_BLOCKS,
     workflow_name_in_app="detection-plus-classification",
 )
-@pytest.mark.parametrize("od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS)
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
 def test_detection_plus_classification_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -183,7 +185,9 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=_build_detection_plus_classification_workflow(od_block_type, cls_block_type),
+        workflow_definition=_build_detection_plus_classification_workflow(
+            od_block_type, cls_block_type
+        ),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -209,7 +213,9 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
     ], "Expected predictions to be as measured in reference run"
 
 
-@pytest.mark.parametrize("od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS)
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
 def test_detection_plus_classification_workflow_when_minimal_valid_input_provided_and_serialization_requested(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -224,7 +230,9 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=_build_detection_plus_classification_workflow(od_block_type, cls_block_type),
+        workflow_definition=_build_detection_plus_classification_workflow(
+            od_block_type, cls_block_type
+        ),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -251,7 +259,9 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
     ], "Expected predictions to be as measured in reference run"
 
 
-@pytest.mark.parametrize("od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS)
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
 def test_detection_plus_classification_workflow_when_nothing_gets_predicted(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -266,7 +276,9 @@ def test_detection_plus_classification_workflow_when_nothing_gets_predicted(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=_build_detection_plus_classification_workflow(od_block_type, cls_block_type),
+        workflow_definition=_build_detection_plus_classification_workflow(
+            od_block_type, cls_block_type
+        ),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -333,7 +345,9 @@ def _build_detection_plus_classification_plus_consensus_workflow(
     }
 
 
-@pytest.mark.parametrize("od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS)
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
 def test_detection_plus_classification_workflow_when_nothing_gets_predicted_and_empty_sv_detections_produced_without_metadata(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -372,7 +386,9 @@ def test_detection_plus_classification_workflow_when_nothing_gets_predicted_and_
     ), "Expected no prediction from 2nd model, as no dogs detected"
 
 
-@pytest.mark.parametrize("od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS)
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
 def test_detection_plus_classification_workflow_when_nothing_gets_predicted_and_serialization_requested(
     model_manager: ModelManager,
     crowd_image: np.ndarray,

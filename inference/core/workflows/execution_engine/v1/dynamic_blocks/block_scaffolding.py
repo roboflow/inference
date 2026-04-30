@@ -108,6 +108,8 @@ def assembly_custom_python_block(
             import_lines_count = len(_get_python_code_imports(python_code).splitlines())
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
+                    # stdout/stderr already reach the process streams in real time via the
+                    # tee in capture_output(); buffers are only used to attach context on error.
                     return run_function(self, *args, **kwargs)
             except Exception as error:
                 raise create_dynamic_block_code_error(

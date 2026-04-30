@@ -1,7 +1,7 @@
 uvicorn[standard]<=0.34.0
-python-multipart==0.0.19
+python-multipart==0.0.26
 fastapi-cprofile<=0.0.2
-orjson>=3.9.10,<=3.10.11
+orjson>=3.11.6,<4.0.0
 asgi_correlation_id~=4.3.1
 opentelemetry-api~=1.27.0
 opentelemetry-sdk~=1.27.0

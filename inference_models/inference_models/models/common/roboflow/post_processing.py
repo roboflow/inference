@@ -1,4 +1,4 @@
-from typing import Dict, List, Literal, Optional, Tuple, Union
+from typing import Dict, Generator, List, Literal, Optional, Tuple, Union
 
 import torch
 import torchvision
@@ -7,6 +7,7 @@ from torchvision.transforms import functional
 from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
 from inference_models.entities import Confidence, ImageDimensions
 from inference_models.logger import LOGGER
+from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
@@ -374,7 +375,7 @@ def align_instance_segmentation_results(
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if image_bboxes.shape[0] == 0:
         empty_masks = torch.empty(
-            size=(0, size_after_pre_processing.height, size_after_pre_processing.width),
+            size=(0, original_size.height, original_size.width),
             dtype=torch.bool,
             device=image_bboxes.device,
         )
@@ -469,6 +470,133 @@ def align_instance_segmentation_results(
     return image_bboxes, masks
 
 
+def align_instance_segmentation_results_to_rle_masks(
+    image_bboxes: torch.Tensor,
+    masks: torch.Tensor,
+    padding: Tuple[int, int, int, int],
+    scale_width: float,
+    scale_height: float,
+    original_size: ImageDimensions,
+    size_after_pre_processing: ImageDimensions,
+    inference_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+    binarization_threshold: float = 0.0,
+) -> Generator[Tuple[torch.Tensor, dict], None, None]:
+    """
+    Generator variant of align_instance_segmentation_results.
+
+    Yields (bbox, mask) pairs one at a time. Only one full-resolution mask
+    exists in memory at any given moment, so the caller can immediately
+    RLE-encode it and drop the dense tensor before the next one is produced.
+
+    NOTE: image_bboxes is modified in-place (same behaviour as the batched
+    version). Pass a .clone() if that's not acceptable.
+    """
+    if image_bboxes.shape[0] == 0:
+        return None
+
+    pad_left, pad_top, pad_right, pad_bottom = padding
+    offsets = torch.tensor(
+        [pad_left, pad_top, pad_left, pad_top],
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].sub_(offsets)
+    scale = torch.as_tensor(
+        [scale_width, scale_height, scale_width, scale_height],
+        dtype=image_bboxes.dtype,
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].div_(scale)
+
+    needs_canvas = static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0
+    if needs_canvas:
+        static_crop_offsets = torch.as_tensor(
+            [
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+            ],
+            dtype=image_bboxes.dtype,
+            device=image_bboxes.device,
+        )
+        image_bboxes[:, :4].add_(static_crop_offsets)
+    n, mh, mw = masks.shape
+    mask_h_scale = mh / inference_size.height
+    mask_w_scale = mw / inference_size.width
+    mask_pad_top, mask_pad_bottom, mask_pad_left, mask_pad_right = (
+        round(mask_h_scale * pad_top),
+        round(mask_h_scale * pad_bottom),
+        round(mask_w_scale * pad_left),
+        round(mask_w_scale * pad_right),
+    )
+    if (
+        mask_pad_top < 0
+        or mask_pad_bottom < 0
+        or mask_pad_left < 0
+        or mask_pad_right < 0
+    ):
+        masks = torch.nn.functional.pad(
+            masks,
+            (
+                abs(min(mask_pad_left, 0)),
+                abs(min(mask_pad_right, 0)),
+                abs(min(mask_pad_top, 0)),
+                abs(min(mask_pad_bottom, 0)),
+            ),
+            "constant",
+            0,
+        )
+        padded_mask_offset_top = max(mask_pad_top, 0)
+        padded_mask_offset_bottom = max(mask_pad_bottom, 0)
+        padded_mask_offset_left = max(mask_pad_left, 0)
+        padded_mask_offset_right = max(mask_pad_right, 0)
+        masks = masks[
+            :,
+            padded_mask_offset_top : masks.shape[1] - padded_mask_offset_bottom,
+            padded_mask_offset_left : masks.shape[2] - padded_mask_offset_right,
+        ]
+    else:
+        masks = masks[
+            :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
+        ]
+
+    target_h = size_after_pre_processing.height
+    target_w = size_after_pre_processing.width
+    offset_y = static_crop_offset.offset_y
+    offset_x = static_crop_offset.offset_x
+    num_instances = image_bboxes.shape[0]
+    for i in range(num_instances):
+        # keep a batch dim so functional.resize is unambiguous
+        single = masks[i : i + 1]
+        resized = (
+            functional.resize(
+                single,
+                [target_h, target_w],
+                interpolation=functional.InterpolationMode.BILINEAR,
+            )
+            .gt_(binarization_threshold)
+            .to(dtype=torch.bool)
+        )
+        if needs_canvas:
+            mask_canvas = torch.zeros(
+                (original_size.height, original_size.width),
+                dtype=torch.bool,
+                device=resized.device,
+            )
+            mask_canvas[
+                offset_y : offset_y + resized.shape[1],
+                offset_x : offset_x + resized.shape[2],
+            ] = resized[0]
+            converted = torch_mask_to_coco_rle(mask_canvas)
+            del mask_canvas
+        else:
+            converted = torch_mask_to_coco_rle(resized[0])
+        del resized
+        yield image_bboxes[i], converted
+    return None
+
+
 class ConfidenceFilter:
     """Resolves per-class confidence thresholds.
 
@@ -503,9 +631,7 @@ class ConfidenceFilter:
             self._fallback_threshold,
         )
 
-    def get_threshold(
-        self, class_names: List[str]
-    ) -> Union[float, torch.Tensor]:
+    def get_threshold(self, class_names: List[str]) -> Union[float, torch.Tensor]:
         """Return the confidence threshold to apply.
 
         Returns a scalar float when the same threshold applies to all
@@ -516,7 +642,10 @@ class ConfidenceFilter:
         if self._class_to_threshold_map is None:
             return self._fallback_threshold
         return torch.tensor(
-            [self._class_to_threshold_map.get(name, self._fallback_threshold) for name in class_names]
+            [
+                self._class_to_threshold_map.get(name, self._fallback_threshold)
+                for name in class_names
+            ]
         )
 
     @staticmethod
@@ -550,4 +679,3 @@ class ConfidenceFilter:
         ):
             return recommended_parameters.confidence
         return default_confidence
-

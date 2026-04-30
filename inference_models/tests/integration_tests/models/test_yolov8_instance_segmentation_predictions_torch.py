@@ -3,6 +3,7 @@ import pytest
 import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.models.common.rle_utils import coco_rle_masks_to_torch_mask
 from inference_models.models.yolov8.yolov8_instance_segmentation_torch_script import (
     YOLOv8ForInstanceSegmentationTorchScript,
 )
@@ -47,6 +48,62 @@ def test_torchscript_package_with_static_batch_size_and_stretch_numpy(
     )
     assert (
         16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16200
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torchscript_package_with_static_batch_size_and_stretch_numpy_rle_variant(
+    asl_yolov8n_torchscript_seg_static_bs_stretch: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch,
+        device=DEFAULT_DEVICE,
+    )
+
+    # when
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        mask_format="rle",
+    )
+    predictions_ref = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
+    decoded_mask = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[0].mask, device=torch.device("cpu")
+    )
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
+    )
+    expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
+        atol=2,
+    )
+    assert (
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16200
+    )
+    assert np.allclose(
+        decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
 
 
@@ -106,6 +163,85 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_numpy(
     )
     assert (
         16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16200
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torchscript_package_with_static_batch_size_and_stretch_batch_numpy_rle_variant(
+    asl_yolov8n_torchscript_seg_static_bs_stretch: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch,
+        device=DEFAULT_DEVICE,
+    )
+
+    # when
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        mask_format="rle",
+    )
+    predictions_ref = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
+    decoded_mask_1 = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[0].mask, device=torch.device("cpu")
+    )
+    decoded_mask_2 = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[1].mask, device=torch.device("cpu")
+    )
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
+    )
+    assert torch.allclose(
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
+    )
+    expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
+        atol=2,
+    )
+    assert (
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16200
+    )
+    assert (
+        16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16200
+    )
+    assert np.allclose(
+        decoded_mask_1.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
+    )
+    assert np.allclose(
+        decoded_mask_2.cpu().numpy(), predictions_ref[1].mask.cpu().numpy()
     )
 
 

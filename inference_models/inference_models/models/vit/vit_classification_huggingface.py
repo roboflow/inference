@@ -18,7 +18,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import Confidence, ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (
@@ -348,7 +348,9 @@ class VITForMultiLabelClassificationHF(
         )
         threshold = confidence_filter.get_threshold(self.class_names)
         if isinstance(threshold, torch.Tensor):
-            threshold = threshold.to(dtype=model_results.dtype, device=model_results.device)
+            threshold = threshold.to(
+                dtype=model_results.dtype, device=model_results.device
+            )
         results = []
         for batch_element_confidence in model_results:
             predicted_classes = torch.argwhere(

@@ -14,6 +14,7 @@ from requests import HTTPError, Request, Response
 from requests_mock.mocker import Mocker
 from yarl import URL
 
+from inference_sdk.config import RemoteProcessingTimeCollector, remote_processing_times
 from inference_sdk.http import client
 from inference_sdk.http.client import (
     DEFAULT_HEADERS,
@@ -1849,6 +1850,50 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_
     }
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v1_threads_service_secret_and_countinference_as_query_params(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="coco/3",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", None)]
+    configuration = InferenceConfiguration(
+        confidence_threshold=0.5,
+        service_secret="internal-secret",
+        count_inference=False,
+    )
+    http_client.configure(inference_configuration=configuration)
+    requests_mock.post(
+        f"{api_url}/infer/object_detection",
+        json={"image": {"height": 480, "width": 640}, "predictions": []},
+    )
+
+    # when
+    http_client.infer_from_api_v1(
+        inference_input="https://some/image.jpg",
+        model_id="coco/3",
+    )
+
+    # then — credentials live on the URL query string, where FastAPI binds them
+    qs = requests_mock.request_history[0].qs
+    assert qs.get("service_secret") == ["internal-secret"]
+    assert qs.get("countinference") == ["false"]
+    # and they must NOT leak into the JSON body (the Pydantic body model would drop them anyway)
+    body = requests_mock.request_history[0].json()
+    assert "service_secret" not in body
+    assert "countinference" not in body
+    assert "count_inference" not in body
+
+
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
 @pytest.mark.parametrize("model_id_to_use", ["coco/3", "yolov8n-640"])
@@ -2975,6 +3020,8 @@ def test_get_clip_text_embeddings_when_single_text_given(
 async def test_get_clip_text_embeddings_async_when_single_text_given() -> None:
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    collector = RemoteProcessingTimeCollector()
+    token = remote_processing_times.set(collector)
     expected_prediction = {
         "frame_id": None,
         "time": 0.05899370899714995,
@@ -2992,32 +3039,46 @@ async def test_get_clip_text_embeddings_async_when_single_text_given() -> None:
         ],
     }
 
-    with aioresponses() as m:
-        m.post(
-            f"{api_url}/clip/embed_text",
-            payload=expected_prediction,
-        )
+    try:
+        with aioresponses() as m:
+            m.post(
+                f"{api_url}/clip/embed_text",
+                payload=expected_prediction,
+                headers={
+                    "X-Processing-Time": "1.5",
+                    "X-Model-Id": "clip/ViT-B-32",
+                    "X-Model-Cold-Start": "true",
+                    "X-Model-Load-Time": "3.2",
+                },
+            )
 
-        # when
-        result = await http_client.get_clip_text_embeddings_async(
-            text="some", clip_version="ViT-B-32"
-        )
+            # when
+            result = await http_client.get_clip_text_embeddings_async(
+                text="some", clip_version="ViT-B-32"
+            )
+    finally:
+        remote_processing_times.reset(token)
 
-        # then
-        assert (
-            result == expected_prediction
-        ), "Result must match the value returned by HTTP endpoint"
-        m.assert_called_with(
-            f"{api_url}/clip/embed_text",
-            "POST",
-            data=None,
-            json={
-                "api_key": "my-api-key",
-                "text": "some",
-                "clip_version_id": "ViT-B-32",
-            },
-            headers={"Content-Type": "application/json"},
-        )
+    # then
+    assert (
+        result == expected_prediction
+    ), "Result must match the value returned by HTTP endpoint"
+    m.assert_called_with(
+        f"{api_url}/clip/embed_text",
+        "POST",
+        data=None,
+        json={
+            "api_key": "my-api-key",
+            "text": "some",
+            "clip_version_id": "ViT-B-32",
+        },
+        headers={"Content-Type": "application/json"},
+    )
+    assert collector.drain() == [("ViT-B-32", 1.5)]
+    assert collector.snapshot_model_ids() == {"clip/ViT-B-32"}
+    assert collector.snapshot_cold_start_count() == 1
+    assert abs(collector.snapshot_cold_start_total_load_time() - 3.2) < 1e-9
+    assert collector.snapshot_cold_start_entries() == [("clip/ViT-B-32", 3.2)]
 
 
 def test_get_clip_text_embeddings_when_faulty_response_returned(
@@ -3148,44 +3209,60 @@ async def test_clip_compare_async_when_both_prompt_and_subject_are_texts() -> No
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    collector = RemoteProcessingTimeCollector()
+    token = remote_processing_times.set(collector)
 
-    with aioresponses() as m:
-        m.post(
-            f"{api_url}/clip/compare",
-            payload={
-                "frame_id": None,
-                "time": 0.1435863340011565,
-                "similarity": [0.8963012099266052, 0.8830886483192444],
-            },
-        )
-        # when
-        result = await http_client.clip_compare_async(
-            subject="some",
-            prompt=["dog", "house"],
-            subject_type="text",
-            prompt_type="text",
-            clip_version="ViT-B-32",
-        )
+    try:
+        with aioresponses() as m:
+            m.post(
+                f"{api_url}/clip/compare",
+                payload={
+                    "frame_id": None,
+                    "time": 0.1435863340011565,
+                    "similarity": [0.8963012099266052, 0.8830886483192444],
+                },
+                headers={
+                    "X-Processing-Time": "1.5",
+                    "X-Model-Id": "clip/ViT-B-32",
+                    "X-Model-Cold-Start": "true",
+                    "X-Model-Load-Time": "3.2",
+                },
+            )
+            # when
+            result = await http_client.clip_compare_async(
+                subject="some",
+                prompt=["dog", "house"],
+                subject_type="text",
+                prompt_type="text",
+                clip_version="ViT-B-32",
+            )
+    finally:
+        remote_processing_times.reset(token)
 
-        # then
-        assert result == {
-            "frame_id": None,
-            "time": 0.1435863340011565,
-            "similarity": [0.8963012099266052, 0.8830886483192444],
-        }, "Result must match the value returned by HTTP endpoint"
-        m.assert_called_with(
-            f"{api_url}/clip/compare",
-            "POST",
-            json={
-                "api_key": "my-api-key",
-                "subject": "some",
-                "prompt": ["dog", "house"],
-                "prompt_type": "text",
-                "subject_type": "text",
-                "clip_version_id": "ViT-B-32",
-            },
-            headers={"Content-Type": "application/json"},
-        )
+    # then
+    assert result == {
+        "frame_id": None,
+        "time": 0.1435863340011565,
+        "similarity": [0.8963012099266052, 0.8830886483192444],
+    }, "Result must match the value returned by HTTP endpoint"
+    m.assert_called_with(
+        f"{api_url}/clip/compare",
+        "POST",
+        json={
+            "api_key": "my-api-key",
+            "subject": "some",
+            "prompt": ["dog", "house"],
+            "prompt_type": "text",
+            "subject_type": "text",
+            "clip_version_id": "ViT-B-32",
+        },
+        headers={"Content-Type": "application/json"},
+    )
+    assert collector.drain() == [("ViT-B-32", 1.5)]
+    assert collector.snapshot_model_ids() == {"clip/ViT-B-32"}
+    assert collector.snapshot_cold_start_count() == 1
+    assert abs(collector.snapshot_cold_start_total_load_time() - 3.2) < 1e-9
+    assert collector.snapshot_cold_start_entries() == [("clip/ViT-B-32", 3.2)]
 
 
 @mock.patch.object(client, "load_static_inference_input")

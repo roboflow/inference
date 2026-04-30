@@ -121,7 +121,9 @@ def test_normalize_deduplicates_identical_references() -> None:
         {WORKFLOWS_CORE_INNER_WORKFLOW_SPEC_RESOLVER: resolver},
     )
     assert len(calls) == 1
-    assert out["steps"][0]["workflow_definition"] == out["steps"][1]["workflow_definition"]
+    assert (
+        out["steps"][0]["workflow_definition"] == out["steps"][1]["workflow_definition"]
+    )
 
 
 def test_normalize_resolves_reference_inside_inline_workflow() -> None:

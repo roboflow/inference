@@ -744,7 +744,7 @@ def serialize_image_data(value: Any) -> Any:
 
 
 def serialize_image_data_parameters(
-    message_parameters: Dict[str, Any]
+    message_parameters: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
     Convert any WorkflowImageData objects in message_parameters to base64 strings
