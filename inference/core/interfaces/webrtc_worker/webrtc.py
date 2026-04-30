@@ -366,6 +366,10 @@ class VideoFrameProcessor:
         self._termination_reason: Optional[str] = None
         self._processing_complete_sent = False
         self.heartbeat_callback = heartbeat_callback
+        self._workflow_warmup_task: Optional[asyncio.Task] = None
+        self._workflow_warmup_complete = False
+        self._workflow_warmup_started_at: Optional[float] = None
+        self._workflow_warmup_passthrough_frames = 0
 
         self.has_video_track = has_video_track
         self.stream_output = stream_output
@@ -868,6 +872,81 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             logger.warning("No image output detected, will use fallback")
             self.stream_output = ""
 
+    def _copy_frame_for_warmup(self, frame: VideoFrame) -> VideoFrame:
+        warmup_frame = VideoFrame.from_ndarray(
+            frame.to_ndarray(format="bgr24"),
+            format="bgr24",
+        )
+        warmup_frame.pts = frame.pts
+        warmup_frame.time_base = frame.time_base
+        return warmup_frame
+
+    def _passthrough_frame(self, frame: VideoFrame) -> VideoFrame:
+        if self._rotation_code is None:
+            return frame
+        rotated_frame = rotate_video_frame(frame, self._rotation_code)
+        rotated_frame.pts = frame.pts
+        rotated_frame.time_base = frame.time_base
+        return rotated_frame
+
+    async def _warmup_workflow_with_frame(
+        self,
+        frame: VideoFrame,
+        frame_id: int,
+    ) -> None:
+        warmup_started_at = time.perf_counter()
+        _, _, errors = await self._process_frame_async(
+            frame=frame,
+            frame_id=frame_id,
+            stream_output=self.stream_output,
+            render_output=True,
+            include_errors_on_frame=True,
+        )
+        logger.warning(
+            "[WEBRTC_WARMUP] complete frame=%d duration_ms=%.1f errors=%d passthrough_frames=%d",
+            frame_id,
+            (time.perf_counter() - warmup_started_at) * 1000,
+            len(errors),
+            self._workflow_warmup_passthrough_frames,
+        )
+
+    def _start_workflow_warmup(self, frame: VideoFrame, frame_id: int) -> None:
+        self._workflow_warmup_started_at = time.perf_counter()
+        warmup_frame = self._copy_frame_for_warmup(frame)
+        self._workflow_warmup_task = asyncio.create_task(
+            self._warmup_workflow_with_frame(warmup_frame, frame_id)
+        )
+        logger.warning(
+            "[WEBRTC_WARMUP] started frame=%d input=%dx%d stream_output=%s data_mode=%s",
+            frame_id,
+            frame.width,
+            frame.height,
+            self.stream_output,
+            self._data_mode,
+        )
+
+    def _workflow_is_ready(self) -> bool:
+        if self._workflow_warmup_complete:
+            return True
+        if self._workflow_warmup_task is None:
+            return False
+        if not self._workflow_warmup_task.done():
+            return False
+
+        try:
+            self._workflow_warmup_task.result()
+        except Exception:
+            logger.exception("[WEBRTC_WARMUP] failed")
+        self._workflow_warmup_complete = True
+        return True
+
+    def _should_passthrough_while_warming(self) -> bool:
+        if not self.realtime_processing:
+            return False
+        if self.stream_output is None:
+            return False
+        return not self._workflow_is_ready()
+
     async def recv(self):
         recv_start = time.perf_counter()
         # Silencing swscaler warnings in multi-threading environment
@@ -926,6 +1005,34 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
 
         if self.stream_output is None and frame_id == 1:
             await self._auto_detect_stream_output(frame, frame_id)
+
+        if self._should_passthrough_while_warming():
+            if self._workflow_warmup_task is None:
+                self._start_workflow_warmup(frame, frame_id)
+            self._workflow_warmup_passthrough_frames += 1
+            if (
+                DEBUG_WEBRTC_PROCESSING_LATENCY
+                and (
+                    self._workflow_warmup_passthrough_frames <= 3
+                    or self._workflow_warmup_passthrough_frames
+                    % max(1, WEBRTC_TIMING_SAMPLE_EVERY_N)
+                    == 0
+                )
+            ):
+                warmup_elapsed_ms = (
+                    (time.perf_counter() - self._workflow_warmup_started_at) * 1000
+                    if self._workflow_warmup_started_at is not None
+                    else 0.0
+                )
+                logger.warning(
+                    "[WEBRTC_WARMUP] passthrough frame=%d input=%dx%d warmup_elapsed_ms=%.1f passthrough_frames=%d",
+                    frame_id,
+                    frame.width,
+                    frame.height,
+                    warmup_elapsed_ms,
+                    self._workflow_warmup_passthrough_frames,
+                )
+            return self._passthrough_frame(frame)
 
         process_start = time.perf_counter()
         workflow_output, new_frame, errors = await self._process_frame_async(
