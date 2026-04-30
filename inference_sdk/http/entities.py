@@ -157,35 +157,43 @@ class InferenceConfiguration:
 
     def to_api_call_parameters(
         self, client_mode: HTTPClientMode, task_type: TaskType
-    ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
-        """Return (body_params, query_params) for the given client mode and task.
+    ) -> Dict[str, Any]:
+        """Convert the current configuration to API call parameters.
 
-        v0 places everything on the URL query string. v1 splits: task-specific
-        config goes in the JSON body, and `service_secret` / `countinference`
-        go on the query string (the FastAPI handlers bind them from query).
-        Returns None for query_params when there's nothing to send.
+        Args:
+            client_mode: The HTTP client mode.
+            task_type: The type of task the model is designed for.
+
+        Returns:
+            Dict[str, Any]: The API call parameters.
         """
         if client_mode is HTTPClientMode.V0:
-            return {}, self.to_legacy_call_parameters() or None
+            return self.to_legacy_call_parameters()
         if task_type == OBJECT_DETECTION_TASK:
-            body = self.to_object_detection_parameters()
-        elif task_type == INSTANCE_SEGMENTATION_TASK:
-            body = self.to_instance_segmentation_parameters()
-        elif task_type == CLASSIFICATION_TASK:
-            body = self.to_classification_parameters()
-        elif task_type == KEYPOINTS_DETECTION_TASK:
-            body = self.to_keypoints_detection_parameters()
-        else:
-            raise ModelTaskTypeNotSupportedError(
-                f"Model task {task_type} is not supported by API v1 client."
-            )
+            return self.to_object_detection_parameters()
+        if task_type == INSTANCE_SEGMENTATION_TASK:
+            return self.to_instance_segmentation_parameters()
+        if task_type == CLASSIFICATION_TASK:
+            return self.to_classification_parameters()
+        if task_type == KEYPOINTS_DETECTION_TASK:
+            return self.to_keypoints_detection_parameters()
+        raise ModelTaskTypeNotSupportedError(
+            f"Model task {task_type} is not supported by API v1 client."
+        )
+
+    def to_api_v1_query_parameters(self) -> Optional[Dict[str, Any]]:
+        """Extract v1 API query-string parameters from the current configuration.
+
+        Returns:
+            Optional[Dict[str, Any]]: The query parameters, or None if unset.
+        """
         query = remove_empty_values(
             {
                 "service_secret": self.service_secret,
                 "countinference": self.count_inference,
             }
         )
-        return body, (query or None)
+        return query or None
 
     def to_object_detection_parameters(self) -> Dict[str, Any]:
         """Convert the current configuration to object detection parameters.

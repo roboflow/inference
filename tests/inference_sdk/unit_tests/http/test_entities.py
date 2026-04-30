@@ -82,13 +82,12 @@ def test_source_attributes() -> None:
 
 def test_to_api_call_parameters_for_api_v0() -> None:
     # when
-    body, query = REFERENCE_IMAGE_CONFIGURATION.to_api_call_parameters(
+    result = REFERENCE_IMAGE_CONFIGURATION.to_api_call_parameters(
         client_mode=HTTPClientMode.V0, task_type="does-not-matter"
     )
 
-    # then — v0 puts everything on the URL query string
-    assert body == {}
-    assert query == {
+    # then
+    assert result == {
         "confidence": 0.5,
         "format": "json",
         "labels": True,
@@ -111,13 +110,13 @@ def test_to_api_call_parameters_for_api_v0() -> None:
 
 def test_to_api_call_parameters_for_api_v1_classification() -> None:
     # when
-    body, query = REFERENCE_IMAGE_CONFIGURATION.to_api_call_parameters(
+    result = REFERENCE_IMAGE_CONFIGURATION.to_api_call_parameters(
         client_mode=HTTPClientMode.V1,
         task_type=CLASSIFICATION_TASK,
     )
 
     # then
-    assert body == {
+    assert result == {
         "confidence": 0.5,
         "visualize_predictions": False,
         "visualization_stroke_width": 1,
@@ -129,17 +128,16 @@ def test_to_api_call_parameters_for_api_v1_classification() -> None:
         "source": "config-test",
         "source_info": "config-test-source-info",
     }
-    assert query == {"service_secret": "xxx", "countinference": True}
 
 
 def test_to_api_call_parameters_for_api_v1_object_detection() -> None:
     # when
-    body, query = REFERENCE_IMAGE_CONFIGURATION.to_api_call_parameters(
+    result = REFERENCE_IMAGE_CONFIGURATION.to_api_call_parameters(
         client_mode=HTTPClientMode.V1, task_type=OBJECT_DETECTION_TASK
     )
 
     # then
-    assert body == {
+    assert result == {
         "disable_preproc_auto_orient": True,
         "disable_preproc_contrast": False,
         "disable_preproc_grayscale": True,
@@ -158,32 +156,44 @@ def test_to_api_call_parameters_for_api_v1_object_detection() -> None:
         "source": "config-test",
         "source_info": "config-test-source-info",
     }
+
+
+def test_to_api_v1_query_parameters_when_both_set() -> None:
+    # when
+    query = REFERENCE_IMAGE_CONFIGURATION.to_api_v1_query_parameters()
+
+    # then
     assert query == {"service_secret": "xxx", "countinference": True}
 
 
-def test_to_api_call_parameters_for_api_v1_when_credentials_unset() -> None:
+def test_to_api_v1_query_parameters_when_credentials_unset() -> None:
     # given
     configuration = InferenceConfiguration(confidence_threshold=0.5)
 
     # when
-    body, query = configuration.to_api_call_parameters(
-        client_mode=HTTPClientMode.V1, task_type=OBJECT_DETECTION_TASK
-    )
+    query = configuration.to_api_v1_query_parameters()
 
-    # then — no creds set means None query, no leakage into body
+    # then — no creds set means None so request builders skip the query string
     assert query is None
-    assert "service_secret" not in body
-    assert "countinference" not in body
 
 
-def test_to_api_call_parameters_for_api_v1_when_only_service_secret_set() -> None:
+def test_to_api_v1_query_parameters_when_only_service_secret_set() -> None:
     # given
     configuration = InferenceConfiguration(service_secret="abc")
 
     # when
-    _, query = configuration.to_api_call_parameters(
-        client_mode=HTTPClientMode.V1, task_type=OBJECT_DETECTION_TASK
-    )
+    query = configuration.to_api_v1_query_parameters()
 
     # then
     assert query == {"service_secret": "abc"}
+
+
+def test_to_api_v1_query_parameters_when_only_count_inference_set() -> None:
+    # given
+    configuration = InferenceConfiguration(count_inference=True)
+
+    # when
+    query = configuration.to_api_v1_query_parameters()
+
+    # then
+    assert query == {"countinference": True}
