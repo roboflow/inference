@@ -121,6 +121,78 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     assert inference_request.api_key == "query-api-key"
 
 
+def test_serverless_auth_middleware_logs_request_received_with_execution_id(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "API_LOGGING_ENABLED", True)
+    monkeypatch.setattr(http_api, "EXECUTION_ID_HEADER", "X-Execution-Id")
+    log_mock = MagicMock()
+    monkeypatch.setattr(http_api.logger, "info", log_mock)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            headers={
+                CORRELATION_ID_HEADER: "request-123",
+                "X-Execution-Id": "execution-123",
+            },
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+    log_mock.assert_any_call(
+        http_api.REQUEST_RECEIVED_LOG_MESSAGE,
+        method="POST",
+        path="/infer/lmm/florence-2-base",
+        request_id="request-123",
+        execution_id="execution-123",
+    )
+
+
+def test_serverless_auth_middleware_skips_request_received_log_when_api_logging_disabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "API_LOGGING_ENABLED", False)
+    log_mock = MagicMock()
+    monkeypatch.setattr(http_api.logger, "info", log_mock)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+    request_received_calls = (
+        call
+        for call in log_mock.call_args_list
+        if call.args and call.args[0] == http_api.REQUEST_RECEIVED_LOG_MESSAGE
+    )
+    assert list(request_received_calls) == []
+
+
 def test_serverless_auth_middleware_allows_authorized_key_and_caches(
     monkeypatch,
 ) -> None:
