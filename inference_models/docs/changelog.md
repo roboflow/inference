@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- RFDetrForObjectDetection{ONNX,TRT} post-processing now uses topk-flat across (queries × classes) via shared select_topk_predictions, matching training-time PostProcess and the existing pytorch + instance-segmentation paths; fixes a cross-backend divergence at low confidence thresholds.
+- RFDetr pre- and post-processing aligned with training transforms: pre-processing replaced with a dedicated `PIL → F.resize → F.to_tensor → F.normalize` chain (always stretches to `training_input_size`); post-processing uses topk-flat across (queries × classes) via shared `select_topk_predictions`; fixes a cross-backend divergence at low confidence thresholds.
 
 ## `0.27.2`
 
