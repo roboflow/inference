@@ -4,26 +4,26 @@ This page compares **direct** [model inference](quickstart/inference_101.md) lat
 
 ## Self-Hosted Results
 
-All times are in **milliseconds**. Each model was warmed up before timing, then measured over 10 iterations.
+All times are in **milliseconds**. Benchmarks were run on a server-grade NVIDIA GPU using TensorRT-optimized models, called directly via the `inference` Python package. Each model was warmed up before timing, then measured over 10 iterations.
 
-| Model | Avg Direct (ms) | Stddev Direct | Avg Workflow (ms) | Stddev Workflow |
-|-------|-----------------|---------------|-------------------|-----------------|
-| rfdetr-nano | 23.86 | 0.35 | 29.99 | 2.04 |
-| rfdetr-small | 29.50 | 0.20 | 31.36 | 0.36 |
-| rfdetr-medium | 33.97 | 0.54 | 34.78 | 0.23 |
-| rfdetr-large | 40.96 | 0.38 | 46.00 | 1.75 |
-| rfdetr-xlarge | 73.37 | 0.26 | 74.41 | 0.13 |
-| yolo26n-640 | 7.68 | 0.04 | 9.61 | 0.43 |
-| yolo26s-640 | 10.10 | 0.08 | 12.48 | 1.04 |
-| yolo26m-640 | 16.43 | 0.05 | 18.10 | 0.58 |
-| yolo26l-640 | 18.50 | 0.09 | 20.01 | 0.38 |
-| yolo26x-640 | 30.46 | 0.14 | 33.51 | 0.17 |
+| Model | Avg Direct (ms) | Avg Workflow (ms) | Workflow Overhead (ms) |
+|-------|-----------------|-------------------|------------------------|
+| rfdetr-nano | 2.65 | 4.40 | 1.75 |
+| rfdetr-small | 3.17 | 4.62 | 1.45 |
+| rfdetr-medium | 3.79 | 5.38 | 1.59 |
+| rfdetr-large | 4.87 | 7.46 | 2.59 |
+| rfdetr-xlarge | 8.44 | 10.65 | 2.21 |
+| yolo26n-640 | 2.42 | 4.07 | 1.65 |
+| yolo26s-640 | 3.25 | 5.48 | 2.23 |
+| yolo26m-640 | 4.56 | 6.29 | 1.73 |
+| yolo26l-640 | 5.76 | 8.01 | 2.25 |
+| yolo26x-640 | 7.75 | 9.36 | 1.61 |
 
 ### Key Takeaways
 
-- **Workflow overhead is minimal** — typically 1–5 ms on top of direct inference, depending on the model.
-- For larger models (e.g. `rfdetr-xlarge`), the workflow overhead becomes negligible relative to model inference time (~1.4%).
-- For smaller, faster models (e.g. `yolo26n-640`), the overhead is proportionally larger (~25%) but still under 2 ms in absolute terms.
+- **Workflow overhead is minimal** — typically 1.5–2.6 ms on top of direct inference, regardless of model size.
+- For larger models (e.g. `rfdetr-xlarge`), the workflow overhead is small relative to model inference time (~26%).
+- For smaller, faster models (e.g. `yolo26n-640`), the overhead is proportionally larger but still under 2 ms in absolute terms.
 - Workflow overhead is CPU-bound (graph scheduling, input preparation, output routing), while model inference itself typically runs on the GPU (when available). As a result, the overhead stays relatively constant regardless of GPU speed.
 
 ### Methodology
