@@ -771,6 +771,7 @@ class ModelManagerProcess:
                     entry["queue_depth"] = backend.queue_depth
                     entry["worker_alive"] = backend.is_healthy
                     entry["worker_pid"] = getattr(backend, "worker_pid", None)
+                    entry["model_class_name"] = getattr(backend, "_model_class_name", None)
                 except Exception:
                     pass
             if self._manager is not None:
