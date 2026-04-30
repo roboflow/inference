@@ -119,7 +119,9 @@ def test_decide_prompt_vs_track_every_frame_requires_prompts():
 def test_build_obj_id_metadata_from_boxes_zips_parallel_lists():
     obj_ids = np.array([5, 6], dtype=np.int64)
     metas = [
-        BoxPromptMetadata(class_id=0, class_name="person", confidence=0.9, parent_id="p"),
+        BoxPromptMetadata(
+            class_id=0, class_name="person", confidence=0.9, parent_id="p"
+        ),
         BoxPromptMetadata(class_id=1, class_name="car", confidence=0.8, parent_id="c"),
     ]
     mapping = build_obj_id_metadata_from_boxes(obj_ids, metas)
