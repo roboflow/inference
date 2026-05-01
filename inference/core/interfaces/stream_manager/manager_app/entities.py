@@ -49,6 +49,7 @@ class CommandType(str, Enum):
     TERMINATE = "terminate"
     LIST_PIPELINES = "list_pipelines"
     CONSUME_RESULT = "consume_result"
+    LATEST_FRAME = "latest_frame"
 
 
 class VideoConfiguration(BaseModel):

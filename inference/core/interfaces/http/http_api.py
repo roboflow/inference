@@ -243,6 +243,7 @@ from inference.core.interfaces.stream_manager.api.entities import (
     InferencePipelineStatusResponse,
     InitializeWebRTCPipelineResponse,
     InitializeWebRTCResponse,
+    LatestFrameResponse,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
@@ -2377,6 +2378,64 @@ class HttpInterface(BaseInterface):
                 return await self.stream_manager_client.consume_pipeline_result(
                     pipeline_id=pipeline_id,
                     excluded_fields=request.excluded_fields,
+                )
+
+            @app.get(
+                "/stats",
+                summary="Aggregated pipeline statistics",
+            )
+            @with_route_exceptions_async
+            async def get_stats():
+                stream_count = 0
+                camera_fps_values = []
+                inference_fps_values = []
+                if self.stream_manager_client is not None:
+                    try:
+                        pipelines_resp = (
+                            await self.stream_manager_client.list_pipelines()
+                        )
+                        pipeline_ids = pipelines_resp.pipelines
+                        stream_count = len(pipeline_ids)
+                        for pid in pipeline_ids:
+                            status_resp = await self.stream_manager_client.get_status(
+                                pid
+                            )
+                            report = status_resp.report
+                            throughput = report.get("inference_throughput", 0.0)
+                            if throughput and throughput > 0:
+                                inference_fps_values.append(throughput)
+                            for src in report.get("sources_metadata", []):
+                                props = src.get("source_properties") or {}
+                                fps = props.get("fps")
+                                if fps and fps > 0:
+                                    camera_fps_values.append(fps)
+                    except Exception:
+                        pass
+                return {
+                    "camera_fps": (
+                        sum(camera_fps_values) / len(camera_fps_values)
+                        if camera_fps_values
+                        else None
+                    ),
+                    "inference_fps": (
+                        sum(inference_fps_values) / len(inference_fps_values)
+                        if inference_fps_values
+                        else None
+                    ),
+                    "stream_count": stream_count,
+                }
+
+            @app.get(
+                "/inference_pipelines/{pipeline_id}/latest_frame",
+                response_model=LatestFrameResponse,
+                summary="[EXPERIMENTAL] Get latest frame from InferencePipeline",
+            )
+            @with_route_exceptions_async
+            async def latest_frame(
+                pipeline_id: str,
+            ) -> LatestFrameResponse:
+                return await self.stream_manager_client.get_latest_frame(
+                    pipeline_id=pipeline_id
                 )
 
         class ModelInitState:

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import os
 import signal
@@ -150,6 +151,8 @@ class InferencePipelineManager(Process):
                 return self._get_pipeline_status(request_id=request_id)
             if command_type is CommandType.CONSUME_RESULT:
                 return self._consume_results(request_id=request_id, payload=payload)
+            if command_type is CommandType.LATEST_FRAME:
+                return self._handle_latest_frame(request_id=request_id)
             raise NotImplementedError(
                 f"Command type `{command_type}` cannot be handled"
             )
@@ -651,6 +654,56 @@ class InferencePipelineManager(Process):
                 request_id=request_id,
                 error=error,
                 public_error_message="Unexpected error with InferencePipeline results consumption.",
+                error_type=ErrorType.OPERATION_ERROR,
+            )
+
+    def _handle_latest_frame(self, request_id: str) -> None:
+        try:
+            if self._buffer_sink is None or self._buffer_sink.empty():
+                response_payload = {
+                    STATUS_KEY: OperationStatus.SUCCESS,
+                    "frame_data": None,
+                    "frame_id": None,
+                    "frame_timestamp": None,
+                    "source_id": None,
+                }
+                self._responses_queue.put((request_id, response_payload))
+                return None
+            # Peek at the last item in the buffer (non-destructive)
+            predictions, frames = self._buffer_sink._buffer[-1]
+            # Find the last non-None VideoFrame
+            frame = None
+            for f in reversed(frames):
+                if f is not None:
+                    frame = f
+                    break
+            if frame is None:
+                response_payload = {
+                    STATUS_KEY: OperationStatus.SUCCESS,
+                    "frame_data": None,
+                    "frame_id": None,
+                    "frame_timestamp": None,
+                    "source_id": None,
+                }
+                self._responses_queue.put((request_id, response_payload))
+                return None
+            _, jpeg_bytes = cv.imencode(
+                ".jpg", frame.image, [cv.IMWRITE_JPEG_QUALITY, 70]
+            )
+            frame_b64 = base64.b64encode(jpeg_bytes.tobytes()).decode("ascii")
+            response_payload = {
+                STATUS_KEY: OperationStatus.SUCCESS,
+                "frame_data": frame_b64,
+                "frame_id": frame.frame_id,
+                "frame_timestamp": frame.frame_timestamp.isoformat(),
+                "source_id": frame.source_id,
+            }
+            self._responses_queue.put((request_id, response_payload))
+        except Exception as error:
+            self._handle_error(
+                request_id=request_id,
+                error=error,
+                public_error_message="Unexpected error retrieving latest frame.",
                 error_type=ErrorType.OPERATION_ERROR,
             )
 
