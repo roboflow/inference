@@ -21,7 +21,8 @@ def get_latest_release_version():
         try:
             logger.debug("Checking for latest inference release version...")
             response = requests.get(
-                "https://api.github.com/repos/roboflow/inference/releases/latest"
+                "https://api.github.com/repos/roboflow/inference/releases/latest",
+                timeout=3,
             )
             response.raise_for_status()
             latest_release = response.json()["tag_name"].lstrip("v")
