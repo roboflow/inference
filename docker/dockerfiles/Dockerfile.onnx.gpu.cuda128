@@ -1,0 +1,164 @@
+# Dockerfile for NVIDIA RTX 50-series (Blackwell/sm_120) and CUDA 12.8 support
+# This enables GPU inference on RTX 5090, 5080, 5070 Ti, 5070, etc.
+#
+# Build from the inference repo root:
+#   docker build -f docker/dockerfiles/Dockerfile.onnx.gpu.cuda128 -t roboflow/roboflow-inference-server-gpu-cuda128 .
+#
+# Run:
+#   docker run --gpus all -p 9001:9001 roboflow/roboflow-inference-server-gpu-cuda128
+
+ARG CUDA_VERSION=12.8.1
+ARG UBUNTU_VERSION=22.04
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/nightly/cu128
+ARG TORCH_CUDA_ARCH_LIST="12.0"
+ARG MAX_JOBS=8
+ARG NVCC_THREADS=4
+
+FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu${UBUNTU_VERSION} as builder
+
+ARG TORCH_INDEX_URL
+ARG TORCH_CUDA_ARCH_LIST
+ARG MAX_JOBS
+ARG NVCC_THREADS
+
+WORKDIR /app
+
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    libxext6 \
+    libopencv-dev \
+    uvicorn \
+    python3-pip \
+    git \
+    libgdal-dev \
+    libvips-dev \
+    wget \
+    rustc \
+    cargo \
+    ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/requirements.sam.txt \
+    requirements/requirements.sam3.txt \
+    requirements/requirements.clip.txt \
+    requirements/requirements.http.txt \
+    requirements/requirements.gpu.txt \
+    requirements/requirements.gaze.txt \
+    requirements/requirements.doctr.txt \
+    requirements/requirements.groundingdino.txt \
+    requirements/requirements.yolo_world.txt \
+    requirements/_requirements.txt \
+    requirements/requirements.transformers.txt \
+    requirements/requirements.pali.flash_attn.txt \
+    requirements/requirements.easyocr.txt \
+    requirements/requirements.modal.txt \
+    ./
+
+RUN python3 -m pip install -U pip uv
+
+# Install PyTorch with CUDA 12.8 support FIRST (nightly builds required for sm_120/RTX 50-series)
+ENV TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}
+ENV MAX_JOBS=${MAX_JOBS}
+ENV NVCC_THREADS=${NVCC_THREADS}
+
+RUN pip3 install --pre torch torchvision torchaudio --index-url ${TORCH_INDEX_URL} && \
+    rm -rf ~/.cache/pip
+
+# Install onnxruntime-gpu with CUDA 12 support FIRST
+# The default onnxruntime-gpu from PyPI doesn't have CUDAExecutionProvider for CUDA 12
+RUN pip3 install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ && \
+    rm -rf ~/.cache/pip
+
+# Install remaining requirements (torch/onnxruntime already satisfied, won't be overwritten)
+RUN uv pip install --system \
+    -r _requirements.txt \
+    -r requirements.doctr.txt \
+    -r requirements.sam.txt \
+    -r requirements.sam3.txt \
+    -r requirements.clip.txt \
+    -r requirements.http.txt \
+    -r requirements.gpu.txt \
+    -r requirements.gaze.txt \
+    -r requirements.groundingdino.txt \
+    -r requirements.yolo_world.txt \
+    -r requirements.transformers.txt \
+    -r requirements.easyocr.txt \
+    -r requirements.modal.txt \
+    jupyterlab \
+    "setuptools<=75.5.0" \
+    && rm -rf ~/.cache/pip
+
+# Note: flash_attn is NOT installed by default as it requires building from source for sm_120
+# and significantly increases build time. If you need Paligemma/Florence2 support, uncomment:
+# RUN python3 -m pip install packaging==24.1 && \
+#     pip3 install flash-attn --no-build-isolation && \
+#     rm -rf ~/.cache/pip
+
+# Start runtime stage
+ARG CUDA_VERSION
+ARG UBUNTU_VERSION
+FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu${UBUNTU_VERSION} as runtime
+
+ARG TORCH_INDEX_URL
+
+WORKDIR /app
+
+# Copy Python and installed packages from builder
+COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Install runtime dependencies
+ADD https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb /tmp/cuda-keyring.deb
+RUN set -eux; \
+    rm -rf /var/lib/apt/lists/*; apt-get clean; \
+    dpkg -i /tmp/cuda-keyring.deb || true; \
+    rm -f /tmp/cuda-keyring.deb; \
+    apt-get update -y; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        libxext6 \
+        libopencv-dev \
+        uvicorn \
+        python3-pip \
+        git \
+        libgdal-dev \
+        libvips-dev \
+        wget \
+        rustc \
+        cargo; \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+RUN ln -s /usr/bin/python3 /usr/bin/python
+RUN /bin/make create_wheels_for_gpu_notebook
+RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+
+# The inference wheels may have installed incompatible torch/onnxruntime versions.
+# Reinstall the CUDA 12.8 compatible versions to ensure GPU support works.
+RUN pip3 install --no-cache-dir --pre torch torchvision torchaudio --index-url ${TORCH_INDEX_URL}
+
+RUN pip3 install --no-cache-dir onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
+
+WORKDIR /notebooks
+COPY examples/notebooks .
+
+WORKDIR /app/
+COPY inference inference
+COPY docker/config/gpu_http.py gpu_http.py
+
+ENV VERSION_CHECK_MODE=continuous
+ENV PROJECT=roboflow-platform
+ENV NUM_WORKERS=1
+ENV HOST=0.0.0.0
+ENV PORT=9001
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
+ENV WORKFLOWS_MAX_CONCURRENT_STEPS=4
+ENV API_LOGGING_ENABLED=True
+ENV LMM_ENABLED=True
+ENV CORE_MODEL_SAM2_ENABLED=True
+ENV CORE_MODEL_SAM3_ENABLED=True
+ENV CORE_MODEL_OWLV2_ENABLED=True
+ENV ENABLE_STREAM_API=True
+ENV ENABLE_PROMETHEUS=True
+ENV STREAM_API_PRELOADED_PROCESSES=2
+
+ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
