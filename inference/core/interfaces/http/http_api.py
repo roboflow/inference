@@ -2496,12 +2496,25 @@ class HttpInterface(BaseInterface):
                     )
 
         @app.get("/healthz", status_code=200)
-        def healthz():
+        def healthz(
+            state: ModelInitState = Depends(lambda: model_init_state),
+        ):
             """Health endpoint for Kubernetes liveness probe.
 
             Verifies CUDA context health when running on GPU. Returns 503 if
-            CUDA is corrupted (unrecoverable - requires process restart).
+            CUDA is corrupted (unrecoverable - requires process restart) or
+            if model initialization has not completed yet.
             """
+            with state.lock:
+                if not state.is_ready:
+                    return JSONResponse(
+                        content={
+                            "status": "unhealthy",
+                            "reason": "not_ready",
+                        },
+                        status_code=503,
+                    )
+
             from inference.core.utils.cuda_health import check_cuda_health
 
             is_healthy, error = check_cuda_health()
