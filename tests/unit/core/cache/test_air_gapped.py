@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -300,32 +299,156 @@ class TestFoundationModelListFormat:
             result = get_cached_foundation_models(blocks=[block])
 
 
-# ── Cross-validation: _slugify_model_id must match inference_models ──────────
-
-_SLUGIFY_TEST_IDS = [
-    "clip/ViT-B-16",
-    "coco/40",
-    "rfdetr-medium",
-    "sam3/sam3_final",
-    "florence-pretrains/3",
-    "depth-anything-v3/small",
-    "smolvlm2/smolvlm-2.2b-instruct",
-    "qwen-pretrains/1",
-    "a" * 100,  # long model id
-    "special!!!chars###here",
-]
+# ---------------------------------------------------------------------------
+# scan_cached_models — model_config.json (inference-models cache layout)
+# ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("model_id", _SLUGIFY_TEST_IDS)
-def test_slugify_matches_inference_models(model_id: str):
-    """Ensure _slugify_model_id stays in sync with the canonical implementation."""
-    try:
-        from inference_models.models.auto_loaders.core import (
-            slugify_model_id_to_os_safe_format,
+def _write_model_config_json(
+    cache_dir: str,
+    slug_dir: str,
+    package_id: str,
+    config: dict,
+) -> None:
+    """Write a ``model_config.json`` inside the inference-models cache layout."""
+    package_dir = os.path.join(cache_dir, "models-cache", slug_dir, package_id)
+    os.makedirs(package_dir, exist_ok=True)
+    with open(os.path.join(package_dir, "model_config.json"), "w") as fh:
+        json.dump(config, fh)
+
+
+class TestScanModelConfigJson:
+    """model_config.json written by dump_model_config_for_offline_use."""
+
+    def test_uses_canonical_model_id_from_config(self, tmp_path):
+        """When model_config.json has model_id, use it instead of directory path."""
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        cache = str(tmp_path)
+        _write_model_config_json(
+            cache,
+            slug_dir="coco-22-abcd1234",
+            package_id="pkg-001",
+            config={
+                "model_id": "coco/22",
+                "task_type": "object-detection",
+                "model_architecture": "yolov10b",
+                "backend_type": "onnxruntime",
+            },
         )
-    except ImportError:
-        pytest.skip("inference_models not installed")
 
-    from inference.core.cache.air_gapped import _slugify_model_id
+        result = scan_cached_models(cache)
 
-    assert _slugify_model_id(model_id) == slugify_model_id_to_os_safe_format(model_id)
+        assert len(result) == 1
+        m = result[0]
+        assert m["model_id"] == "coco/22"
+        assert m["task_type"] == "object-detection"
+        assert m["model_architecture"] == "yolov10b"
+        assert m["is_foundation"] is False
+
+    def test_deduplicates_by_model_id(self, tmp_path):
+        """Two cache entries with the same canonical model_id produce one result."""
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        cache = str(tmp_path)
+        # Same model in inference-models layout
+        _write_model_config_json(
+            cache,
+            slug_dir="coco-22-abcd1234",
+            package_id="pkg-001",
+            config={
+                "model_id": "coco/22",
+                "task_type": "object-detection",
+                "model_architecture": "yolov10b",
+                "backend_type": "onnxruntime",
+            },
+        )
+        # Same model also present in traditional layout
+        _write_model_type_json(
+            cache,
+            "coco/22",
+            {"project_task_type": "object-detection", "model_type": "yolov10b"},
+        )
+
+        result = scan_cached_models(cache)
+
+        assert len(result) == 1
+        assert result[0]["model_id"] == "coco/22"
+
+    def test_skips_config_without_model_id(self, tmp_path):
+        """model_config.json missing model_id falls back to model_type.json."""
+        from inference.core.cache.air_gapped import scan_cached_models
+
+        cache = str(tmp_path)
+        # model_config.json without model_id — should not be picked up
+        _write_model_config_json(
+            cache,
+            slug_dir="some-slug-abcd1234",
+            package_id="pkg-001",
+            config={
+                "task_type": "object-detection",
+                "model_architecture": "yolov8n",
+                "backend_type": "onnxruntime",
+            },
+        )
+
+        result = scan_cached_models(cache)
+
+        assert len(result) == 0
+
+
+# ---------------------------------------------------------------------------
+# is_model_cached — inference-models layout delegation
+# ---------------------------------------------------------------------------
+
+
+class TestIsModelCachedInferenceModels:
+    """is_model_cached delegates to find_cached_model_package_dir for the
+    inference-models cache layout."""
+
+    def test_returns_true_when_package_dir_found(self, tmp_path):
+        from inference.core.cache.air_gapped import is_model_cached
+
+        cache = str(tmp_path)
+        fake_find = MagicMock(return_value="/some/cached/dir")
+        fake_module = MagicMock()
+        fake_module.find_cached_model_package_dir = fake_find
+
+        with patch("inference.core.cache.air_gapped.MODEL_CACHE_DIR", cache), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
+        ), patch.dict(
+            "sys.modules",
+            {"inference_models.models.auto_loaders.core": fake_module},
+        ):
+            assert is_model_cached("my-model") is True
+        fake_find.assert_called_once_with("my-model")
+
+    def test_returns_false_when_no_cache_hit(self):
+        from inference.core.cache.air_gapped import is_model_cached
+
+        fake_find = MagicMock(return_value=None)
+        fake_module = MagicMock()
+        fake_module.find_cached_model_package_dir = fake_find
+
+        with patch(
+            "inference.core.cache.air_gapped.MODEL_CACHE_DIR", "/nonexistent"
+        ), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
+        ), patch.dict(
+            "sys.modules",
+            {"inference_models.models.auto_loaders.core": fake_module},
+        ):
+            assert is_model_cached("no-such-model") is False
+
+    def test_returns_false_when_inference_models_not_installed(self):
+        from inference.core.cache.air_gapped import is_model_cached
+
+        with patch(
+            "inference.core.cache.air_gapped.MODEL_CACHE_DIR", "/nonexistent"
+        ), patch(
+            "inference.core.cache.air_gapped.USE_INFERENCE_MODELS", True
+        ), patch.dict(
+            "sys.modules",
+            {"inference_models.models.auto_loaders.core": None},
+        ):
+            assert is_model_cached("some-model") is False

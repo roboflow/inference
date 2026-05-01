@@ -35,7 +35,7 @@ router = APIRouter()
 # ----------------------------------------------------------------
 csrf_file = workflow_local_dir / ".csrf"
 if csrf_file.exists():
-    csrf = csrf_file.read_text()
+    csrf = csrf_file.read_text().strip()
 else:
     csrf = os.urandom(16).hex()
     csrf_file.write_text(csrf)
@@ -110,6 +110,12 @@ async def builder_edit(workflow_id: str):
 # ----------------------
 # BACKEND JSON API ROUTES
 # ----------------------
+
+
+@router.get("/api/csrf")
+@with_route_exceptions_async
+async def get_csrf_token():
+    return {"csrf": csrf}
 
 
 @router.get("/api", dependencies=[Depends(verify_csrf_token)])

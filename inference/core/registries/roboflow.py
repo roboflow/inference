@@ -299,21 +299,59 @@ def get_model_metadata_from_cache(
 def _get_model_metadata_from_cache(
     dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
 ) -> Optional[Tuple[TaskType, ModelType]]:
+    # Layout 1: traditional model_type.json
     model_type_cache_path = construct_model_type_cache_path(
         dataset_id=dataset_id, version_id=version_id
     )
-    if not os.path.isfile(model_type_cache_path):
-        return None
+    if os.path.isfile(model_type_cache_path):
+        try:
+            model_metadata = read_json(path=model_type_cache_path)
+            if not model_metadata_content_is_invalid(content=model_metadata):
+                return (
+                    model_metadata[PROJECT_TASK_TYPE_KEY],
+                    model_metadata[MODEL_TYPE_KEY],
+                )
+        except ValueError as e:
+            logger.warning(
+                f"Could not load model description from cache under path: "
+                f"{model_type_cache_path} - decoding issue: {e}."
+            )
+
+    # Layout 2: inference-models model_config.json
+    model_id = f"{dataset_id}/{version_id}" if version_id else dataset_id
+    result = _get_model_metadata_from_inference_models_cache(model_id)
+    if result is not None:
+        return result
+
+    return None
+
+
+def _get_model_metadata_from_inference_models_cache(
+    model_id: str,
+) -> Optional[Tuple[TaskType, ModelType]]:
+    """Check the inference-models cache layout for model metadata."""
     try:
-        model_metadata = read_json(path=model_type_cache_path)
-        if model_metadata_content_is_invalid(content=model_metadata):
-            return None
-        return model_metadata[PROJECT_TASK_TYPE_KEY], model_metadata[MODEL_TYPE_KEY]
-    except ValueError as e:
-        logger.warning(
-            f"Could not load model description from cache under path: {model_type_cache_path} - decoding issue: {e}."
+        from inference_models.models.auto_loaders.core import (
+            find_cached_model_package_dir,
         )
+    except ImportError:
         return None
+
+    cached_dir = find_cached_model_package_dir(model_id)
+    if cached_dir is None:
+        return None
+    config_path = os.path.join(cached_dir, "model_config.json")
+    try:
+        metadata = read_json(path=config_path)
+    except ValueError:
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    task_type = metadata.get("task_type", "")
+    model_arch = metadata.get("model_architecture", "")
+    if task_type and model_arch:
+        return task_type, model_arch
+    return None
 
 
 def model_metadata_content_is_invalid(content: Optional[Union[list, dict]]) -> bool:
