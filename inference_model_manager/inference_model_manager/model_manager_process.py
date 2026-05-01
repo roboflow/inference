@@ -619,6 +619,11 @@ class ModelManagerProcess:
         params_bytes = data[1] if len(data) > 1 else b"{}"
 
         self._pending[req_id] = (identity, slot_id, model_id)
+        # TODO(debug): TEMPORARY — remove after diagnosing 0-byte slot bug
+        logger.error(
+            "[mmp] T_SUBMIT slot=%d req=%d model=%s input_sz=%d (TEMP DEBUG)",
+            slot_id, req_id, model_id, input_sz,
+        )
         self._pool.mark_written(slot_id, input_sz)
         self._forward_to_backend(model_id, slot_id, req_id, params_bytes)
 
