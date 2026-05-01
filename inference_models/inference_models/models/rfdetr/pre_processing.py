@@ -1,29 +1,27 @@
 """RFDETR-specific preprocessing.
 
-Mirrors `rfdetr_internal/detr.py:RFDETR.predict()` exactly so inference-time
-inputs are byte-equivalent to the training-time / parity-runner pipeline.
+Mirrors `rfdetr_internal/detr.py:RFDETR.predict()` so inference-time inputs
+are byte-equivalent to the training-time / parity-runner pipeline.
 
-predict() has two branches that diverge at the resize step:
+For numpy / PIL inputs the chain is:
 
-  numpy / PIL inputs (HTTP server case after JPEG decode):
-      PIL → torchvision F.resize on PIL (PIL bilinear)
-          → F.to_tensor (PIL → contiguous float32 CHW [0, 1])
-          → F.normalize(mean, std)
-  This branch matches `datasets/transforms.py` (training source-of-truth).
+      [optional dataset-version resize via shared handler]
+      → PIL → torchvision F.resize on PIL (PIL bilinear) → training_input_size
+      → F.to_tensor (PIL → contiguous float32 CHW [0, 1])
+      → F.normalize(mean, std)
 
-  torch.Tensor inputs (advanced caller, assumed float CHW [0, 1]):
+The dataset-version resize step (letterbox / center-crop / stretch /
+letterbox-reflect-edges) is applied via the shared cv2-on-uint8 handler when
+`dataset_version_resize_dimensions` is non-square and `resize_mode` is not
+STRETCH_TO — matching the resize Roboflow's exporter applies. The second
+PIL F.resize step then stretches to `training_input_size`, mirroring the
+SquareResize → ToTensor → Normalize chain in `datasets/transforms.py`.
+
+For torch.Tensor inputs (advanced caller, assumed float CHW [0, 1]):
       F.resize on tensor (torchvision tensor bilinear)
           → F.normalize(mean, std)
-  This branch skips the PIL / numpy round-trip and uses tensor F.resize,
-  matching predict()'s tensor branch. Note the tensor and PIL bilinear
-  kernels are not byte-identical; predict() already accepts that drift on
-  the tensor path, so we mirror it.
-
-RFDETR training only ever stretches to a square (`square_resize_div_64=True`
-on every Roboflow-trained RFDETR), so this preprocessor always stretches and
-ignores `dataset_version_resize_dimensions` / `resize_mode` from the network
-input definition. No fast-path gate; this chain applies for every RFDETR
-inference regardless of the dataset version's preprocessing config.
+mirrors predict()'s tensor branch. Tensor and PIL bilinear kernels are not
+byte-identical; predict() already accepts that drift on its tensor path.
 
 YOLO and other model families continue to use the shared cv2-on-uint8 path in
 `models.common.roboflow.pre_processing` to match their Ultralytics-derived
@@ -48,12 +46,15 @@ from inference_models.models.common.roboflow.model_packages import (
     ImagePreProcessing,
     NetworkInputDefinition,
     PreProcessingMetadata,
+    ResizeMode,
     StaticCropOffset,
+    TrainingInputSize,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     apply_pre_processing_to_numpy_image,
     apply_pre_processing_to_torch_image,
     make_the_value_divisible,
+    pre_process_numpy_image,
 )
 
 
@@ -99,7 +100,14 @@ def pre_process_network_input(
             )
     target_size = ImageDimensions(width=target_w, height=target_h)
 
-    image_list = images if isinstance(images, list) else [images]
+    if isinstance(images, list):
+        image_list: List[Union[np.ndarray, torch.Tensor]] = list(images)
+    elif isinstance(images, torch.Tensor) and images.ndim == 4:
+        image_list = list(images.unbind(0))
+    elif isinstance(images, np.ndarray) and images.ndim == 4:
+        image_list = list(images)
+    else:
+        image_list = [images]
 
     tensors: List[torch.Tensor] = []
     metadata: List[PreProcessingMetadata] = []
@@ -144,30 +152,117 @@ def _pre_process_numpy(
     input_color_mode: Optional[ColorMode],
     pre_processing_overrides: Optional[PreProcessingOverrides],
 ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
-    """numpy / uint8-tensor branch: PIL chain matching training source-of-truth."""
-    original_size = ImageDimensions(width=image.shape[1], height=image.shape[0])
-    image, static_crop_offset = apply_pre_processing_to_numpy_image(
-        image=image,
-        image_pre_processing=image_pre_processing,
-        network_input_channels=network_input.input_channels,
-        input_color_mode=input_color_mode,
-        pre_processing_overrides=pre_processing_overrides,
-    )
-    size_after_pre_processing = ImageDimensions(
-        width=image.shape[1], height=image.shape[0]
-    )
-    if input_color_mode != network_input.color_mode:
-        image = image[:, :, ::-1]
-    pil = Image.fromarray(np.ascontiguousarray(image))
+    """numpy / uint8-tensor branch: PIL chain matching training source-of-truth.
+
+    For non-stretch resize modes with non-square `dataset_version_resize_dimensions`
+    we first apply the dataset-version resize via the shared cv2-on-uint8 handler
+    (matching what Roboflow's exporter applies), then PIL F.resize stretches to
+    `training_input_size` (matching training's SquareResize). Otherwise we stretch
+    directly in a single PIL F.resize step.
+    """
+    if _needs_two_step_resize(network_input):
+        intermediate_image, meta = _dataset_version_resize_uint8(
+            image=image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+        meta = meta._replace(
+            nonsquare_intermediate_size=meta.inference_size,
+            inference_size=target_size,
+        )
+        pil = Image.fromarray(np.ascontiguousarray(intermediate_image))
+    else:
+        original_size = ImageDimensions(width=image.shape[1], height=image.shape[0])
+        image, static_crop_offset = apply_pre_processing_to_numpy_image(
+            image=image,
+            image_pre_processing=image_pre_processing,
+            network_input_channels=network_input.input_channels,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+        size_after_pre_processing = ImageDimensions(
+            width=image.shape[1], height=image.shape[0]
+        )
+        if input_color_mode != network_input.color_mode:
+            image = image[:, :, ::-1]
+        pil = Image.fromarray(np.ascontiguousarray(image))
+        meta = _build_metadata(
+            original_size=original_size,
+            size_after_pre_processing=size_after_pre_processing,
+            target_size=target_size,
+            static_crop_offset=static_crop_offset,
+        )
+
     resized = TF.resize(pil, (target_size.height, target_size.width))
     tensor = TF.to_tensor(resized)
     tensor = _apply_normalization(tensor, network_input)
-    return tensor, _build_metadata(
-        original_size=original_size,
-        size_after_pre_processing=size_after_pre_processing,
-        target_size=target_size,
-        static_crop_offset=static_crop_offset,
+    return tensor, meta
+
+
+def _needs_two_step_resize(network_input: NetworkInputDefinition) -> bool:
+    """True when the dataset-version resize_mode is non-stretch — the resize
+    Roboflow's exporter applied at version creation needs to be replayed at
+    inference for production-served pixels to match training-time pixels.
+    STRETCH_TO with any dims collapses to a single PIL F.resize stretch."""
+    dims = network_input.dataset_version_resize_dimensions
+    return (
+        dims is not None
+        and network_input.resize_mode != ResizeMode.STRETCH_TO
     )
+
+
+def _dataset_version_resize_uint8(
+    image: np.ndarray,
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
+    input_color_mode: Optional[ColorMode],
+    pre_processing_overrides: Optional[PreProcessingOverrides],
+) -> Tuple[np.ndarray, PreProcessingMetadata]:
+    """Apply the dataset-version resize via the shared cv2-on-uint8 handler and
+    return (uint8 HWC numpy, metadata). The numpy is in `network_input.color_mode`
+    channel order. We rebuild a stripped-down NetworkInputDefinition that targets
+    the dataset-version dims and disables `scaling_factor` / `normalization` so
+    the handler skips the /255 + normalize step and we keep raw pixels for the
+    second PIL F.resize."""
+    dims = network_input.dataset_version_resize_dimensions
+    effective = network_input.model_copy(
+        update={
+            "training_input_size": TrainingInputSize(
+                height=dims.height, width=dims.width
+            ),
+            "scaling_factor": None,
+            "normalization": None,
+            "dataset_version_resize_dimensions": None,
+        }
+    )
+    tensor, metadatas = pre_process_numpy_image(
+        image=image,
+        image_pre_processing=image_pre_processing,
+        network_input=effective,
+        target_device=torch.device("cpu"),
+        input_color_mode=input_color_mode,
+        pre_processing_overrides=pre_processing_overrides,
+    )
+    # Handler returns NCHW. STRETCH_TO produces uint8 (cv2.resize on uint8); the
+    # letterbox / center-crop / letterbox-reflect paths construct a float32 buffer
+    # and scatter the cv2-resized uint8 into it (values stay in [0, 255] integers,
+    # padding values are 0/127/255). Round-trip via .to(uint8) is exact.
+    chw = tensor[0]
+    if chw.dtype == torch.uint8:
+        arr = chw.permute(1, 2, 0).cpu().numpy()
+    elif chw.dtype == torch.float32:
+        arr = chw.to(torch.uint8).permute(1, 2, 0).cpu().numpy()
+    else:
+        raise ModelRuntimeError(
+            message=(
+                f"Unexpected dtype {chw.dtype} from shared dataset-version resize "
+                "handler; expected torch.uint8 or torch.float32."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+        )
+    return arr, metadatas[0]
 
 
 def _pre_process_tensor(
@@ -245,22 +340,15 @@ def _build_metadata(
 
 
 def _ensure_hwc_uint8(image: np.ndarray) -> np.ndarray:
-    if image.ndim == 4 and image.shape[0] == 1:
-        image = image[0]
-    if image.ndim != 3:
-        raise ValueError(f"Expected HWC image, got shape {image.shape}")
-    if image.dtype != np.uint8:
-        if np.issubdtype(image.dtype, np.floating):
-            image = (image * 255.0).clip(0, 255).astype(np.uint8)
-        else:
-            image = image.astype(np.uint8)
-    return image
+    if image.dtype == np.uint8:
+        return image
+    if np.issubdtype(image.dtype, np.floating):
+        return (image * 255.0).clip(0, 255).astype(np.uint8)
+    return image.astype(np.uint8)
 
 
 def _tensor_to_hwc_uint8(image: torch.Tensor) -> np.ndarray:
     arr = image.detach().cpu().numpy()
-    if arr.ndim == 4 and arr.shape[0] == 1:
-        arr = arr[0]
     if arr.ndim == 3 and arr.shape[0] in (1, 3, 4) and arr.shape[-1] not in (1, 3, 4):
         arr = np.transpose(arr, (1, 2, 0))
     return _ensure_hwc_uint8(arr)
