@@ -74,6 +74,7 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
     construct_output_selector,
     construct_step_selector,
     get_last_chunk_of_selector,
+    get_input_selector_base,
     get_nodes_of_specific_category,
     get_step_selector_from_its_output,
     identify_lineage,
@@ -282,7 +283,7 @@ def add_edge_for_step(
     if is_input_selector(target_step_parsed_selector.value):
         input_node_compilation_data = node_as(
             execution_graph=execution_graph,
-            node=target_step_parsed_selector.value,
+            node=get_input_selector_base(target_step_parsed_selector.value),
             expected_type=InputNode,
         )
         actual_input_kind = input_node_compilation_data.input_manifest.kind
