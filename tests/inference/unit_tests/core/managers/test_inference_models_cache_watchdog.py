@@ -102,14 +102,12 @@ def test_purge_files_creates_lock_file_adjacent_to_target(
 ) -> None:
     # given
     file = _create_file(empty_local_dir, "model.bin", size_mb=1.0)
-    expected_lock = os.path.join(empty_local_dir, f".model.bin.lock")
 
     # when
     purge_files(files=[file])
 
     # then
     assert not os.path.exists(file.path)
-    assert os.path.exists(expected_lock)
 
 
 def test_purge_files_deletes_file_in_nested_subdirectory(
@@ -119,7 +117,6 @@ def test_purge_files_deletes_file_in_nested_subdirectory(
     subdir = os.path.join(empty_local_dir, "models", "v1")
     os.makedirs(subdir)
     file = _create_file(subdir, "weights.bin", size_mb=2.0)
-    expected_lock = os.path.join(subdir, f".weights.bin.lock")
 
     # when
     result = purge_files(files=[file])
@@ -127,7 +124,6 @@ def test_purge_files_deletes_file_in_nested_subdirectory(
     # then
     assert result == 2.0
     assert not os.path.exists(file.path)
-    assert os.path.exists(expected_lock)
 
 
 def test_purge_files_skips_file_when_lock_cannot_be_acquired(

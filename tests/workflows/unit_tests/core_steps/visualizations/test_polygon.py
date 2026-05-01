@@ -2,7 +2,11 @@ import numpy as np
 import pytest
 import supervision as sv
 from pydantic import ValidationError
+from supervision import Color, ColorLookup, ColorPalette, Detections
 
+from inference.core.workflows.core_steps.visualizations.common.annotators.polygon import (
+    PolygonAnnotator,
+)
 from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
     PolygonManifest,
     PolygonVisualizationBlockV1,
@@ -143,3 +147,44 @@ def test_polygon_visualization_block_v2() -> None:
     assert not np.array_equal(
         output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
     )
+
+
+def test_polygon_annotator_draws_at_correct_coordinates() -> None:
+    """Verify the mask-crop + offset logic places polygons at the detection's
+    actual location in the frame, not at the origin.
+
+    The existing block tests use masks at (0,0) where offset +[0,0] is a no-op,
+    so a broken offset would still pass. This test puts the detection in the
+    center of a large frame and asserts pixels near the bbox edge are drawn
+    while pixels near the origin remain untouched.
+    """
+    annotator = PolygonAnnotator(
+        color=ColorPalette.DEFAULT,
+        thickness=2,
+        color_lookup=ColorLookup.INDEX,
+    )
+
+    H, W = 1000, 1000
+    x1, y1, x2, y2 = 400, 400, 600, 600
+
+    mask = np.zeros((1, H, W), dtype=np.bool_)
+    mask[0, y1:y2, x1:x2] = True
+
+    scene = np.zeros((H, W, 3), dtype=np.uint8)
+    detections = Detections(
+        xyxy=np.array([[x1, y1, x2, y2]], dtype=np.float64),
+        mask=mask,
+        class_id=np.array([0]),
+    )
+
+    result = annotator.annotate(scene=scene, detections=detections)
+
+    # Pixels near the center bbox edge should be drawn
+    center_region = result[y1 - 5 : y2 + 5, x1 - 5 : x2 + 5]
+    assert center_region.any(), "Expected polygon drawn near center bbox — none found"
+
+    # Pixels near origin should remain black (offset wasn't discarded)
+    origin_region = result[0:50, 0:50]
+    assert (
+        not origin_region.any()
+    ), "Polygon was drawn near origin — coordinate offset is broken"
