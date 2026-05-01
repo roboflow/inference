@@ -130,6 +130,7 @@ def process_frame(
         result_np_image = get_frame_from_workflow_output(
             workflow_output=workflow_output,
             frame_output_key=stream_output,
+            log_latency=profile_frame,
         )
         if result_np_image is None:
             errors.append("Visualisation blocks were not executed")
@@ -188,7 +189,9 @@ def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
 
 
 def get_frame_from_workflow_output(
-    workflow_output: Dict[str, Union[WorkflowImageData, Any]], frame_output_key: str
+    workflow_output: Dict[str, Union[WorkflowImageData, Any]],
+    frame_output_key: str,
+    log_latency: bool = False,
 ) -> Optional[np.ndarray]:
     latency: Optional[datetime.timedelta] = None
     np_image: Optional[np.ndarray] = None
@@ -219,7 +222,7 @@ def get_frame_from_workflow_output(
                 np_image = frame_output.numpy_image
 
     # logger.warning since inference pipeline is noisy on INFO level
-    if DEBUG_WEBRTC_PROCESSING_LATENCY and latency is not None:
+    if DEBUG_WEBRTC_PROCESSING_LATENCY and log_latency and latency is not None:
         logger.warning("Processing latency: %ss", latency.total_seconds())
 
     return np_image

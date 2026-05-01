@@ -362,6 +362,8 @@ class VideoFrameProcessor:
         self._received_frames = 0
         self._declared_fps = declared_fps
         self._fps_monitor = sv.FPSMonitor()
+        self._last_input_frame_time_seconds: Optional[float] = None
+        self._last_input_frame_wall_time: Optional[float] = None
         self._stop_processing = False
         self._termination_reason: Optional[str] = None
         self._processing_complete_sent = False
@@ -444,6 +446,12 @@ class VideoFrameProcessor:
             self.track = track
             self._rotation_code = rotation_code
             self._track_ready_event.set()
+
+    @staticmethod
+    def _get_frame_media_time_seconds(frame: VideoFrame) -> Optional[float]:
+        if frame.pts is None or frame.time_base is None:
+            return None
+        return float(frame.pts * frame.time_base)
 
     async def close(self):
         self._track_active = False
@@ -1002,6 +1010,23 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         self._fps_monitor.tick()
         frame_id = self._received_frames
         frame_timestamp = datetime.datetime.now()
+        input_time_seconds = self._get_frame_media_time_seconds(frame)
+        input_delta_ms: Optional[float] = None
+        if (
+            input_time_seconds is not None
+            and self._last_input_frame_time_seconds is not None
+        ):
+            input_delta_ms = (
+                input_time_seconds - self._last_input_frame_time_seconds
+            ) * 1000
+        wall_frame_gap_ms: Optional[float] = None
+        frame_wall_time = time.perf_counter()
+        if self._last_input_frame_wall_time is not None:
+            wall_frame_gap_ms = (
+                frame_wall_time - self._last_input_frame_wall_time
+            ) * 1000
+        self._last_input_frame_time_seconds = input_time_seconds
+        self._last_input_frame_wall_time = frame_wall_time
 
         if self.stream_output is None and frame_id == 1:
             await self._auto_detect_stream_output(frame, frame_id)
@@ -1055,15 +1080,28 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             logger.warning("[RECV] Frame %d errors: %s", frame_id, errors)
 
         if DEBUG_WEBRTC_PROCESSING_LATENCY and (
-            frame_id <= 3 or frame_id % max(1, WEBRTC_TIMING_SAMPLE_EVERY_N) == 0
+            frame_id <= 3
+            or frame_id % max(1, WEBRTC_TIMING_SAMPLE_EVERY_N) == 0
+            or process_ms >= 1000
         ):
             logger.warning(
-                "[WEBRTC_RECV_TIMING] frame=%d input=%dx%d output=%dx%d ack_wait_ms=%.1f track_recv_ms=%.1f process_ms=%.1f data_output_ms=%.1f total_ms=%.1f measured_fps=%.1f",
+                "[WEBRTC_RECV_TIMING] frame=%d input=%dx%d output=%dx%d input_time_s=%s input_delta_ms=%s wall_frame_gap_ms=%s ack_wait_ms=%.1f track_recv_ms=%.1f process_ms=%.1f data_output_ms=%.1f total_ms=%.1f measured_fps=%.1f",
                 frame_id,
                 frame.width,
                 frame.height,
                 new_frame.width,
                 new_frame.height,
+                (
+                    f"{input_time_seconds:.3f}"
+                    if input_time_seconds is not None
+                    else "unknown"
+                ),
+                f"{input_delta_ms:.1f}" if input_delta_ms is not None else "unknown",
+                (
+                    f"{wall_frame_gap_ms:.1f}"
+                    if wall_frame_gap_ms is not None
+                    else "unknown"
+                ),
                 ack_wait_ms,
                 track_recv_ms,
                 process_ms,
