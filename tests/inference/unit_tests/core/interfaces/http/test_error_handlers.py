@@ -2,6 +2,7 @@ import pytest
 
 from inference.core.exceptions import (
     CannotInitialiseModelDueToInputSizeError,
+    ModelDeploymentNotSupportedError,
     RoboflowAPIUsagePausedError,
 )
 from inference.core.interfaces.http.error_handlers import (
@@ -143,6 +144,29 @@ async def test_with_route_exceptions_async_when_cannot_initialise_model_due_to_i
 
     assert resp.status_code == 507
     assert "restrictions" in resp.body.decode().lower()
+
+
+def test_with_route_exceptions_when_model_deployment_not_supported_error_raised():
+    @with_route_exceptions
+    def my_route():
+        raise ModelDeploymentNotSupportedError("fine-tuned SAM3 disabled")
+
+    resp = my_route()
+
+    assert resp.status_code == 501
+    assert "fine-tuned sam3 disabled" in resp.body.decode().lower()
+
+
+@pytest.mark.asyncio
+async def test_with_route_exceptions_async_when_model_deployment_not_supported_error_raised():
+    @with_route_exceptions_async
+    async def my_route():
+        raise ModelDeploymentNotSupportedError("fine-tuned SAM3 disabled")
+
+    resp = await my_route()
+
+    assert resp.status_code == 501
+    assert "fine-tuned sam3 disabled" in resp.body.decode().lower()
 
 
 def test_with_route_exceptions_when_model_restricted_error_raised():

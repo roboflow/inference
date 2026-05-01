@@ -127,6 +127,10 @@ class ServiceConfigurationError(Exception):
     pass
 
 
+class ModelDeploymentNotSupportedError(ServiceConfigurationError):
+    pass
+
+
 class MissingDefaultModelError(ServiceConfigurationError):
     pass
 
