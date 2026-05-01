@@ -138,7 +138,9 @@ class RoboflowInferenceModel(Model):
         self.dataset_id, self.version_id = get_model_id_chunks(model_id=model_id)
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
-        self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
+        self.cache_dir = get_cache_dir(
+            model_id=self.endpoint, cache_dir_root=cache_dir_root
+        )
         self.keypoints_metadata: Optional[dict] = None
         initialise_cache(model_id=self.endpoint)
 

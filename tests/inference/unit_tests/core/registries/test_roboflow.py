@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from inference.core.cache import model_artifacts
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import ModelType, TaskType
 from inference.core.exceptions import (
@@ -211,6 +212,39 @@ def test_save_model_metadata_in_cache(
     assert result["project_task_type"] == "instance-segmentation"
     construct_model_type_cache_path_mock.assert_called_once_with(
         dataset_id="some", version_id="1"
+    )
+
+
+def test_save_and_load_model_metadata_in_cache_when_instant_model_slug_is_long(
+    empty_local_dir: str,
+) -> None:
+    # given
+    long_model_slug = "find-" + ("class-" * 60) + "instant-1"
+    dataset_id = f"huizen/{long_model_slug}"
+
+    # when
+    with mock.patch.object(
+        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
+    ), mock.patch.object(roboflow, "LAMBDA", True):
+        save_model_metadata_in_cache(
+            dataset_id=dataset_id,
+            version_id=None,
+            project_task_type="object-detection",
+            model_type="yolov8n",
+        )
+        _in_process_metadata_cache.cache.clear()
+        result = get_model_metadata_from_cache(dataset_id=dataset_id, version_id=None)
+        cache_path = roboflow.construct_model_type_cache_path(
+            dataset_id=dataset_id, version_id=None
+        )
+
+    # then
+    assert result == ("object-detection", "yolov8n")
+    assert os.path.isfile(cache_path)
+    assert all(
+        len(os.fsencode(path_segment)) <= 255
+        for path_segment in cache_path.split(os.sep)
+        if path_segment
     )
 
 

@@ -4,13 +4,15 @@ Used by the air-gapped workflow builder to enumerate what is available for
 offline workflow construction.
 """
 
-import hashlib
 import json
 import logging
 import os
-import re
 from typing import Any, Dict, List, Optional
 
+from inference.core.cache.model_artifacts import (
+    get_cache_dir,
+    slugify_model_id_to_cache_key,
+)
 from inference.core.env import MODEL_CACHE_DIR, USE_INFERENCE_MODELS
 from inference.core.roboflow_api import MODEL_TYPE_KEY, PROJECT_TASK_TYPE_KEY
 
@@ -26,14 +28,7 @@ def _slugify_model_id(model_id: str) -> str:
     Must stay in sync with
     ``inference_models.models.auto_loaders.core.slugify_model_id_to_os_safe_format``.
     """
-    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", model_id)
-    slug = re.sub(r"[_-]{2,}", "-", slug)
-    if not slug:
-        slug = "special-char-only-model-id"
-    if len(slug) > 48:
-        slug = slug[:48]
-    digest = hashlib.blake2s(model_id.encode("utf-8"), digest_size=4).hexdigest()
-    return f"{slug}-{digest}"
+    return slugify_model_id_to_cache_key(model_id=model_id)
 
 
 def _has_non_hidden_children(path: str) -> bool:
@@ -65,14 +60,16 @@ def is_model_cached(model_id: str) -> bool:
     """
     if not USE_INFERENCE_MODELS:
         # Only check the traditional layout when inference-models is disabled.
-        traditional_path = os.path.join(MODEL_CACHE_DIR, model_id)
+        traditional_path = get_cache_dir(
+            model_id=model_id, cache_dir_root=MODEL_CACHE_DIR
+        )
         return os.path.isdir(traditional_path) and _has_non_hidden_children(
             traditional_path
         )
 
     # When inference-models is enabled, check both layouts — models cached
     # before the migration still sit in the traditional tree.
-    traditional_path = os.path.join(MODEL_CACHE_DIR, model_id)
+    traditional_path = get_cache_dir(model_id=model_id, cache_dir_root=MODEL_CACHE_DIR)
     if os.path.isdir(traditional_path) and _has_non_hidden_children(traditional_path):
         return True
 

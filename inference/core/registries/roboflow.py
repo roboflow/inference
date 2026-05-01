@@ -5,6 +5,7 @@ from cachetools.func import ttl_cache
 
 from inference.core.cache import cache
 from inference.core.cache.lru_cache import LRUCache
+from inference.core.cache.model_artifacts import get_cache_dir
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import (
     DatasetID,
@@ -16,7 +17,6 @@ from inference.core.entities.types import (
 from inference.core.env import (
     CACHE_METADATA_LOCK_TIMEOUT,
     LAMBDA,
-    MODEL_CACHE_DIR,
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
@@ -414,7 +414,6 @@ def _save_model_metadata_in_cache(
 def construct_model_type_cache_path(
     dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
 ) -> str:
-    cache_dir = os.path.join(
-        MODEL_CACHE_DIR, dataset_id, version_id if version_id else ""
-    )
+    model_id = dataset_id if version_id is None else f"{dataset_id}/{version_id}"
+    cache_dir = get_cache_dir(model_id=model_id)
     return os.path.join(cache_dir, "model_type.json")
