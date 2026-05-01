@@ -21,6 +21,31 @@ BROWSER_INPUT_REMB_START_BITRATE = 6_000_000
 BROWSER_INPUT_REMB_MIN_BITRATE = 2_000_000
 BROWSER_INPUT_REMB_MAX_BITRATE = 12_000_000
 
+H264_NVENC_ENCODER = "h264_nvenc"
+H264_NVENC_OPTION_SETS = (
+    {
+        "preset": "p1",
+        "tune": "ull",
+        "rc": "cbr",
+        "zerolatency": "1",
+        "delay": "0",
+        "bf": "0",
+    },
+    {
+        "preset": "llhp",
+        "rc": "cbr",
+        "zerolatency": "1",
+        "delay": "0",
+        "bf": "0",
+    },
+    {
+        "preset": "fast",
+        "rc": "cbr",
+        "bf": "0",
+    },
+    {},
+)
+
 
 def _apply_codec_bitrates(
     module: Any,
@@ -53,6 +78,7 @@ def apply_aiortc_bitrate_limits() -> None:
     )
     _patch_encoder_bitrate_logging(h264.H264Encoder, "h264")
     _patch_encoder_bitrate_logging(vpx.Vp8Encoder, "vp8")
+    _patch_h264_nvenc_encoder(h264)
     _patch_encoder_timing_logging(h264.H264Encoder, "h264")
     _patch_encoder_timing_logging(vpx.Vp8Encoder, "vp8")
     _patch_receiver_remb_estimator()
@@ -92,6 +118,129 @@ def _patch_encoder_bitrate_logging(encoder_cls: Any, codec_name: str) -> None:
 
     encoder_cls.target_bitrate = property(getter, target_bitrate)
     encoder_cls._roboflow_bitrate_logging_patched = True
+
+
+def _patch_h264_nvenc_encoder(h264_module: Any) -> None:
+    encoder_cls = h264_module.H264Encoder
+    if getattr(encoder_cls, "_roboflow_h264_nvenc_patched", False):
+        return
+
+    original_encode_frame = encoder_cls._encode_frame
+
+    def _encode_frame(self: Any, frame: Any, force_keyframe: bool) -> Any:
+        if self.codec and _h264_codec_needs_recreate(self, frame):
+            self.buffer_data = b""
+            self.buffer_pts = None
+            self.codec = None
+
+        if force_keyframe:
+            frame.pict_type = h264_module.av.video.frame.PictureType.I
+        else:
+            frame.pict_type = h264_module.av.video.frame.PictureType.NONE
+
+        if self.codec is None:
+            try:
+                self.codec, options = _create_h264_nvenc_context(
+                    h264_module,
+                    frame,
+                    self.target_bitrate,
+                )
+                LOGGER.warning(
+                    "[WEBRTC_NVENC] active encoder=%s input=%sx%s target_bps=%s options=%s",
+                    H264_NVENC_ENCODER,
+                    frame.width,
+                    frame.height,
+                    self.target_bitrate,
+                    options,
+                )
+            except Exception as error:
+                self.codec = None
+                LOGGER.warning(
+                    "[WEBRTC_NVENC] unavailable falling_back=libx264 input=%sx%s target_bps=%s error=%r",
+                    frame.width,
+                    frame.height,
+                    self.target_bitrate,
+                    error,
+                )
+                yield from original_encode_frame(self, frame, force_keyframe)
+                return
+
+        data_to_send = b""
+        try:
+            for package in self.codec.encode(frame):
+                data_to_send += bytes(package)
+        except Exception as error:
+            self.buffer_data = b""
+            self.buffer_pts = None
+            self.codec = None
+            LOGGER.warning(
+                "[WEBRTC_NVENC] encode_failed falling_back=libx264 input=%sx%s target_bps=%s error=%r",
+                frame.width,
+                frame.height,
+                self.target_bitrate,
+                error,
+            )
+            yield from original_encode_frame(self, frame, force_keyframe)
+            return
+
+        if data_to_send:
+            yield from self._split_bitstream(data_to_send)
+
+    encoder_cls._encode_frame = _encode_frame
+    encoder_cls._roboflow_h264_nvenc_patched = True
+    LOGGER.warning("Applied aiortc WebRTC H.264 NVENC preference")
+
+
+def _h264_codec_needs_recreate(encoder: Any, frame: Any) -> bool:
+    codec_bitrate = getattr(encoder.codec, "bit_rate", 0) or 0
+    target_bitrate = encoder.target_bitrate
+    bitrate_changed = (
+        codec_bitrate <= 0
+        or abs(target_bitrate - codec_bitrate) / codec_bitrate > 0.1
+    )
+    return (
+        frame.width != encoder.codec.width
+        or frame.height != encoder.codec.height
+        or bitrate_changed
+    )
+
+
+def _create_h264_nvenc_context(
+    h264_module: Any,
+    frame: Any,
+    target_bitrate: int,
+) -> Any:
+    last_error = None
+    for options in H264_NVENC_OPTION_SETS:
+        try:
+            codec = h264_module.av.CodecContext.create(H264_NVENC_ENCODER, "w")
+            codec.width = frame.width
+            codec.height = frame.height
+            codec.bit_rate = target_bitrate
+            codec.pix_fmt = "yuv420p"
+            codec.framerate = h264_module.fractions.Fraction(
+                h264_module.MAX_FRAME_RATE,
+                1,
+            )
+            codec.time_base = h264_module.fractions.Fraction(
+                1,
+                h264_module.MAX_FRAME_RATE,
+            )
+            codec.options = dict(options)
+            try:
+                codec.profile = "Baseline"
+            except Exception as profile_error:
+                LOGGER.warning(
+                    "[WEBRTC_NVENC] profile_unavailable encoder=%s error=%r",
+                    H264_NVENC_ENCODER,
+                    profile_error,
+                )
+            codec.open()
+            return codec, options
+        except Exception as error:
+            last_error = error
+
+    raise RuntimeError(f"Could not open {H264_NVENC_ENCODER}: {last_error!r}")
 
 
 def _patch_encoder_timing_logging(encoder_cls: Any, codec_name: str) -> None:
