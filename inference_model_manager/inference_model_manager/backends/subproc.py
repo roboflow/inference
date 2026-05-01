@@ -383,6 +383,11 @@ def _process_slots(
     is_npy: list[bool] = []
     for slot_id, _, _ in batch:
         hdr = pool.read_header(slot_id)
+        # TODO(debug): TEMPORARY — remove after diagnosing 0-byte slot bug
+        log.error(
+            "[worker] slot=%d hdr.input_size=%d hdr.status=%d (TEMP DEBUG)",
+            slot_id, hdr.input_size, hdr.status,
+        )
         mv = pool.data_memoryview(slot_id)[: hdr.input_size]
         mvs.append(mv)
         is_npy.append(bytes(mv[:6]) == _NP_MAGIC)
