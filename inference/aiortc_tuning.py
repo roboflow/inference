@@ -53,6 +53,8 @@ def apply_aiortc_bitrate_limits() -> None:
     )
     _patch_encoder_bitrate_logging(h264.H264Encoder, "h264")
     _patch_encoder_bitrate_logging(vpx.Vp8Encoder, "vp8")
+    _patch_encoder_timing_logging(h264.H264Encoder, "h264")
+    _patch_encoder_timing_logging(vpx.Vp8Encoder, "vp8")
     _patch_receiver_remb_estimator()
 
 
@@ -90,6 +92,52 @@ def _patch_encoder_bitrate_logging(encoder_cls: Any, codec_name: str) -> None:
 
     encoder_cls.target_bitrate = property(getter, target_bitrate)
     encoder_cls._roboflow_bitrate_logging_patched = True
+
+
+def _patch_encoder_timing_logging(encoder_cls: Any, codec_name: str) -> None:
+    if getattr(encoder_cls, "_roboflow_encode_timing_patched", False):
+        return
+
+    original_encode = encoder_cls.encode
+
+    def encode(self: Any, frame: Any, force_keyframe: bool = False) -> Any:
+        started_at = time.perf_counter()
+        payloads, timestamp = original_encode(self, frame, force_keyframe)
+        encode_ms = (time.perf_counter() - started_at) * 1000
+
+        frame_count = getattr(self, "_roboflow_encode_frame_count", 0) + 1
+        self._roboflow_encode_frame_count = frame_count
+        payload_bytes = sum(len(payload) for payload in payloads)
+        av_codec = getattr(self, "codec", None)
+        codec_encoder = getattr(av_codec, "name", None) or "uninitialized"
+        codec_bitrate = getattr(av_codec, "bit_rate", None)
+        target_bitrate = getattr(self, "target_bitrate", None)
+        width = getattr(frame, "width", None)
+        height = getattr(frame, "height", None)
+
+        if frame_count <= 3 or frame_count % 30 == 0 or encode_ms >= 50.0:
+            LOGGER.warning(
+                "[WEBRTC_ENCODE_TIMING] codec=%s encoder=%s frame=%d input=%sx%s "
+                "force_keyframe=%s encode_ms=%.1f payloads=%d payload_bytes=%d "
+                "target_bps=%s codec_bps=%s",
+                codec_name,
+                codec_encoder,
+                frame_count,
+                width,
+                height,
+                force_keyframe,
+                encode_ms,
+                len(payloads),
+                payload_bytes,
+                target_bitrate,
+                codec_bitrate,
+            )
+
+        return payloads, timestamp
+
+    encoder_cls.encode = encode
+    encoder_cls._roboflow_encode_timing_patched = True
+    LOGGER.warning("Applied aiortc WebRTC encode timing for codec=%s", codec_name)
 
 
 def _patch_receiver_remb_estimator() -> None:
