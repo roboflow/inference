@@ -1,0 +1,45 @@
+[project]
+name = "inference-server"
+version = "0.1.0"
+description = "FastAPI inference server — orchestrated client for inference-model-manager"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "inference-model-manager",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pyzmq>=26.0.0,<28.0.0",
+  "orjson>=3.9.0",
+  "filetype>=1.2.0",
+  "aiohttp>=3.9.0",
+  "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+# Runtime extras — each pulls the matching inference-model-manager (→ inference-models) variant
+torch-cpu = ["inference-model-manager[torch-cpu]"]
+torch-cu118 = ["inference-model-manager[torch-cu118]"]
+torch-cu124 = ["inference-model-manager[torch-cu124]"]
+torch-cu126 = ["inference-model-manager[torch-cu126]"]
+torch-cu128 = ["inference-model-manager[torch-cu128]"]
+torch-cu130 = ["inference-model-manager[torch-cu130]"]
+torch-jp6-cu126 = ["inference-model-manager[torch-jp6-cu126]"]
+onnx-cpu = ["inference-model-manager[onnx-cpu]"]
+onnx-cu118 = ["inference-model-manager[onnx-cu118]"]
+onnx-cu12 = ["inference-model-manager[onnx-cu12]"]
+onnx-jp6-cu126 = ["inference-model-manager[onnx-jp6-cu126]"]
+mediapipe = ["inference-model-manager[mediapipe]"]
+trt10 = ["inference-model-manager[trt10]"]
+cuda = ["inference-model-manager[cuda]"]
+test = [
+  "pytest>=8.0.0",
+  "pytest-timeout>=2.3.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["inference_server*"]
+exclude = ["tests*"]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"

@@ -23,7 +23,6 @@ dependencies = [
   "rf-clip==1.1",
   "python-doctr[torch]>=1.0.0",
   "packaging>=24.0.0",
-  "rich>=13.0.0,<15.0.0",
   "pydantic>=2.11.7,<3.0.0",
   "filelock>=3.20.3,<4.0.0",
   "rich>=14.1.0,<15.0.0",
@@ -150,14 +149,18 @@ torch = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
+  { index = "torch-cu126", extra = "torch-cu126" },
   { index = "torch-cu128", extra = "torch-cu128" },
+  { index = "torch-cu130", extra = "torch-cu130" },
   { index = "jp6-cu126", extra = "torch-jp6-cu126" },
 ]
 torchvision = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
+  { index = "torch-cu126", extra = "torch-cu126" },
   { index = "torch-cu128", extra = "torch-cu128" },
+  { index = "torch-cu130", extra = "torch-cu130" },
   { index = "jp6-cu126", extra = "torch-jp6-cu126" },
 ]
 

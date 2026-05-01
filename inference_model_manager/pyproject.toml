@@ -1,0 +1,47 @@
+[project]
+name = "inference-model-manager"
+version = "0.1.0"
+description = "Orchestrated model management: SHM pools, subprocess workers, ZMQ routing, batched GPU inference"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "inference-models",
+  "numpy",
+  "pyzmq>=26.0.0,<28.0.0",
+  "psutil>=5.9.0",
+  "pillow-heif>=0.18.0",
+  "imagecodecs",
+]
+
+[project.optional-dependencies]
+# Runtime extras — each pulls the matching inference-models variant
+torch-cpu = ["inference-models[torch-cpu]"]
+torch-cu118 = ["inference-models[torch-cu118]", "inference-model-manager[cuda]"]
+torch-cu124 = ["inference-models[torch-cu124]", "inference-model-manager[cuda]"]
+torch-cu126 = ["inference-models[torch-cu126]", "inference-model-manager[cuda]"]
+torch-cu128 = ["inference-models[torch-cu128]", "inference-model-manager[cuda]"]
+torch-cu130 = ["inference-models[torch-cu130]", "inference-model-manager[cuda]"]
+torch-jp6-cu126 = ["inference-models[torch-jp6-cu126]", "inference-model-manager[cuda]"]
+onnx-cpu = ["inference-models[onnx-cpu]"]
+onnx-cu118 = ["inference-models[onnx-cu118]", "inference-model-manager[cuda]"]
+onnx-cu12 = ["inference-models[onnx-cu12]", "inference-model-manager[cuda]"]
+onnx-jp6-cu126 = ["inference-models[onnx-jp6-cu126]", "inference-model-manager[cuda]"]
+mediapipe = ["inference-models[mediapipe]"]
+trt10 = ["inference-models[trt10]", "inference-model-manager[cuda]"]
+cuda = [
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "nvidia-ml-py>=12.0.0",
+]
+test = [
+  "pytest>=8.0.0",
+  "pytest-timeout>=2.3.0",
+  "pytest-xdist>=3.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["inference_model_manager*"]
+exclude = ["tests*"]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"

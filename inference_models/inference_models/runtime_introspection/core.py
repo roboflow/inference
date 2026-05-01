@@ -445,7 +445,7 @@ def get_onnxruntime_info() -> Optional[Tuple[Version, Set[str]]]:
 
         available_providers = onnxruntime.get_available_providers()
         return Version(onnxruntime.__version__), available_providers
-    except ImportError:
+    except (ImportError, AttributeError):
         return None
 
 
