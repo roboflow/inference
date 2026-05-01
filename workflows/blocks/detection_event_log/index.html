@@ -1,0 +1,970 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scalable, on-device computer vision deployment.">
+      
+      
+        <meta name="author" content="Roboflow">
+      
+      
+        <link rel="canonical" href="https://inference.roboflow.com/workflows/blocks/detection_event_log/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../favicon.png">
+      <meta name="generator" content="zensical-0.0.33">
+    
+    
+      
+        <title>Detection Event Log - Roboflow Inference</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.53a7feaf.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.dfe2e883.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7Cui-monospace:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"ui-monospace"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../styles/cookbooks.css">
+    
+      <link rel="stylesheet" href="../../../styles.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+  
+
+
+  
+  
+
+<script id="__analytics">function __md_analytics(){function e(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],e("js",new Date),e("config","G-T0CED2YY8K"),document.addEventListener("DOMContentLoaded",(function(){document.forms.search&&document.forms.search.query.addEventListener("blur",(function(){this.value&&e("event","search",{search_term:this.value})}));document$.subscribe((function(){var t=document.forms.feedback;if(void 0!==t)for(var a of t.querySelectorAll("[type=submit]"))a.addEventListener("click",(function(a){a.preventDefault();var n=document.location.pathname,d=this.getAttribute("data-md-value");e("event","feedback",{page:n,data:d}),t.firstElementChild.disabled=!0;var r=t.querySelector(".md-feedback__note [data-md-value='"+d+"']");r&&(r.hidden=!1)})),t.hidden=!1})),location$.subscribe((function(t){e("config","G-T0CED2YY8K",{page_path:t.pathname})}))}));var t=document.createElement("script");t.async=!0,t.src="https://www.googletagmanager.com/gtag/js?id=G-T0CED2YY8K",document.getElementById("__analytics").insertAdjacentElement("afterEnd",t)}</script>
+  
+    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
+  
+
+    
+    
+
+<link href="https://cdnassets.roboflow.com/_vendor/fontawesome/6.4.0/css/all.min.css" rel="stylesheet">
+<link href="https://cdnassets.roboflow.com/_vendor/fontawesome/kit/custom-icons.css" rel="stylesheet">
+
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#detection-event-log" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Roboflow Inference" class="md-header__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../../roboflow-logomark-color.svg" alt="Roboflow Inference">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Roboflow Inference
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Detection Event Log
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search" aria-label="Search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../start/overview/" class="md-tabs__link">
+          
+  
+  Start
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../quickstart/run_a_model/" class="md-tabs__link">
+          
+  
+  Models
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../about/" class="md-tabs__link">
+          
+  
+  Workflows
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/overview/" class="md-tabs__link">
+          
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+
+        
+      
+
+
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Roboflow Inference" class="md-nav__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../../roboflow-logomark-color.svg" alt="Roboflow Inference">
+
+    </a>
+    Roboflow Inference
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../start/overview/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../quickstart/run_a_model/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../about/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../reference/overview/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#type-identifier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type identifier
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#properties" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Properties
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#available-connections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Connections
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#input-and-output-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Input and Output Bindings
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+
+
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+    <a href="https://github.com/roboflow/inference/tree/main/docs/workflows/blocks/detection_event_log.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-file-pen" viewBox="0 0 24 24"><path d="M12.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v9.34"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10.378 12.622a1 1 0 0 1 3 3.003L8.36 20.637a2 2 0 0 1-.854.506l-2.867.837a.5.5 0 0 1-.62-.62l.836-2.869a2 2 0 0 1 .506-.853z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="detection-event-log">Detection Event Log<a class="headerlink" href="#detection-event-log" title="Permanent link">&para;</a></h1>
+<details>
+<summary>Class: <code>DetectionEventLogBlockV1</code></summary>
+<p>Source:
+<a target="_blank" href="https://github.com/roboflow/inference/blob/main/inference/core/workflows/core_steps/analytics/detection_event_log/v1.py">inference.core.workflows.core_steps.analytics.detection_event_log.v1.DetectionEventLogBlockV1</a></p>
+</details>
+<p>This block maintains a log of detection events from tracked objects. For each tracked object it records: class name, first and last seen frame numbers, absolute wall-clock timestamps (Unix epoch floats derived from frame_timestamp metadata, or time.time() as fallback), and relative timestamps in seconds since the video started. Objects must be seen for a minimum number of frames (frame_threshold) before being moved from 'pending' to 'logged' status. Stale events (not seen for stale_frames frames) are removed during periodic cleanup (every flush_interval frames). When a logged event goes stale it is emitted in the complete_events output, which contains the full event data for objects that were tracked long enough to be logged and have since left the scene. The reference_timestamp parameter is deprecated and no longer used.</p>
+<h3 id="type-identifier">Type identifier<a class="headerlink" href="#type-identifier" title="Permanent link">&para;</a></h3>
+<p>Use the following identifier in step <code>"type"</code> field: <code>roboflow_core/detection_event_log@v1</code>to add the block as
+as step in your workflow.</p>
+<h3 id="properties">Properties<a class="headerlink" href="#properties" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;"><strong>Name</strong></th>
+<th style="text-align: left;"><strong>Type</strong></th>
+<th style="text-align: left;"><strong>Description</strong></th>
+<th style="text-align: left;">Refs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>name</code></td>
+<td style="text-align: left;"><code>str</code></td>
+<td style="text-align: left;">Enter a unique identifier for this step..</td>
+<td style="text-align: left;">❌</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>frame_threshold</code></td>
+<td style="text-align: left;"><code>int</code></td>
+<td style="text-align: left;">Number of frames an object must be seen before being logged..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>flush_interval</code></td>
+<td style="text-align: left;"><code>int</code></td>
+<td style="text-align: left;">How often (in frames) to run the cleanup operation for stale events..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>stale_frames</code></td>
+<td style="text-align: left;"><code>int</code></td>
+<td style="text-align: left;">Remove events that haven't been seen for this many frames..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>reference_timestamp</code></td>
+<td style="text-align: left;"><code>float</code></td>
+<td style="text-align: left;">Deprecated, no longer used. Absolute timestamps are now taken directly from frame_timestamp metadata (or time.time() as fallback)..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>fallback_fps</code></td>
+<td style="text-align: left;"><code>float</code></td>
+<td style="text-align: left;">Fallback FPS to use when video metadata does not provide FPS information. Used to calculate relative timestamps..</td>
+<td style="text-align: left;">✅</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>Refs</strong> column marks possibility to parametrise the property with dynamic values available 
+in <code>workflow</code> runtime. See <em>Bindings</em> for more info.</p>
+<h3 data-search-exclude="data-search-exclude" id="available-connections">Available Connections<a class="headerlink" href="#available-connections" title="Permanent link">&para;</a></h3>
+<details class="tip">
+<summary>Compatible Blocks</summary>
+<p>Check what blocks you can connect to <code>Detection Event Log</code> in version <code>v1</code>.</p>
+<ul>
+<li>inputs: <a href="../detections_stitch/"><code>Detections Stitch</code></a>, <a href="../detections_stabilizer/"><code>Detections Stabilizer</code></a>, <a href="../seg_preview/"><code>Seg Preview</code></a>, <a href="../detections_filter/"><code>Detections Filter</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../dynamic_zone/"><code>Dynamic Zone</code></a>, <a href="../mask_edge_snap/"><code>Mask Edge Snap</code></a>, <a href="../ocr_model/"><code>OCR Model</code></a>, <a href="../gaze_detection/"><code>Gaze Detection</code></a>, <a href="../google_vision_ocr/"><code>Google Vision OCR</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../timein_zone/"><code>Time in Zone</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../easy_ocr/"><code>EasyOCR</code></a>, <a href="../detections_combine/"><code>Detections Combine</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../motion_detection/"><code>Motion Detection</code></a>, <a href="../cosine_similarity/"><code>Cosine Similarity</code></a>, <a href="../sam2_video_tracker/"><code>SAM2 Video Tracker</code></a>, <a href="../detection_event_log/"><code>Detection Event Log</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../byte_track_tracker/"><code>ByteTrack Tracker</code></a>, <a href="../bounding_rectangle/"><code>Bounding Rectangle</code></a>, <a href="../vlm_as_detector/"><code>VLM As Detector</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../detections_consensus/"><code>Detections Consensus</code></a>, <a href="../detections_classes_replacement/"><code>Detections Classes Replacement</code></a>, <a href="../timein_zone/"><code>Time in Zone</code></a>, <a href="../detections_merge/"><code>Detections Merge</code></a>, <a href="../perspective_correction/"><code>Perspective Correction</code></a>, <a href="../overlap_filter/"><code>Overlap Filter</code></a>, <a href="../velocity/"><code>Velocity</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../identify_changes/"><code>Identify Changes</code></a>, <a href="../camera_focus/"><code>Camera Focus</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../yolo_world_model/"><code>YOLO-World Model</code></a>, <a href="../detection_offset/"><code>Detection Offset</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="../vlm_as_detector/"><code>VLM As Detector</code></a>, <a href="../detections_list_roll_up/"><code>Detections List Roll-Up</code></a>, <a href="../template_matching/"><code>Template Matching</code></a>, <a href="../mask_area_measurement/"><code>Mask Area Measurement</code></a>, <a href="../dynamic_crop/"><code>Dynamic Crop</code></a>, <a href="../sort_tracker/"><code>SORT Tracker</code></a>, <a href="../per_class_confidence_filter/"><code>Per-Class Confidence Filter</code></a>, <a href="../moondream2/"><code>Moondream2</code></a>, <a href="../camera_focus/"><code>Camera Focus</code></a>, <a href="../segment_anything2_model/"><code>Segment Anything 2 Model</code></a>, <a href="../detections_transformation/"><code>Detections Transformation</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a>, <a href="../timein_zone/"><code>Time in Zone</code></a>, <a href="../ocsort_tracker/"><code>OC-SORT Tracker</code></a>, <a href="../ptz_tracking(onvif)/"><code>PTZ Tracking (ONVIF)</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a>, <a href="../sam3/"><code>SAM 3</code></a></li>
+<li>outputs: <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../line_counter_visualization/"><code>Line Counter Visualization</code></a>, <a href="../mask_edge_snap/"><code>Mask Edge Snap</code></a>, <a href="../image_slicer/"><code>Image Slicer</code></a>, <a href="../distance_measurement/"><code>Distance Measurement</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../color_visualization/"><code>Color Visualization</code></a>, <a href="../bounding_rectangle/"><code>Bounding Rectangle</code></a>, <a href="../ellipse_visualization/"><code>Ellipse Visualization</code></a>, <a href="../byte_track_tracker/"><code>ByteTrack Tracker</code></a>, <a href="../polygon_visualization/"><code>Polygon Visualization</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../detections_consensus/"><code>Detections Consensus</code></a>, <a href="../detections_classes_replacement/"><code>Detections Classes Replacement</code></a>, <a href="../webhook_sink/"><code>Webhook Sink</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="../trace_visualization/"><code>Trace Visualization</code></a>, <a href="../camera_focus/"><code>Camera Focus</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../size_measurement/"><code>Size Measurement</code></a>, <a href="../image_threshold/"><code>Image Threshold</code></a>, <a href="../heatmap_visualization/"><code>Heatmap Visualization</code></a>, <a href="../sort_tracker/"><code>SORT Tracker</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="../halo_visualization/"><code>Halo Visualization</code></a>, <a href="../detections_transformation/"><code>Detections Transformation</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a>, <a href="../dot_visualization/"><code>Dot Visualization</code></a>, <a href="../path_deviation/"><code>Path Deviation</code></a>, <a href="../twilio_sms_notification/"><code>Twilio SMS Notification</code></a>, <a href="../model_monitoring_inference_aggregator/"><code>Model Monitoring Inference Aggregator</code></a>, <a href="../roboflow_dataset_upload/"><code>Roboflow Dataset Upload</code></a>, <a href="../dynamic_zone/"><code>Dynamic Zone</code></a>, <a href="../pixelate_visualization/"><code>Pixelate Visualization</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../twilio_smsmms_notification/"><code>Twilio SMS/MMS Notification</code></a>, <a href="../motion_detection/"><code>Motion Detection</code></a>, <a href="../blur_visualization/"><code>Blur Visualization</code></a>, <a href="../background_subtraction/"><code>Background Subtraction</code></a>, <a href="../text_display/"><code>Text Display</code></a>, <a href="../detections_merge/"><code>Detections Merge</code></a>, <a href="../perspective_correction/"><code>Perspective Correction</code></a>, <a href="../overlap_filter/"><code>Overlap Filter</code></a>, <a href="../line_counter/"><code>Line Counter</code></a>, <a href="../velocity/"><code>Velocity</code></a>, <a href="../bounding_box_visualization/"><code>Bounding Box Visualization</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../stability_ai_inpainting/"><code>Stability AI Inpainting</code></a>, <a href="../polygon_visualization/"><code>Polygon Visualization</code></a>, <a href="../roboflow_vision_events/"><code>Roboflow Vision Events</code></a>, <a href="../label_visualization/"><code>Label Visualization</code></a>, <a href="../grid_visualization/"><code>Grid Visualization</code></a>, <a href="../per_class_confidence_filter/"><code>Per-Class Confidence Filter</code></a>, <a href="../triangle_visualization/"><code>Triangle Visualization</code></a>, <a href="../halo_visualization/"><code>Halo Visualization</code></a>, <a href="../circle_visualization/"><code>Circle Visualization</code></a>, <a href="../segment_anything2_model/"><code>Segment Anything 2 Model</code></a>, <a href="../mask_visualization/"><code>Mask Visualization</code></a>, <a href="../dominant_color/"><code>Dominant Color</code></a>, <a href="../email_notification/"><code>Email Notification</code></a>, <a href="../slack_notification/"><code>Slack Notification</code></a>, <a href="../detections_stabilizer/"><code>Detections Stabilizer</code></a>, <a href="../detections_stitch/"><code>Detections Stitch</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../stability_ai_outpainting/"><code>Stability AI Outpainting</code></a>, <a href="../email_notification/"><code>Email Notification</code></a>, <a href="../identify_outliers/"><code>Identify Outliers</code></a>, <a href="../image_preprocessing/"><code>Image Preprocessing</code></a>, <a href="../detections_combine/"><code>Detections Combine</code></a>, <a href="../object_detection_model/"><code>Object Detection Model</code></a>, <a href="../sam2_video_tracker/"><code>SAM2 Video Tracker</code></a>, <a href="../detection_event_log/"><code>Detection Event Log</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../timein_zone/"><code>Time in Zone</code></a>, <a href="../model_comparison_visualization/"><code>Model Comparison Visualization</code></a>, <a href="../roboflow_custom_metadata/"><code>Roboflow Custom Metadata</code></a>, <a href="../detection_offset/"><code>Detection Offset</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../detections_list_roll_up/"><code>Detections List Roll-Up</code></a>, <a href="../mask_area_measurement/"><code>Mask Area Measurement</code></a>, <a href="../stitch_images/"><code>Stitch Images</code></a>, <a href="../sift_comparison/"><code>SIFT Comparison</code></a>, <a href="../morphological_transformation/"><code>Morphological Transformation</code></a>, <a href="../instance_segmentation_model/"><code>Instance Segmentation Model</code></a>, <a href="../crop_visualization/"><code>Crop Visualization</code></a>, <a href="../florence2_model/"><code>Florence-2 Model</code></a>, <a href="../timein_zone/"><code>Time in Zone</code></a>, <a href="../ocsort_tracker/"><code>OC-SORT Tracker</code></a>, <a href="../sam3/"><code>SAM 3</code></a>, <a href="../icon_visualization/"><code>Icon Visualization</code></a>, <a href="../detections_filter/"><code>Detections Filter</code></a>, <a href="../image_contours/"><code>Image Contours</code></a>, <a href="../keypoint_detection_model/"><code>Keypoint Detection Model</code></a>, <a href="../timein_zone/"><code>Time in Zone</code></a>, <a href="../reference_path_visualization/"><code>Reference Path Visualization</code></a>, <a href="../anthropic_claude/"><code>Anthropic Claude</code></a>, <a href="../pixel_color_count/"><code>Pixel Color Count</code></a>, <a href="../identify_changes/"><code>Identify Changes</code></a>, <a href="../classification_label_visualization/"><code>Classification Label Visualization</code></a>, <a href="../byte_tracker/"><code>Byte Tracker</code></a>, <a href="../absolute_static_crop/"><code>Absolute Static Crop</code></a>, <a href="../image_blur/"><code>Image Blur</code></a>, <a href="../image_slicer/"><code>Image Slicer</code></a>, <a href="../corner_visualization/"><code>Corner Visualization</code></a>, <a href="../dynamic_crop/"><code>Dynamic Crop</code></a>, <a href="../keypoint_detection_model/"><code>Keypoint Detection Model</code></a>, <a href="../keypoint_visualization/"><code>Keypoint Visualization</code></a>, <a href="../qr_code_generator/"><code>QR Code Generator</code></a>, <a href="../morphological_transformation/"><code>Morphological Transformation</code></a>, <a href="../keypoint_detection_model/"><code>Keypoint Detection Model</code></a>, <a href="../background_color_visualization/"><code>Background Color Visualization</code></a>, <a href="../ptz_tracking(onvif)/"><code>PTZ Tracking (ONVIF)</code></a>, <a href="../stitch_ocr_detections/"><code>Stitch OCR Detections</code></a>, <a href="../sift_comparison/"><code>SIFT Comparison</code></a></li>
+</ul>
+</details>
+<h3 id="input-and-output-bindings">Input and Output Bindings<a class="headerlink" href="#input-and-output-bindings" title="Permanent link">&para;</a></h3>
+<p>The available connections depend on its binding kinds. Check what binding kinds 
+<code>Detection Event Log</code> in version <code>v1</code>  has.</p>
+<details class="tip" open="open">
+<summary>Bindings</summary>
+<ul>
+<li>
+<p>input</p>
+<ul>
+<li><code>image</code> (<em><a href="../../kinds/image/"><code>image</code></a></em>): Reference to the image for video metadata (frame number, timestamp)..</li>
+<li><code>detections</code> (<em>Union[<a href="../../kinds/object_detection_prediction/"><code>object_detection_prediction</code></a>, <a href="../../kinds/instance_segmentation_prediction/"><code>instance_segmentation_prediction</code></a>]</em>): Tracked detections from byte tracker (must have tracker_id)..</li>
+<li><code>frame_threshold</code> (<em><a href="../../kinds/integer/"><code>integer</code></a></em>): Number of frames an object must be seen before being logged..</li>
+<li><code>flush_interval</code> (<em><a href="../../kinds/integer/"><code>integer</code></a></em>): How often (in frames) to run the cleanup operation for stale events..</li>
+<li><code>stale_frames</code> (<em><a href="../../kinds/integer/"><code>integer</code></a></em>): Remove events that haven't been seen for this many frames..</li>
+<li><code>reference_timestamp</code> (<em><a href="../../kinds/float/"><code>float</code></a></em>): Deprecated, no longer used. Absolute timestamps are now taken directly from frame_timestamp metadata (or time.time() as fallback)..</li>
+<li><code>fallback_fps</code> (<em><a href="../../kinds/float/"><code>float</code></a></em>): Fallback FPS to use when video metadata does not provide FPS information. Used to calculate relative timestamps..</li>
+</ul>
+</li>
+<li>
+<p>output</p>
+<ul>
+<li><code>event_log</code> (<a href="../../kinds/dictionary/"><code>dictionary</code></a>): Dictionary.</li>
+<li><code>detections</code> (<em>Union[<a href="../../kinds/object_detection_prediction/"><code>object_detection_prediction</code></a>, <a href="../../kinds/instance_segmentation_prediction/"><code>instance_segmentation_prediction</code></a>]</em>): Prediction with detected bounding boxes in form of sv.Detections(...) object if <code>object_detection_prediction</code> or Prediction with detected bounding boxes and segmentation masks in form of sv.Detections(...) object if <code>instance_segmentation_prediction</code>.</li>
+<li><code>total_logged</code> (<a href="../../kinds/integer/"><code>integer</code></a>): Integer value.</li>
+<li><code>total_pending</code> (<a href="../../kinds/integer/"><code>integer</code></a>): Integer value.</li>
+<li><code>complete_events</code> (<a href="../../kinds/dictionary/"><code>dictionary</code></a>): Dictionary.</li>
+</ul>
+</li>
+</ul>
+</details>
+<details class="tip">
+<summary>Example JSON definition of step <code>Detection Event Log</code> in version <code>v1</code></summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;your_step_name_here&gt;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;roboflow_core/detection_event_log@v1&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;image&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;$inputs.image&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;detections&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;$steps.byte_tracker.tracked_detections&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;frame_threshold&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;flush_interval&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;stale_frames&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">150</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;reference_timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1726570875.0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;fallback_fps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.0</span>
+<span class="p">}</span>
+</code></pre></div>
+</details>
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {
+    display: none;
+}
+</style>
+
+<pre><code>
+</code></pre>
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+                
+              </article>
+            </div>
+          
+
+
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Roboflow 2026. All rights reserved.
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/roboflow" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/roboflow" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M549.7 124.1c-6.2-23.7-24.8-42.3-48.3-48.6C458.9 64 288.1 64 288.1 64S117.3 64 74.7 75.5c-23.5 6.3-42 24.9-48.3 48.6C15 167 15 256.4 15 256.4s0 89.4 11.4 132.3c6.3 23.6 24.8 41.5 48.3 47.8C117.3 448 288.1 448 288.1 448s170.8 0 213.4-11.5c23.5-6.3 42-24.2 48.3-47.8 11.4-42.9 11.4-132.3 11.4-132.3s0-89.4-11.4-132.3zM232.2 337.6V175.2l142.7 81.2z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/company/roboflow-ai/mycompany/" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://twitter.com/roboflow" target="_blank" rel="noopener" title="twitter.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M459.4 151.7c.3 4.5.3 9.1.3 13.6 0 138.7-105.6 298.6-298.6 298.6-59.5 0-114.7-17.2-161.1-47.1 8.4 1 16.6 1.3 25.3 1.3 49.1 0 94.2-16.6 130.3-44.8-46.1-1-84.8-31.2-98.1-72.8 6.5 1 13 1.6 19.8 1.6 9.4 0 18.8-1.3 27.6-3.6-48.1-9.7-84.1-52-84.1-103v-1.3c14 7.8 30.2 12.7 47.4 13.3-28.3-18.8-46.8-51-46.8-87.4 0-19.5 5.2-37.4 14.3-53C87.4 130.8 165 172.4 252.1 176.9c-1.6-7.8-2.6-15.9-2.6-24C249.5 95.1 296.3 48 354.4 48c30.2 0 57.5 12.7 76.7 33.1 23.7-4.5 46.5-13.3 66.6-25.3-7.8 24.4-24.4 44.8-46.1 57.8 21.1-2.3 41.6-8.1 60.4-16.2-14.3 20.8-32.2 39.3-52.6 54.3"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["announce.dismiss","content.action.edit","content.code.copy","content.tabs.link","navigation.footer","navigation.indexes","navigation.instant","navigation.instant.prefetch","navigation.instant.preview","navigation.instant.progress","navigation.prune","navigation.tabs","navigation.tabs.sticky","navigation.top","navigation.tracking","optimize","search.share","search.suggest","toc.follow"],"search":"../../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"default":1.0}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.63456bd9.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+      
+        <script src="../../../javascript/init_kapa_widget.js"></script>
+      
+        <script src="../../../javascript/cookbooks.js"></script>
+      
+        <script src="../../../javascript/workflows.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+      
+        <script src="https://unpkg.com/@rive-app/canvas"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+      
+        <script src="../../../assets/home.js"></script>
+      
+        <script src="../../../js/segment.js"></script>
+      
+    
+  </body>
+</html>
