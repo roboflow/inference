@@ -181,6 +181,20 @@ class InferenceConfiguration:
             f"Model task {task_type} is not supported by API v1 client."
         )
 
+    def to_api_v1_query_parameters(self) -> Optional[Dict[str, Any]]:
+        """Extract v1 API query-string parameters from the current configuration.
+
+        Returns:
+            Optional[Dict[str, Any]]: The query parameters, or None if unset.
+        """
+        query = remove_empty_values(
+            {
+                "service_secret": self.service_secret,
+                "countinference": self.count_inference,
+            }
+        )
+        return query or None
+
     def to_object_detection_parameters(self) -> Dict[str, Any]:
         """Convert the current configuration to object detection parameters.
 
