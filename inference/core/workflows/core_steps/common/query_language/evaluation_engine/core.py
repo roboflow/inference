@@ -34,6 +34,7 @@ BINARY_OPERATORS = {
     "(Number) >=": lambda a, b: a >= b,
     "(Number) <": lambda a, b: a < b,
     "(Number) <=": lambda a, b: a <= b,
+    "(Number) in range": lambda a, b: b[0] <= a <= b[1],
     "(String) startsWith": lambda a, b: a.startswith(b),
     "(String) endsWith": lambda a, b: a.endswith(b),
     "(String) contains": lambda a, b: b in a,
