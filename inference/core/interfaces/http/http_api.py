@@ -352,6 +352,7 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
+REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
 
 
 @dataclass(frozen=True)
@@ -487,6 +488,23 @@ def _log_serverless_authorization_denial(
     if workspace_id is not None:
         log_fields["workspace_id"] = workspace_id
     logger.info("Serverless authorization denied", **log_fields)
+
+
+def _log_serverless_request_received(
+    request: Request,
+    request_id: str,
+    execution_id_value: Optional[str],
+) -> None:
+    if not API_LOGGING_ENABLED:
+        return
+    log_fields = {
+        "method": request.method,
+        "path": request.url.path,
+        "request_id": request_id,
+    }
+    if execution_id_value is not None:
+        log_fields["execution_id"] = execution_id_value
+    logger.info(REQUEST_RECEIVED_LOG_MESSAGE, **log_fields)
 
 
 class HttpInterface(BaseInterface):
@@ -687,6 +705,11 @@ class HttpInterface(BaseInterface):
             async def check_authorization_serverless(request: Request, call_next):
                 request_id, execution_id_value = (
                     _prepare_serverless_observability_context(request=request)
+                )
+                _log_serverless_request_received(
+                    request=request,
+                    request_id=request_id,
+                    execution_id_value=execution_id_value,
                 )
                 t1 = time.time()
 
