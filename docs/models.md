@@ -150,10 +150,10 @@ docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-
 docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-5.1.1:latest
 ```
 
-- Run on NVIDIA Jetson with JetPack `6.x`:
+- Run on NVIDIA Jetson with JetPack `6.2`:
 
 ```bash
-docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-6.0.0:latest
+docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-6.2.0:latest
 ```
 
 </details>

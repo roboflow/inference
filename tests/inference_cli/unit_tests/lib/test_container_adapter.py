@@ -284,7 +284,6 @@ def test_jetson_images_table_is_sorted_descending() -> None:
 JETSON_450 = "roboflow/roboflow-inference-server-jetson-4.5.0:latest"
 JETSON_461 = "roboflow/roboflow-inference-server-jetson-4.6.1:latest"
 JETSON_511 = "roboflow/roboflow-inference-server-jetson-5.1.1:latest"
-JETSON_600 = "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
 JETSON_620 = "roboflow/roboflow-inference-server-jetson-6.2.0:latest"
 JETSON_710 = "roboflow/roboflow-inference-server-jetson-7.1.0:latest"
 
@@ -325,9 +324,6 @@ class TestImageForL4t:
             (35, 0, JETSON_511),
             (35, 2, JETSON_511),
             (35, 4, JETSON_511),
-            (36, 0, JETSON_600),
-            (36, 2, JETSON_600),
-            (36, 3, JETSON_600),
             (36, 4, JETSON_620),
             (36, 5, JETSON_620),
             (38, 0, JETSON_710),
@@ -352,8 +348,6 @@ class TestGetJetpackImage:
             ("5", JETSON_511),
             ("5.0", JETSON_511),
             ("5.1.1", JETSON_511),
-            ("6.0", JETSON_600),
-            ("6.1", JETSON_600),
             ("6.2", JETSON_620),
             ("6.2.0", JETSON_620),
             ("7.1", JETSON_710),
