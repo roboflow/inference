@@ -374,7 +374,7 @@ class TestDetectJetson:
 
     @patch.object(container_adapter, "_parse_tegra_release", return_value=None)
     @patch.object(
-        container_adapter, "_get_jetpack_version_from_dpkg", return_value="6.0"
+        container_adapter, "_get_jetpack_version_from_dpkg", return_value="6.2"
     )
     def test_falls_back_to_dpkg(
         self, _dpkg_mock: MagicMock, _tegra_mock: MagicMock
@@ -382,7 +382,7 @@ class TestDetectJetson:
         result = _detect_jetson()
         assert result is not None
         image, source = result
-        assert image == JETSON_600
+        assert image == JETSON_620
         assert "dpkg" in source
 
     @patch.object(container_adapter, "_parse_tegra_release", return_value=None)
