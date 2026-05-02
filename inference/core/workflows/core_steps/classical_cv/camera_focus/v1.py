@@ -126,6 +126,37 @@ class CameraFocusManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
+def _to_grayscale_uint8_for_brenner(input_image: np.ndarray) -> np.ndarray:
+    x = np.ascontiguousarray(input_image)
+    if x.ndim == 3:
+        channels = x.shape[2]
+        if channels == 1:
+            x = x[:, :, 0]
+        elif channels == 3:
+            x = cv2.cvtColor(x, cv2.COLOR_BGR2GRAY)
+        elif channels == 4:
+            x = cv2.cvtColor(x, cv2.COLOR_BGRA2GRAY)
+        elif channels == 2:
+            x = np.mean(x, axis=2)
+        else:
+            raise ValueError(
+                f"Unsupported channel count for Brenner measure: {channels}"
+            )
+    if x.ndim != 2:
+        raise ValueError(f"Brenner measure expects a 2D grayscale image, got shape {x.shape}")
+    if x.dtype == np.uint8:
+        return x
+    if np.issubdtype(x.dtype, np.floating):
+        x = np.nan_to_num(x, nan=0.0, posinf=255.0, neginf=0.0)
+        return np.clip(x, 0, 255).astype(np.uint8)
+    if x.dtype == np.uint16:
+        return (x >> 8).astype(np.uint8)
+    info = np.iinfo(x.dtype)
+    denom = max(int(info.max) - int(info.min), 1)
+    scaled = (x.astype(np.float64) - float(info.min)) / float(denom) * 255.0
+    return np.clip(scaled, 0, 255).astype(np.uint8)
+
+
 class CameraFocusBlockV1(WorkflowBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -158,7 +189,7 @@ def calculate_brenner_measure(
     Parameters
     ----------
     input_image : np.ndarray
-        The input image in grayscale.
+        Image as HxW grayscale or HxWxC (1/2/3/4 channels); normalized to grayscale uint8 internally.
     text_color : Tuple[int, int, int], optional
         The color of the text displaying the Brenner value, in BGR format. Default is white (255, 255, 255).
     text_thickness : int, optional
@@ -169,12 +200,10 @@ def calculate_brenner_measure(
     Tuple[np.ndarray, float]
         The Brenner image and the Brenner value.
     """
-    # Convert image to grayscale if it has 3 channels
-    if len(input_image.shape) == 3:
-        input_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2GRAY)
+    gray_uint8 = _to_grayscale_uint8_for_brenner(input_image)
 
     # Convert image to 16-bit integer format
-    converted_image = input_image.astype(np.int16)
+    converted_image = gray_uint8.astype(np.int16)
 
     # Get the dimensions of the image
     height, width = converted_image.shape
@@ -195,7 +224,11 @@ def calculate_brenner_measure(
     focus_measure = np.max((horizontal_diff, vertical_diff), axis=0) ** 2
 
     # Convert focus measure matrix to 8-bit for visualization
-    focus_measure_image = ((focus_measure / focus_measure.max()) * 255).astype(np.uint8)
+    fm_max = float(focus_measure.max())
+    if fm_max > 0:
+        focus_measure_image = ((focus_measure / fm_max) * 255).astype(np.uint8)
+    else:
+        focus_measure_image = np.zeros(focus_measure.shape, dtype=np.uint8)
 
     # Display the Brenner value on the top left of the image
     cv2.putText(
