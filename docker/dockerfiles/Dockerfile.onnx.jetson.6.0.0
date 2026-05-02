@@ -279,7 +279,7 @@ COPY --from=builder /usr/local/cuda/targets/aarch64-linux/lib/libnvToolsExt*.so.
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvinfer*.so.*.*.* /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so.*.*.* /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvparsers*.so.*.*.* /usr/local/cuda/lib64/
-COPY --from=builder /usr/lib/aarch64-linux-gnu/tegra/libnvdla_compiler.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/nvidia/libnvdla_compiler.so* /usr/local/cuda/lib64/
 
 # Create symlinks for cuDNN and TensorRT (saves ~2GB by not duplicating files)
 RUN cd /usr/local/cuda/lib64 && \
