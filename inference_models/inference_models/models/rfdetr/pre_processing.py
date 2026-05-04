@@ -1,31 +1,14 @@
-"""RFDETR-specific preprocessing.
+"""RFDETR-specific preprocessing matching the training pipeline.
 
-Mirrors `rfdetr_internal/detr.py:RFDETR.predict()` so inference-time inputs
-are byte-equivalent to the training-time / parity-runner pipeline.
+numpy / PIL inputs:
+    [optional cv2 dataset-version resize] → PIL F.resize → F.to_tensor → F.normalize
 
-For numpy / PIL inputs the chain is:
+The cv2 dataset-version resize runs first when `resize_mode != STRETCH_TO`
+and `dataset_version_resize_dimensions` is set; the PIL stretch then takes
+the result to `training_input_size`.
 
-      [optional dataset-version resize via shared handler]
-      → PIL → torchvision F.resize on PIL (PIL bilinear) → training_input_size
-      → F.to_tensor (PIL → contiguous float32 CHW [0, 1])
-      → F.normalize(mean, std)
-
-The dataset-version resize step (letterbox / center-crop / stretch /
-letterbox-reflect-edges) is applied via the shared cv2-on-uint8 handler when
-`dataset_version_resize_dimensions` is non-square and `resize_mode` is not
-STRETCH_TO — matching the resize Roboflow's exporter applies. The second
-PIL F.resize step then stretches to `training_input_size`, mirroring the
-SquareResize → ToTensor → Normalize chain in `datasets/transforms.py`.
-
-For torch.Tensor inputs (advanced caller, assumed float CHW [0, 1]):
-      F.resize on tensor (torchvision tensor bilinear)
-          → F.normalize(mean, std)
-mirrors predict()'s tensor branch. Tensor and PIL bilinear kernels are not
-byte-identical; predict() already accepts that drift on its tensor path.
-
-YOLO and other model families continue to use the shared cv2-on-uint8 path in
-`models.common.roboflow.pre_processing` to match their Ultralytics-derived
-training conventions.
+torch.Tensor inputs (advanced caller, float CHW [0, 1]):
+    tensor F.resize → F.normalize
 """
 
 from typing import List, Optional, Tuple, Union
@@ -195,7 +178,7 @@ def _pre_process_numpy(
             static_crop_offset=static_crop_offset,
         )
 
-    resized = TF.resize(pil, (target_size.height, target_size.width))
+    resized = TF.resize(pil, (target_size.height, target_size.width), antialias=True)
     tensor = TF.to_tensor(resized)
     tensor = _apply_normalization(tensor, network_input)
     return tensor, meta
@@ -293,7 +276,7 @@ def _pre_process_tensor(
     )
     if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
-    resized = TF.resize(image, (target_size.height, target_size.width))
+    resized = TF.resize(image, (target_size.height, target_size.width), antialias=True)
     if resized.shape[0] == 1:
         resized = resized.squeeze(0)
     tensor = _apply_normalization(resized, network_input)

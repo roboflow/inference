@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- RFDetr pre- and post-processing aligned with training transforms: pre-processing replaced with a dedicated `PIL → F.resize → F.to_tensor → F.normalize` chain (always stretches to `training_input_size`); post-processing uses topk-flat across (queries × classes) via shared `select_topk_predictions`; fixes a cross-backend divergence at low confidence thresholds.
+- RFDetr pre- and post-processing aligned with training transforms. Pre-processing replaced with a dedicated `PIL → F.resize → F.to_tensor → F.normalize` chain matching the training pipeline. For model packages with non-stretch `dataset_version_resize_dimensions`, the dataset-version resize (cv2 letterbox / center-crop) runs first, then the PIL stretch to `training_input_size`. Post-processing uses topk-flat across (queries × classes) via shared `select_topk_predictions`. Fixes a cross-backend divergence at low confidence thresholds.
 
 ## `0.27.2`
 

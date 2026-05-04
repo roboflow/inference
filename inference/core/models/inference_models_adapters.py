@@ -121,14 +121,13 @@ class InferenceModelsObjectDetectionAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
             disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
         )
         kwargs["pre_processing_overrides"] = pre_processing_overrides
-        # preprocess() loads via load_image_bgr; tell pre_process so it swaps to RGB.
-        kwargs["input_color_format"] = "bgr"
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -274,14 +273,13 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
             disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
         )
         kwargs["pre_processing_overrides"] = pre_processing_overrides
-        # preprocess() loads via load_image_bgr; tell pre_process so it swaps to RGB.
-        kwargs["input_color_format"] = "bgr"
         if "rle" in self._model.supported_mask_formats:
             kwargs["mask_format"] = "rle"
         return kwargs
@@ -483,6 +481,7 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         if "request" in kwargs:
             keypoint_confidence_threshold = kwargs["request"].keypoint_confidence
             kwargs["key_points_threshold"] = keypoint_confidence_threshold
@@ -492,8 +491,6 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
         )
         kwargs["pre_processing_overrides"] = pre_processing_overrides
-        # preprocess() loads via load_image_bgr; tell pre_process so it swaps to RGB.
-        kwargs["input_color_format"] = "bgr"
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -696,14 +693,13 @@ class InferenceModelsClassificationAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
             disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
         )
         kwargs["pre_processing_overrides"] = pre_processing_overrides
-        # preprocess() loads via load_image_bgr; tell pre_process so it swaps to RGB.
-        kwargs["input_color_format"] = "bgr"
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -1032,14 +1028,13 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         return {str(k): v for k, v in enumerate(self.class_names)}
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
             disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
         )
         kwargs["pre_processing_overrides"] = pre_processing_overrides
-        # preprocess() loads via load_image_bgr; tell pre_process so it swaps to RGB.
-        kwargs["input_color_format"] = "bgr"
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
