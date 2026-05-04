@@ -1,3 +1,4 @@
+import os
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -18,6 +19,43 @@ from inference_models.models.common.roboflow.post_processing import (
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 from inference_models.models.rfdetr.post_processor import select_topk_predictions
 from inference_models.utils.file_system import read_json
+
+_RFDETR_TRITON_FULLPOSTPROC = os.getenv("RFDETR_TRITON_FULLPOSTPROC", "false").lower() in (
+    "true",
+    "1",
+)
+if _RFDETR_TRITON_FULLPOSTPROC:
+    try:
+        from inference_models.models.rfdetr.triton_fullpostproc import (
+            TRITON_AVAILABLE as _TRITON_FULLPOST_AVAILABLE,
+            triton_rfdetr_fullpost,
+        )
+        _TRITON_FULLPOST_READY = _TRITON_FULLPOST_AVAILABLE and torch.cuda.is_available()
+    except Exception:
+        _TRITON_FULLPOST_READY = False
+        triton_rfdetr_fullpost = None
+else:
+    _TRITON_FULLPOST_READY = False
+    triton_rfdetr_fullpost = None
+
+
+def _fullpost_eligible(
+    bboxes: torch.Tensor,
+    pre_processing_meta: List[PreProcessingMetadata],
+    classes_re_mapping: Optional[ClassesReMapping],
+) -> bool:
+    if not _TRITON_FULLPOST_READY or not bboxes.is_cuda:
+        return False
+    if bboxes.shape[0] != 1 or len(pre_processing_meta) != 1:
+        return False
+    meta = pre_processing_meta[0]
+    if meta.nonsquare_intermediate_size is not None:
+        return False
+    if meta.static_crop_offset.offset_x != 0 or meta.static_crop_offset.offset_y != 0:
+        return False
+    if classes_re_mapping is None:
+        return False
+    return True
 
 
 def parse_model_type(config_path: str) -> str:
@@ -132,6 +170,31 @@ def post_process_instance_segmentation_results(
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> List[InstanceDetections]:
+    if _fullpost_eligible(bboxes, pre_processing_meta, classes_re_mapping):
+        meta = pre_processing_meta[0]
+        thr_arg = threshold if isinstance(threshold, torch.Tensor) else float(threshold)
+        combined, mask_bin, mask_any, counter, done_event = triton_rfdetr_fullpost(
+            bboxes=bboxes,
+            logits=logits,
+            masks=masks,
+            threshold=thr_arg,
+            num_classes=num_classes,
+            class_mapping=classes_re_mapping.class_mapping,
+            inference_size_wh=(meta.inference_size.width, meta.inference_size.height),
+            pad_ltrb=(meta.pad_left, meta.pad_top, meta.pad_right, meta.pad_bottom),
+            scale_wh=(meta.scale_width, meta.scale_height),
+            orig_size_wh=(meta.original_size.width, meta.original_size.height),
+        )
+        detections = InstanceDetections(
+            xyxy=combined[:, :4],
+            confidence=combined[:, 4],
+            class_id=combined[:, 5],
+            mask=mask_bin,
+        )
+        detections.__dict__["_combined_gpu"] = combined
+        detections.__dict__["_counter_gpu"] = counter
+        detections.__dict__["_postproc_done_event"] = done_event
+        return [detections]
     logits_sigmoid = torch.nn.functional.sigmoid(logits)
     results = []
     device = bboxes.device
