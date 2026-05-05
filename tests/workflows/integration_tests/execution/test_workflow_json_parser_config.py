@@ -24,7 +24,7 @@ JSON_PARSER_WORKFLOW = {
             "expected_fields": ["model_id"],
         },
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "model",
             "images": "$inputs.image",
             "model_id": "$steps.json_parser.model_id",

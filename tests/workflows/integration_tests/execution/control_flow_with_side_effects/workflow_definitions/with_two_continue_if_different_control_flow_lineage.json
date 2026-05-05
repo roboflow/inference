@@ -15,7 +15,7 @@
         "overlap_ratio_height": 0.2
       },
       {
-        "type": "roboflow_core/roboflow_object_detection_model@v2",
+        "type": "roboflow_core/roboflow_object_detection_model@v3",
         "name": "detection",
         "image": "$steps.image_slicer.slices",
         "model_id": "yolov8n-640",

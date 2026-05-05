@@ -7878,3 +7878,30 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_lis
         torch.tensor([0.9362, 0.9064]).cpu(),
         atol=0.01,
     )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_per_class_confidence_blocks_person_class(
+    yolov8n_pose_onnx_static_center_crop_package: str,
+    people_walking_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_yolov8n_pose_onnx_static_center_crop_package_numpy` above)
+    returns 2 detections of class 0 (person) at confidences 0.9245/0.9082.
+    Setting a 0.99 per-class threshold on the only class leaves no detections."""
+    from inference_models.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
+        model_name_or_path=yolov8n_pose_onnx_static_center_crop_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[0]: 0.99},
+    )
+    _, filtered_det = model(people_walking_image_numpy, confidence="best")
+    assert filtered_det[0].class_id.numel() == 0

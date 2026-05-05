@@ -304,3 +304,27 @@ def test_trt_package_torch_batch(
         atol=5,
     )
     assert abs(predictions[0][0].confidence.sum().item() - 26.07147979736328) < 1e-2
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_per_class_confidence_filters_detections(
+    yolov8_pose_trt_package: str,
+    people_walking_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.models.yolov8.yolov8_key_points_detection_trt import (
+        YOLOv8ForKeyPointsDetectionTRT,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv8ForKeyPointsDetectionTRT.from_pretrained(
+        model_name_or_path=yolov8_pose_trt_package,
+        engine_host_code_allowed=True,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[0]: 1.01},
+    )
+    _, predictions_det = model(people_walking_image_numpy, confidence="best")
+    assert predictions_det[0].class_id.numel() == 0

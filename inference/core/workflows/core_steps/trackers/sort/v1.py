@@ -5,6 +5,7 @@ from pydantic import ConfigDict, Field
 from trackers import SORTTracker
 
 from inference.core.workflows.core_steps.trackers._base import (
+    TRACKER_PREDICTION_KINDS,
     TrackerBlockBase,
     tracker_describe_outputs,
 )
@@ -15,10 +16,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    KEYPOINT_DETECTION_PREDICTION_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
@@ -85,11 +83,7 @@ class SORTManifest(WorkflowBlockManifest):
         "Used to initialise and retrieve per-video tracker state.",
     )
     detections: Selector(
-        kind=[
-            OBJECT_DETECTION_PREDICTION_KIND,
-            KEYPOINT_DETECTION_PREDICTION_KIND,
-            INSTANCE_SEGMENTATION_PREDICTION_KIND,
-        ]
+        kind=TRACKER_PREDICTION_KINDS,
     ) = Field(
         description="Detection predictions for the current frame to track.",
         examples=["$steps.object_detection_model.predictions"],

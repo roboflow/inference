@@ -733,3 +733,24 @@ def test_torchscript_package_letterbox_torch(
     assert torch.allclose(
         predictions[0].xyxy.cpu().float(), expected_xyxy, atol=XYXY_ATOL
     )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torchscript_per_class_confidence_filters_detections(
+    yolo26n_object_detection_sunflowers_stretch_torch_script_package: str,
+    sunflowers_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLO26ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=yolo26n_object_detection_sunflowers_stretch_torch_script_package,
+        device=DEFAULT_DEVICE,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[1]: 1.01},
+    )
+    predictions = model(sunflowers_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

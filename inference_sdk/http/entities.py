@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 from dataclasses_json import DataClassJsonMixin
@@ -14,6 +14,7 @@ from inference_sdk.http.errors import ModelTaskTypeNotSupportedError
 from inference_sdk.http.utils.iterables import remove_empty_values
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
+Confidence = Union[float, Literal["best", "default"]]
 
 DEFAULT_IMAGE_EXTENSIONS = ["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]
 
@@ -112,7 +113,7 @@ class InferenceConfiguration:
         stroke_width: The stroke width for the inference.
     """
 
-    confidence_threshold: Optional[float] = None
+    confidence_threshold: Optional[Confidence] = None
     keypoint_confidence_threshold: Optional[float] = None
     format: Optional[str] = None
     mask_decode_mode: Optional[str] = None
@@ -148,6 +149,7 @@ class InferenceConfiguration:
     source_info: Optional[str] = None
     profiling_directory: str = "./inference_profiling"
     workflow_run_retries_enabled: bool = WORKFLOW_RUN_RETRIES_ENABLED
+    response_mask_format: Optional[Literal["polygon", "rle"]] = None
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":
@@ -178,6 +180,20 @@ class InferenceConfiguration:
         raise ModelTaskTypeNotSupportedError(
             f"Model task {task_type} is not supported by API v1 client."
         )
+
+    def to_api_v1_query_parameters(self) -> Optional[Dict[str, Any]]:
+        """Extract v1 API query-string parameters from the current configuration.
+
+        Returns:
+            Optional[Dict[str, Any]]: The query parameters, or None if unset.
+        """
+        query = remove_empty_values(
+            {
+                "service_secret": self.service_secret,
+                "countinference": self.count_inference,
+            }
+        )
+        return query or None
 
     def to_object_detection_parameters(self) -> Dict[str, Any]:
         """Convert the current configuration to object detection parameters.
@@ -230,6 +246,7 @@ class InferenceConfiguration:
         parameters_specs = [
             ("mask_decode_mode", "mask_decode_mode"),
             ("tradeoff_factor", "tradeoff_factor"),
+            ("response_mask_format", "response_mask_format"),
         ]
         for internal_name, external_name in parameters_specs:
             parameters[external_name] = getattr(self, internal_name)
@@ -285,6 +302,7 @@ class InferenceConfiguration:
             ("active_learning_target_dataset", "active_learning_target_dataset"),
             ("source", "source"),
             ("source_info", "source_info"),
+            ("response_mask_format", "response_mask_format"),
         ]
         return get_non_empty_attributes(
             source_object=self,

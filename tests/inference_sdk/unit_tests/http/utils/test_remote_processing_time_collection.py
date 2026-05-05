@@ -15,11 +15,18 @@ from inference_sdk.http.utils.executors import (
 from inference_sdk.http.utils.request_building import RequestData
 
 
-def _make_response(processing_time: str = None, status_code: int = 200) -> Response:
+def _make_response(
+    processing_time: str = None,
+    status_code: int = 200,
+    extra_headers: dict = None,
+) -> Response:
     response = Response()
     response.status_code = status_code
     if processing_time is not None:
         response.headers[PROCESSING_TIME_HEADER] = processing_time
+    if extra_headers:
+        for key, value in extra_headers.items():
+            response.headers[key] = value
     return response
 
 
@@ -211,3 +218,141 @@ class TestCollectRemoteProcessingTimes:
         assert len(entries) == 1
         assert entries[0][0] == "m1"
         assert "does not match" in caplog.text
+
+    def test_collects_remote_model_id_from_response_header(self) -> None:
+        # given
+        collector = RemoteProcessingTimeCollector()
+        token = remote_processing_times.set(collector)
+        responses = [
+            _make_response(
+                "0.5",
+                extra_headers={"X-Model-Id": "remote-model/1"},
+            )
+        ]
+        requests_data = [_make_request_data(model_id="payload-model/1")]
+
+        try:
+            # when
+            _collect_remote_processing_times(responses, requests_data)
+        finally:
+            remote_processing_times.reset(token)
+
+        # then
+        assert collector.snapshot_model_ids() == {"remote-model/1"}
+
+    def test_collects_remote_cold_start_from_detailed_headers(self) -> None:
+        # given
+        collector = RemoteProcessingTimeCollector()
+        token = remote_processing_times.set(collector)
+        responses = [
+            _make_response(
+                "0.5",
+                extra_headers={
+                    "X-Model-Id": "remote-model/1",
+                    "X-Model-Cold-Start": "true",
+                    "X-Model-Load-Time": "1.1",
+                    "X-Model-Load-Details": '[{"m":"remote-model/1","t":1.1}]',
+                },
+            )
+        ]
+        requests_data = [_make_request_data(model_id="payload-model/1")]
+
+        try:
+            # when
+            _collect_remote_processing_times(responses, requests_data)
+        finally:
+            remote_processing_times.reset(token)
+
+        # then
+        assert collector.snapshot_model_ids() == {"remote-model/1"}
+        assert collector.snapshot_cold_start_entries() == [("remote-model/1", 1.1)]
+        assert collector.snapshot_cold_start_count() == 1
+        assert abs(collector.snapshot_cold_start_total_load_time() - 1.1) < 1e-9
+
+    def test_collects_remote_cold_start_from_summary_headers_when_details_missing(
+        self,
+    ) -> None:
+        # given
+        collector = RemoteProcessingTimeCollector()
+        token = remote_processing_times.set(collector)
+        responses = [
+            _make_response(
+                "0.5",
+                extra_headers={
+                    "X-Model-Id": "remote-model/1",
+                    "X-Model-Cold-Start": "true",
+                    "X-Model-Load-Time": "0.9",
+                },
+            )
+        ]
+        requests_data = [_make_request_data(model_id="payload-model/1")]
+
+        try:
+            # when
+            _collect_remote_processing_times(responses, requests_data)
+        finally:
+            remote_processing_times.reset(token)
+
+        # then
+        assert collector.snapshot_cold_start_entries() == [("remote-model/1", 0.9)]
+        assert collector.snapshot_cold_start_count() == 1
+        assert abs(collector.snapshot_cold_start_total_load_time() - 0.9) < 1e-9
+
+    def test_collects_remote_cold_start_count_without_detail_when_model_ambiguous(
+        self,
+    ) -> None:
+        # given
+        collector = RemoteProcessingTimeCollector()
+        token = remote_processing_times.set(collector)
+        responses = [
+            _make_response(
+                "0.5",
+                extra_headers={
+                    "X-Model-Id": "model-a/1,model-b/2",
+                    "X-Model-Cold-Start": "true",
+                    "X-Model-Load-Time": "1.4",
+                },
+            )
+        ]
+        requests_data = [_make_request_data(model_id="payload-model/1")]
+
+        try:
+            # when
+            _collect_remote_processing_times(responses, requests_data)
+        finally:
+            remote_processing_times.reset(token)
+
+        # then
+        assert collector.snapshot_model_ids() == {"model-a/1", "model-b/2"}
+        assert collector.snapshot_cold_start_entries() == []
+        assert collector.snapshot_cold_start_count() == 1
+        assert abs(collector.snapshot_cold_start_total_load_time() - 1.4) < 1e-9
+
+    def test_uses_cold_start_count_header_when_detail_is_unavailable(self) -> None:
+        # given
+        collector = RemoteProcessingTimeCollector()
+        token = remote_processing_times.set(collector)
+        responses = [
+            _make_response(
+                "0.5",
+                extra_headers={
+                    "X-Model-Id": "model-a/1,model-b/2",
+                    "X-Model-Cold-Start": "true",
+                    "X-Model-Cold-Start-Count": "3",
+                    "X-Model-Load-Time": "1.4",
+                },
+            )
+        ]
+        requests_data = [_make_request_data(model_id="payload-model/1")]
+
+        try:
+            # when
+            _collect_remote_processing_times(responses, requests_data)
+        finally:
+            remote_processing_times.reset(token)
+
+        # then
+        assert collector.snapshot_model_ids() == {"model-a/1", "model-b/2"}
+        assert collector.snapshot_cold_start_entries() == []
+        assert collector.snapshot_cold_start_count() == 3
+        assert abs(collector.snapshot_cold_start_total_load_time() - 1.4) < 1e-9

@@ -9,7 +9,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
@@ -27,6 +27,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     rescale_image_detections,
 )
 from inference_models.models.rfdetr.class_remapping import (
@@ -37,6 +38,7 @@ from inference_models.models.rfdetr.pre_processing import pre_process_network_in
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -70,6 +72,7 @@ class RFDetrForObjectDetectionONNX(
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionONNX":
         if onnx_execution_providers is None:
@@ -143,6 +146,7 @@ class RFDetrForObjectDetectionONNX(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -154,6 +158,7 @@ class RFDetrForObjectDetectionONNX(
         inference_config: InferenceConfig,
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -168,6 +173,7 @@ class RFDetrForObjectDetectionONNX(
             else inference_config.forward_pass.max_dynamic_batch_size
         )
         self._session_thread_lock = threading.Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -205,17 +211,46 @@ class RFDetrForObjectDetectionONNX(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        )
         bboxes, logits = model_results
         logits_sigmoid = torch.nn.functional.sigmoid(logits)
+        threshold = confidence_filter.get_threshold(self.class_names)
+        if isinstance(threshold, torch.Tensor):
+            threshold = threshold.to(
+                dtype=logits_sigmoid.dtype, device=logits_sigmoid.device
+            )
         results = []
         for image_bboxes, image_logits, image_meta in zip(
             bboxes, logits_sigmoid, pre_processing_meta
         ):
             predicted_confidence, top_classes = image_logits.max(dim=1)
-            confidence_mask = predicted_confidence > confidence
+            if self._classes_re_mapping is not None:
+                remapping_mask = torch.isin(
+                    top_classes, self._classes_re_mapping.remaining_class_ids
+                )
+                top_classes = self._classes_re_mapping.class_mapping[
+                    top_classes[remapping_mask]
+                ]
+                predicted_confidence = predicted_confidence[remapping_mask]
+                image_bboxes = image_bboxes[remapping_mask]
+            else:
+                # drop DETR no-object rows
+                named = top_classes < len(self.class_names)
+                predicted_confidence = predicted_confidence[named]
+                top_classes = top_classes[named]
+                image_bboxes = image_bboxes[named]
+            confidence_mask = predicted_confidence > (
+                threshold[top_classes.long()]
+                if isinstance(threshold, torch.Tensor)
+                else threshold
+            )
             predicted_confidence = predicted_confidence[confidence_mask]
             top_classes = top_classes[confidence_mask]
             selected_boxes = image_bboxes[confidence_mask]
@@ -224,15 +259,6 @@ class RFDetrForObjectDetectionONNX(
             )
             top_classes = top_classes[sorted_indices]
             selected_boxes = selected_boxes[sorted_indices]
-            if self._classes_re_mapping is not None:
-                remapping_mask = torch.isin(
-                    top_classes, self._classes_re_mapping.remaining_class_ids
-                )
-                top_classes = self._classes_re_mapping.class_mapping[
-                    top_classes[remapping_mask]
-                ]
-                selected_boxes = selected_boxes[remapping_mask]
-                predicted_confidence = predicted_confidence[remapping_mask]
             cxcy = selected_boxes[:, :2]
             wh = selected_boxes[:, 2:]
             xy_min = cxcy - 0.5 * wh
@@ -255,10 +281,11 @@ class RFDetrForObjectDetectionONNX(
                 image_detections=selected_boxes_xyxy,
                 image_metadata=image_meta,
             )
-            detections = Detections(
-                xyxy=selected_boxes_xyxy.round().int(),
-                confidence=predicted_confidence,
-                class_id=top_classes.int(),
+            results.append(
+                Detections(
+                    xyxy=selected_boxes_xyxy.round().int(),
+                    confidence=predicted_confidence,
+                    class_id=top_classes.int(),
+                )
             )
-            results.append(detections)
         return results

@@ -607,3 +607,27 @@ def test_trt_outputs_match_expected_shapes(
 
     assert output[0].shape == (1, 300, 4)
     assert output[1].shape == (1, 300, 91)
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_per_class_confidence_filters_detections(
+    rfdetr_coin_counting_trt_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.models.rfdetr.rfdetr_object_detection_trt import (
+        RFDetrForObjectDetectionTRT,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = RFDetrForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=rfdetr_coin_counting_trt_package,
+        engine_host_code_allowed=True,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.3,
+        per_class_confidence={class_names[1]: 1.01},
+    )
+    predictions = model(coins_counting_image_numpy, confidence="best")
+    assert 1 not in predictions[0].class_id.cpu().tolist()

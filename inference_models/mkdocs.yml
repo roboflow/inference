@@ -76,6 +76,7 @@ nav:
           - SAM2 RT: models/sam2-rt-video-tracking.md
       - Vision-Language Models:
           - Florence-2: models/florence2.md
+          - Gemma 4: models/gemma4.md
           - PaliGemma: models/paligemma.md
           - Qwen2.5-VL: models/qwen25vl.md
           - Qwen3-VL: models/qwen3vl.md

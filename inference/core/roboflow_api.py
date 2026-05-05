@@ -20,6 +20,7 @@ import requests
 from cachetools.func import ttl_cache
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
+from yarl import URL
 
 from inference.core import logger
 from inference.core.cache import cache
@@ -47,6 +48,7 @@ from inference.core.env import (
     ROBOFLOW_API_EXTRA_HEADERS,
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_API_VERIFY_SSL,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
     SINGLE_TENANT_WORKFLOW_CACHE,
     TRANSIENT_ROBOFLOW_API_ERRORS,
@@ -289,10 +291,15 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
 async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
     try:
         headers = build_roboflow_api_headers()
+        full_url = wrap_url(
+            _add_params_to_url(
+                url=f"{API_BASE_URL}/",
+                params=[("api_key", api_key), ("nocache", "true")],
+            )
+        )
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{API_BASE_URL}/",
-                params={"api_key": api_key, "nocache": "true"},
+                URL(full_url, encoded=True),
                 headers=headers,
                 timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             ) as response:
@@ -331,10 +338,15 @@ async def get_serverless_usage_check_async(
 ) -> ServerlessUsageCheckResponse:
     try:
         headers = build_roboflow_api_headers()
+        full_url = wrap_url(
+            _add_params_to_url(
+                url=f"{API_BASE_URL}/serverless/usage-check",
+                params=[("api_key", api_key), ("nocache", "true")],
+            )
+        )
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{API_BASE_URL}/serverless/usage-check",
-                params={"api_key": api_key, "nocache": "true"},
+                URL(full_url, encoded=True),
                 headers=headers,
                 timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             ) as response:
@@ -388,9 +400,11 @@ def add_custom_metadata(
     field_name: str,
     field_value: str,
 ):
-    api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{workspace_id}/inference-stats/metadata",
-        params=[("api_key", api_key), ("nocache", "true")],
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/inference-stats/metadata",
+            params=[("api_key", api_key), ("nocache", "true")],
+        )
     )
     response = requests.post(
         url=api_url,
@@ -595,6 +609,8 @@ def get_model_metadata_from_inference_models_registry(
         )
         if not skip:
             headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
+    if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+        headers["X-Roboflow-Internal-Service-Secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/models/v1/external/weights",
         params=query,
@@ -1123,7 +1139,9 @@ def _test_range_request(url: str, timeout: int = 10) -> bool:
     """
     try:
         headers = {"Range": "bytes=0-0"}
-        response = requests.get(url, headers=headers, stream=True, timeout=timeout)
+        response = requests.get(
+            wrap_url(url), headers=headers, stream=True, timeout=timeout
+        )
         response.close()
         if response.status_code == 206:
             return True
@@ -1197,9 +1215,11 @@ def send_inference_results_to_model_monitoring(
     workspace_id: WorkspaceID,
     inference_data: dict,
 ):
-    api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{workspace_id}/inference-stats",
-        params=[("api_key", api_key)],
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/inference-stats",
+            params=[("api_key", api_key)],
+        )
     )
     response = requests.post(
         url=api_url,
@@ -1226,6 +1246,8 @@ def get_extra_weights_provider_headers(
         )
         if not skip:
             headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
+    if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+        headers["X-Roboflow-Internal-Service-Secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
     return build_roboflow_api_headers(explicit_headers=headers)
 
 

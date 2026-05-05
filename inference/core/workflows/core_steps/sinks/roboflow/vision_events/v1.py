@@ -13,6 +13,7 @@ from pydantic import ConfigDict, Field
 from inference.core.env import API_BASE_URL
 from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.serializers import mask_to_polygon
 from inference.core.workflows.execution_engine.constants import (
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
@@ -21,7 +22,6 @@ from inference.core.workflows.execution_engine.constants import (
     PREDICTION_TYPE_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
-    Batch,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -356,10 +356,6 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def get_parameters_accepting_batches(cls) -> List[str]:
-        return ["input_image", "output_image", "predictions"]
-
-    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
@@ -393,9 +389,9 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
 
     def run(
         self,
-        input_image: Optional[Batch[WorkflowImageData]],
-        output_image: Optional[Batch[WorkflowImageData]],
-        predictions: Optional[Batch[Union[sv.Detections, dict]]],
+        input_image: Optional[WorkflowImageData],
+        output_image: Optional[WorkflowImageData],
+        predictions: Optional[Union[sv.Detections, dict]],
         event_type: str,
         solution: str,
         custom_metadata: Dict[str, Any],
@@ -420,79 +416,56 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 "https://docs.roboflow.com/api-reference/authentication"
                 "#retrieve-an-api-key to learn how to retrieve one."
             )
-        # Determine batch size from whichever image input is provided
-        batch_size = 1
-        if input_image is not None:
-            batch_size = len(input_image)
-        elif output_image is not None:
-            batch_size = len(output_image)
-        elif predictions is not None:
-            batch_size = len(predictions)
 
         if disable_sink:
-            return [
-                {
-                    "error_status": False,
-                    "message": "Sink was disabled by parameter `disable_sink`",
-                }
-                for _ in range(batch_size)
-            ]
+            return {
+                "error_status": False,
+                "message": "Sink was disabled by parameter `disable_sink`",
+            }
 
-        input_images = [None] * batch_size if input_image is None else input_image
-        output_images = [None] * batch_size if output_image is None else output_image
-        predictions_list = [None] * batch_size if predictions is None else predictions
+        event_data = _build_event_data(
+            event_type=event_type,
+            external_id=external_id,
+            qc_result=qc_result,
+            location=location,
+            item_count=item_count,
+            item_type=item_type,
+            alert_type=alert_type,
+            severity=severity,
+            alert_description=alert_description,
+            custom_value=custom_value,
+            related_event_id=related_event_id,
+            feedback=feedback,
+        )
 
-        result = []
-        for img_in, img_out, pred in zip(input_images, output_images, predictions_list):
-            event_data = _build_event_data(
-                event_type=event_type,
-                external_id=external_id,
-                qc_result=qc_result,
-                location=location,
-                item_count=item_count,
-                item_type=item_type,
-                alert_type=alert_type,
-                severity=severity,
-                alert_description=alert_description,
-                custom_value=custom_value,
-                related_event_id=related_event_id,
-                feedback=feedback,
-            )
+        task = partial(
+            _execute_vision_event,
+            api_base_url=API_BASE_URL,
+            api_key=self._api_key,
+            input_image=input_image,
+            output_image=output_image,
+            prediction=predictions,
+            event_type=event_type,
+            solution=solution,
+            event_data=event_data,
+            custom_metadata=custom_metadata,
+        )
 
-            task = partial(
-                _execute_vision_event,
-                api_base_url=API_BASE_URL,
-                api_key=self._api_key,
-                input_image=img_in,
-                output_image=img_out,
-                prediction=pred,
-                event_type=event_type,
-                solution=solution,
-                event_data=event_data,
-                custom_metadata=custom_metadata,
-            )
-
-            if fire_and_forget and self._background_tasks:
-                self._background_tasks.add_task(task)
-                result.append(
-                    {
-                        "error_status": False,
-                        "message": "Vision event sent in background task",
-                    }
-                )
-            elif fire_and_forget and self._thread_pool_executor:
-                self._thread_pool_executor.submit(task)
-                result.append(
-                    {
-                        "error_status": False,
-                        "message": "Vision event sent in background task",
-                    }
-                )
-            else:
-                error_status, message = task()
-                result.append({"error_status": error_status, "message": message})
-
-        return result
+        if fire_and_forget and self._background_tasks:
+            self._background_tasks.add_task(task)
+            return {
+                "error_status": False,
+                "message": "Vision event sent in background task",
+            }
+        elif fire_and_forget and self._thread_pool_executor:
+            self._thread_pool_executor.submit(task)
+            return {
+                "error_status": False,
+                "message": "Vision event sent in background task",
+            }
+        else:
+            error_status, message = task()
+            return {"error_status": error_status, "message": message}
 
 
 def _build_event_data(
@@ -773,7 +746,7 @@ def _upload_image(
         image_data.numpy_image, jpeg_quality=jpeg_quality
     )
     response = requests.post(
-        f"{api_base_url}/vision-events/upload",
+        wrap_url(f"{api_base_url}/vision-events/upload"),
         headers={"Authorization": f"Bearer {api_key}"},
         files={"file": ("image.jpg", image_bytes, "image/jpeg")},
         timeout=30,
@@ -825,7 +798,7 @@ def _send_event(
     """
     try:
         response = requests.post(
-            f"{api_base_url}/vision-events",
+            wrap_url(f"{api_base_url}/vision-events"),
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",

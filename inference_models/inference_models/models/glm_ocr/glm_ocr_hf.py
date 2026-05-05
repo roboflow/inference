@@ -14,6 +14,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE,
     INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
+    RUNNING_ON_JETSON,
 )
 from inference_models.entities import ColorFormat
 
@@ -23,7 +24,13 @@ TABLE_RECOGNITION_PROMPT = "Table Recognition:"
 
 
 def _get_glm_ocr_attn_implementation(device: torch.device) -> str:
-    if is_flash_attn_2_available() and device and "cuda" in str(device):
+    # TODO: look into jetson builds, as flash-attention compiled for Jetsons does not cooperate
+    if (
+        is_flash_attn_2_available()
+        and device
+        and "cuda" in str(device)
+        and not RUNNING_ON_JETSON
+    ):
         try:
             import flash_attn  # noqa: F401
 

@@ -678,3 +678,32 @@ def test_multi_label_torch_static_package_batch_torch_tensor_list(
         predictions[1].class_ids.cpu(),
         torch.tensor([8], dtype=torch.int64).cpu(),
     )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_multi_label_torch_per_class_confidence_blocks_specific_class(
+    dinov3_multi_label_torch_static_package: str,
+    chess_set_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_multi_label_torch_static_package_numpy` above)
+    returns class_ids=[0..11] (12 classes). Setting a 0.99 per-class threshold
+    on class 0 (conf 0.9897) drops it; classes 1..11 still pass."""
+    from inference_models.models.dinov3.dinov3_classification_torch import (
+        DinoV3ForMultiLabelClassificationTorch,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = DinoV3ForMultiLabelClassificationTorch.from_pretrained(
+        model_name_or_path=dinov3_multi_label_torch_static_package,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.5,
+        per_class_confidence={class_names[0]: 0.99},
+    )
+    predictions = model(chess_set_image_numpy, confidence="best")
+    assert torch.equal(
+        predictions[0].class_ids.cpu(),
+        torch.tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64),
+    )

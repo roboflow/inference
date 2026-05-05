@@ -1,6 +1,6 @@
 import threading
 from threading import Lock
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
@@ -8,6 +8,7 @@ import torchvision
 
 from inference_models import (
     InstanceDetections,
+    InstanceSegmentationMaskFormat,
     InstanceSegmentationModel,
     PreProcessingOverrides,
 )
@@ -18,10 +19,11 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLACT_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
+    ModelInputError,
     ModelRuntimeError,
 )
 from inference_models.models.common.cuda import (
@@ -39,6 +41,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_trt_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     align_instance_segmentation_results,
     crop_masks_to_boxes,
 )
@@ -52,6 +55,8 @@ from inference_models.models.common.trt import (
     infer_from_trt_engine,
     load_trt_model,
 )
+from inference_models.models.yolact.common import prepare_dense_masks, prepare_rle_masks
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import tensorrt as trt
@@ -97,6 +102,7 @@ class YOLOACTForInstanceSegmentationTRT(
         engine_host_code_allowed: bool = False,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOACTForInstanceSegmentationTRT":
         if device.type != "cuda":
@@ -173,6 +179,7 @@ class YOLOACTForInstanceSegmentationTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -187,6 +194,7 @@ class YOLOACTForInstanceSegmentationTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        recommended_parameters=None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -201,10 +209,15 @@ class YOLOACTForInstanceSegmentationTRT(
         self._lock = Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
         return self._class_names
+
+    @property
+    def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
+        return {"dense", "rle"}
 
     def pre_process(
         self,
@@ -275,12 +288,29 @@ class YOLOACTForInstanceSegmentationTRT(
             torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
         ],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         iou_threshold: float = INFERENCE_MODELS_YOLACT_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS,
         class_agnostic_nms: bool = INFERENCE_MODELS_YOLACT_DEFAULT_CLASS_AGNOSTIC_NMS,
+        mask_format: InstanceSegmentationMaskFormat = "dense",
         **kwargs,
     ) -> List[InstanceDetections]:
+        if mask_format not in self.supported_mask_formats:
+            raise ModelInputError(
+                message=f"YOLA-CT Instance Segmentation models support the following mask "
+                f"formats: {self.supported_mask_formats}. Requested format: {mask_format} "
+                f"is not supported. If you see this error while running on Roboflow platform, "
+                f"contact support or raise an issue at https://github.com/roboflow/inference/issues. "
+                f"When running locally - please verify your integration to make sure that appropriate "
+                f"value of `mask_format` parameter is set.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE,
+        )
+        confidence = confidence_filter.get_threshold(self.class_names)
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
@@ -327,41 +357,17 @@ class YOLOACTForInstanceSegmentationTRT(
                 max_detections=max_detections,
                 class_agnostic=class_agnostic_nms,
             )
-            final_results = []
-            for image_bboxes, image_protos, image_meta in zip(
-                nms_results, all_proto_data, pre_processing_meta
-            ):
-                pre_processed_masks = image_protos @ image_bboxes[:, 6:].T
-                pre_processed_masks = 1 / (1 + torch.exp(-pre_processed_masks))
-                pre_processed_masks = torch.permute(pre_processed_masks, (2, 0, 1))
-                cropped_masks = crop_masks_to_boxes(
-                    image_bboxes[:, :4], pre_processed_masks
+            if mask_format == "dense":
+                final_results = prepare_dense_masks(
+                    nms_results=nms_results,
+                    all_proto_data=all_proto_data,
+                    pre_processing_meta=pre_processing_meta,
                 )
-                padding = (
-                    image_meta.pad_left,
-                    image_meta.pad_top,
-                    image_meta.pad_right,
-                    image_meta.pad_bottom,
-                )
-                aligned_boxes, aligned_masks = align_instance_segmentation_results(
-                    image_bboxes=image_bboxes,
-                    masks=cropped_masks,
-                    padding=padding,
-                    scale_height=image_meta.scale_height,
-                    scale_width=image_meta.scale_width,
-                    original_size=image_meta.original_size,
-                    size_after_pre_processing=image_meta.size_after_pre_processing,
-                    inference_size=image_meta.inference_size,
-                    static_crop_offset=image_meta.static_crop_offset,
-                    binarization_threshold=0.5,
-                )
-                final_results.append(
-                    InstanceDetections(
-                        xyxy=aligned_boxes[:, :4].round().int(),
-                        class_id=aligned_boxes[:, 5].int(),
-                        confidence=aligned_boxes[:, 4],
-                        mask=aligned_masks,
-                    )
+            else:
+                final_results = prepare_rle_masks(
+                    nms_results=nms_results,
+                    all_proto_data=all_proto_data,
+                    pre_processing_meta=pre_processing_meta,
                 )
         self._post_process_stream.synchronize()
         return final_results
@@ -401,11 +407,15 @@ def decode_predicted_bboxes(
 
 def run_nms_for_instance_segmentation(
     output: torch.Tensor,
-    conf_thresh: float = 0.25,
+    conf_thresh: Union[float, torch.Tensor] = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
     class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    """
     bs = output.shape[0]
     boxes = output[:, :, :4]  # (N, 19248, 4)
     scores = output[:, :, 4:-32]  # (N, 19248, num_classes)
@@ -416,7 +426,10 @@ def run_nms_for_instance_segmentation(
         class_scores = scores[b]  # (19248, 80)
         box_masks = masks[b]
         class_conf, class_ids = class_scores.max(1)  # (8400,), (8400,)
-        mask = class_conf > conf_thresh
+        if isinstance(conf_thresh, torch.Tensor):
+            mask = class_conf > conf_thresh.to(output.device)[class_ids]
+        else:
+            mask = class_conf > conf_thresh
         if mask.sum() == 0:
             results.append(torch.zeros((0, 38), device=output.device))
             continue

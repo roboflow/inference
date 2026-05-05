@@ -1,4 +1,5 @@
 import os
+import warnings
 
 import torch
 
@@ -43,7 +44,15 @@ ROBOFLOW_API_HOST = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
-ROBOFLOW_LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
+_legacy_license_server = os.getenv("LICENSE_SERVER")
+SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
+if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
+    warnings.warn(
+        "`LICENSE_SERVER` env variable is deprecated, use `SECURE_GATEWAY` instead. "
+        "`LICENSE_SERVER` will be removed end of Q3 2026.",
+        DeprecationWarning,
+        stacklevel=1,
+    )
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 L4T_VERSION = os.getenv("L4T_VERSION")
 INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")
@@ -58,6 +67,18 @@ DISABLE_VERBOSE_LOGGER = get_boolean_from_env(
 )
 AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
+)
+CHUNK_DOWNLOAD_CONNECT_TIMEOUT = get_float_from_env(
+    variable_name="CHUNK_DOWNLOAD_CONNECT_TIMEOUT",
+    default=30.0,
+)
+CHUNK_DOWNLOAD_READ_TIMEOUT = get_float_from_env(
+    variable_name="CHUNK_DOWNLOAD_READ_TIMEOUT",
+    default=60.0,
+)
+CHUNK_DOWNLOAD_MAX_ATTEMPTS = get_integer_from_env(
+    variable_name="CHUNK_DOWNLOAD_MAX_ATTEMPTS",
+    default=60,
 )
 FILE_LOCK_ACQUIRE_TIMEOUT = get_integer_from_env(
     variable_name="INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT", default=20
@@ -234,6 +255,35 @@ INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS",
     default=True,
 )
+INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_ENABLE_THINKING = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_ENABLE_THINKING",
+    default=False,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_SKIP_SPECIAL_TOKENS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_SKIP_SPECIAL_TOKENS",
+    default=True,
+)
+# Official Gemma 4 sampling recommendations when ``do_sample`` is True (HF model cards).
+INFERENCE_MODELS_GEMMA4_DEFAULT_TEMPERATURE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_TEMPERATURE",
+    default=1.0,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_P = get_float_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_P",
+    default=0.95,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K",
+    default=64,
+)
 INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE = get_float_from_env(
     variable_name="INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE",
     default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
@@ -257,6 +307,14 @@ INFERENCE_MODELS_ROBOFLOW_INSTANT_MAX_DETECTIONS = get_integer_from_env(
 INFERENCE_MODELS_SMOL_VLM_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_SMOL_VLM_DEFAULT_MAX_NEW_TOKENS",
     default=400,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT = os.getenv(
+    "INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT",
+    "Describe what you see in this image.",
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_SYSTEM_PROMPT = os.getenv(
+    "INFERENCE_MODELS_GEMMA4_DEFAULT_SYSTEM_PROMPT",
+    "You are Gemma 4, a helpful multimodal assistant. Answer clearly and accurately.",
 )
 INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE",

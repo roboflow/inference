@@ -389,7 +389,10 @@ def write_blocks_summary_md(block_families):
     for block_section in BLOCK_SECTIONS:
         section_title = block_section['title']
         section_id = block_section['id']
-        
+
+        if not block_families_by_section[section_id]:
+            continue
+
         lines.append(f"* {section_title}")
         for family_name in sorted(block_families_by_section[section_id], key=lambda x: block_families[x][0].block_schema.get("ui_manifest", {}).get("blockPriority", 99)):
             # Suppose you had a function slugify_block_name:

@@ -11,6 +11,7 @@ from inference.core.env import (
 )
 from inference.core.interfaces.webrtc_worker.utils import is_over_quota
 from inference.core.logger import logger
+from inference.core.utils.url_utils import wrap_url
 
 
 class Watchdog:
@@ -87,7 +88,7 @@ class Watchdog:
 
         try:
             response = requests.post(
-                self._heartbeat_url,
+                wrap_url(self._heartbeat_url),
                 json={
                     "session_id": self._session_id,
                     "api_key": self._api_key,
@@ -116,7 +117,7 @@ class Watchdog:
         url = self._heartbeat_url + "/end"
         try:
             response = requests.post(
-                url,
+                wrap_url(url),
                 json={
                     "session_id": self._session_id,
                     "api_key": self._api_key,

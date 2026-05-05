@@ -526,8 +526,7 @@ def test_get_os_version_for_linux_when_etc_release_available(
     # given
     platform_mock.system.return_value = "Linux"
     get_os_version.cache_clear()
-    mocked_open_results = mock_open(
-        read_data="""
+    mocked_open_results = mock_open(read_data="""
 PRETTY_NAME="Ubuntu 22.04.5 LTS"
 NAME="Ubuntu"
 VERSION_ID="22.04"
@@ -539,8 +538,7 @@ HOME_URL="https://www.ubuntu.com/"
 SUPPORT_URL="https://help.ubuntu.com/"
 BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
 PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
-UBUNTU_CODENAME=jammy"""
-    )
+UBUNTU_CODENAME=jammy""")
     try:
         with mock.patch("builtins.open", mocked_open_results):
             # when

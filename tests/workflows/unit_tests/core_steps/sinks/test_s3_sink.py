@@ -574,7 +574,7 @@ def _make_retryable_client_error(code: str) -> ClientError:
     )
 
 
-@patch("inference.core.workflows.core_steps.sinks.s3.v1.time.sleep")
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.sleep")
 def test_upload_retries_on_retryable_client_error_then_succeeds(mock_sleep) -> None:
     mock_s3 = MagicMock()
     # Fail twice with a retryable error, succeed on the third attempt
@@ -597,7 +597,7 @@ def test_upload_retries_on_retryable_client_error_then_succeeds(mock_sleep) -> N
     assert mock_sleep.call_count == 2
 
 
-@patch("inference.core.workflows.core_steps.sinks.s3.v1.time.sleep")
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.sleep")
 def test_upload_retries_on_botocore_error_then_succeeds(mock_sleep) -> None:
     from botocore.exceptions import EndpointConnectionError
 
@@ -620,7 +620,7 @@ def test_upload_retries_on_botocore_error_then_succeeds(mock_sleep) -> None:
     assert mock_sleep.call_count == 1
 
 
-@patch("inference.core.workflows.core_steps.sinks.s3.v1.time.sleep")
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.sleep")
 def test_upload_returns_error_after_all_retries_exhausted(mock_sleep) -> None:
     mock_s3 = MagicMock()
     mock_s3.put_object.side_effect = _make_retryable_client_error("SlowDown")
@@ -638,9 +638,10 @@ def test_upload_returns_error_after_all_retries_exhausted(mock_sleep) -> None:
     assert mock_sleep.call_count == MAX_UPLOAD_RETRIES
 
 
-@patch("inference.core.workflows.core_steps.sinks.s3.v1.time.sleep")
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.sleep")
 def test_upload_does_not_retry_non_retryable_errors(mock_sleep) -> None:
     for error_code in NON_RETRYABLE_CLIENT_ERROR_CODES:
+        mock_sleep.reset_mock()
         mock_s3 = MagicMock()
         mock_s3.put_object.side_effect = _make_retryable_client_error(error_code)
 
@@ -657,7 +658,7 @@ def test_upload_does_not_retry_non_retryable_errors(mock_sleep) -> None:
         mock_sleep.assert_not_called()
 
 
-@patch("inference.core.workflows.core_steps.sinks.s3.v1.time.sleep")
+@patch("inference.core.workflows.core_steps.sinks.s3.v1.sleep")
 def test_upload_retry_uses_exponential_backoff(mock_sleep) -> None:
     mock_s3 = MagicMock()
     mock_s3.put_object.side_effect = _make_retryable_client_error("SlowDown")

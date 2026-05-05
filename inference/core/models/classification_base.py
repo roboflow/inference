@@ -4,7 +4,7 @@ from typing import Any, List, Tuple, Union
 
 import numpy as np
 
-from inference.core.env import USE_PYTORCH_FOR_PREPROCESSING
+from inference.core.env import USE_INFERENCE_MODELS, USE_PYTORCH_FOR_PREPROCESSING
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
@@ -281,7 +281,11 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             - If visualization is requested, the predictions are drawn on the image.
         """
         t1 = perf_counter()
-        responses = self.infer(**request.dict(), return_image_dims=True)
+        kwargs = request.dict()
+        confidence = kwargs.get("confidence")
+        if isinstance(confidence, str) and not USE_INFERENCE_MODELS:
+            kwargs.pop("confidence")
+        responses = self.infer(**kwargs, return_image_dims=True)
         for response in responses:
             response.time = perf_counter() - t1
             response.inference_id = getattr(request, "id", None)

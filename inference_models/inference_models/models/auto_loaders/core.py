@@ -81,6 +81,7 @@ from inference_models.weights_providers.entities import (
     ModelDependency,
     ModelPackageMetadata,
     Quantization,
+    RecommendedParameters,
 )
 
 MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
@@ -926,6 +927,7 @@ class AutoModel:
                 model_dependencies=model_metadata.model_dependencies,
                 model_dependencies_instances=model_dependencies_instances,
                 model_dependencies_directories=model_dependencies_directories,
+                recommended_parameters=model_metadata.recommended_parameters,
                 max_package_loading_attempts=max_package_loading_attempts,
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 verify_hash_while_download=verify_hash_while_download,
@@ -1078,6 +1080,12 @@ def attempt_loading_model_with_auto_load_cache(
             package_id=cache_entry.model_package_id,
         )
         model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
+        # Cache stores the already-resolved (package-vs-model) value written
+        # in initialize_model — no need to re-run resolve_recommended_parameters.
+        if cache_entry.recommended_parameters is not None:
+            model_init_kwargs["recommended_parameters"] = (
+                cache_entry.recommended_parameters
+            )
         model = model_class.from_pretrained(
             model_package_cache_dir, **model_init_kwargs
         )
@@ -1113,6 +1121,7 @@ def attempt_loading_matching_model_packages(
     model_dependencies: Optional[List[ModelDependency]],
     model_dependencies_instances: Dict[str, AnyModel],
     model_dependencies_directories: Dict[str, str],
+    recommended_parameters: Optional[RecommendedParameters] = None,
     max_package_loading_attempts: Optional[int] = None,
     model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     verbose: bool = True,
@@ -1130,7 +1139,7 @@ def attempt_loading_matching_model_packages(
             help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
         )
     failed_load_attempts: List[Tuple[str, Exception]] = []
-    for model_package in matching_model_packages:
+    for idx, model_package in enumerate(matching_model_packages):
         access_identifiers = AccessIdentifiers(
             model_id=model_id,
             package_id=model_package.package_id,
@@ -1153,6 +1162,7 @@ def attempt_loading_matching_model_packages(
                 model_dependencies=model_dependencies,
                 model_dependencies_instances=model_dependencies_instances,
                 model_dependencies_directories=model_dependencies_directories,
+                recommended_parameters=recommended_parameters,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
                 on_file_created=partial(
@@ -1169,6 +1179,12 @@ def attempt_loading_matching_model_packages(
                 ),
                 on_symlink_deleted=model_access_manager.on_symlink_deleted,
                 use_auto_resolution_cache=use_auto_resolution_cache,
+            )
+            LOGGER.info(
+                "Loaded model %s with backend %s (package %s)",
+                model_id,
+                model_package.backend.value,
+                model_package.package_id,
             )
             model_access_manager.on_model_loaded(
                 model=model,
@@ -1188,6 +1204,15 @@ def attempt_loading_matching_model_packages(
                 f"likely a bug in `inference-models` and you should raise an issue providing full context of "
                 f"the event. https://github.com/roboflow/inference/issues"
             )
+            next_idx = idx + 1
+            if next_idx < len(matching_model_packages):
+                next_backend = matching_model_packages[next_idx].backend.value
+                LOGGER.warning(
+                    "Falling back from %s to %s backend for model %s",
+                    model_package.backend.value,
+                    next_backend,
+                    model_id,
+                )
             failed_load_attempts.append((model_package.package_id, error))
 
     summary_of_errors = "\n".join(
@@ -1218,6 +1243,7 @@ def initialize_model(
     model_dependencies: Optional[List[ModelDependency]],
     model_dependencies_instances: Dict[str, AnyModel],
     model_dependencies_directories: Dict[str, str],
+    recommended_parameters: Optional[RecommendedParameters] = None,
     model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
@@ -1307,6 +1333,12 @@ def initialize_model(
     )
     resolved_files.update(dependencies_resolved_files)
     model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
+    resolved_recommended_parameters = resolve_recommended_parameters(
+        package_level=model_package.recommended_parameters,
+        model_level=recommended_parameters,
+    )
+    if resolved_recommended_parameters is not None:
+        model_init_kwargs["recommended_parameters"] = resolved_recommended_parameters
     model = model_class.from_pretrained(model_package_cache_dir, **model_init_kwargs)
     dump_auto_resolution_cache(
         use_auto_resolution_cache=use_auto_resolution_cache,
@@ -1320,6 +1352,7 @@ def initialize_model(
         resolved_files=resolved_files,
         model_dependencies=model_dependencies,
         model_features=model_package.model_features,
+        recommended_parameters=resolved_recommended_parameters,
     )
     return model, model_package_cache_dir
 
@@ -1484,6 +1517,7 @@ def dump_auto_resolution_cache(
     resolved_files: Set[str],
     model_dependencies: Optional[List[ModelDependency]],
     model_features: Optional[dict],
+    recommended_parameters: Optional[RecommendedParameters] = None,
 ) -> None:
     if not use_auto_resolution_cache:
         return None
@@ -1497,6 +1531,7 @@ def dump_auto_resolution_cache(
         created_at=datetime.now(),
         model_dependencies=model_dependencies,
         model_features=model_features,
+        recommended_parameters=recommended_parameters,
     )
     auto_resolution_cache.register(
         auto_negotiation_hash=auto_negotiation_hash, cache_entry=cache_content
@@ -1812,3 +1847,11 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     return getattr(module, class_name)
+
+
+def resolve_recommended_parameters(
+    package_level: Optional[RecommendedParameters],
+    model_level: Optional[RecommendedParameters],
+) -> Optional[RecommendedParameters]:
+    """Package-level recommended_parameters take priority over model-level."""
+    return package_level if package_level is not None else model_level

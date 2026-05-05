@@ -4386,3 +4386,24 @@ def test_yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_packa
         torch.tensor([0.9362, 0.9064]).cpu(),
         atol=0.01,
     )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torchscript_per_class_confidence_filters_detections(
+    yolov8n_pose_torchscript_static_center_crop_package: str,
+    people_walking_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
+        model_name_or_path=yolov8n_pose_torchscript_static_center_crop_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[0]: 1.01},
+    )
+    _, predictions_det = model(people_walking_image_numpy, confidence="best")
+    assert predictions_det[0].class_id.numel() == 0

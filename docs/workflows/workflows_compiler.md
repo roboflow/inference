@@ -35,6 +35,8 @@ during execution and verifying Workflow integrity
 5. Initializing Workflow steps from blocks: Setting up the individual workflow steps based on the available blocks, 
 steps definitions and configuration of execution environment.
 
+If the definition contains [`roboflow_core/inner_workflow@v1`](./inner_workflow_design.md) steps, the compiler **first** resolves saved-workflow references, validates nested **composition** (depth, total count, acyclicity), and **inlines** child steps into the parent **before** parsing and building the execution graph. See [Inner workflows (nested definitions)](./inner_workflow_design.md) for the full pipeline, `parameter_bindings`, and environment limits.
+
 Let's take a closer look at each of the workflow compilation steps.
 
 ### Workflows blocks loading

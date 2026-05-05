@@ -1,11 +1,12 @@
 import threading
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
 
 from inference_models import (
     InstanceDetections,
+    InstanceSegmentationMaskFormat,
     InstanceSegmentationModel,
     PreProcessingOverrides,
 )
@@ -13,10 +14,11 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
+    ModelInputError,
     ModelRuntimeError,
 )
 from inference_models.models.common.cuda import (
@@ -33,6 +35,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.common.trt import (
     TRTCudaGraphCache,
     establish_trt_cuda_graph_cache,
@@ -46,8 +49,10 @@ from inference_models.models.rfdetr.class_remapping import (
 )
 from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
+    post_process_instance_segmentation_results_to_rle_masks,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import tensorrt as trt
@@ -96,6 +101,7 @@ class RFDetrForInstanceSegmentationTRT(
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationTRT":
         if device.type != "cuda":
@@ -181,6 +187,7 @@ class RFDetrForInstanceSegmentationTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -196,6 +203,7 @@ class RFDetrForInstanceSegmentationTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        recommended_parameters=None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -211,10 +219,15 @@ class RFDetrForInstanceSegmentationTRT(
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
         return self._class_names
+
+    @property
+    def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
+        return {"dense", "rle"}
 
     def pre_process(
         self,
@@ -263,21 +276,49 @@ class RFDetrForInstanceSegmentationTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
+        mask_format: InstanceSegmentationMaskFormat = "dense",
         **kwargs,
     ) -> List[InstanceDetections]:
+        if mask_format not in self.supported_mask_formats:
+            raise ModelInputError(
+                message=f"RFDetr Instance Segmentation models support the following mask "
+                f"formats: {self.supported_mask_formats}. Requested format: {mask_format} "
+                f"is not supported. If you see this error while running on Roboflow platform, "
+                f"contact support or raise an issue at https://github.com/roboflow/inference/issues. "
+                f"When running locally - please verify your integration to make sure that appropriate "
+                f"value of `mask_format` parameter is set.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        )
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
             bboxes, logits, masks = model_results
-            results = post_process_instance_segmentation_results(
-                bboxes=bboxes,
-                logits=logits,
-                masks=masks,
-                pre_processing_meta=pre_processing_meta,
-                threshold=confidence,
-                classes_re_mapping=self._classes_re_mapping,
-            )
+            if mask_format == "dense":
+                results = post_process_instance_segmentation_results(
+                    bboxes=bboxes,
+                    logits=logits,
+                    masks=masks,
+                    pre_processing_meta=pre_processing_meta,
+                    threshold=confidence_filter.get_threshold(self.class_names),
+                    num_classes=len(self.class_names),
+                    classes_re_mapping=self._classes_re_mapping,
+                )
+            else:
+                results = post_process_instance_segmentation_results_to_rle_masks(
+                    bboxes=bboxes,
+                    logits=logits,
+                    masks=masks,
+                    pre_processing_meta=pre_processing_meta,
+                    threshold=confidence_filter.get_threshold(self.class_names),
+                    num_classes=len(self.class_names),
+                    classes_re_mapping=self._classes_re_mapping,
+                )
         self._post_process_stream.synchronize()
         return results
 

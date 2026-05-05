@@ -285,3 +285,30 @@ def test_multi_label_trt_package_torch_batch(
     # then
     assert abs(predictions[0].confidence[2].item() - 0.833984375) < 1e-3
     assert abs(predictions[1].confidence[2].item() - 0.833984375) < 1e-3
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_multi_label_trt_per_class_confidence_blocks_specific_class(
+    vit_multi_label_cls_trt_package: str,
+    dog_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_multi_label_trt_package_numpy` above) has class 2
+    confidence ~0.834 on dog_image (so it passes 0.5 baseline threshold).
+    Setting a 0.99 per-class threshold on class 2 drops it from predictions."""
+    from inference_models.models.vit.vit_classification_trt import (
+        VITForMultiLabelClassificationTRT,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = VITForMultiLabelClassificationTRT.from_pretrained(
+        model_name_or_path=vit_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.5,
+        per_class_confidence={class_names[2]: 0.99},
+    )
+    predictions = model(dog_image_numpy, confidence="best")
+    assert 2 not in predictions[0].class_ids.cpu().tolist()

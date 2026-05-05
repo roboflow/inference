@@ -15,30 +15,46 @@ from tests.workflows.integration_tests.execution.workflows_gallery_collector.dec
     add_to_workflows_gallery,
 )
 
-OBJECT_DETECTION_WORKFLOW = {
-    "version": "1.0",
-    "inputs": [
-        {"type": "WorkflowImage", "name": "image"},
-        {
-            "type": "WorkflowParameter",
-            "name": "model_id",
-            "default_value": "yolov8n-640",
-        },
-        {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
-    ],
-    "steps": [
-        {
-            "type": "RoboflowObjectDetectionModel",
-            "name": "detection",
-            "image": "$inputs.image",
-            "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
-        }
-    ],
-    "outputs": [
-        {"type": "JsonField", "name": "result", "selector": "$steps.detection.*"}
-    ],
-}
+OBJECT_DETECTION_BLOCK_TYPES = [
+    "roboflow_core/roboflow_object_detection_model@v2",
+    "roboflow_core/roboflow_object_detection_model@v3",
+]
+
+
+def _build_object_detection_workflow(block_type: str) -> dict:
+    step = {
+        "type": block_type,
+        "name": "detection",
+        "image": "$inputs.image",
+        "model_id": "$inputs.model_id",
+    }
+    if block_type.endswith("@v3"):
+        step["confidence_mode"] = "custom"
+        step["custom_confidence"] = "$inputs.confidence"
+    else:
+        step["confidence"] = "$inputs.confidence"
+    return {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {
+                "type": "WorkflowParameter",
+                "name": "model_id",
+                "default_value": "yolov8n-640",
+            },
+            {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
+        ],
+        "steps": [step],
+        "outputs": [
+            {"type": "JsonField", "name": "result", "selector": "$steps.detection.*"}
+        ],
+    }
+
+
+# Gallery definition uses the latest block version.
+OBJECT_DETECTION_WORKFLOW = _build_object_detection_workflow(
+    OBJECT_DETECTION_BLOCK_TYPES[-1]
+)
 
 EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE = np.array(
     [
@@ -117,18 +133,20 @@ EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE = np.array(
     category="Basic Workflows",
     use_case_title="Workflow with single object detection model",
     use_case_description="""
-This is the basic workflow that only contains a single object detection model. 
+This is the basic workflow that only contains a single object detection model.
 
-Please take a look at how batch-oriented WorkflowImage data is plugged to 
+Please take a look at how batch-oriented WorkflowImage data is plugged to
 detection step via input selector (`$inputs.image`) and how non-batch parameters
 are dynamically specified - via `$inputs.model_id` and `$inputs.confidence` selectors.
     """,
     workflow_definition=OBJECT_DETECTION_WORKFLOW,
     workflow_name_in_app="basic-object-detection",
 )
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -137,7 +155,7 @@ def test_object_detection_workflow_when_minimal_valid_input_provided(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -175,9 +193,11 @@ def test_object_detection_workflow_when_minimal_valid_input_provided(
         ), "Expected confidences to match what was validated manually as workflow outcome"
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_batch_input_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -186,7 +206,7 @@ def test_object_detection_workflow_when_batch_input_provided(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -248,9 +268,11 @@ def test_object_detection_workflow_when_batch_input_provided(
         ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_batch_input_provided_and_serialization_requested(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -259,7 +281,7 @@ def test_object_detection_workflow_when_batch_input_provided_and_serialization_r
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -322,9 +344,11 @@ def test_object_detection_workflow_when_batch_input_provided_and_serialization_r
         ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_confidence_is_restricted_by_input_parameter(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -333,7 +357,7 @@ def test_object_detection_workflow_when_confidence_is_restricted_by_input_parame
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -363,8 +387,10 @@ def test_object_detection_workflow_when_confidence_is_restricted_by_input_parame
     ), "Expected confidences to match what was validated manually as workflow outcome"
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_image_not_provided_in_input(
     model_manager: ModelManager,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -373,7 +399,7 @@ def test_object_detection_workflow_when_image_not_provided_in_input(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -387,9 +413,11 @@ def test_object_detection_workflow_when_image_not_provided_in_input(
         )
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_confidence_provided_with_invalid_type(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -398,7 +426,7 @@ def test_object_detection_workflow_when_confidence_provided_with_invalid_type(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -414,9 +442,11 @@ def test_object_detection_workflow_when_confidence_provided_with_invalid_type(
         )
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_model_id_cannot_be_resolved_to_valid_model(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -425,7 +455,7 @@ def test_object_detection_workflow_when_model_id_cannot_be_resolved_to_valid_mod
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )

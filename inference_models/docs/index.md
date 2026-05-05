@@ -93,12 +93,16 @@ be fast, reliable, and user-friendly. It offers:
 
 - **RFDetr**
 - **SAM models family**
-- **Vision-Language Models** (Florence, PaliGemma, Qwen, SmolVLM, Moondream)
+- **Vision-Language Models** (Florence, PaliGemma, Qwen, SmolVLM, Moondream, [Gemma 4](models/gemma4.md))
 - **OCR** (DocTR, EasyOCR, TrOCR)
 - **YOLO**
 - and many more
 
 For detailed model documentation, see [Supported Models](models/index.md).
+
+### Gemma 4 (Hugging Face multimodal)
+
+[Gemma 4](models/gemma4.md) runs through the Hugging Face stack as `Gemma4HF` in `inference_models.models.gemma4.gemma4_hf` — multimodal prompts, optional Roboflow `inference_config.json`, and configurable visual token budgets. Defaults for generation are configurable via `INFERENCE_MODELS_GEMMA4_*` environment variables ([reference](how-to/environment-variables.md#gemma-4)).
 
 # 🔧 Run your local models
 

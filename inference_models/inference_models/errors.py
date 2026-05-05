@@ -37,6 +37,12 @@ class RetryError(BaseInferenceModelsError):
     pass
 
 
+class RangeRequestNotSupportedError(BaseInferenceModelsError):
+    """HTTP ranged GET did not return 206 Partial Content (threaded downloads)."""
+
+    pass
+
+
 class ModelRetrievalError(BaseInferenceModelsError):
     pass
 

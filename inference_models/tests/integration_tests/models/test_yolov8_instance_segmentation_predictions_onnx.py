@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 import torch
 
+from inference_models.models.common.rle_utils import coco_rle_masks_to_torch_mask
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -46,6 +48,66 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy(
     )
     assert (
         16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16200
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy_rle_variant(
+    asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    from inference_models.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        mask_format="rle",
+    )
+    predictions_ref = model(
+        asl_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
+    decoded_mask = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[0].mask, device=torch.device("cpu")
+    )
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
+    )
+    expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
+        atol=2,
+    )
+    assert (
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16200
+    )
+    assert np.allclose(
+        decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
 
 
@@ -203,6 +265,89 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_numpy(
     )
     assert (
         16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16200
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_numpy_rle_variant(
+    asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    from inference_models.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+        mask_format="rle",
+    )
+    predictions_ref = model(
+        [asl_image_numpy, asl_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
+    decoded_mask_1 = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[0].mask, device=torch.device("cpu")
+    )
+    decoded_mask_2 = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[1].mask, device=torch.device("cpu")
+    )
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
+    )
+    assert torch.allclose(
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
+    )
+    expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
+        atol=2,
+    )
+    assert (
+        16000 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16200
+    )
+    assert (
+        16000 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16200
+    )
+    assert np.allclose(
+        decoded_mask_1.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
+    )
+    assert np.allclose(
+        decoded_mask_2.cpu().numpy(), predictions_ref[1].mask.cpu().numpy()
     )
 
 
@@ -3572,3 +3717,30 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_list_tor
     assert (
         13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
     )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_per_class_confidence_blocks_specific_class(
+    asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_onnx_package_with_dynamic_batch_size_and_stretch_numpy`
+    above) returns 1 detection of class 20 at conf 0.985. Setting a 0.99
+    per-class threshold on class 20 should leave no detections."""
+    from inference_models.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[20]: 0.99},
+    )
+    predictions = model(asl_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

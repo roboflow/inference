@@ -1225,3 +1225,31 @@ def test_onnx_package_with_nonsquare_letterbox_torch_list(
         assert torch.allclose(
             pred.xyxy.cpu(), _NONSQUARE_LETTERBOX_ONNX_EXPECTED_XYXY, atol=2
         )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_per_class_confidence_blocks_specific_class(
+    coin_counting_rfdetr_nano_onnx_cs_stretch_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    """RFDETR OD: Group B direct-indexing + DETR no-object handling.
+    Other tests in this file (e.g. center-crop runs) return all class_id=1 for
+    coin counting. Setting a 0.99 per-class threshold on class 1 leaves no
+    detections."""
+    from inference_models.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = RFDetrForObjectDetectionONNX.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_onnx_cs_stretch_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.3,
+        per_class_confidence={class_names[1]: 0.99},
+    )
+    predictions = model(coins_counting_image_numpy, confidence="best")
+    assert 1 not in predictions[0].class_id.cpu().tolist()

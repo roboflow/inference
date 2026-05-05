@@ -31,6 +31,7 @@ import gzip
 import hashlib
 import json
 import os
+import sys
 import threading
 import time as _time
 from typing import Any, Dict, Optional
@@ -437,6 +438,16 @@ class ModalExecutor:
                     stderr=result.get("stderr"),
                 )
 
+            stdout = result.get("stdout")
+            stderr = result.get("stderr")
+            if stdout:
+                sys.stdout.write(stdout)
+                sys.stdout.flush()
+            if stderr:
+                sys.stderr.write(stderr)
+                sys.stderr.flush()
+
+            # Get the result and deserialize from JSON
             json_result = result.get("result", "{}")
             return deserialize_for_modal_remote_execution(json_result)
 

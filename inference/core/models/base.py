@@ -6,6 +6,7 @@ import numpy as np
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.env import USE_INFERENCE_MODELS
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.telemetry import set_span_attribute, start_span
 from inference.usage_tracking.collector import usage_collector
@@ -139,7 +140,16 @@ class Model(BaseInference):
               is also included in the response.
         """
         t1 = perf_counter()
-        responses = self.infer(**request.dict(), return_image_dims=False)
+        kwargs = request.dict()
+        confidence = kwargs.get("confidence")
+        if isinstance(confidence, str) and not USE_INFERENCE_MODELS:
+            logger.warning(
+                "Legacy inference does not support confidence=%r, "
+                "using model default",
+                confidence,
+            )
+            kwargs.pop("confidence")
+        responses = self.infer(**kwargs, return_image_dims=False)
         for response in responses:
             response.time = perf_counter() - t1
             logger.debug(f"model infer time: {response.time * 1000.0} ms")

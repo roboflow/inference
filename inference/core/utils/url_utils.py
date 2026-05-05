@@ -1,11 +1,11 @@
 import urllib
 
-from inference.core.env import LICENSE_SERVER
+from inference.core.env import SECURE_GATEWAY
 
 
 def wrap_url(url: str) -> str:
-    if not LICENSE_SERVER:
+    if not SECURE_GATEWAY:
         return url
-    return f"http://{LICENSE_SERVER}/proxy?url=" + urllib.parse.quote(
+    return f"http://{SECURE_GATEWAY}/proxy?url=" + urllib.parse.quote(
         url, safe="~()*!'"
     )

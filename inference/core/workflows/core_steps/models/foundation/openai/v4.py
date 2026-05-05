@@ -38,6 +38,11 @@ from inference.core.workflows.prototypes.block import (
 
 OPENAI_MODELS = [
     {
+        "id": "gpt-5.5",
+        "name": "GPT-5.5",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+    },
+    {
         "id": "gpt-5.4",
         "name": "GPT-5.4",
         "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],

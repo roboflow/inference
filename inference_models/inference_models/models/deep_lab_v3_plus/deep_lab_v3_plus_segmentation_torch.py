@@ -10,6 +10,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
 )
+from inference_models.entities import Confidence
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.base.semantic_segmentation import (
@@ -24,9 +25,11 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 class DeepLabV3PlusForSemanticSegmentationTorch(
@@ -38,6 +41,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "DeepLabV3PlusForSemanticSegmentationTorch":
         model_package_content = get_model_package_contents(
@@ -112,6 +116,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
             class_names=class_names,
             background_class_id=background_class_id,
             device=device,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -121,6 +126,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         class_names: List[str],
         background_class_id: int,
         device: torch.device,
+        recommended_parameters: Optional[RecommendedParameters] = None,
     ):
         self._model = model
         self._inference_config = inference_config
@@ -128,6 +134,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         self._background_class_id = background_class_id
         self._device = device
         self._lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -159,9 +166,14 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
+        )
         results = []
         for image_results, image_metadata in zip(model_results, pre_processing_meta):
             inference_size = image_metadata.inference_size
@@ -224,9 +236,6 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 )
             image_results = torch.nn.functional.softmax(image_results, dim=0)
             image_confidence, image_class_ids = torch.max(image_results, dim=0)
-            below_threshold = image_confidence < confidence
-            image_confidence[below_threshold] = 0.0
-            image_class_ids[below_threshold] = self._background_class_id
             if (
                 image_metadata.static_crop_offset.offset_x > 0
                 or image_metadata.static_crop_offset.offset_y > 0
@@ -264,6 +273,20 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 ] = image_class_ids
                 image_class_ids = original_size_confidence_class_id_canvas
                 image_confidence = original_size_confidence_canvas
+            threshold = confidence_filter.get_threshold(self.class_names)
+            if isinstance(threshold, torch.Tensor):
+                threshold = threshold.to(
+                    dtype=image_confidence.dtype, device=image_confidence.device
+                )
+            below = image_confidence < (
+                threshold[image_class_ids.long()]
+                if isinstance(threshold, torch.Tensor)
+                else threshold
+            )
+            image_class_ids = image_class_ids.clone()
+            image_confidence = image_confidence.clone()
+            image_class_ids[below] = self._background_class_id
+            image_confidence[below] = 0.0
             results.append(
                 SemanticSegmentationResult(
                     segmentation_map=image_class_ids,

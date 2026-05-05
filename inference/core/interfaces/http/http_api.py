@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from functools import partial
 from threading import Lock, Thread
 from time import sleep
-from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 from uuid import uuid4
 
 import asgi_correlation_id
@@ -32,6 +32,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
 from inference.core.constants import (
+    MODEL_COLD_START_COUNT_HEADER,
     MODEL_COLD_START_HEADER,
     MODEL_ID_HEADER,
     MODEL_LOAD_DETAILS_HEADER,
@@ -229,6 +230,12 @@ from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
     orjson_response_keeping_parent_id,
 )
+from inference.core.interfaces.http.request_metrics import (
+    REMOTE_PROCESSING_TIME_HEADER,
+    REMOTE_PROCESSING_TIMES_HEADER,
+    GCPServerlessMiddleware,
+    build_model_response_headers,
+)
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandContext,
     CommandResponse,
@@ -278,9 +285,16 @@ from inference.core.roboflow_api import (
     get_serverless_usage_check_async,
     get_workflow_specification,
 )
-from inference.core.telemetry import setup_telemetry, shutdown_telemetry, start_span
+from inference.core.telemetry import (
+    get_trace_id,
+    record_error,
+    setup_telemetry,
+    shutdown_telemetry,
+    start_span,
+)
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     WorkflowBlockError,
@@ -314,25 +328,13 @@ import time
 
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
+from inference_sdk.http.entities import Confidence
 
 try:
-    from inference_sdk.config import (
-        EXECUTION_ID_HEADER,
-        INTERNAL_REMOTE_EXEC_REQ_HEADER,
-        INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER,
-        RemoteProcessingTimeCollector,
-        apply_duration_minimum,
-        execution_id,
-        remote_processing_times,
-    )
+    from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 except ImportError:
-    execution_id = None
-    remote_processing_times = None
-    RemoteProcessingTimeCollector = None
     EXECUTION_ID_HEADER = None
-    INTERNAL_REMOTE_EXEC_REQ_HEADER = None
-    INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER = None
-    apply_duration_minimum = None
+    execution_id = None
 
 
 def get_content_type(request: Request) -> str:
@@ -348,8 +350,6 @@ class LambdaMiddleware(BaseHTTPMiddleware):
         return response
 
 
-REMOTE_PROCESSING_TIME_HEADER = "X-Remote-Processing-Time"
-REMOTE_PROCESSING_TIMES_HEADER = "X-Remote-Processing-Times"
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 
@@ -362,46 +362,131 @@ class AuthorizationCacheEntry:
     message: Optional[str] = None
 
 
-class GCPServerlessMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        if execution_id is not None:
-            execution_id_value = request.headers.get(EXECUTION_ID_HEADER)
-            if not execution_id_value:
-                execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
-            execution_id.set(execution_id_value)
-        is_verified_internal = False
-        if apply_duration_minimum is not None:
-            is_verified_internal = bool(
-                ROBOFLOW_INTERNAL_SERVICE_SECRET
-                and INTERNAL_REMOTE_EXEC_REQ_HEADER
-                and request.headers.get(INTERNAL_REMOTE_EXEC_REQ_HEADER)
-                == ROBOFLOW_INTERNAL_SERVICE_SECRET
-            )
-            apply_duration_minimum.set(not is_verified_internal)
-        collector = None
-        if (
-            WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING
-            and remote_processing_times is not None
-            and RemoteProcessingTimeCollector is not None
-        ):
-            collector = RemoteProcessingTimeCollector()
-            remote_processing_times.set(collector)
-        t1 = time.time()
-        response = await call_next(request)
-        t2 = time.time()
-        response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
-        if collector is not None and collector.has_data():
-            total, detail = collector.summarize()
-            response.headers[REMOTE_PROCESSING_TIME_HEADER] = str(total)
-            if detail is not None:
-                response.headers[REMOTE_PROCESSING_TIMES_HEADER] = detail
-        if execution_id is not None:
-            response.headers[EXECUTION_ID_HEADER] = execution_id_value
-        if INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER is not None:
-            response.headers[INTERNAL_REMOTE_EXEC_REQ_VERIFIED_HEADER] = str(
-                is_verified_internal
-            ).lower()
-        return response
+AuthorizationCacheKey = Tuple[str, bool]
+
+
+def _get_request_param(
+    req_params,
+    json_params: Dict[str, Any],
+    key: str,
+) -> Optional[Any]:
+    return json_params.get(key, req_params.get(key))
+
+
+def _coerce_optional_bool(value: Optional[Any]) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if not isinstance(value, str):
+        return None
+    normalized_value = value.strip().lower()
+    if normalized_value in {"true", "1", "yes", "on"}:
+        return True
+    if normalized_value in {"false", "0", "no", "off"}:
+        return False
+    return None
+
+
+def _is_non_billable_internal_request(
+    req_params,
+    json_params: Dict[str, Any],
+) -> bool:
+    countinference = _coerce_optional_bool(
+        _get_request_param(
+            req_params=req_params,
+            json_params=json_params,
+            key="countinference",
+        )
+    )
+    service_secret = _get_request_param(
+        req_params=req_params, json_params=json_params, key="service_secret"
+    )
+    return (
+        countinference is False
+        and service_secret is not None
+        and service_secret == ROBOFLOW_SERVICE_SECRET
+    )
+
+
+def _set_request_header(request: Request, header_name: str, header_value: str) -> None:
+    header_key = header_name.lower().encode("latin-1")
+    raw_headers = list(request.scope.get("headers", []))
+    raw_headers = [(key, value) for key, value in raw_headers if key != header_key]
+    raw_headers.append((header_key, header_value.encode("latin-1")))
+    request.scope["headers"] = raw_headers
+
+
+def _set_optional_context_var(context_var: Optional[Any], value: Optional[str]) -> None:
+    if context_var is None or value is None:
+        return
+    try:
+        context_var.set(value)
+    except Exception:
+        pass
+
+
+def _prepare_serverless_observability_context(
+    request: Request,
+) -> Tuple[str, Optional[str]]:
+    request_id = request.headers.get(CORRELATION_ID_HEADER) or uuid4().hex
+    _set_request_header(
+        request=request, header_name=CORRELATION_ID_HEADER, header_value=request_id
+    )
+    correlation_context_var = getattr(asgi_correlation_id, "correlation_id", None)
+    _set_optional_context_var(correlation_context_var, request_id)
+    execution_id_value = None
+    if EXECUTION_ID_HEADER is not None:
+        execution_id_value = request.headers.get(EXECUTION_ID_HEADER)
+        if not execution_id_value:
+            execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
+        _set_request_header(
+            request=request,
+            header_name=EXECUTION_ID_HEADER,
+            header_value=execution_id_value,
+        )
+        _set_optional_context_var(execution_id, execution_id_value)
+    return request_id, execution_id_value
+
+
+def _attach_observability_headers_to_early_response(
+    response: Response,
+    request_id: str,
+    execution_id_value: Optional[str],
+    processing_time: float,
+    workspace_id: Optional[str] = None,
+) -> None:
+    response.headers[CORRELATION_ID_HEADER] = request_id
+    response.headers[PROCESSING_TIME_HEADER] = str(processing_time)
+    if workspace_id is not None:
+        response.headers[WORKSPACE_ID_HEADER] = workspace_id
+    if EXECUTION_ID_HEADER is not None and execution_id_value is not None:
+        response.headers[EXECUTION_ID_HEADER] = execution_id_value
+    trace_id = get_trace_id()
+    if trace_id is not None:
+        response.headers[TRACE_ID_HEADER] = trace_id
+
+
+def _log_serverless_authorization_denial(
+    request: Request,
+    status_code: int,
+    message: str,
+    request_id: str,
+    execution_id_value: Optional[str],
+    workspace_id: Optional[str],
+    cache_hit: bool,
+) -> None:
+    log_fields = {
+        "method": request.method,
+        "path": request.url.path,
+        "status_code": status_code,
+        "denial_message": message,
+        "request_id": request_id,
+        "cache_hit": cache_hit,
+    }
+    if execution_id_value is not None:
+        log_fields["execution_id"] = execution_id_value
+    if workspace_id is not None:
+        log_fields["workspace_id"] = workspace_id
+    logger.info("Serverless authorization denied", **log_fields)
 
 
 class HttpInterface(BaseInterface):
@@ -510,6 +595,7 @@ class HttpInterface(BaseInterface):
                     REMOTE_PROCESSING_TIME_HEADER,
                     REMOTE_PROCESSING_TIMES_HEADER,
                     MODEL_COLD_START_HEADER,
+                    MODEL_COLD_START_COUNT_HEADER,
                     MODEL_LOAD_TIME_HEADER,
                     MODEL_LOAD_DETAILS_HEADER,
                     MODEL_ID_HEADER,
@@ -593,12 +679,17 @@ class HttpInterface(BaseInterface):
                 )
                 return JSONResponse(status_code=200, content=container_stats)
 
-        cached_api_keys: Dict[str, AuthorizationCacheEntry] = {}
+        cached_api_keys: Dict[AuthorizationCacheKey, AuthorizationCacheEntry] = {}
 
         if GCP_SERVERLESS:
 
             @app.middleware("http")
             async def check_authorization_serverless(request: Request, call_next):
+                request_id, execution_id_value = (
+                    _prepare_serverless_observability_context(request=request)
+                )
+                t1 = time.time()
+
                 # exclusions
                 skip_check = (
                     request.method not in ["GET", "POST"]
@@ -639,83 +730,218 @@ class HttpInterface(BaseInterface):
                 if skip_check:
                     return await call_next(request)
 
-                def _authorization_error_response(status_code: int, msg: str):
-                    return JSONResponse(
+                def _authorization_error_response(
+                    status_code: int,
+                    msg: str,
+                    workspace_id: Optional[str] = None,
+                    cache_hit: bool = False,
+                ):
+                    response = JSONResponse(
                         status_code=status_code,
                         content={
                             "status": status_code,
                             "message": msg,
                         },
                     )
-
-                req_params = request.query_params
-                json_params = dict()
-                api_key = req_params.get("api_key", None)
-                if (
-                    api_key is None
-                    and get_content_type(request) == "application/json"
-                    and int(request.headers.get("content-length", 0)) > 0
-                ):
-                    # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
-                    try:
-                        json_params = await request.json()
-                    except Exception:
-                        pass
-                api_key = json_params.get("api_key", api_key)
-
-                if api_key is None:
-                    return _authorization_error_response(401, "Unauthorized api_key")
-
-                cache_entry = cached_api_keys.get(api_key)
-                workspace_id = None
-                if cache_entry and cache_entry.expires_at >= time.time():
-                    if cache_entry.status_code != 200:
-                        return _authorization_error_response(
-                            cache_entry.status_code,
-                            cache_entry.message or "Unauthorized api_key",
-                        )
-                    workspace_id = cache_entry.workspace_id
-                else:
-                    usage_check_result = await get_serverless_usage_check_async(
-                        api_key=api_key
+                    _attach_observability_headers_to_early_response(
+                        response=response,
+                        request_id=request_id,
+                        execution_id_value=execution_id_value,
+                        processing_time=time.time() - t1,
+                        workspace_id=workspace_id,
                     )
-                    if usage_check_result.status_code == 200:
-                        workspace_id = usage_check_result.workspace_id
-                        cached_api_keys[api_key] = AuthorizationCacheEntry(
-                            expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
-                            workspace_id=workspace_id,
+                    _log_serverless_authorization_denial(
+                        request=request,
+                        status_code=status_code,
+                        message=msg,
+                        request_id=request_id,
+                        execution_id_value=execution_id_value,
+                        workspace_id=workspace_id,
+                        cache_hit=cache_hit,
+                    )
+                    return response
+
+                try:
+                    with start_span(
+                        "serverless.authorization.check",
+                        attributes={
+                            "http.method": request.method,
+                            "http.target": request.url.path,
+                        },
+                    ) as auth_span:
+                        req_params = request.query_params
+                        json_params = dict()
+                        api_key = req_params.get("api_key", None)
+                        if (
+                            api_key is None
+                            and get_content_type(request) == "application/json"
+                            and int(request.headers.get("content-length", 0)) > 0
+                        ):
+                            # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
+                            try:
+                                json_params = await request.json()
+                            except Exception:
+                                pass
+                        api_key = json_params.get("api_key", api_key)
+
+                        if api_key is None:
+                            if auth_span is not None:
+                                auth_span.set_attribute("http.status_code", 401)
+                                auth_span.set_attribute(
+                                    "auth.result", "missing_api_key"
+                                )
+                            return _authorization_error_response(
+                                401, "Unauthorized api_key"
+                            )
+
+                        enforce_credits_verification = (
+                            not _is_non_billable_internal_request(
+                                req_params=req_params,
+                                json_params=json_params,
+                            )
                         )
-                    elif usage_check_result.status_code == 401:
-                        cached_api_keys[api_key] = AuthorizationCacheEntry(
-                            expires_at=time.time() + SHORT_AUTH_CACHE_TTL_SECONDS,
-                            workspace_id=None,
-                            status_code=401,
-                            message=(
-                                "Unauthorized api_key. This key is not authorized "
-                                "for serverless inference."
-                            ),
-                        )
-                        return _authorization_error_response(
-                            401,
-                            cached_api_keys[api_key].message,
-                        )
-                    elif usage_check_result.status_code == 402:
-                        message = (
-                            "This workspace cannot currently spend credits for serverless inference. "
-                            "Verify billing or credit cap settings."
-                        )
-                        if usage_check_result.error:
-                            message = f"{message} {usage_check_result.error}"
-                        cached_api_keys[api_key] = AuthorizationCacheEntry(
-                            expires_at=time.time() + SHORT_AUTH_CACHE_TTL_SECONDS,
-                            workspace_id=usage_check_result.workspace_id,
-                            status_code=402,
-                            message=message,
-                        )
-                        return _authorization_error_response(
-                            402,
-                            cached_api_keys[api_key].message,
-                        )
+                        cache_key = (api_key, enforce_credits_verification)
+                        cache_entry = cached_api_keys.get(cache_key)
+                        workspace_id = None
+                        if auth_span is not None:
+                            auth_span.set_attribute(
+                                "auth.enforce_credits_verification",
+                                enforce_credits_verification,
+                            )
+                        if cache_entry and cache_entry.expires_at >= time.time():
+                            if auth_span is not None:
+                                auth_span.set_attribute("auth.cache_hit", True)
+                            if cache_entry.status_code != 200:
+                                if auth_span is not None:
+                                    auth_span.set_attribute(
+                                        "http.status_code", cache_entry.status_code
+                                    )
+                                    auth_span.set_attribute(
+                                        "auth.result", "denied_from_cache"
+                                    )
+                                return _authorization_error_response(
+                                    cache_entry.status_code,
+                                    cache_entry.message or "Unauthorized api_key",
+                                    workspace_id=cache_entry.workspace_id,
+                                    cache_hit=True,
+                                )
+                            workspace_id = cache_entry.workspace_id
+                        else:
+                            if auth_span is not None:
+                                auth_span.set_attribute("auth.cache_hit", False)
+                            if not enforce_credits_verification:
+                                try:
+                                    workspace_id = await get_roboflow_workspace_async(
+                                        api_key=api_key
+                                    )
+                                    cached_api_keys[cache_key] = (
+                                        AuthorizationCacheEntry(
+                                            expires_at=time.time()
+                                            + AUTH_CACHE_TTL_SECONDS,
+                                            workspace_id=workspace_id,
+                                        )
+                                    )
+                                except (
+                                    RoboflowAPINotAuthorizedError,
+                                    WorkspaceLoadError,
+                                ):
+                                    cached_api_keys[cache_key] = (
+                                        AuthorizationCacheEntry(
+                                            expires_at=time.time()
+                                            + SHORT_AUTH_CACHE_TTL_SECONDS,
+                                            workspace_id=None,
+                                            status_code=401,
+                                            message="Unauthorized api_key",
+                                        )
+                                    )
+                                    if auth_span is not None:
+                                        auth_span.set_attribute("http.status_code", 401)
+                                        auth_span.set_attribute(
+                                            "auth.result", "unauthorized"
+                                        )
+                                    return _authorization_error_response(
+                                        401,
+                                        cached_api_keys[cache_key].message,
+                                        cache_hit=False,
+                                    )
+                            else:
+                                usage_check_result = (
+                                    await get_serverless_usage_check_async(
+                                        api_key=api_key
+                                    )
+                                )
+                                if usage_check_result.status_code == 200:
+                                    workspace_id = usage_check_result.workspace_id
+                                    cached_api_keys[cache_key] = (
+                                        AuthorizationCacheEntry(
+                                            expires_at=time.time()
+                                            + AUTH_CACHE_TTL_SECONDS,
+                                            workspace_id=workspace_id,
+                                        )
+                                    )
+                                elif usage_check_result.status_code == 401:
+                                    cached_api_keys[cache_key] = (
+                                        AuthorizationCacheEntry(
+                                            expires_at=time.time()
+                                            + SHORT_AUTH_CACHE_TTL_SECONDS,
+                                            workspace_id=None,
+                                            status_code=401,
+                                            message=(
+                                                "Unauthorized api_key. This key is not authorized "
+                                                "for serverless inference."
+                                            ),
+                                        )
+                                    )
+                                    if auth_span is not None:
+                                        auth_span.set_attribute("http.status_code", 401)
+                                        auth_span.set_attribute(
+                                            "auth.result",
+                                            "serverless_inference_unauthorized",
+                                        )
+                                    return _authorization_error_response(
+                                        401,
+                                        cached_api_keys[cache_key].message,
+                                        cache_hit=False,
+                                    )
+                                elif usage_check_result.status_code == 402:
+                                    message = (
+                                        "This workspace cannot currently spend credits for serverless inference. "
+                                        "Verify billing or credit cap settings."
+                                    )
+                                    if usage_check_result.error:
+                                        message = (
+                                            f"{message} {usage_check_result.error}"
+                                        )
+                                    cached_api_keys[cache_key] = (
+                                        AuthorizationCacheEntry(
+                                            expires_at=time.time()
+                                            + SHORT_AUTH_CACHE_TTL_SECONDS,
+                                            workspace_id=usage_check_result.workspace_id,
+                                            status_code=402,
+                                            message=message,
+                                        )
+                                    )
+                                    if auth_span is not None:
+                                        auth_span.set_attribute("http.status_code", 402)
+                                        auth_span.set_attribute(
+                                            "auth.result",
+                                            "credits_verification_failed",
+                                        )
+                                    return _authorization_error_response(
+                                        402,
+                                        cached_api_keys[cache_key].message,
+                                        workspace_id=usage_check_result.workspace_id,
+                                        cache_hit=False,
+                                    )
+
+                        if auth_span is not None:
+                            auth_span.set_attribute("http.status_code", 200)
+                            auth_span.set_attribute("auth.result", "authorized")
+                            if workspace_id is not None:
+                                auth_span.set_attribute("workspace.id", workspace_id)
+                except Exception as error:
+                    record_error(error)
+                    raise
 
                 response = await call_next(request)
                 if workspace_id:
@@ -820,17 +1046,35 @@ class HttpInterface(BaseInterface):
             ids_collector = RequestModelIds()
             request_model_ids.set(ids_collector)
             response = await call_next(request)
-            if load_collector.has_data():
-                total, detail = load_collector.summarize()
-                response.headers[MODEL_COLD_START_HEADER] = "true"
-                response.headers[MODEL_LOAD_TIME_HEADER] = str(total)
-                if detail is not None:
-                    response.headers[MODEL_LOAD_DETAILS_HEADER] = detail
+            remote_processing_collector = getattr(
+                request.state, "remote_processing_time_collector", None
+            )
+            if remote_processing_collector is not None:
+                remote_model_ids = remote_processing_collector.snapshot_model_ids()
+                remote_cold_start_entries = (
+                    remote_processing_collector.snapshot_cold_start_entries()
+                )
+                remote_cold_start_count = (
+                    remote_processing_collector.snapshot_cold_start_count()
+                )
+                remote_cold_start_total_load_time = (
+                    remote_processing_collector.snapshot_cold_start_total_load_time()
+                )
             else:
-                response.headers[MODEL_COLD_START_HEADER] = "false"
-            model_ids = ids_collector.get_ids()
-            if model_ids:
-                response.headers[MODEL_ID_HEADER] = ",".join(sorted(model_ids))
+                remote_model_ids = set()
+                remote_cold_start_entries = []
+                remote_cold_start_count = 0
+                remote_cold_start_total_load_time = 0.0
+            response.headers.update(
+                build_model_response_headers(
+                    local_model_ids=ids_collector.get_ids(),
+                    local_cold_start_entries=load_collector.snapshot_entries(),
+                    remote_model_ids=remote_model_ids,
+                    remote_cold_start_entries=remote_cold_start_entries,
+                    remote_cold_start_count=remote_cold_start_count,
+                    remote_cold_start_total_load_time=remote_cold_start_total_load_time,
+                )
+            )
             wf_id = request_workflow_id.get(None)
             if wf_id:
                 response.headers[WORKFLOW_ID_HEADER] = wf_id
@@ -856,6 +1100,7 @@ class HttpInterface(BaseInterface):
                     "request_id": CORRELATION_ID_HEADER,
                     "processing_time": PROCESSING_TIME_HEADER,
                     "model_cold_start": MODEL_COLD_START_HEADER,
+                    "model_cold_start_count": MODEL_COLD_START_COUNT_HEADER,
                     "model_load_time": MODEL_LOAD_TIME_HEADER,
                     "model_id": MODEL_ID_HEADER,
                     "workflow_id": WORKFLOW_ID_HEADER,
@@ -2157,6 +2402,8 @@ class HttpInterface(BaseInterface):
                 def load_model(model_id):
                     t_start = time.perf_counter()
                     de_aliased = resolve_roboflow_model_alias(model_id=model_id)
+                    model_id_alias = model_id if de_aliased != model_id else None
+                    loaded_model_id = model_id_alias or de_aliased
                     logger.info(
                         f"Preload: starting model load for '{model_id}' (resolved: '{de_aliased}')"
                     )
@@ -2164,6 +2411,7 @@ class HttpInterface(BaseInterface):
                         self.model_manager.add_model(
                             de_aliased,
                             PRELOAD_API_KEY,
+                            model_id_alias=model_id_alias,
                         )
                         load_time = time.perf_counter() - t_start
                         logger.info(
@@ -2183,7 +2431,7 @@ class HttpInterface(BaseInterface):
                         and model_id in PINNED_MODELS
                         and hasattr(self.model_manager, "pin_model")
                     ):
-                        self.model_manager.pin_model(de_aliased)
+                        self.model_manager.pin_model(loaded_model_id)
 
                 all_models = list(
                     dict.fromkeys((PRELOAD_MODELS or []) + (PINNED_MODELS or []))
@@ -2249,8 +2497,25 @@ class HttpInterface(BaseInterface):
 
         @app.get("/healthz", status_code=200)
         def healthz():
-            """Health endpoint for Kubernetes liveness probe."""
-            return {"status": "healthy"}
+            """Health endpoint for Kubernetes liveness probe.
+
+            Verifies CUDA context health when running on GPU. Returns 503 if
+            CUDA is corrupted (unrecoverable - requires process restart).
+            """
+            from inference.core.utils.cuda_health import check_cuda_health
+
+            is_healthy, error = check_cuda_health()
+            if is_healthy:
+                return {"status": "healthy"}
+            else:
+                logger.error("CUDA health check failed: %s", error)
+                return JSONResponse(
+                    content={
+                        "status": "unhealthy",
+                        "reason": "cuda_error",
+                    },
+                    status_code=503,
+                )
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:
@@ -3064,7 +3329,7 @@ class HttpInterface(BaseInterface):
                             )
 
                             response = requests.post(
-                                f"{endpoint}?api_key={api_key}",
+                                wrap_url(f"{endpoint}?api_key={api_key}"),
                                 json=payload,
                                 headers=headers,
                                 timeout=60,
@@ -3165,7 +3430,7 @@ class HttpInterface(BaseInterface):
                             )
 
                             response = requests.post(
-                                f"{endpoint}?api_key={api_key}",
+                                wrap_url(f"{endpoint}?api_key={api_key}"),
                                 json=payload,
                                 headers=headers,
                                 timeout=60,
@@ -3584,9 +3849,14 @@ class HttpInterface(BaseInterface):
                     None,
                     description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                 ),
-                confidence: float = Query(
+                confidence: Confidence = Query(
                     0.4,
-                    description="The confidence threshold used to filter out predictions",
+                    description=(
+                        "The confidence threshold used to filter out predictions. "
+                        'Pass a float in [0, 1], or "best" to use F1-optimal '
+                        'thresholds from model evaluation, or "default" to use '
+                        "the model's built-in default."
+                    ),
                 ),
                 keypoint_confidence: float = Query(
                     0.0,
@@ -3671,6 +3941,11 @@ class HttpInterface(BaseInterface):
                     description="If true, disables model monitoring for this request",
                     include_in_schema=False,
                 ),
+                response_mask_format: Optional[Literal["polygon", "rle"]] = Query(
+                    default="polygon",
+                    description="The format of the prediction mask - polygon (default) or rle - applicable "
+                    "for instance segmentation models.",
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -3689,11 +3964,12 @@ class HttpInterface(BaseInterface):
                     f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
                 )
                 model_id = f"{dataset_id}/{version_id}"
-                if confidence >= 1:
-                    confidence /= 100
-                if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
-                    # allowing lower confidence results in RAM usage explosion
-                    confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
+                if isinstance(confidence, (int, float)):
+                    if confidence >= 1:
+                        confidence /= 100
+                    if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
+                        # allowing lower confidence results in RAM usage explosion
+                        confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
 
                 if overlap >= 1:
                     overlap /= 100
@@ -3771,6 +4047,8 @@ class HttpInterface(BaseInterface):
                         "mask_decode_mode": mask_decode_mode,
                         "tradeoff_factor": tradeoff_factor,
                     }
+                    if response_mask_format:
+                        args["response_mask_format"] = response_mask_format
                 elif task_type == "classification":
                     inference_request_type = ClassificationInferenceRequest
                 elif task_type == "keypoint-detection":

@@ -778,7 +778,7 @@ def denote_data_flow_for_step(
     ]
     step_node_data.batch_oriented_parameters = parameters_with_batch_inputs
     if not all_data_derived_lineages and not all_control_flow_lineages:
-        if manifest.get_output_dimensionality_offset() > 0:
+        if output_dimensionality_offset > 0:
             # brave decision to open a Pandora box
             data_lineage = [node]
         else:
