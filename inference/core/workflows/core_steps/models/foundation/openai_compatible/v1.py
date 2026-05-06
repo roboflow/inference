@@ -1,10 +1,12 @@
 import base64
 import re
 from collections import defaultdict
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 
 from openai import OpenAI
 from pydantic import ConfigDict, Field
+
+from inference.core.logger import logger
 
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
@@ -203,6 +205,9 @@ class BlockManifest(WorkflowBlockManifest):
 
 class OpenAICompatibleBlockV1(WorkflowBlock):
 
+    def __init__(self):
+        self._client_cache: Dict[Tuple[str, str], OpenAI] = {}
+
     @classmethod
     def get_init_parameters(cls) -> List[str]:
         return []
@@ -214,6 +219,14 @@ class OpenAICompatibleBlockV1(WorkflowBlock):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    def _get_client(self, base_url: str, api_key: str) -> OpenAI:
+        cache_key = (base_url, api_key)
+        client = self._client_cache.get(cache_key)
+        if client is None:
+            client = OpenAI(base_url=base_url, api_key=api_key, timeout=120.0)
+            self._client_cache[cache_key] = client
+        return client
 
     def run(
         self,
@@ -242,8 +255,7 @@ class OpenAICompatibleBlockV1(WorkflowBlock):
         )
         try:
             output = _execute_request(
-                base_url=base_url,
-                api_key=api_key or "no-key",
+                client=self._get_client(base_url, api_key or "no-key"),
                 model_name=model_name,
                 messages=messages,
                 max_tokens=max_tokens,
@@ -251,6 +263,10 @@ class OpenAICompatibleBlockV1(WorkflowBlock):
             )
             return {"output": output, "error_status": ""}
         except Exception as e:
+            logger.warning(
+                f"OpenAI-compatible request to {base_url} failed: {e}",
+                exc_info=True,
+            )
             return {"output": "", "error_status": str(e)}
 
 
@@ -277,7 +293,7 @@ def _is_image_value(value: Any) -> bool:
 def _is_image_list(value: Any) -> bool:
     if not isinstance(value, list) or not value:
         return False
-    return _is_image_value(value[0])
+    return any(_is_image_value(item) for item in value)
 
 
 def _encode_single_image(value: Any) -> str:
@@ -302,14 +318,14 @@ def _collect_image_data_urls(value: Any) -> List[str]:
 def _build_prompt_content(
     prompt: str,
     resolved_params: Dict[str, Any],
-) -> tuple:
+) -> Tuple[str, List[str]]:
     """Build text prompt and image content parts from template + params.
 
     Returns (text_prompt, image_parts) where image_parts is a list of
     base64 data URLs for any image parameters found.
     """
     image_parts: List[str] = []
-    image_param_names: set = set()
+    image_param_names: Set[str] = set()
 
     matching_parameters = PARAMETER_REGEX.findall(prompt)
     parameters_to_substitute = {
@@ -375,14 +391,12 @@ def _build_messages(
 
 
 def _execute_request(
-    base_url: str,
-    api_key: str,
+    client: OpenAI,
     model_name: str,
     messages: List[dict],
     max_tokens: int,
     temperature: Optional[float],
 ) -> str:
-    client = OpenAI(base_url=base_url, api_key=api_key)
     kwargs: Dict[str, Any] = {
         "model": model_name,
         "messages": messages,
