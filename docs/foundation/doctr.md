@@ -23,7 +23,7 @@ import os
 from inference_sdk import InferenceHTTPClient
 
 CLIENT = InferenceHTTPClient(
-    api_url="https://infer.roboflow.com",
+    api_url="https://serverless.roboflow.com",
     api_key=os.environ["ROBOFLOW_API_KEY"]
 )
 
