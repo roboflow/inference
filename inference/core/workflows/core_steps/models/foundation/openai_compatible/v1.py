@@ -7,7 +7,6 @@ from openai import OpenAI
 from pydantic import ConfigDict, Field
 
 from inference.core.logger import logger
-
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
