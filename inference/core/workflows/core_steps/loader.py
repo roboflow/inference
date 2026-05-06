@@ -178,7 +178,6 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
     VLMAsDetectorBlockV2,
 )
 from inference.core.workflows.core_steps.fusion.buffer.v1 import BufferBlockV1
-from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     DetectionsClassesReplacementBlockV1,
 )
@@ -194,6 +193,7 @@ from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
+from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
 from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
 )

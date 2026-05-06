@@ -56,9 +56,7 @@ out-of-memory conditions.
 - **Event buffering**: keep a rolling window of frames around an event of interest.
 """
 
-SHORT_DESCRIPTION = (
-    "Accumulate compressed video frames into a fixed-size FIFO stack."
-)
+SHORT_DESCRIPTION = "Accumulate compressed video frames into a fixed-size FIFO stack."
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -120,9 +118,7 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def validate_stack_size(cls, value: Any) -> Any:
         if isinstance(value, int) and not (1 <= value <= MAX_STACK_SIZE):
-            raise ValueError(
-                f"`stack_size` must be between 1 and {MAX_STACK_SIZE}."
-            )
+            raise ValueError(f"`stack_size` must be between 1 and {MAX_STACK_SIZE}.")
         return value
 
     @field_validator("resolution_width")
