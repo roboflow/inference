@@ -216,6 +216,7 @@ def test_block_run_success(mock_execute: MagicMock) -> None:
         prompt_parameters_operations={},
         max_tokens=100,
         temperature=None,
+        extra_body=None,
     )
     assert result["output"] == "The model response"
     assert result["error_status"] == ""
@@ -237,6 +238,49 @@ def test_block_run_error(mock_execute: MagicMock) -> None:
         prompt_parameters_operations={},
         max_tokens=100,
         temperature=None,
+        extra_body=None,
     )
     assert result["output"] == ""
     assert "Connection refused" in result["error_status"]
+
+
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.openai_compatible.v1._execute_request"
+)
+def test_block_run_forwards_extra_body(mock_execute: MagicMock) -> None:
+    mock_execute.return_value = "A"
+    block = OpenAICompatibleBlockV1()
+    extra_body = {
+        "guided_choice": ["A", "B", "C", "D"],
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+    block.run(
+        base_url="http://localhost:8000/v1",
+        model_name="test-model",
+        api_key="test-key",
+        system_prompt=None,
+        prompt="Pick one.",
+        prompt_parameters={},
+        prompt_parameters_operations={},
+        max_tokens=2,
+        temperature=0.0,
+        extra_body=extra_body,
+    )
+    assert mock_execute.call_args.kwargs["extra_body"] == extra_body
+
+
+def test_manifest_validation_with_extra_body() -> None:
+    specification = {
+        "type": "roboflow_core/openai_compatible@v1",
+        "name": "step_1",
+        "base_url": "http://localhost:8000/v1",
+        "model_name": "test-model",
+        "prompt": "Pick one.",
+        "extra_body": {
+            "guided_choice": ["A", "B", "C"],
+            "chat_template_kwargs": {"enable_thinking": False},
+        },
+    }
+    result = BlockManifest.model_validate(specification)
+    assert result.extra_body["guided_choice"] == ["A", "B", "C"]
+    assert result.extra_body["chat_template_kwargs"] == {"enable_thinking": False}
