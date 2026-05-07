@@ -194,7 +194,6 @@ from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
-from inference.core.workflows.core_steps.fusion.image_stack.v2 import ImageStackBlockV2
 from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
 )
@@ -777,7 +776,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SizeMeasurementBlockV1,
         BufferBlockV1,
         ImageStackBlockV1,
-        ImageStackBlockV2,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
         PropertyDefinitionBlockV1,
