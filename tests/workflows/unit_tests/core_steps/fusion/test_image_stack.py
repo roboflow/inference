@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import cv2
 import numpy as np
 import pytest
 from pydantic import ValidationError
@@ -7,6 +8,10 @@ from pydantic import ValidationError
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import (
     BlockManifest,
     ImageStackBlockV1,
+    MAX_RESOLUTION_HEIGHT,
+    MAX_RESOLUTION_WIDTH,
+    MAX_STACK_SIZE,
+    _compress_frame,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -20,7 +25,6 @@ def _make_image(
     height: int = 240,
     video_id: str = "cam-1",
     frame_number: int = 0,
-    fps: int = 30,
 ) -> WorkflowImageData:
     return WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id=video_id),
@@ -29,7 +33,7 @@ def _make_image(
             video_identifier=video_id,
             frame_number=frame_number,
             frame_timestamp=datetime.now(),
-            fps=fps,
+            fps=30,
             comes_from_video_file=None,
         ),
     )
@@ -38,236 +42,405 @@ def _make_image(
 # ── Manifest validation ─────────────────────────────────────────────
 
 
-def test_manifest_defaults() -> None:
+def test_manifest_with_defaults() -> None:
     raw = {
         "type": "roboflow_core/image_stack@v1",
-        "name": "stack",
+        "name": "stack1",
         "image": "$inputs.image",
     }
     result = BlockManifest.model_validate(raw)
-    assert result.window_seconds == 0.5
-    assert result.subsample_fps is None
+    assert result.stack_size == 10
+    assert result.resolution_width == MAX_RESOLUTION_WIDTH
+    assert result.resolution_height == MAX_RESOLUTION_HEIGHT
     assert result.clear is False
 
 
-def test_manifest_custom_values() -> None:
+def test_manifest_with_custom_values() -> None:
     raw = {
         "type": "roboflow_core/image_stack@v1",
-        "name": "stack",
+        "name": "stack1",
         "image": "$inputs.image",
-        "window_seconds": 1.0,
-        "subsample_fps": 5.0,
-        "resolution_width": 512,
-        "resolution_height": 512,
+        "stack_size": 5,
+        "resolution_width": 640,
+        "resolution_height": 480,
+        "clear": "$inputs.reset",
     }
     result = BlockManifest.model_validate(raw)
-    assert result.window_seconds == 1.0
-    assert result.subsample_fps == 5.0
-    assert result.resolution_width == 512
+    assert result.stack_size == 5
+    assert result.resolution_width == 640
+    assert result.resolution_height == 480
 
 
-def test_manifest_rejects_invalid_window_seconds() -> None:
+def test_manifest_rejects_stack_size_too_large() -> None:
     raw = {
         "type": "roboflow_core/image_stack@v1",
-        "name": "stack",
+        "name": "stack1",
         "image": "$inputs.image",
-        "window_seconds": 0.0,
+        "stack_size": MAX_STACK_SIZE + 1,
     }
     with pytest.raises(ValidationError):
         BlockManifest.model_validate(raw)
 
 
-def test_manifest_rejects_invalid_subsample_fps() -> None:
+def test_manifest_rejects_stack_size_zero() -> None:
     raw = {
         "type": "roboflow_core/image_stack@v1",
-        "name": "stack",
+        "name": "stack1",
         "image": "$inputs.image",
-        "subsample_fps": 0.0,
+        "stack_size": 0,
     }
     with pytest.raises(ValidationError):
         BlockManifest.model_validate(raw)
 
 
-def test_manifest_subsample_fps_can_be_none() -> None:
+def test_manifest_rejects_resolution_too_large() -> None:
     raw = {
         "type": "roboflow_core/image_stack@v1",
-        "name": "stack",
+        "name": "stack1",
         "image": "$inputs.image",
-        "subsample_fps": None,
+        "resolution_width": MAX_RESOLUTION_WIDTH + 1,
+    }
+    with pytest.raises(ValidationError):
+        BlockManifest.model_validate(raw)
+
+
+def test_manifest_accepts_selectors_for_int_fields() -> None:
+    raw = {
+        "type": "roboflow_core/image_stack@v1",
+        "name": "stack1",
+        "image": "$inputs.image",
+        "stack_size": "$inputs.stack_size",
+        "resolution_width": "$inputs.width",
+        "resolution_height": "$inputs.height",
     }
     result = BlockManifest.model_validate(raw)
-    assert result.subsample_fps is None
+    assert result.stack_size == "$inputs.stack_size"
+    assert result.resolution_width == "$inputs.width"
+    assert result.resolution_height == "$inputs.height"
 
 
-# ── Sampling behavior ────────────────────────────────────────────────
+# ── _compress_frame helper ───────────────────────────────────────────
 
 
-def _run(
-    block,
-    image,
-    *,
-    window_seconds=0.5,
-    subsample_fps=None,
-    clear=False,
-):
-    return block.run(
-        image=image,
-        window_seconds=window_seconds,
-        subsample_fps=subsample_fps,
-        resolution_width=256,
-        resolution_height=256,
-        clear=clear,
+def test_compress_frame_returns_jpeg_bytes() -> None:
+    img = np.zeros((100, 200, 3), dtype=np.uint8)
+    result = _compress_frame(img, max_width=1920, max_height=1080)
+    assert isinstance(result, bytes)
+    # JPEG magic bytes
+    assert result[:2] == b"\xff\xd8"
+
+
+def test_compress_frame_downsamples_wide_image() -> None:
+    img = np.zeros((1080, 3840, 3), dtype=np.uint8)
+    result = _compress_frame(img, max_width=1920, max_height=1080)
+    # decode and check dimensions
+    decoded = cv2.imdecode(
+        np.frombuffer(result, dtype=np.uint8), cv2.IMREAD_COLOR
     )
+    assert decoded.shape[1] <= 1920
+    assert decoded.shape[0] <= 1080
 
 
-def test_buffer_size_derived_from_source_fps_when_no_subsample() -> None:
-    """Without subsample_fps set, the buffer should size to
-    ceil(window_seconds * source_fps). At 30 fps source, 0.5s = 15 frames."""
+def test_compress_frame_downsamples_tall_image() -> None:
+    img = np.zeros((2160, 1000, 3), dtype=np.uint8)
+    result = _compress_frame(img, max_width=1920, max_height=1080)
+    decoded = cv2.imdecode(
+        np.frombuffer(result, dtype=np.uint8), cv2.IMREAD_COLOR
+    )
+    assert decoded.shape[0] <= 1080
+    assert decoded.shape[1] <= 1920
+
+
+def test_compress_frame_preserves_small_image_dimensions() -> None:
+    img = np.zeros((100, 200, 3), dtype=np.uint8)
+    result = _compress_frame(img, max_width=1920, max_height=1080)
+    decoded = cv2.imdecode(
+        np.frombuffer(result, dtype=np.uint8), cv2.IMREAD_COLOR
+    )
+    assert decoded.shape[:2] == (100, 200)
+
+
+def test_compress_frame_handles_grayscale() -> None:
+    img = np.zeros((100, 200), dtype=np.uint8)
+    result = _compress_frame(img, max_width=1920, max_height=1080)
+    assert isinstance(result, bytes)
+    assert result[:2] == b"\xff\xd8"
+
+
+def test_compress_frame_handles_rgba() -> None:
+    img = np.zeros((100, 200, 4), dtype=np.uint8)
+    result = _compress_frame(img, max_width=1920, max_height=1080)
+    assert isinstance(result, bytes)
+    assert result[:2] == b"\xff\xd8"
+
+
+# ── Block accumulation ───────────────────────────────────────────────
+
+
+def test_single_frame_added() -> None:
     block = ImageStackBlockV1()
-    last_count = 0
-    for i in range(60):
-        result = _run(
-            block,
-            _make_image(frame_number=i, fps=30),
-            window_seconds=0.5,
+    result = block.run(
+        image=_make_image(),
+        stack_size=3,
+        resolution_width=1920,
+        resolution_height=1080,
+        clear=False,
+    )
+    assert result["frames_count"] == 1
+    assert len(result["frames"]) == 1
+    assert isinstance(result["frames"][0], bytes)
+
+
+def test_frames_accumulate_up_to_stack_size() -> None:
+    block = ImageStackBlockV1()
+    for i in range(5):
+        result = block.run(
+            image=_make_image(frame_number=i),
+            stack_size=3,
+            resolution_width=1920,
+            resolution_height=1080,
+            clear=False,
         )
-        last_count = result["frames_count"]
-    assert last_count == 15
+    assert result["frames_count"] == 3
+    assert len(result["frames"]) == 3
 
 
-def test_buffer_size_with_subsample_fps() -> None:
-    """With subsample_fps=10 and window 0.5s, buffer holds ceil(0.5 * 10) = 5
-    frames once steady-state."""
+def test_newest_frame_is_first() -> None:
     block = ImageStackBlockV1()
-    last_count = 0
-    for i in range(60):
-        result = _run(
-            block,
-            _make_image(frame_number=i, fps=30),
-            window_seconds=0.5,
-            subsample_fps=10.0,
+    # Add two distinct frames
+    img1 = _make_image(width=100, height=100, frame_number=0)
+    img2 = _make_image(width=100, height=100, frame_number=1)
+
+    block.run(
+        image=img1,
+        stack_size=5,
+        resolution_width=1920,
+        resolution_height=1080,
+        clear=False,
+    )
+    result = block.run(
+        image=img2,
+        stack_size=5,
+        resolution_width=1920,
+        resolution_height=1080,
+        clear=False,
+    )
+    # newest (img2) at index 0, oldest (img1) at index 1
+    assert len(result["frames"]) == 2
+    assert result["frames"][0] != result["frames"][1]
+
+
+def test_oldest_frame_evicted_on_overflow() -> None:
+    block = ImageStackBlockV1()
+    frames_added = []
+    for i in range(4):
+        result = block.run(
+            image=_make_image(frame_number=i),
+            stack_size=2,
+            resolution_width=1920,
+            resolution_height=1080,
+            clear=False,
         )
-        last_count = result["frames_count"]
-    assert last_count == 5
+        frames_added.append(result["frames"][0])  # newest each time
+
+    # only last 2 frames remain
+    assert result["frames_count"] == 2
+    assert result["frames"][0] == frames_added[3]
+    assert result["frames"][1] == frames_added[2]
 
 
-def test_subsample_fps_drops_intermediate_frames() -> None:
-    """At 30 fps source with subsample_fps=10, only frames at the right
-    cadence get sampled (≈ every 3rd source frame)."""
+# ── Clear ────────────────────────────────────────────────────────────
+
+
+def test_clear_flushes_buffer_then_adds_current() -> None:
     block = ImageStackBlockV1()
-    state_id = "cam-1"
-    sampled_indices = []
-    prev_t = None
-    for i in range(30):
-        _run(
-            block,
-            _make_image(video_id=state_id, frame_number=i, fps=30),
-            window_seconds=0.5,
-            subsample_fps=10.0,
+    # fill buffer
+    for i in range(3):
+        block.run(
+            image=_make_image(frame_number=i),
+            stack_size=5,
+            resolution_width=1920,
+            resolution_height=1080,
+            clear=False,
         )
-        t = block._states[state_id].last_sampled_t
-        if t != prev_t:
-            sampled_indices.append(i)
-            prev_t = t
 
-    assert sampled_indices[0] == 0
-    gaps = [b - a for a, b in zip(sampled_indices, sampled_indices[1:])]
-    assert all(g in (3, 4) for g in gaps), gaps
-    # Average gap should be close to 3.33 (= 100ms / 33ms-per-frame).
-    assert 3.0 <= sum(gaps) / len(gaps) <= 3.7
-    assert 8 <= len(sampled_indices) <= 11
-
-
-def test_subsample_higher_than_source_is_capped() -> None:
-    """If subsample_fps > source_fps, we can't sample faster than frames
-    arrive — should silently cap at source_fps."""
-    block = ImageStackBlockV1()
-    last_count = 0
-    for i in range(60):
-        result = _run(
-            block,
-            _make_image(frame_number=i, fps=10),
-            window_seconds=1.0,
-            subsample_fps=120.0,  # absurdly high
-        )
-        last_count = result["frames_count"]
-    # Source = 10 fps, window = 1.0s → buffer caps at 10 frames.
-    assert last_count == 10
-
-
-def test_clear_empties_buffer() -> None:
-    block = ImageStackBlockV1()
-    for i in range(20):
-        _run(block, _make_image(frame_number=i, fps=30), subsample_fps=10.0)
-    result = _run(
-        block,
-        _make_image(frame_number=20, fps=30),
-        subsample_fps=10.0,
+    # clear and add one frame
+    result = block.run(
+        image=_make_image(frame_number=99),
+        stack_size=5,
+        resolution_width=1920,
+        resolution_height=1080,
         clear=True,
     )
     assert result["frames_count"] == 1
 
 
-def test_isolated_buffers_per_video() -> None:
+def test_clear_false_preserves_buffer() -> None:
     block = ImageStackBlockV1()
-    for i in range(20):
-        _run(block, _make_image(video_id="cam-A", frame_number=i, fps=30), subsample_fps=10.0)
-        _run(block, _make_image(video_id="cam-B", frame_number=i, fps=30), subsample_fps=10.0)
-    a_state = block._states["cam-A"]
-    b_state = block._states["cam-B"]
-    assert a_state is not b_state
-    assert len(a_state.frames) == len(b_state.frames) == 5
-
-
-def test_returned_frames_are_jpeg_bytes() -> None:
-    block = ImageStackBlockV1()
-    result = _run(block, _make_image(frame_number=0, fps=30))
-    frames = result["frames"]
-    assert len(frames) == 1
-    assert isinstance(frames[0], bytes)
-    assert frames[0][:2] == b"\xff\xd8"
-
-
-def test_falls_back_to_default_fps_when_metadata_missing() -> None:
-    """If video_metadata.fps is 0/missing, the block should default to the
-    fallback (currently 30 fps) and still process frames."""
-    block = ImageStackBlockV1()
-
-    bad_image = WorkflowImageData(
-        parent_metadata=ImageParentMetadata(parent_id="x"),
-        numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
-        video_metadata=VideoMetadata(
-            video_identifier="x",
-            frame_number=0,
-            frame_timestamp=datetime.now(),
-            fps=0,  # invalid
-            comes_from_video_file=None,
-        ),
+    block.run(
+        image=_make_image(frame_number=0),
+        stack_size=5,
+        resolution_width=1920,
+        resolution_height=1080,
+        clear=False,
     )
+    result = block.run(
+        image=_make_image(frame_number=1),
+        stack_size=5,
+        resolution_width=1920,
+        resolution_height=1080,
+        clear=False,
+    )
+    assert result["frames_count"] == 2
 
-    result = _run(block, bad_image)
-    assert result["frames_count"] == 1
-    # Default fallback fps = 30; with window 0.5s buffer caps at 15.
-    # Only one frame in so far, but maxlen should be 15:
-    assert block._states["x"].frames.maxlen == 15
+
+# ── Per-camera isolation ─────────────────────────────────────────────
 
 
-def test_buffer_resizes_when_params_change() -> None:
-    """If derived buffer size changes mid-stream, the buffer resizes while
-    preserving the most recent frames."""
+def test_buffers_isolated_per_camera() -> None:
     block = ImageStackBlockV1()
-    for i in range(20):
-        _run(
-            block,
-            _make_image(frame_number=i, fps=30),
-            window_seconds=0.5,
-            subsample_fps=10.0,
+
+    # feed 3 frames to cam-1
+    for i in range(3):
+        block.run(
+            image=_make_image(video_id="cam-1", frame_number=i),
+            stack_size=5,
+            resolution_width=1920,
+            resolution_height=1080,
+            clear=False,
         )
-    result = _run(
-        block,
-        _make_image(frame_number=21, fps=30),
-        window_seconds=0.2,
-        subsample_fps=10.0,
+
+    # feed 1 frame to cam-2
+    result_cam2 = block.run(
+        image=_make_image(video_id="cam-2", frame_number=0),
+        stack_size=5,
+        resolution_width=1920,
+        resolution_height=1080,
+        clear=False,
     )
-    # ceil(0.2 * 10) = 2
-    assert result["frames_count"] <= 2
+    assert result_cam2["frames_count"] == 1
+
+    # cam-1 still has its own count
+    result_cam1 = block.run(
+        image=_make_image(video_id="cam-1", frame_number=3),
+        stack_size=5,
+        resolution_width=1920,
+        resolution_height=1080,
+        clear=False,
+    )
+    assert result_cam1["frames_count"] == 4
+
+
+def test_clear_only_affects_targeted_camera() -> None:
+    block = ImageStackBlockV1()
+
+    # fill both cameras
+    for i in range(3):
+        block.run(
+            image=_make_image(video_id="cam-1", frame_number=i),
+            stack_size=5,
+            resolution_width=1920,
+            resolution_height=1080,
+            clear=False,
+        )
+        block.run(
+            image=_make_image(video_id="cam-2", frame_number=i),
+            stack_size=5,
+            resolution_width=1920,
+            resolution_height=1080,
+            clear=False,
+        )
+
+    # clear cam-1 only
+    result_cam1 = block.run(
+        image=_make_image(video_id="cam-1", frame_number=99),
+        stack_size=5,
+        resolution_width=1920,
+        resolution_height=1080,
+        clear=True,
+    )
+    assert result_cam1["frames_count"] == 1
+
+    # cam-2 unaffected
+    result_cam2 = block.run(
+        image=_make_image(video_id="cam-2", frame_number=3),
+        stack_size=5,
+        resolution_width=1920,
+        resolution_height=1080,
+        clear=False,
+    )
+    assert result_cam2["frames_count"] == 4
+
+
+# ── Stack size change mid-stream ─────────────────────────────────────
+
+
+def test_stack_size_shrink_preserves_newest_frames() -> None:
+    block = ImageStackBlockV1()
+
+    # fill with stack_size=3
+    for i in range(3):
+        block.run(
+            image=_make_image(frame_number=i),
+            stack_size=3,
+            resolution_width=1920,
+            resolution_height=1080,
+            clear=False,
+        )
+
+    # shrink stack_size to 2 — preserves 2 newest + adds current frame
+    result = block.run(
+        image=_make_image(frame_number=10),
+        stack_size=2,
+        resolution_width=1920,
+        resolution_height=1080,
+        clear=False,
+    )
+    # deque(old_3_items, maxlen=2) keeps 2 newest, then appendleft adds 1 more
+    # but maxlen=2 evicts oldest → 2 frames
+    assert result["frames_count"] == 2
+
+
+def test_stack_size_grow_preserves_all_frames() -> None:
+    block = ImageStackBlockV1()
+
+    # fill with stack_size=2
+    for i in range(2):
+        block.run(
+            image=_make_image(frame_number=i),
+            stack_size=2,
+            resolution_width=1920,
+            resolution_height=1080,
+            clear=False,
+        )
+
+    # grow stack_size to 5 — all 2 existing frames preserved + new one
+    result = block.run(
+        image=_make_image(frame_number=10),
+        stack_size=5,
+        resolution_width=1920,
+        resolution_height=1080,
+        clear=False,
+    )
+    assert result["frames_count"] == 3
+
+
+# ── Resolution enforcement ───────────────────────────────────────────
+
+
+def test_custom_resolution_limits_applied() -> None:
+    block = ImageStackBlockV1()
+    # 800x600 image with 400x300 cap
+    result = block.run(
+        image=_make_image(width=800, height=600),
+        stack_size=3,
+        resolution_width=400,
+        resolution_height=300,
+        clear=False,
+    )
+    jpeg_bytes = result["frames"][0]
+    decoded = cv2.imdecode(
+        np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR
+    )
+    assert decoded.shape[1] <= 400
+    assert decoded.shape[0] <= 300

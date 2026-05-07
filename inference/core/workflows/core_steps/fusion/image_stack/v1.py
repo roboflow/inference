@@ -1,5 +1,3 @@
-import math
-import time
 from collections import deque
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
@@ -7,7 +5,6 @@ import cv2
 import numpy as np
 from pydantic import ConfigDict, Field, field_validator
 
-from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -15,7 +12,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
-    FLOAT_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
@@ -27,39 +23,40 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-DEFAULT_FPS_FALLBACK = 30.0
-
 MAX_STACK_SIZE = 64
 MAX_RESOLUTION_WIDTH = 1920
 MAX_RESOLUTION_HEIGHT = 1080
 JPEG_QUALITY = 75
 
 LONG_DESCRIPTION = """
-Accumulate compressed video frames covering a fixed real-time window. Specify
-the window in seconds and the block reads the source FPS from the incoming
-stream's video metadata to size the buffer correctly — no need to know the
-source FPS up-front.
+Accumulate compressed video frames into a fixed-size stack, returning the most recent
+N frames as JPEG-encoded binary blobs. Designed for shared-hosting safety: frames are
+always JPEG-compressed and downsampled to fit within resolution limits, preventing
+out-of-memory conditions.
 
 ## How This Block Works
 
-1. Reads source FPS from each frame's `video_metadata.fps`. Falls back to 30
-   (with a warning) when the stream has no FPS info.
-2. Effective sampling rate defaults to the source FPS. If you set
-   `subsample_fps`, frames arriving faster than that rate are dropped before
-   any encoding work, which saves CPU when you don't need every frame.
-3. Buffer size is derived as ceil(window_seconds * effective_fps).
-4. Each kept frame is downsampled to the configured resolution, JPEG-encoded,
-   and appended to the per-stream buffer. The oldest frame is evicted when the
-   buffer is full.
-5. Every call returns the current buffer contents (oldest-first) so downstream
-   blocks see a consistent value, even on calls where the input frame was
-   dropped by the subsample filter.
+1. Receives a video frame (WorkflowImageData) each workflow cycle.
+2. Downsamples the frame if it exceeds the configured resolution limits (default
+   1920x1080), preserving aspect ratio.
+3. JPEG-encodes the frame at quality 75 and stores the resulting bytes.
+4. Maintains a per-camera FIFO buffer (deque) of up to `stack_size` compressed frames.
+   When the buffer is full the oldest frame is automatically evicted.
+5. If `stack_size` changes between calls (e.g. via a dynamic selector), the buffer is
+   resized and existing frames are preserved up to the new limit.
+6. If the `clear` input is True the buffer is flushed before the current frame is added.
+7. Outputs the list of JPEG byte blobs (newest first) and the current frame count.
+
+## Common Use Cases
+
+- **Action / activity recognition**: accumulate a clip of N frames and pass them to a
+  vision-language model (e.g. Google Gemini, Qwen) that can reason over multiple images
+  to classify actions, detect events, or describe what is happening in a scene.
+- **Time-lapse snapshots**: collect the last N frames for periodic visual comparison.
+- **Event buffering**: keep a rolling window of frames around an event of interest.
 """
 
-SHORT_DESCRIPTION = (
-    "Accumulate compressed video frames covering a real-time window. "
-    "Sampling rate auto-detected from the stream."
-)
+SHORT_DESCRIPTION = "Accumulate compressed video frames into a fixed-size FIFO stack."
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -81,29 +78,16 @@ class BlockManifest(WorkflowBlockManifest):
 
     image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
-        description="Video frame to feed into the time-windowed buffer.",
+        description="Video frame to add to the stack.",
         examples=["$inputs.image", "$steps.preprocessing.image"],
     )
-    window_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
-        default=0.5,
-        title="Window Duration",
+    stack_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        default=10,
         description=(
-            "Length of the time window the buffer covers, in seconds. "
-            "Combined with the source FPS (or subsample_fps) this determines "
-            "how many frames are kept."
+            f"Maximum number of frames to keep in the stack (1-{MAX_STACK_SIZE}). "
+            "When the stack is full the oldest frame is evicted."
         ),
-        examples=[0.5, 1.0, "$inputs.window_seconds"],
-    )
-    subsample_fps: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(  # type: ignore
-        default=None,
-        title="Subsample FPS (optional)",
-        description=(
-            "If set, drop incoming frames so the buffer is sampled at this "
-            "rate. If unset, the buffer is sampled at the source's native FPS "
-            "(read from video metadata). Useful for cutting cost when the "
-            "source delivers more frames than you need."
-        ),
-        examples=[None, 10.0, "$inputs.subsample_fps"],
+        examples=[5, 10, "$inputs.stack_size"],
     )
     resolution_width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=MAX_RESOLUTION_WIDTH,
@@ -125,25 +109,16 @@ class BlockManifest(WorkflowBlockManifest):
         default=False,
         description=(
             "When True the entire frame buffer is flushed before the current "
-            "frame is added."
+            "frame is added. Useful for resetting state on scene changes."
         ),
         examples=[False, "$inputs.clear_buffer"],
     )
 
-    @field_validator("window_seconds")
+    @field_validator("stack_size")
     @classmethod
-    def validate_window_seconds(cls, value: Any) -> Any:
-        if isinstance(value, (int, float)) and not (0.05 <= float(value) <= 60.0):
-            raise ValueError("`window_seconds` must be between 0.05 and 60.0.")
-        return value
-
-    @field_validator("subsample_fps")
-    @classmethod
-    def validate_subsample_fps(cls, value: Any) -> Any:
-        if value is None:
-            return value
-        if isinstance(value, (int, float)) and not (0.1 <= float(value) <= 60.0):
-            raise ValueError("`subsample_fps` must be between 0.1 and 60.0.")
+    def validate_stack_size(cls, value: Any) -> Any:
+        if isinstance(value, int) and not (1 <= value <= MAX_STACK_SIZE):
+            raise ValueError(f"`stack_size` must be between 1 and {MAX_STACK_SIZE}.")
         return value
 
     @field_validator("resolution_width")
@@ -167,8 +142,14 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="frames", kind=[LIST_OF_VALUES_KIND]),
-            OutputDefinition(name="frames_count", kind=[INTEGER_KIND]),
+            OutputDefinition(
+                name="frames",
+                kind=[LIST_OF_VALUES_KIND],
+            ),
+            OutputDefinition(
+                name="frames_count",
+                kind=[INTEGER_KIND],
+            ),
         ]
 
     @classmethod
@@ -192,46 +173,10 @@ def _compress_frame(
     return encode_image_to_jpeg_bytes(numpy_image, jpeg_quality=JPEG_QUALITY)
 
 
-def _read_source_fps(image: WorkflowImageData) -> Optional[float]:
-    """Source FPS as declared by the stream's video metadata, or None if absent."""
-    try:
-        m = image.video_metadata
-        if m is not None and m.fps and m.fps > 0:
-            return float(m.fps)
-    except Exception:
-        pass
-    return None
-
-
-def _frame_timestamp(image: WorkflowImageData, source_fps: Optional[float]) -> float:
-    """Return a monotonically-increasing seconds timestamp for the input frame.
-
-    Prefers video metadata (frame_number / fps); falls back to wall clock so the
-    block stays useful for non-video inputs and tests.
-    """
-    if source_fps and source_fps > 0:
-        try:
-            m = image.video_metadata
-            if m is not None and m.frame_number is not None:
-                return float(m.frame_number) / source_fps
-        except Exception:
-            pass
-    return time.monotonic()
-
-
-class _BufferState:
-    __slots__ = ("frames", "last_sampled_t", "warned_no_fps")
-
-    def __init__(self, maxlen: int) -> None:
-        self.frames: deque = deque(maxlen=maxlen)
-        self.last_sampled_t: Optional[float] = None
-        self.warned_no_fps: bool = False
-
-
 class ImageStackBlockV1(WorkflowBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._states: Dict[str, _BufferState] = {}
+        self._buffers: Dict[str, deque] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -240,77 +185,38 @@ class ImageStackBlockV1(WorkflowBlock):
     def run(
         self,
         image: WorkflowImageData,
-        window_seconds: float,
-        subsample_fps: Optional[float],
+        stack_size: int,
         resolution_width: int,
         resolution_height: int,
         clear: bool,
     ) -> BlockResult:
-        window_seconds = max(0.05, min(float(window_seconds), 60.0))
+        stack_size = max(1, min(stack_size, MAX_STACK_SIZE))
         resolution_width = max(64, min(resolution_width, MAX_RESOLUTION_WIDTH))
         resolution_height = max(64, min(resolution_height, MAX_RESOLUTION_HEIGHT))
 
-        try:
-            video_id = image.video_metadata.video_identifier
-        except Exception:
-            video_id = "default"
+        video_id = image.video_metadata.video_identifier
 
-        # Source FPS comes from the stream's metadata. Fall back to a default
-        # only when it's missing (and warn once per video).
-        source_fps = _read_source_fps(image)
-        if source_fps is None:
-            source_fps = DEFAULT_FPS_FALLBACK
-
-        # Effective sampling rate: subsample if user asked, otherwise source.
-        # Capped at source — can't keep frames denser than they arrive.
-        if subsample_fps is not None:
-            effective_fps = min(
-                max(0.1, min(float(subsample_fps), 60.0)),
-                source_fps,
-            )
-        else:
-            effective_fps = source_fps
-
-        max_buffer = max(
-            1, min(math.ceil(window_seconds * effective_fps), MAX_STACK_SIZE)
-        )
-        sample_interval = 1.0 / effective_fps
-
-        state = self._states.get(video_id)
-        if state is None or state.frames.maxlen != max_buffer:
-            old_frames = list(state.frames) if state else []
-            new_state = _BufferState(maxlen=max_buffer)
-            new_state.warned_no_fps = state.warned_no_fps if state else False
-            for frame in old_frames[-max_buffer:]:
-                new_state.frames.append(frame)
-            state = new_state
-            self._states[video_id] = state
-
-        if _read_source_fps(image) is None and not state.warned_no_fps:
-            logger.warning(
-                f"video_metadata.fps not available for video '{video_id}'; "
-                f"defaulting to {DEFAULT_FPS_FALLBACK} fps for Image Stack "
-                "buffer sizing. Set subsample_fps explicitly to override."
-            )
-            state.warned_no_fps = True
+        buf = self._buffers.get(video_id)
+        if buf is None:
+            buf = deque(maxlen=stack_size)
+            self._buffers[video_id] = buf
+        elif buf.maxlen != stack_size:
+            new_buf = deque(buf, maxlen=stack_size)
+            buf = new_buf
+            self._buffers[video_id] = buf
 
         if clear:
-            state.frames.clear()
-            state.last_sampled_t = None
+            buf.clear()
 
-        now_t = _frame_timestamp(image, source_fps)
-        should_sample = (
-            state.last_sampled_t is None
-            or (now_t - state.last_sampled_t) >= sample_interval
+        compressed = _compress_frame(
+            image.numpy_image,
+            max_width=resolution_width,
+            max_height=resolution_height,
         )
-        if should_sample:
-            compressed = _compress_frame(
-                image.numpy_image,
-                max_width=resolution_width,
-                max_height=resolution_height,
-            )
-            state.frames.append(compressed)
-            state.last_sampled_t = now_t
+        buf.appendleft(compressed)
 
-        frames = list(state.frames)
-        return {"frames": frames, "frames_count": len(frames)}
+        frames = list(buf)
+        return {
+            "frames": frames,
+            "frames_count": len(frames),
+        }
