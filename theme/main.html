@@ -40,6 +40,40 @@
 {% endif %}
 {% endblock %}
 
+{# Override Material's default Google Fonts loader to use display=swap.
+   The base theme hard-codes display=fallback, which causes invisible text on
+   slow connections. Mirrors base.html's logic exactly except for the swap. #}
+{% block fonts %}
+{% if config.theme.font != false %}
+{% set text = config.theme.font.text | d("Roboto", true) %}
+{% set code = config.theme.font.code | d("Roboto Mono", true) %}
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family={{
+    text | replace(' ', '+') + ':300,300i,400,400i,700,700i%7C' +
+    code | replace(' ', '+') + ':400,400i,700,700i'
+  }}&display=swap">
+<style>:root{--md-text-font:"{{ text }}";--md-code-font:"{{ code }}"}</style>
+{% endif %}
+{% endblock %}
+
+{# Render org-level attribution on inner documentation pages.
+   Anchored just before the footer so the byline reads as part of each article.
+   Skipped on the homepage (which has its own composed hero layout). #}
+{% block content %}
+{{ super() }}
+{% if not is_home %}
+<aside class="rf-page-attribution" aria-label="Page maintainers">
+  <p>
+    Maintained by the <strong>Roboflow engineering team</strong>
+    &middot;
+    <a href="https://github.com/roboflow/inference" rel="noopener">GitHub</a>
+    &middot;
+    <a href="https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md" rel="noopener">Contribute</a>
+  </p>
+</aside>
+{% endif %}
+{% endblock %}
+
 {% block extrahead %}
 {{ super() }}
 <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">

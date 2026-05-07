@@ -241,7 +241,12 @@ plugins:
             separate_signature: true
   - search
   - mkdocs-jupyter
-  - social
+  - social:
+      cards: true
+      cards_layout_options:
+        background_color: "#8315F9"
+        color: "#FFFFFF"
+        font_family: Inter
   - ezlinks
   - gen-files:
       scripts:
