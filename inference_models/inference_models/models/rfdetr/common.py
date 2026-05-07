@@ -11,6 +11,7 @@ from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
 )
+from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     align_instance_segmentation_results_to_rle_masks,
@@ -290,6 +291,60 @@ def post_process_instance_segmentation_results_to_rle_masks(
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> List[InstanceDetections]:
+    if _fullpost_eligible(bboxes, pre_processing_meta, classes_re_mapping):
+        meta = pre_processing_meta[0]
+        thr_arg = threshold if isinstance(threshold, torch.Tensor) else float(threshold)
+        combined, mask_bin, _mask_any, counter, done_event = triton_rfdetr_fullpost(
+            bboxes=bboxes,
+            logits=logits,
+            masks=masks,
+            threshold=thr_arg,
+            num_classes=num_classes,
+            class_mapping=classes_re_mapping.class_mapping,
+            inference_size_wh=(meta.inference_size.width, meta.inference_size.height),
+            pad_ltrb=(meta.pad_left, meta.pad_top, meta.pad_right, meta.pad_bottom),
+            scale_wh=(meta.scale_width, meta.scale_height),
+            orig_size_wh=(meta.original_size.width, meta.original_size.height),
+        )
+        done_event.wait(torch.cuda.current_stream(bboxes.device))
+        n_survivors = int(counter.item())
+        orig_h = meta.original_size.height
+        orig_w = meta.original_size.width
+        if n_survivors == 0:
+            empty_xyxy = torch.empty(
+                (0, 4), dtype=torch.int32, device=bboxes.device
+            )
+            empty_conf = torch.empty((0,), dtype=torch.float32, device=bboxes.device)
+            empty_cls = torch.empty((0,), dtype=torch.int32, device=bboxes.device)
+            return [
+                InstanceDetections(
+                    xyxy=empty_xyxy,
+                    confidence=empty_conf,
+                    class_id=empty_cls,
+                    mask=InstancesRLEMasks.from_coco_rle_masks(
+                        image_size=(orig_h, orig_w), masks=[]
+                    ),
+                )
+            ]
+        combined_slice = combined[:n_survivors]
+        mask_slice = mask_bin[:n_survivors].to(dtype=torch.bool)
+        rle_masks = [
+            torch_mask_to_coco_rle(mask=mask_slice[i]) for i in range(n_survivors)
+        ]
+        instances_masks = InstancesRLEMasks.from_coco_rle_masks(
+            image_size=(orig_h, orig_w), masks=rle_masks
+        )
+        xyxy = combined_slice[:, :4]
+        confidence = combined_slice[:, 4].view(torch.float32)
+        class_id = combined_slice[:, 5]
+        return [
+            InstanceDetections(
+                xyxy=xyxy,
+                confidence=confidence,
+                class_id=class_id,
+                mask=instances_masks,
+            )
+        ]
     logits_sigmoid = torch.nn.functional.sigmoid(logits)
     final_results = []
     device = bboxes.device
