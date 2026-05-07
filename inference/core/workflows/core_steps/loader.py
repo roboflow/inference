@@ -424,6 +424,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inferen
 from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
     RoboflowVisionEventsBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.rosbridge_publish.v1 import (
+    RosbridgePublishSinkBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
@@ -904,6 +907,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TrackerSORTBlockV1,
         TrackerOCSORTBlockV1,
         WebhookSinkBlockV1,
+        RosbridgePublishSinkBlockV1,
         VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
         RoboflowInstanceSegmentationModelBlockV3,

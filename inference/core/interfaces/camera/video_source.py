@@ -194,6 +194,10 @@ def _is_test_pattern_reference(video: Union[str, int]) -> bool:
     )
 
 
+def _is_rosbridge_reference(video: Union[str, int]) -> bool:
+    return isinstance(video, str) and video.strip().lower().startswith("rosbridge://")
+
+
 class VideoSource:
     @classmethod
     def init(
@@ -617,6 +621,12 @@ class VideoSource:
             )
 
             self._video = TestPatternStreamProducer()
+        elif _is_rosbridge_reference(self._stream_reference):
+            from inference.core.interfaces.camera.rosbridge_image_producer import (
+                RosbridgeImageFrameProducer,
+            )
+
+            self._video = RosbridgeImageFrameProducer.from_url(self._stream_reference)
         else:
             self._video = CV2VideoFrameProducer(self._stream_reference)
         if not self._video.isOpened():
