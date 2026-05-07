@@ -1,7 +1,7 @@
 site_name: Roboflow Inference
 site_url: https://inference.roboflow.com/
 site_author: Roboflow
-site_description: Scalable, on-device computer vision deployment.
+site_description: Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.
 repo_name: roboflow/inference
 repo_url: https://github.com/roboflow/inference
 edit_uri: https://github.com/roboflow/inference/tree/main/docs
@@ -224,6 +224,9 @@ theme:
       primary: 'custom'
 
 plugins:
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: date
   - mkdocstrings:
       handlers:
         python:
