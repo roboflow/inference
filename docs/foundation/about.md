@@ -1,3 +1,7 @@
+---
+description: Overview of Roboflow foundation models, including CLIP, DocTR, Grounding DINO, and SAM-based workflows.
+---
+
 Foundation models are machine learning models that have been trained on vast amounts of data to accomplish a specific task.
 
 For example, OpenAI trained CLIP, a foundation model. CLIP enables you to classify images. You can also compare the similarity of images and text with CLIP.
@@ -8,7 +12,7 @@ Foundation models are being built for a range of vision tasks, from image segmen
 
 Inference supports the following foundation models:
 
-- [Gaze (LC2S-Net)](./gaze.md): Detect the direction in which someone is looking.
+- [Gaze (L2CS-Net)](./gaze.md): Detect the direction in which someone is looking.
 - [CLIP](./clip.md): Classify images and compare the similarity of images and text.
 - [DocTR](./doctr.md): Read characters in images.
 - [Grounding DINO](./grounding_dino.md): Detect objects in images using text prompts.
