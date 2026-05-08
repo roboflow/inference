@@ -33,6 +33,8 @@ COPY inference inference
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
 COPY .release .release
 COPY requirements requirements
 COPY Makefile Makefile
@@ -66,4 +68,4 @@ ENV CORE_MODEL_SAM3_ENABLED=False \
     RUNNING_ON_JETSON=True \
     L4T_VERSION=35.2.1
 
-ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]
