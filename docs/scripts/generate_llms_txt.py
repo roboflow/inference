@@ -206,7 +206,7 @@ def generate_llms_full_txt(
     (site_dir / "llms-full.txt").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
-def main():
+def main() -> None:
     config = load_config()
     site_name = config.get("site_name", "Documentation")
     site_description = config.get("site_description", "")
