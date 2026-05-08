@@ -1,7 +1,7 @@
 # Core Models
 
 `InferenceHTTPClient` supports core models hosted via `inference`. Part of the models can be used on the Roboflow
-hosted inference platform (use `https://infer.roboflow.com` as url), other are possible to be deployed locally (usually
+hosted inference platform (use `https://serverless.roboflow.com` as url), other are possible to be deployed locally (usually
 local server will be available under `http://localhost:9001`).
 
 ## Clip
@@ -10,7 +10,7 @@ local server will be available under `http://localhost:9001`).
 from inference_sdk import InferenceHTTPClient
 
 CLIENT = InferenceHTTPClient(
-    api_url="http://localhost:9001",  # or "https://infer.roboflow.com" to use hosted serving
+    api_url="http://localhost:9001",  # or "https://serverless.roboflow.com" to use hosted serving
     api_key="ROBOFLOW_API_KEY"
 )
 
@@ -37,7 +37,7 @@ Async methods are also available:
 from inference_sdk import InferenceHTTPClient
 
 CLIENT = InferenceHTTPClient(
-    api_url="http://localhost:9001",  # or "https://infer.roboflow.com" to use hosted serving
+    api_url="http://localhost:9001",  # or "https://serverless.roboflow.com" to use hosted serving
     api_key="ROBOFLOW_API_KEY"
 )
 
@@ -58,7 +58,7 @@ async def see_async_method():
 from inference_sdk import InferenceHTTPClient
 
 CLIENT = InferenceHTTPClient(
-    api_url="http://localhost:9001",  # or "https://infer.roboflow.com" to use hosted serving
+    api_url="http://localhost:9001",  # or "https://serverless.roboflow.com" to use hosted serving
     api_key="ROBOFLOW_API_KEY"
 )
 

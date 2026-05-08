@@ -1,3 +1,7 @@
+---
+description: Find and run Roboflow Universe models with Inference and Supervision.
+---
+
 With Inference, you can run any of the 50,000+ models available on Roboflow Universe.
 
 All models run on your own hardware.
@@ -33,7 +37,7 @@ Next, create a new Python file and add the following code:
 from inference import get_model
 # import supervision to visualize our results
 import supervision as sv
-# import cv2 to helo load our image
+# import cv2 to help load our image
 import cv2
 
 # define the image url to use for inference
