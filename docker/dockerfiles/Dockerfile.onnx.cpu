@@ -69,6 +69,8 @@ COPY examples/notebooks .
 WORKDIR /app
 COPY inference inference
 COPY docker/config/cpu_http.py cpu_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
@@ -84,4 +86,4 @@ ENV ENABLE_STREAM_API=True
 ENV ENABLE_PROMETHEUS=True
 ENV CORE_MODEL_SAM3_ENABLED=False
 
-ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "cpu_http:app"]

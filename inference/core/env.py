@@ -317,6 +317,29 @@ FIX_BATCH_SIZE = str2bool(os.getenv("FIX_BATCH_SIZE", False))
 # Host, default is "0.0.0.0"
 HOST = os.getenv("HOST", "0.0.0.0")
 
+# Enable HTTPS for the inference server. When True, SSL_CERTFILE and SSL_KEYFILE
+# must point to a valid certificate/key pair on disk.
+ENABLE_HTTPS = str2bool(os.getenv("ENABLE_HTTPS", False))
+
+# Default location where customers are expected to mount their PEM cert/key
+# pair when running in a container. Override either path explicitly via
+# SSL_CERTFILE / SSL_KEYFILE if the certs live elsewhere.
+DEFAULT_SSL_CERTFILE = "/etc/inference/certs/server.crt"
+DEFAULT_SSL_KEYFILE = "/etc/inference/certs/server.key"
+
+# Path to the PEM-encoded SSL certificate file used to serve HTTPS.
+SSL_CERTFILE = os.getenv("SSL_CERTFILE", DEFAULT_SSL_CERTFILE)
+
+# Path to the PEM-encoded SSL private key file used to serve HTTPS.
+SSL_KEYFILE = os.getenv("SSL_KEYFILE", DEFAULT_SSL_KEYFILE)
+
+# Optional password used to decrypt the SSL_KEYFILE if it is encrypted.
+SSL_KEYFILE_PASSWORD = os.getenv("SSL_KEYFILE_PASSWORD", None)
+
+# Optional path to a CA certificate bundle used when client certificate
+# verification is required.
+SSL_CA_CERTS = os.getenv("SSL_CA_CERTS", None)
+
 # IoU threshold, default is 0.3
 IOU_THRESHOLD_ENV = "IOU_THRESHOLD"
 DEFAULT_IOU_THRESHOLD = 0.3

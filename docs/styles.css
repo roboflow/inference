@@ -402,3 +402,28 @@ body[data-md-color-scheme] .md-header {
     grid-template-columns: 1fr;
   }
 }
+
+/* Org-level attribution shown at the bottom of every inner doc page.
+ * Surfaces an E-E-A-T signal for AI citation engines without competing
+ * with article content. */
+.rf-page-attribution {
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #E7E4F0;
+  font-size: 0.85rem;
+  color: #6F6C79;
+}
+
+.rf-page-attribution p {
+  margin: 0;
+}
+
+.rf-page-attribution a {
+  color: var(--md-primary-fg-color);
+  text-decoration: none;
+}
+
+.rf-page-attribution a:hover,
+.rf-page-attribution a:focus {
+  text-decoration: underline;
+}

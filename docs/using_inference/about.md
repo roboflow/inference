@@ -1,3 +1,7 @@
+---
+description: Core Python package reference for loading models, running inference, and building video pipelines with Roboflow Inference.
+---
+
 # About
 
 The `inference` Python package is the core library that powers Roboflow's computer vision deployment stack. It provides model loading, pre/post-processing, GPU/CPU optimization, and [Workflows](../workflows/about.md) execution, callable directly from Python.
