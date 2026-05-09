@@ -238,29 +238,47 @@ def _fast_path_eligible(
     # the per-item check below only needs to handle 3D.
     for img in image_list:
         if isinstance(img, np.ndarray):
-            if img.dtype != np.uint8 or img.ndim != 3 or img.shape[2] != 3:
+            if img.dtype != np.uint8 or img.ndim != 3:
+                return False
+            if img.shape[2] != 3 and not _looks_like_chw(img.shape):
                 return False
         elif isinstance(img, torch.Tensor):
-            # Only uint8 HWC. Float tensors keep the existing tensor branch
-            # (F.resize bilinear *without* PIL's antialias — a caller-
-            # accepted divergence we don't silently change).
-            if img.dtype != torch.uint8:
+            # Only uint8 3-channel images (HWC or CHW). Float tensors keep
+            # the existing tensor branch (F.resize bilinear *without* PIL's
+            # antialias — a caller-accepted divergence we don't silently
+            # change).
+            if img.dtype != torch.uint8 or img.ndim != 3:
                 return False
-            if img.ndim != 3 or img.shape[-1] != 3:
+            if img.shape[-1] != 3 and not _looks_like_chw(img.shape):
                 return False
         else:
             return False
     return True
 
 
+def _looks_like_chw(shape) -> bool:
+    """Matches _tensor_to_hwc_uint8's CHW heuristic: first dim is 1/3/4 and
+    last dim is not. Catches torchvision.io.read_image's CHW output."""
+    return (
+        len(shape) == 3
+        and shape[0] in (1, 3, 4)
+        and shape[-1] not in (1, 3, 4)
+    )
+
+
 def _as_hwc_uint8_cuda(
     img: Union[np.ndarray, torch.Tensor], device: torch.device
 ) -> torch.Tensor:
-    """Return a contiguous (H, W, 3) uint8 CUDA tensor, copying if needed."""
+    """Return a contiguous (H, W, 3) uint8 CUDA tensor, copying if needed.
+    Accepts HWC or CHW 3D inputs (CHW is torchvision.io.read_image's layout)."""
     if isinstance(img, torch.Tensor):
+        if _looks_like_chw(img.shape):
+            img = img.permute(1, 2, 0)
         if img.device != device:
             img = img.to(device=device, non_blocking=True)
         return img.contiguous()
+    if _looks_like_chw(img.shape):
+        img = np.transpose(img, (1, 2, 0))
     t = torch.from_numpy(np.ascontiguousarray(img))
     return t.to(device=device, non_blocking=True)
 
