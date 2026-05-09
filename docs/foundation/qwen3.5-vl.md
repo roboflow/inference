@@ -8,12 +8,13 @@ You can deploy Qwen 3.5-VL with Inference.
 
 ### Model Variants
 
-Qwen 3.5-VL is available in two sizes:
+Qwen 3.5-VL is available in three sizes:
 
 | Model ID | Parameters |
 |:---------|:-----------|
 | `qwen3_5-0.8b` | 0.8B |
 | `qwen3_5-2b` | 2B |
+| `qwen3_5-4b` | 4B |
 
 ### Execution Modes
 

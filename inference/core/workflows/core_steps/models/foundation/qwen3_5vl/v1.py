@@ -74,13 +74,13 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["What is in this image?"],
     )
     model_version: Union[
-        Literal["qwen3_5-0.8b", "qwen3_5-2b"],
+        Literal["qwen3_5-0.8b", "qwen3_5-2b", "qwen3_5-4b"],
         Selector(kind=[ROBOFLOW_MODEL_ID_KIND]),
         str,
     ] = Field(
         default="qwen3_5-0.8b",
         description="The Qwen3.5-VL model to be used for inference.",
-        examples=["qwen3_5-0.8b", "qwen3_5-2b"],
+        examples=["qwen3_5-0.8b", "qwen3_5-2b", "qwen3_5-4b"],
     )
 
     system_prompt: Optional[str] = Field(
@@ -95,7 +95,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "model_version": {
-                    "values": ["qwen3_5-2b", "qwen3_5-2b-peft"],
+                    "values": ["qwen3_5-2b", "qwen3_5-2b-peft", "qwen3_5-4b"],
                 },
             },
         },
@@ -133,7 +133,7 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         """Return list of model_id variants that can satisfy this block."""
-        return ["qwen3_5-0.8b", "qwen3_5-2b"]
+        return ["qwen3_5-0.8b", "qwen3_5-2b", "qwen3_5-4b"]
 
 
 ##########################################################################
