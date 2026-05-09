@@ -135,10 +135,12 @@ def pre_process_network_input(
     ):
         return _fast_path_preprocess(
             image_list=image_list,
+            image_pre_processing=image_pre_processing,
             network_input=network_input,
             target_size=target_size,
             target_device=target_device,
             input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     tensors: List[torch.Tensor] = []
@@ -190,15 +192,25 @@ def _fast_path_eligible(
     # Kernel runs on CUDA.
     if target_device.type != "cuda":
         return False
-    # Image-level transforms (static_crop / grayscale / contrast) aren't in
-    # the kernel — predicate rejects if any is enabled in config.
+    # grayscale / contrast aren't implemented in the kernel; static_crop is
+    # (as a load-time offset + effective-dims substitution).
     ipp = image_pre_processing
-    if (
-        (ipp.static_crop is not None and ipp.static_crop.enabled)
-        or (ipp.contrast is not None and ipp.contrast.enabled)
-        or (ipp.grayscale is not None and ipp.grayscale.enabled)
+    if (ipp.contrast is not None and ipp.contrast.enabled) or (
+        ipp.grayscale is not None and ipp.grayscale.enabled
     ):
         return False
+    # Honour overrides that force-disable static_crop (True means "disable").
+    static_crop_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_static_crop is True
+    )
+    if (
+        ipp.static_crop is not None
+        and ipp.static_crop.enabled
+        and not static_crop_overridden
+    ):
+        # We'll apply it in the kernel — don't reject here.
+        pass
     # Two-stage dataset-version resize isn't in the kernel.
     ni = network_input
     if ni.dataset_version_resize_dimensions is not None:
@@ -255,10 +267,12 @@ def _as_hwc_uint8_cuda(
 
 def _fast_path_preprocess(
     image_list: List[Union[np.ndarray, torch.Tensor]],
+    image_pre_processing: ImagePreProcessing,
     network_input: NetworkInputDefinition,
     target_size: ImageDimensions,
     target_device: torch.device,
     input_color_mode: Optional[ColorMode],
+    pre_processing_overrides: Optional[PreProcessingOverrides],
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     """Per-image Triton launch + stack. Assumes `_fast_path_eligible` passed."""
     means, stds = network_input.normalization
@@ -272,12 +286,36 @@ def _fast_path_preprocess(
     # so the swap runs even on unspecified inputs — we replicate that exactly.
     swap_rb = input_color_mode != network_input.color_mode
 
+    # Resolve whether static_crop is active for this call. Computed once
+    # because the config + override are call-level.
+    static_crop_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_static_crop is True
+    )
+    crop_cfg = image_pre_processing.static_crop
+    crop_active = (
+        crop_cfg is not None and crop_cfg.enabled and not static_crop_overridden
+    )
+
     outs: List[torch.Tensor] = []
     metas: List[PreProcessingMetadata] = []
     for img in image_list:
         src_gpu = _as_hwc_uint8_cuda(img, target_device)
         sh, sw = int(src_gpu.shape[0]), int(src_gpu.shape[1])
-        tables = _get_resample_tables(target_device, sh, sw, th, tw)
+
+        if crop_active:
+            # Matches apply_static_crop_to_numpy_image: percentage-based.
+            x0 = int(crop_cfg.x_min / 100 * sw)
+            y0 = int(crop_cfg.y_min / 100 * sh)
+            x1 = int(crop_cfg.x_max / 100 * sw)
+            y1 = int(crop_cfg.y_max / 100 * sh)
+            crop_w = x1 - x0
+            crop_h = y1 - y0
+        else:
+            x0 = y0 = 0
+            crop_w, crop_h = sw, sh
+
+        tables = _get_resample_tables(target_device, crop_h, crop_w, th, tw)
         out = triton_preprocess_rfdetr_stretch(
             src=src_gpu,
             tables=tables,
@@ -286,6 +324,10 @@ def _fast_path_preprocess(
             means=means_t,
             stds=stds_t,
             swap_rb=swap_rb,
+            crop_offset_y=y0,
+            crop_offset_x=x0,
+            crop_h=crop_h,
+            crop_w=crop_w,
         )
         outs.append(out[0])  # drop leading batch dim to match stack below
         metas.append(
@@ -295,12 +337,12 @@ def _fast_path_preprocess(
                 pad_right=0,
                 pad_bottom=0,
                 original_size=ImageDimensions(width=sw, height=sh),
-                size_after_pre_processing=ImageDimensions(width=sw, height=sh),
+                size_after_pre_processing=ImageDimensions(width=crop_w, height=crop_h),
                 inference_size=ImageDimensions(width=tw, height=th),
-                scale_width=tw / sw,
-                scale_height=th / sh,
+                scale_width=tw / crop_w,
+                scale_height=th / crop_h,
                 static_crop_offset=StaticCropOffset(
-                    offset_x=0, offset_y=0, crop_width=sw, crop_height=sh
+                    offset_x=x0, offset_y=y0, crop_width=crop_w, crop_height=crop_h
                 ),
             )
         )
