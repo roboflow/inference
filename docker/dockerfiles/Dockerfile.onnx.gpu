@@ -111,6 +111,8 @@ COPY examples/notebooks .
 WORKDIR /app/
 COPY inference inference
 COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
@@ -128,4 +130,4 @@ ENV ENABLE_STREAM_API=True
 ENV ENABLE_PROMETHEUS=True
 ENV STREAM_API_PRELOADED_PROCESSES=2
 
-ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

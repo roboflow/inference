@@ -1,3 +1,7 @@
+---
+description: Install Inference and compare deployment paths before running your first model from the start guide.
+---
+
 # Installation
 
 You can install `inference` in a [Python>=3.10,<3.13](https://www.python.org/) environment.
@@ -14,7 +18,7 @@ You can install `inference` in a [Python>=3.10,<3.13](https://www.python.org/) e
         pip install --extra-index-url https://download.pytorch.org/whl/cu124  inference-gpu
         # please adjust the --extra-index-url to CUDA version installed in your OS
         # https://download.pytorch.org/whl/cu<major><minor>, for instance https://download.pytorch.org/whl/cu130 for CUDA 13.0
-        # alternativelly use
+        # alternatively use
         uv pip install inference-gpu
         ```
 
@@ -71,11 +75,11 @@ use-case and organizational constraints.
 ## Cloud Hosting
 
 By far the easiest way to get started is with Roboflow's managed services. You can
-jump straight to building without having to setup any infrastructure. It's often
-the front-door to using Inference even for those who know they will eventually want
-to self host.
+jump straight to building without having to set up any infrastructure. It's often
+the front door to using Inference even for those who know they will eventually want
+to self-host.
 
-There are two cloud hosted offerings with different targeted use-cases, capabilities,
+There are two cloud-hosted offerings with different targeted use-cases, capabilities,
 and pricing models.
 
 ### Serverless Hosted API
@@ -101,7 +105,7 @@ higher priority task & are limited to 3-hour sessions) or production mode (guara
 capacity and no session time limit).
 
 On a Dedicated Deployment, you can stream video, run custom Python code, access
-heavy foundation models like SAM 2, Florence-2, and Paligemma (including your fine-tunes
+heavy foundation models like SAM 2, Florence-2, and PaliGemma (including your fine-tunes
 of those models), and install additional dependencies. They are much higher performance
 machines than the instances backing the Serverless Hosted API.
 

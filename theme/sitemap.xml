@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{# Always emit the homepage first — index.md uses `template: home.html` and may
+   be skipped or under-prioritised by some build pipelines. Hard-coding the
+   site root guarantees AI crawlers and search engines see it. #}
+    <url>
+         <loc>{{ config.site_url|e }}</loc>
+         {%- if build_date_utc %}
+         <lastmod>{{ build_date_utc.strftime('%Y-%m-%d') }}</lastmod>
+         {%- endif %}
+         <changefreq>weekly</changefreq>
+         <priority>1.0</priority>
+    </url>
+{%- for page in pages -%}
+    {%- if not page.is_link and not page.is_homepage and (page.abs_url or page.canonical_url) %}
+    <url>
+         <loc>{% if page.canonical_url %}{{ page.canonical_url|e }}{% else %}{{ page.abs_url|e }}{% endif %}</loc>
+         {%- if page.update_date %}
+         <lastmod>{{ page.update_date }}</lastmod>
+         {%- endif %}
+    </url>
+    {%- endif -%}
+{% endfor %}
+</urlset>
