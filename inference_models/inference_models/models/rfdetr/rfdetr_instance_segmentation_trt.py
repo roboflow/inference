@@ -55,6 +55,7 @@ from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results_to_rle_masks,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.utils.environment import get_boolean_from_env
 
 try:
     from inference_models.models.rfdetr.triton_preprocess import (
@@ -66,6 +67,12 @@ except ImportError:
     _TRITON_AVAILABLE = False
     build_resample_tables = None
     triton_preprocess_rfdetr_stretch = None
+
+# Kill switch: set INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=false to force
+# the PIL reference path for every call, regardless of other predicates.
+_FAST_PATH_ENABLED = get_boolean_from_env(
+    "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED", default=True
+)
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -358,6 +365,8 @@ class RFDetrForInstanceSegmentationTRT(
         image_size,
         pre_processing_overrides,
     ) -> Optional[Tuple[torch.Tensor, List[PreProcessingMetadata]]]:
+        if not _FAST_PATH_ENABLED:
+            return None
         if not _TRITON_AVAILABLE:
             return None
         if image_size is not None:
