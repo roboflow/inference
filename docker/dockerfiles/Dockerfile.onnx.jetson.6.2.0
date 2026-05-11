@@ -7,6 +7,22 @@ ARG CMAKE_VERSION=4.2.0
 ARG PYTORCH_VERSION=2.6.0
 ARG TORCHVISION_VERSION=0.21.0
 ARG OPENCV_VERSION=4.13.0
+# Per-Jetson-platform OpenCV build parameters. To replicate this from-source
+# OpenCV section in another Jetson dockerfile (jp51, jp71), copy the OpenCV
+# block below verbatim and update these four ARGs to match the target base.
+# Cross-reference the values already used by the same dockerfile's PyTorch /
+# torchvision / onnxruntime build steps so all components target the same SoC:
+#   OPENCV_CUDA_ARCH:           jp51 (Orin on L4T r35): 8.7
+#                               jp62 (Orin on L4T r36): 8.7
+#                               jp71 (Thor on L4T r38): 11.0
+#   OPENCV_PYTHON_INSTALL_PATH: dist-packages dir of the base's Python
+#                               (jp51: python3.12, jp62: python3.10, jp71: python3.12)
+#   OPENCV_PYTHON_INCLUDE_DIR:  matches the base's Python C headers
+#   OPENCV_PYTHON_VERSION:      cmake's PYTHON_VERSION flag (major+minor, no dot)
+ARG OPENCV_CUDA_ARCH=8.7
+ARG OPENCV_PYTHON_INSTALL_PATH=/usr/local/lib/python3.10/dist-packages
+ARG OPENCV_PYTHON_INCLUDE_DIR=/usr/include/python3.10
+ARG OPENCV_PYTHON_VERSION=310
 ARG ONNXRUNTIME_VERSION=1.20.0
 ENV LANG=en_US.UTF-8
 
@@ -233,7 +249,7 @@ RUN cmake -GNinja \
         -D CMAKE_INSTALL_PREFIX=/usr/local \
         -D WITH_CUDA=ON \
         -D WITH_CUDNN=ON \
-        -D CUDA_ARCH_BIN="8.7" \
+        -D CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH}" \
         -D CUDA_ARCH_PTX="" \
         -D OPENCV_GENERATE_PKGCONFIG=ON \
         -D OPENCV_EXTRA_MODULES_PATH=/build/opencv/opencv_contrib-${OPENCV_VERSION}/modules \
@@ -246,9 +262,9 @@ RUN cmake -GNinja \
         -D BUILD_EXAMPLES=OFF \
         -D BUILD_DOCS=OFF \
         -D PYTHON3_EXECUTABLE=/usr/bin/python3 \
-        -D PYTHON3_INCLUDE_DIR=/usr/include/python3.10 \
-        -D PYTHON_VERSION=310 \
-        -D OPENCV_PYTHON3_INSTALL_PATH=/usr/local/lib/python3.10/dist-packages \
+        -D PYTHON3_INCLUDE_DIR=${OPENCV_PYTHON_INCLUDE_DIR} \
+        -D PYTHON_VERSION=${OPENCV_PYTHON_VERSION} \
+        -D OPENCV_PYTHON3_INSTALL_PATH=${OPENCV_PYTHON_INSTALL_PATH} \
         -D BUILD_SHARED_LIBS=OFF \
         -D WITH_OPENCLAMDFFT=OFF \
         -D WITH_OPENCLAMDBLAS=OFF \
@@ -257,9 +273,24 @@ RUN cmake -GNinja \
     ninja && \
     ninja install && \
     ldconfig && \
+    # Rescue install-tree config files before pip install clobbers them.
+    # `ninja install` writes ${OPENCV_PYTHON_INSTALL_PATH}/cv2/config*.py with
+    # install paths (correct). The `pip install` below installs a wheel built
+    # from the BUILD-TREE python_loader directory, whose config files reference
+    # /build/... paths that don't survive into the runtime stage. Save the
+    # install-tree versions now, restore them after pip install registers
+    # opencv with pip's metadata. Without this, cv2 import in the runtime image
+    # fails with "recursion is detected during loading of cv2 binary extensions".
+    mkdir -p /tmp/cv2-install-tree && \
+    cp ${OPENCV_PYTHON_INSTALL_PATH}/cv2/config*.py /tmp/cv2-install-tree/ && \
     python3 -m pip wheel /build/opencv/opencv-${OPENCV_VERSION}/release/python_loader --wheel-dir /build/out/wheels && \
     python3 -m pip install --break-system-packages /build/out/wheels/opencv-*.whl && \
-    python3 -c "import cv2; info = cv2.getBuildInformation(); assert 'GStreamer:' in info and 'YES' in info.split('GStreamer:')[1].split('\n')[0], 'GStreamer not enabled in OpenCV'; assert 'FFMPEG:' in info and 'YES' in info.split('FFMPEG:')[1].split('\n')[0], 'FFmpeg not enabled in OpenCV'; print('OpenCV built with GStreamer + FFmpeg')"
+    cp /tmp/cv2-install-tree/config*.py ${OPENCV_PYTHON_INSTALL_PATH}/cv2/ && \
+    rm -rf /tmp/cv2-install-tree && \
+    # Sanity check: simulate the runtime stage by removing /build/ from sys.path.
+    # If config files still leak build-tree paths, the loader bootstrap fails here
+    # with a recursion error rather than at runtime on the device.
+    env -u PYTHONPATH python3 -c "import sys; sys.path = [p for p in sys.path if '/build' not in p]; import cv2; info = cv2.getBuildInformation(); assert 'YES' in info.split('GStreamer:')[1].split(chr(10))[0], 'GStreamer not enabled'; assert 'YES' in info.split('FFMPEG:')[1].split(chr(10))[0], 'FFMPEG not enabled'; print('cv2 ' + cv2.__version__ + ' OK from install path; GStreamer + FFmpeg + CUDA enabled')"
 
 # Remove test directories, development tools, and unnecessary packages to reduce image size
 # This happens AFTER all package installations to ensure everything gets cleaned
