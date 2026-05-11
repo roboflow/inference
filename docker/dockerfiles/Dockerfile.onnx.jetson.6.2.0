@@ -269,13 +269,6 @@ RUN cd /usr/local/lib/python3.10/dist-packages && \
     rm -rf */examples */benchmarks */docs || true && \
     rm -rf skimage/data || true
 
-# Ensure /usr/lib/aarch64-linux-gnu/tegra/ exists so the libnvdla_compiler.so glob
-# COPY in the runtime stage below can be processed by BuildKit. NVIDIA's L4T base
-# images don't always populate that directory (it's normally injected at run time
-# by nvidia-container-runtime), and BuildKit's glob handler needs to lstat the
-# parent dir even when the glob is allowed to match zero files.
-RUN mkdir -p /usr/lib/aarch64-linux-gnu/tegra
-
 # Stage 2: Runtime
 FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
 
@@ -344,7 +337,7 @@ COPY --from=builder /usr/local/cuda/targets/aarch64-linux/lib/libnvToolsExt*.so.
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvinfer*.so.*.*.* /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so.*.*.* /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvparsers*.so.*.*.* /usr/local/cuda/lib64/
-COPY --from=builder /usr/lib/aarch64-linux-gnu/tegra/libnvdla_compiler.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/nvidia/libnvdla_compiler.so* /usr/local/cuda/lib64/
 
 # NOTE: NVIDIA's gstreamer plugins (nvv4l2decoder, nvvidconv, nvjpegenc/dec) and
 # their tegra runtime deps (libnvbufsurface, libnvjpeg, libnvargus, ...) are NOT
