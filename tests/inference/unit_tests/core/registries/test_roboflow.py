@@ -8,9 +8,14 @@ import pytest
 
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import ModelType, TaskType
-from inference.core.exceptions import MissingApiKeyError, ModelNotRecognisedError
+from inference.core.exceptions import (
+    MissingApiKeyError,
+    ModelDeploymentNotSupportedError,
+    ModelNotRecognisedError,
+)
 from inference.core.registries import roboflow
 from inference.core.registries.roboflow import (
+    FINE_TUNED_SAM3_DEPLOYMENT_ERROR,
     RoboflowModelRegistry,
     _in_process_metadata_cache,
     get_model_metadata_from_cache,
@@ -237,6 +242,32 @@ def test_get_model_type_when_cache_is_utilised(
     assert result == ("object-detection", "yolov8n")
 
 
+@mock.patch.object(roboflow, "SAM3_FINE_TUNED_MODELS_ENABLED", False)
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+def test_get_model_type_when_fine_tuned_sam3_is_cached_but_disabled(
+    construct_model_type_cache_path_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    with open(metadata_path, "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "project_task_type": "instance-segmentation",
+                    "model_type": "sam3-large",
+                }
+            )
+        )
+
+    # when / then
+    with pytest.raises(ModelDeploymentNotSupportedError) as error:
+        get_model_type(model_id="workspace/123", api_key="my_api_key")
+
+    assert str(error.value) == FINE_TUNED_SAM3_DEPLOYMENT_ERROR
+
+
 @pytest.mark.parametrize(
     "model_id, expected_result",
     [
@@ -254,6 +285,43 @@ def test_get_model_type_when_generic_model_is_utilised(
 
     # then
     assert result == expected_result
+
+
+@mock.patch.object(roboflow, "SAM3_FINE_TUNED_MODELS_ENABLED", False)
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+def test_get_model_type_when_fine_tuned_sam3_is_requested_and_disabled(
+    construct_model_type_cache_path_mock: MagicMock,
+    get_roboflow_model_data_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_roboflow_model_data_mock.return_value = {
+        "ort": {
+            "type": "instance-segmentation",
+            "modelType": "sam3-large",
+        }
+    }
+
+    # when / then
+    with pytest.raises(ModelDeploymentNotSupportedError) as error:
+        get_model_type(
+            model_id="workspace/123",
+            api_key="my_api_key",
+        )
+
+    assert str(error.value) == FINE_TUNED_SAM3_DEPLOYMENT_ERROR
+    assert not os.path.exists(metadata_path)
+    get_roboflow_model_data_mock.assert_called_once_with(
+        api_key="my_api_key",
+        model_id="workspace/123",
+        countinference=None,
+        service_secret=None,
+        endpoint_type=ModelEndpointType.ORT,
+        device_id=GLOBAL_DEVICE_ID,
+    )
 
 
 @mock.patch.object(roboflow, "get_roboflow_model_data")

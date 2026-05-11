@@ -80,7 +80,7 @@ inference infer https://[YOUR_HOSTED_IMAGE_URL] --project-id my-project --model-
 #### Hosted API inference
 
 ```bash
-inference infer ./image.jpg --project-id my-project --model-version 1 --api-key my-api-key --host https://detect.roboflow.com
+inference infer ./image.jpg --project-id my-project --model-version 1 --api-key my-api-key --host https://serverless.roboflow.com
 ```
 
 ## Supported Devices

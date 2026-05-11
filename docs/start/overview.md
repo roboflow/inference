@@ -1,3 +1,7 @@
+---
+description: Overview of Roboflow Inference deployment modes, model serving, and quickstart paths for self-hosted and managed setups.
+---
+
 # Inference
 
 Inference is an open-source computer vision deployment hub by [Roboflow](https://roboflow.com).

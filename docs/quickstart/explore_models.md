@@ -1,3 +1,7 @@
+---
+description: Run private fine-tuned models from Roboflow, pre-trained detection and segmentation models, and Universe community models on your own hardware with Roboflow Inference.
+---
+
 With Inference, you can run private, fine-tuned models that you have trained or uploaded to Roboflow.
 
 All models run on your own hardware.
