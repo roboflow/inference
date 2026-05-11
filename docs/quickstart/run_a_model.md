@@ -1,3 +1,7 @@
+---
+description: Run a pre-trained, fine-tuned, or Universe model with Roboflow Inference using the Python package or HTTP client.
+---
+
 Let's run a computer vision model with Inference. There are two ways to do this: the [inference Python package](../using_inference/about.md) which loads and runs models directly in your process, or the [inference-sdk](../inference_helpers/inference_sdk.md) which sends requests to an Inference Server over HTTP.
 
 ## Install
@@ -20,7 +24,7 @@ Let's run a computer vision model with Inference. There are two ways to do this:
     pip install --extra-index-url https://download.pytorch.org/whl/cu124 inference-gpu
     # please adjust the --extra-index-url to CUDA version installed in your OS
     # https://download.pytorch.org/whl/cu<major><minor>, for instance https://download.pytorch.org/whl/cu130 for CUDA 13.0
-    # alternativelly use
+    # alternatively use
     uv pip install inference-gpu
     ```
     GPU installation requires CUDA available in the OS - check 

@@ -40,8 +40,120 @@
 {% endif %}
 {% endblock %}
 
+{# Override Material's default Google Fonts loader to use display=swap.
+   The base theme hard-codes display=fallback, which causes invisible text on
+   slow connections. Mirrors base.html's logic exactly except for the swap. #}
+{% block fonts %}
+{% if config.theme.font != false %}
+{% set text = config.theme.font.text | d("Roboto", true) %}
+{% set code = config.theme.font.code | d("Roboto Mono", true) %}
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family={{
+    text | replace(' ', '+') + ':300,300i,400,400i,700,700i%7C' +
+    code | replace(' ', '+') + ':400,400i,700,700i'
+  }}&display=swap">
+<style>:root{--md-text-font:"{{ text }}";--md-code-font:"{{ code }}"}</style>
+{% endif %}
+{% endblock %}
+
+{# Render org-level attribution on inner documentation pages.
+   Anchored just before the footer so the byline reads as part of each article.
+   Skipped on the homepage (which has its own composed hero layout). #}
+{% block content %}
+{{ super() }}
+{% if not is_home %}
+<aside class="rf-page-attribution" aria-label="Page maintainers">
+  <p>
+    Maintained by the <strong>Roboflow engineering team</strong>
+    &middot;
+    <a href="https://github.com/roboflow/inference" rel="noopener">GitHub</a>
+    &middot;
+    <a href="https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md" rel="noopener">Contribute</a>
+  </p>
+</aside>
+{% endif %}
+{% endblock %}
+
 {% block extrahead %}
 {{ super() }}
+<link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+<link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+<link rel="dns-prefetch" href="https://unpkg.com">
+<link rel="dns-prefetch" href="https://cdnassets.roboflow.com">
+{% if is_home %}
+<script type="application/ld+json">
+[
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Roboflow",
+    "url": "https://roboflow.com",
+    "sameAs": [
+      "https://github.com/roboflow",
+      "https://twitter.com/roboflow",
+      "https://www.linkedin.com/company/roboflow-ai",
+      "https://www.youtube.com/roboflow",
+      "https://en.wikipedia.org/wiki/Roboflow"
+    ]
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Roboflow Inference",
+    "url": "https://inference.roboflow.com",
+    "description": "Open-source computer vision inference server supporting object detection, segmentation, classification, and foundation models. Deployable on CPU, GPU, and edge devices.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows, Docker",
+    "downloadUrl": "https://pypi.org/project/inference/",
+    "codeRepository": "https://github.com/roboflow/inference",
+    "license": "https://github.com/roboflow/inference/blob/main/LICENSE",
+    "programmingLanguage": "Python",
+    "author": { "@type": "Organization", "name": "Roboflow", "url": "https://roboflow.com" },
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "sameAs": [
+      "https://github.com/roboflow/inference",
+      "https://pypi.org/project/inference/"
+    ]
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Roboflow Inference Documentation",
+    "url": "https://inference.roboflow.com"
+  }
+]
+</script>
+{% elif page.title %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": {{ page.title | tojson }},
+  "description": {% if page.meta and page.meta.description %}{{ page.meta.description | tojson }}{% else %}{{ (page.title ~ " | Roboflow Inference Documentation") | tojson }}{% endif %},
+  "url": {{ (config.site_url ~ page.url) | tojson }},
+  "inLanguage": "en",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Roboflow Inference Documentation",
+    "url": "https://inference.roboflow.com"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Roboflow",
+    "url": "https://roboflow.com"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Roboflow",
+    "url": "https://roboflow.com"
+  },
+  "speakable": {
+    "@type": "SpeakableSpecification",
+    "xpath": ["//h1", "//h2[1]"]
+  }
+}
+</script>
+{% endif %}
 <link href="https://cdnassets.roboflow.com/_vendor/fontawesome/6.4.0/css/all.min.css" rel="stylesheet">
 <link href="https://cdnassets.roboflow.com/_vendor/fontawesome/kit/custom-icons.css" rel="stylesheet">
 {% if is_home %}

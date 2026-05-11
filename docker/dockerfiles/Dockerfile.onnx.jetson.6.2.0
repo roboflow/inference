@@ -313,6 +313,8 @@ COPY inference inference
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 RUN python -m pip uninstall -y boto3 botocore && python -m pip install "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
 
@@ -343,4 +345,4 @@ LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (PyT
 
 EXPOSE 9001
 
-ENTRYPOINT ["/bin/sh", "-c", "python3 -m uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT"]
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]
