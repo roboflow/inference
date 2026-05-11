@@ -412,4 +412,10 @@ def _execute_request(
         if isinstance(error_detail, dict):
             error_detail = error_detail.get("message", "No response choices returned")
         raise RuntimeError(f"API returned no choices. Details: {error_detail}")
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    if content is None:
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+        raise RuntimeError(
+            f"API returned empty message content (finish_reason={finish_reason})."
+        )
+    return content

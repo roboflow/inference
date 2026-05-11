@@ -344,6 +344,31 @@ def test_execute_request_omits_extra_body_when_none(mock_openai: MagicMock) -> N
 
 
 @patch("inference.core.workflows.core_steps.models.foundation.openai_compatible.v1.OpenAI")
+def test_execute_request_raises_on_none_content(mock_openai: MagicMock) -> None:
+    import pytest
+
+    from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
+        _execute_request,
+    )
+
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    choice = MagicMock(message=MagicMock(content=None), finish_reason="tool_calls")
+    mock_response.choices = [choice]
+    mock_client.chat.completions.create.return_value = mock_response
+
+    with pytest.raises(RuntimeError, match="empty message content"):
+        _execute_request(
+            client=mock_client,
+            model_name="m",
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=1,
+            temperature=None,
+            extra_body=None,
+        )
+
+
+@patch("inference.core.workflows.core_steps.models.foundation.openai_compatible.v1.OpenAI")
 def test_execute_request_forwards_empty_extra_body(mock_openai: MagicMock) -> None:
     from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
         _execute_request,
