@@ -339,14 +339,13 @@ COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so.*.*.* /usr/lo
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvparsers*.so.*.*.* /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/tegra/libnvdla_compiler.so* /usr/local/cuda/lib64/
 
-# NVIDIA GStreamer plugins (nvv4l2decoder, nvvidconv, nvjpegenc/dec, etc.) from the
-# JetPack builder stage. The l4t-cuda runtime base ships without the multimedia stack,
-# so we copy the plugins and their tegra runtime deps to make hardware-accelerated
-# capture/encode pipelines work inside the container without depending on
-# nvidia-container-passthrough host mounts.
-COPY --from=builder /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnv*.so /usr/lib/aarch64-linux-gnu/gstreamer-1.0/
-COPY --from=builder /usr/lib/aarch64-linux-gnu/tegra /usr/lib/aarch64-linux-gnu/tegra
-COPY --from=builder /etc/ld.so.conf.d/nvidia-tegra.conf /etc/ld.so.conf.d/nvidia-tegra.conf
+# NOTE: NVIDIA's gstreamer plugins (nvv4l2decoder, nvvidconv, nvjpegenc/dec) and
+# their tegra runtime deps (libnvbufsurface, libnvjpeg, libnvargus, ...) are NOT
+# baked into the image -- they are tied to the host's JetPack BSP and are injected
+# at container start by `nvidia-container-runtime` via the CSVs under
+# /etc/nvidia-container-runtime/host-files-for-container.d/. The host system must
+# be configured to mount them; without that, cv2 here can dispatch a GStreamer
+# pipeline but `nvv4l2decoder` / `nvvidconv` / `nvjpegenc` won't resolve.
 
 # Create symlinks for cuDNN and TensorRT (saves ~2GB by not duplicating files)
 RUN cd /usr/local/cuda/lib64 && \
