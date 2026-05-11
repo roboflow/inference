@@ -40,6 +40,10 @@ RUN apt-get update -y && \
     libavformat-dev \
     libswscale-dev \
     libv4l-dev \
+    libavutil-dev \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    unzip \
     libatlas-base-dev \
     liblapack-dev \
     gfortran \
@@ -194,6 +198,49 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     packaging \
     && rm -rf ~/.cache/uv
 
+# Compile OpenCV from source with GStreamer / FFmpeg / CUDA support.
+# The pip opencv-python wheel ships without GStreamer, which blocks
+# cv2.VideoCapture from dispatching to NVIDIA's nv* GStreamer elements
+# (nvv4l2decoder, nvvidconv, nvjpegenc/dec). Replace it with a from-source
+# build so hardware-accelerated capture paths work on Orin.
+WORKDIR /build/opencv
+RUN python3 -m pip uninstall -y opencv-python opencv-contrib-python opencv-python-headless || true && \
+    wget -q https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSION}.zip -O opencv.zip && \
+    wget -q https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VERSION}.zip -O opencv_contrib.zip && \
+    unzip -q opencv.zip && unzip -q opencv_contrib.zip && \
+    rm opencv.zip opencv_contrib.zip && \
+    mkdir -p /build/opencv/opencv-${OPENCV_VERSION}/release
+WORKDIR /build/opencv/opencv-${OPENCV_VERSION}/release
+RUN cmake -GNinja \
+        -D CMAKE_BUILD_TYPE=RELEASE \
+        -D CMAKE_INSTALL_PREFIX=/usr/local \
+        -D WITH_CUDA=ON \
+        -D WITH_CUDNN=ON \
+        -D CUDA_ARCH_BIN="8.7" \
+        -D CUDA_ARCH_PTX="" \
+        -D OPENCV_GENERATE_PKGCONFIG=ON \
+        -D OPENCV_EXTRA_MODULES_PATH=/build/opencv/opencv_contrib-${OPENCV_VERSION}/modules \
+        -D WITH_FFMPEG=ON \
+        -D WITH_GSTREAMER=ON \
+        -D WITH_LIBV4L=ON \
+        -D BUILD_opencv_python3=ON \
+        -D BUILD_TESTS=OFF \
+        -D BUILD_PERF_TESTS=OFF \
+        -D BUILD_EXAMPLES=OFF \
+        -D BUILD_DOCS=OFF \
+        -D PYTHON3_EXECUTABLE=/usr/bin/python3 \
+        -D BUILD_SHARED_LIBS=OFF \
+        -D WITH_OPENCLAMDFFT=OFF \
+        -D WITH_OPENCLAMDBLAS=OFF \
+        -D WITH_VA_INTEL=OFF \
+        .. && \
+    ninja && \
+    ninja install && \
+    ldconfig && \
+    python3 -m pip wheel /build/opencv/opencv-${OPENCV_VERSION}/release/python_loader --wheel-dir /build/out/wheels && \
+    python3 -m pip install --break-system-packages /build/out/wheels/opencv-*.whl && \
+    python3 -c "import cv2; info = cv2.getBuildInformation(); assert 'GStreamer:' in info and 'YES' in info.split('GStreamer:')[1].split('\n')[0], 'GStreamer not enabled in OpenCV'; assert 'FFMPEG:' in info and 'YES' in info.split('FFMPEG:')[1].split('\n')[0], 'FFmpeg not enabled in OpenCV'; print('OpenCV built with GStreamer + FFmpeg')"
+
 # Build inference packages
 WORKDIR /build/inference
 COPY . .
@@ -260,6 +307,14 @@ RUN apt-get update -y && \
     libavformat58 \
     libswscale5 \
     ffmpeg \
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-tools \
+    python3-gi \
+    gir1.2-gstreamer-1.0 \
+    gir1.2-gst-plugins-base-1.0 \
     libatlas3-base \
     && rm -rf /var/lib/apt/lists/*
 
@@ -284,6 +339,15 @@ COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so.*.*.* /usr/lo
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvparsers*.so.*.*.* /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/tegra/libnvdla_compiler.so* /usr/local/cuda/lib64/
 
+# NVIDIA GStreamer plugins (nvv4l2decoder, nvvidconv, nvjpegenc/dec, etc.) from the
+# JetPack builder stage. The l4t-cuda runtime base ships without the multimedia stack,
+# so we copy the plugins and their tegra runtime deps to make hardware-accelerated
+# capture/encode pipelines work inside the container without depending on
+# nvidia-container-passthrough host mounts.
+COPY --from=builder /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnv*.so /usr/lib/aarch64-linux-gnu/gstreamer-1.0/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/tegra /usr/lib/aarch64-linux-gnu/tegra
+COPY --from=builder /etc/ld.so.conf.d/nvidia-tegra.conf /etc/ld.so.conf.d/nvidia-tegra.conf
+
 # Create symlinks for cuDNN and TensorRT (saves ~2GB by not duplicating files)
 RUN cd /usr/local/cuda/lib64 && \
     for lib in *.so.*.*.*; do \
@@ -295,6 +359,11 @@ RUN cd /usr/local/cuda/lib64 && \
 
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 RUN ldconfig
+
+# GStreamer plugin discovery: point at the standard arch dir (where libgstnv*.so live).
+# Clear stale plugin registry so it's rebuilt on first use against the copied plugins.
+ENV GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
+RUN rm -rf /root/.cache/gstreamer-1.0 /home/*/.cache/gstreamer-1.0 2>/dev/null || true
 
 # Copy Python packages
 COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
