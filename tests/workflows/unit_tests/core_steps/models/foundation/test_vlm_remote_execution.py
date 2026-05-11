@@ -249,7 +249,7 @@ class TestQwen25VLRemote:
 
 
 class TestQwen35VLRemote:
-    """Tests for Qwen3.5-VL remote execution."""
+    """Tests for Qwen3.5 remote execution."""
 
     @patch(
         "inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1.InferenceHTTPClient"
@@ -276,7 +276,6 @@ class TestQwen35VLRemote:
             model_version="qwen3_5-2b",
             prompt="Describe this image",
             system_prompt="You are helpful.",
-            enable_thinking=True,
             max_new_tokens=1024,
         )
 
@@ -287,7 +286,7 @@ class TestQwen35VLRemote:
             model_id="qwen3_5-2b",
             prompt="Describe this image<system_prompt>You are helpful.",
             model_id_in_path=True,
-            enable_thinking=True,
+            enable_thinking=False,
             max_new_tokens=1024,
         )
 
