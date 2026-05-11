@@ -1,3 +1,7 @@
+---
+description: Glossary of Roboflow Inference terms including Blocks, Workflows, Kinds, Sinks, Pipeline, and other key concepts used throughout the Inference ecosystem.
+---
+
 # Glossary
 
 Inference uses some terms (and terms of art) that may be unfamiliar to some

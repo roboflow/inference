@@ -1,3 +1,7 @@
+---
+description: HTTP client guide for using Roboflow Inference Server from Python, including local, hosted, async, and batch inference.
+---
+
 # Inference SDK
 
 The `InferenceHTTPClient` enables you to interact with an [Inference Server](../quickstart/docker.md) over HTTP - hosted either by Roboflow or on your own hardware. `inference-sdk` can be installed via pip:
@@ -133,7 +137,7 @@ The client also supports [core foundation models](inference_sdk/core_models.md) 
 
 ## Inference against stream
 
-One may want to infer against video or directory of images - and that modes are supported in `inference-client`
+One may want to infer against video or a directory of images, and those modes are supported in `inference-sdk`.
 
 ```python
 from inference_sdk import InferenceHTTPClient
@@ -158,6 +162,6 @@ for file_path, image, prediction in CLIENT.infer_on_stream("local/dir/", model_i
 
 ## What is actually returned as prediction?
 
-`inference_client` returns plain Python dictionaries that are responses from model serving API. Modification
-is done only in context of `visualization` key that keep server-generated prediction visualisation (it
-can be transcoded to the format of choice) and in terms of client-side re-scaling.
+`InferenceHTTPClient` returns plain Python dictionaries that are responses from the model serving API. Modification
+is done only in the context of the `visualization` key, which keeps server-generated prediction visualisation and can
+be transcoded to the format of choice. Client-side rescaling only adjusts the input size.

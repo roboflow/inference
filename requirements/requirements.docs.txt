@@ -1,4 +1,5 @@
 zensical==0.0.33
+mkdocs-git-revision-date-localized
 mkdocstrings[python]
 mkdocs-gen-files
 mkdocs-literate-nav
@@ -16,4 +17,4 @@ jinja2
 # which likely stems from a typo or mismatch in versions
 # between the libraries.
 mistune==2.0.4
-nbconvert==7.17.0
+nbconvert==7.17.1
