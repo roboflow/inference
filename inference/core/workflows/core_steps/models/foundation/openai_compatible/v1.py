@@ -7,7 +7,6 @@ from openai import OpenAI
 from pydantic import ConfigDict, Field
 
 from inference.core.logger import logger
-
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
@@ -237,7 +236,7 @@ class OpenAICompatibleBlockV1(WorkflowBlock):
         prompt_parameters_operations: Dict[str, List[AllOperationsType]],
         max_tokens: int,
         temperature: Optional[float],
-        extra_body: Optional[Dict[str, Any]],
+        extra_body: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
         resolved_params = _resolve_parameters(
             prompt_parameters=prompt_parameters,
@@ -405,7 +404,7 @@ def _execute_request(
     }
     if temperature is not None:
         kwargs["temperature"] = temperature
-    if extra_body:
+    if extra_body is not None:
         kwargs["extra_body"] = extra_body
     response = client.chat.completions.create(**kwargs)
     if response.choices is None or len(response.choices) == 0:

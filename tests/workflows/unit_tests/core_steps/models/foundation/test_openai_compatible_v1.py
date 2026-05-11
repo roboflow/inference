@@ -284,3 +284,82 @@ def test_manifest_validation_with_extra_body() -> None:
     result = BlockManifest.model_validate(specification)
     assert result.extra_body["guided_choice"] == ["A", "B", "C"]
     assert result.extra_body["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_manifest_extra_body_defaults_to_none() -> None:
+    specification = {
+        "type": "roboflow_core/openai_compatible@v1",
+        "name": "step_1",
+        "base_url": "http://localhost:8000/v1",
+        "model_name": "test-model",
+        "prompt": "Hello.",
+    }
+    result = BlockManifest.model_validate(specification)
+    assert result.extra_body is None
+
+
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.openai_compatible.v1._execute_request"
+)
+def test_block_run_without_extra_body_kwarg_is_backwards_compatible(
+    mock_execute: MagicMock,
+) -> None:
+    mock_execute.return_value = "ok"
+    block = OpenAICompatibleBlockV1()
+    result = block.run(
+        base_url="http://localhost:8000/v1",
+        model_name="test-model",
+        api_key=None,
+        system_prompt=None,
+        prompt="Hello.",
+        prompt_parameters={},
+        prompt_parameters_operations={},
+        max_tokens=10,
+        temperature=None,
+    )
+    assert result["output"] == "ok"
+    assert mock_execute.call_args.kwargs["extra_body"] is None
+
+
+@patch("inference.core.workflows.core_steps.models.foundation.openai_compatible.v1.OpenAI")
+def test_execute_request_omits_extra_body_when_none(mock_openai: MagicMock) -> None:
+    from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
+        _execute_request,
+    )
+
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock(message=MagicMock(content="hi"))]
+    mock_client.chat.completions.create.return_value = mock_response
+
+    _execute_request(
+        client=mock_client,
+        model_name="m",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=1,
+        temperature=None,
+        extra_body=None,
+    )
+    assert "extra_body" not in mock_client.chat.completions.create.call_args.kwargs
+
+
+@patch("inference.core.workflows.core_steps.models.foundation.openai_compatible.v1.OpenAI")
+def test_execute_request_forwards_empty_extra_body(mock_openai: MagicMock) -> None:
+    from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
+        _execute_request,
+    )
+
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock(message=MagicMock(content="hi"))]
+    mock_client.chat.completions.create.return_value = mock_response
+
+    _execute_request(
+        client=mock_client,
+        model_name="m",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=1,
+        temperature=None,
+        extra_body={},
+    )
+    assert mock_client.chat.completions.create.call_args.kwargs["extra_body"] == {}
