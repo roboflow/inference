@@ -107,11 +107,13 @@ ENV CUDA_HOME=/usr/local/cuda \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 # Compile PyTorch from source with Jetson Thor optimizations.
-# build/ is cache-mounted (Thor = sm 11.0); cache id includes version + arch.
+# Clone in its own RUN so the build/ cache mount overlays cleanly (mount would
+# otherwise auto-create the parent and break git clone).
 WORKDIR /build/pytorch
+RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
+# build/ is cache-mounted (Thor = sm 11.0); cache id includes version + arch.
 RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm110 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
-    git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch && \
     cd pytorch && \
     python3 -m pip install --break-system-packages -r requirements.txt && \
     export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
@@ -131,13 +133,14 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
     python3 setup.py bdist_wheel && \
     python3 -m pip install --break-system-packages dist/torch-*.whl
 
-# Compile torchvision from source (with retry for transient GitHub issues)
+# Compile torchvision from source (with retry for transient GitHub issues).
+# Clone in its own RUN so build/ cache mount overlays cleanly.
 WORKDIR /build/torchvision
+RUN for i in 1 2 3; do \
+        git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
+    done
 RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-${TORCHVISION_VERSION}-${TARGETARCH}-sm110 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
-    for i in 1 2 3; do \
-        git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
-    done && \
     cd vision && \
     export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="11.0" && \
     export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
@@ -149,9 +152,9 @@ RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=
 # No prebuilt ARM64 CUDA 13 packages available - must build from source
 # Parallel jobs limited to 8 to prevent OOM during flash attention CUDA kernel compilation
 WORKDIR /build/onnxruntime
+RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git
 RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/Linux,sharing=locked,id=ort-build-${ONNXRUNTIME_VERSION}-${TARGETARCH}-sm110-cu130 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
-    git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git && \
     cd onnxruntime && \
     python3 -m pip install --break-system-packages -r requirements-dev.txt && \
     ./build.sh --config Release --update --build --parallel 8 \

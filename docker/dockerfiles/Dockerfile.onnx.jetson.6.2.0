@@ -105,13 +105,17 @@ RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar
     cd ../.. && rm -rf gdal-3.11.5*
 
 # Compile PyTorch from source with Jetson optimizations.
+# Clone is in its own RUN so the build/ cache mount in the next RUN can overlay
+# cleanly on top of the cloned source. Combining them fails because the cache
+# mount auto-creates /build/pytorch/pytorch/ before git clone runs, and git
+# refuses to clone into a non-empty target.
+WORKDIR /build/pytorch
+RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
 # build/ is cache-mounted so a stage rerun reuses CMake/ninja state and object
 # files. Cache id scoped to (version, arch, SM) so a version or target bump
 # starts from a clean cache instead of contaminating the previous one.
-WORKDIR /build/pytorch
 RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
-    git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch && \
     cd pytorch && \
     python3 -m pip install -r requirements.txt && \
     export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
@@ -131,13 +135,14 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
     python3 setup.py bdist_wheel && \
     python3 -m pip install dist/torch-*.whl
 
-# Compile torchvision from source (with retry for transient GitHub issues)
+# Compile torchvision from source (with retry for transient GitHub issues).
+# Clone in its own RUN so build/ cache mount overlays cleanly.
 WORKDIR /build/torchvision
+RUN for i in 1 2 3; do \
+        git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
+    done
 RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-${TORCHVISION_VERSION}-${TARGETARCH}-sm87 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
-    for i in 1 2 3; do \
-        git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
-    done && \
     cd vision && \
     export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="8.7" && \
     export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
@@ -167,11 +172,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-bu
     apt-get update && \
     apt-get install -y tensorrt
 
-# Build onnxruntime-gpu from source with TensorRT support
+# Build onnxruntime-gpu from source with TensorRT support.
+# Clone in its own RUN so the build/cuda12 cache mount overlays cleanly.
 WORKDIR /build/onnxruntime
+RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git
 RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/cuda12,sharing=locked,id=ort-build-${ONNXRUNTIME_VERSION}-${TARGETARCH}-sm87-cu126 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
-    git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git && \
     cd onnxruntime && \
     sed -i 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c09388b2e288312d8eba/g' cmake/deps.txt && \
     sed -i '/PATCH_COMMAND.*nsync_1.26.0.patch/s|$| \&\& sed -i "s/cmake_minimum_required.*/cmake_minimum_required(VERSION 3.5)/" CMakeLists.txt|' cmake/external/onnxruntime_external_deps.cmake && \
