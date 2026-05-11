@@ -1,6 +1,6 @@
 import time
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
     BlockManifest,
+    execute_qwen_requests,
     execute_qwen_request,
 )
 
@@ -128,7 +129,7 @@ def test_qwen3_6_openrouter_step_validation_when_model_type_invalid(
         _ = BlockManifest.model_validate(specification)
 
 
-def test_qwen3_6_openrouter_step_validation_when_api_key_not_given() -> None:
+def test_qwen3_6_openrouter_step_defaults_to_roboflow_managed_api_key() -> None:
     # given
     specification = {
         "type": "roboflow_core/qwen3_6_openrouter@v1",
@@ -138,8 +139,10 @@ def test_qwen3_6_openrouter_step_validation_when_api_key_not_given() -> None:
     }
 
     # when
-    with pytest.raises(ValidationError):
-        _ = BlockManifest.model_validate(specification)
+    result = BlockManifest.model_validate(specification)
+
+    # then
+    assert result.api_key == "rf_key:account"
 
 
 def test_qwen3_6_openrouter_step_validation_when_output_structure_invalid() -> None:
@@ -313,3 +316,37 @@ def test_execute_qwen_request_when_request_fails() -> None:
         call_kwargs["messages"][0]["content"][0]["text"] == "prompt"
     ), "Text prompt is expected to be injected without modification"
     assert "Details: Error MSG" in str(e.value)
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_execute_qwen_requests_when_rf_key_uses_roboflow_proxy(
+    post_to_roboflow_api: MagicMock,
+) -> None:
+    # given
+    post_to_roboflow_api.return_value = {
+        "choices": [{"message": {"content": "This is proxied content from Qwen"}}]
+    }
+
+    # when
+    result = execute_qwen_requests(
+        roboflow_api_key="rf-workspace-key",
+        qwen_api_key="rf_key:account",
+        qwen_prompts=[[{"content": [{"text": "prompt"}]}]],
+        model_version_id="qwen/qwen3.6-35b-a3b",
+        max_tokens=300,
+        temperature=0.5,
+        max_concurrent_requests=1,
+    )
+
+    # then
+    assert result == ["This is proxied content from Qwen"]
+    call_kwargs = post_to_roboflow_api.call_args.kwargs
+    assert call_kwargs["endpoint"] == "apiproxy/openrouter"
+    assert call_kwargs["api_key"] == "rf-workspace-key"
+    assert call_kwargs["payload"] == {
+        "openrouter_api_key": "rf_key:account",
+        "model": "qwen/qwen3.6-35b-a3b",
+        "messages": [{"content": [{"text": "prompt"}]}],
+        "max_tokens": 300,
+        "temperature": 0.5,
+    }

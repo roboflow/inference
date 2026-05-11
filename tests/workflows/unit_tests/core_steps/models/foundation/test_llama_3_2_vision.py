@@ -1,6 +1,6 @@
 import time
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
     BlockManifest,
+    execute_llama_vision_32_requests,
     execute_llama_vision_32_request,
 )
 
@@ -128,10 +129,7 @@ def test_llama_3_2_vision_step_validation_when_model_type_invalid(
         _ = BlockManifest.model_validate(specification)
 
 
-@pytest.mark.parametrize("value", ["$inputs.api_key", "my-api-key", None])
-def test_llama_3_2_vision_step_validation_when_api_key_not_given(
-    value: Any,
-) -> None:
+def test_llama_3_2_vision_step_defaults_to_roboflow_managed_api_key() -> None:
     # given
     specification = {
         "type": "roboflow_core/llama_3_2_vision@v1",
@@ -141,8 +139,10 @@ def test_llama_3_2_vision_step_validation_when_api_key_not_given(
     }
 
     # when
-    with pytest.raises(ValidationError):
-        _ = BlockManifest.model_validate(specification)
+    result = BlockManifest.model_validate(specification)
+
+    # then
+    assert result.api_key == "rf_key:account"
 
 
 def test_llama_3_2_vision_step_validation_when_output_structure_invalid() -> None:
@@ -315,3 +315,37 @@ def test_execute_llama_vision_32_request_when_request_fails() -> None:
         call_kwargs["messages"][0]["content"][0]["text"] == "prompt"
     ), "Text prompt is expected to be injected without modification"
     assert "Details: Error MSG" in str(e.value)
+
+
+@patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
+def test_execute_llama_vision_32_requests_when_rf_key_uses_roboflow_proxy(
+    post_to_roboflow_api: MagicMock,
+) -> None:
+    # given
+    post_to_roboflow_api.return_value = {
+        "choices": [{"message": {"content": "This is proxied content from Llama"}}]
+    }
+
+    # when
+    result = execute_llama_vision_32_requests(
+        roboflow_api_key="rf-workspace-key",
+        llama_api_key="rf_key:account",
+        llama_prompts=[[{"content": [{"text": "prompt"}]}]],
+        model_version_id="meta-llama/llama-3.2-11b-vision-instruct:free",
+        max_tokens=300,
+        temperature=0.5,
+        max_concurrent_requests=1,
+    )
+
+    # then
+    assert result == ["This is proxied content from Llama"]
+    call_kwargs = post_to_roboflow_api.call_args.kwargs
+    assert call_kwargs["endpoint"] == "apiproxy/openrouter"
+    assert call_kwargs["api_key"] == "rf-workspace-key"
+    assert call_kwargs["payload"] == {
+        "openrouter_api_key": "rf_key:account",
+        "model": "meta-llama/llama-3.2-11b-vision-instruct:free",
+        "messages": [{"content": [{"text": "prompt"}]}],
+        "max_tokens": 300,
+        "temperature": 0.5,
+    }

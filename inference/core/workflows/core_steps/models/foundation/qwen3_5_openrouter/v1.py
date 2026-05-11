@@ -3,13 +3,14 @@ import json
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from openai import OpenAI
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.workflows.core_steps.common.utils import run_in_parallel
+from inference.core.workflows.core_steps.common.openrouter import (
+    execute_direct_openrouter_request,
+    execute_openrouter_requests,
+)
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -21,6 +22,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
+    ROBOFLOW_MANAGED_KEY,
     SECRET_KIND,
     STRING_KIND,
     ImageInputField,
@@ -82,8 +84,10 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 #### 🛠️ API providers and model variants
 
-Qwen 3.5 is exposed via [OpenRouter API](https://openrouter.ai/) and we require
-passing an [OpenRouter API Key](https://openrouter.ai/docs/api-keys) to run.
+Qwen 3.5 is exposed via [OpenRouter API](https://openrouter.ai/).
+
+Provide your OpenRouter API key or set the value to ``rf_key:account`` to
+proxy requests through Roboflow's API and pay with Roboflow credits.
 
 Pick a specific model version from the `model_version` dropdown - new Qwen 3.5 releases
 will be added to this list as they become available on OpenRouter.
@@ -191,9 +195,12 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
-        description="Your OpenRouter API key",
-        examples=["xxx-xxx", "$inputs.open_router_api_key"],
+    api_key: Union[
+        Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
+    ] = Field(
+        default="rf_key:account",
+        description="Your OpenRouter API key or 'rf_key:account' to use Roboflow's managed API key",
+        examples=["rf_key:account", "sk-or-...", "$inputs.open_router_api_key"],
         private=True,
     )
     model_version: Union[
@@ -285,12 +292,14 @@ class Qwen35OpenRouterBlockV1(WorkflowBlock):
     def __init__(
         self,
         model_manager: ModelManager,
+        api_key: Optional[str],
     ):
         self._model_manager = model_manager
+        self._api_key = api_key
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager"]
+        return ["model_manager", "api_key"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -315,6 +324,7 @@ class Qwen35OpenRouterBlockV1(WorkflowBlock):
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_qwen_llm_prompting(
+            roboflow_api_key=self._api_key,
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
@@ -332,6 +342,7 @@ class Qwen35OpenRouterBlockV1(WorkflowBlock):
 
 
 def run_qwen_llm_prompting(
+    roboflow_api_key: Optional[str],
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
@@ -364,6 +375,7 @@ def run_qwen_llm_prompting(
         )
         qwen_prompts.append(generated_prompt)
     return execute_qwen_requests(
+        roboflow_api_key=roboflow_api_key,
         qwen_api_key=qwen_api_key,
         qwen_prompts=qwen_prompts,
         model_version_id=model_version_id,
@@ -374,6 +386,7 @@ def run_qwen_llm_prompting(
 
 
 def execute_qwen_requests(
+    roboflow_api_key: Optional[str],
     qwen_api_key: str,
     qwen_prompts: List[List[dict]],
     model_version_id: str,
@@ -381,49 +394,31 @@ def execute_qwen_requests(
     temperature: float,
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
-    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=qwen_api_key)
-    tasks = [
-        partial(
-            execute_qwen_request,
-            client=client,
-            prompt=prompt,
-            qwen_model_version=model_version_id,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-        for prompt in qwen_prompts
-    ]
-    max_workers = (
-        max_concurrent_requests
-        or WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
-    )
-    return run_in_parallel(
-        tasks=tasks,
-        max_workers=max_workers,
+    return execute_openrouter_requests(
+        roboflow_api_key=roboflow_api_key,
+        openrouter_api_key=qwen_api_key,
+        prompts=qwen_prompts,
+        model_version_id=model_version_id,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        max_concurrent_requests=max_concurrent_requests,
     )
 
 
 def execute_qwen_request(
-    client: OpenAI,
+    client: Any,
     prompt: List[dict],
     qwen_model_version: str,
     max_tokens: int,
     temperature: float,
 ) -> str:
-    response = client.chat.completions.create(
-        model=qwen_model_version,
-        messages=prompt,
+    return execute_direct_openrouter_request(
+        client=client,
+        prompt=prompt,
+        model_version_id=qwen_model_version,
         max_tokens=max_tokens,
         temperature=temperature,
     )
-    if response.choices is None:
-        error_detail = getattr(response, "error", {}).get("message", "N/A")
-        raise RuntimeError(
-            "OpenRouter provider failed in delivering response. This issue happens from time "
-            "to time - raise issue to OpenRouter if that's problematic for you. "
-            f"Details: {error_detail}"
-        )
-    return response.choices[0].message.content
 
 
 def prepare_unconstrained_prompt(
