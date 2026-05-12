@@ -196,6 +196,7 @@ def safe_register_image_at_roboflow(
         image_duplicated = registration_response.get("duplicate", False)
         if image_duplicated:
             credit_to_be_returned = True
+            # codeql[py/clear-text-logging-sensitive-data]: Dup response; no api_key.
             logger.warning(f"Image duplication detected: {registration_response}.")
             return None
         return registration_response["id"]

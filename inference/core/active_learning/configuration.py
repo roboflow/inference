@@ -95,6 +95,7 @@ def prepare_active_learning_configuration_inplace(
     if predictions_incompatible_with_dataset(
         model_type=model_type, dataset_type=dataset_type
     ):
+        # codeql[py/clear-text-logging-sensitive-data]: Model and dataset ids only.
         logger.warning(
             f"Attempted to register predictions from model {model_id} (type: {model_type}) "
             f"into dataset {target_dataset} (of type {dataset_type}) which have incompatible types."
@@ -140,6 +141,7 @@ def get_roboflow_project_metadata(
     if predictions_incompatible_with_dataset(
         model_type=model_type, dataset_type=dataset_type
     ):
+        # codeql[py/clear-text-logging-sensitive-data]: Model and dataset ids only.
         logger.warning(
             f"Attempted to register predictions from model {model_id} (type: {model_type}) "
             f"into dataset {target_dataset} (of type {dataset_type}) which have incompatible types."
@@ -168,6 +170,7 @@ def get_roboflow_project_metadata(
 def construct_cache_key_for_active_learning_config(
     api_key: str, target_dataset: str, model_id: str
 ) -> str:
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     return f"active_learning:configurations:{api_key_hash}:{target_dataset}:{model_id}"
 

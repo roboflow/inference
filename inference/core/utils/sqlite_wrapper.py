@@ -9,6 +9,11 @@ ColType = str
 ColValue = str
 
 
+def _sqlite_row_columns_for_log(row: Dict[ColName, ColValue]) -> str:
+    """Sorted column names for debug logs (values omitted — may be sensitive)."""
+    return ",".join(sorted(row.keys()))
+
+
 class SQLiteWrapper:
     def __init__(
         self,
@@ -76,7 +81,10 @@ class SQLiteWrapper:
                 connection.close()
             except Exception as exc:
                 logger.debug(
-                    "Failed to store '%s' in %s - %s", row, self._tbl_name, exc
+                    "Failed to store row (columns %s) in %s - %s",
+                    _sqlite_row_columns_for_log(row),
+                    self._tbl_name,
+                    exc,
                 )
                 raise exc
         elif connection and not cursor:
@@ -97,8 +105,8 @@ class SQLiteWrapper:
     ):
         if not set(row.keys()).issubset(self._columns.keys()):
             logger.debug(
-                "Cannot store '%s' in %s, requested column names do not match with table columns",
-                row,
+                "Cannot store row (columns %s) in %s, requested column names do not match with table columns",
+                _sqlite_row_columns_for_log(row),
                 self._tbl_name,
             )
             raise ValueError("Columns mismatch")
@@ -113,7 +121,10 @@ class SQLiteWrapper:
                 cursor.execute("BEGIN EXCLUSIVE")
             except Exception as exc:
                 logger.debug(
-                    "Failed to store '%s' in %s - %s", row, self._tbl_name, exc
+                    "Failed to store row (columns %s) in %s - %s",
+                    _sqlite_row_columns_for_log(row),
+                    self._tbl_name,
+                    exc,
                 )
                 raise exc
 
@@ -127,7 +138,12 @@ class SQLiteWrapper:
             if with_exclusive:
                 connection.commit()
         except Exception as exc:
-            logger.debug("Failed to store '%s' in %s - %s", values, self._tbl_name, exc)
+            logger.debug(
+                "Failed to store row (columns %s) in %s - %s",
+                _sqlite_row_columns_for_log(values),
+                self._tbl_name,
+                exc,
+            )
             connection.rollback()
             raise exc
 
@@ -358,7 +374,11 @@ class SQLiteWrapper:
     ) -> List[Dict[str, Any]]:
         keys = [r["id"] for r in rows if "id" in r]
         if not keys:
-            logger.debug("No row with 'id' key found in %s", rows)
+            logger.debug(
+                "No row with 'id' key found among %s row(s) in %s",
+                len(rows),
+                self._tbl_name,
+            )
             return []
 
         cursor_needs_closing = False
