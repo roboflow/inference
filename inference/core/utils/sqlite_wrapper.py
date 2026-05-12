@@ -80,9 +80,9 @@ class SQLiteWrapper:
                 )
                 connection.close()
             except Exception as exc:
-                # codeql[py/clear-text-logging-sensitive-data]: Columns only; no values.
                 logger.debug(
                     "Failed to store row (columns %s) in %s - %s",
+                    # codeql[py/clear-text-logging-sensitive-data]: Key names only.
                     _sqlite_row_columns_for_log(row),
                     self._tbl_name,
                     exc,
@@ -105,9 +105,9 @@ class SQLiteWrapper:
         with_exclusive: bool = False,
     ):
         if not set(row.keys()).issubset(self._columns.keys()):
-            # codeql[py/clear-text-logging-sensitive-data]: Columns only; no values.
             logger.debug(
                 "Cannot store row (columns %s) in %s, requested column names do not match with table columns",
+                # codeql[py/clear-text-logging-sensitive-data]: Key names only.
                 _sqlite_row_columns_for_log(row),
                 self._tbl_name,
             )
@@ -122,9 +122,9 @@ class SQLiteWrapper:
             try:
                 cursor.execute("BEGIN EXCLUSIVE")
             except Exception as exc:
-                # codeql[py/clear-text-logging-sensitive-data]: Columns only; no values.
                 logger.debug(
                     "Failed to store row (columns %s) in %s - %s",
+                    # codeql[py/clear-text-logging-sensitive-data]: Key names only.
                     _sqlite_row_columns_for_log(row),
                     self._tbl_name,
                     exc,
@@ -141,9 +141,9 @@ class SQLiteWrapper:
             if with_exclusive:
                 connection.commit()
         except Exception as exc:
-            # codeql[py/clear-text-logging-sensitive-data]: Columns only; no values.
             logger.debug(
                 "Failed to store row (columns %s) in %s - %s",
+                # codeql[py/clear-text-logging-sensitive-data]: Key names only.
                 _sqlite_row_columns_for_log(values),
                 self._tbl_name,
                 exc,
