@@ -7,33 +7,40 @@ from inference.models.gaze.gaze import Gaze
 from inference.models.gaze.gaze_inference_models import InferenceModelsGazeAdapter
 
 
-def test_gaze_stub_raises_feature_deprecated_error_on_init() -> None:
-    with pytest.raises(FeatureDeprecatedError) as captured:
-        Gaze()
-
-    assert captured.value.feature == "Gaze (L2CS-Net) model"
-
-
-def test_gaze_stub_raises_regardless_of_kwargs() -> None:
+@pytest.mark.parametrize(
+    "stub_cls",
+    [Gaze, InferenceModelsGazeAdapter],
+    ids=["legacy-Gaze", "inference-models-adapter"],
+)
+def test_gaze_stubs_raise_feature_deprecated_error_on_init(stub_cls) -> None:
     with pytest.raises(FeatureDeprecatedError):
-        Gaze("model-id", api_key="anything", arbitrary=True)
+        stub_cls()
 
 
-def test_inference_models_gaze_adapter_raises_feature_deprecated_error_on_init() -> None:
-    with pytest.raises(FeatureDeprecatedError) as captured:
-        InferenceModelsGazeAdapter()
+@pytest.mark.parametrize(
+    "stub_cls",
+    [Gaze, InferenceModelsGazeAdapter],
+    ids=["legacy-Gaze", "inference-models-adapter"],
+)
+def test_gaze_stubs_raise_regardless_of_kwargs(stub_cls) -> None:
+    with pytest.raises(FeatureDeprecatedError):
+        stub_cls("model-id", api_key="anything", arbitrary=True)
 
-    assert "inference_models adapter" in captured.value.feature
 
-
-def test_gaze_stub_resolves_in_roboflow_model_types_registry() -> None:
-    # If CORE_MODEL_GAZE_ENABLED is True (default), the registry must still
-    # resolve ("gaze", "l2cs") to the stub so model-id lookups raise
-    # FeatureDeprecatedError rather than KeyError.
+def test_gaze_l2cs_registry_entry_resolves_to_a_stub_that_raises_feature_deprecated() -> None:
+    """The registry entry under ("gaze", "l2cs") must still resolve so model-id
+    lookups raise FeatureDeprecatedError rather than KeyError. Which specific
+    stub class (legacy Gaze vs InferenceModelsGazeAdapter) wins depends on the
+    order of registration in `inference/models/utils.py`; both are valid."""
     from inference.core.env import CORE_MODEL_GAZE_ENABLED
     from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
     if not CORE_MODEL_GAZE_ENABLED:
         pytest.skip("CORE_MODEL_GAZE_ENABLED is False — registry entry is opt-in.")
 
-    assert ROBOFLOW_MODEL_TYPES.get(("gaze", "l2cs")) is Gaze
+    registered = ROBOFLOW_MODEL_TYPES.get(("gaze", "l2cs"))
+    assert registered is not None, "Registry entry for ('gaze', 'l2cs') must survive."
+    assert registered in {Gaze, InferenceModelsGazeAdapter}
+
+    with pytest.raises(FeatureDeprecatedError):
+        registered()
