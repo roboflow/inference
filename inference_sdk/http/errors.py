@@ -108,6 +108,38 @@ class InvalidParameterError(HTTPClientError):
     pass
 
 
+class FeatureDeprecatedError(Exception):
+    """Raised when a deprecated SDK helper is invoked.
+
+    SDK-local: does NOT inherit from or import inference.core.exceptions
+    so the SDK keeps zero dependency on inference core. A consumer
+    catching `inference_sdk.http.errors.FeatureDeprecatedError` will NOT
+    catch `inference.core.exceptions.FeatureDeprecatedError` and vice
+    versa.
+    """
+
+    def __init__(
+        self,
+        feature: str,
+        *,
+        reason: Optional[str] = None,
+        removal_release: Optional[str] = None,
+        replacement: Optional[str] = None,
+    ):
+        self.feature = feature
+        self.reason = reason
+        self.removal_release = removal_release
+        self.replacement = replacement
+        public = f"SDK helper '{feature}' has been removed."
+        if reason:
+            public += f" {reason}"
+        if removal_release:
+            public += f" Removed in {removal_release}."
+        if replacement:
+            public += f" Closest replacement: {replacement}."
+        super().__init__(public)
+
+
 class RetryError(Exception):
 
     def __init__(

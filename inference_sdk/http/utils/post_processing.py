@@ -358,23 +358,6 @@ def adjust_points_coordinates_to_client_scaling_factor(
     return result
 
 
-def combine_gaze_detections(
-    detections: Union[dict, List[Union[dict, List[dict]]]],
-) -> Union[dict, List[Dict]]:
-    """Combine gaze detections.
-
-    Args:
-        detections: The detections to combine.
-
-    Returns:
-        The combined detections.
-    """
-    if not issubclass(type(detections), list):
-        return detections
-    detections = [e if issubclass(type(e), list) else [e] for e in detections]
-    return list(itertools.chain.from_iterable(detections))
-
-
 def combine_clip_embeddings(embeddings: Union[dict, List[dict]]) -> List[dict]:
     """Combine clip embeddings.
 

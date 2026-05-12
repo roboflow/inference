@@ -33,6 +33,7 @@ from inference_sdk.http.entities import (
 )
 from inference_sdk.http.errors import (
     APIKeyNotProvided,
+    FeatureDeprecatedError,
     HTTPCallErrorError,
     HTTPClientError,
     InvalidModelIdentifier,
@@ -66,7 +67,6 @@ from inference_sdk.http.utils.loaders import (
 from inference_sdk.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
     combine_clip_embeddings,
-    combine_gaze_detections,
     decode_workflow_outputs,
     filter_model_descriptions,
     response_contains_jpeg_image,
@@ -1217,53 +1217,49 @@ class InferenceHTTPClient:
         )
         return unwrap_single_element_list(sequence=responses)
 
-    @wrap_errors
+    @deprecated(
+        reason="MediaPipe dependency removed from inference; gaze detection is no longer available."
+    )
     def detect_gazes(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
-        """Detect gazes in input image(s).
+        """Deprecated. Always raises FeatureDeprecatedError.
 
-        Args:
-            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.
-
-        Returns:
-            Union[dict, List[dict]]: Gaze detection results for the input image(s).
+        Gaze detection has been removed from inference along with the
+        MediaPipe dependency. This helper short-circuits client-side and
+        never issues a network call.
 
         Raises:
-            WrongClientModeError: If not in API v1 mode.
-            HTTPCallErrorError: If there is an error in the HTTP call.
-            HTTPClientError: If there is an error with the server connection.
+            FeatureDeprecatedError: Always.
         """
-        self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
-        result = self._post_images(
-            inference_input=inference_input, endpoint="/gaze/gaze_detection"
+        raise FeatureDeprecatedError(
+            feature="InferenceHTTPClient.detect_gazes",
+            reason="MediaPipe dependency removed from inference.",
+            removal_release="end of Q2 2026",
         )
-        return combine_gaze_detections(detections=result)
 
-    @wrap_errors_async
+    @deprecated(
+        reason="MediaPipe dependency removed from inference; gaze detection is no longer available."
+    )
     async def detect_gazes_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
-        """Detect gazes in input image(s) asynchronously.
+        """Deprecated. Always raises FeatureDeprecatedError.
 
-        Args:
-            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.
-
-        Returns:
-            Union[dict, List[dict]]: Gaze detection results for the input image(s).
+        Gaze detection has been removed from inference along with the
+        MediaPipe dependency. This helper short-circuits client-side and
+        never issues a network call.
 
         Raises:
-            WrongClientModeError: If not in API v1 mode.
-            HTTPCallErrorError: If there is an error in the HTTP call.
-            HTTPClientError: If there is an error with the server connection.
+            FeatureDeprecatedError: Always.
         """
-        self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
-        result = await self._post_images_async(
-            inference_input=inference_input, endpoint="/gaze/gaze_detection"
+        raise FeatureDeprecatedError(
+            feature="InferenceHTTPClient.detect_gazes_async",
+            reason="MediaPipe dependency removed from inference.",
+            removal_release="end of Q2 2026",
         )
-        return combine_gaze_detections(detections=result)
 
     @wrap_errors
     def get_clip_image_embeddings(
