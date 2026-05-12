@@ -22,7 +22,7 @@ WORKDIR /build
 COPY uv.lock uv.lock
 COPY pyproject.toml pyproject.toml
 
-RUN UV_PROJECT_ENVIRONMENT=/usr $HOME/.local/bin/uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra mediapipe --extra trt10
+RUN UV_PROJECT_ENVIRONMENT=/usr $HOME/.local/bin/uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra trt10
 
 COPY inference_models inference_models
 RUN $HOME/.local/bin/uv build

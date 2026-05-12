@@ -46,9 +46,7 @@ def test_image_stack_accumulates_frames(
 
     # when — feed 3 frames
     for _ in range(3):
-        result = execution_engine.run(
-            runtime_parameters={"image": dogs_image}
-        )
+        result = execution_engine.run(runtime_parameters={"image": dogs_image})
 
     # then
     assert isinstance(result, list)
@@ -93,9 +91,7 @@ def test_image_stack_clear_resets_buffer(
 
     # when — fill buffer
     for _ in range(3):
-        execution_engine.run(
-            runtime_parameters={"image": dogs_image}
-        )
+        execution_engine.run(runtime_parameters={"image": dogs_image})
 
     # then — clear and add one
     result = execution_engine.run(

@@ -27,7 +27,6 @@ BACKEND_PRIORITY = {
     BackendType.TORCH: 5,
     BackendType.HF: 4,
     BackendType.TORCH_SCRIPT: 3,
-    BackendType.MEDIAPIPE: 2,
     BackendType.ULTRALYTICS: 1,
     BackendType.CUSTOM: 0,
 }
