@@ -20,6 +20,7 @@ import zmq
 import zmq.asyncio
 from fastapi import FastAPI, Response
 
+from inference_server import configuration as _cfg
 from inference_server import state
 from inference_server.auth import validate_api_key
 from inference_server.routers import infer, v2_models, v2_server
@@ -38,9 +39,7 @@ async def _lifespan(_: FastAPI):
     # disk rollover (write + read) for typical image uploads (2-10MB).
     from starlette.formparsers import MultiPartParser
 
-    MultiPartParser.spool_max_size = (
-        int(os.environ.get("INFERENCE_MULTIPART_SPOOL_MB", "32")) * 1024 * 1024
-    )
+    MultiPartParser.spool_max_size = _cfg.MULTIPART_SPOOL_MB * 1024 * 1024
 
     identity = f"uv_{os.getpid()}_{uuid.uuid4().hex[:8]}".encode()
 
@@ -86,7 +85,7 @@ _AUTH_SKIP_PATHS = frozenset(
     }
 )
 
-_DEBUG_BENCHMARK_MODE = os.environ.get("DEBUG_BENCHMARK_MODE", "").strip() == "1"
+_DEBUG_BENCHMARK_MODE = _cfg.DEBUG_BENCHMARK_MODE
 
 
 class _AuthMiddleware:
@@ -158,8 +157,8 @@ app.include_router(v2_server.router)
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("PORT", "8000"))
-    workers = int(os.environ.get("NUM_WORKERS", "4"))
+    port = int(os.environ.get(_cfg.PORT_ENV, str(_cfg.APP_PORT_DEFAULT)))
+    workers = _cfg.NUM_WORKERS
     uvicorn.run(
         "inference_server.app:app",
         host="0.0.0.0",
