@@ -116,7 +116,7 @@ def _preload_models(mmp_addr: str, preload_spec: str) -> None:
 
     T_LOAD = b"\x20"
     T_OK = b"\x40"
-    T_ERROR = b"\xFF"
+    T_ERROR = b"\xff"
 
     default_key = os.environ.get(configuration.ROBOFLOW_API_KEY_ENV, "")
     models = []
@@ -190,7 +190,9 @@ def main() -> None:
 
     # ── HTTP / TLS config ──────────────────────────────────────────────────
     host = configuration.SERVER_HOST
-    port = int(os.environ.get(configuration.PORT_ENV, str(configuration.SERVER_PORT_DEFAULT)))
+    port = int(
+        os.environ.get(configuration.PORT_ENV, str(configuration.SERVER_PORT_DEFAULT))
+    )
     workers = configuration.NUM_WORKERS
     ssl_cert = configuration.SSL_CERTFILE
     ssl_key = configuration.SSL_KEYFILE

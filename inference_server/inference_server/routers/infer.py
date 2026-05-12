@@ -92,35 +92,46 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
                     return Response(status_code=413, content=b"payload too large")
                 if pos == 0 and not state.looks_like_image(chunk):
                     return Response(
-                        status_code=415, content=b"body is not a recognized image format"
+                        status_code=415,
+                        content=b"body is not a recognized image format",
                     )
                 state.write_input(slot_id, chunk, pos)
                 pos += len(chunk)
         except ClientDisconnect:
-            logger.debug("[infer] client disconnected during body stream, slot=%d", slot_id)
+            logger.debug(
+                "[infer] client disconnected during body stream, slot=%d", slot_id
+            )
             return Response(status_code=499)
 
         if _T:
             _t3 = time.monotonic()
 
-        result = await state.submit_and_wait(slot_id, model_id, instance, pos, params, request=request)
+        result = await state.submit_and_wait(
+            slot_id, model_id, instance, pos, params, request=request
+        )
         if _T:
             _t4 = time.monotonic()
 
         if result[0] == "error":
             if _T:
-                state.pipeline_record({
-                    "timestamp": time.time(), "worker_pid": os.getpid(),
-                    "endpoint": "/infer", "payload_bytes": pos, "status": 500,
-                    "body_extract_ms": 0,
-                    "ensure_loaded_ms": (_t1 - _t0) * 1000,
-                    "zmq_alloc_ms": (_t2 - _t1) * 1000,
-                    "shm_write_ms": (_t3 - _t2) * 1000,
-                    "zmq_submit_ms": 0,
-                    "zmq_result_wait_ms": (_t4 - _t3) * 1000,
-                    "result_read_ms": 0, "serialize_ms": 0,
-                    "total_ms": (_t4 - _t0) * 1000,
-                })
+                state.pipeline_record(
+                    {
+                        "timestamp": time.time(),
+                        "worker_pid": os.getpid(),
+                        "endpoint": "/infer",
+                        "payload_bytes": pos,
+                        "status": 500,
+                        "body_extract_ms": 0,
+                        "ensure_loaded_ms": (_t1 - _t0) * 1000,
+                        "zmq_alloc_ms": (_t2 - _t1) * 1000,
+                        "shm_write_ms": (_t3 - _t2) * 1000,
+                        "zmq_submit_ms": 0,
+                        "zmq_result_wait_ms": (_t4 - _t3) * 1000,
+                        "result_read_ms": 0,
+                        "serialize_ms": 0,
+                        "total_ms": (_t4 - _t0) * 1000,
+                    }
+                )
             return Response(status_code=500, content=b"inference failed")
         if result[0] != "result":
             return Response(status_code=500, content=b"internal error")
@@ -136,18 +147,24 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
             else:
                 err_msg = "inference failed"
             if _T:
-                state.pipeline_record({
-                    "timestamp": time.time(), "worker_pid": os.getpid(),
-                    "endpoint": "/infer", "payload_bytes": pos, "status": 500,
-                    "body_extract_ms": 0,
-                    "ensure_loaded_ms": (_t1 - _t0) * 1000,
-                    "zmq_alloc_ms": (_t2 - _t1) * 1000,
-                    "shm_write_ms": (_t3 - _t2) * 1000,
-                    "zmq_submit_ms": 0,
-                    "zmq_result_wait_ms": (_t4 - _t3) * 1000,
-                    "result_read_ms": 0, "serialize_ms": 0,
-                    "total_ms": (time.monotonic() - _t0) * 1000,
-                })
+                state.pipeline_record(
+                    {
+                        "timestamp": time.time(),
+                        "worker_pid": os.getpid(),
+                        "endpoint": "/infer",
+                        "payload_bytes": pos,
+                        "status": 500,
+                        "body_extract_ms": 0,
+                        "ensure_loaded_ms": (_t1 - _t0) * 1000,
+                        "zmq_alloc_ms": (_t2 - _t1) * 1000,
+                        "shm_write_ms": (_t3 - _t2) * 1000,
+                        "zmq_submit_ms": 0,
+                        "zmq_result_wait_ms": (_t4 - _t3) * 1000,
+                        "result_read_ms": 0,
+                        "serialize_ms": 0,
+                        "total_ms": (time.monotonic() - _t0) * 1000,
+                    }
+                )
             return Response(status_code=500, content=err_msg.encode())
 
         raw = state.read_result(result_slot_id, result_sz)
@@ -162,9 +179,35 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
             content = serialize_json(obj)
             if _T:
                 _t_end = time.monotonic()
-                state.pipeline_record({
-                    "timestamp": time.time(), "worker_pid": os.getpid(),
-                    "endpoint": "/infer", "payload_bytes": pos, "status": 200,
+                state.pipeline_record(
+                    {
+                        "timestamp": time.time(),
+                        "worker_pid": os.getpid(),
+                        "endpoint": "/infer",
+                        "payload_bytes": pos,
+                        "status": 200,
+                        "body_extract_ms": 0,
+                        "ensure_loaded_ms": (_t1 - _t0) * 1000,
+                        "zmq_alloc_ms": (_t2 - _t1) * 1000,
+                        "shm_write_ms": (_t3 - _t2) * 1000,
+                        "zmq_submit_ms": 0,
+                        "zmq_result_wait_ms": (_t4 - _t3) * 1000,
+                        "result_read_ms": (_t_end - _t4) * 1000,
+                        "serialize_ms": 0,
+                        "total_ms": (_t_end - _t0) * 1000,
+                    }
+                )
+            return Response(content=content, media_type="application/json")
+
+        if _T:
+            _t_end = time.monotonic()
+            state.pipeline_record(
+                {
+                    "timestamp": time.time(),
+                    "worker_pid": os.getpid(),
+                    "endpoint": "/infer",
+                    "payload_bytes": pos,
+                    "status": 200,
                     "body_extract_ms": 0,
                     "ensure_loaded_ms": (_t1 - _t0) * 1000,
                     "zmq_alloc_ms": (_t2 - _t1) * 1000,
@@ -174,44 +217,38 @@ async def infer(request: Request, api_key: str = Depends(_bearer_token)) -> Resp
                     "result_read_ms": (_t_end - _t4) * 1000,
                     "serialize_ms": 0,
                     "total_ms": (_t_end - _t0) * 1000,
-                })
-            return Response(content=content, media_type="application/json")
-
-        if _T:
-            _t_end = time.monotonic()
-            state.pipeline_record({
-                "timestamp": time.time(), "worker_pid": os.getpid(),
-                "endpoint": "/infer", "payload_bytes": pos, "status": 200,
-                "body_extract_ms": 0,
-                "ensure_loaded_ms": (_t1 - _t0) * 1000,
-                "zmq_alloc_ms": (_t2 - _t1) * 1000,
-                "shm_write_ms": (_t3 - _t2) * 1000,
-                "zmq_submit_ms": 0,
-                "zmq_result_wait_ms": (_t4 - _t3) * 1000,
-                "result_read_ms": (_t_end - _t4) * 1000,
-                "serialize_ms": 0,
-                "total_ms": (_t_end - _t0) * 1000,
-            })
+                }
+            )
         return Response(content=raw, media_type="application/octet-stream")
 
     except asyncio.TimeoutError:
         if _T:
-            state.pipeline_record({
-                "timestamp": time.time(), "worker_pid": os.getpid(),
-                "endpoint": "/infer", "payload_bytes": pos, "status": 504,
-                "body_extract_ms": 0,
-                "ensure_loaded_ms": (_t1 - _t0) * 1000,
-                "zmq_alloc_ms": (_t2 - _t1) * 1000,
-                "shm_write_ms": (_t3 - _t2) * 1000 if '_t3' in dir() else 0,
-                "zmq_submit_ms": 0,
-                "zmq_result_wait_ms": (time.monotonic() - _t3) * 1000 if '_t3' in dir() else 0,
-                "result_read_ms": 0, "serialize_ms": 0,
-                "total_ms": (time.monotonic() - _t0) * 1000,
-            })
+            state.pipeline_record(
+                {
+                    "timestamp": time.time(),
+                    "worker_pid": os.getpid(),
+                    "endpoint": "/infer",
+                    "payload_bytes": pos,
+                    "status": 504,
+                    "body_extract_ms": 0,
+                    "ensure_loaded_ms": (_t1 - _t0) * 1000,
+                    "zmq_alloc_ms": (_t2 - _t1) * 1000,
+                    "shm_write_ms": (_t3 - _t2) * 1000 if "_t3" in dir() else 0,
+                    "zmq_submit_ms": 0,
+                    "zmq_result_wait_ms": (
+                        (time.monotonic() - _t3) * 1000 if "_t3" in dir() else 0
+                    ),
+                    "result_read_ms": 0,
+                    "serialize_ms": 0,
+                    "total_ms": (time.monotonic() - _t0) * 1000,
+                }
+            )
         return Response(status_code=504, content=b"inference timeout")
 
     except state._ClientDisconnected:
-        logger.debug("[infer] client disconnected during inference wait, slot=%d", slot_id)
+        logger.debug(
+            "[infer] client disconnected during inference wait, slot=%d", slot_id
+        )
         return Response(status_code=499)
 
     finally:

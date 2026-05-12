@@ -296,17 +296,24 @@ async def _submit_one_slot(
         slot_id = await state.alloc_slot(model_id, instance)
     except (asyncio.TimeoutError, RuntimeError):
         if _T:
-            state.pipeline_record({
-                "timestamp": time.time(), "worker_pid": os.getpid(),
-                "endpoint": "/v2/models/infer", "payload_bytes": len(image_bytes),
-                "status": 503,
-                "body_extract_ms": _t_body_extract_ms,
-                "ensure_loaded_ms": _t_ensure_loaded_ms,
-                "zmq_alloc_ms": (time.monotonic() - _t0) * 1000,
-                "shm_write_ms": 0, "zmq_submit_ms": 0, "zmq_result_wait_ms": 0,
-                "result_read_ms": 0, "serialize_ms": 0,
-                "total_ms": (time.monotonic() - _t0) * 1000,
-            })
+            state.pipeline_record(
+                {
+                    "timestamp": time.time(),
+                    "worker_pid": os.getpid(),
+                    "endpoint": "/v2/models/infer",
+                    "payload_bytes": len(image_bytes),
+                    "status": 503,
+                    "body_extract_ms": _t_body_extract_ms,
+                    "ensure_loaded_ms": _t_ensure_loaded_ms,
+                    "zmq_alloc_ms": (time.monotonic() - _t0) * 1000,
+                    "shm_write_ms": 0,
+                    "zmq_submit_ms": 0,
+                    "zmq_result_wait_ms": 0,
+                    "result_read_ms": 0,
+                    "serialize_ms": 0,
+                    "total_ms": (time.monotonic() - _t0) * 1000,
+                }
+            )
         return None, error_response(
             503, "SERVER_BUSY", "no slots available, try again", follow_up="retry in 1s"
         )
@@ -327,19 +334,24 @@ async def _submit_one_slot(
 
         if result[0] == "error":
             if _T:
-                state.pipeline_record({
-                    "timestamp": time.time(), "worker_pid": os.getpid(),
-                    "endpoint": "/v2/models/infer", "payload_bytes": len(image_bytes),
-                    "status": 500,
-                    "body_extract_ms": _t_body_extract_ms,
-                    "ensure_loaded_ms": _t_ensure_loaded_ms,
-                    "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
-                    "shm_write_ms": (_t_write - _t_alloc) * 1000,
-                    "zmq_submit_ms": 0,
-                    "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
-                    "result_read_ms": 0, "serialize_ms": 0,
-                    "total_ms": (_t_result - _t0) * 1000,
-                })
+                state.pipeline_record(
+                    {
+                        "timestamp": time.time(),
+                        "worker_pid": os.getpid(),
+                        "endpoint": "/v2/models/infer",
+                        "payload_bytes": len(image_bytes),
+                        "status": 500,
+                        "body_extract_ms": _t_body_extract_ms,
+                        "ensure_loaded_ms": _t_ensure_loaded_ms,
+                        "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
+                        "shm_write_ms": (_t_write - _t_alloc) * 1000,
+                        "zmq_submit_ms": 0,
+                        "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
+                        "result_read_ms": 0,
+                        "serialize_ms": 0,
+                        "total_ms": (_t_result - _t0) * 1000,
+                    }
+                )
             return None, error_response(500, "INFERENCE_FAILED", "inference failed")
         if result[0] != "result":
             return None, error_response(500, "INTERNAL_ERROR", "unexpected result type")
@@ -354,19 +366,24 @@ async def _submit_one_slot(
                     "utf-8", errors="replace"
                 )
             if _T:
-                state.pipeline_record({
-                    "timestamp": time.time(), "worker_pid": os.getpid(),
-                    "endpoint": "/v2/models/infer", "payload_bytes": len(image_bytes),
-                    "status": 500,
-                    "body_extract_ms": _t_body_extract_ms,
-                    "ensure_loaded_ms": _t_ensure_loaded_ms,
-                    "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
-                    "shm_write_ms": (_t_write - _t_alloc) * 1000,
-                    "zmq_submit_ms": 0,
-                    "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
-                    "result_read_ms": 0, "serialize_ms": 0,
-                    "total_ms": (time.monotonic() - _t0) * 1000,
-                })
+                state.pipeline_record(
+                    {
+                        "timestamp": time.time(),
+                        "worker_pid": os.getpid(),
+                        "endpoint": "/v2/models/infer",
+                        "payload_bytes": len(image_bytes),
+                        "status": 500,
+                        "body_extract_ms": _t_body_extract_ms,
+                        "ensure_loaded_ms": _t_ensure_loaded_ms,
+                        "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
+                        "shm_write_ms": (_t_write - _t_alloc) * 1000,
+                        "zmq_submit_ms": 0,
+                        "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
+                        "result_read_ms": 0,
+                        "serialize_ms": 0,
+                        "total_ms": (time.monotonic() - _t0) * 1000,
+                    }
+                )
             return None, error_response(500, "INFERENCE_FAILED", err_msg)
 
         raw = state.read_result(result_slot_id, result_sz)
@@ -380,40 +397,52 @@ async def _submit_one_slot(
 
         if _T:
             _t_end = time.monotonic()
-            state.pipeline_record({
-                "timestamp": time.time(), "worker_pid": os.getpid(),
-                "endpoint": "/v2/models/infer", "payload_bytes": len(image_bytes),
-                "status": 200,
-                "body_extract_ms": _t_body_extract_ms,
-                "ensure_loaded_ms": _t_ensure_loaded_ms,
-                "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
-                "shm_write_ms": (_t_write - _t_alloc) * 1000,
-                "zmq_submit_ms": 0,
-                "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
-                "result_read_ms": (_t_end - _t_result) * 1000,
-                "serialize_ms": 0,
-                "total_ms": (_t_end - _t0) * 1000,
-            })
+            state.pipeline_record(
+                {
+                    "timestamp": time.time(),
+                    "worker_pid": os.getpid(),
+                    "endpoint": "/v2/models/infer",
+                    "payload_bytes": len(image_bytes),
+                    "status": 200,
+                    "body_extract_ms": _t_body_extract_ms,
+                    "ensure_loaded_ms": _t_ensure_loaded_ms,
+                    "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
+                    "shm_write_ms": (_t_write - _t_alloc) * 1000,
+                    "zmq_submit_ms": 0,
+                    "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
+                    "result_read_ms": (_t_end - _t_result) * 1000,
+                    "serialize_ms": 0,
+                    "total_ms": (_t_end - _t0) * 1000,
+                }
+            )
         return obj, None
 
     except asyncio.TimeoutError:
         if _T:
-            state.pipeline_record({
-                "timestamp": time.time(), "worker_pid": os.getpid(),
-                "endpoint": "/v2/models/infer", "payload_bytes": len(image_bytes),
-                "status": 504,
-                "body_extract_ms": _t_body_extract_ms,
-                "ensure_loaded_ms": _t_ensure_loaded_ms,
-                "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
-                "shm_write_ms": 0, "zmq_submit_ms": 0,
-                "zmq_result_wait_ms": (time.monotonic() - _t_alloc) * 1000,
-                "result_read_ms": 0, "serialize_ms": 0,
-                "total_ms": (time.monotonic() - _t0) * 1000,
-            })
+            state.pipeline_record(
+                {
+                    "timestamp": time.time(),
+                    "worker_pid": os.getpid(),
+                    "endpoint": "/v2/models/infer",
+                    "payload_bytes": len(image_bytes),
+                    "status": 504,
+                    "body_extract_ms": _t_body_extract_ms,
+                    "ensure_loaded_ms": _t_ensure_loaded_ms,
+                    "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
+                    "shm_write_ms": 0,
+                    "zmq_submit_ms": 0,
+                    "zmq_result_wait_ms": (time.monotonic() - _t_alloc) * 1000,
+                    "result_read_ms": 0,
+                    "serialize_ms": 0,
+                    "total_ms": (time.monotonic() - _t0) * 1000,
+                }
+            )
         return None, error_response(504, "TIMEOUT", "inference timeout")
 
     except state._ClientDisconnected:
-        logger.debug("[v2_slot] client disconnected during inference wait, slot=%d", slot_id)
+        logger.debug(
+            "[v2_slot] client disconnected during inference wait, slot=%d", slot_id
+        )
         return None, Response(status_code=499)
 
     finally:
@@ -470,7 +499,10 @@ async def _infer_images(
 
     if len(images) == 1:
         predictions, err = await _submit_one_slot(
-            images[0], model_id, instance, params,
+            images[0],
+            model_id,
+            instance,
+            params,
             request=request,
             _t_body_extract_ms=_t_body_extract_ms,
             _t_ensure_loaded_ms=_t_ensure_loaded_ms,
@@ -482,7 +514,10 @@ async def _infer_images(
     # Batch: submit all concurrently
     slot_tasks = [
         _submit_one_slot(
-            img, model_id, instance, params,
+            img,
+            model_id,
+            instance,
+            params,
             request=request,
             _t_body_extract_ms=_t_body_extract_ms,
             _t_ensure_loaded_ms=_t_ensure_loaded_ms,
@@ -585,7 +620,12 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
         return error_response(500, "LOAD_FAILED", "model load failed")
 
     return await _infer_images(
-        images, model_id, instance, task, params, style=style,
+        images,
+        model_id,
+        instance,
+        task,
+        params,
+        style=style,
         request=request,
         _t_body_extract_ms=_t_body_extract_ms,
         _t_ensure_loaded_ms=_t_ensure_loaded_ms,

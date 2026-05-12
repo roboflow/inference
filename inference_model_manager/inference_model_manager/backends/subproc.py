@@ -394,7 +394,9 @@ def _process_slots(
         # TODO(debug): TEMPORARY — remove after diagnosing 0-byte slot bug
         log.error(
             "[worker] slot=%d hdr.input_size=%d hdr.status=%d (TEMP DEBUG)",
-            slot_id, hdr.input_size, hdr.status,
+            slot_id,
+            hdr.input_size,
+            hdr.status,
         )
         mv = pool.data_memoryview(slot_id)[: hdr.input_size]
         mvs.append(mv)

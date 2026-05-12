@@ -279,7 +279,7 @@ def test_write_read_result_data():
     pool = _make_pool(n_slots=2, input_mb=1.0)
     try:
         slot = pool.alloc_slot()
-        result = b"\xDE\xAD\xBE\xEF" * 50
+        result = b"\xde\xad\xbe\xef" * 50
         pool.data_memoryview(slot)[: len(result)] = result
         readback = bytes(pool.data_memoryview(slot)[: len(result)])
         assert readback == result
