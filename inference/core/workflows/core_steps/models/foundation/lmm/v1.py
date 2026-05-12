@@ -42,6 +42,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    Runtime,
+    RuntimeIssue,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -167,6 +170,19 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
+        return {
+            Runtime.HOSTED_SERVERLESS: RuntimeIssue(
+                severity=Severity.HARD,
+                note=(
+                    "LMM_ENABLED=False on Roboflow Hosted Serverless: the "
+                    "/llm_v1 endpoint is not registered, so run_remotely() "
+                    "returns 404."
+                ),
+            ),
+        }
 
 
 class LMMBlockV1(WorkflowBlock):

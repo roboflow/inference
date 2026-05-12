@@ -1,4 +1,4 @@
-from typing import Any, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -19,7 +19,13 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     Selector,
 )
-from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference.core.workflows.prototypes.block import (
+    STATEFUL_VIDEO_HTTP_SOFT_ISSUE,
+    BlockResult,
+    Runtime,
+    RuntimeIssue,
+    WorkflowBlockManifest,
+)
 
 DEFAULT_LOST_TRACK_BUFFER = 30
 DEFAULT_MINIMUM_CONSECUTIVE_FRAMES = 3
@@ -169,6 +175,13 @@ class OCSORTManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
+        return {
+            Runtime.HOSTED_SERVERLESS: STATEFUL_VIDEO_HTTP_SOFT_ISSUE,
+            Runtime.DEDICATED_DEPLOYMENT: STATEFUL_VIDEO_HTTP_SOFT_ISSUE,
+        }
 
 
 class OCSORTBlockV1(TrackerBlockBase):

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,6 +30,85 @@ class AirGappedAvailability:
 
     available: bool = True
     reason: Optional[str] = None
+
+
+class Severity(str, Enum):
+    """Severity of a runtime issue for a workflow block in a given runtime.
+
+    SOFT: the block runs to completion and returns the right output shape,
+    but the values are degraded or meaningless (e.g. tracker IDs reset across
+    requests, cooldown does not throttle, file is written to ephemeral disk).
+
+    HARD: the block does not run / raises / cannot produce a usable output
+    in this runtime. The engine should refuse to compile or fail-fast.
+    """
+
+    SOFT = "soft"
+    HARD = "hard"
+
+
+class Runtime(str, Enum):
+    """Canonical runtimes a workflow block can be executed in.
+
+    Runtimes not listed in ``get_runtime_issues()`` are considered OK.
+    """
+
+    HOSTED_SERVERLESS = "hosted_serverless"
+    DEDICATED_DEPLOYMENT = "dedicated_deployment"
+    SELF_HOSTED_CPU = "self_hosted_cpu"
+    SELF_HOSTED_GPU = "self_hosted_gpu"
+    INFERENCE_PIPELINE = "inference_pipeline"
+
+
+@dataclass(frozen=True)
+class RuntimeIssue:
+    """A single per-runtime caveat for a workflow block.
+
+    ``note`` is a one-line, human-readable explanation of the failure mode
+    that surfaces in this runtime. It should describe what happens (e.g.
+    "track_ids reset between requests", "raises RuntimeError", "writes to
+    ephemeral /tmp"), not abstract preconditions.
+    """
+
+    severity: Severity
+    note: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"severity": self.severity.value, "note": self.note}
+
+
+# ----------------------------------------------------------------------------
+# Common runtime-issue presets.
+#
+# Many blocks share the same per-runtime failure mode (e.g. all stateful
+# video blocks degrade the same way on stateless HTTP runtimes). Reusing
+# these presets keeps the per-block overrides tight and the wording
+# consistent across the codebase.
+# ----------------------------------------------------------------------------
+
+
+STATEFUL_VIDEO_HTTP_SOFT_ISSUE = RuntimeIssue(
+    severity=Severity.SOFT,
+    note=(
+        "Block keeps per-video state in process memory (keyed by "
+        "video_metadata.video_identifier). On stateless or multi-replica "
+        "HTTP runtimes successive requests are served by different worker "
+        "processes, so the state resets between calls and the output is "
+        "meaningless for tracking / counting / aggregation. Use an "
+        "InferencePipeline for stable cross-frame results."
+    ),
+)
+
+
+COOLDOWN_HTTP_SOFT_ISSUE = RuntimeIssue(
+    severity=Severity.SOFT,
+    note=(
+        "Cooldown / rate-limit timer is stored in process memory. On "
+        "stateless or multi-replica HTTP runtimes each request gets a "
+        "fresh worker, so cooldown does not throttle. Cooldown only "
+        "behaves as documented inside an InferencePipeline."
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -84,6 +164,19 @@ class WorkflowBlockManifest(BaseModel, ABC):
         The default indicates the block works offline.
         """
         return AirGappedAvailability(available=True)
+
+    @classmethod
+    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
+        """Per-runtime caveats for this block.
+
+        Return a mapping ``{Runtime: RuntimeIssue}`` describing where the
+        block degrades (``Severity.SOFT``) or fails outright
+        (``Severity.HARD``). Runtimes not present in the dict are assumed
+        to work normally.
+
+        The default (no overrides) means the block works in every runtime.
+        """
+        return {}
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:

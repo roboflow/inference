@@ -1,5 +1,5 @@
 import os
-from typing import List, Literal, Optional, Type
+from typing import Dict, List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
 
@@ -7,6 +7,9 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import SECRET_KIND
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeIssue,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -86,6 +89,22 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
+        no_env_access = RuntimeIssue(
+            severity=Severity.HARD,
+            note=(
+                "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"
+                "ACCESSING_ENVIRONMENTAL_VARIABLES is False. Roboflow's "
+                "hosted runtimes set this flag to False for security, so "
+                "environment variables cannot be exposed."
+            ),
+        )
+        return {
+            Runtime.HOSTED_SERVERLESS: no_env_access,
+            Runtime.DEDICATED_DEPLOYMENT: no_env_access,
+        }
 
 
 class EnvironmentSecretsStoreBlockV1(WorkflowBlock):

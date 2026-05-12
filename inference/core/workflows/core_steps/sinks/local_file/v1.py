@@ -3,7 +3,7 @@ import logging
 import os.path
 from datetime import datetime
 from io import TextIOWrapper
-from typing import Any, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator
 
@@ -15,6 +15,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeIssue,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -164,6 +167,29 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
+        return {
+            Runtime.HOSTED_SERVERLESS: RuntimeIssue(
+                severity=Severity.HARD,
+                note=(
+                    "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"
+                    "ACCESSING_LOCAL_STORAGE is False (Roboflow Hosted "
+                    "Serverless default). Even when access is allowed, the "
+                    "container disk is ephemeral, so files are lost when "
+                    "the worker scales down."
+                ),
+            ),
+            Runtime.DEDICATED_DEPLOYMENT: RuntimeIssue(
+                severity=Severity.SOFT,
+                note=(
+                    "Files are persisted on the deployment's volume but are "
+                    "not retrievable through the Roboflow API; treat as "
+                    "internal-only logs."
+                ),
+            ),
+        }
 
 
 class LocalFileSinkBlockV1(WorkflowBlock):

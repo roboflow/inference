@@ -31,6 +31,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeIssue,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -236,6 +239,22 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
+        no_lan_or_remote = RuntimeIssue(
+            severity=Severity.HARD,
+            note=(
+                "Block requires LAN access to a PTZ camera and "
+                "step_execution_mode=local; raises ValueError otherwise. "
+                "Hosted Serverless and Roboflow Dedicated Deployments cannot "
+                "reach customer LANs and run in remote step-execution mode."
+            ),
+        )
+        return {
+            Runtime.HOSTED_SERVERLESS: no_lan_or_remote,
+            Runtime.DEDICATED_DEPLOYMENT: no_lan_or_remote,
+        }
 
 
 # primarily used for rate limiting

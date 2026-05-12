@@ -27,8 +27,11 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    COOLDOWN_HTTP_SOFT_ISSUE,
     AirGappedAvailability,
     BlockResult,
+    Runtime,
+    RuntimeIssue,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -243,6 +246,13 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
+        return {
+            Runtime.HOSTED_SERVERLESS: COOLDOWN_HTTP_SOFT_ISSUE,
+            Runtime.DEDICATED_DEPLOYMENT: COOLDOWN_HTTP_SOFT_ISSUE,
+        }
 
 
 class TwilioSMSNotificationBlockV1(WorkflowBlock):
