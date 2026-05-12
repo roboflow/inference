@@ -39,7 +39,9 @@ def test_build_human_friendly_block_name_when_block_suffix_present() -> None:
     assert result == "My Crop"
 
 
-def test_build_human_friendly_block_name_when_acronym_and_block_suffix_present() -> None:
+def test_build_human_friendly_block_name_when_acronym_and_block_suffix_present() -> (
+    None
+):
     # when
     result = build_human_friendly_block_name(
         fully_qualified_name="inference.core.workflows.core_steps.example.OCRResultsParserBlock"
@@ -59,7 +61,9 @@ def test_build_human_friendly_block_name_when_underscores_separate_segments() ->
     assert result == "OCR Results Parser"
 
 
-def test_build_human_friendly_block_name_when_underscores_and_block_suffix_present() -> None:
+def test_build_human_friendly_block_name_when_underscores_and_block_suffix_present() -> (
+    None
+):
     # when
     result = build_human_friendly_block_name(
         fully_qualified_name="inference.core.workflows.core_steps.example.OCR_Results_Parser_Block"

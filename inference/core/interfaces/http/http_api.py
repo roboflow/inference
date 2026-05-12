@@ -4137,5 +4137,3 @@ class HttpInterface(BaseInterface):
 
     def run(self):
         uvicorn.run(self.app, host="127.0.0.1", port=8080)
-
-

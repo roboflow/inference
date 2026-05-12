@@ -11,7 +11,9 @@ from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
 )
 
 
-def test_cog_vlm_block_run_raises_feature_deprecated_error_with_removal_release() -> None:
+def test_cog_vlm_block_run_raises_feature_deprecated_error_with_removal_release() -> (
+    None
+):
     # given
     block = CogVLMBlockV1(
         model_manager=MagicMock(),

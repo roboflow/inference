@@ -27,7 +27,9 @@ def test_gaze_stubs_raise_regardless_of_kwargs(stub_cls) -> None:
         stub_cls("model-id", api_key="anything", arbitrary=True)
 
 
-def test_gaze_l2cs_registry_entry_resolves_to_a_stub_that_raises_feature_deprecated() -> None:
+def test_gaze_l2cs_registry_entry_resolves_to_a_stub_that_raises_feature_deprecated() -> (
+    None
+):
     """The registry entry under ("gaze", "l2cs") must still resolve so model-id
     lookups raise FeatureDeprecatedError rather than KeyError. Which specific
     stub class (legacy Gaze vs InferenceModelsGazeAdapter) wins depends on the

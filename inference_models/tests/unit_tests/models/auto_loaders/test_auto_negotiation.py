@@ -4318,5 +4318,3 @@ def test_filter_model_packages_based_on_model_features_when_package_not_should_b
     # then
     assert len(remaining_packages) == 1
     assert len(discarded_packages) == 0
-
-

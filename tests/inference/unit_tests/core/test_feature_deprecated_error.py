@@ -3,7 +3,9 @@ import pytest
 from inference.core.exceptions import FeatureDeprecatedError
 
 
-def test_feature_deprecated_error_minimum_construction_sets_feature_and_default_message() -> None:
+def test_feature_deprecated_error_minimum_construction_sets_feature_and_default_message() -> (
+    None
+):
     # when
     error = FeatureDeprecatedError(feature="foo")
 
@@ -43,7 +45,9 @@ def test_feature_deprecated_error_includes_replacement_when_provided() -> None:
     assert "Closest replacement: bar-v2." in str(error)
 
 
-def test_feature_deprecated_error_get_structured_public_error_details_returns_full_payload() -> None:
+def test_feature_deprecated_error_get_structured_public_error_details_returns_full_payload() -> (
+    None
+):
     # given
     error = FeatureDeprecatedError(
         feature="foo",

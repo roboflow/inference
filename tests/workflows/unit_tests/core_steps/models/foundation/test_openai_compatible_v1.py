@@ -321,7 +321,9 @@ def test_block_run_without_extra_body_kwarg_is_backwards_compatible(
     assert mock_execute.call_args.kwargs["extra_body"] is None
 
 
-@patch("inference.core.workflows.core_steps.models.foundation.openai_compatible.v1.OpenAI")
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.openai_compatible.v1.OpenAI"
+)
 def test_execute_request_omits_extra_body_when_none(mock_openai: MagicMock) -> None:
     from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
         _execute_request,
@@ -343,7 +345,9 @@ def test_execute_request_omits_extra_body_when_none(mock_openai: MagicMock) -> N
     assert "extra_body" not in mock_client.chat.completions.create.call_args.kwargs
 
 
-@patch("inference.core.workflows.core_steps.models.foundation.openai_compatible.v1.OpenAI")
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.openai_compatible.v1.OpenAI"
+)
 def test_execute_request_raises_on_none_content(mock_openai: MagicMock) -> None:
     import pytest
 
@@ -368,7 +372,9 @@ def test_execute_request_raises_on_none_content(mock_openai: MagicMock) -> None:
         )
 
 
-@patch("inference.core.workflows.core_steps.models.foundation.openai_compatible.v1.OpenAI")
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.openai_compatible.v1.OpenAI"
+)
 def test_execute_request_forwards_empty_extra_body(mock_openai: MagicMock) -> None:
     from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
         _execute_request,
