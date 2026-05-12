@@ -37,11 +37,13 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCOffer,
     WebRTCTURNConfig,
 )
+from inference.core.interfaces.webrtc_worker.vp8_timing import patch_vp8_timing_logs
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
+patch_vp8_timing_logs()
 
 
 def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):

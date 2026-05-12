@@ -71,6 +71,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
     process_frame,
     rotate_video_frame,
 )
+from inference.core.interfaces.webrtc_worker.vp8_timing import patch_vp8_timing_logs
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
@@ -78,6 +79,7 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.usage_tracking.collector import usage_collector
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
+patch_vp8_timing_logs()
 
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
