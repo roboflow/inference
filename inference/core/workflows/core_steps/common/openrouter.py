@@ -50,7 +50,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 # ---------------------------------------------------------------------------
 # Privacy level
 # ---------------------------------------------------------------------------
@@ -141,7 +140,7 @@ class OpenRouterBlockManifestMixin(WorkflowBlockManifest):
     temperature: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=0.1,
         description=(
-            'Temperature to sample from the model - value in range 0.0-2.0, '
+            "Temperature to sample from the model - value in range 0.0-2.0, "
             'the higher - the more random / "creative" the generations are.'
         ),
     )
@@ -195,9 +194,7 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
         with ``rf_key:`` (managed/user-stored), otherwise calls the OpenRouter
         API directly using the OpenAI SDK with the provided key.
         """
-        is_managed = openrouter_api_key.startswith(
-            ("rf_key:account", "rf_key:user:")
-        )
+        is_managed = openrouter_api_key.startswith(("rf_key:account", "rf_key:user:"))
         if is_managed:
             single = partial(
                 _execute_proxied_openrouter_request,
@@ -241,9 +238,7 @@ def _build_proxy_error_handler(
         try:
             error_data = http_error.response.json()
             api_msg = (
-                error_data.get("details")
-                or error_data.get("error")
-                or str(http_error)
+                error_data.get("details") or error_data.get("error") or str(http_error)
             )
         except Exception:
             api_msg = str(http_error)
@@ -318,8 +313,7 @@ def _execute_proxied_openrouter_request(
             else ""
         )
         raise RuntimeError(
-            "OpenRouter response missing message.content via Roboflow proxy."
-            + hint
+            "OpenRouter response missing message.content via Roboflow proxy." + hint
         )
     return content
 
@@ -367,9 +361,7 @@ def _execute_direct_openrouter_request(
             else " This can happen when the model returns only tool calls "
             "or reasoning tokens. Try a different prompt or model."
         )
-        raise RuntimeError(
-            "OpenRouter response missing message.content." + hint
-        )
+        raise RuntimeError("OpenRouter response missing message.content." + hint)
     return content
 
 

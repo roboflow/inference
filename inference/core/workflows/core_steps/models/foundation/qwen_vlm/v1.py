@@ -74,7 +74,6 @@ from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_METADATA,
 )
 
-
 # ---------------------------------------------------------------------------
 # Model variants
 # ---------------------------------------------------------------------------
@@ -172,7 +171,9 @@ OpenRouterModelVersion = Literal[tuple(OPENROUTER_VARIANT_LABELS)]
 # Native model_id values that the unified block knows how to run directly,
 # plus the Roboflow pretrains registry name used by the legacy qwen3-vl block
 # so users can pick fine-tuned Qwen3 checkpoints from their workspace.
-NATIVE_MODEL_IDS = [v["model_id"] for v in MODEL_VARIANTS.values() if v["backend"] == "native"]
+NATIVE_MODEL_IDS = [
+    v["model_id"] for v in MODEL_VARIANTS.values() if v["backend"] == "native"
+]
 NATIVE_SUPPORTED_VARIANTS = NATIVE_MODEL_IDS + ["qwen-pretrains/2"]
 
 # Native dropdown entries whose underlying checkpoints expose Qwen3.5-VL's
@@ -256,8 +257,7 @@ _SYSTEM_DETECTION = (
 )
 
 _DEFAULT_UNCONSTRAINED_SYSTEM_PROMPT = (
-    "You are a Qwen vision-language model that can answer questions "
-    "about any image."
+    "You are a Qwen vision-language model that can answer questions " "about any image."
 )
 
 
@@ -338,9 +338,7 @@ def _build_native_prompt(
         system_text = _SYSTEM_DETECTION
     elif task_type == "structured-answering":
         spec = json.dumps(output_structure or {}, indent=4)
-        user_text = (
-            f"Specification of requirements regarding output fields: \n{spec}"
-        )
+        user_text = f"Specification of requirements regarding output fields: \n{spec}"
         system_text = _SYSTEM_STRUCTURED
     else:
         raise ValueError(f"Task type: {task_type} not supported.")
@@ -450,9 +448,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     # Native model picker: friendly-name dropdown listing the built-in
     # pre-trained variants AND a `Fine-tuned model` sentinel entry that,
     # when selected, reveals the `fine_tuned_model_id` field below.
-    model_version: Union[
-        Selector(kind=[STRING_KIND]), NativeModelVersion
-    ] = Field(
+    model_version: Union[Selector(kind=[STRING_KIND]), NativeModelVersion] = Field(
         default=DEFAULT_NATIVE_MODEL_VERSION,
         description=(
             "Native Qwen-VL variant. Pick a pre-trained model or "
@@ -808,8 +804,7 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
                 max_concurrent_requests=max_concurrent_requests,
             )
             return [
-                {"output": o, "classes": classes, "thinking": ""}
-                for o in raw_outputs
+                {"output": o, "classes": classes, "thinking": ""} for o in raw_outputs
             ]
 
         # `enable_thinking` is only meaningful on Qwen3.5-VL native variants
@@ -867,9 +862,7 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
                 enable_thinking=enable_thinking,
                 max_new_tokens=max_tokens,
             )
-        raise ValueError(
-            f"Unknown step_execution_mode: {self._step_execution_mode}"
-        )
+        raise ValueError(f"Unknown step_execution_mode: {self._step_execution_mode}")
 
     def _run_native_locally(
         self,
@@ -882,9 +875,7 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
-        self._model_manager.add_model(
-            model_id=model_id, api_key=self._roboflow_api_key
-        )
+        self._model_manager.add_model(model_id=model_id, api_key=self._roboflow_api_key)
         outputs: List[Dict[str, str]] = []
         for image in inference_images:
             request_kwargs: Dict[str, Any] = dict(
@@ -918,9 +909,7 @@ class QwenVlmBlockV1(OpenRouterWorkflowBlockBase):
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
             else HOSTED_CORE_MODEL_URL
         )
-        client = InferenceHTTPClient(
-            api_url=api_url, api_key=self._roboflow_api_key
-        )
+        client = InferenceHTTPClient(api_url=api_url, api_key=self._roboflow_api_key)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         outputs: List[Dict[str, str]] = []

@@ -43,7 +43,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 
 
