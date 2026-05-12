@@ -555,18 +555,10 @@ except:
         category=ModelDependencyMissing,
     )
 
-try:
-    if CORE_MODEL_GAZE_ENABLED:
-        from inference.models import Gaze
+if CORE_MODEL_GAZE_ENABLED:
+    from inference.models import Gaze
 
-        ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = Gaze
-except:
-    warnings.warn(
-        "Your `inference` configuration does not support Gaze Detection model. "
-        "Use pip install 'inference[gaze]' to install missing requirements."
-        "To suppress this warning, set CORE_MODEL_GAZE_ENABLED to False.",
-        category=ModelDependencyMissing,
-    )
+    ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = Gaze
 
 try:
     if SMOLVLM2_ENABLED:

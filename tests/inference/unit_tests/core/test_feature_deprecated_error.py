@@ -43,7 +43,7 @@ def test_feature_deprecated_error_includes_replacement_when_provided() -> None:
     assert "Closest replacement: bar-v2." in str(error)
 
 
-def test_feature_deprecated_error_get_public_error_details_returns_full_payload() -> None:
+def test_feature_deprecated_error_get_structured_public_error_details_returns_full_payload() -> None:
     # given
     error = FeatureDeprecatedError(
         feature="foo",
@@ -53,7 +53,7 @@ def test_feature_deprecated_error_get_public_error_details_returns_full_payload(
     )
 
     # when
-    details = error.get_public_error_details()
+    details = error.get_structured_public_error_details()
 
     # then
     assert details == {

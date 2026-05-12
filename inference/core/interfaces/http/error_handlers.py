@@ -562,7 +562,7 @@ def with_route_exceptions(route):
                 content={
                     "message": str(error),
                     "error_type": "FeatureDeprecatedError",
-                    **error.get_public_error_details(),
+                    **error.get_structured_public_error_details(),
                 },
             )
         except Exception as error:
@@ -1009,7 +1009,7 @@ def with_route_exceptions_async(route):
                 content={
                     "message": str(error),
                     "error_type": "FeatureDeprecatedError",
-                    **error.get_public_error_details(),
+                    **error.get_structured_public_error_details(),
                 },
             )
         except Exception as error:

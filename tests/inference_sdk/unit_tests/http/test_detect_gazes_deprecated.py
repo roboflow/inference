@@ -1,13 +1,10 @@
 """Behavioural tests for the deprecated detect_gazes SDK helpers."""
 
-import warnings
-
 import pytest
 from requests_mock import Mocker
 
 from inference_sdk import InferenceHTTPClient
-from inference_sdk.config import InferenceSDKDeprecationWarning
-from inference_sdk.http.errors import FeatureDeprecatedError
+from inference_sdk.http.errors import FeatureDeprecatedError, HTTPClientError
 
 
 def test_detect_gazes_raises_feature_deprecated_error_without_network_call(
@@ -30,23 +27,13 @@ def test_detect_gazes_raises_feature_deprecated_error_without_network_call(
     assert requests_mock.call_count == 0, "SDK helper must short-circuit before any HTTP traffic."
 
 
-def test_detect_gazes_emits_deprecation_warning() -> None:
+def test_detect_gazes_feature_deprecated_error_is_an_http_client_error() -> None:
     # given
     client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
 
-    # when
-    with warnings.catch_warnings(record=True) as recorded:
-        warnings.simplefilter("always", InferenceSDKDeprecationWarning)
-        with pytest.raises(FeatureDeprecatedError):
-            client.detect_gazes(inference_input="/some/image.jpg")
-
-    # then
-    deprecation_warnings = [
-        w for w in recorded if issubclass(w.category, InferenceSDKDeprecationWarning)
-    ]
-    assert any(
-        "detect_gazes" in str(w.message) for w in deprecation_warnings
-    ), "An InferenceSDKDeprecationWarning mentioning detect_gazes must be emitted."
+    # when / then — broad-catch consumers of HTTPClientError must catch this too
+    with pytest.raises(HTTPClientError):
+        client.detect_gazes(inference_input="/some/image.jpg")
 
 
 @pytest.mark.asyncio

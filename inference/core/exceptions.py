@@ -289,7 +289,7 @@ class FeatureDeprecatedError(Exception):
         self._public_message = public
         super().__init__(public)
 
-    def get_public_error_details(self) -> dict:
+    def get_structured_public_error_details(self) -> dict:
         return {
             "feature": self.feature,
             "removal_release": self.removal_release,

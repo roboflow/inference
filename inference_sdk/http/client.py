@@ -1217,9 +1217,6 @@ class InferenceHTTPClient:
         )
         return unwrap_single_element_list(sequence=responses)
 
-    @deprecated(
-        reason="MediaPipe dependency removed from inference; gaze detection is no longer available."
-    )
     def detect_gazes(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
@@ -1239,9 +1236,6 @@ class InferenceHTTPClient:
             removal_release="end of Q2 2026",
         )
 
-    @deprecated(
-        reason="MediaPipe dependency removed from inference; gaze detection is no longer available."
-    )
     async def detect_gazes_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],

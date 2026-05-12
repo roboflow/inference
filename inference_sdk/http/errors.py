@@ -108,15 +108,8 @@ class InvalidParameterError(HTTPClientError):
     pass
 
 
-class FeatureDeprecatedError(Exception):
-    """Raised when a deprecated SDK helper is invoked.
-
-    SDK-local: does NOT inherit from or import inference.core.exceptions
-    so the SDK keeps zero dependency on inference core. A consumer
-    catching `inference_sdk.http.errors.FeatureDeprecatedError` will NOT
-    catch `inference.core.exceptions.FeatureDeprecatedError` and vice
-    versa.
-    """
+class FeatureDeprecatedError(HTTPClientError):
+    """Raised when a deprecated SDK helper is invoked."""
 
     def __init__(
         self,

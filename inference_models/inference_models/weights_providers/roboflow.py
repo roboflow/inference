@@ -49,6 +49,7 @@ MAX_MODEL_PACKAGE_PAGES = 10
 MODEL_PACKAGES_TO_IGNORE = {
     "oak-model-package-v1",
     "tfjs-model-package-v1",
+    "mediapipe-model-package-v1",
 }
 
 ProxyUrlBuilder = Optional[
