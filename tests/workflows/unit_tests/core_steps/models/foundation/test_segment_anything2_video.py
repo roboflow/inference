@@ -23,7 +23,6 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -83,7 +82,9 @@ class _FakeStreamingModel:
         self._state_counter += 1
         return {"_counter": self._state_counter}
 
-    def prompt(self, image, bboxes, state_dict=None, clear_old_prompts=True, frame_idx=0):
+    def prompt(
+        self, image, bboxes, state_dict=None, clear_old_prompts=True, frame_idx=0
+    ):
         self.calls.append(
             (
                 "prompt",
@@ -103,9 +104,7 @@ class _FakeStreamingModel:
         return masks, obj_ids, self._next_state()
 
     def track(self, image, state_dict=None):
-        self.calls.append(
-            ("track", {"had_prior_state": state_dict is not None})
-        )
+        self.calls.append(("track", {"had_prior_state": state_dict is not None}))
         # Re-use the number of objects from the most recent prompt call.
         last_prompt_n = next(
             (c[1]["num_boxes"] for c in reversed(self.calls) if c[0] == "prompt"),

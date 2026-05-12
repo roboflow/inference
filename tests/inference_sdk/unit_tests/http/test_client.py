@@ -1850,6 +1850,50 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_
     }
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v1_threads_service_secret_and_countinference_as_query_params(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="coco/3",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", None)]
+    configuration = InferenceConfiguration(
+        confidence_threshold=0.5,
+        service_secret="internal-secret",
+        count_inference=False,
+    )
+    http_client.configure(inference_configuration=configuration)
+    requests_mock.post(
+        f"{api_url}/infer/object_detection",
+        json={"image": {"height": 480, "width": 640}, "predictions": []},
+    )
+
+    # when
+    http_client.infer_from_api_v1(
+        inference_input="https://some/image.jpg",
+        model_id="coco/3",
+    )
+
+    # then — credentials live on the URL query string, where FastAPI binds them
+    qs = requests_mock.request_history[0].qs
+    assert qs.get("service_secret") == ["internal-secret"]
+    assert qs.get("countinference") == ["false"]
+    # and they must NOT leak into the JSON body (the Pydantic body model would drop them anyway)
+    body = requests_mock.request_history[0].json()
+    assert "service_secret" not in body
+    assert "countinference" not in body
+    assert "count_inference" not in body
+
+
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
 @pytest.mark.parametrize("model_id_to_use", ["coco/3", "yolov8n-640"])
