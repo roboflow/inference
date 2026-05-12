@@ -37,10 +37,14 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCOffer,
     WebRTCTURNConfig,
 )
+from inference.core.interfaces.webrtc_worker.h264_nvenc import (
+    prefer_h264_nvenc_encoder,
+)
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
+prefer_h264_nvenc_encoder()
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 
