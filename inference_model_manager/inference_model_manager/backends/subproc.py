@@ -50,6 +50,12 @@ import numpy as np
 from inference_model_manager.backends.base import Backend
 from inference_model_manager.backends.utils.shm_pool import SHMPool
 from inference_model_manager.backends.utils.transport import default_transport
+from inference_model_manager.configuration import (
+    DEBUG_BENCHMARK_MODE_ENV,
+    ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_DEFAULT,
+    ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV,
+    INFERENCE_ZMQ_TRANSPORT_ENV,
+)
 from inference_model_manager.dispatch import invoke_task
 
 logger = logging.getLogger(__name__)
@@ -145,8 +151,10 @@ def _worker_main(
     Loads model, attaches SHMPool, signals READY, then greedy-batches
     T_SLOT_READY messages and sends T_RESULT per completed slot.
     """
-    if os.environ.get("ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND") is None:
-        os.environ["ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND"] = "False"
+    if os.environ.get(ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV) is None:
+        os.environ[ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV] = (
+            ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_DEFAULT
+        )
 
     import zmq  # noqa: PLC0415
 
@@ -163,7 +171,7 @@ def _worker_main(
             gpu_device if (use_gpu and gpu_device) else ("cuda:0" if use_gpu else "cpu")
         )
         _log.info("Worker(%s): loading on %s", model_id, device)
-        if os.environ.get("DEBUG_BENCHMARK_MODE"):
+        if os.environ.get(DEBUG_BENCHMARK_MODE_ENV):
             from inference_model_manager.backends.passthrough_model import (
                 PassthroughModel,
             )
@@ -633,7 +641,7 @@ class SubprocessBackend(Backend):
         self._zmq_sock = self._zmq_ctx.socket(zmq.PAIR)
         self._zmq_sock.setsockopt(zmq.LINGER, 0)
 
-        _transport = os.environ.get("INFERENCE_ZMQ_TRANSPORT", default_transport())
+        _transport = os.environ.get(INFERENCE_ZMQ_TRANSPORT_ENV, default_transport())
         _sock_id = f"sp_{os.getpid()}_{uuid.uuid4().hex[:8]}"
         if _transport == "ipc":
             self._zmq_addr = f"ipc:///tmp/inference_{_sock_id}.ipc"

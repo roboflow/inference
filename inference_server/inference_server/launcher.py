@@ -30,6 +30,8 @@ from typing import Optional, Union
 
 from inference_model_manager.model_manager import ModelManager
 
+from inference_server import configuration
+
 logger = logging.getLogger(__name__)
 
 _MODE_INPROCESS = "inprocess"
@@ -202,7 +204,9 @@ def launch(
         ModelManager (inprocess) or LaunchHandle (orchestrated).
     """
     if mode is None:
-        mode = os.environ.get("INFERENCE_DEPLOYMENT_MODE", _MODE_INPROCESS)
+        mode = os.environ.get(
+            configuration.INFERENCE_DEPLOYMENT_MODE_ENV, _MODE_INPROCESS
+        )
 
     if mode == _MODE_ORCHESTRATED:
         return launch_orchestrated(**kwargs)

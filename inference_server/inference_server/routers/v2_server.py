@@ -8,7 +8,7 @@ import os
 
 from fastapi import APIRouter, Response
 
-from inference_server import state
+from inference_server import configuration, state
 from inference_server.errors import error_response
 
 router = APIRouter(prefix="/v2/server")
@@ -28,7 +28,7 @@ async def v2_ready() -> Response:
     except (asyncio.TimeoutError, Exception):
         return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
-    preload_raw = os.environ.get("INFERENCE_PRELOAD_MODELS", "").strip()
+    preload_raw = os.environ.get(configuration.INFERENCE_PRELOAD_MODELS_ENV, "").strip()
     if preload_raw:
         preload_ids = {m.strip() for m in preload_raw.split(",") if m.strip()}
         models = stats.get("mmp_models", {})
