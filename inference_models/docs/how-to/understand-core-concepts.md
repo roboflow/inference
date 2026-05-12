@@ -82,7 +82,7 @@ We aim to keep extra dependencies minimal while covering as broad a range of mod
 **Optional Extras** add:
 - ONNX Runtime (CPU or GPU)
 - TensorRT (GPU only)
-- Specialized models (MediaPipe, Grounding DINO)
+- Specialized models (Grounding DINO)
 
 ### ⚡ 4. Runtime Backend Selection
 

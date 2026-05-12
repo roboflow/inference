@@ -33,7 +33,7 @@ Table key:
 | YOLOv5 Segmentation    | ✅   | ✅   | ✅           | ✅           | ✅         | ✅                        |
 | CLIP                   | ✅   | ✅   | ✅           | ✅           | ✅         | ✅                        |
 | DocTR                  | ✅   | ✅   | ✅           | ✅           | ✅         | ✅                        |
-| Gaze                   | ✅   | ✅   | 🚫           | 🚫           | 🚫         | ✅                        |
+| Gaze ⚠ deprecated      | 🚫   | 🚫   | 🚫           | 🚫           | 🚫         | 🚫                        |
 | SAM                    | ✅   | ✅   | 🚫           | 🚫           | 🚫         | 🚫                       |
 | ViT Classification     | ✅   | ✅   | ✅           | ✅           | ✅         | ✅                        |
 | YOLACT                 | ✅   | ✅   | ✅           | ✅           | ✅         | ✅                        |

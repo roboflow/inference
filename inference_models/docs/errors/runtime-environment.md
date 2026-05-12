@@ -36,8 +36,6 @@ This error occurs when a required Python package or system library is not instal
 
 - SAM/SAM2 models require additional packages
 
-- MediaPipe models need `mediapipe` package
-
 - Vision-language models need transformers/tokenizers
 
 **Scenario 4: CUDA dependencies missing**
