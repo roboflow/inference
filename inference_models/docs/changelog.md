@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## `0.28.0`
 
 ### Removed (BREAKING)
 
@@ -29,12 +29,12 @@
   The standalone `L2CSNetOnnx` (under `inference_models.models.l2cs`) is
   unaffected and remains supported.
 
-## `0.27.3`
-
 ### Fixed
 
 - RFDetr pre- and post-processing aligned with training transforms. Pre-processing replaced with a dedicated `PIL → F.resize → F.to_tensor → F.normalize` chain matching the training pipeline. For model packages with non-stretch `dataset_version_resize_dimensions`, the dataset-version resize (cv2 letterbox / center-crop) runs first, then the PIL stretch to `training_input_size`. Post-processing uses topk-flat across (queries × classes) via shared `select_topk_predictions`. Fixes a cross-backend divergence at low confidence thresholds.
 - Fixed a bug where 'best' and 'default' confidence modes were not correctly handled by `RoboflowInstantHF` models.
+
+---
 
 ## `0.27.2`
 
@@ -43,12 +43,15 @@
 - Temporarily disabled flash-attention in GLM-OCR for Jetsons, due to incompatibility detected
 before release.
 
+---
 
 ## `0.27.1`
 
 ### Added
 
 - Improved logging for auto-negotiation of model packages.
+
+---
 
 ## `0.27.0`
 
