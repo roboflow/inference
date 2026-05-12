@@ -57,9 +57,7 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
-from inference.core.interfaces.webrtc_worker.h264_nvenc import (
-    prefer_h264_nvenc_encoder,
-)
+from inference.core.interfaces.webrtc_worker.h264_nvenc import prefer_h264_nvenc_encoder
 from inference.core.interfaces.webrtc_worker.serializers import serialize_for_webrtc
 from inference.core.interfaces.webrtc_worker.sources.file import (
     ThreadedVideoFileTrack,
