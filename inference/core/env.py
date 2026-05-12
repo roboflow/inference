@@ -1039,6 +1039,15 @@ if DISABLED_INFERENCE_MODELS_BACKENDS is not None:
     DISABLED_INFERENCE_MODELS_BACKENDS = set(
         DISABLED_INFERENCE_MODELS_BACKENDS.split(",")
     )
+    if "mediapipe" in DISABLED_INFERENCE_MODELS_BACKENDS:
+        warnings.warn(
+            "`mediapipe` backend for `inference-models` got deprecated and all remaining left-overs "
+            "will be removed end of Q2 2026. Keeping `mediapipe` in the list of `DISABLED_INFERENCE_MODELS_BACKENDS` "
+            "will trigger runtime exception causing `inference` to crash. Please adjust your configuration.",
+            category=InferenceDeprecationWarning,
+            stacklevel=1,
+        )
+        DISABLED_INFERENCE_MODELS_BACKENDS.discard("mediapipe")
     if any(
         v not in VALID_INFERENCE_MODELS_BACKENDS
         for v in DISABLED_INFERENCE_MODELS_BACKENDS
