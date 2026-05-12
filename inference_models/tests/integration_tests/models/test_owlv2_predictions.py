@@ -58,9 +58,11 @@ def test_owlv2_predictions_for_open_vocabulary(
 
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
+@pytest.mark.parametrize("confidence", [0.99, "best", "default"])
 def test_owlv2_predictions_for_reference_dataset(
     owlv2_model: OWLv2HF,
     dog_image_numpy: np.ndarray,
+    confidence,
 ) -> None:
     # when
     predictions = owlv2_model.infer_with_reference_examples(
@@ -74,7 +76,7 @@ def test_owlv2_predictions_for_reference_dataset(
                 ],
             )
         ],
-        confidence=0.99,
+        confidence=confidence,
         iou_threshold=0.3,
         max_detections=300,
     )
@@ -85,15 +87,17 @@ def test_owlv2_predictions_for_reference_dataset(
 
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
+@pytest.mark.parametrize("confidence", [0.99, "best", "default"])
 def test_instant_model_predictions(
     instant_model: RoboflowInstantHF,
     coins_counting_image_torch: torch.Tensor,
     coins_counting_image_numpy: np.ndarray,
+    confidence,
 ) -> None:
     # when
     predictions = instant_model(
         coins_counting_image_torch,
-        confidence=0.99,
+        confidence=confidence,
         iou_threshold=0.3,
         class_agnostic_nms=False,
         max_detections=300,

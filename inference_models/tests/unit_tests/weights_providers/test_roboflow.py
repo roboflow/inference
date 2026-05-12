@@ -61,64 +61,6 @@ def test_as_version_when_invalid_version_provided() -> None:
         _ = as_version(value="invalid")
 
 
-def test_parse_mediapipe_model_package_when_package_is_valid() -> None:
-    # given
-    metadata = RoboflowModelPackageV1(
-        type="external-model-package-v1",
-        packageId="my-package-id",
-        packageManifest={
-            "type": "mediapipe-model-package-v1",
-            "backendType": "mediapipe",
-        },
-        packageFiles=[
-            RoboflowModelPackageFile(
-                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
-            )
-        ],
-        trustedSource=True,
-    )
-
-    # when
-    result = parse_model_package_metadata(metadata=metadata)
-
-    # then
-    assert result == ModelPackageMetadata(
-        package_id="my-package-id",
-        backend=BackendType.MEDIAPIPE,
-        package_artefacts=[
-            FileDownloadSpecs(
-                download_url="https://dummy.com", file_handle="some", md5_hash="some"
-            ),
-        ],
-        quantization=Quantization.UNKNOWN,
-        trusted_source=True,
-    )
-
-
-def test_parse_mediapipe_model_package_when_package_is_invalid() -> None:
-    # given
-    metadata = RoboflowModelPackageV1(
-        type="external-model-package-v1",
-        packageId="my-package-id",
-        packageManifest={
-            "type": "mediapipe-model-package-v1",
-            "backendType": "invalid",
-        },
-        packageFiles=[
-            RoboflowModelPackageFile(
-                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
-            )
-        ],
-        trustedSource=True,
-    )
-
-    # when
-    result = parse_model_package_metadata(metadata=metadata)
-
-    # then
-    assert result is None
-
-
 def test_parse_ultralytics_model_package() -> None:
     # given
     metadata = RoboflowModelPackageV1(
@@ -2014,47 +1956,6 @@ def test_params_from_url_and_query_are_both_preserved_without_proxy():
     params = urllib.parse.parse_qs(parsed.query)
     assert params["existing"] == ["from_url"]
     assert params["modelId"] == ["my-model"]
-
-
-def test_parse_mediapipe_model_package_when_package_is_valid_with_proxy_builder() -> (
-    None
-):
-    # given
-    metadata = RoboflowModelPackageV1(
-        type="external-model-package-v1",
-        packageId="my-package-id",
-        packageManifest={
-            "type": "mediapipe-model-package-v1",
-            "backendType": "mediapipe",
-        },
-        packageFiles=[
-            RoboflowModelPackageFile(
-                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
-            )
-        ],
-        trustedSource=True,
-    )
-
-    # when
-    result = parse_model_package_metadata(
-        metadata=metadata,
-        proxy_url_builder=_dummy_proxy_url_builder,
-    )
-
-    # then
-    assert result == ModelPackageMetadata(
-        package_id="my-package-id",
-        backend=BackendType.MEDIAPIPE,
-        package_artefacts=[
-            FileDownloadSpecs(
-                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
-                file_handle="some",
-                md5_hash="some",
-            ),
-        ],
-        quantization=Quantization.UNKNOWN,
-        trusted_source=True,
-    )
 
 
 def test_parse_ultralytics_model_package_with_proxy_builder() -> None:

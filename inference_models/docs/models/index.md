@@ -110,7 +110,6 @@ The `inference-models` library supports a wide range of computer vision models a
 | Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
 | [L2CS](l2cs.md) | `torch` | MIT | N/A | ✅ | ❌ |
-| [MediaPipe Face](mediapipe-face.md) | `mediapipe` | Apache 2.0 | N/A | ✅ | ❌ |
 
 
 

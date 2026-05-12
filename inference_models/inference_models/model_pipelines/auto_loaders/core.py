@@ -44,8 +44,7 @@ class AutoModelPipeline:
             >>> AutoModelPipeline.list_available_pipelines()
             # Displays:
             # Available Model Pipelines:
-            # ├── face-and-gaze-detection
-            # └── ... (other registered pipelines)
+            # └── ... (registered pipelines)
 
         See Also:
             - `AutoModelPipeline.from_pretrained()`: Load a pipeline
@@ -84,8 +83,7 @@ class AutoModelPipeline:
         """Load and initialize a multi-model pipeline.
 
         Pipelines are pre-configured workflows that combine multiple models to solve
-        complex computer vision tasks. For example, the "face-and-gaze-detection"
-        pipeline combines a face detector with a gaze estimation model.
+        complex computer vision tasks.
 
         Each pipeline has default model configurations, but you can override them by
         providing custom `models_parameters`. All models in the pipeline are loaded
@@ -93,7 +91,7 @@ class AutoModelPipeline:
 
         Args:
             pipline_id: Pipeline identifier. Use `list_available_pipelines()` to see
-                available options. Examples: "face-and-gaze-detection".
+                available options.
 
             models_parameters: Optional list of parameters for each model in the pipeline.
                 Can be:
@@ -165,24 +163,24 @@ class AutoModelPipeline:
             Load pipeline with default models:
 
             >>> from inference_models import AutoModelPipeline
-            >>> pipeline = AutoModelPipeline.from_pretrained("face-and-gaze-detection")
+            >>> pipeline = AutoModelPipeline.from_pretrained("<pipeline-id>")
             >>> results = pipeline(image)
 
             Load pipeline with custom model parameters:
 
             >>> pipeline = AutoModelPipeline.from_pretrained(
-            ...     "face-and-gaze-detection",
+            ...     "<pipeline-id>",
             ...     models_parameters=[
-            ...         "mediapipe/face-detector",  # Use specific face detector
-            ...         {"model_id_or_path": "l2cs-net/rn50", "device": "cuda"}  # Custom gaze model
-            ...     ]
+            ...         "<model-id-1>",
+            ...         {"model_id_or_path": "<model-id-2>", "device": "cuda"},
+            ...     ],
             ... )
 
             Load with verbose logging:
 
             >>> pipeline = AutoModelPipeline.from_pretrained(
-            ...     "face-and-gaze-detection",
-            ...     verbose=True
+            ...     "<pipeline-id>",
+            ...     verbose=True,
             ... )
 
         See Also:
