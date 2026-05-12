@@ -1,5 +1,6 @@
 from inference.core.exceptions import (
     CannotInitialiseModelDueToInputSizeError,
+    FeatureDeprecatedError,
     InferenceModelNotFound,
     InvalidModelIDError,
     ModelManagerLockAcquisitionError,
@@ -22,12 +23,28 @@ from inference_sdk.http.errors import HTTPCallErrorError
 
 
 def legacy_step_error_handler(step_name: str, error: Exception) -> None:
+    if isinstance(error, FeatureDeprecatedError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=410,
+            public_message=str(error),
+            context="workflow_execution | step_execution | feature_deprecated",
+            inner_error=error,
+        ) from error
     if isinstance(error, (ModelManagerLockAcquisitionError, InferenceModelNotFound)):
         raise error
     return None
 
 
 def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
+    if isinstance(error, FeatureDeprecatedError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=410,
+            public_message=str(error),
+            context="workflow_execution | step_execution | feature_deprecated",
+            inner_error=error,
+        ) from error
     if isinstance(
         error,
         (
