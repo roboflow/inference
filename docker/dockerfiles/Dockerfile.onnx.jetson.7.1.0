@@ -173,10 +173,13 @@ RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/Linux,sharing
             onnxruntime_BUILD_UNIT_TESTS=OFF && \
     python3 -m pip install --break-system-packages build/Linux/Release/dist/onnxruntime_gpu*.whl
 
-# Install flash-attn package (requires CUDA-enabled PyTorch already installed)
-# Limit MAX_JOBS to 1 to prevent resource starvation that kills the Depot gRPC connection
+# Install flash-attn package (requires CUDA-enabled PyTorch already installed).
+# MAX_JOBS=2: middle ground between the historical MAX_JOBS=4 that starved the
+# Depot BuildKit gRPC connection (#2068) and the safe-but-slow MAX_JOBS=1.
+# flash-attn nvcc instances peak ~3-4 GB each against PyTorch 2.10 headers,
+# so 2 fits comfortably on a 32 GB Depot arm builder while halving the wall time.
 # Using 2.8.3 - removed legacy features (rotary, xentropy, fused_softmax, ft_attention) for faster builds
-RUN export MAX_JOBS=1 && \
+RUN export MAX_JOBS=2 && \
     python3 -m pip install --break-system-packages --no-build-isolation flash-attn==2.8.3
 
 # Copy requirements files (done after compilation to improve cache efficiency)
