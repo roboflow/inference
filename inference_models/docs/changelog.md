@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Removed (BREAKING)
+
+- **MediaPipe is no longer supported.** The `mediapipe` extra and every
+  symbol coupled to it have been removed. Consumers comparing against
+  `BackendType.MEDIAPIPE` will hit `AttributeError`. Roboflow Universe
+  payloads of type `mediapipe-model-package-v1` are now silently filtered
+  by `MODEL_PACKAGE_PARSERS.get(...)`. Removed symbols:
+  - `inference_models.models.mediapipe_face_detection.MediaPipeFaceDetector`
+  - `inference_models.model_pipelines.face_and_gaze_detection.FaceAndGazeDetectionMPAndL2CS`
+  - `BackendType.MEDIAPIPE`
+  - `mediapipe_package_matches_runtime_environment` and its entry in
+    `MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS`
+  - Models registry entry for
+    `("mediapipe-face-detector", KEYPOINT_DETECTION_TASK, BackendType.MEDIAPIPE)`
+  - `BACKEND_PRIORITY[BackendType.MEDIAPIPE]`
+  - Pipelines registry's `face-and-gaze-detection` entry +
+    `mediapipe/face-detector` default parameter
+  - `MediapipeModelPackageV1`, `parse_mediapipe_model_package`, and the
+    `"mediapipe-model-package-v1"` entry in `MODEL_PACKAGE_PARSERS`
+  - `RuntimeXRayResult.mediapipe_available` and `is_mediapipe_available()`
+  - `INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE`
+  - The `[project.optional-dependencies] mediapipe` extra in
+    `pyproject.toml`
+
+  The standalone `L2CSNetOnnx` (under `inference_models.models.l2cs`) is
+  unaffected and remains supported.
+
 ## `0.27.3`
 
 ### Fixed
