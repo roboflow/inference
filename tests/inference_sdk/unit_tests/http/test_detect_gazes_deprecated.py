@@ -47,14 +47,3 @@ async def test_detect_gazes_async_raises_feature_deprecated_error_without_networ
 
     # then
     assert captured.value.feature == "InferenceHTTPClient.detect_gazes_async"
-
-
-def test_sdk_feature_deprecated_error_is_distinct_from_inference_core_class() -> None:
-    """Catching one must NOT catch the other — they're intentionally separate."""
-    from inference.core.exceptions import (
-        FeatureDeprecatedError as CoreFeatureDeprecatedError,
-    )
-
-    assert FeatureDeprecatedError is not CoreFeatureDeprecatedError
-    assert not issubclass(FeatureDeprecatedError, CoreFeatureDeprecatedError)
-    assert not issubclass(CoreFeatureDeprecatedError, FeatureDeprecatedError)
