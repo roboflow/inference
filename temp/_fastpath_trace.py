@@ -1,9 +1,9 @@
 """Rigorous kill-switch trace for the widen-scope fast path.
 
 Patches three surfaces in inference_models.models.rfdetr.pre_processing:
-  - _fast_path_eligible   (did the gate say yes or no?)
+  - triton_path_eligible   (did the gate say yes or no?)
   - triton_preprocess_rfdetr_stretch (did the kernel fire?)
-  - _fast_path_preprocess (did the fast-path code path actually run end-to-end?)
+  - triton_path_preprocess (did the fast-path code path actually run end-to-end?)
 
 Also patches the name `pre_process_numpy_image` used by the PIL fallback so
 we can count PIL-fallback invocations per-image (the PIL path iterates one
@@ -33,18 +33,18 @@ def install():
 
     import inference_models.models.rfdetr.pre_processing as pp
 
-    orig_eligible = pp._fast_path_eligible
+    orig_eligible = pp.triton_path_eligible
     def traced_eligible(*a, **kw):
         r = orig_eligible(*a, **kw)
         COUNTERS["eligible_true" if r else "eligible_false"] += 1
         return r
-    pp._fast_path_eligible = traced_eligible
+    pp.triton_path_eligible = traced_eligible
 
-    orig_fast = pp._fast_path_preprocess
+    orig_fast = pp.triton_path_preprocess
     def traced_fast(*a, **kw):
         COUNTERS["fastpath_runs"] += 1
         return orig_fast(*a, **kw)
-    pp._fast_path_preprocess = traced_fast
+    pp.triton_path_preprocess = traced_fast
 
     orig_kernel = pp.triton_preprocess_rfdetr_stretch
     if orig_kernel is not None:

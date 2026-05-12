@@ -10,11 +10,9 @@ the result to `training_input_size`.
 torch.Tensor inputs (advanced caller, float CHW [0, 1]):
     tensor F.resize → F.normalize
 
-Fused Triton fast path: for the common case (single-stage resize, no
-image-level transforms, normalization set, uint8 HWC input) we invoke a
-single PIL-exact Triton kernel that writes the normalized fp32 tensor
-directly to `target_device`. See
-`inference_models.models.rfdetr.triton_preprocess`.
+Triton path: for the common case (single-stage resize, no contrast) 
+we invoke a single PIL-exact Triton kernel that writes the normalized
+fp32 tensor directly to `target_device`.
 """
 
 from typing import Dict, List, Optional, Tuple, Union
@@ -51,28 +49,27 @@ try:
     from inference_models.models.rfdetr.triton_preprocess import (
         TRITON_AVAILABLE as _TRITON_AVAILABLE,
         build_resample_tables,
-        triton_preprocess_rfdetr_stretch,
-    )
+        triton_preprocess_rfdetr_stretch, ResampleTables,
+)
 except ImportError:
     _TRITON_AVAILABLE = False
     build_resample_tables = None
     triton_preprocess_rfdetr_stretch = None
 
-# Resample tables are cheap (a few KB of int32 weights) but rebuilding them
-# is a per-call Python loop we can skip. Key: (device_str, src_h, src_w, th, tw).
-_RESAMPLE_TABLES_CACHE: Dict[Tuple[str, int, int, int, int], "object"] = {}
+# Resample tables for PIL identical image resize [Key: (device_str, src_h, src_w, th, tw)]
+RESAMPLE_TABLES_CACHE: Dict[Tuple[str, int, int, int, int], ResampleTables] = {}
 
 
-def _get_resample_tables(
+def get_resample_tables(
     device: torch.device, src_h: int, src_w: int, th: int, tw: int
-):
+)->ResampleTables:
     key = (str(device), src_h, src_w, th, tw)
-    t = _RESAMPLE_TABLES_CACHE.get(key)
+    t = RESAMPLE_TABLES_CACHE.get(key)
     if t is None:
         t = build_resample_tables(
             src_h=src_h, src_w=src_w, target_h=th, target_w=tw, device=device
         )
-        _RESAMPLE_TABLES_CACHE[key] = t
+        RESAMPLE_TABLES_CACHE[key] = t
     return t
 
 
@@ -127,14 +124,14 @@ def pre_process_network_input(
     else:
         image_list = [images]
 
-    if _fast_path_eligible(
+    if triton_path_eligible(
         image_list=image_list,
         image_pre_processing=image_pre_processing,
         network_input=network_input,
         target_device=target_device,
         pre_processing_overrides=pre_processing_overrides,
     ):
-        return _fast_path_preprocess(
+        return triton_path_preprocess(
             image_list=image_list,
             image_pre_processing=image_pre_processing,
             network_input=network_input,
@@ -179,7 +176,7 @@ def pre_process_network_input(
     return batch, metadata
 
 
-def _fast_path_eligible(
+def triton_path_eligible(
     image_list: List[Union[np.ndarray, torch.Tensor]],
     image_pre_processing: ImagePreProcessing,
     network_input: NetworkInputDefinition,
@@ -202,18 +199,11 @@ def _fast_path_eligible(
         ipp.grayscale is not None and ipp.grayscale.enabled
     ):
         return False
-    # Honour overrides that force-disable static_crop (True means "disable").
+    # Honor overrides that force-disable static_crop (True means "disable").
     static_crop_overridden = (
         pre_processing_overrides is not None
         and pre_processing_overrides.disable_static_crop is True
     )
-    if (
-        ipp.static_crop is not None
-        and ipp.static_crop.enabled
-        and not static_crop_overridden
-    ):
-        # We'll apply it in the kernel — don't reject here.
-        pass
     # Two-stage dataset-version resize isn't in the kernel.
     ni = network_input
     if ni.dataset_version_resize_dimensions is not None:
@@ -231,9 +221,6 @@ def _fast_path_eligible(
         ResizeMode.LETTERBOX_REFLECT_EDGES,
     ):
         return False
-    # When dataset_version_resize_dimensions is None, the prod PIL path
-    # collapses every resize_mode to a single stretch to training_input_size;
-    # the kernel does the same. See _needs_two_step_resize.
     if not image_list:
         return False
     # `pre_process_network_input` already unbinds 4D inputs (batch tensors
@@ -243,7 +230,7 @@ def _fast_path_eligible(
         if isinstance(img, np.ndarray):
             if img.dtype != np.uint8 or img.ndim != 3:
                 return False
-            if img.shape[2] != 3 and not _looks_like_chw(img.shape):
+            if img.shape[2] != 3 and not looks_like_chw(img.shape):
                 return False
         elif isinstance(img, torch.Tensor):
             # Only uint8 3-channel images (HWC or CHW). Float tensors keep
@@ -252,14 +239,14 @@ def _fast_path_eligible(
             # change).
             if img.dtype != torch.uint8 or img.ndim != 3:
                 return False
-            if img.shape[-1] != 3 and not _looks_like_chw(img.shape):
+            if img.shape[-1] != 3 and not looks_like_chw(img.shape):
                 return False
         else:
             return False
     return True
 
 
-def _looks_like_chw(shape) -> bool:
+def looks_like_chw(shape) -> bool:
     """Matches _tensor_to_hwc_uint8's CHW heuristic: first dim is 1/3/4 and
     last dim is not. Catches torchvision.io.read_image's CHW output."""
     return (
@@ -269,24 +256,24 @@ def _looks_like_chw(shape) -> bool:
     )
 
 
-def _as_hwc_uint8_cuda(
+def as_hwc_uint8_cuda(
     img: Union[np.ndarray, torch.Tensor], device: torch.device
 ) -> torch.Tensor:
     """Return a contiguous (H, W, 3) uint8 CUDA tensor, copying if needed.
     Accepts HWC or CHW 3D inputs (CHW is torchvision.io.read_image's layout)."""
     if isinstance(img, torch.Tensor):
-        if _looks_like_chw(img.shape):
+        if looks_like_chw(img.shape):
             img = img.permute(1, 2, 0)
         if img.device != device:
             img = img.to(device=device, non_blocking=True)
         return img.contiguous()
-    if _looks_like_chw(img.shape):
+    if looks_like_chw(img.shape):
         img = np.transpose(img, (1, 2, 0))
     t = torch.from_numpy(np.ascontiguousarray(img))
     return t.to(device=device, non_blocking=True)
 
 
-def _fast_path_preprocess(
+def triton_path_preprocess(
     image_list: List[Union[np.ndarray, torch.Tensor]],
     image_pre_processing: ImagePreProcessing,
     network_input: NetworkInputDefinition,
@@ -295,16 +282,13 @@ def _fast_path_preprocess(
     input_color_mode: Optional[ColorMode],
     pre_processing_overrides: Optional[PreProcessingOverrides],
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-    """Per-image Triton launch + stack. Assumes `_fast_path_eligible` passed."""
+    """Per-image Triton launch + stack. Assumes `triton_path_eligible` passed."""
     means, stds = network_input.normalization
     means_t = (float(means[0]), float(means[1]), float(means[2]))
     stds_t = (float(stds[0]), float(stds[1]), float(stds[2]))
     th, tw = target_size.height, target_size.width
 
     # Match _pre_process_numpy's swap semantics: the PIL path does
-    # `image[:, :, ::-1]` whenever `input_color_mode != network_input.color_mode`.
-    # That comparison returns True when input_color_mode is None (unspecified),
-    # so the swap runs even on unspecified inputs — we replicate that exactly.
     swap_rb = input_color_mode != network_input.color_mode
 
     # Resolve whether static_crop is active for this call. Computed once
@@ -321,7 +305,7 @@ def _fast_path_preprocess(
     outs: List[torch.Tensor] = []
     metas: List[PreProcessingMetadata] = []
     for img in image_list:
-        src_gpu = _as_hwc_uint8_cuda(img, target_device)
+        src_gpu = as_hwc_uint8_cuda(img, target_device)
         sh, sw = int(src_gpu.shape[0]), int(src_gpu.shape[1])
 
         if crop_active:
@@ -336,7 +320,7 @@ def _fast_path_preprocess(
             x0 = y0 = 0
             crop_w, crop_h = sw, sh
 
-        tables = _get_resample_tables(target_device, crop_h, crop_w, th, tw)
+        tables = get_resample_tables(target_device, crop_h, crop_w, th, tw)
         out = triton_preprocess_rfdetr_stretch(
             src=src_gpu,
             tables=tables,

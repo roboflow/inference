@@ -25,12 +25,6 @@ KSIZE_Y source rows; for each contributing source row we recompute the
 horizontal convolution (int32 fixed-point, uint8 quantize) on the fly,
 multiply by the vertical weight, and accumulate. Final: uint8 quantize,
 BGR↔RGB swap, /255, ImageNet normalize, fp32 CHW store.
-
-A separable two-pass variant (horizontal then vertical, via a DRAM uint8
-intermediate) is ~0.4 fps faster end-to-end on the 312² RF-DETR workload
-because it avoids redoing KSIZE_X MACs per output row. We picked the fused
-version for simplicity (no intermediate buffer, one launch, one piece of
-math).
 """
 
 from __future__ import annotations
@@ -97,7 +91,7 @@ if TRITON_AVAILABLE:
     _HALF = 1 << (PRECISION_BITS - 1)
 
     @triton.jit
-    def _fused_resize_normalize_kernel(
+    def fused_resize_normalize_kernel(
         src_ptr,
         dst_ptr,
         ymin_ptr,
@@ -235,7 +229,7 @@ if TRITON_AVAILABLE:
         tl.store(dst_ptr + 2 * dst_stride_c + out_row, out_b, mask=mask_out)
 
 
-class _ResampleTables:
+class ResampleTables:
     """Cache of per-axis PIL-int32 weight tables for one (src, dst) pair."""
 
     __slots__ = (
@@ -270,10 +264,10 @@ def build_resample_tables(
     target_h: int,
     target_w: int,
     device: torch.device,
-) -> _ResampleTables:
+) -> ResampleTables:
     ymin, wy, ksize_y = _bilinear_antialias_weights_1d_int(src_h, target_h)
     xmin, wx, ksize_x = _bilinear_antialias_weights_1d_int(src_w, target_w)
-    return _ResampleTables(
+    return ResampleTables(
         ymin_gpu=torch.from_numpy(ymin).to(device=device, non_blocking=True),
         xmin_gpu=torch.from_numpy(xmin).to(device=device, non_blocking=True),
         wy_gpu=torch.from_numpy(wy.ravel()).to(device=device, non_blocking=True),
@@ -285,7 +279,7 @@ def build_resample_tables(
 
 def triton_preprocess_rfdetr_stretch(
     src: torch.Tensor,
-    tables: _ResampleTables,
+    tables: ResampleTables,
     target_h: int,
     target_w: int,
     means: Tuple[float, float, float] = (0.485, 0.456, 0.406),
@@ -366,7 +360,7 @@ def triton_preprocess_rfdetr_stretch(
         (target_h + BLOCK_H - 1) // BLOCK_H,
         (target_w + BLOCK_W - 1) // BLOCK_W,
     )
-    _fused_resize_normalize_kernel[grid](
+    fused_resize_normalize_kernel[grid](
         src,
         out,
         tables.ymin_gpu,
