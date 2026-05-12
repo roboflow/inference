@@ -1,3 +1,7 @@
+---
+description: Use Meta Segment Anything 2 (SAM 2) with Roboflow Inference for precise image segmentation and interactive mask generation using point or bounding box prompts.
+---
+
 <a href="https://github.com/facebookresearch/segment-anything-2" target="_blank">Segment Anything 2</a> is an open source image segmentation model.
 
 You can use Segment Anything 2 to identify the precise location of objects in an image. This process can generate masks for objects in an image iteratively, by specifying points to be included or discluded from the segmentation mask.

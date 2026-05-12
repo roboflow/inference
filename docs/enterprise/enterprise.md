@@ -1,3 +1,7 @@
+---
+description: Enterprise-only Roboflow Inference features, including active learning, parallel processing, and multi-device licensing.
+---
+
 # Enterprise Features
 
 Roboflow Enterprise customers have access to advanced Inference features. These include:
