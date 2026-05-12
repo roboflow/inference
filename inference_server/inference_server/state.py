@@ -51,8 +51,8 @@ SLOT_TOTAL: int = 0
 def init_from_env() -> None:
     """Re-read config from env. Called once per worker in lifespan."""
     global MMP_ADDR, SHM_NAME, SHM_DATA_SIZE, SLOT_TOTAL
-    MMP_ADDR = (
-        os.environ.get(configuration.INFERENCE_MMP_ADDR_ENV) or zmq_addr("mmprocess")
+    MMP_ADDR = os.environ.get(configuration.INFERENCE_MMP_ADDR_ENV) or zmq_addr(
+        "mmprocess"
     )
     SHM_NAME = os.environ.get(
         configuration.INFERENCE_SHM_NAME_ENV, configuration.INFERENCE_SHM_NAME_DEFAULT
@@ -82,9 +82,9 @@ T_ENSURE_LOADED = b"\x09"
 # MMP -> uvicorn
 T_ALLOC_OK = b"\x11"
 T_RESULT_READY = b"\x14"
-T_ERROR = b"\xFF"
-T_MODEL_READY = b"\x0A"
-T_LOAD_TIMEOUT = b"\x0B"
+T_ERROR = b"\xff"
+T_MODEL_READY = b"\x0a"
+T_LOAD_TIMEOUT = b"\x0b"
 T_OK = b"\x40"
 
 # uvicorn -> MMP (lifecycle)
@@ -439,7 +439,12 @@ def start_pipeline_csv_writer() -> None:
                 for rec in batch:
                     w.writerow(rec)
 
-    _pipeline_thread = threading.Thread(target=_writer, daemon=True, name="pipeline-csv")
+    _pipeline_thread = threading.Thread(
+        target=_writer, daemon=True, name="pipeline-csv"
+    )
     _pipeline_thread.start()
-    logger.info("Pipeline CSV writer started: %s (flush every %.1fs)",
-                csv_path, _PIPELINE_FLUSH_INTERVAL_S)
+    logger.info(
+        "Pipeline CSV writer started: %s (flush every %.1fs)",
+        csv_path,
+        _PIPELINE_FLUSH_INTERVAL_S,
+    )

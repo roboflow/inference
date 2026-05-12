@@ -29,7 +29,6 @@ import threading
 from typing import Optional, Union
 
 from inference_model_manager.model_manager import ModelManager
-
 from inference_server import configuration
 
 logger = logging.getLogger(__name__)

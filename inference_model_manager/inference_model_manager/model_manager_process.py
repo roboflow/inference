@@ -69,11 +69,11 @@ T_SUBMIT = b"\x02"
 T_FREE = b"\x03"
 
 # MMP → uvicorn (hot path)
-T_MODEL_READY = b"\x0A"
-T_LOAD_TIMEOUT = b"\x0B"
+T_MODEL_READY = b"\x0a"
+T_LOAD_TIMEOUT = b"\x0b"
 T_ALLOC_OK = b"\x11"
 T_RESULT_READY = b"\x14"
-T_ERROR = b"\xFF"
+T_ERROR = b"\xff"
 
 # Lifecycle API (admin → MMP)
 T_LOAD = b"\x20"
@@ -626,7 +626,10 @@ class ModelManagerProcess:
         # TODO(debug): TEMPORARY — remove after diagnosing 0-byte slot bug
         logger.error(
             "[mmp] T_SUBMIT slot=%d req=%d model=%s input_sz=%d (TEMP DEBUG)",
-            slot_id, req_id, model_id, input_sz,
+            slot_id,
+            req_id,
+            model_id,
+            input_sz,
         )
         self._pool.mark_written(slot_id, input_sz)
         self._forward_to_backend(model_id, slot_id, req_id, params_bytes)
