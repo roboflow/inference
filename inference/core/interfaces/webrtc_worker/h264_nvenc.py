@@ -8,13 +8,25 @@ H264_NVENC_ENCODER = "h264_nvenc"
 H264_NVENC_TIMING_SAMPLE_INTERVAL = 120
 H264_NVENC_OPTION_SETS = (
     {
-        "preset": "p2",
-        "tune": "ll",
+        "preset": "p1",
+        "tune": "ull",
         "rc": "cbr",
-        "profile": "baseline",
+        "zerolatency": "1",
+        "delay": "0",
         "bf": "0",
     },
-    {},
+    {
+        "preset": "llhp",
+        "rc": "cbr",
+        "zerolatency": "1",
+        "delay": "0",
+        "bf": "0",
+    },
+    {
+        "preset": "fast",
+        "rc": "cbr",
+        "bf": "0",
+    },
 )
 
 
@@ -123,6 +135,7 @@ def _create_nvenc_context(
             codec.framerate = fractions.Fraction(h264_module.MAX_FRAME_RATE, 1)
             codec.time_base = fractions.Fraction(1, h264_module.MAX_FRAME_RATE)
             codec.options = options
+            _try_set_baseline_profile(codec)
             codec.open()
             return codec, options
         except Exception as error:
@@ -138,6 +151,13 @@ def _create_nvenc_context(
         last_error,
     )
     return None, {}
+
+
+def _try_set_baseline_profile(codec: Any) -> None:
+    try:
+        codec.profile = "Baseline"
+    except Exception:
+        pass
 
 
 def _set_picture_type(h264_module: Any, frame: Any, force_keyframe: bool) -> None:
