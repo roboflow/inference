@@ -81,7 +81,7 @@ class SQLiteWrapper:
                 connection.close()
             except Exception as exc:
                 # codeql[py/clear-text-logging-sensitive-data]: Key names only.
-                logger.debug("Failed to store row (columns %s) in %s - %s", _sqlite_log(row), self._tbl_name, exc)
+                logger.debug(f"Failed to store row (columns {_sqlite_log(row)}) in {self._tbl_name} - {exc}")
                 raise exc
         elif connection and not cursor:
             self._insert(row=row, connection=connection, with_exclusive=with_exclusive)
@@ -101,7 +101,7 @@ class SQLiteWrapper:
     ):
         if not set(row.keys()).issubset(self._columns.keys()):
             # codeql[py/clear-text-logging-sensitive-data]: Key names only.
-            logger.debug("Cannot store row (columns %s) in %s, requested column names do not match with table columns", _sqlite_log(row), self._tbl_name)
+            logger.debug(f"Cannot store row (columns {_sqlite_log(row)}) in {self._tbl_name}, requested column names do not match with table columns")
             raise ValueError("Columns mismatch")
 
         cursor_needs_closing = False
@@ -114,7 +114,7 @@ class SQLiteWrapper:
                 cursor.execute("BEGIN EXCLUSIVE")
             except Exception as exc:
                 # codeql[py/clear-text-logging-sensitive-data]: Key names only.
-                logger.debug("Failed to store row (columns %s) in %s - %s", _sqlite_log(row), self._tbl_name, exc)
+                logger.debug(f"Failed to store row (columns {_sqlite_log(row)}) in {self._tbl_name} - {exc}")
                 raise exc
 
         values = {k: v for k, v in row.items() if k != "id"}
@@ -128,7 +128,7 @@ class SQLiteWrapper:
                 connection.commit()
         except Exception as exc:
             # codeql[py/clear-text-logging-sensitive-data]: Key names only.
-            logger.debug("Failed to store row (columns %s) in %s - %s", _sqlite_log(values), self._tbl_name, exc)
+            logger.debug(f"Failed to store row (columns {_sqlite_log(values)}) in {self._tbl_name} - {exc}")
             connection.rollback()
             raise exc
         if cursor_needs_closing:
