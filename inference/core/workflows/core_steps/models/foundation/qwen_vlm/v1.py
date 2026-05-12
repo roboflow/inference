@@ -37,11 +37,13 @@ from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.openrouter import (
-    OpenRouterBlockManifestMixin,
-    OpenRouterWorkflowBlockBase,
+    PRIVACY_LEVEL_LITERAL,
+    PRIVACY_LEVEL_METADATA,
     RECOMMENDED_PARSERS,
     RELEVANT_TASKS_METADATA,
     SUPPORTED_TASK_TYPES_LIST,
+    OpenRouterBlockManifestMixin,
+    OpenRouterWorkflowBlockBase,
     build_prompts_from_images,
     validate_task_type_required_fields,
 )
@@ -68,11 +70,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceHTTPClient
-
-from inference.core.workflows.core_steps.common.openrouter import (
-    PRIVACY_LEVEL_LITERAL,
-    PRIVACY_LEVEL_METADATA,
-)
 
 # ---------------------------------------------------------------------------
 # Model variants

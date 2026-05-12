@@ -3,11 +3,11 @@ from typing import Dict, List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.workflows.core_steps.common.openrouter import (
-    OpenRouterBlockManifestMixin,
-    OpenRouterWorkflowBlockBase,
     RECOMMENDED_PARSERS,
     RELEVANT_TASKS_METADATA,
     SUPPORTED_TASK_TYPES_LIST,
+    OpenRouterBlockManifestMixin,
+    OpenRouterWorkflowBlockBase,
     build_prompts_from_images,
     validate_task_type_required_fields,
 )
