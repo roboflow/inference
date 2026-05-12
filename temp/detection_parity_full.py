@@ -1,6 +1,6 @@
 """Full coco/val2017 detection + mask parity: Triton fast path vs PIL.
 
-Driven by INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED. Because the env
+Driven by USE_TRITON_FOR_PREPROCESSING. Because the env
 var is read once at import time, we run two subprocesses (true, false),
 dump per-image detections to pickle, then compare.
 
@@ -45,8 +45,8 @@ def do_run(out_path):
             return original(*a, **kw)
         trt_mod.triton_preprocess_rfdetr_stretch = counting
 
-    env_flag = os.environ.get("INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED", "<unset>")
-    print(f"[run] env={env_flag}  _FAST_PATH_ENABLED={trt_mod._FAST_PATH_ENABLED}")
+    env_flag = os.environ.get("USE_TRITON_FOR_PREPROCESSING", "<unset>")
+    print(f"[run] env={env_flag}  USE_TRITON_FOR_PREPROCESSING={trt_mod.USE_TRITON_FOR_PREPROCESSING}")
 
     paths = sorted(COCO.glob("*.jpg"))
     model = AutoModel.from_pretrained("rfdetr-seg-nano")
@@ -182,7 +182,7 @@ def main():
 
     for env_value, out in (("true", OUT_ON), ("false", OUT_OFF)):
         env = os.environ.copy()
-        env["INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED"] = env_value
+        env["USE_TRITON_FOR_PREPROCESSING"] = env_value
         print(f"\n---- child: env={env_value} out={out} ----", flush=True)
         subprocess.run([PY, str(SELF), "--mode", "run", "--out", out], check=True, env=env)
 

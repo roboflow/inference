@@ -1,10 +1,10 @@
 """Isolate pre_process() timing. Path selected by
-INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED. Reports the Triton
+USE_TRITON_FOR_PREPROCESSING. Reports the Triton
 kernel call count so the reviewer can see which path ran.
 
 Usage (run twice and compare):
-  INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=true  python temp/preproc_microbench.py
-  INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=false python temp/preproc_microbench.py
+  USE_TRITON_FOR_PREPROCESSING=true  python temp/preproc_microbench.py
+  USE_TRITON_FOR_PREPROCESSING=false python temp/preproc_microbench.py
 """
 import os
 import time
@@ -33,7 +33,7 @@ def bench(label, fn, n=200):
 
 
 def main():
-    env_flag = os.environ.get("INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED", "<unset>")
+    env_flag = os.environ.get("USE_TRITON_FOR_PREPROCESSING", "<unset>")
 
     triton_calls = {"count": 0}
     original = trt_mod.triton_preprocess_rfdetr_stretch
@@ -43,8 +43,8 @@ def main():
             return original(*a, **kw)
         trt_mod.triton_preprocess_rfdetr_stretch = counting
 
-    print(f"INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED={env_flag}")
-    print(f"_FAST_PATH_ENABLED={trt_mod._FAST_PATH_ENABLED}")
+    print(f"USE_TRITON_FOR_PREPROCESSING={env_flag}")
+    print(f"USE_TRITON_FOR_PREPROCESSING={trt_mod.USE_TRITON_FOR_PREPROCESSING}")
 
     m = AutoModel.from_pretrained("rfdetr-seg-nano")
     for src_h, src_w in [(312, 312), (720, 1280), (1080, 1920)]:

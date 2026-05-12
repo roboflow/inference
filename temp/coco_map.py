@@ -1,12 +1,12 @@
 """Compute coco detection + segm mAP for rfdetr-seg-nano on coco/val2017.
 
 A single process runs one pass with the path selected by the
-INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED env var. Run it twice
+USE_TRITON_FOR_PREPROCESSING env var. Run it twice
 (true, false) and compare — mAP should be identical to 4 decimals.
 
 Usage:
-  INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=true  python temp/coco_map.py
-  INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=false python temp/coco_map.py
+  USE_TRITON_FOR_PREPROCESSING=true  python temp/coco_map.py
+  USE_TRITON_FOR_PREPROCESSING=false python temp/coco_map.py
 
 Also prints the Triton kernel call count: it must equal the image count
 when the env is true and be 0 when it is false.
@@ -113,7 +113,7 @@ def eval_and_print(coco_gt, results, iou_type):
 
 
 def main():
-    env_flag = os.environ.get("INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED", "true")
+    env_flag = os.environ.get("USE_TRITON_FOR_PREPROCESSING", "true")
     tag = f"env={env_flag}"
 
     triton_calls = {"count": 0}
@@ -124,8 +124,8 @@ def main():
             return original(*a, **kw)
         trt_mod.triton_preprocess_rfdetr_stretch = counting
 
-    print(f"INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED={env_flag}")
-    print(f"_FAST_PATH_ENABLED={trt_mod._FAST_PATH_ENABLED}  "
+    print(f"USE_TRITON_FOR_PREPROCESSING={env_flag}")
+    print(f"USE_TRITON_FOR_PREPROCESSING={trt_mod.USE_TRITON_FOR_PREPROCESSING}  "
           f"_TRITON_AVAILABLE={trt_mod._TRITON_AVAILABLE}")
 
     coco = COCO(str(ANN))

@@ -51,8 +51,8 @@ def do_run(out_path: str):
     paths = random.sample(all_paths, N_IMAGES)
 
     model = AutoModel.from_pretrained("rfdetr-seg-nano")
-    print(f"[child] env={os.environ.get('INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED','<unset>')}  "
-          f"_FAST_PATH_ENABLED={trt_mod._FAST_PATH_ENABLED}  _TRITON_AVAILABLE={trt_mod._TRITON_AVAILABLE}",
+    print(f"[child] env={os.environ.get('USE_TRITON_FOR_PREPROCESSING','<unset>')}  "
+          f"USE_TRITON_FOR_PREPROCESSING={trt_mod.USE_TRITON_FOR_PREPROCESSING}  _TRITON_AVAILABLE={trt_mod._TRITON_AVAILABLE}",
           flush=True)
 
     records = []
@@ -195,7 +195,7 @@ def main():
 
     for env_value, out in (("true", OUT_ON), ("false", OUT_OFF)):
         env = os.environ.copy()
-        env["INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED"] = env_value
+        env["USE_TRITON_FOR_PREPROCESSING"] = env_value
         print(f"\n---- running child: env={env_value} out={out} ----", flush=True)
         subprocess.run(
             [PY, str(SELF), "--mode", "run", "--out", out],

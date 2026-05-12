@@ -24,6 +24,7 @@ import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
 
+from inference.core.env import USE_TRITON_FOR_PREPROCESSING
 from inference_models import PreProcessingOverrides
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelRuntimeError
@@ -45,7 +46,6 @@ from inference_models.models.common.roboflow.pre_processing import (
     make_the_value_divisible,
     pre_process_numpy_image,
 )
-from inference_models.utils.environment import get_boolean_from_env
 
 try:
     from inference_models.models.rfdetr.triton_preprocess import (
@@ -57,12 +57,6 @@ except ImportError:
     _TRITON_AVAILABLE = False
     build_resample_tables = None
     triton_preprocess_rfdetr_stretch = None
-
-# Kill switch: set INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=false to force
-# the PIL reference path for every call, regardless of other predicates.
-_FAST_PATH_ENABLED = get_boolean_from_env(
-    "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED", default=True
-)
 
 # Resample tables are cheap (a few KB of int32 weights) but rebuilding them
 # is a per-call Python loop we can skip. Key: (device_str, src_h, src_w, th, tw).
@@ -194,7 +188,7 @@ def _fast_path_eligible(
 ) -> bool:
     """True when every item in `image_list` can go through the fused Triton
     kernel. Predicate is intentionally conservative — any miss → PIL path."""
-    if not _FAST_PATH_ENABLED:
+    if not USE_TRITON_FOR_PREPROCESSING:
         return False
     if not _TRITON_AVAILABLE:
         return False

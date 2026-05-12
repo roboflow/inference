@@ -70,7 +70,7 @@ def install():
 
 def _print_counters():
     import os
-    env = os.environ.get("INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED", "<unset>")
+    env = os.environ.get("USE_TRITON_FOR_PREPROCESSING", "<unset>")
     print(f"\n[fastpath-trace env={env}]")
     for k, v in COUNTERS.items():
         print(f"  {k:<22s}: {v}")
