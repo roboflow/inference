@@ -57,7 +57,10 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
-from inference.core.interfaces.webrtc_worker.h264_nvenc import prefer_h264_nvenc_encoder
+from inference.core.interfaces.webrtc_worker.h264_nvenc import (
+    log_answer_video_codecs,
+    prefer_h264_nvenc_encoder,
+)
 from inference.core.interfaces.webrtc_worker.serializers import serialize_for_webrtc
 from inference.core.interfaces.webrtc_worker.sources.file import (
     ThreadedVideoFileTrack,
@@ -1303,6 +1306,7 @@ async def init_rtc_peer_connection_with_loop(
     )
     answer = await peer_connection.createAnswer()
     await peer_connection.setLocalDescription(answer)
+    log_answer_video_codecs(peer_connection.localDescription.sdp)
 
     await _wait_ice_complete(peer_connection, timeout=2.0)
 
