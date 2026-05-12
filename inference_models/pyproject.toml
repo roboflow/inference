@@ -114,10 +114,6 @@ onnx-jp6-cu126 = [
   "protobuf>=5.29.6",
   "Mako>=1.3.11",
 ]
-mediapipe = [
-  "mediapipe>=0.10.35,<0.11.0",
-  "protobuf>=5.29.6",
-]
 trt10 = [
   "tensorrt-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
   "tensorrt-lean-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
