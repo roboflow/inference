@@ -1,11 +1,10 @@
 import fractions
 import time
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, Optional, Tuple
 
 from inference.core import logger
 
 H264_NVENC_ENCODER = "h264_nvenc"
-H264_NVENC_TIMING_SAMPLE_INTERVAL = 120
 H264_NVENC_OPTION_SETS = (
     {
         "preset": "p1",
@@ -87,12 +86,10 @@ def prefer_h264_nvenc_encoder() -> None:
                 options,
             )
 
-        should_log_timing = _should_log_timing(self)
-        encode_started = time.perf_counter() if should_log_timing else None
         try:
             data_to_send = _encode_to_bytes(self.codec, frame)
         except Exception as error:
-            logger.info(
+            logger.warning(
                 "[WEBRTC_NVENC] encoder=%s failed; falling_back=libx264 "
                 "resolution=%sx%s target_bps=%s error=%r",
                 H264_NVENC_ENCODER,
@@ -104,19 +101,6 @@ def prefer_h264_nvenc_encoder() -> None:
             _reset_encoder(self)
             yield from original_encode_frame(self, frame, force_keyframe)
             return
-
-        if should_log_timing and encode_started is not None:
-            logger.info(
-                "[WEBRTC_NVENC] encode_sample frame=%s encode_ms=%.2f "
-                "payload_bytes=%s resolution=%sx%s target_bps=%s codec_bps=%s",
-                self._roboflow_h264_nvenc_frame_count,
-                (time.perf_counter() - encode_started) * 1000,
-                len(data_to_send),
-                frame.width,
-                frame.height,
-                self.target_bitrate,
-                getattr(self.codec, "bit_rate", None),
-            )
 
         if data_to_send:
             yield from self._split_bitstream(data_to_send)
@@ -153,7 +137,7 @@ def _create_nvenc_context(
         except Exception as error:
             last_error = error
 
-    logger.info(
+    logger.warning(
         "[WEBRTC_NVENC] encoder=%s unavailable; falling_back=libx264 "
         "resolution=%sx%s target_bps=%s error=%r",
         H264_NVENC_ENCODER,
@@ -163,18 +147,6 @@ def _create_nvenc_context(
         last_error,
     )
     return None, {}, 0.0
-
-
-def log_answer_video_codecs(sdp: str) -> None:
-    video_payloads, rtpmap = _parse_video_codecs(sdp)
-    ordered_codecs = [
-        f"{payload}:{rtpmap.get(payload, 'unknown')}" for payload in video_payloads
-    ]
-    logger.info(
-        "[WEBRTC_NVENC] answer_video_codecs preferred=%s codecs=%s",
-        ordered_codecs[0] if ordered_codecs else None,
-        ",".join(ordered_codecs[:16]),
-    )
 
 
 def _try_set_baseline_profile(codec: Any) -> None:
@@ -204,11 +176,10 @@ def _bitrate_change_ratio(encoder: Any) -> float:
 
 def _update_nvenc_bitrate(encoder: Any) -> None:
     previous_bitrate = getattr(encoder.codec, "bit_rate", None)
-    started_at = time.perf_counter()
     try:
         encoder.codec.bit_rate = encoder.target_bitrate
     except Exception as error:
-        logger.info(
+        logger.warning(
             "[WEBRTC_NVENC] bitrate_update_failed previous_bps=%s "
             "target_bps=%s error=%r",
             previous_bitrate,
@@ -217,21 +188,6 @@ def _update_nvenc_bitrate(encoder: Any) -> None:
         )
         _reset_encoder(encoder)
         return
-
-    logger.info(
-        "[WEBRTC_NVENC] bitrate_updated update_ms=%.2f previous_bps=%s "
-        "target_bps=%s codec_bps=%s",
-        (time.perf_counter() - started_at) * 1000,
-        previous_bitrate,
-        encoder.target_bitrate,
-        getattr(encoder.codec, "bit_rate", None),
-    )
-
-
-def _should_log_timing(encoder: Any) -> bool:
-    frame_count = getattr(encoder, "_roboflow_h264_nvenc_frame_count", 0) + 1
-    encoder._roboflow_h264_nvenc_frame_count = frame_count
-    return frame_count == 1 or frame_count % H264_NVENC_TIMING_SAMPLE_INTERVAL == 0
 
 
 def _encode_to_bytes(codec: Any, frame: Any) -> bytes:
@@ -246,30 +202,3 @@ def _reset_encoder(encoder: Any) -> None:
     encoder.buffer_pts = None
     encoder.codec = None
     encoder._roboflow_h264_nvenc_active = False
-
-
-def _parse_video_codecs(sdp: str) -> Tuple[List[str], Dict[str, str]]:
-    video_payloads: List[str] = []
-    rtpmap: Dict[str, str] = {}
-    in_video_section = False
-
-    for raw_line in sdp.splitlines():
-        line = raw_line.strip()
-        if line.startswith("m="):
-            if in_video_section:
-                break
-            if line.startswith("m=video "):
-                parts = line.split()
-                video_payloads = parts[3:]
-                in_video_section = True
-            continue
-
-        if not in_video_section or not line.startswith("a=rtpmap:"):
-            continue
-
-        payload_and_codec = line[len("a=rtpmap:") :]
-        payload, separator, codec = payload_and_codec.partition(" ")
-        if separator:
-            rtpmap[payload] = codec.split("/", 1)[0]
-
-    return video_payloads, rtpmap
