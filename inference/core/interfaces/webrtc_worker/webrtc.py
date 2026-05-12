@@ -57,6 +57,9 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.interfaces.webrtc_worker.h264_libx264_logging import (
+    add_h264_libx264_logging,
+)
 from inference.core.interfaces.webrtc_worker.serializers import serialize_for_webrtc
 from inference.core.interfaces.webrtc_worker.sources.file import (
     ThreadedVideoFileTrack,
@@ -77,6 +80,7 @@ from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
 
+add_h264_libx264_logging()
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 # WebRTC data channel chunking configuration
