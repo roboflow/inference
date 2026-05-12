@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from inference.core.logger import logger
 
@@ -11,7 +11,8 @@ ColValue = str
 
 def _sqlite_log(row: Dict[ColName, ColValue]) -> str:
     """Sorted column names for debug logs (values omitted — may be sensitive)."""
-    return ",".join(sorted(row.keys()))
+    keys: Iterable[ColName] = row.keys()
+    return ",".join(sorted(keys))
 
 
 class SQLiteWrapper:
