@@ -51,7 +51,13 @@ def prefer_h264_nvenc_encoder() -> None:
             if _frame_size_changed(self, frame):
                 _reset_encoder(self)
             elif _bitrate_change_ratio(self) > 0.1:
-                _update_nvenc_bitrate(self)
+                logger.info(
+                    "[WEBRTC_NVENC] bitrate_changed recreating_encoder "
+                    "previous_bps=%s target_bps=%s",
+                    getattr(self.codec, "bit_rate", None),
+                    self.target_bitrate,
+                )
+                _reset_encoder(self)
 
         _set_picture_type(h264, frame, force_keyframe)
 
@@ -176,36 +182,6 @@ def _bitrate_change_ratio(encoder: Any) -> float:
     if not codec_bitrate:
         return 0.0
     return abs(encoder.target_bitrate - codec_bitrate) / codec_bitrate
-
-
-def _update_nvenc_bitrate(encoder: Any) -> None:
-    previous_bitrate = getattr(encoder.codec, "bit_rate", None)
-    try:
-        encoder.codec.bit_rate = encoder.target_bitrate
-    except Exception as error:
-        logger.info(
-            "[WEBRTC_NVENC] bitrate_update_failed requested_bps=%s "
-            "previous_bps=%s error=%r",
-            encoder.target_bitrate,
-            previous_bitrate,
-            error,
-        )
-        _reset_encoder(encoder)
-        return
-
-    if getattr(encoder, "_roboflow_h264_nvenc_logged_bitrate", None) != (
-        previous_bitrate,
-        encoder.target_bitrate,
-    ):
-        logger.info(
-            "[WEBRTC_NVENC] bitrate_updated previous_bps=%s target_bps=%s",
-            previous_bitrate,
-            encoder.target_bitrate,
-        )
-        encoder._roboflow_h264_nvenc_logged_bitrate = (
-            previous_bitrate,
-            encoder.target_bitrate,
-        )
 
 
 def _should_log_timing(encoder: Any) -> bool:
