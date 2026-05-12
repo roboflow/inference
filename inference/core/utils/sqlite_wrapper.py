@@ -80,11 +80,9 @@ class SQLiteWrapper:
                 )
                 connection.close()
             except Exception as exc:
-                # fmt: off
                 # codeql[py/clear-text-logging-sensitive-data]: Key names only.
                 logger.debug("Failed to store row (columns %s) in %s - %s", _sqlite_log(row), self._tbl_name, exc)
                 raise exc
-                # fmt: on
         elif connection and not cursor:
             self._insert(row=row, connection=connection, with_exclusive=with_exclusive)
         elif connection and not with_exclusive:
@@ -102,11 +100,9 @@ class SQLiteWrapper:
         with_exclusive: bool = False,
     ):
         if not set(row.keys()).issubset(self._columns.keys()):
-            # fmt: off
             # codeql[py/clear-text-logging-sensitive-data]: Key names only.
             logger.debug("Cannot store row (columns %s) in %s, requested column names do not match with table columns", _sqlite_log(row), self._tbl_name)
             raise ValueError("Columns mismatch")
-            # fmt: on
 
         cursor_needs_closing = False
         if not cursor:
@@ -117,11 +113,9 @@ class SQLiteWrapper:
             try:
                 cursor.execute("BEGIN EXCLUSIVE")
             except Exception as exc:
-                # fmt: off
                 # codeql[py/clear-text-logging-sensitive-data]: Key names only.
                 logger.debug("Failed to store row (columns %s) in %s - %s", _sqlite_log(row), self._tbl_name, exc)
                 raise exc
-                # fmt: on
 
         values = {k: v for k, v in row.items() if k != "id"}
         sql_insert = f"""INSERT INTO {self._tbl_name} ({', '.join(values.keys())})
@@ -133,12 +127,10 @@ class SQLiteWrapper:
             if with_exclusive:
                 connection.commit()
         except Exception as exc:
-            # fmt: off
             # codeql[py/clear-text-logging-sensitive-data]: Key names only.
             logger.debug("Failed to store row (columns %s) in %s - %s", _sqlite_log(values), self._tbl_name, exc)
             connection.rollback()
             raise exc
-            # fmt: on
         if cursor_needs_closing:
             cursor.close()
 
