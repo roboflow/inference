@@ -182,8 +182,21 @@ SAM3_FINE_TUNED_MODELS_ENABLED = str2bool(
     os.getenv("SAM3_FINE_TUNED_MODELS_ENABLED", _sam3_fine_tuned_default)
 )
 
-# Flag to enable GAZE core model, default is True
+# DEPRECATED: Gaze detection has been removed along with the MediaPipe
+# dependency. When True (default), the legacy POST /gaze/gaze_detection
+# route stays registered as a 410-Gone deprecation stub. The stub — and
+# this flag — will be removed end of Q2 2026. Set CORE_MODEL_GAZE_ENABLED=False
+# to disable the stub now.
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
+if CORE_MODEL_GAZE_ENABLED:
+    warnings.warn(
+        "CORE_MODEL_GAZE_ENABLED is True: POST /gaze/gaze_detection is registered "
+        "as a deprecation stub returning HTTP 410 Gone. The stub and this flag "
+        "will be removed end of Q2 2026. Set CORE_MODEL_GAZE_ENABLED=False to "
+        "disable it now.",
+        category=InferenceDeprecationWarning,
+        stacklevel=1,
+    )
 
 # Flag to enable DocTR core model, default is True
 CORE_MODEL_DOCTR_ENABLED = str2bool(os.getenv("CORE_MODEL_DOCTR_ENABLED", True))
@@ -1022,7 +1035,6 @@ VALID_INFERENCE_MODELS_BACKENDS = {
     "trt",
     "hugging-face",
     "ultralytics",
-    "mediapipe",
     "custom",
 }
 # env variables to control inference-models auto-loader
@@ -1031,6 +1043,15 @@ if DISABLED_INFERENCE_MODELS_BACKENDS is not None:
     DISABLED_INFERENCE_MODELS_BACKENDS = set(
         DISABLED_INFERENCE_MODELS_BACKENDS.split(",")
     )
+    if "mediapipe" in DISABLED_INFERENCE_MODELS_BACKENDS:
+        warnings.warn(
+            "`mediapipe` backend for `inference-models` got deprecated and all remaining left-overs "
+            "will be removed end of Q2 2026. Keeping `mediapipe` in the list of `DISABLED_INFERENCE_MODELS_BACKENDS` "
+            "will trigger runtime exception causing `inference` to crash. Please adjust your configuration.",
+            category=InferenceDeprecationWarning,
+            stacklevel=1,
+        )
+        DISABLED_INFERENCE_MODELS_BACKENDS.discard("mediapipe")
     if any(
         v not in VALID_INFERENCE_MODELS_BACKENDS
         for v in DISABLED_INFERENCE_MODELS_BACKENDS

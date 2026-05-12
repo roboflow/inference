@@ -309,7 +309,6 @@ def test_rank_model_packages_when_cuda_device_match_should_be_prioritised_correc
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
     model_packages = [
         ModelPackageMetadata(
@@ -386,7 +385,6 @@ def test_rank_model_packages_when_cuda_device_match_should_be_prioritised_correc
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
     model_packages = [
         ModelPackageMetadata(
@@ -541,7 +539,6 @@ def test_rank_model_packages_when_onnx_incompatible_providers_should_be_prioriti
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
     model_packages = [
         ModelPackageMetadata(
@@ -670,7 +667,6 @@ def test_rank_model_packages_when_os_version_match_should_be_prioritised_correct
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
     model_packages = [
         ModelPackageMetadata(
@@ -739,7 +735,6 @@ def test_rank_model_packages_when_l4t_version_match_should_be_prioritised_correc
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
     model_packages = [
         ModelPackageMetadata(
@@ -810,7 +805,6 @@ def test_rank_model_packages_when_driver_version_match_should_be_prioritised_cor
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
     model_packages = [
         ModelPackageMetadata(
@@ -881,7 +875,6 @@ def test_rank_model_packages_when_jetson_device_match_should_be_prioritised_corr
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
     model_packages = [
         ModelPackageMetadata(

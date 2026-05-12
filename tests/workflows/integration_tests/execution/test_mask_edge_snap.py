@@ -416,7 +416,7 @@ def _build_mask_edge_snap_with_morphological_preprocessing_workflow() -> dict:
                 "dilation_iterations": 2,
                 "boundary_band_width": 15,
                 "adaptive_window_size": 41,
-            }
+            },
         ],
         "outputs": [
             {
@@ -481,4 +481,3 @@ def test_mask_edge_snap_workflow_with_morphological_preprocessing(
     assert len(refined) == 1
     assert refined.mask is not None
     assert refined.mask[0].shape == (h, w)
-

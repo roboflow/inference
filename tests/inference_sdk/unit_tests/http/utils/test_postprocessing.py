@@ -19,7 +19,6 @@ from inference_sdk.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
     adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
     combine_clip_embeddings,
-    combine_gaze_detections,
     decode_workflow_output_image,
     decode_workflow_outputs,
     filter_model_descriptions,
@@ -606,31 +605,6 @@ def test_decode_workflow_outputs(
     assert isinstance(
         result_element["fourth"][1][0]["b"], np.ndarray
     ), "This element must be deserialized to numpy"
-
-
-def test_combine_gaze_detections_when_single_detections_given() -> None:
-    # when
-    result = combine_gaze_detections(detections={"predictions": []})
-
-    # then
-    assert result == {"predictions": []}
-
-
-def test_combine_gaze_detections_when_multiple_detections_given() -> None:
-    # when
-    result = combine_gaze_detections(
-        detections=[
-            [{"predictions": ["a"]}, {"predictions": ["b"]}],
-            {"predictions": ["c"]},
-        ]
-    )
-
-    # then
-    assert result == [
-        {"predictions": ["a"]},
-        {"predictions": ["b"]},
-        {"predictions": ["c"]},
-    ]
 
 
 def test_combine_clip_embeddings_when_single_response_given() -> None:

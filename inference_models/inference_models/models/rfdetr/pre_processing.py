@@ -155,7 +155,9 @@ def pre_process_network_input(
             )
         elif isinstance(img, (np.ndarray, torch.Tensor)):
             np_img = (
-                _tensor_to_hwc_uint8(img) if isinstance(img, torch.Tensor) else _ensure_hwc_uint8(img)
+                _tensor_to_hwc_uint8(img)
+                if isinstance(img, torch.Tensor)
+                else _ensure_hwc_uint8(img)
             )
             tensor, meta = _pre_process_numpy(
                 image=np_img,
@@ -419,10 +421,7 @@ def _needs_two_step_resize(network_input: NetworkInputDefinition) -> bool:
     inference for production-served pixels to match training-time pixels.
     STRETCH_TO with any dims collapses to a single PIL F.resize stretch."""
     dims = network_input.dataset_version_resize_dimensions
-    return (
-        dims is not None
-        and network_input.resize_mode != ResizeMode.STRETCH_TO
-    )
+    return dims is not None and network_input.resize_mode != ResizeMode.STRETCH_TO
 
 
 def _dataset_version_resize_uint8(
@@ -524,8 +523,7 @@ def _apply_normalization(
         mean, std = network_input.normalization
         tensor = TF.normalize(tensor, mean=mean, std=std)
     elif (
-        network_input.scaling_factor is not None
-        and network_input.scaling_factor != 255
+        network_input.scaling_factor is not None and network_input.scaling_factor != 255
     ):
         tensor = tensor * (255.0 / network_input.scaling_factor)
     return tensor

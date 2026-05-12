@@ -68,18 +68,11 @@ CLIENT.ocr_image(inference_input=["./my_image.jpg", "./other_image.jpg"])  # bat
 
 Async equivalent: `CLIENT.ocr_image_async(...)`
 
-## Gaze
+## Gaze (deprecated)
 
-```python
-from inference_sdk import InferenceHTTPClient
-
-CLIENT = InferenceHTTPClient(
-    api_url="http://localhost:9001",  # only local hosting supported
-    api_key="ROBOFLOW_API_KEY"
-)
-
-CLIENT.detect_gazes(inference_input="./my_image.jpg")  # single image request
-CLIENT.detect_gazes(inference_input=["./my_image.jpg", "./other_image.jpg"])  # batch image request
-```
-
-Async equivalent: `CLIENT.detect_gazes_async(...)`
+!!! warning "Deprecated"
+    `CLIENT.detect_gazes(...)` and `CLIENT.detect_gazes_async(...)` have
+    been removed along with the MediaPipe dependency. They now short-
+    circuit client-side and raise
+    `inference_sdk.http.errors.FeatureDeprecatedError` without issuing a
+    network call. Contact Roboflow if you require this capability.

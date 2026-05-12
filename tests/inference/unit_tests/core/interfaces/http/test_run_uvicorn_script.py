@@ -14,7 +14,7 @@ def _fake_uvicorn_dir(tmp_path: Path) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake = bin_dir / "uvicorn"
-    fake.write_text("#!/bin/sh\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\n")
+    fake.write_text('#!/bin/sh\nfor arg in "$@"; do printf \'%s\\n\' "$arg"; done\n')
     fake.chmod(0o755)
     return bin_dir
 

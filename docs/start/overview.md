@@ -19,7 +19,7 @@ Read more about the Inference architecture [here](../../understand/architecture)
 ## Features
 
 - **[Model Serving](../quickstart/run_a_model)** - Object detection, classification, segmentation,
-  keypoint detection, OCR, VQA, gaze detection, and more. Supports
+  keypoint detection, OCR, VQA, and more. Supports
   [pre-trained](../quickstart/aliases), [fine-tuned](https://roboflow.com/train),
   and [foundation](../foundation/about) models.
 - **[Video Streaming](../workflows/video_processing/overview)** - Efficient

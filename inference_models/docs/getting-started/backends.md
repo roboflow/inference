@@ -171,28 +171,6 @@ uv pip install inference-models
 
 **Supported Models**: OWLv2, TrOCR, and other Hugging Face models
 
-### MediaPipe
-
-**Optimized for mobile and edge devices.**
-
-- ✅ **Pros**: Highly optimized, mobile-friendly, efficient
-- ⚠️ **Cons**: Limited model selection, specific use cases
-- 🎯 **Best for**: Face detection, mobile deployment, edge devices
-
-**Installation:**
-
-=== "uv"
-    ```bash
-    uv pip install "inference-models[mediapipe]"
-    ```
-
-=== "pip"
-    ```bash
-    pip install "inference-models[mediapipe]"
-    ```
-
-**Supported Models**: MediaPipe Face Detection
-
 ## Model-Specific Extras
 
 Some models require additional dependencies beyond backends:
@@ -288,7 +266,7 @@ All GPU backends for maximum flexibility and performance.
 ### Edge/Embedded (Jetson)
 
 ```bash
-uv pip install "inference-models[torch-jp6-cu126,onnx-cu12,mediapipe]"
+uv pip install "inference-models[torch-jp6-cu126,onnx-cu12]"
 ```
 
 Optimized for NVIDIA Jetson devices with JetPack 6.
@@ -301,7 +279,6 @@ When multiple backends are installed, `AutoModel` selects backends in this order
 2. **PyTorch** (default, widest compatibility)
 3. **ONNX** (good performance, cross-platform)
 4. **Hugging Face** (for transformer models)
-5. **MediaPipe** (for specific models)
 
 You can override this by specifying `backend_type`:
 
