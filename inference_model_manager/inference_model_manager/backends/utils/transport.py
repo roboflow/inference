@@ -19,6 +19,11 @@ import os
 import sys
 import tempfile
 
+from inference_model_manager.configuration import (
+    INFERENCE_ZMQ_PORT_ENV_PREFIX,
+    INFERENCE_ZMQ_TRANSPORT_ENV,
+)
+
 _DEFAULT_PORTS: dict[str, int] = {
     "mmprocess": 15555,
 }
@@ -51,13 +56,13 @@ def zmq_addr(name: str, transport: str | None = None) -> str:
         zmq_addr("mmprocess", "tcp")       # force loopback
     """
     if transport is None:
-        transport = os.environ.get("INFERENCE_ZMQ_TRANSPORT", default_transport())
+        transport = os.environ.get(INFERENCE_ZMQ_TRANSPORT_ENV, default_transport())
 
     if transport == "ipc":
         return f"ipc://{tempfile.gettempdir()}/inference_{name}.ipc"
 
     # TCP loopback — port from env or registry
-    env_key = f"INFERENCE_ZMQ_PORT_{name.upper()}"
+    env_key = f"{INFERENCE_ZMQ_PORT_ENV_PREFIX}{name.upper()}"
     default_port = _DEFAULT_PORTS.get(name)
     env_port = os.environ.get(env_key)
     if env_port is not None:

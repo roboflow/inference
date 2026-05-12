@@ -15,19 +15,20 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import time
 from dataclasses import dataclass
 from typing import Optional
 
 import aiohttp
 
+from inference_server import configuration
+
 logger = logging.getLogger(__name__)
 
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.roboflow.com")
-_CACHE_TTL_S = int(os.environ.get("AUTH_CACHE_TTL_S", "3600"))
-_CACHE_FAIL_TTL_S = int(os.environ.get("AUTH_CACHE_FAIL_TTL_S", "60"))
-_MAX_CACHE_SIZE = int(os.environ.get("AUTH_CACHE_MAX_SIZE", "10000"))
+API_BASE_URL = configuration.API_BASE_URL
+_CACHE_TTL_S = configuration.AUTH_CACHE_TTL_S
+_CACHE_FAIL_TTL_S = configuration.AUTH_CACHE_FAIL_TTL_S
+_MAX_CACHE_SIZE = configuration.AUTH_CACHE_MAX_SIZE
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 

@@ -22,16 +22,17 @@ from typing import Optional
 import zmq.asyncio
 
 from inference_model_manager.backends.utils.transport import zmq_addr
+from inference_server import configuration
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Config
+# Config — env vars centralized in inference_server.configuration
 # ---------------------------------------------------------------------------
 
-LOAD_WAIT_S = float(os.environ.get("INFERENCE_LOAD_WAIT_S", "10.0"))
-INFER_TIMEOUT_S = float(os.environ.get("INFERENCE_INFER_TIMEOUT_S", "30.0"))
-ALLOC_TIMEOUT_S = float(os.environ.get("INFERENCE_ALLOC_TIMEOUT_S", "2.0"))
+LOAD_WAIT_S = configuration.LOAD_WAIT_S
+INFER_TIMEOUT_S = configuration.INFER_TIMEOUT_S
+ALLOC_TIMEOUT_S = configuration.ALLOC_TIMEOUT_S
 
 # SHM slot layout constants. MMP_ADDR, SHM_NAME, SHM_DATA_SIZE are set
 # by server.py AFTER import but BEFORE uvicorn forks workers. With fork,
@@ -50,10 +51,17 @@ SLOT_TOTAL: int = 0
 def init_from_env() -> None:
     """Re-read config from env. Called once per worker in lifespan."""
     global MMP_ADDR, SHM_NAME, SHM_DATA_SIZE, SLOT_TOTAL
-    MMP_ADDR = os.environ.get("INFERENCE_MMP_ADDR") or zmq_addr("mmprocess")
-    SHM_NAME = os.environ.get("INFERENCE_SHM_NAME", "inference_pool")
+    MMP_ADDR = (
+        os.environ.get(configuration.INFERENCE_MMP_ADDR_ENV) or zmq_addr("mmprocess")
+    )
+    SHM_NAME = os.environ.get(
+        configuration.INFERENCE_SHM_NAME_ENV, configuration.INFERENCE_SHM_NAME_DEFAULT
+    )
     SHM_DATA_SIZE = int(
-        os.environ.get("INFERENCE_SHM_DATA_SIZE", str(25 * 1024 * 1024))
+        os.environ.get(
+            configuration.INFERENCE_SHM_DATA_SIZE_ENV,
+            str(configuration.INFERENCE_SHM_DATA_SIZE_DEFAULT),
+        )
     )
     SLOT_TOTAL = HEADER_SIZE + SHM_DATA_SIZE
 
@@ -368,8 +376,8 @@ async def fetch_stats(timeout_s: float = 5.0) -> dict:
 # Pipeline timing CSV
 # ---------------------------------------------------------------------------
 
-_PIPELINE_CSV = os.environ.get("INFERENCE_PIPELINE_CSV", "")
-_PIPELINE_FLUSH_INTERVAL_S = float(os.environ.get("INFERENCE_PIPELINE_FLUSH_S", "5.0"))
+_PIPELINE_CSV = configuration.PIPELINE_CSV
+_PIPELINE_FLUSH_INTERVAL_S = configuration.PIPELINE_FLUSH_INTERVAL_S
 TIMING = bool(_PIPELINE_CSV)
 
 _CSV_FIELDS = [

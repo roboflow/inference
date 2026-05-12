@@ -50,6 +50,8 @@ import sys
 
 import uvicorn
 
+from inference_server import configuration
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -116,7 +118,7 @@ def _preload_models(mmp_addr: str, preload_spec: str) -> None:
     T_OK = b"\x40"
     T_ERROR = b"\xFF"
 
-    default_key = os.environ.get("ROBOFLOW_API_KEY", "")
+    default_key = os.environ.get(configuration.ROBOFLOW_API_KEY_ENV, "")
     models = []
     for entry in preload_spec.split(","):
         entry = entry.strip()
@@ -175,24 +177,24 @@ def main() -> None:
     from inference_server.launcher import launch_orchestrated
 
     # ── MPS ────────────────────────────────────────────────────────────────
-    if os.environ.get("NVIDIA_MPS", "").strip() == "1":
+    if os.environ.get(configuration.NVIDIA_MPS_ENV, "").strip() == "1":
         _start_mps()
 
     # ── MMP config ─────────────────────────────────────────────────────────
-    n_slots = int(os.environ.get("INFERENCE_N_SLOTS", "256"))
-    input_mb = float(os.environ.get("INFERENCE_INPUT_MB", "25.0"))
-    decoder = os.environ.get("INFERENCE_DECODER", "imagecodecs")
-    batch_max_size = int(os.environ.get("INFERENCE_BATCH_MAX_SIZE", "0"))
-    batch_max_wait = float(os.environ.get("INFERENCE_BATCH_MAX_WAIT_MS", "5.0"))
-    idle_timeout = float(os.environ.get("INFERENCE_MODEL_IDLE_TIMEOUT_S", "300.0"))
+    n_slots = configuration.SERVER_N_SLOTS
+    input_mb = configuration.SERVER_INPUT_MB
+    decoder = configuration.SERVER_DECODER
+    batch_max_size = configuration.SERVER_BATCH_MAX_SIZE
+    batch_max_wait = configuration.SERVER_BATCH_MAX_WAIT_MS
+    idle_timeout = configuration.SERVER_MODEL_IDLE_TIMEOUT_S
 
     # ── HTTP / TLS config ──────────────────────────────────────────────────
-    host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "8443"))
-    workers = int(os.environ.get("NUM_WORKERS", "4"))
-    ssl_cert = os.environ.get("SSL_CERTFILE")
-    ssl_key = os.environ.get("SSL_KEYFILE")
-    log_level = os.environ.get("LOG_LEVEL", "warning").lower()
+    host = configuration.SERVER_HOST
+    port = int(os.environ.get(configuration.PORT_ENV, str(configuration.SERVER_PORT_DEFAULT)))
+    workers = configuration.NUM_WORKERS
+    ssl_cert = configuration.SSL_CERTFILE
+    ssl_key = configuration.SSL_KEYFILE
+    log_level = configuration.LOG_LEVEL
 
     if ssl_cert and not ssl_key:
         logger.error("SSL_CERTFILE set but SSL_KEYFILE is missing — aborting")
@@ -215,12 +217,14 @@ def main() -> None:
     logger.info("MMP ready: addr=%s  shm=%s", handle.mmp_addr, handle.shm_name)
 
     # Inject into env so uvicorn worker processes pick them up at import time
-    os.environ["INFERENCE_MMP_ADDR"] = handle.mmp_addr
-    os.environ["INFERENCE_SHM_NAME"] = handle.shm_name
-    os.environ["INFERENCE_SHM_DATA_SIZE"] = str(int(input_mb * 1024 * 1024))
+    os.environ[configuration.INFERENCE_MMP_ADDR_ENV] = handle.mmp_addr
+    os.environ[configuration.INFERENCE_SHM_NAME_ENV] = handle.shm_name
+    os.environ[configuration.INFERENCE_SHM_DATA_SIZE_ENV] = str(
+        int(input_mb * 1024 * 1024)
+    )
 
     # ── Preload models ────────────────────────────────────────────────────
-    preload = os.environ.get("INFERENCE_PRELOAD_MODELS", "").strip()
+    preload = os.environ.get(configuration.INFERENCE_PRELOAD_MODELS_ENV, "").strip()
     if preload:
         _preload_models(handle.mmp_addr, preload)
 

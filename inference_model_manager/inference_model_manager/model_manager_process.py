@@ -50,6 +50,10 @@ import zmq.asyncio
 
 from inference_model_manager.backends.utils.shm_pool import SHMPool
 from inference_model_manager.backends.utils.transport import zmq_addr
+from inference_model_manager.configuration import (
+    MMP_INPUT_MB_DEFAULT,
+    MMP_N_SLOTS_DEFAULT,
+)
 from inference_model_manager.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
@@ -1257,12 +1261,12 @@ def main() -> None:
     parser.add_argument(
         "--n-slots",
         type=int,
-        default=int(os.environ.get("MMP_N_SLOTS", "256")),
+        default=MMP_N_SLOTS_DEFAULT,
     )
     parser.add_argument(
         "--input-mb",
         type=float,
-        default=float(os.environ.get("MMP_INPUT_MB", "20.0")),
+        default=MMP_INPUT_MB_DEFAULT,
     )
     parser.add_argument(
         "--addr", default=None, help="ZMQ bind address (default: platform auto)"
