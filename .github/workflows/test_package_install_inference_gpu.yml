@@ -23,20 +23,20 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
       - name: 🛎️ Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: 🐍 Set up Python 3.10 to create wheels
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
       - name: 🛞 Create Wheels
         run: |
           make create_wheels
       - name: 🐍 Set up Python ${{ matrix.python-version }} to test package install process
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: 📦 Cache Python packages
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}

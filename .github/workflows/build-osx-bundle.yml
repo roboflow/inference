@@ -20,11 +20,11 @@ jobs:
       NOTARY_PROFILE_NAME: "roboflow-notary"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         # No 'path' means checkout to the root
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -180,7 +180,7 @@ jobs:
         run: python build.py
 
       - name: Upload macOS DMG Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Roboflow-Inference-DMG-${{ steps.determine_version.outputs.BUILD_VERSION_ENV || 'dev' }} # Add version to artifact name
           path: app_bundles/osx/Roboflow-Inference-${{ steps.determine_version.outputs.BUILD_VERSION_ENV || 'unknown' }}.dmg

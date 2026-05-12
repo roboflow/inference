@@ -16,11 +16,11 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         # No 'path' means checkout to the root
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -79,7 +79,7 @@ jobs:
 
       - name: Install DigiCert Client tools
         id: install_digicert_tools # Renamed for clarity
-        uses: digicert/ssm-code-signing@v1.0.0
+        uses: digicert/ssm-code-signing@v1.2.1
 
 
       - name: Set DigiCert certificate
@@ -328,7 +328,7 @@ jobs:
           echo "Installer signed successfully (based on smctl exit code and absence of 'FAILED' in CLI output). Review logs carefully."
 
       - name: Upload Windows Installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Roboflow-Inference-Windows-Installer
           # The build.py script creates the installer in installer/inference-{version}-installer.exe

@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: 🛎️ Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install code analysis dependencies
         run: |
           python -m pip install --upgrade pip
