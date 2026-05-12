@@ -4,7 +4,6 @@ from typing import Any, Dict, Iterator, Optional, Tuple
 
 from inference.core import logger
 
-
 H264_NVENC_ENCODER = "h264_nvenc"
 H264_NVENC_TIMING_SAMPLE_INTERVAL = 120
 H264_NVENC_OPTION_SETS = (
@@ -192,10 +191,7 @@ def _update_nvenc_bitrate(encoder: Any) -> None:
 def _should_log_timing(encoder: Any) -> bool:
     frame_count = getattr(encoder, "_roboflow_h264_nvenc_frame_count", 0) + 1
     encoder._roboflow_h264_nvenc_frame_count = frame_count
-    return (
-        frame_count == 1
-        or frame_count % H264_NVENC_TIMING_SAMPLE_INTERVAL == 0
-    )
+    return frame_count == 1 or frame_count % H264_NVENC_TIMING_SAMPLE_INTERVAL == 0
 
 
 def _encode_to_bytes(codec: Any, frame: Any) -> bytes:
@@ -210,4 +206,3 @@ def _reset_encoder(encoder: Any) -> None:
     encoder.buffer_pts = None
     encoder.codec = None
     encoder._roboflow_h264_nvenc_active = False
-
