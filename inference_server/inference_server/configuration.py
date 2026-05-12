@@ -12,10 +12,7 @@ the ``os.environ.get`` so the read happens at the right moment.
 
 import os
 
-from inference_models.utils.environment import (
-    get_float_from_env,
-    get_integer_from_env,
-)
+from inference_models.utils.environment import get_float_from_env, get_integer_from_env
 
 # ── State timeouts (state.py module-level) ────────────────────────────────
 LOAD_WAIT_S = get_float_from_env("INFERENCE_LOAD_WAIT_S", default=10.0)
@@ -68,12 +65,8 @@ SSL_KEYFILE = os.environ.get("SSL_KEYFILE")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "warning").lower()
 
 # ── App lifespan (app.py) ─────────────────────────────────────────────────
-MULTIPART_SPOOL_MB = get_integer_from_env(
-    "INFERENCE_MULTIPART_SPOOL_MB", default=32
-)
-DEBUG_BENCHMARK_MODE = (
-    os.environ.get("DEBUG_BENCHMARK_MODE", "").strip() == "1"
-)
+MULTIPART_SPOOL_MB = get_integer_from_env("INFERENCE_MULTIPART_SPOOL_MB", default=32)
+DEBUG_BENCHMARK_MODE = os.environ.get("DEBUG_BENCHMARK_MODE", "").strip() == "1"
 
 # ── Preload / readiness (server.main, routers/v2_server) ──────────────────
 INFERENCE_PRELOAD_MODELS_ENV = "INFERENCE_PRELOAD_MODELS"

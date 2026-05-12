@@ -291,7 +291,7 @@ class TestFullLifecycle:
 
         req_id, slot_id = harness.alloc("yolov8n")
 
-        image_bytes = b"\xFF\xD8\xFF" * 10  # fake JPEG header
+        image_bytes = b"\xff\xd8\xff" * 10  # fake JPEG header
         harness.submit(req_id, slot_id, "yolov8n", image_bytes)
 
         msg_type, frame = harness.recv()
