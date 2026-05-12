@@ -206,7 +206,7 @@ def triton_path_eligible(
     )
     # Two-stage dataset-version resize isn't in the kernel.
     ni = network_input
-    if ni.dataset_version_resize_dimensions is not None:
+    if _needs_two_step_resize(ni):
         return False
     if ni.input_channels != 3:
         return False
