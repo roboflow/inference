@@ -1,7 +1,5 @@
-import json
 from typing import List, Literal, Optional, Type, Union
 
-import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
@@ -20,9 +18,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
     IMAGE_KIND,
-    LANGUAGE_MODEL_OUTPUT_KIND,
     ROBOFLOW_MODEL_ID_KIND,
-    STRING_KIND,
     ImageInputField,
     Selector,
 )
@@ -35,29 +31,28 @@ from inference_sdk import InferenceHTTPClient
 
 
 ##########################################################################
-# Qwen3.5-VL Workflow Block Manifest
+# Qwen3.5 Workflow Block Manifest
 ##########################################################################
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Qwen3.5-VL",
-            "version": "v1",
-            "short_description": "Run Qwen3.5-VL on an image.",
+            "name": "Qwen3.5",
+            "version": "v2",
+            "short_description": "Run Qwen3.5 on an image.",
             "long_description": (
-                "This workflow block runs Qwen3.5-VL—a vision language model that accepts an image "
+                "This workflow block runs Qwen3.5—a vision language model that accepts an image "
                 "and an optional text prompt—and returns a text answer based on a conversation template."
             ),
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": [
                 "Qwen3.5",
-                "qwen3.5-vl",
+                "qwen3.5",
                 "vision language model",
                 "VLM",
                 "Alibaba",
             ],
             "is_vlm_block": True,
-            "deprecated": True,
             "ui_manifest": {
                 "section": "model",
                 "icon": "fal fa-atom",
@@ -66,45 +61,33 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/qwen3_5vl@v1"]
+    type: Literal["roboflow_core/qwen3_5vl@v2"]
 
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Optional[str] = Field(
         default=None,
-        description="Optional text prompt to provide additional context to Qwen3.5-VL. Otherwise it will just be a default one, which may affect the desired model behavior.",
+        description="Optional text prompt to provide additional context to Qwen3.5. Otherwise it will just be a default one, which may affect the desired model behavior.",
         examples=["What is in this image?"],
     )
     model_version: Union[
-        Literal["qwen3_5-0.8b", "qwen3_5-2b"],
+        Literal["qwen3_5-0.8b", "qwen3_5-2b", "qwen3_5-4b"],
         Selector(kind=[ROBOFLOW_MODEL_ID_KIND]),
         str,
     ] = Field(
         default="qwen3_5-0.8b",
-        description="The Qwen3.5-VL model to be used for inference.",
-        examples=["qwen3_5-0.8b", "qwen3_5-2b"],
+        description="The Qwen3.5 model to be used for inference.",
+        examples=["qwen3_5-0.8b", "qwen3_5-2b", "qwen3_5-4b"],
     )
 
     system_prompt: Optional[str] = Field(
         default=None,
-        description="Optional system prompt to provide additional context to Qwen3.5-VL.",
+        description="Optional system prompt to provide additional context to Qwen3.5.",
         examples=["You are a helpful assistant."],
-    )
-
-    enable_thinking: bool = Field(
-        default=False,
-        description="If true, enables Qwen3.5-VL's thinking mode, which allows the model to generate reasoning tokens before answering. The thinking output will be returned in the 'thinking' field.",
-        json_schema_extra={
-            "relevant_for": {
-                "model_version": {
-                    "values": ["qwen3_5-2b", "qwen3_5-2b-peft"],
-                },
-            },
-        },
     )
 
     max_new_tokens: Optional[int] = Field(
         default=None,
-        description="Maximum number of tokens to generate. If not set, the model's default will be used. Consider increasing for thinking mode.",
+        description="Maximum number of tokens to generate. If not set, the model's default will be used.",
     )
 
     @classmethod
@@ -115,16 +98,10 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[DICTIONARY_KIND],
                 description="A parsed version of the output, provided as a dictionary containing the text.",
             ),
-            OutputDefinition(
-                name="thinking",
-                kind=[STRING_KIND],
-                description="The model's thinking/reasoning output when enable_thinking is True. Empty string when enable_thinking is False.",
-            ),
         ]
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
-        # Only images can be passed in as a list/batch
         return ["images"]
 
     @classmethod
@@ -133,14 +110,13 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
-        """Return list of model_id variants that can satisfy this block."""
-        return ["qwen3_5-0.8b", "qwen3_5-2b"]
+        return ["qwen3_5-0.8b", "qwen3_5-2b", "qwen3_5-4b"]
 
 
 ##########################################################################
-# Qwen3.5-VL Workflow Block
+# Qwen3.5 Workflow Block
 ##########################################################################
-class Qwen35VLBlockV1(WorkflowBlock):
+class Qwen35VLBlockV2(WorkflowBlock):
     def __init__(
         self,
         model_manager: ModelManager,
@@ -165,7 +141,6 @@ class Qwen35VLBlockV1(WorkflowBlock):
         model_version: str,
         prompt: Optional[str],
         system_prompt: Optional[str],
-        enable_thinking: bool = False,
         max_new_tokens: Optional[int] = None,
     ) -> BlockResult:
         if self._step_execution_mode == StepExecutionMode.LOCAL:
@@ -174,7 +149,6 @@ class Qwen35VLBlockV1(WorkflowBlock):
                 model_version=model_version,
                 prompt=prompt,
                 system_prompt=system_prompt,
-                enable_thinking=enable_thinking,
                 max_new_tokens=max_new_tokens,
             )
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
@@ -183,7 +157,6 @@ class Qwen35VLBlockV1(WorkflowBlock):
                 model_version=model_version,
                 prompt=prompt,
                 system_prompt=system_prompt,
-                enable_thinking=enable_thinking,
                 max_new_tokens=max_new_tokens,
             )
         else:
@@ -197,7 +170,6 @@ class Qwen35VLBlockV1(WorkflowBlock):
         model_version: str,
         prompt: Optional[str],
         system_prompt: Optional[str],
-        enable_thinking: bool = False,
         max_new_tokens: Optional[int] = None,
     ) -> BlockResult:
         api_url = (
@@ -215,7 +187,7 @@ class Qwen35VLBlockV1(WorkflowBlock):
         prompt = prompt or "Describe what's in this image."
         system_prompt = (
             system_prompt
-            or "You are a Qwen3.5-VL model that can answer questions about any image."
+            or "You are a Qwen3.5 model that can answer questions about any image."
         )
         combined_prompt = prompt + "<system_prompt>" + system_prompt
 
@@ -226,11 +198,11 @@ class Qwen35VLBlockV1(WorkflowBlock):
                 model_id=model_version,
                 prompt=combined_prompt,
                 model_id_in_path=True,
-                enable_thinking=enable_thinking,
+                enable_thinking=False,
                 max_new_tokens=max_new_tokens,
             )
             response_text = result.get("response", result)
-            predictions.append({"parsed_output": response_text, "thinking": ""})
+            predictions.append({"parsed_output": response_text})
 
         return predictions
 
@@ -240,56 +212,32 @@ class Qwen35VLBlockV1(WorkflowBlock):
         model_version: str,
         prompt: Optional[str],
         system_prompt: Optional[str],
-        enable_thinking: bool = False,
         max_new_tokens: Optional[int] = None,
     ) -> BlockResult:
-        # Convert each image to the format required by the model.
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
-        # Use the provided prompt or default to a generic image description request.
         prompt = prompt or "Describe what's in this image."
         system_prompt = system_prompt or "You are a helpful assistant."
         prompts = [prompt + "<system_prompt>" + system_prompt] * len(inference_images)
-        # Register Qwen3.5-VL with the model manager.
         self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
 
         predictions = []
         for image, single_prompt in zip(inference_images, prompts):
-            # Build an LMMInferenceRequest with both prompt and image.
             request_kwargs = dict(
                 api_key=self._api_key,
                 model_id=model_version,
                 image=image,
                 source="workflow-execution",
                 prompt=single_prompt,
-                enable_thinking=enable_thinking,
+                enable_thinking=False,
             )
             if max_new_tokens is not None:
                 request_kwargs["max_new_tokens"] = max_new_tokens
             request = LMMInferenceRequest(**request_kwargs)
-            # Run inference.
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
             response_text = prediction.response
-            # When enable_thinking is used and the response contains
-            # thinking data (dict with 'thinking' and 'answer' keys),
-            # extract them separately.
-            if enable_thinking and isinstance(response_text, dict):
-                thinking = response_text.get("thinking", "")
-                answer = response_text.get("answer", "")
-                predictions.append(
-                    {
-                        "parsed_output": answer,
-                        "thinking": thinking,
-                    }
-                )
-            else:
-                predictions.append(
-                    {
-                        "parsed_output": response_text,
-                        "thinking": "",
-                    }
-                )
+            predictions.append({"parsed_output": response_text})
         return predictions

@@ -276,6 +276,7 @@ class TestQwen35VLRemote:
             model_version="qwen3_5-2b",
             prompt="Describe this image",
             system_prompt="You are helpful.",
+            enable_thinking=True,
             max_new_tokens=1024,
         )
 
@@ -284,6 +285,50 @@ class TestQwen35VLRemote:
         mock_client.infer_lmm.assert_called_once_with(
             inference_input=mock_workflow_image_data.base64_image,
             model_id="qwen3_5-2b",
+            prompt="Describe this image<system_prompt>You are helpful.",
+            model_id_in_path=True,
+            enable_thinking=True,
+            max_new_tokens=1024,
+        )
+
+
+class TestQwen35VLRemoteV2:
+    """Tests for Qwen3.5 remote execution (v2)."""
+
+    @patch(
+        "inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2.InferenceHTTPClient"
+    )
+    def test_run_remotely_forwards_generation_parameters(
+        self, mock_client_cls, mock_model_manager, mock_workflow_image_data
+    ):
+        from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
+            Qwen35VLBlockV2,
+        )
+
+        mock_client = MagicMock()
+        mock_client.infer_lmm.return_value = {"response": "This is a test response."}
+        mock_client_cls.return_value = mock_client
+
+        block = Qwen35VLBlockV2(
+            model_manager=mock_model_manager,
+            api_key="test_api_key",
+            step_execution_mode=StepExecutionMode.REMOTE,
+        )
+
+        result = block.run(
+            images=[mock_workflow_image_data],
+            model_version="qwen3_5-4b",
+            prompt="Describe this image",
+            system_prompt="You are helpful.",
+            max_new_tokens=1024,
+        )
+
+        assert len(result) == 1
+        assert "parsed_output" in result[0]
+        assert "thinking" not in result[0]
+        mock_client.infer_lmm.assert_called_once_with(
+            inference_input=mock_workflow_image_data.base64_image,
+            model_id="qwen3_5-4b",
             prompt="Describe this image<system_prompt>You are helpful.",
             model_id_in_path=True,
             enable_thinking=False,
