@@ -16,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 TRACKER_TYPES = [
     "roboflow_core/byte_tracker@v3",
     "roboflow_core/trackers_bytetrack@v1",
+    "roboflow_core/trackers_botsort@v1",
     "roboflow_core/trackers_sort@v1",
     "roboflow_core/trackers_ocsort@v1",
 ]

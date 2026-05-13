@@ -1,13 +1,14 @@
 """Shared base classes for tracker workflow blocks.
 
-Each concrete tracker block (ByteTrack, SORT, OC-SORT) inherits from
-``TrackerBlockBase`` and only needs to implement ``_create_tracker`` and
-``get_manifest``.
+Each concrete tracker block (ByteTrack, BoT-SORT, SORT, OC-SORT) inherits from
+``TrackerBlockBase`` and implements ``_create_tracker`` and ``get_manifest``.
+Sub-classes may override ``_tracker_update`` when the underlying tracker needs
+extra per-frame context (e.g. a video frame for camera motion compensation).
 """
 
 from abc import abstractmethod
 from collections import deque
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Type
 
 import supervision as sv
 
@@ -76,7 +77,9 @@ class InstanceCache:
 class TrackerBlockBase(WorkflowBlock):
     """Common run-loop shared by every tracker block.
 
-    Sub-classes only need to override ``_create_tracker`` and ``get_manifest``.
+    Sub-classes implement ``_create_tracker`` and ``get_manifest``.  Override
+    ``_tracker_update`` only when the tracker API requires additional context
+    beyond ``sv.Detections`` (e.g. BoT-SORT with camera motion compensation).
     """
 
     def __init__(self) -> None:
@@ -91,6 +94,20 @@ class TrackerBlockBase(WorkflowBlock):
     def _create_tracker(self, fps: int, **kwargs: Any) -> Any:
         """Instantiate the concrete tracker with algorithm-specific params."""
         ...
+
+    def _tracker_update(
+        self,
+        tracker: Any,
+        detections: sv.Detections,
+        image: WorkflowImageData,
+    ) -> sv.Detections:
+        """Invoke the tracker for one frame.
+
+        Must call ``tracker.update`` only with arguments that library trackers
+        define for the per-frame step (typically detections, optionally a frame
+        tensor).  Do **not** pass workflow/block kwargs used in ``_create_tracker``.
+        """
+        return tracker.update(detections)
 
     def _run_tracker(
         self,
@@ -120,7 +137,7 @@ class TrackerBlockBase(WorkflowBlock):
             self._trackers[video_id] = self._create_tracker(fps=fps, **tracker_kwargs)
 
         tracker = self._trackers[video_id]
-        tracked_detections = tracker.update(detections)
+        tracked_detections = self._tracker_update(tracker, detections, image)
 
         # Filter out immature / unmatched tracks (tracker_id == -1)
         if tracked_detections.tracker_id is not None and len(tracked_detections) > 0:

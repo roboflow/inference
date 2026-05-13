@@ -435,6 +435,9 @@ from inference.core.workflows.core_steps.sinks.twilio.sms.v2 import (
     TwilioSMSNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
+from inference.core.workflows.core_steps.trackers.botsort.v1 import (
+    BoTSORTBlockV1 as TrackerBoTSORTBlockV1,
+)
 from inference.core.workflows.core_steps.trackers.bytetrack.v1 import (
     ByteTrackBlockV1 as TrackerByteTrackBlockV1,
 )
@@ -901,6 +904,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
         TrackerByteTrackBlockV1,
+        TrackerBoTSORTBlockV1,
         TrackerSORTBlockV1,
         TrackerOCSORTBlockV1,
         WebhookSinkBlockV1,
