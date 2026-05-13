@@ -44,7 +44,7 @@ This error occurs when you specify a `backend` parameter value that is not suppo
 
    # List all supported backends
    print([b.value for b in BackendType])
-   # Output: ['torch', 'torch-script', 'onnx', 'trt', 'hugging-face', 'ultralytics', 'mediapipe', 'custom']
+   # Output: ['torch', 'torch-script', 'onnx', 'trt', 'hugging-face', 'ultralytics', 'custom']
    ```
 
 2. **Check your backend parameter:**

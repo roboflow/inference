@@ -1,5 +1,6 @@
 from inference.core.exceptions import (
     CannotInitialiseModelDueToInputSizeError,
+    FeatureDeprecatedError,
     InferenceModelNotFound,
     InvalidModelIDError,
     ModelManagerLockAcquisitionError,
@@ -22,12 +23,28 @@ from inference_sdk.http.errors import HTTPCallErrorError
 
 
 def legacy_step_error_handler(step_name: str, error: Exception) -> None:
+    if isinstance(error, FeatureDeprecatedError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=410,
+            public_message=str(error),
+            context="workflow_execution | step_execution | feature_deprecated",
+            inner_error=error,
+        ) from error
     if isinstance(error, (ModelManagerLockAcquisitionError, InferenceModelNotFound)):
         raise error
     return None
 
 
 def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
+    if isinstance(error, FeatureDeprecatedError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=410,
+            public_message=str(error),
+            context="workflow_execution | step_execution | feature_deprecated",
+            inner_error=error,
+        ) from error
     if isinstance(
         error,
         (
@@ -157,6 +174,15 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
                 public_message=f"Could not find requested Roboflow resource while remote execution of step {step_name} - "
                 f"details of error: {error}. This error usually mean the problem with not existing model.",
                 context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+        if error.status_code == 410:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=410,
+                public_message=f"Deprecated feature usage detected while remote execution of step {step_name} - "
+                f"details of error: {error}.",
+                context="workflow_execution | step_execution | feature_deprecated",
                 inner_error=error,
             ) from error
         if error.status_code == 507:

@@ -374,7 +374,7 @@ class AutoModel:
         - **TensorRT**: TensorRT version and availability
         - **PyTorch**: PyTorch and torchvision versions
         - **ONNX Runtime**: Version and available execution providers
-        - **Other backends**: Hugging Face Transformers, Ultralytics, MediaPipe
+        - **Other backends**: Hugging Face Transformers, Ultralytics
         - **Platform**: OS version, Jetson type (if applicable), L4T version
 
         This is useful for:

@@ -53,7 +53,6 @@ setuptools.setup(
             "requirements/requirements.clip.txt",
             "requirements/requirements.http.txt",
             "requirements/requirements.sdk.http.txt",
-            "requirements/requirements.gaze.txt",
             "requirements/requirements.groundingdino.txt",
             "requirements/requirements.hosted.txt",
             "requirements/requirements.modal.txt",

@@ -3,6 +3,7 @@ from typing import Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
+from inference.core.exceptions import FeatureDeprecatedError
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
@@ -157,9 +158,8 @@ class CogVLMBlockV1(WorkflowBlock):
         prompt: str,
         json_output_format: Optional[Dict[str, str]],
     ) -> BlockResult:
-        raise ValueError(
-            "CogVLM reached End Of Life in `inference` and is no longer supported. "
-            "Removal was correlated with changes introduced by maintainers as a result of "
-            "the following security issue: https://nvd.nist.gov/vuln/detail/CVE-2024-11393. "
-            "This class will be removed in inference 0.54.0."
+        raise FeatureDeprecatedError(
+            feature="roboflow_core/cog_vlm@v1",
+            reason="End-of-life due to CVE-2024-11393",
+            removal_release="0.54.0",
         )

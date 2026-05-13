@@ -11,7 +11,6 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
@@ -62,7 +61,6 @@ def load_core_model(
         ClipCompareRequest,
         YOLOWorldInferenceRequest,
         Sam2InferenceRequest,
-        GazeDetectionInferenceRequest,
     ],
     core_model: str,
 ) -> str:

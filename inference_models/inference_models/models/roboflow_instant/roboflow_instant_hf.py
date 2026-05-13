@@ -118,15 +118,34 @@ class RoboflowInstantHF(ObjectDetectionModel):
     def forward(
         self,
         pre_processed_images: List[ImageEmbeddings],
-        confidence: float = INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE,
+        confidence: Confidence = INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE,
         iou_threshold: float = INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_IOU_THRESHOLD,
         **kwargs,
     ) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+        forward_confidence = self._resolve_forward_confidence(confidence)
         return self._feature_extractor.forward_pass_with_precomputed_embeddings(
             images_embeddings=pre_processed_images,
             class_embeddings=self._reference_examples_embeddings.class_embeddings,
-            confidence=confidence,
+            confidence=forward_confidence,
             iou_threshold=iou_threshold,
+        )
+
+    def _resolve_forward_confidence(self, confidence: Confidence) -> float:
+        if not isinstance(confidence, str):
+            return confidence
+        per_class_confidence = self._build_confidence_filter(confidence).get_threshold(
+            self.class_names
+        )
+        if isinstance(per_class_confidence, torch.Tensor):
+            return float(per_class_confidence.min().item())
+        else:
+            return per_class_confidence
+
+    def _build_confidence_filter(self, confidence: Confidence) -> ConfidenceFilter:
+        return ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE,
         )
 
     def post_process(
@@ -138,11 +157,7 @@ class RoboflowInstantHF(ObjectDetectionModel):
         iou_threshold: float = INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_IOU_THRESHOLD,
         **kwargs,
     ) -> List[Detections]:
-        confidence_filter = ConfidenceFilter(
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE,
-        )
+        confidence_filter = self._build_confidence_filter(confidence)
         results = (
             self._feature_extractor.post_process_predictions_for_precomputed_embeddings(
                 predictions=model_results,
