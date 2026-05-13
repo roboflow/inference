@@ -23,9 +23,7 @@ Run standalone::
 
 or embed::
 
-    from inference_model_manager.model_manager import ModelManager
-    mmp = ModelManagerProcess(n_slots=256, input_mb=20,
-                              manager=ModelManager())
+    mmp = ModelManagerProcess(n_slots=256, input_mb=20)
     ready = threading.Event()
     t = threading.Thread(target=lambda: asyncio.run(mmp.run(ready_event=ready)))
     t.start()
@@ -1277,13 +1275,10 @@ def main() -> None:
     parser.add_argument("--evict-threshold", type=float, default=0.9)
     args = parser.parse_args()
 
-    from inference_model_manager.model_manager import ModelManager
-
     mmp = ModelManagerProcess(
         n_slots=args.n_slots,
         input_mb=args.input_mb,
         evict_threshold=args.evict_threshold,
-        manager=ModelManager(),
     )
     asyncio.run(mmp.run(addr=args.addr))
 
