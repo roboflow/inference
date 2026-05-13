@@ -22,7 +22,7 @@ import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
 
-from inference.core.env import USE_TRITON_FOR_PREPROCESSING
+from inference_models.configuration import USE_TRITON_FOR_PREPROCESSING
 from inference_models import PreProcessingOverrides
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelRuntimeError
