@@ -563,7 +563,7 @@ try:
 except:
     warnings.warn(
         "Your `inference` configuration does not support Gaze Detection model. "
-        "Use pip install 'inference[gaze]' to install missing requirements."
+        "This model got deprecated and remaining left-overs will be removed end of Q2 2026."
         "To suppress this warning, set CORE_MODEL_GAZE_ENABLED to False.",
         category=ModelDependencyMissing,
     )

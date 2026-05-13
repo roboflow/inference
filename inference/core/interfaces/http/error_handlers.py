@@ -9,6 +9,7 @@ from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
     CreditsExceededError,
+    FeatureDeprecatedError,
     InferenceModelNotFound,
     InputImageLoadError,
     InvalidEnvironmentVariableError,
@@ -554,6 +555,16 @@ def with_route_exceptions(route):
                     "error_type": "WorkspaceStreamQuotaError",
                 },
             )
+        except FeatureDeprecatedError as error:
+            logger.warning("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=410,
+                content={
+                    "message": str(error),
+                    "error_type": "FeatureDeprecatedError",
+                    **error.get_structured_public_error_details(),
+                },
+            )
         except Exception as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
@@ -989,6 +1000,16 @@ def with_route_exceptions_async(route):
                 content={
                     "message": str(error),
                     "error_type": "WorkspaceStreamQuotaError",
+                },
+            )
+        except FeatureDeprecatedError as error:
+            logger.warning("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=410,
+                content={
+                    "message": str(error),
+                    "error_type": "FeatureDeprecatedError",
+                    **error.get_structured_public_error_details(),
                 },
             )
         except Exception as error:

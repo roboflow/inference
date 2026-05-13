@@ -62,7 +62,9 @@ def test_build_ssl_uvicorn_kwargs_skips_blank_optional_values() -> None:
     "certfile,keyfile",
     [(None, "/tmp/key.pem"), ("/tmp/cert.pem", None), ("", ""), (None, None)],
 )
-def test_build_ssl_uvicorn_kwargs_raises_when_pair_incomplete(certfile, keyfile) -> None:
+def test_build_ssl_uvicorn_kwargs_raises_when_pair_incomplete(
+    certfile, keyfile
+) -> None:
     with pytest.raises(HTTPSConfigurationError):
         build_ssl_uvicorn_kwargs(
             enable_https=True,

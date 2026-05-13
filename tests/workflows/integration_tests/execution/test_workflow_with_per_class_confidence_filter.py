@@ -6,7 +6,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
-
 PER_CLASS_CONFIDENCE_FILTER_WORKFLOW = {
     "version": "1.3.0",
     "inputs": [
@@ -16,7 +15,11 @@ PER_CLASS_CONFIDENCE_FILTER_WORKFLOW = {
             "kind": ["object_detection_prediction"],
         },
         {"type": "WorkflowParameter", "name": "class_thresholds"},
-        {"type": "WorkflowParameter", "name": "default_threshold", "default_value": 0.3},
+        {
+            "type": "WorkflowParameter",
+            "name": "default_threshold",
+            "default_value": 0.3,
+        },
     ],
     "steps": [
         {
@@ -37,9 +40,7 @@ PER_CLASS_CONFIDENCE_FILTER_WORKFLOW = {
 }
 
 
-def _make_detections(
-    class_names: list[str], confidences: list[float]
-) -> sv.Detections:
+def _make_detections(class_names: list[str], confidences: list[float]) -> sv.Detections:
     n = len(class_names)
     return sv.Detections(
         xyxy=np.array([[0, 0, 10, 10]] * n, dtype=np.float64),
@@ -139,9 +140,7 @@ def test_per_class_confidence_filter_handles_batch_of_images(
     predictions_image_1 = _make_detections(
         class_names=["person", "car"], confidences=[0.99, 0.4]
     )
-    predictions_image_2 = _make_detections(
-        class_names=["car"], confidences=[0.55]
-    )
+    predictions_image_2 = _make_detections(class_names=["car"], confidences=[0.55])
 
     # when
     result = execution_engine.run(

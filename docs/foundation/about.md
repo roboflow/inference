@@ -12,7 +12,7 @@ Foundation models are being built for a range of vision tasks, from image segmen
 
 Inference supports the following foundation models:
 
-- [Gaze (L2CS-Net)](./gaze.md): Detect the direction in which someone is looking.
+- [Gaze (L2CS-Net)](./gaze.md): ⚠ deprecated — see the linked page for the deprecation contract; no longer functional.
 - [CLIP](./clip.md): Classify images and compare the similarity of images and text.
 - [DocTR](./doctr.md): Read characters in images.
 - [Grounding DINO](./grounding_dino.md): Detect objects in images using text prompts.

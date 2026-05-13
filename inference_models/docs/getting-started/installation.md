@@ -7,7 +7,6 @@ This guide covers all installation options for the `inference-models` package.
 The `inference-models` package uses **composable extras** to give you fine-grained control over dependencies. Instead of installing everything at once, you can mix and match components based on your needs:
 
 - **Backend extras** (`torch-cu128`, `onnx-cpu`, `trt10`) - Choose your inference runtime
-- **Model extras** (`mediapipe`) - Add support for specific model families
 
 This modular approach keeps installations lightweight and avoids dependency conflicts. For example, you can combine `torch-cu128` (PyTorch with CUDA 12.8) + `onnx-cu12` (ONNX Runtime) + `trt10` (TensorRT) in a single installation for maximum flexibility.
 
@@ -75,8 +74,6 @@ Install additional backends and specialized models using extras:
 | `onnx-cu12`        | ONNX Runtime + CUDA 12.x     | GPU inference with CUDA 12.x                                                    |
 | `onnx-jp6-cu126`   | ONNX Runtime for Jetson      | NVIDIA Jetson devices (see [Hardware Compatibility](hardware-compatibility.md)) |
 | `trt10`            | TensorRT 10                  | Maximum GPU performance, production                                             |
-| **Model Extras**   |                              |                                                                                 |
-| `mediapipe`        | MediaPipe models             | Face detection, pose estimation                                                 |
 
 ## 💻 Basic Installation
 
@@ -196,14 +193,6 @@ pip install "inference-models[torch-jp6-cu126,onnx-jp6-cu126]"
 
 ## 🔧 Additional Features
 
-### MediaPipe Models
-
-Enables MediaPipe-based models including Face Detection:
-
-```bash
-uv pip install "inference-models[mediapipe]"
-```
-
 ### SAM2 Real-Time
 
 SAM2 Real-Time requires manual installation from GitHub:
@@ -224,8 +213,8 @@ pip install git+https://github.com/Gy920/segment-anything-2-real-time.git
 You can combine multiple extras in a single installation:
 
 ```bash
-# GPU with multiple backends and additional models
-uv pip install "inference-models[torch-cu128,onnx-cu12,trt10,mediapipe]" "tensorrt==10.12.0.36"
+# GPU with multiple backends
+uv pip install "inference-models[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
 ```
 
 !!! important "Conflicting Extras"

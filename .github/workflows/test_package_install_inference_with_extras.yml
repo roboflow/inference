@@ -49,13 +49,12 @@ jobs:
       - name: 📦 Installing `inference` package...
         run: |
           wheel_name=`ls ./dist/inference-*-py3-none-any.whl | head -n 1`
-          pip install "${wheel_name}[clip,gaze,grounding-dino,sam,waf,yolo-world,http,hosted,transformers]"
+          pip install "${wheel_name}[clip,grounding-dino,sam,waf,yolo-world,http,hosted,transformers]"
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |
           python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}'); from inference import get_model"
           python -c "from inference.models.clip import Clip"
-          python -c "from inference.models.gaze import Gaze"
           python -c "from inference.models.sam import SegmentAnything"
           python -c "from inference.models.grounding_dino import GroundingDINO"
           python -c "from inference.models.yolo_world import YOLOWorld"
