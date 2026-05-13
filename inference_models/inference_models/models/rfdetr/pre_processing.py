@@ -15,8 +15,9 @@ we invoke a single PIL-exact Triton kernel that writes the normalized
 fp32 tensor directly to `target_device`.
 """
 
+from functools import lru_cache
 import warnings
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -65,21 +66,23 @@ if USE_TRITON_FOR_PREPROCESSING and not _TRITON_AVAILABLE:
         stacklevel=2,
     )
 
-# Resample tables for PIL identical image resize [Key: (device_str, src_h, src_w, th, tw)]
-RESAMPLE_TABLES_CACHE: Dict[Tuple[str, int, int, int, int], ResampleTables] = {}
+@lru_cache(maxsize=50)
+def _get_resample_tables_cached(
+    device_str: str, src_h: int, src_w: int, th: int, tw: int
+) -> ResampleTables:
+    return build_resample_tables(
+        src_h=src_h,
+        src_w=src_w,
+        target_h=th,
+        target_w=tw,
+        device=torch.device(device_str),
+    )
 
 
 def get_resample_tables(
     device: torch.device, src_h: int, src_w: int, th: int, tw: int
-)->ResampleTables:
-    key = (str(device), src_h, src_w, th, tw)
-    t = RESAMPLE_TABLES_CACHE.get(key)
-    if t is None:
-        t = build_resample_tables(
-            src_h=src_h, src_w=src_w, target_h=th, target_w=tw, device=device
-        )
-        RESAMPLE_TABLES_CACHE[key] = t
-    return t
+) -> ResampleTables:
+    return _get_resample_tables_cached(str(device), src_h, src_w, th, tw)
 
 
 def pre_process_network_input(
