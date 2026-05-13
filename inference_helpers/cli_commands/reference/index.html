@@ -1,0 +1,1970 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Scalable, on-device computer vision deployment.">
+      
+      
+        <meta name="author" content="Roboflow">
+      
+      
+        <link rel="canonical" href="https://inference.roboflow.com/inference_helpers/cli_commands/reference/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../favicon.png">
+      <meta name="generator" content="zensical-0.0.33">
+    
+    
+      
+        <title>inference - Roboflow Inference</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.53a7feaf.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.dfe2e883.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7Cui-monospace:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"ui-monospace"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../styles/cookbooks.css">
+    
+      <link rel="stylesheet" href="../../../styles.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+  
+
+
+  
+  
+
+<script id="__analytics">function __md_analytics(){function e(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],e("js",new Date),e("config","G-T0CED2YY8K"),document.addEventListener("DOMContentLoaded",(function(){document.forms.search&&document.forms.search.query.addEventListener("blur",(function(){this.value&&e("event","search",{search_term:this.value})}));document$.subscribe((function(){var t=document.forms.feedback;if(void 0!==t)for(var a of t.querySelectorAll("[type=submit]"))a.addEventListener("click",(function(a){a.preventDefault();var n=document.location.pathname,d=this.getAttribute("data-md-value");e("event","feedback",{page:n,data:d}),t.firstElementChild.disabled=!0;var r=t.querySelector(".md-feedback__note [data-md-value='"+d+"']");r&&(r.hidden=!1)})),t.hidden=!1})),location$.subscribe((function(t){e("config","G-T0CED2YY8K",{page_path:t.pathname})}))}));var t=document.createElement("script");t.async=!0,t.src="https://www.googletagmanager.com/gtag/js?id=G-T0CED2YY8K",document.getElementById("__analytics").insertAdjacentElement("afterEnd",t)}</script>
+  
+    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
+  
+
+    
+    
+
+<link href="https://cdnassets.roboflow.com/_vendor/fontawesome/6.4.0/css/all.min.css" rel="stylesheet">
+<link href="https://cdnassets.roboflow.com/_vendor/fontawesome/kit/custom-icons.css" rel="stylesheet">
+
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#inference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Roboflow Inference" class="md-header__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../../roboflow-logomark-color.svg" alt="Roboflow Inference">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Roboflow Inference
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              inference
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search" aria-label="Search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../start/overview/" class="md-tabs__link">
+          
+  
+  Start
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../quickstart/run_a_model/" class="md-tabs__link">
+          
+  
+  Models
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../workflows/about/" class="md-tabs__link">
+          
+  
+  Workflows
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/overview/" class="md-tabs__link">
+          
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+
+        
+      
+
+
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Roboflow Inference" class="md-nav__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../../roboflow-logomark-color.svg" alt="Roboflow Inference">
+
+    </a>
+    Roboflow Inference
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../start/overview/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../quickstart/run_a_model/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../workflows/about/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../reference/overview/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#inference-infer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference infer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inference-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference server
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="inference server">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference-server-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference server start
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-server-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference server status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-server-stop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference server stop
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inference-cloud" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference cloud
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="inference cloud">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference-cloud-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference cloud status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-cloud-deploy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference cloud deploy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-cloud-undeploy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference cloud undeploy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-cloud-stop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference cloud stop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-cloud-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference cloud start
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inference-benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference benchmark
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="inference benchmark">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference-benchmark-api-speed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference benchmark api-speed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-benchmark-python-package-speed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference benchmark python-package-speed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-benchmark-inference-models-speed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference benchmark inference-models-speed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inference-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference workflows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="inference workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference-workflows-process-video" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference workflows process-video
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-workflows-process-image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference workflows process-image
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-workflows-process-images-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference workflows process-images-directory
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inference-rf-cloud" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="inference rf-cloud">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-data-staging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud data-staging
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="inference rf-cloud data-staging">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-data-staging-list-batches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud data-staging list-batches
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-data-staging-list-batch-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud data-staging list-batch-content
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-data-staging-create-batch-of-images" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud data-staging create-batch-of-images
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-data-staging-create-batch-of-videos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud data-staging create-batch-of-videos
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-data-staging-show-batch-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud data-staging show-batch-details
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-data-staging-export-batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud data-staging export-batch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-data-staging-list-ingest-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud data-staging list-ingest-details
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-batch-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud batch-processing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="inference rf-cloud batch-processing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-batch-processing-list-jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud batch-processing list-jobs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-batch-processing-show-job-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud batch-processing show-job-details
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-batch-processing-process-images-with-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud batch-processing process-images-with-workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-batch-processing-process-videos-with-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud batch-processing process-videos-with-workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-batch-processing-trt-compile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud batch-processing trt-compile
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-batch-processing-abort-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud batch-processing abort-job
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-batch-processing-restart-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud batch-processing restart-job
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inference-rf-cloud-batch-processing-fetch-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference rf-cloud batch-processing fetch-logs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inference-enterprise" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference enterprise
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="inference enterprise">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference-enterprise-inference-compiler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference enterprise inference-compiler
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="inference enterprise inference-compiler">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inference-enterprise-inference-compiler-compile-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        inference enterprise inference-compiler compile-model
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+
+
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+    <a href="https://github.com/roboflow/inference/tree/main/docs/inference_helpers/cli_commands/reference.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-file-pen" viewBox="0 0 24 24"><path d="M12.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v9.34"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10.378 12.622a1 1 0 0 1 3 3.003L8.36 20.637a2 2 0 0 1-.854.506l-2.867.837a.5.5 0 0 1-.62-.62l.836-2.869a2 2 0 0 1 .506-.853z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="inference"><code>inference</code><a class="headerlink" href="#inference" title="Permanent link">&para;</a></h1>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--version</code></li>
+<li><code>--install-completion</code>: Install completion for the current shell.</li>
+<li><code>--show-completion</code>: Show completion for the current shell, to copy it or customize the installation.</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<p><strong>Commands</strong>:</p>
+<ul>
+<li><code>infer</code></li>
+<li><code>server</code>: Commands for running the inference server...</li>
+<li><code>cloud</code>: Commands for running the inference in...</li>
+<li><code>benchmark</code>: Commands for running inference benchmarks.</li>
+<li><code>workflows</code>: Commands for interacting with Roboflow...</li>
+<li><code>rf-cloud</code>: Commands for interacting with Roboflow Cloud</li>
+<li><code>enterprise</code>: Roboflow Enterprise commands</li>
+</ul>
+<h2 id="inference-infer"><code>inference infer</code><a class="headerlink" href="#inference-infer" title="Permanent link">&para;</a></h2>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>infer<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-i, --input TEXT</code>: URL or local path of image / directory with images or video to run inference on.  [required]</li>
+<li><code>-m, --model_id TEXT</code>: Model ID in format project/version.  [required]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>-h, --host TEXT</code>: Host to run inference on.  [default: http://localhost:9001]</li>
+<li><code>-o, --output_location TEXT</code>: Location where to save the result (path to directory)</li>
+<li><code>-D, --display / -d, --no-display</code>: Boolean flag to decide if visualisations should be displayed on the screen  [default: no-display]</li>
+<li><code>-V, --visualise / -v, --no-visualise</code>: Boolean flag to decide if visualisations should be preserved  [default: visualise]</li>
+<li><code>-c, --visualisation_config TEXT</code>: Location of yaml file with visualisation config</li>
+<li><code>-mc, --model_config TEXT</code>: Location of yaml file with model config</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h2 id="inference-server"><code>inference server</code><a class="headerlink" href="#inference-server" title="Permanent link">&para;</a></h2>
+<p>Commands for running the inference server locally. </p>
+<p>Supported devices targets are x86 CPU, ARM64 CPU, and NVIDIA GPU.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>server<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<p><strong>Commands</strong>:</p>
+<ul>
+<li><code>start</code></li>
+<li><code>status</code></li>
+<li><code>stop</code></li>
+</ul>
+<h3 id="inference-server-start"><code>inference server start</code><a class="headerlink" href="#inference-server-start" title="Permanent link">&para;</a></h3>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>server<span class="w"> </span>start<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-p, --port INTEGER</code>: Port to run the inference server on (default is 9001).  [default: 9001]</li>
+<li><code>-rfe, --rf-env TEXT</code>: Roboflow environment to run the inference server with (default is roboflow-platform).  [default: roboflow-platform]</li>
+<li><code>-e, --env-file TEXT</code>: Path to file with env variables (in each line KEY=VALUE). Optional. If given - values will be overriden by any explicit parameter of this command.</li>
+<li><code>-d, --dev</code>: Run inference server in development mode (default is False).</li>
+<li><code>-k, --roboflow-api-key TEXT</code>: Roboflow API key (default is None).</li>
+<li><code>--tunnel</code>: Start a tunnel to expose inference to external requests on a TLS-enabled https://&lt;subdomain&gt;.roboflow.run endpoint</li>
+<li><code>--image TEXT</code>: Point specific docker image you would like to run with command (useful for development of custom builds of inference server)</li>
+<li><code>--use-local-images / --not-use-local-images</code>: Flag to allow using local images (if set False image is always attempted to be pulled)  [default: not-use-local-images]</li>
+<li><code>--metrics-enabled / --metrics-disabled</code>: Flag controlling if metrics are enabled (default is True)  [default: metrics-enabled]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h3 id="inference-server-status"><code>inference server status</code><a class="headerlink" href="#inference-server-status" title="Permanent link">&para;</a></h3>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>server<span class="w"> </span>status<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h3 id="inference-server-stop"><code>inference server stop</code><a class="headerlink" href="#inference-server-stop" title="Permanent link">&para;</a></h3>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>server<span class="w"> </span>stop<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h2 id="inference-cloud"><code>inference cloud</code><a class="headerlink" href="#inference-cloud" title="Permanent link">&para;</a></h2>
+<p>Commands for running the inference in cloud with skypilot. </p>
+<p>Supported devices targets are x86 CPU and NVIDIA GPU VMs.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>cloud<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<p><strong>Commands</strong>:</p>
+<ul>
+<li><code>status</code></li>
+<li><code>deploy</code></li>
+<li><code>undeploy</code></li>
+<li><code>stop</code></li>
+<li><code>start</code></li>
+</ul>
+<h3 id="inference-cloud-status"><code>inference cloud status</code><a class="headerlink" href="#inference-cloud-status" title="Permanent link">&para;</a></h3>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>cloud<span class="w"> </span>status<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h3 id="inference-cloud-deploy"><code>inference cloud deploy</code><a class="headerlink" href="#inference-cloud-deploy" title="Permanent link">&para;</a></h3>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>cloud<span class="w"> </span>deploy<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-p, --provider TEXT</code>: Cloud provider to deploy to. Currently aws or gcp.  [required]</li>
+<li><code>-t, --compute-type TEXT</code>: Execution environment to deploy to: cpu or gpu.  [required]</li>
+<li><code>-d, --dry-run</code>: Print out deployment plan without executing.</li>
+<li><code>-c, --custom TEXT</code>: Path to config file to override default config.</li>
+<li><code>-r, --roboflow-api-key TEXT</code>: Roboflow API key for your workspace.</li>
+<li><code>-h, --help</code>: Print out help text.</li>
+</ul>
+<h3 id="inference-cloud-undeploy"><code>inference cloud undeploy</code><a class="headerlink" href="#inference-cloud-undeploy" title="Permanent link">&para;</a></h3>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>cloud<span class="w"> </span>undeploy<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>CLUSTER_NAME
+</code></pre></div>
+<p><strong>Arguments</strong>:</p>
+<ul>
+<li><code>CLUSTER_NAME</code>: Name of cluster to undeploy.  [required]</li>
+</ul>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h3 id="inference-cloud-stop"><code>inference cloud stop</code><a class="headerlink" href="#inference-cloud-stop" title="Permanent link">&para;</a></h3>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>cloud<span class="w"> </span>stop<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>CLUSTER_NAME
+</code></pre></div>
+<p><strong>Arguments</strong>:</p>
+<ul>
+<li><code>CLUSTER_NAME</code>: Name of cluster to stop.  [required]</li>
+</ul>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h3 id="inference-cloud-start"><code>inference cloud start</code><a class="headerlink" href="#inference-cloud-start" title="Permanent link">&para;</a></h3>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>cloud<span class="w"> </span>start<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>CLUSTER_NAME
+</code></pre></div>
+<p><strong>Arguments</strong>:</p>
+<ul>
+<li><code>CLUSTER_NAME</code>: Name of cluster to start.  [required]</li>
+</ul>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h2 id="inference-benchmark"><code>inference benchmark</code><a class="headerlink" href="#inference-benchmark" title="Permanent link">&para;</a></h2>
+<p>Commands for running inference benchmarks.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>benchmark<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<p><strong>Commands</strong>:</p>
+<ul>
+<li><code>api-speed</code></li>
+<li><code>python-package-speed</code></li>
+<li><code>inference-models-speed</code>: This command provides a benchmark of...</li>
+</ul>
+<h3 id="inference-benchmark-api-speed"><code>inference benchmark api-speed</code><a class="headerlink" href="#inference-benchmark-api-speed" title="Permanent link">&para;</a></h3>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>benchmark<span class="w"> </span>api-speed<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-m, --model_id TEXT</code>: Model ID in format project/version.</li>
+<li><code>-wid, --workflow-id TEXT</code>: Workflow ID.</li>
+<li><code>-wn, --workspace-name TEXT</code>: Workspace Name.</li>
+<li><code>-ws, --workflow-specification TEXT</code>: Workflow specification.</li>
+<li><code>-wp, --workflow-parameters TEXT</code>: Model ID in format project/version.</li>
+<li><code>-d, --dataset_reference TEXT</code>: Name of predefined dataset (one of [&#x27;coco&#x27;]) or path to directory with images  [default: coco]</li>
+<li><code>-h, --host TEXT</code>: Host to run inference on.  [default: http://localhost:9001]</li>
+<li><code>-wr, --warm_up_requests INTEGER</code>: Number of warm-up requests  [default: 10]</li>
+<li><code>-br, --benchmark_requests INTEGER</code>: Number of benchmark requests  [default: 1000]</li>
+<li><code>-bs, --batch_size INTEGER</code>: Batch size of single request  [default: 1]</li>
+<li><code>-c, --clients INTEGER</code>: Meaningful if <code>rps</code> not specified - number of concurrent threads that will send requests one by one  [default: 1]</li>
+<li><code>-rps, --rps INTEGER</code>: Number of requests per second to emit. If not specified - requests will be sent one-by-one by requested number of client threads</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>-mc, --model_config TEXT</code>: Location of yaml file with model config</li>
+<li><code>-o, --output_location TEXT</code>: Location where to save the result (path to file or directory)</li>
+<li><code>-L, --legacy-endpoints / -l, --no-legacy-endpoints</code>: Boolean flag to decide if legacy endpoints should be used (applicable for self-hosted API benchmark)  [default: no-legacy-endpoints]</li>
+<li><code>-y, --yes / -n, --no</code>: Boolean flag to decide on auto <code>yes</code> answer given on user input required.  [default: no]</li>
+<li><code>--max_error_rate FLOAT</code>: Max error rate for API speed benchmark - if given and the error rate is higher - command will return non-success error code. Expected percentage values in range 0.0-100.0</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h3 id="inference-benchmark-python-package-speed"><code>inference benchmark python-package-speed</code><a class="headerlink" href="#inference-benchmark-python-package-speed" title="Permanent link">&para;</a></h3>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>benchmark<span class="w"> </span>python-package-speed<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-m, --model_id TEXT</code>: Model ID in format project/version.  [required]</li>
+<li><code>-d, --dataset_reference TEXT</code>: Name of predefined dataset (one of [&#x27;coco&#x27;]) or path to directory with images  [default: coco]</li>
+<li><code>-wi, --warm_up_inferences INTEGER</code>: Number of warm-up requests  [default: 10]</li>
+<li><code>-bi, --benchmark_requests INTEGER</code>: Number of benchmark requests  [default: 1000]</li>
+<li><code>-bs, --batch_size INTEGER</code>: Batch size of single request  [default: 1]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>-mc, --model_config TEXT</code>: Location of yaml file with model config</li>
+<li><code>-o, --output_location TEXT</code>: Location where to save the result (path to file or directory)</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h3 id="inference-benchmark-inference-models-speed"><code>inference benchmark inference-models-speed</code><a class="headerlink" href="#inference-benchmark-inference-models-speed" title="Permanent link">&para;</a></h3>
+<p>This command provides a benchmark of inference-models package. Currently, support for this feature is experimental.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>benchmark<span class="w"> </span>inference-models-speed<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-m, --model_id TEXT</code>: Model ID in format project/version.  [required]</li>
+<li><code>-d, --dataset_reference TEXT</code>: Name of predefined dataset (one of [&#x27;coco&#x27;]) or path to directory with images  [default: coco]</li>
+<li><code>-wi, --warm_up_inferences INTEGER</code>: Number of warm-up requests  [default: 10]</li>
+<li><code>-bi, --benchmark_requests INTEGER</code>: Number of benchmark requests  [default: 1000]</li>
+<li><code>-bs, --batch_size INTEGER</code>: Batch size of single request  [default: 1]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>-mc, --model_config TEXT</code>: Location of yaml file with model config</li>
+<li><code>-o, --output_location TEXT</code>: Location where to save the result (path to file or directory)</li>
+<li><code>-mpi, --model_package_id TEXT</code>: Selected model package ID (leave blank to run auto-negotiation)</li>
+<li><code>--images-as-tensors / --no-images-as-tensors</code>: Boolean flag to decide if input images are to be loaded as tensors on the device that model is running, or should be left as np.arrays.  [default: images-as-tensors]</li>
+<li><code>--allow-untrusted-packages / --no-allow-untrusted-packages</code>: Boolean flag to decide if untrusted packages (for example the ones registered by clients) are allowed to be loaded.  [default: allow-untrusted-packages]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h2 id="inference-workflows"><code>inference workflows</code><a class="headerlink" href="#inference-workflows" title="Permanent link">&para;</a></h2>
+<p>Commands for interacting with Roboflow Workflows</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>workflows<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<p><strong>Commands</strong>:</p>
+<ul>
+<li><code>process-video</code>: Process video file with your Workflow...</li>
+<li><code>process-image</code>: Process single image with Workflows...</li>
+<li><code>process-images-directory</code>: Process whole images directory with...</li>
+</ul>
+<h3 id="inference-workflows-process-video"><code>inference workflows process-video</code><a class="headerlink" href="#inference-workflows-process-video" title="Permanent link">&para;</a></h3>
+<p>Process video file with your Workflow locally (inference Python package required)</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>workflows<span class="w"> </span>process-video<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-v, --video_path TEXT</code>: Path to video to be processed  [required]</li>
+<li><code>-o, --output_dir TEXT</code>: Path to output directory  [required]</li>
+<li><code>-ft, --output_file_type [jsonl|csv]</code>: Type of the output file  [default: csv]</li>
+<li><code>-ws, --workflow_spec TEXT</code>: Path to JSON file with Workflow definition (mutually exclusive with <code>workspace_name</code> and <code>workflow_id</code>)</li>
+<li><code>-wn, --workspace_name TEXT</code>: Name of Roboflow workspace the that Workflow belongs to (mutually exclusive with <code>workflow_specification_path</code>)</li>
+<li><code>-wid, --workflow_id TEXT</code>: Identifier of a Workflow on Roboflow platform (mutually exclusive with <code>workflow_specification_path</code>)</li>
+<li><code>-wvid, --workflow_version_id TEXT</code>: Specific version of the Workflow to use. If not provided, the latest version is used.</li>
+<li><code>--workflow_params TEXT</code>: Path to JSON document with Workflow parameters - helpful when Workflow is parametrized and passing the parameters in CLI is not handy / impossible due to typing conversion issues.</li>
+<li><code>--image_input_name TEXT</code>: Name of the Workflow input that defines placeholder for image to be processed  [default: image]</li>
+<li><code>--max_fps FLOAT</code>: Use the parameter to limit video FPS (additional frames will be skipped in processing).</li>
+<li><code>--save_out_video / --no_save_out_video</code>: Flag deciding if image outputs of the workflow should be saved as video file  [default: save_out_video]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--allow_override / --no_override</code>: Flag to decide if content of output directory can be overridden.  [default: no_override]</li>
+<li><code>--debug_mode / --no_debug_mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no_debug_mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h3 id="inference-workflows-process-image"><code>inference workflows process-image</code><a class="headerlink" href="#inference-workflows-process-image" title="Permanent link">&para;</a></h3>
+<p>Process single image with Workflows (inference Package may be needed dependent on mode)</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>workflows<span class="w"> </span>process-image<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-i, --image_path TEXT</code>: Path to image to be processed  [required]</li>
+<li><code>-o, --output_dir TEXT</code>: Path to output directory  [required]</li>
+<li><code>-pt, --processing_target [api|inference_package]</code>: Defines where the actual processing will be done, either in inference Python package running locally, or behind the API (which ensures greater throughput).  [default: api]</li>
+<li><code>-ws, --workflow_spec TEXT</code>: Path to JSON file with Workflow definition (mutually exclusive with <code>workspace_name</code> and <code>workflow_id</code>)</li>
+<li><code>-wn, --workspace_name TEXT</code>: Name of Roboflow workspace the that Workflow belongs to (mutually exclusive with <code>workflow_specification_path</code>)</li>
+<li><code>-wid, --workflow_id TEXT</code>: Identifier of a Workflow on Roboflow platform (mutually exclusive with <code>workflow_specification_path</code>)</li>
+<li><code>-wvid, --workflow_version_id TEXT</code>: Specific version of the Workflow to use. If not provided, the latest version is used.</li>
+<li><code>--workflow_params TEXT</code>: Path to JSON document with Workflow parameters - helpful when Workflow is parametrized and passing the parameters in CLI is not handy / impossible due to typing conversion issues.</li>
+<li><code>--image_input_name TEXT</code>: Name of the Workflow input that defines placeholder for image to be processed  [default: image]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--api_url TEXT</code>: URL of the API that will be used for processing, when API processing target pointed.  [default: https://detect.roboflow.com]</li>
+<li><code>--allow_override / --no_override</code>: Flag to decide if content of output directory can be overridden.  [default: no_override]</li>
+<li><code>--save_image_outputs / --no_save_image_outputs</code>: Flag controlling persistence of Workflow outputs that are images  [default: save_image_outputs]</li>
+<li><code>--force_reprocessing / --no_reprocessing</code>: Flag to enforce re-processing of specific images. Images are identified by file name.  [default: no_reprocessing]</li>
+<li><code>--debug_mode / --no_debug_mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no_debug_mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h3 id="inference-workflows-process-images-directory"><code>inference workflows process-images-directory</code><a class="headerlink" href="#inference-workflows-process-images-directory" title="Permanent link">&para;</a></h3>
+<p>Process whole images directory with Workflows (inference Package may be needed dependent on mode)</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>workflows<span class="w"> </span>process-images-directory<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-i, --input_directory TEXT</code>: Path to directory with images  [required]</li>
+<li><code>-o, --output_dir TEXT</code>: Path to output directory  [required]</li>
+<li><code>-pt, --processing_target [api|inference_package]</code>: Defines where the actual processing will be done, either in inference Python package running locally, or behind the API (which ensures greater throughput).  [default: api]</li>
+<li><code>-ws, --workflow_spec TEXT</code>: Path to JSON file with Workflow definition (mutually exclusive with <code>workspace_name</code> and <code>workflow_id</code>)</li>
+<li><code>-wn, --workspace_name TEXT</code>: Name of Roboflow workspace the that Workflow belongs to (mutually exclusive with <code>workflow_specification_path</code>)</li>
+<li><code>-wid, --workflow_id TEXT</code>: Identifier of a Workflow on Roboflow platform (mutually exclusive with <code>workflow_specification_path</code>)</li>
+<li><code>-wvid, --workflow_version_id TEXT</code>: Specific version of the Workflow to use. If not provided, the latest version is used.</li>
+<li><code>--workflow_params TEXT</code>: Path to JSON document with Workflow parameters - helpful when Workflow is parametrized and passing the parameters in CLI is not handy / impossible due to typing conversion issues.</li>
+<li><code>--image_input_name TEXT</code>: Name of the Workflow input that defines placeholder for image to be processed  [default: image]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--api_url TEXT</code>: URL of the API that will be used for processing, when API processing target pointed.  [default: https://detect.roboflow.com]</li>
+<li><code>--allow_override / --no_override</code>: Flag to decide if content of output directory can be overridden.  [default: no_override]</li>
+<li><code>--save_image_outputs / --no_save_image_outputs</code>: Flag controlling persistence of Workflow outputs that are images  [default: save_image_outputs]</li>
+<li><code>--force_reprocessing / --no_reprocessing</code>: Flag to enforce re-processing of specific images. Images are identified by file name.  [default: no_reprocessing]</li>
+<li><code>--aggregate / --no_aggregate</code>: Flag to decide if processing results for a directory should be aggregated to a single file at the end of processing.  [default: aggregate]</li>
+<li><code>-af, --aggregation_format [jsonl|csv]</code>: Defines the format of aggregated results - either CSV of JSONL  [default: csv]</li>
+<li><code>--threads INTEGER</code>: Defines number of threads that will be used to send requests when processing target is API. Default for Roboflow Hosted API is 32, and for on-prem deployments: 1.</li>
+<li><code>--debug_mode / --no_debug_mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no_debug_mode]</li>
+<li><code>--max-failures INTEGER</code>: Maximum number of Workflow executions for directory images which will be tolerated before give up. If not set - unlimited.</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h2 id="inference-rf-cloud"><code>inference rf-cloud</code><a class="headerlink" href="#inference-rf-cloud" title="Permanent link">&para;</a></h2>
+<p>Commands for interacting with Roboflow Cloud</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<p><strong>Commands</strong>:</p>
+<ul>
+<li><code>data-staging</code>: Commands for interacting with Roboflow...</li>
+<li><code>batch-processing</code>: Commands for interacting with Roboflow...</li>
+</ul>
+<h3 id="inference-rf-cloud-data-staging"><code>inference rf-cloud data-staging</code><a class="headerlink" href="#inference-rf-cloud-data-staging" title="Permanent link">&para;</a></h3>
+<p>Commands for interacting with Roboflow Data Staging. THIS IS ALPHA PREVIEW OF THE FEATURE.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>data-staging<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<p><strong>Commands</strong>:</p>
+<ul>
+<li><code>list-batches</code>: List staging batches in your workspace.</li>
+<li><code>list-batch-content</code>: List content of individual batch.</li>
+<li><code>create-batch-of-images</code>: Create new batch with your images.</li>
+<li><code>create-batch-of-videos</code>: Create new batch with your videos.</li>
+<li><code>show-batch-details</code>: Show batch details</li>
+<li><code>export-batch</code>: Export batch</li>
+<li><code>list-ingest-details</code>: List details of your data ingest.</li>
+</ul>
+<h4 id="inference-rf-cloud-data-staging-list-batches"><code>inference rf-cloud data-staging list-batches</code><a class="headerlink" href="#inference-rf-cloud-data-staging-list-batches" title="Permanent link">&para;</a></h4>
+<p>List staging batches in your workspace.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>data-staging<span class="w"> </span>list-batches<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>-p, --pages INTEGER</code>: Number of pages to pull  [default: 1]</li>
+<li><code>--page-size INTEGER</code>: Size of pagination page</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-data-staging-list-batch-content"><code>inference rf-cloud data-staging list-batch-content</code><a class="headerlink" href="#inference-rf-cloud-data-staging-list-batch-content" title="Permanent link">&para;</a></h4>
+<p>List content of individual batch.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>data-staging<span class="w"> </span>list-batch-content<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-b, --batch-id TEXT</code>: Identifier of new batch (must be lower-cased letters with &#x27;-&#x27; and &#x27;_&#x27; allowed  [required]</li>
+<li><code>-pn, --part-name TEXT</code>: Name of the part to be listed (if not given - all parts are presented). Invalid if batch is not multipart</li>
+<li><code>-l, --limit INTEGER</code>: Number of entries to display / dump into th output files. If not given - whole content will be presented.</li>
+<li><code>-o, --output-file TEXT</code>: Path to the output file - if not provided, command will dump result to the console. File type is JSONL.</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-data-staging-create-batch-of-images"><code>inference rf-cloud data-staging create-batch-of-images</code><a class="headerlink" href="#inference-rf-cloud-data-staging-create-batch-of-images" title="Permanent link">&para;</a></h4>
+<p>Create new batch with your images.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>data-staging<span class="w"> </span>create-batch-of-images<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-b, --batch-id TEXT</code>: Identifier of new batch (must be lower-cased letters with &#x27;-&#x27; and &#x27;_&#x27; allowed  [required]</li>
+<li><code>-ds, --data-source [local-directory|references-file|cloud-storage]</code>: Source of the data - either local directory or JSON file with references.  [default: local-directory]</li>
+<li><code>-i, --images-dir TEXT</code>: Path to your images directory to upload (required if data source is &#x27;local-directory&#x27;)</li>
+<li><code>-r, --references TEXT</code>: Path to JSON file with URLs of files to be ingested (required if data source is &#x27;references-file&#x27;)</li>
+<li><code>-bp, --bucket-path TEXT</code>: Cloud storage path with optional glob pattern (e.g., &#x27;s3://bucket/path/*<em>/</em>.jpg&#x27;, &#x27;gs://bucket/images/&#x27;). Required for cloud-storage source. Supports S3, GCS, and Azure.</li>
+<li><code>-i, --ingest-id TEXT</code>: Identifier assigned for references ingest (if value not provided - system will auto-assign) - only relevant when <code>notifications-url</code> specified</li>
+<li><code>--notifications-url TEXT</code>: Webhook URL where system should send notifications about ingest status</li>
+<li><code>--notification-category TEXT</code>: Selecting specific notification categories (ingest-status / files-status) in combination with <code>--notifications-url</code> you may filter which notifications are going to be sent to your system. Please note that filtering of notifications do only work with ingests of files references via signed URLs and will not be applicable for ingests from local storage.</li>
+<li><code>-bn, --batch-name TEXT</code>: Display name of your batch</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-data-staging-create-batch-of-videos"><code>inference rf-cloud data-staging create-batch-of-videos</code><a class="headerlink" href="#inference-rf-cloud-data-staging-create-batch-of-videos" title="Permanent link">&para;</a></h4>
+<p>Create new batch with your videos.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>data-staging<span class="w"> </span>create-batch-of-videos<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-b, --batch-id TEXT</code>: Identifier of new batch (must be lower-cased letters with &#x27;-&#x27; and &#x27;_&#x27; allowed  [required]</li>
+<li><code>-ds, --data-source [local-directory|references-file|cloud-storage]</code>: Source of the data - either local directory or JSON file with references.  [default: local-directory]</li>
+<li><code>-v, --videos-dir TEXT</code>: Path to your videos directory to upload</li>
+<li><code>-r, --references TEXT</code>: Path to JSON file with URLs of files to be ingested (required if data source is &#x27;references-file&#x27;)</li>
+<li><code>-bp, --bucket-path TEXT</code>: Cloud storage path with optional glob pattern (e.g., &#x27;s3://bucket/path/*<em>/</em>.mp4&#x27;, &#x27;gs://bucket/videos/&#x27;). Required for cloud-storage source. Supports S3, GCS, and Azure.</li>
+<li><code>-i, --ingest-id TEXT</code>: Identifier assigned for references ingest (if value not provided - system will auto-assign) - only relevant if data source is &#x27;references-file&#x27;</li>
+<li><code>--notifications-url TEXT</code>: Webhook URL where system should send notifications about ingest status - only relevant if data source is &#x27;references-file&#x27;</li>
+<li><code>--notification-category TEXT</code>: Selecting specific notification categories (ingest-status / files-status) in combination with <code>--notifications-url</code> you may filter which notifications are going to be sent to your system. Please note that filtering of notifications do only work with ingests of files references via signed URLs and will not be applicable for ingests from local storage.</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>-bn, --batch-name TEXT</code>: Display name of your batch</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-data-staging-show-batch-details"><code>inference rf-cloud data-staging show-batch-details</code><a class="headerlink" href="#inference-rf-cloud-data-staging-show-batch-details" title="Permanent link">&para;</a></h4>
+<p>Show batch details</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>data-staging<span class="w"> </span>show-batch-details<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-b, --batch-id TEXT</code>: Identifier of new batch (must be lower-cased letters with &#x27;-&#x27; and &#x27;_&#x27; allowed  [required]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-data-staging-export-batch"><code>inference rf-cloud data-staging export-batch</code><a class="headerlink" href="#inference-rf-cloud-data-staging-export-batch" title="Permanent link">&para;</a></h4>
+<p>Export batch</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>data-staging<span class="w"> </span>export-batch<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-b, --batch-id TEXT</code>: Identifier of new batch (must be lower-cased letters with &#x27;-&#x27; and &#x27;_&#x27; allowed  [required]</li>
+<li><code>-t, --target-dir TEXT</code>: Path to export directory  [required]</li>
+<li><code>-pn, --part-name TEXT</code>: Name of the part to be exported (if not given - all parts are presented). Invalid if batch is not multipart</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--override-existing / --no-override-existing</code>: Flag to enforce export even if partial content is already exported  [default: no-override-existing]</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-data-staging-list-ingest-details"><code>inference rf-cloud data-staging list-ingest-details</code><a class="headerlink" href="#inference-rf-cloud-data-staging-list-ingest-details" title="Permanent link">&para;</a></h4>
+<p>List details of your data ingest.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>data-staging<span class="w"> </span>list-ingest-details<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-b, --batch-id TEXT</code>: Identifier of new batch (must be lower-cased letters with &#x27;-&#x27; and &#x27;_&#x27; allowed  [required]</li>
+<li><code>-o, --output-file TEXT</code>: Path to the output file - if not provided, command will dump result to the console. File type is JSONL.</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--page-size INTEGER</code>: Size of pagination page</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h3 id="inference-rf-cloud-batch-processing"><code>inference rf-cloud batch-processing</code><a class="headerlink" href="#inference-rf-cloud-batch-processing" title="Permanent link">&para;</a></h3>
+<p>Commands for interacting with Roboflow Batch Processing. THIS IS ALPHA PREVIEW OF THE FEATURE.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>batch-processing<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<p><strong>Commands</strong>:</p>
+<ul>
+<li><code>list-jobs</code>: List batch jobs in your workspace.</li>
+<li><code>show-job-details</code>: Get job details.</li>
+<li><code>process-images-with-workflow</code>: Trigger batch job to process images with...</li>
+<li><code>process-videos-with-workflow</code>: Trigger batch job to process videos with...</li>
+<li><code>trt-compile</code>: Trigger TRT compilation of a model</li>
+<li><code>abort-job</code>: Terminate running job</li>
+<li><code>restart-job</code>: Restart failed job</li>
+<li><code>fetch-logs</code>: Fetches job logs</li>
+</ul>
+<h4 id="inference-rf-cloud-batch-processing-list-jobs"><code>inference rf-cloud batch-processing list-jobs</code><a class="headerlink" href="#inference-rf-cloud-batch-processing-list-jobs" title="Permanent link">&para;</a></h4>
+<p>List batch jobs in your workspace.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>batch-processing<span class="w"> </span>list-jobs<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>-p, --max-pages INTEGER</code>: Number of pagination pages with batch jobs to display  [default: 1]</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-batch-processing-show-job-details"><code>inference rf-cloud batch-processing show-job-details</code><a class="headerlink" href="#inference-rf-cloud-batch-processing-show-job-details" title="Permanent link">&para;</a></h4>
+<p>Get job details.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>batch-processing<span class="w"> </span>show-job-details<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-j, --job-id TEXT</code>: Identifier of job  [required]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-batch-processing-process-images-with-workflow"><code>inference rf-cloud batch-processing process-images-with-workflow</code><a class="headerlink" href="#inference-rf-cloud-batch-processing-process-images-with-workflow" title="Permanent link">&para;</a></h4>
+<p>Trigger batch job to process images with Workflow</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>batch-processing<span class="w"> </span>process-images-with-workflow<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-b, --batch-id TEXT</code>: Identifier of batch to be processed  [required]</li>
+<li><code>-w, --workflow-id TEXT</code>: Identifier of the workflow  [required]</li>
+<li><code>--workflow-params TEXT</code>: Path to JSON document with Workflow parameters - helpful when Workflow is parametrized and passing the parameters in CLI is not handy / impossible due to typing conversion issues.</li>
+<li><code>--image-input-name TEXT</code>: Name of the Workflow input that defines placeholder for image to be processed</li>
+<li><code>--save-image-outputs / --no-save-image-outputs</code>: Flag controlling persistence of Workflow outputs that are images  [default: no-save-image-outputs]</li>
+<li><code>--image-outputs-to-save TEXT</code>: Use this option to filter out workflow image outputs you want to save</li>
+<li><code>-p, --part-name TEXT</code>: Name of the batch part (relevant for multipart batches</li>
+<li><code>-mt, --machine-type [cpu|gpu]</code>: Type of machine</li>
+<li><code>--workers-per-machine INTEGER</code>: Number of workers to run on a single machine - more workers equals better resources utilisation, but may cause out of memory errors for bulky Workflows.</li>
+<li><code>-ms, --machine-size [xs|s|m|l|xl]</code>: (Deprecated - use --workers-per-machine) Size of machine</li>
+<li><code>--max-runtime-seconds INTEGER</code>: Max processing duration</li>
+<li><code>--max-parallel-tasks INTEGER</code>: Max number of concurrent processing tasks</li>
+<li><code>--aggregation-format [csv|jsonl]</code>: Format of results aggregation</li>
+<li><code>-j, --job-id TEXT</code>: Identifier of job (if not given - will be generated)</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--notifications-url TEXT</code>: URL of the Webhook to be used for job state notifications.</li>
+<li><code>-ib, --inference-backend [old-inference|inference-models]</code>: Inference backend to use</li>
+<li><code>-jn, --job-name TEXT</code>: Name of your job</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-batch-processing-process-videos-with-workflow"><code>inference rf-cloud batch-processing process-videos-with-workflow</code><a class="headerlink" href="#inference-rf-cloud-batch-processing-process-videos-with-workflow" title="Permanent link">&para;</a></h4>
+<p>Trigger batch job to process videos with Workflow</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>batch-processing<span class="w"> </span>process-videos-with-workflow<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-b, --batch-id TEXT</code>: Identifier of batch to be processed  [required]</li>
+<li><code>-w, --workflow-id TEXT</code>: Identifier of the workflow  [required]</li>
+<li><code>--workflow-params TEXT</code>: Path to JSON document with Workflow parameters - helpful when Workflow is parametrized and passing the parameters in CLI is not handy / impossible due to typing conversion issues.</li>
+<li><code>--image-input-name TEXT</code>: Name of the Workflow input that defines placeholder for image to be processed</li>
+<li><code>--save-image-outputs / --no-save-image-outputs</code>: Flag controlling persistence of Workflow outputs that are images  [default: no-save-image-outputs]</li>
+<li><code>--image-outputs-to-save TEXT</code>: Use this option to filter out workflow image outputs you want to save</li>
+<li><code>-p, --part-name TEXT</code>: Name of the batch part (relevant for multipart batches</li>
+<li><code>-mt, --machine-type [cpu|gpu]</code>: Type of machine</li>
+<li><code>--workers-per-machine INTEGER</code>: Number of workers to run on a single machine - more workers equals better resources utilisation, but may cause out of memory errors for bulky Workflows.</li>
+<li><code>-ms, --machine-size [xs|s|m|l|xl]</code>: (Deprecated - use --workers-per-machine) Size of machine</li>
+<li><code>--max-runtime-seconds INTEGER</code>: Max processing duration</li>
+<li><code>--max-parallel-tasks INTEGER</code>: Max number of concurrent processing tasks</li>
+<li><code>--aggregation-format [csv|jsonl]</code>: Format of results aggregation</li>
+<li><code>--max-video-fps INTEGER</code>: Limit for FPS to process for video (subsampling predictions rate) - smaller FPS means faster processing and less accurate video analysis.</li>
+<li><code>-j, --job-id TEXT</code>: Identifier of job (if not given - will be generated)</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--notifications-url TEXT</code>: URL of the Webhook to be used for job state notifications.</li>
+<li><code>-ib, --inference-backend [old-inference|inference-models]</code>: Inference backend to use</li>
+<li><code>-jn, --job-name TEXT</code>: Name of your job</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-batch-processing-trt-compile"><code>inference rf-cloud batch-processing trt-compile</code><a class="headerlink" href="#inference-rf-cloud-batch-processing-trt-compile" title="Permanent link">&para;</a></h4>
+<p>Trigger TRT compilation of a model</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>batch-processing<span class="w"> </span>trt-compile<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-m, --model-id TEXT</code>: Model to be compiled  [required]</li>
+<li><code>-d, --device [nvidia-l4|nvidia-t4|nvidia-l40s]</code>: Target compilation devices  [required]</li>
+<li><code>-j, --job-id TEXT</code>: Identifier of job (if not given - will be generated)</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--notifications-url TEXT</code>: URL of the Webhook to be used for job state notifications.</li>
+<li><code>-jn, --job-name TEXT</code>: Name of your job</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-batch-processing-abort-job"><code>inference rf-cloud batch-processing abort-job</code><a class="headerlink" href="#inference-rf-cloud-batch-processing-abort-job" title="Permanent link">&para;</a></h4>
+<p>Terminate running job</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>batch-processing<span class="w"> </span>abort-job<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-j, --job-id TEXT</code>: Identifier of job  [required]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-batch-processing-restart-job"><code>inference rf-cloud batch-processing restart-job</code><a class="headerlink" href="#inference-rf-cloud-batch-processing-restart-job" title="Permanent link">&para;</a></h4>
+<p>Restart failed job</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>batch-processing<span class="w"> </span>restart-job<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-j, --job-id TEXT</code>: Identifier of job  [required]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>-mt, --machine-type [cpu|gpu]</code>: Type of machine</li>
+<li><code>--workers-per-machine INTEGER</code>: Number of workers to run on a single machine - more workers equals better resources utilisation, but may cause out of memory errors for bulky Workflows.</li>
+<li><code>--max-runtime-seconds INTEGER</code>: Max processing duration</li>
+<li><code>--max-parallel-tasks INTEGER</code>: Max number of concurrent processing tasks</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h4 id="inference-rf-cloud-batch-processing-fetch-logs"><code>inference rf-cloud batch-processing fetch-logs</code><a class="headerlink" href="#inference-rf-cloud-batch-processing-fetch-logs" title="Permanent link">&para;</a></h4>
+<p>Fetches job logs</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>rf-cloud<span class="w"> </span>batch-processing<span class="w"> </span>fetch-logs<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-j, --job-id TEXT</code>: Identifier of job  [required]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
+<li><code>--log-severity [info|error|warning]</code>: Severity of logs to pick</li>
+<li><code>-o, --output-file TEXT</code>: Path to the output file - if not provided, command will dump result to the console. File type is JSONL.</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<h2 id="inference-enterprise"><code>inference enterprise</code><a class="headerlink" href="#inference-enterprise" title="Permanent link">&para;</a></h2>
+<p>Roboflow Enterprise commands</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>enterprise<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<p><strong>Commands</strong>:</p>
+<ul>
+<li><code>inference-compiler</code>: Compile Roboflow models into optimized...</li>
+</ul>
+<h3 id="inference-enterprise-inference-compiler"><code>inference enterprise inference-compiler</code><a class="headerlink" href="#inference-enterprise-inference-compiler" title="Permanent link">&para;</a></h3>
+<p>Compile Roboflow models into optimized TensorRT engines for GPU-accelerated inference on NVIDIA GPUs and Jetson devices.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>enterprise<span class="w"> </span>inference-compiler<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+<p><strong>Commands</strong>:</p>
+<ul>
+<li><code>compile-model</code>: Compile an ONNX model from Roboflow into a...</li>
+</ul>
+<h4 id="inference-enterprise-inference-compiler-compile-model"><code>inference enterprise inference-compiler compile-model</code><a class="headerlink" href="#inference-enterprise-inference-compiler-compile-model" title="Permanent link">&para;</a></h4>
+<p>Compile an ONNX model from Roboflow into a TensorRT engine optimized for your GPU. The compiled engine is registered back to the Roboflow platform so it can be served to matching devices automatically. Compilation can run in-process (requires TensorRT and inference-models) or inside a Docker container.</p>
+<p><strong>Usage</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>inference<span class="w"> </span>enterprise<span class="w"> </span>inference-compiler<span class="w"> </span>compile-model<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</code></pre></div>
+<p><strong>Options</strong>:</p>
+<ul>
+<li><code>-m, --model-id TEXT</code>: Model ID in format project/version.  [required]</li>
+<li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not provided, the <code>ROBOFLOW_API_KEY</code> environment variable is used.</li>
+<li><code>--debug-mode / --no-debug-mode</code>: Display full stack traces on errors.  [default: no-debug-mode]</li>
+<li><code>--trt-forward-compatible / --no-trt-forward-compatible</code>: Enable TensorRT forward-compatibility mode, allowing engines to run on newer TRT versions.  [default: no-trt-forward-compatible]</li>
+<li><code>--trt-same-cc-compatible / --no-trt-same-cc-compatible</code>: Compile the engine to be portable across GPUs with the same CUDA compute capability.  [default: no-trt-same-cc-compatible]</li>
+<li><code>--compilation-mode [auto|container|python]</code>: Selection of compilation mode. <code>container</code> runs the procedure inside an Inference server container, <code>python</code> runs in-process. <code>auto</code> (default) inspects environment dependencies to verify if the procedure can run in-process; if not, it offloads to the container.  [default: auto]</li>
+<li><code>--image TEXT</code>: Specify a Docker image to use for compilation (useful for custom builds of the Inference server).</li>
+<li><code>--use-local-images / --not-use-local-images</code>: Allow using local Docker images. If false, the image is always pulled from the registry.  [default: not-use-local-images]</li>
+<li><code>--env-file-path TEXT</code>: Path to a key-value .env file to inject into the compilation container. For Python mode, export the variables to your environment instead.</li>
+<li><code>--help</code>: Show this message and exit.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+                
+              </article>
+            </div>
+          
+
+
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Roboflow 2026. All rights reserved.
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/roboflow" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/roboflow" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M549.7 124.1c-6.2-23.7-24.8-42.3-48.3-48.6C458.9 64 288.1 64 288.1 64S117.3 64 74.7 75.5c-23.5 6.3-42 24.9-48.3 48.6C15 167 15 256.4 15 256.4s0 89.4 11.4 132.3c6.3 23.6 24.8 41.5 48.3 47.8C117.3 448 288.1 448 288.1 448s170.8 0 213.4-11.5c23.5-6.3 42-24.2 48.3-47.8 11.4-42.9 11.4-132.3 11.4-132.3s0-89.4-11.4-132.3zM232.2 337.6V175.2l142.7 81.2z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/company/roboflow-ai/mycompany/" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://twitter.com/roboflow" target="_blank" rel="noopener" title="twitter.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M459.4 151.7c.3 4.5.3 9.1.3 13.6 0 138.7-105.6 298.6-298.6 298.6-59.5 0-114.7-17.2-161.1-47.1 8.4 1 16.6 1.3 25.3 1.3 49.1 0 94.2-16.6 130.3-44.8-46.1-1-84.8-31.2-98.1-72.8 6.5 1 13 1.6 19.8 1.6 9.4 0 18.8-1.3 27.6-3.6-48.1-9.7-84.1-52-84.1-103v-1.3c14 7.8 30.2 12.7 47.4 13.3-28.3-18.8-46.8-51-46.8-87.4 0-19.5 5.2-37.4 14.3-53C87.4 130.8 165 172.4 252.1 176.9c-1.6-7.8-2.6-15.9-2.6-24C249.5 95.1 296.3 48 354.4 48c30.2 0 57.5 12.7 76.7 33.1 23.7-4.5 46.5-13.3 66.6-25.3-7.8 24.4-24.4 44.8-46.1 57.8 21.1-2.3 41.6-8.1 60.4-16.2-14.3 20.8-32.2 39.3-52.6 54.3"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["announce.dismiss","content.action.edit","content.code.copy","content.tabs.link","navigation.footer","navigation.indexes","navigation.instant","navigation.instant.prefetch","navigation.instant.preview","navigation.instant.progress","navigation.prune","navigation.tabs","navigation.tabs.sticky","navigation.top","navigation.tracking","optimize","search.share","search.suggest","toc.follow"],"search":"../../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"default":1.0}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.63456bd9.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+      
+        <script src="../../../javascript/init_kapa_widget.js"></script>
+      
+        <script src="../../../javascript/cookbooks.js"></script>
+      
+        <script src="../../../javascript/workflows.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+      
+        <script src="https://unpkg.com/@rive-app/canvas"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+      
+        <script src="../../../assets/home.js"></script>
+      
+        <script src="../../../js/segment.js"></script>
+      
+    
+  </body>
+</html>
