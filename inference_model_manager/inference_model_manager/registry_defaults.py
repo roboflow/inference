@@ -642,8 +642,9 @@ def _register_from_config(cls: type) -> None:
     config = _TASK_CONFIGS.get(cls.__name__)
     if config is None:
         return
+    existing = set(registry.registered_tasks(cls))
     for task_name, method, default, params, val_name, ser_name, resp_type in config:
-        if registry.get_entry_for_class(cls, task_name) is not None:
+        if task_name in existing:
             continue
         registry.register(
             cls,
