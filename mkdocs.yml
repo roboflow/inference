@@ -108,10 +108,9 @@ nav:
           - YOLO-World (Object Detection): foundation/yolo_world.md
           - OwlV2 (Object Detection): foundation/owlv2.md
       - Deploy a Model:
-          - How Do I Run Inference?: quickstart/inference_101.md
           - What Devices Can I Use?: quickstart/devices.md
           - Retrieve Your API Key: quickstart/configure_api_key.md
-          - Model Licenses: https://roboflow.com/licensing
+          - Model Licenses »: https://roboflow.com/licensing
   - Workflows:
       - About Workflows: workflows/about.md
       - User Guide:
