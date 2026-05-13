@@ -266,6 +266,12 @@ def rescale_image_detections(
             device=image_detections.device,
         )
         image_detections[:, :4].add_(static_crop_offsets)
+    img_h = image_metadata.original_size.height
+    img_w = image_metadata.original_size.width
+    image_detections[:, 0].clamp_(min=0, max=img_w)
+    image_detections[:, 1].clamp_(min=0, max=img_h)
+    image_detections[:, 2].clamp_(min=0, max=img_w)
+    image_detections[:, 3].clamp_(min=0, max=img_h)
     return image_detections
 
 
@@ -332,6 +338,12 @@ def rescale_key_points_detections(
                 device=image_detections.device,
             )
             image_detections[:, :4].add_(static_crop_offsets)
+        img_h = metadata.original_size.height
+        img_w = metadata.original_size.width
+        image_detections[:, 0].clamp_(min=0, max=img_w)
+        image_detections[:, 1].clamp_(min=0, max=img_h)
+        image_detections[:, 2].clamp_(min=0, max=img_w)
+        image_detections[:, 3].clamp_(min=0, max=img_h)
     return detections
 
 
@@ -467,6 +479,10 @@ def align_instance_segmentation_results(
         )
         image_bboxes[:, :4].add_(static_crop_offsets)
         masks = mask_canvas
+    image_bboxes[:, 0].clamp_(min=0, max=original_size.width)
+    image_bboxes[:, 1].clamp_(min=0, max=original_size.height)
+    image_bboxes[:, 2].clamp_(min=0, max=original_size.width)
+    image_bboxes[:, 3].clamp_(min=0, max=original_size.height)
     return image_bboxes, masks
 
 
@@ -521,6 +537,10 @@ def align_instance_segmentation_results_to_rle_masks(
             device=image_bboxes.device,
         )
         image_bboxes[:, :4].add_(static_crop_offsets)
+    image_bboxes[:, 0].clamp_(min=0, max=original_size.width)
+    image_bboxes[:, 1].clamp_(min=0, max=original_size.height)
+    image_bboxes[:, 2].clamp_(min=0, max=original_size.width)
+    image_bboxes[:, 3].clamp_(min=0, max=original_size.height)
     n, mh, mw = masks.shape
     mask_h_scale = mh / inference_size.height
     mask_w_scale = mw / inference_size.width
