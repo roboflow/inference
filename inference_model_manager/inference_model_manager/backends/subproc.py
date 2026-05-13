@@ -520,18 +520,19 @@ def _process_slots(
             result.class_id = result.class_id.cpu()
         data = pickle.dumps(result)
         mv = pool.data_memoryview(slot_id)
-        if len(data) > len(mv):
+        capacity = len(mv)
+        if len(data) > capacity:
             log.error(
                 "Worker: result %d B exceeds slot capacity %d B for slot %d — marking error",
                 len(data),
-                len(mv),
+                capacity,
                 slot_id,
             )
             mv.release()
             _write_error_to_slot(
                 pool,
                 slot_id,
-                f"result {len(data)}B exceeds slot capacity {len(mv)}B",
+                f"result {len(data)}B exceeds slot capacity {capacity}B",
             )
             try:
                 sock.send_multipart(
