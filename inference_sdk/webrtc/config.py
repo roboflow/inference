@@ -1,7 +1,10 @@
 """Configuration for WebRTC streaming sessions."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
+
+VideoCodecPreference = Literal["auto", "h264", "vp8"]
+VIDEO_CODEC_PREFERENCES = ("auto", "h264", "vp8")
 
 
 @dataclass
@@ -29,6 +32,12 @@ class StreamConfig:
     Note: Some sources (like WebcamSource) auto-detect FPS from the video device and will
     override this value. The source's detected FPS takes precedence over this configuration.
     For sources without auto-detection (like ManualSource), this value will be used if provided.
+    """
+
+    video_codec: VideoCodecPreference = "h264"
+    """Preferred WebRTC video codec.
+
+    Use "auto" to keep aiortc's default negotiation.
     """
 
     # Network configuration
@@ -65,3 +74,9 @@ class StreamConfig:
     If not set, the server uses its default (WEBRTC_MODAL_FUNCTION_TIME_LIMIT).
     Only applicable when connecting to Roboflow serverless endpoints.
     """
+
+    def __post_init__(self) -> None:
+        if self.video_codec not in VIDEO_CODEC_PREFERENCES:
+            raise ValueError(
+                f"video_codec must be one of: {', '.join(VIDEO_CODEC_PREFERENCES)}"
+            )

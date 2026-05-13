@@ -28,6 +28,7 @@ from inference_sdk.config import (
     WEBRTC_VIDEO_QUEUE_MAX_SIZE,
 )
 from inference_sdk.utils.logging import get_logger
+from inference_sdk.webrtc.codec_preferences import apply_video_codec_preference
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.datachannel import ChunkReassembler
 from inference_sdk.webrtc.sources import StreamSource, VideoFileSource
@@ -868,6 +869,7 @@ class WebRTCSession:
         # Let source configure the peer connection
         # (adds tracks for webcam/video/manual, or recvonly transceiver for RTSP)
         await self._source.configure_peer_connection(pc)
+        apply_video_codec_preference(pc, self._config.video_codec)
 
         # Create offer and wait for ICE gathering
         offer = await pc.createOffer()

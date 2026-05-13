@@ -49,6 +49,10 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCData,
     WorkflowConfiguration,
 )
+from inference.core.interfaces.webrtc_worker.aiortc_bitrate import (
+    apply_aiortc_bitrate_tuning,
+    prefer_h264_for_peer_connection,
+)
 from inference.core.interfaces.webrtc_worker.entities import (
     DataOutputMode,
     StreamOutputMode,
@@ -78,6 +82,7 @@ from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
 
+apply_aiortc_bitrate_tuning()
 prefer_h264_nvenc_encoder()
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
@@ -1301,6 +1306,7 @@ async def init_rtc_peer_connection_with_loop(
             sdp=webrtc_request.webrtc_offer.sdp, type=webrtc_request.webrtc_offer.type
         )
     )
+    prefer_h264_for_peer_connection(peer_connection)
     answer = await peer_connection.createAnswer()
     await peer_connection.setLocalDescription(answer)
 
