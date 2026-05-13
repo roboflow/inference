@@ -27,6 +27,7 @@ from inference_model_manager.model_manager_process import (
     T_ERROR,
     T_FREE,
     T_LOAD,
+    T_LOAD_TIMEOUT,
     T_MODEL_READY,
     T_OK,
     T_RESULT_READY,
@@ -597,3 +598,79 @@ class TestWorkerAutoRestart:
         assert mmp._models["m"].loading is False
         assert mmp._reload_calls == []
         assert backend.signals == [(0, 99)]
+
+
+# ---------------------------------------------------------------------------
+# Per-waiter load-timeout tests
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureLoadedTimeout:
+    """_expire_waiter must fire at the deadline even if loading is still in progress."""
+
+    def _make_mmp(self) -> ModelManagerProcess:
+        return ModelManagerProcess(n_slots=4, input_mb=_TEST_INPUT_MB)
+
+    def test_expire_waiter_sends_timeout_when_load_hangs(self):
+        from inference_model_manager.model_manager_process import ModelState
+
+        mmp = self._make_mmp()
+        sent: list[tuple[bytes, bytes, bytes]] = []
+
+        async def _fake_send(identity, msg_type, payload):
+            sent.append((identity, msg_type, payload))
+
+        mmp._send = _fake_send
+
+        async def _run():
+            mmp._loop = asyncio.get_running_loop()
+            deadline = time.monotonic() + 0.05
+            fs = ModelState(loading=True)
+            fs.load_waiters.append((b"client-id", 42, deadline))
+            mmp._models["m"] = fs
+            # _load_model is never invoked — simulates a hanging load
+            asyncio.create_task(
+                mmp._expire_waiter("m", b"client-id", 42, deadline)
+            )
+            await asyncio.sleep(0.15)
+
+        asyncio.run(_run())
+        mmp._loop = None
+
+        assert len(sent) == 1
+        assert sent[0][0] == b"client-id"
+        assert sent[0][1] == T_LOAD_TIMEOUT
+        assert mmp._models["m"].load_waiters == []
+
+    def test_expire_waiter_noop_if_already_flushed(self):
+        """If load completes first, _flush_load_waiters consumes the waiter and
+        the expiry task must not double-send."""
+        from inference_model_manager.model_manager_process import ModelState
+
+        mmp = self._make_mmp()
+        sent: list[tuple[bytes, bytes, bytes]] = []
+
+        async def _fake_send(identity, msg_type, payload):
+            sent.append((identity, msg_type, payload))
+
+        mmp._send = _fake_send
+
+        async def _run():
+            mmp._loop = asyncio.get_running_loop()
+            deadline = time.monotonic() + 0.1
+            fs = ModelState(loading=True)
+            fs.load_waiters.append((b"client-id", 7, deadline))
+            mmp._models["m"] = fs
+            task = asyncio.create_task(
+                mmp._expire_waiter("m", b"client-id", 7, deadline)
+            )
+            # Simulate load completing immediately — flush before deadline.
+            mmp._flush_load_waiters("m")
+            await task
+
+        asyncio.run(_run())
+        mmp._loop = None
+
+        # Flush sent T_MODEL_READY. _expire_waiter should NOT send T_LOAD_TIMEOUT.
+        assert len(sent) == 1
+        assert sent[0][1] == T_MODEL_READY

@@ -579,6 +579,10 @@ class ModelManagerProcess:
             self._models[model_id] = fs
 
         fs.load_waiters.append((identity, req_id, deadline))
+        asyncio.create_task(
+            self._expire_waiter(model_id, identity, req_id, deadline),
+            name=f"mmp-waiter-timeout-{req_id}",
+        )
 
         if not fs.loading:
             fs.api_key = api_key
@@ -1055,6 +1059,24 @@ class ModelManagerProcess:
                 asyncio.create_task(
                     self._send(identity, T_LOAD_TIMEOUT, struct.pack(">QI", req_id, 1))
                 )
+
+    async def _expire_waiter(
+        self, model_id: str, identity: bytes, req_id: int, deadline: float
+    ) -> None:
+        """Send T_LOAD_TIMEOUT if this waiter is still pending at its deadline."""
+        delay = deadline - time.monotonic()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        fs = self._models.get(model_id)
+        if fs is None:
+            return
+        remaining = [
+            w for w in fs.load_waiters if not (w[0] == identity and w[1] == req_id)
+        ]
+        if len(remaining) == len(fs.load_waiters):
+            return  # already flushed by _flush_load_waiters / _fail_load
+        fs.load_waiters = remaining
+        await self._send(identity, T_LOAD_TIMEOUT, struct.pack(">QI", req_id, 1))
 
     # ------------------------------------------------------------------
     # Stale slot reaper
