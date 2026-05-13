@@ -182,23 +182,6 @@ class TestSubprocBackendLifecycle:
         assert backend.is_accepting is False
         pool.close()
 
-    def test_submit_after_unload_raises(
-        self, yolov8n_model_path: str, dog_image_numpy: np.ndarray
-    ) -> None:
-        pool = SHMPool.create(_N_SLOTS, _INPUT_MB)
-        backend = SubprocessBackend(
-            yolov8n_model_path,
-            api_key="",
-            shm_pool_name=pool.name,
-            n_slots=_N_SLOTS,
-            input_mb=_INPUT_MB,
-            use_gpu=False,
-        )
-        backend.unload()
-        with pytest.raises(RuntimeError, match="not available"):
-            backend.submit(dog_image_numpy)
-        pool.close()
-
 
 # ---------------------------------------------------------------------------
 # Through ModelManager (production flow)

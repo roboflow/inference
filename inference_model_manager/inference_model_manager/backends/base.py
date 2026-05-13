@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from concurrent.futures import Future
 from typing import Any, Dict, List, Optional
 
 
@@ -49,58 +48,16 @@ class Backend(ABC):
     normalize, forward, post-process). Backends wrap that call with
     transport, batching, and lifecycle management.
 
-    Callers use ``infer_sync()`` / ``infer_async()`` for the simple path,
-    or ``submit()`` when they want a non-blocking Future with priority and
-    batching.
+    All inference goes through ``ModelManager.process()`` /
+    ``process_async()`` / ``submit()`` — backends have no public inference
+    entry point. ``ModelManager`` dispatches to ``invoke_task`` (direct) or
+    ``signal_slot`` (subprocess, after SHM slot allocation).
 
     For ``DirectBackend``: inference runs in-process via a thread pool.
     For ``SubprocessBackend``: inference runs in a worker subprocess;
     bulk image data flows through a shared ``SHMPool`` and signaling
     flows through a ZMQ PAIR socket.
     """
-
-    # ------------------------------------------------------------------
-    # Inference — main entry points
-    # ------------------------------------------------------------------
-
-    @abstractmethod
-    def infer_sync(self, raw_input: Any, **kwargs) -> Any:
-        """Run inference synchronously. Blocks until result is ready.
-
-        ``raw_input`` may be raw bytes (JPEG/PNG), a numpy array, or a
-        decoded image — the backend and model handle decoding internally.
-
-        Raises:
-            RuntimeError: If the backend is not in 'loaded' state.
-        """
-        ...
-
-    @abstractmethod
-    async def infer_async(self, raw_input: Any, **kwargs) -> Any:
-        """Run inference asynchronously. Returns when result is ready.
-
-        Raises:
-            RuntimeError: If the backend is not in 'loaded' state.
-        """
-        ...
-
-    @abstractmethod
-    def submit(self, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
-        """Submit a request for inference. Returns a Future immediately.
-
-        Non-blocking. The item enters the backend's internal BatchCollector
-        (if batching is enabled). When the batch fires, the Future resolves
-        with the post-processed result.
-
-        Args:
-            raw_input: Raw image bytes, numpy array, or decoded image.
-            priority: Request priority (0 = default). Higher priority
-                requests are dequeued first.
-
-        Returns:
-            Future that resolves to the model's output.
-        """
-        ...
 
     # ------------------------------------------------------------------
     # Lifecycle
