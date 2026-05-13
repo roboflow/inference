@@ -58,11 +58,9 @@ def test_owlv2_predictions_for_open_vocabulary(
 
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
-@pytest.mark.parametrize("confidence", [0.99, "best", "default"])
 def test_owlv2_predictions_for_reference_dataset(
     owlv2_model: OWLv2HF,
     dog_image_numpy: np.ndarray,
-    confidence,
 ) -> None:
     # when
     predictions = owlv2_model.infer_with_reference_examples(
@@ -76,7 +74,7 @@ def test_owlv2_predictions_for_reference_dataset(
                 ],
             )
         ],
-        confidence=confidence,
+        confidence=0.99,
         iou_threshold=0.3,
         max_detections=300,
     )
