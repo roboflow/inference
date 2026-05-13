@@ -9,11 +9,6 @@ Usage (run twice and compare):
 import os
 import time
 
-os.environ.setdefault(
-    "DISABLED_INFERENCE_MODELS_BACKENDS",
-    "torch,torch-script,onnx,hugging-face,ultralytics,mediapipe,custom",
-)
-
 import numpy as np
 import torch
 from inference_models import AutoModel

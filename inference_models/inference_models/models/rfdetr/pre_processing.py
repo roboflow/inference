@@ -201,11 +201,6 @@ def triton_path_eligible(
         ipp.grayscale is not None and ipp.grayscale.enabled
     ):
         return False
-    # Honor overrides that force-disable static_crop (True means "disable").
-    static_crop_overridden = (
-        pre_processing_overrides is not None
-        and pre_processing_overrides.disable_static_crop is True
-    )
     # Two-stage dataset-version resize isn't in the kernel.
     ni = network_input
     if _needs_two_step_resize(ni):
