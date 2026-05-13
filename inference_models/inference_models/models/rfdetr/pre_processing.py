@@ -15,6 +15,7 @@ we invoke a single PIL-exact Triton kernel that writes the normalized
 fp32 tensor directly to `target_device`.
 """
 
+import warnings
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -55,6 +56,14 @@ except ImportError:
     _TRITON_AVAILABLE = False
     build_resample_tables = None
     triton_preprocess_rfdetr_stretch = None
+
+if USE_TRITON_FOR_PREPROCESSING and not _TRITON_AVAILABLE:
+    warnings.warn(
+        "USE_TRITON_FOR_PREPROCESSING is enabled, but Triton is not available; "
+        "RF-DETR Triton preprocessing will be disabled.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 # Resample tables for PIL identical image resize [Key: (device_str, src_h, src_w, th, tw)]
 RESAMPLE_TABLES_CACHE: Dict[Tuple[str, int, int, int, int], ResampleTables] = {}
