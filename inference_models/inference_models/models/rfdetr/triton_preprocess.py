@@ -35,6 +35,12 @@ from typing import Optional, Tuple
 import numpy as np
 import torch
 
+from inference_models.errors import (
+    MissingDependencyError,
+    ModelInputError,
+    ModelRuntimeError,
+)
+
 try:
     import triton
     import triton.language as tl
@@ -311,13 +317,25 @@ def triton_preprocess_rfdetr_stretch(
         fp32 (1, 3, target_h, target_w) on the same device as `src`.
     """
     if not TRITON_AVAILABLE:
-        raise RuntimeError("triton is not installed")
+        raise MissingDependencyError(
+            message="triton is not installed",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
+        )
     if not src.is_cuda:
-        raise ValueError(f"expected CUDA src tensor, got device={src.device}")
+        raise ModelInputError(
+            message=f"expected CUDA src tensor, got device={src.device}",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
     if src.dtype != torch.uint8:
-        raise ValueError(f"expected uint8 src, got {src.dtype}")
+        raise ModelInputError(
+            message=f"expected uint8 src, got {src.dtype}",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
     if src.ndim != 3 or src.shape[2] != 3:
-        raise ValueError(f"expected HWC 3-channel, got shape={tuple(src.shape)}")
+        raise ModelInputError(
+            message=f"expected HWC 3-channel, got shape={tuple(src.shape)}",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
 
     src = src.contiguous()
     raw_src_h, raw_src_w = int(src.shape[0]), int(src.shape[1])
@@ -332,12 +350,18 @@ def triton_preprocess_rfdetr_stretch(
         )
     else:
         if tuple(out.shape) != (1, 3, target_h, target_w):
-            raise ValueError(
-                f"out has shape {tuple(out.shape)}, expected "
-                f"(1, 3, {target_h}, {target_w})"
+            raise ModelRuntimeError(
+                message=(
+                    f"out has shape {tuple(out.shape)}, expected "
+                    f"(1, 3, {target_h}, {target_w})"
+                ),
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         if out.dtype != torch.float32 or not out.is_cuda:
-            raise ValueError("out must be fp32 CUDA tensor")
+            raise ModelRuntimeError(
+                message="out must be fp32 CUDA tensor",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            )
 
     dst_stride_c = target_h * target_w
     dst_stride_h = target_w
