@@ -217,6 +217,35 @@ class TestModelManagerInference:
 
         assert result is not None
 
+    def test_submit_records_inference_stats(self):
+        """submit() direct path must call backend.record_inference (P3 #1)."""
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+
+        mm.load("model-a", api_key="")
+        fb = backends["model-a"]
+        recorded: list[bool] = []
+        original = fb.record_inference
+
+        def _spy(t0: float, error: bool = False) -> None:
+            recorded.append(error)
+            original(t0, error=error)
+
+        fb.record_inference = _spy
+
+        mm.submit("model-a", images="img").result(timeout=5)
+        assert recorded == [False]
+
+    def test_submit_validates_task(self):
+        """submit() direct path must raise on unknown task before queuing."""
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("model-a", api_key="")
+
+        with pytest.raises(ValueError):
+            mm.submit("model-a", task="nonexistent-task", images="img")
+
     def test_process_async(self):
         mm = ModelManager()
         backends = {}

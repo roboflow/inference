@@ -419,9 +419,25 @@ class ModelManager:
             backend.submit_slot(slot_id, req_id, future, params_bytes)
             return future
 
-        # Direct backend: run in thread pool via task dispatch
-        future = self._executor.submit(invoke_task, backend.model, task=task, **kwargs)
-        return future
+        # Direct backend: validate sync, run in thread pool, record stats.
+        if not backend.is_accepting:
+            raise RuntimeError(
+                f"Backend '{model_id}' not accepting requests (state={backend.state})"
+            )
+        task_name, _ = resolve_task(backend.model, task)
+        kwargs = _get_registry().validate(backend.model, task_name, kwargs)
+
+        def _run():
+            t0 = time.monotonic()
+            try:
+                result = invoke_task(backend.model, task=task, **kwargs)
+            except Exception:
+                backend.record_inference(t0, error=True)
+                raise
+            backend.record_inference(t0, error=False)
+            return result
+
+        return self._executor.submit(_run)
 
     def get_supported_tasks(self, model_id: str) -> Dict[str, Any]:
         """Return supported tasks for a loaded model.
