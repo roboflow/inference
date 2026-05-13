@@ -18,6 +18,7 @@ from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModel
 from inference_models.models.qwen3_5.qwen3_5_hf import Qwen35HF
 
+
 class InferenceModelsQwen35VLAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
