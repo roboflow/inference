@@ -1,4 +1,4 @@
-zensical==0.0.33
+zensical
 mkdocs-git-revision-date-localized
 mkdocstrings[python]
 mkdocs-gen-files
