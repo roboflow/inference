@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
-import numpy as np
+import torch
 
 
 class _DummyDetections:
-    """Minimal Detections-like object."""
+    """Minimal Detections-like object.
+
+    Uses torch tensors (not numpy) so the subprocess worker's result
+    normalization (``result.xyxy.cpu()`` etc.) is a no-op rather than an
+    AttributeError. Keeps the hot path branch-free.
+    """
 
     __slots__ = ("xyxy", "confidence", "class_id")
 
     def __init__(self):
-        self.xyxy = np.zeros((1, 4), dtype=np.float32)
-        self.confidence = np.array([0.99], dtype=np.float32)
-        self.class_id = np.array([0], dtype=np.int64)
+        self.xyxy = torch.zeros((1, 4), dtype=torch.float32)
+        self.confidence = torch.tensor([0.99], dtype=torch.float32)
+        self.class_id = torch.tensor([0], dtype=torch.int64)
 
 
 class PassthroughModel:
