@@ -11,16 +11,11 @@ Thread-safety (ZMQ):
   signal_slot() and unload() enqueue work to _outbound (Queue); the recv
   thread drains _outbound before polling for inbound messages.
 
-Modes:
-  standalone:
-    SubprocessBackend owns the SHMPool.  submit() allocates a slot, writes
-    input, signals the worker, and returns a Future that the recv thread
-    resolves when T_RESULT arrives.  infer_sync() calls Future.result().
-
-  orchestrated (MMP):
-    SubprocessBackend attaches to MMP's existing SHMPool.  MMP calls
-    signal_slot() for each request; the recv thread calls on_result_callback
-    when T_RESULT arrives.  submit()/infer_sync() raise RuntimeError.
+Usage:
+  SubprocessBackend always attaches to an externally-owned SHMPool
+  (created by ModelManager or MMP). The owner allocates a slot, writes
+  input, then calls signal_slot(slot_id, req_id, params_bytes). The recv
+  thread invokes on_result_callback when T_RESULT arrives.
 
 Input formats (both modes):
   - bytes / bytearray / memoryview:  written directly.
@@ -930,24 +925,6 @@ class SubprocessBackend(Backend):
             self._slot_futures[slot_id] = (req_id, future)
 
         self.signal_slot(slot_id, req_id, params_bytes)
-
-    def infer_sync(self, raw_input: Any, **kwargs) -> Any:
-        raise RuntimeError(
-            "SubprocessBackend.infer_sync() is not available — "
-            "use ModelManager.infer_sync() which handles pool allocation"
-        )
-
-    async def infer_async(self, raw_input: Any, **kwargs) -> Any:
-        raise RuntimeError(
-            "SubprocessBackend.infer_async() is not available — "
-            "use ModelManager.infer_async() which handles pool allocation"
-        )
-
-    def submit(self, raw_input: Any, *, priority: int = 0, **kwargs) -> Future:
-        raise RuntimeError(
-            "SubprocessBackend.submit() is not available — "
-            "use ModelManager.submit() which handles pool allocation"
-        )
 
     # ------------------------------------------------------------------
     # Lifecycle

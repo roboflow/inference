@@ -11,7 +11,7 @@ Usage::
 
     mm = ModelManager()
     mm.load("yolov8n-640", api_key=key, backend="subprocess")
-    result = mm.infer_sync("yolov8n-640", image)
+    result = mm.process("yolov8n-640", images=image, confidence=0.7)
     mm.shutdown()
 """
 
