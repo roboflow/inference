@@ -16,18 +16,7 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
 from inference_models import AutoModel
-from inference_models.models.auto_loaders.entities import BackendType
-from inference_models.models.auto_loaders.models_registry import REGISTERED_MODELS
 from inference_models.models.qwen3_5.qwen3_5_hf import Qwen35HF
-
-_QWEN35_HYPHEN_KEY = ("qwen3-5", "vlm", BackendType.HF)
-_QWEN35_UNDERSCORE_KEY = ("qwen3_5", "vlm", BackendType.HF)
-if (
-    _QWEN35_HYPHEN_KEY not in REGISTERED_MODELS
-    and _QWEN35_UNDERSCORE_KEY in REGISTERED_MODELS
-):
-    REGISTERED_MODELS[_QWEN35_HYPHEN_KEY] = REGISTERED_MODELS[_QWEN35_UNDERSCORE_KEY]
-
 
 class InferenceModelsQwen35VLAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
