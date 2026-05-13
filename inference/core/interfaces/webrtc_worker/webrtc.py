@@ -72,6 +72,10 @@ from inference.core.interfaces.webrtc_worker.utils import (
     process_frame,
     rotate_video_frame,
 )
+from inference.core.interfaces.webrtc_worker.webrtc_timing import (
+    apply_aiortc_timing_logs,
+    record_frame_timing,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
@@ -79,6 +83,7 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.usage_tracking.collector import usage_collector
 
 prefer_h264_nvenc_encoder()
+apply_aiortc_timing_logs()
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 # WebRTC data channel chunking configuration
@@ -774,21 +779,27 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
                     "[RECV] Drained %d frames from queue (was %d)", drained, queue_size
                 )
 
+        recv_started_at = time.perf_counter()
         try:
             frame: VideoFrame = await self.track.recv()
         except MediaStreamError:
             logger.info("[RECV] Track ended after %d frames", self._received_frames)
             await self._send_processing_complete()
             raise
+        input_recv_ms = (time.perf_counter() - recv_started_at) * 1000
 
         self._received_frames += 1
         self._fps_monitor.tick()
         frame_id = self._received_frames
         frame_timestamp = datetime.datetime.now()
 
+        auto_detect_ms = 0.0
         if self.stream_output is None and frame_id == 1:
+            auto_detect_started_at = time.perf_counter()
             await self._auto_detect_stream_output(frame, frame_id)
+            auto_detect_ms = (time.perf_counter() - auto_detect_started_at) * 1000
 
+        process_started_at = time.perf_counter()
         workflow_output, new_frame, errors = await self._process_frame_async(
             frame=frame,
             frame_id=frame_id,
@@ -796,11 +807,32 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             render_output=True,
             include_errors_on_frame=True,
         )
+        process_ms = (time.perf_counter() - process_started_at) * 1000
 
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
 
+        data_output_started_at = time.perf_counter()
         await self._send_data_output(workflow_output, frame_timestamp, frame, errors)
+        data_output_ms = (time.perf_counter() - data_output_started_at) * 1000
+
+        record_frame_timing(
+            owner=self,
+            frame_id=frame_id,
+            input_recv_ms=input_recv_ms,
+            auto_detect_ms=auto_detect_ms,
+            process_ms=process_ms,
+            data_output_ms=data_output_ms,
+            total_pre_encode_ms=(time.perf_counter() - recv_started_at) * 1000,
+            input_resolution=(frame.width, frame.height),
+            output_resolution=(new_frame.width, new_frame.height),
+            fps=(
+                self._fps_monitor.fps
+                if len(self._fps_monitor.all_timestamps) > 1
+                else self._declared_fps
+            ),
+            errors_count=len(errors),
+        )
 
         if errors:
             logger.warning("[RECV] Frame %d errors: %s", frame_id, errors)
