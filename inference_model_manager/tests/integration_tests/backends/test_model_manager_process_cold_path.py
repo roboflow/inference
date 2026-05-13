@@ -493,9 +493,11 @@ class TestWorkerAutoRestart:
         """MMP with _load_model stubbed and running event loop for create_task."""
         mmp = self._make_mmp()
         mmp._reload_calls = []
+        mmp._reload_kwargs = []
 
         async def _fake_load(model_id, **kw):
             mmp._reload_calls.append(model_id)
+            mmp._reload_kwargs.append(kw)
 
         mmp._load_model = _fake_load
         return mmp
@@ -537,6 +539,19 @@ class TestWorkerAutoRestart:
 
         self._run_with_loop(mmp, lambda: mmp._schedule_reload("nonexistent"))
         assert mmp._reload_calls == []
+
+    def test_schedule_reload_preserves_api_key_and_device(self):
+        """Reload after worker death must reuse the original api_key and device."""
+        mmp = self._make_reload_mmp()
+        from inference_model_manager.model_manager_process import ModelState
+
+        mmp._models["m"] = ModelState(
+            loaded=True, api_key="secret-key", device="cuda:1"
+        )
+
+        self._run_with_loop(mmp, lambda: mmp._schedule_reload("m"))
+        assert mmp._reload_calls == ["m"]
+        assert mmp._reload_kwargs == [{"api_key": "secret-key", "device": "cuda:1"}]
 
     def test_forward_to_unhealthy_backend_triggers_reload(self):
         mmp = self._make_reload_mmp()

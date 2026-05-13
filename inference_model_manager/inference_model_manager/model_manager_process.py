@@ -219,6 +219,9 @@ class ModelState:
     loading: bool = False
     # Each waiter: (uvicorn_identity, req_id, deadline_monotonic_s)
     load_waiters: list[tuple[bytes, int, float]] = field(default_factory=list)
+    # Persisted load config — reused by _schedule_reload after worker death.
+    api_key: str = ""
+    device: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +387,7 @@ class ModelManagerProcess:
         fs.loading = True
         logger.info("MMP: reloading '%s' after worker death", model_id)
         asyncio.create_task(
-            self._load_model(model_id),
+            self._load_model(model_id, api_key=fs.api_key, device=fs.device),
             name=f"mmp-reload-{model_id}",
         )
 
@@ -578,6 +581,8 @@ class ModelManagerProcess:
         fs.load_waiters.append((identity, req_id, deadline))
 
         if not fs.loading:
+            fs.api_key = api_key
+            fs.device = device
             fs.loading = True
             asyncio.create_task(
                 self._load_model(model_id, api_key=api_key, device=device),
@@ -670,6 +675,7 @@ class ModelManagerProcess:
             return
 
         if not fs.loading:
+            fs.api_key = api_key
             fs.loading = True
             try:
                 await self._load_model(model_id, api_key=api_key)
