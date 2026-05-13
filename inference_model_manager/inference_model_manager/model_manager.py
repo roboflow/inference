@@ -350,18 +350,6 @@ class ModelManager:
             KeyError: If model_id is not loaded.
             ValueError: If task is not supported by the model.
         """
-        backend = self._get_backend(model_id)
-
-        if hasattr(backend, "submit_slot"):
-            loop = asyncio.get_running_loop()
-            raw_input = kwargs.pop("images", None)
-            return await loop.run_in_executor(
-                None,
-                lambda: self.submit(
-                    model_id, task=task, raw_input=raw_input, **kwargs
-                ).result(),
-            )
-
         return await asyncio.get_running_loop().run_in_executor(
             None, lambda: self.process(model_id, task=task, **kwargs)
         )
