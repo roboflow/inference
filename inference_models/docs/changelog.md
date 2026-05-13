@@ -1,5 +1,11 @@
 # Changelog
 
+## `0.28.1`
+
+- Detections at image edges are now clipped to the image dimensions.
+
+---
+
 ## `0.28.0`
 
 ### Removed (BREAKING)
