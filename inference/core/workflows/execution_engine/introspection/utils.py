@@ -22,7 +22,7 @@ def build_human_friendly_block_name(
 
     class_name = fully_qualified_name.split(".")[-1]
     words = _words_from_class_name(class_name=class_name)
-    if words[-1] == "Block":
+    if len(words) > 0 and words[-1] == "Block":
         words.pop()
     return " ".join(words)
 
