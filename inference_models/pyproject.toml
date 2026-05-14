@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "inference-models"
 version = "0.28.7"
@@ -132,6 +136,9 @@ test = [
   "pytest-timeout",
   "requests-mock>=1.12.1"
 ]
+profiling-memory = [
+  "nvidia-ml-py>=12.560.30,<13.0.0",
+]
 docs = [
   "mkdocs-material[imaging]>=9.5.5",
   "mkdocstrings>=0.25.2,<0.31.0",
@@ -147,6 +154,9 @@ docs = [
   "mistune>=3.2.1,<4.0.0",
   "pymdown-extensions>=10.21.3"
 ]
+
+[project.scripts]
+memory-profile-pytorch = "profiling.memory.cli:main"
 
 [tool.uv.sources]
 torch = [
@@ -210,7 +220,7 @@ url = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxrunti
 explicit = true
 
 [tool.setuptools.packages.find]
-include = ["inference_models*"]
+include = ["inference_models*", "profiling*"]
 exclude = ["development*", "dockerfiles*", "tests*"]
 
 [[tool.uv.dependency-metadata]]
@@ -252,6 +262,7 @@ requires-dist = [
 
 
 [tool.uv]
+package = true
 conflicts = [
   [
     { extra = "torch-cpu" },
