@@ -3,7 +3,7 @@ from typing import Optional
 
 import click
 
-from inference_models import BackendType
+from inference_models import BackendType, Quantization
 from inference_models.developer_tools import (
     ModelMetadata,
     ModelPackageMetadata,
@@ -35,22 +35,25 @@ def _select_package(
     *,
     backend: BackendType,
     package_id: Optional[str],
+    quantization: Optional[Quantization],
 ) -> ModelPackageMetadata:
     candidates = [
         package
         for package in metadata.model_packages
         if package.backend == backend
         and (package_id is None or package.package_id == package_id)
+        and (quantization is None or package.quantization == quantization)
     ]
 
     if not candidates:
         available = ", ".join(
-            f"{package.package_id}:{package.backend.value}"
+            f"{package.package_id}:{package.backend.value}:{package.quantization.value}"
             for package in metadata.model_packages
         )
         raise click.ClickException(
             f"No package found for backend={backend.value!r}"
             + (f" and package_id={package_id!r}" if package_id else "")
+            + (f" and quantization={quantization.value!r}" if quantization else "")
             + f". Available packages: {available}"
         )
 
@@ -66,6 +69,7 @@ def _make_package_dir(
     model_architecture: str,
     task_type: str,
     backend: BackendType,
+    quantization: Optional[Quantization],
     package_id: str,
 ) -> Path:
     safe_model_id = model_id.replace("/", "-")
@@ -74,6 +78,7 @@ def _make_package_dir(
         / model_architecture
         / task_type
         / backend.value
+        / (quantization.value if quantization else "fp32")
         / safe_model_id
         / package_id
     )
@@ -113,6 +118,14 @@ def _make_package_dir(
     help="Optional explicit package id. Defaults to the first matching backend.",
 )
 @click.option(
+    "--quantization",
+    type=click.Choice(
+        [quantization.value for quantization in Quantization],
+    ),
+    default=None,
+    help="Optional package quantization.",
+)
+@click.option(
     "--provider",
     type=str,
     default="roboflow",
@@ -137,6 +150,7 @@ def main(
     task_type: str,
     backend: str,
     package_id: Optional[str],
+    quantization: Optional[str],
     provider: str,
     api_key: Optional[str],
     target_dir: Path,
@@ -147,6 +161,7 @@ def main(
         api_key=api_key,
     )
     backend_type = BackendType(backend)
+    quantization_type = Quantization(quantization) if quantization else None
 
     _validate_metadata(
         metadata,
@@ -157,6 +172,7 @@ def main(
         metadata,
         backend=backend_type,
         package_id=package_id,
+        quantization=quantization_type,
     )
     package_dir = _make_package_dir(
         target_dir,
@@ -164,6 +180,7 @@ def main(
         model_architecture=model_architecture,
         task_type=task_type,
         backend=backend_type,
+        quantization=quantization_type,
         package_id=package.package_id,
     )
 
