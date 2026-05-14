@@ -4,6 +4,10 @@ import cv2
 import numpy as np
 import supervision as sv
 
+# DEBUG: lift numpy print threshold so failure messages show the full actual
+# array (pending snapshot update under inference_models 0.28.1 box clipping).
+np.set_printoptions(threshold=10**6)
+
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
