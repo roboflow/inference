@@ -23,7 +23,11 @@ the API's effective rate; predictions trail real-time by the API latency.
 
 import base64
 import math
+import os
+import shutil
+import subprocess
 import time
+import uuid
 from collections import deque
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
@@ -61,6 +65,13 @@ MAX_WINDOW_SECONDS = 60.0
 MAX_STRIDE_SECONDS = 60.0
 MAX_SAMPLE_FPS = 60.0
 HARD_BUFFER_CAP = 200  # absolute upper bound on frames in the buffer
+
+# Set to a path to enable on-disk serialization of the exact frame window sent
+# to the LLM on every fire. After the response, the clip is kept only if the
+# parsed letter is "A"; otherwise it is deleted. Useful for debugging FPs/FNs.
+DEBUG_DUMP_DIR = os.environ.get(
+    "ACTION_RECOGNITION_DEBUG_DIR", "/app/inference/snap_debug_server"
+)
 
 LONG_DESCRIPTION = """
 Time-domain sliding-window action recognition via an OpenAI-compatible VLM.
@@ -197,6 +208,18 @@ class BlockManifest(WorkflowBlockManifest):
         ),
         examples=[100, 500, 1000],
     )
+    payload_mode: Literal["frames", "video"] = Field(
+        default="frames",
+        title="Payload Mode",
+        description=(
+            "How the rolling buffer is sent to the API. 'frames' sends each "
+            "frame as a separate image_url content block (works with Together "
+            "AI Qwen models). 'video' encodes the buffer to mp4 and sends a "
+            "single video_url block (works with OpenRouter, DashScope, and "
+            "any backend supporting OpenAI-style video_url content)."
+        ),
+        examples=["frames", "video"],
+    )
 
     @field_validator("window_seconds")
     @classmethod
@@ -254,6 +277,66 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
+
+
+def _jpegs_to_mp4_bytes(jpegs: List[bytes], fps: float) -> Optional[bytes]:
+    """Encode a list of JPEG frames into an in-memory mp4 (h264) at `fps`.
+
+    Uses ffmpeg via stdin/stdout pipes so nothing hits disk. Returns the mp4
+    bytes, or None on failure. Used for providers that accept a single
+    `video_url` content block (e.g. OpenRouter, DashScope) instead of N
+    individual image_url items.
+    """
+    if not jpegs or not shutil.which("ffmpeg"):
+        return None
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "image2pipe", "-vcodec", "mjpeg", "-r", str(float(fps)),
+        "-i", "pipe:0",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-movflags", "frag_keyframe+empty_moov",
+        "-f", "mp4", "pipe:1",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd, input=b"".join(jpegs), capture_output=True, check=True
+        )
+        return proc.stdout
+    except subprocess.CalledProcessError as e:
+        logger.warning(
+            f"ffmpeg mp4 encode failed: {e.stderr.decode('utf-8', 'ignore')[:300]}"
+        )
+        return None
+    except Exception as e:
+        logger.warning(f"ffmpeg mp4 encode error: {e}")
+        return None
+
+
+def _write_jpegs_to_mp4(jpegs: List[bytes], path: str, fps: float) -> bool:
+    """Decode jpegs and serialize them as a video at the given fps.
+
+    Uses MJPG inside an .avi container (most reliable cv2 codec combo in
+    headless containers). Returns True on success.
+    """
+    if not jpegs:
+        return False
+    first = cv2.imdecode(np.frombuffer(jpegs[0], dtype=np.uint8), cv2.IMREAD_COLOR)
+    if first is None:
+        return False
+    h, w = first.shape[:2]
+    writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"MJPG"), float(fps), (w, h))
+    if not writer.isOpened():
+        return False
+    try:
+        writer.write(first)
+        for jpg in jpegs[1:]:
+            frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if frame is None:
+                continue
+            writer.write(frame)
+    finally:
+        writer.release()
+    return True
 
 
 def _compress_frame(numpy_image: np.ndarray, max_side: int) -> bytes:
@@ -345,8 +428,13 @@ class ActionRecognitionBlockV2(WorkflowBlock):
             self._client_cache[cache_key] = client
         return client
 
-    def _build_extra_body(self, choices: List[str]) -> Dict[str, Any]:
-        return {
+    def _build_extra_body(
+        self,
+        choices: List[str],
+        payload_mode: str = "frames",
+        sample_fps: float = 5.0,
+    ) -> Dict[str, Any]:
+        extra: Dict[str, Any] = {
             "chat_template_kwargs": {"enable_thinking": False},
             "response_format": {
                 "type": "json_schema",
@@ -363,6 +451,15 @@ class ActionRecognitionBlockV2(WorkflowBlock):
                 },
             },
         }
+        # When sending a single video_url, tell the server's video preprocessor
+        # to sample at our sample_fps instead of its default (Qwen3.5: 2 fps).
+        # Otherwise the model throws away most of the frames we encoded.
+        if payload_mode == "video":
+            extra["mm_processor_kwargs"] = {
+                "fps": float(sample_fps),
+                "do_sample_frames": True,
+            }
+        return extra
 
     def run(
         self,
@@ -377,6 +474,7 @@ class ActionRecognitionBlockV2(WorkflowBlock):
         api_key: Optional[str],
         resolution: int,
         max_tokens: int,
+        payload_mode: str = "frames",
     ) -> BlockResult:
         window_seconds = max(0.05, min(float(window_seconds), MAX_WINDOW_SECONDS))
         sample_fps = max(0.1, min(float(sample_fps), MAX_SAMPLE_FPS))
@@ -436,6 +534,9 @@ class ActionRecognitionBlockV2(WorkflowBlock):
                     model_name=model_name,
                     api_key=api_key,
                     max_tokens=max_tokens,
+                    payload_mode=payload_mode,
+                    sample_fps=sample_fps,
+                    debug_tag=f"vt{now_t:.3f}",
                 )
                 state.last_raw = raw
                 if letter:
@@ -461,23 +562,102 @@ class ActionRecognitionBlockV2(WorkflowBlock):
         model_name: str,
         api_key: Optional[str],
         max_tokens: int,
+        payload_mode: str = "frames",
+        sample_fps: float = 5.0,
+        debug_tag: str = "",
     ) -> Tuple[Optional[str], str]:
+        # Pre-build the mp4 if we'll be sending video_url — we also reuse it
+        # for the debug dump so the on-disk file is bit-identical to the
+        # payload that hit the API.
+        mp4_bytes: Optional[bytes] = None
+        if payload_mode == "video":
+            mp4_bytes = _jpegs_to_mp4_bytes(jpegs, fps=float(sample_fps))
+            if mp4_bytes is None:
+                raise ValueError(
+                    "payload_mode=video requested but mp4 encode failed; "
+                    "falling back to frames."
+                )
+                
+
+        # Serialize the exact payload to disk *before* the API call. After the
+        # response we keep it only if letter == "A", else delete.
+        debug_path: Optional[str] = None
+        if DEBUG_DUMP_DIR:
+            try:
+                os.makedirs(DEBUG_DUMP_DIR, exist_ok=True)
+                ext = "mp4" if payload_mode == "video" else "avi"
+                fname = (
+                    f"fire_{int(time.time() * 1000)}_{debug_tag}_"
+                    f"{uuid.uuid4().hex[:6]}.{ext}"
+                )
+                debug_path = os.path.join(DEBUG_DUMP_DIR, fname)
+                if payload_mode == "video" and mp4_bytes is not None:
+                    with open(debug_path, "wb") as f:
+                        f.write(mp4_bytes)
+                else:
+                    _write_jpegs_to_mp4(jpegs, debug_path, fps=8.0)
+            except Exception as e:
+                logger.warning(f"Action Recognition v2 debug dump failed: {e}")
+                debug_path = None
+
         content: List[dict] = []
-        for jpg in jpegs:
-            url = "data:image/jpeg;base64," + base64.b64encode(jpg).decode("ascii")
-            content.append({"type": "image_url", "image_url": {"url": url}})
+        if payload_mode == "video" and mp4_bytes is not None:
+            url = (
+                "data:video/mp4;base64,"
+                + base64.b64encode(mp4_bytes).decode("ascii")
+            )
+            content.append({"type": "video_url", "video_url": {"url": url}})
+        else:
+            for jpg in jpegs:
+                url = (
+                    "data:image/jpeg;base64,"
+                    + base64.b64encode(jpg).decode("ascii")
+                )
+                content.append({"type": "image_url", "image_url": {"url": url}})
         content.append({"type": "text", "text": prompt})
 
         client = self._get_client(base_url, api_key or "no-key")
-        resp = client.chat.completions.create(
-            model=model_name,
-            messages=[{"role": "user", "content": content}],
-            max_tokens=max_tokens,
-            temperature=0,
-            extra_body=self._build_extra_body(choices),
-        )
+        try:
+            resp = client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": content}],
+                max_tokens=max_tokens,
+                temperature=0,
+                extra_body=self._build_extra_body(
+                    choices, payload_mode=payload_mode, sample_fps=sample_fps
+                ),
+            )
+        except Exception:
+            if debug_path and os.path.exists(debug_path):
+                try:
+                    os.unlink(debug_path)
+                except Exception:
+                    pass
+            raise
+
         if resp.choices is None or len(resp.choices) == 0:
+            if debug_path and os.path.exists(debug_path):
+                try:
+                    os.unlink(debug_path)
+                except Exception:
+                    pass
             raise RuntimeError(f"LLM returned no choices: {resp!r}")
         raw = resp.choices[0].message.content or ""
         letter = _parse_letter(raw, choices)
+
+        if debug_path and os.path.exists(debug_path):
+            if letter == "A":
+                # Rename to include the letter so it's easy to grep/inspect.
+                stem, ext = os.path.splitext(debug_path)
+                final = f"{stem}_A{ext}"
+                try:
+                    os.rename(debug_path, final)
+                except Exception:
+                    pass
+            else:
+                try:
+                    os.unlink(debug_path)
+                except Exception:
+                    pass
+
         return letter, raw
