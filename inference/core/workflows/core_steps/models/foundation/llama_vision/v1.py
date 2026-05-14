@@ -143,6 +143,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Llama 3.2 Vision",
             "version": "v1",
+            "deprecated": True,
+            "deprecation_message": "Use the Llama 3.2 Vision v2 block, which adds a Roboflow-managed API key option and user-selectable privacy controls.",
             "short_description": "Run Llama model with Vision capabilities",
             "long_description": LONG_DESCRIPTION,
             "license": "Llama 3.2 Community",
