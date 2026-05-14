@@ -255,9 +255,13 @@ def main(
             + ". Use --list-torch-models or see --help."
         )
 
-    infer_extra = _load_json_dict(infer_kwargs_json, infer_kwargs_path)
+    infer_extra = _load_json_dict(
+        raw=infer_kwargs_json,
+        path=infer_kwargs_path,
+    )
     fp_extra = _load_json_dict(
-        from_pretrained_kwargs_json, from_pretrained_kwargs_path
+        raw=from_pretrained_kwargs_json,
+        path=from_pretrained_kwargs_path,
     )
 
     payload: Dict[str, Any] = {
@@ -287,8 +291,12 @@ def main(
 
     text = json.dumps(result, indent=2)
     console.print(text)
+
     if output_json:
-        dump_result_json(result, output_json)
+        dump_result_json(
+            result,
+            path=output_json,
+        )
 
 
 if __name__ == "__main__":

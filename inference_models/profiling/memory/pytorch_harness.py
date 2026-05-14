@@ -20,10 +20,15 @@ def run_pytorch_profile_subprocess(
     ctx = mp.get_context(mp_context)
 
     def _target(queue: mp.Queue, data: Dict[str, Any]) -> None:
-        queue.put(worker_main(data))
+        message = worker_main(data)
+
+        queue.put(message)
 
     queue = ctx.Queue(maxsize=1)
-    proc = ctx.Process(target=_target, args=(queue, payload))
+    proc = ctx.Process(
+        target=_target,
+        args=(queue, payload),
+    )
     proc.start()
     proc.join()
 
@@ -36,16 +41,22 @@ def run_pytorch_profile_subprocess(
     try:
         msg = queue.get_nowait()
     except Exception as exc:
-        raise RuntimeError(
-            "Profiling worker produced no result message."
-        ) from exc
+        raise RuntimeError("Profiling worker produced no result message.") from exc
 
     if not msg.get("ok"):
-        raise RuntimeError(msg.get("error") or "Profiling worker failed without detail.")
+        error_message = msg.get("error") or "Profiling worker failed without detail."
 
-    return msg["result"]
+        raise RuntimeError(error_message)
+
+    result = msg["result"]
+
+    return result
 
 
-def dump_result_json(result: Dict[str, Any], path: str) -> None:
+def dump_result_json(
+    result: Dict[str, Any],
+    *,
+    path: str,
+) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)

@@ -17,7 +17,9 @@ class ShapeProfile(BaseModel):
 class PyTorchMemoryProfileResult(BaseModel):
     """Normalized metrics for one PyTorch profiling worker run."""
 
-    model_id: str = Field(description="Weights path or logical model id used for this run")
+    model_id: str = Field(
+        description="Weights path or logical model id used for this run"
+    )
     runtime: str = Field(default="pytorch")
     gpu_name: Optional[str] = None
     precision: Optional[str] = None
@@ -49,11 +51,15 @@ class PyTorchMemoryProfileResult(BaseModel):
 
     notes: List[str] = Field(default_factory=list)
     timestamp: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        default_factory=lambda: datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
     )
 
     torch_profiler_memory_enabled: bool = False
     extra: Dict[str, Any] = Field(default_factory=dict)
 
     def as_json_dict(self) -> Dict[str, Any]:
-        return self.model_dump(mode="json")
+        json_dict = self.model_dump(mode="json")
+
+        return json_dict

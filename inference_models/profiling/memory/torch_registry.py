@@ -27,8 +27,10 @@ def iter_torch_registry_rows() -> Iterator[TorchRegistryRow]:
         architecture, task_type, backend = key
         if backend != BackendType.TORCH:
             continue
+
         lazy = entry.model_class if isinstance(entry, RegistryEntry) else entry
         assert isinstance(lazy, LazyClass)
+
         yield TorchRegistryRow(
             architecture=architecture,
             task_type=task_type,
@@ -48,4 +50,9 @@ def iter_torch_registry_rows() -> Iterator[TorchRegistryRow]:
 
 
 def list_torch_registry_rows() -> List[TorchRegistryRow]:
-    return sorted(iter_torch_registry_rows(), key=lambda r: (r.architecture, r.task_type or ""))
+    rows = sorted(
+        iter_torch_registry_rows(),
+        key=lambda r: (r.architecture, r.task_type or ""),
+    )
+
+    return rows

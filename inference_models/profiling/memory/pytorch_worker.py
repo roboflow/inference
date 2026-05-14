@@ -21,24 +21,31 @@ def _optional_nvml_free_bytes(device_index: int) -> Optional[int]:
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(device_index)
         meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
-        return int(meminfo.free)
+        free_bytes = int(meminfo.free)
+
+        return free_bytes
     except Exception:
         return None
 
 
 def _resolve_class(module_name: str, class_name: str) -> type:
     module = importlib.import_module(module_name)
-    return getattr(module, class_name)
+    model_class = getattr(module, class_name)
+
+    return model_class
 
 
 def _invoke_method(
     model: Any,
+    *,
     method_name: str,
     images: Any,
     infer_kwargs: Dict[str, Any],
 ) -> Any:
     fn: Callable[..., Any] = getattr(model, method_name)
-    return fn(images, **infer_kwargs)
+    result = fn(images, **infer_kwargs)
+
+    return result
 
 
 def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -73,10 +80,14 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
     torch.cuda.empty_cache()
 
     device_index = device.index if device.index is not None else 0
-    baseline_free = _optional_nvml_free_bytes(device_index)
+    baseline_free = _optional_nvml_free_bytes(device_index=device_index)
 
-    model_cls = _resolve_class(module_name, class_name)
+    model_cls = _resolve_class(
+        module_name=module_name,
+        class_name=class_name,
+    )
     model = model_cls.from_pretrained(model_name_or_path, **from_pretrained_kwargs)
+
     if hasattr(model, "eval"):
         model.eval()
 
@@ -85,13 +96,30 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
     idle_after_load_allocated = int(torch.cuda.memory_allocated(device))
     idle_after_load_reserved = int(torch.cuda.memory_reserved(device))
 
-    images = build_random_rgb_images(batch_size, height, width)
-    infer_kwargs = merge_infer_kwargs(task_type, infer_kwargs_user)
-    shape_signature = describe_shape_signature(batch_size, height, width, infer_kwargs)
+    images = build_random_rgb_images(
+        batch_size,
+        height=height,
+        width=width,
+    )
+    infer_kwargs = merge_infer_kwargs(
+        task_type,
+        user=infer_kwargs_user,
+    )
+    shape_signature = describe_shape_signature(
+        batch_size,
+        height=height,
+        width=width,
+        infer_kwargs=infer_kwargs,
+    )
 
     def run_inference_steps(num_steps: int) -> None:
         for _ in range(num_steps):
-            _invoke_method(model, method_name, images, infer_kwargs)
+            _invoke_method(
+                model,
+                method_name=method_name,
+                images=images,
+                infer_kwargs=infer_kwargs,
+            )
 
     torch.cuda.reset_peak_memory_stats(device)
     run_inference_steps(warmup_iterations)
@@ -134,7 +162,9 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         "incremental peaks subtract idle-after-load in the same allocator units",
     ]
     if baseline_free is None:
-        notes.append("NVML baseline unavailable (install profiling-memory extra or GPU driver)")
+        notes.append(
+            "NVML baseline unavailable (install profiling-memory extra or GPU driver)"
+        )
 
     result = PyTorchMemoryProfileResult(
         model_id=model_id,
@@ -142,7 +172,9 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         gpu_name=gpu_name,
         precision=precision,
         shape_profile=ShapeProfile(
-            batch_size=batch_size, height=height, width=width
+            batch_size=batch_size,
+            height=height,
+            width=width,
         ),
         concurrency=1,
         idle_after_load_allocated_bytes=idle_after_load_allocated,
@@ -165,12 +197,18 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         torch_profiler_memory_enabled=torch_profiler_memory,
         extra=profiler_extra,
     )
-    return result.as_json_dict()
+    result_dict = result.as_json_dict()
+
+    return result_dict
 
 
 def worker_main(conn_payload: Dict[str, Any]) -> Dict[str, Any]:
     """Top-level entry used by multiprocessing; wraps errors for parent reporting."""
     try:
-        return {"ok": True, "result": worker_run(conn_payload)}
+        result = worker_run(conn_payload)
+        response = {"ok": True, "result": result}
     except Exception:
-        return {"ok": False, "error": traceback.format_exc()}
+        error = traceback.format_exc()
+        response = {"ok": False, "error": error}
+
+    return response
