@@ -88,9 +88,9 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
         f"width={shape_profile.get('width')}"
     )
     summary.add_row("Model", str(result.get("model_id")))
-    summary.add_row("Runtime", str(result.get("runtime")))
+    summary.add_row("Backend", str(result.get("backend")))
     summary.add_row("GPU", str(result.get("gpu_name")))
-    summary.add_row("Precision", str(result.get("precision")))
+    summary.add_row("Quantization", str(result.get("quantization")))
     summary.add_row("Shape", shape_text)
     summary.add_row("Method", str(result.get("method_name")))
 

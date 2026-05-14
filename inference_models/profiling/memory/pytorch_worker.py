@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Optional
 
 import torch
 
+from inference_models.models.auto_loaders.entities import BackendType
 from profiling.memory.input_factory import (
     build_random_rgb_images,
     describe_shape_signature,
@@ -168,7 +169,6 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     result = PyTorchMemoryProfileResult(
         model_id=model_id,
-        runtime="pytorch",
         gpu_name=gpu_name,
         quantization=quantization,
         shape_profile=ShapeProfile(

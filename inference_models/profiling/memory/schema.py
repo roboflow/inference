@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from inference_models.models.auto_loaders.entities import BackendType
+
 
 class ShapeProfile(BaseModel):
     """Input dimensions used for a profiling run."""
@@ -20,9 +22,9 @@ class PyTorchMemoryProfileResult(BaseModel):
     model_id: str = Field(
         description="Weights path or logical model id used for this run"
     )
-    runtime: str = Field(default="pytorch")
+    backend: str = Field(default=BackendType.TORCH.value)
     gpu_name: Optional[str] = None
-    precision: Optional[str] = None
+    quantization: Optional[str] = None
     shape_profile: ShapeProfile
     concurrency: int = Field(default=1, ge=1)
 
