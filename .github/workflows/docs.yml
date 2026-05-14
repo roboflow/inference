@@ -25,6 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: inference_repo
+          fetch-depth: 0
 
       - name: Create GitHub App token (enterprise blocks)
         id: enterprise_blocks_token

@@ -57,6 +57,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "Alibaba",
             ],
             "is_vlm_block": True,
+            "deprecated": True,
             "ui_manifest": {
                 "section": "model",
                 "icon": "fal fa-atom",

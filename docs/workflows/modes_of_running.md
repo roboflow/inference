@@ -31,7 +31,7 @@ if you use too many of them or if the input images are too large.
 
 
 
-Integrating via HTTP is simple: just send a [request](https://detect.roboflow.com/docs#/default/infer_from_predefined_workflow__workspace_name__workflows__workflow_id__post)
+Integrating via HTTP is simple: just send a [request](https://serverless.roboflow.com/docs#/default/infer_from_predefined_workflow__workspace_name__workflows__workflow_id__post)
 to the server. You can do this using a HTTP client library in your preferred programming language, 
 leverage our Inference SDK in Python, or even use cURL. Explore the examples below to see how it’s done.
 
@@ -42,7 +42,7 @@ leverage our Inference SDK in Python, or even use cURL. Explore the examples bel
         To run your workflow created in Roboflow APP with `cURL`, use the following command:
 
         ```bash
-        curl --location 'https://detect.roboflow.com/infer/workflows/<your-workspace-name>/<your-workflow-id>' \
+        curl --location 'https://serverless.roboflow.com/infer/workflows/<your-workspace-name>/<your-workflow-id>' \
             --header 'Content-Type: application/json' \
             --data '{
             "api_key": "<YOUR-API-KEY>",
@@ -73,7 +73,7 @@ leverage our Inference SDK in Python, or even use cURL. Explore the examples bel
         from inference_sdk import InferenceHTTPClient
 
         client = InferenceHTTPClient(
-            api_url="https://detect.roboflow.com",
+            api_url="https://serverless.roboflow.com",
             api_key="<YOUR-API-KEY>",
         )
         
@@ -162,7 +162,7 @@ leverage our Inference SDK in Python, or even use cURL. Explore the examples bel
 The above examples present how to run Workflow created and saved in Roboflow APP. It is also possible to
 create and run workflow that is created from scratch and may not contain API-KEY gated blocks (for instance 
 your own blocks). Then you should use the 
-[following endpoint](https://detect.roboflow.com/docs#/default/infer_from_workflow_workflows_run_post) or
+[following endpoint](https://serverless.roboflow.com/docs#/default/infer_from_workflow_workflows_run_post) or
 [Inference SDK](../inference_helpers/inference_sdk.md#inference-workflows) as showcased in docs.
 
 

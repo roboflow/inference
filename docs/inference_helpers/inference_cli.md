@@ -1,3 +1,7 @@
+---
+description: Command-line guide for starting the server, running predictions, benchmarking, and deploying Roboflow Inference.
+---
+
 # Inference CLI
 
 <div align="center">
@@ -7,7 +11,7 @@
     />
 </div>
 
-Roboflow Inference CLI is command-line interface for `inference` ecosystem, providing an easy way to:
+Roboflow Inference CLI is a command-line interface for the `inference` ecosystem, providing an easy way to:
 
 - run and manage [`inference` server](./cli_commands/server.md) locally
 - process data with [Workflows](../workflows/about.md)
@@ -21,7 +25,7 @@ Roboflow Inference CLI is command-line interface for `inference` ecosystem, prov
 pip install inference-cli
 ```
 
-Note that if you have installed `inference` Python package, the CLI extensions is already included.
+Note that if you have installed the `inference` Python package, the CLI extensions are already included.
 
 ## Supported Devices
 

@@ -121,6 +121,29 @@ See [Model Weights Download](../using_inference/offline_weights_download.md) for
 
 Sets the number of workers used by HTTP interfaces. 
 
+## HTTPS / TLS
+
+**ENABLE_HTTPS**: Boolean (default = `False`)
+
+When set, the inference server serves traffic over HTTPS instead of HTTP. The
+server reads the cert and private key from `SSL_CERTFILE` and `SSL_KEYFILE`.
+
+**SSL_CERTFILE**: String (default = `/etc/inference/certs/server.crt`)
+**SSL_KEYFILE**: String (default = `/etc/inference/certs/server.key`)
+
+Paths to the PEM-encoded certificate and private key inside the container. The
+defaults are sane mount points so customers usually only need to bind their
+cert/key into `/etc/inference/certs/` and flip `ENABLE_HTTPS=true`.
+
+**SSL_KEYFILE_PASSWORD**: String (optional)
+**SSL_CA_CERTS**: String (optional)
+
+Set `SSL_KEYFILE_PASSWORD` if your private key is encrypted. Set `SSL_CA_CERTS`
+to a CA bundle when you need client certificate verification (mTLS).
+
+Full walkthrough with self-signed certs: [Serving inference over HTTPS](../server_configuration/https.md).
+
+
 ## TensorRT Cache Directory
 
 **TENSORRT_CACHE_PATH**: String (default = MODEL_CACHE_DIR)

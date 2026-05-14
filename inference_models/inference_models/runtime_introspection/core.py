@@ -45,7 +45,6 @@ class RuntimeXRayResult:
     available_onnx_execution_providers: Optional[Set[str]]
     hf_transformers_available: bool
     trt_python_package_available: bool
-    mediapipe_available: bool
 
     def __str__(self) -> str:
         gpu_devices_str = ", ".join(self.gpu_devices)
@@ -57,7 +56,7 @@ class RuntimeXRayResult:
             f"torch_available={self.torch_available}, onnxruntime_version={self.onnxruntime_version}, "
             f"available_onnx_execution_providers={self.available_onnx_execution_providers}, hf_transformers_available={self.hf_transformers_available}, "
             f"trt_python_package_available={self.trt_python_package_available}, torch_version={self.torch_version}, "
-            f"torchvision_version={self.torchvision_version}, mediapipe_available={self.mediapipe_available})"
+            f"torchvision_version={self.torchvision_version})"
         )
 
 
@@ -107,8 +106,6 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
             - hf_transformers_available (bool): Whether Hugging Face Transformers is installed
 
             - trt_python_package_available (bool): Whether TensorRT Python package is installed
-
-            - mediapipe_available (bool): Whether MediaPipe is installed
 
     Examples:
         Inspect runtime environment:
@@ -170,7 +167,6 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
         onnxruntime_version, available_onnx_execution_providers = None, None
     hf_transformers_available = is_hf_transformers_available()
     trt_python_package_available = is_trt_python_package_available()
-    mediapipe_available = is_mediapipe_available()
     return RuntimeXRayResult(
         gpu_available=len(gpu_devices) > 0,
         gpu_devices=gpu_devices,
@@ -188,7 +184,6 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
         available_onnx_execution_providers=available_onnx_execution_providers,
         hf_transformers_available=hf_transformers_available,
         trt_python_package_available=trt_python_package_available,
-        mediapipe_available=mediapipe_available,
     )
 
 
@@ -380,16 +375,6 @@ def get_driver_version() -> Optional[Version]:
 def is_trt_python_package_available() -> bool:
     try:
         import tensorrt
-
-        return True
-    except ImportError:
-        return False
-
-
-@cache
-def is_mediapipe_available() -> bool:
-    try:
-        import mediapipe
 
         return True
     except ImportError:

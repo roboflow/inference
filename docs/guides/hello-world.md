@@ -1,3 +1,7 @@
+---
+description: Run your first Roboflow Inference Workflow in 5 minutes. Validate your setup, run computer vision model inference, and visualize results in the Workflow Builder UI.
+---
+
 # Hello World
 
 In this tutorial, we will build and run a simple Workflow to validate that our setup is

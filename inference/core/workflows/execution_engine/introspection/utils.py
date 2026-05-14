@@ -1,4 +1,7 @@
 import re
+from typing import List
+
+CLASS_NAME_WORD_PATTERN = re.compile(r"[A-Z](?:[a-z1-9]+|[A-Z]*(?=[A-Z]|$))")
 
 
 def get_full_type_name(selected_type: type) -> str:
@@ -18,7 +21,19 @@ def build_human_friendly_block_name(
             return manual_title
 
     class_name = fully_qualified_name.split(".")[-1]
-    words = re.findall(r"[A-Z](?:[a-z1-9]+|[A-Z]*(?=[A-Z]|$))", class_name)
+    words = _words_from_class_name(class_name=class_name)
     if words[-1] == "Block":
         words.pop()
     return " ".join(words)
+
+
+def _words_from_class_name(class_name: str) -> List[str]:
+    words = []
+    for segment in class_name.split("_"):
+        if segment:
+            words.extend(_words_from_class_segment(class_segment=segment))
+    return words
+
+
+def _words_from_class_segment(class_segment: str) -> List[str]:
+    return CLASS_NAME_WORD_PATTERN.findall(class_segment)

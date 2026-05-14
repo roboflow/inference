@@ -1,3 +1,7 @@
+---
+description: Reference overview for Roboflow Inference — inference-sdk, inference-cli, Inference Server (Docker), and the inference Python package with architecture diagram and API links.
+---
+
 # Reference Overview
 
 Inference has several components that work together to serve computer vision models. The diagram below shows how they fit together.
