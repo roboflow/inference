@@ -1,10 +1,10 @@
 ---
-description: Run private fine-tuned models from Roboflow, pre-trained detection and segmentation models, and Universe community models on your own hardware with Roboflow Inference.
+description: Run your own private, fine-tuned models trained or uploaded to Roboflow, either on Roboflow Cloud (serverless) or on your own hardware (self-hosted / native) with Roboflow Inference.
 ---
 
-With Inference, you can run private, fine-tuned models that you have trained or uploaded to Roboflow.
+# Fine-Tuned Models
 
-All models run on your own hardware.
+This page covers running your **own private models** - models you have trained in Roboflow (or uploaded weights for) in your own workspace.
 
 ## Run a Private, Fine-Tuned Model
 
@@ -18,39 +18,79 @@ Copy the model ID on the page (in this case, `taylor-swift-records/3`).
 
 ![Model page](https://media.roboflow.com/docs-model-id.png)
 
-Then, create a new Python file and add the following code:
+Then, create a new Python file and add the following code. See [Run a Model](./run_a_model.md) for package installation.
 
-```python
-from inference import get_model
-import supervision as sv
-import cv2
+=== "inference-sdk (HTTP client)"
 
-# define the image url to use for inference
-image_file = "taylor-swift-album-1989.jpeg"
-image = cv2.imread(image_file)
+    ```python
+    from inference_sdk import InferenceHTTPClient
+    import supervision as sv
+    import cv2
 
-# load a pre-trained rfdetr model
-model = get_model(model_id="taylor-swift-records/3")
+    # define the image url to use for inference
+    image_file = "taylor-swift-album-1989.jpeg"
+    image = cv2.imread(image_file)
 
-# run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
-results = model.infer(image)[0]
+    # connect to an Inference Server (Roboflow-hosted or self-hosted)
+    client = InferenceHTTPClient(
+        # api_url="http://localhost:9001",  # for Self-hosted
+        api_url="https://serverless.roboflow.com",
+        api_key="ROBOFLOW_API_KEY",
+    )
 
-# load the results into the supervision Detections api
-detections = sv.Detections.from_inference(results)
+    # run inference on our chosen image
+    results = client.infer(image, model_id="taylor-swift-records/3")
 
-# create supervision annotators
-bounding_box_annotator = sv.BoxAnnotator()
-label_annotator = sv.LabelAnnotator()
+    # load the results into the supervision Detections api
+    detections = sv.Detections.from_inference(results)
 
-# annotate the image with our inference results
-annotated_image = bounding_box_annotator.annotate(
-    scene=image, detections=detections)
-annotated_image = label_annotator.annotate(
-    scene=annotated_image, detections=detections)
+    # create supervision annotators
+    bounding_box_annotator = sv.BoxAnnotator()
+    label_annotator = sv.LabelAnnotator()
 
-# display the image
-sv.plot_image(annotated_image)
-```
+    # annotate the image with our inference results
+    annotated_image = bounding_box_annotator.annotate(
+        scene=image, detections=detections)
+    annotated_image = label_annotator.annotate(
+        scene=annotated_image, detections=detections)
+
+    # display the image
+    sv.plot_image(annotated_image)
+    ```
+
+=== "inference (native)"
+
+    ```python
+    from inference import get_model
+    import supervision as sv
+    import cv2
+
+    # define the image url to use for inference
+    image_file = "taylor-swift-album-1989.jpeg"
+    image = cv2.imread(image_file)
+
+    # load a pre-trained rfdetr model
+    model = get_model(model_id="taylor-swift-records/3")
+
+    # run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
+    results = model.infer(image)[0]
+
+    # load the results into the supervision Detections api
+    detections = sv.Detections.from_inference(results)
+
+    # create supervision annotators
+    bounding_box_annotator = sv.BoxAnnotator()
+    label_annotator = sv.LabelAnnotator()
+
+    # annotate the image with our inference results
+    annotated_image = bounding_box_annotator.annotate(
+        scene=image, detections=detections)
+    annotated_image = label_annotator.annotate(
+        scene=annotated_image, detections=detections)
+
+    # display the image
+    sv.plot_image(annotated_image)
+    ```
 
 The `taylor-swift-album-1989.jpeg` file is hosted <a href="https://storage.googleapis.com/com-roboflow-marketing/inference/taylor-swift-album-1989.jpeg" target="_blank">here</a>.
 

@@ -1,14 +1,14 @@
 ---
-description: Find and run Roboflow Universe models with Inference and Supervision.
+description: Find and run community-trained models from Roboflow Universe - 50,000+ public computer vision models published by other Roboflow users.
 ---
 
-With Inference, you can run any of the 50,000+ models available on Roboflow Universe.
+# Universe Models
 
-All models run on your own hardware.
+[Roboflow Universe](https://universe.roboflow.com) is a public catalog of **50,000+ computer vision models published by other Roboflow users** - covering everything from defect detection and sports analytics to wildlife identification. This page shows how to pick one of those community models and run it with Inference.
 
 ## Run a Model From Roboflow Universe
 
-In the first example, we showed how to run a people detection model. This model was hosted on Universe. Let's find another model to try.
+Let's pick a community model from Universe and run it.
 
 Go to the <a href="https://universe.roboflow.com" target="_blank">Roboflow Universe</a> homepage and use the search bar to find a model.
 
@@ -24,48 +24,85 @@ Browse the search page to find a model.
 
 When you have found a model, click on the model card to learn more. Click the "Model" link in the sidebar to get the information you need to use the model.
 
-Then, install Inference and supervision, which we will use to run our model and handle model predictions, respectively:
+Next, create a new Python file and add the following code. See [Run a Model](./run_a_model.md) for package installation (including GPU and HTTP-client variants) and [Supervision](https://supervision.roboflow.com) for the visualization helpers used below.
 
-```bash
-pip install inference supervision
-```
+=== "inference-sdk (HTTP client)"
 
-Next, create a new Python file and add the following code:
+    ```python
+    # import the HTTP client for sending inference requests to an Inference Server
+    from inference_sdk import InferenceHTTPClient
+    # import supervision to visualize our results
+    import supervision as sv
+    # import cv2 to help load our image
+    import cv2
 
-```python
-# import a utility function for loading Roboflow models
-from inference import get_model
-# import supervision to visualize our results
-import supervision as sv
-# import cv2 to help load our image
-import cv2
+    # define the image url to use for inference
+    image_file = "people-walking.jpg"
+    image = cv2.imread(image_file)
 
-# define the image url to use for inference
-image_file = "people-walking.jpg"
-image = cv2.imread(image_file)
+    # connect to an Inference Server (Roboflow-hosted or self-hosted)
+    client = InferenceHTTPClient(
+        # api_url="http://localhost:9001",  # for Self-hosted
+        api_url="https://serverless.roboflow.com",
+        api_key="ROBOFLOW_API_KEY",
+    )
 
-# load a pre-trained rfdetr model
-model = get_model(model_id="rfdetr-small")
+    # Run the inference with cup-detection-cevbw/1 (Yolov8s) model from Universe
+    results = client.infer(image, model_id="cup-detection-cevbw/1")
 
-# run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
-results = model.infer(image)
+    # load the results into the supervision Detections api
+    detections = sv.Detections.from_inference(results)
 
-# load the results into the supervision Detections api
-detections = sv.Detections.from_inference(results[0].dict(by_alias=True, exclude_none=True))
+    # create supervision annotators
+    bounding_box_annotator = sv.BoxAnnotator()
+    label_annotator = sv.LabelAnnotator()
 
-# create supervision annotators
-bounding_box_annotator = sv.BoxAnnotator()
-label_annotator = sv.LabelAnnotator()
+    # annotate the image with our inference results
+    annotated_image = bounding_box_annotator.annotate(
+        scene=image, detections=detections)
+    annotated_image = label_annotator.annotate(
+        scene=annotated_image, detections=detections)
 
-# annotate the image with our inference results
-annotated_image = bounding_box_annotator.annotate(
-    scene=image, detections=detections)
-annotated_image = label_annotator.annotate(
-    scene=annotated_image, detections=detections)
+    # display the image
+    sv.plot_image(annotated_image)
+    ```
 
-# display the image
-sv.plot_image(annotated_image)
-```
+=== "inference (native)"
+
+    ```python
+    # import a utility function for loading Roboflow models
+    from inference import get_model
+    # import supervision to visualize our results
+    import supervision as sv
+    # import cv2 to help load our image
+    import cv2
+
+    # define the image url to use for inference
+    image_file = "people-walking.jpg"
+    image = cv2.imread(image_file)
+
+    # load the cup-detection-cevbw/1 (Yolov8s) from Universe
+    model = get_model(model_id="cup-detection-cevbw/1")
+
+    # run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
+    results = model.infer(image)
+
+    # load the results into the supervision Detections api
+    detections = sv.Detections.from_inference(results[0].dict(by_alias=True, exclude_none=True))
+
+    # create supervision annotators
+    bounding_box_annotator = sv.BoxAnnotator()
+    label_annotator = sv.LabelAnnotator()
+
+    # annotate the image with our inference results
+    annotated_image = bounding_box_annotator.annotate(
+        scene=image, detections=detections)
+    annotated_image = label_annotator.annotate(
+        scene=annotated_image, detections=detections)
+
+    # display the image
+    sv.plot_image(annotated_image)
+    ```
 
 
 !!! Tip
