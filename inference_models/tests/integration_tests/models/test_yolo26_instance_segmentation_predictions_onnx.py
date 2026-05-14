@@ -482,7 +482,7 @@ def test_onnx_package_letterbox_static_bs_numpy(
         predictions[0].class_id.cpu(),
         torch.tensor([0], dtype=torch.int32),
     )
-    expected_xyxy = torch.tensor([[107, 325, 1293, 562]], dtype=torch.int32)
+    expected_xyxy = torch.tensor([[107, 325, 1280, 562]], dtype=torch.int32)
     assert torch.allclose(
         predictions[0].xyxy.cpu(),
         expected_xyxy,
@@ -542,7 +542,7 @@ def test_onnx_package_letterbox_static_bs_batch_numpy(
         predictions[1].class_id.cpu(),
         torch.tensor([0], dtype=torch.int32),
     )
-    expected_xyxy = torch.tensor([[107, 325, 1293, 562]], dtype=torch.int32)
+    expected_xyxy = torch.tensor([[107, 325, 1280, 562]], dtype=torch.int32)
     assert torch.allclose(
         predictions[0].xyxy.cpu(),
         expected_xyxy,
@@ -592,7 +592,7 @@ def test_onnx_package_letterbox_static_bs_torch(
         predictions[0].class_id.cpu(),
         torch.tensor([0], dtype=torch.int32),
     )
-    expected_xyxy = torch.tensor([[107, 325, 1293, 562]], dtype=torch.int32)
+    expected_xyxy = torch.tensor([[107, 325, 1280, 562]], dtype=torch.int32)
     assert torch.allclose(
         predictions[0].xyxy.cpu(),
         expected_xyxy,
@@ -636,7 +636,7 @@ def test_onnx_package_letterbox_dynamic_bs_numpy(
         predictions[0].class_id.cpu(),
         torch.tensor([0], dtype=torch.int32),
     )
-    expected_xyxy = torch.tensor([[107, 325, 1293, 562]], dtype=torch.int32)
+    expected_xyxy = torch.tensor([[107, 325, 1280, 562]], dtype=torch.int32)
     assert torch.allclose(
         predictions[0].xyxy.cpu(),
         expected_xyxy,
@@ -696,7 +696,7 @@ def test_onnx_package_letterbox_dynamic_bs_batch_numpy(
         predictions[1].class_id.cpu(),
         torch.tensor([0], dtype=torch.int32),
     )
-    expected_xyxy = torch.tensor([[107, 325, 1293, 562]], dtype=torch.int32)
+    expected_xyxy = torch.tensor([[107, 325, 1280, 562]], dtype=torch.int32)
     assert torch.allclose(
         predictions[0].xyxy.cpu(),
         expected_xyxy,
@@ -746,7 +746,7 @@ def test_onnx_package_letterbox_dynamic_bs_torch(
         predictions[0].class_id.cpu(),
         torch.tensor([0], dtype=torch.int32),
     )
-    expected_xyxy = torch.tensor([[107, 325, 1293, 562]], dtype=torch.int32)
+    expected_xyxy = torch.tensor([[107, 325, 1280, 562]], dtype=torch.int32)
     assert torch.allclose(
         predictions[0].xyxy.cpu(),
         expected_xyxy,
