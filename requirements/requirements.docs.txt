@@ -16,5 +16,5 @@ jinja2
 # library is trying to access a method parse_axt_heading,
 # which likely stems from a typo or mismatch in versions
 # between the libraries.
-mistune==2.0.4
+mistune==3.2.1
 nbconvert==7.17.1

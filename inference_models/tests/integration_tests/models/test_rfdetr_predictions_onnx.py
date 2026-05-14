@@ -25,18 +25,20 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9444,
-            0.9384,
-            0.9369,
-            0.9279,
-            0.902,
-            0.898,
-            0.8813,
-            0.879,
-            0.7601,
-            0.5973,
-        ]),
+        torch.tensor(
+            [
+                0.9444,
+                0.9384,
+                0.9369,
+                0.9279,
+                0.902,
+                0.898,
+                0.8813,
+                0.879,
+                0.7601,
+                0.5973,
+            ]
+        ),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -85,34 +87,38 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_batch_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9444,
-            0.9384,
-            0.9369,
-            0.9279,
-            0.902,
-            0.898,
-            0.8813,
-            0.879,
-            0.7601,
-            0.5973,
-        ]),
+        torch.tensor(
+            [
+                0.9444,
+                0.9384,
+                0.9369,
+                0.9279,
+                0.902,
+                0.898,
+                0.8813,
+                0.879,
+                0.7601,
+                0.5973,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([
-            0.9444,
-            0.9384,
-            0.9369,
-            0.9279,
-            0.902,
-            0.898,
-            0.8813,
-            0.879,
-            0.7601,
-            0.5973,
-        ]),
+        torch.tensor(
+            [
+                0.9444,
+                0.9384,
+                0.9369,
+                0.9279,
+                0.902,
+                0.898,
+                0.8813,
+                0.879,
+                0.7601,
+                0.5973,
+            ]
+        ),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -164,18 +170,20 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9346,
-            0.9344,
-            0.9145,
-            0.9036,
-            0.892,
-            0.8903,
-            0.8553,
-            0.7684,
-            0.6861,
-            0.5013,
-        ]),
+        torch.tensor(
+            [
+                0.9346,
+                0.9344,
+                0.9145,
+                0.9036,
+                0.892,
+                0.8903,
+                0.8553,
+                0.7684,
+                0.6861,
+                0.5013,
+            ]
+        ),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -224,34 +232,38 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9346,
-            0.9344,
-            0.9145,
-            0.9036,
-            0.892,
-            0.8903,
-            0.8553,
-            0.7684,
-            0.6861,
-            0.5013,
-        ]),
+        torch.tensor(
+            [
+                0.9346,
+                0.9344,
+                0.9145,
+                0.9036,
+                0.892,
+                0.8903,
+                0.8553,
+                0.7684,
+                0.6861,
+                0.5013,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([
-            0.9346,
-            0.9344,
-            0.9145,
-            0.9036,
-            0.892,
-            0.8903,
-            0.8553,
-            0.7684,
-            0.6861,
-            0.5013,
-        ]),
+        torch.tensor(
+            [
+                0.9346,
+                0.9344,
+                0.9145,
+                0.9036,
+                0.892,
+                0.8903,
+                0.8553,
+                0.7684,
+                0.6861,
+                0.5013,
+            ]
+        ),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -303,16 +315,18 @@ def test_onnx_package_with_static_crop_letterbox_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9123,
-            0.9047,
-            0.8818,
-            0.8336,
-            0.8227,
-            0.783,
-            0.7721,
-            0.5093,
-        ]),
+        torch.tensor(
+            [
+                0.9123,
+                0.9047,
+                0.8818,
+                0.8336,
+                0.8227,
+                0.783,
+                0.7721,
+                0.5093,
+            ]
+        ),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -359,30 +373,34 @@ def test_onnx_package_with_static_crop_letterbox_numpy_batch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9123,
-            0.9047,
-            0.8818,
-            0.8336,
-            0.8227,
-            0.783,
-            0.7721,
-            0.5093,
-        ]),
+        torch.tensor(
+            [
+                0.9123,
+                0.9047,
+                0.8818,
+                0.8336,
+                0.8227,
+                0.783,
+                0.7721,
+                0.5093,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([
-            0.9123,
-            0.9047,
-            0.8818,
-            0.8336,
-            0.8227,
-            0.783,
-            0.7721,
-            0.5093,
-        ]),
+        torch.tensor(
+            [
+                0.9123,
+                0.9047,
+                0.8818,
+                0.8336,
+                0.8227,
+                0.783,
+                0.7721,
+                0.5093,
+            ]
+        ),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -433,28 +451,33 @@ def test_onnx_package_with_static_crop_letterbox_torch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9333,
-            0.8997,
-            0.899,
-            0.886,
-            0.8851,
-            0.8332,
-            0.6993,
-        ]),
+        torch.tensor(
+            [
+                0.9333,
+                0.8997,
+                0.899,
+                0.886,
+                0.8851,
+                0.8332,
+                0.6993,
+            ]
+        ),
         atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -500,53 +523,63 @@ def test_onnx_package_with_static_crop_letterbox_torch_batch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9333,
-            0.8997,
-            0.899,
-            0.886,
-            0.8851,
-            0.8332,
-            0.6993,
-        ]),
+        torch.tensor(
+            [
+                0.9333,
+                0.8997,
+                0.899,
+                0.886,
+                0.8851,
+                0.8332,
+                0.6993,
+            ]
+        ),
         atol=0.02,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([
-            0.9333,
-            0.8997,
-            0.899,
-            0.886,
-            0.8851,
-            0.8332,
-            0.6993,
-        ]),
+        torch.tensor(
+            [
+                0.9333,
+                0.8997,
+                0.899,
+                0.886,
+                0.8851,
+                0.8332,
+                0.6993,
+            ]
+        ),
         atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+            ],
+            dtype=torch.int32,
+        ),
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -597,53 +630,63 @@ def test_onnx_package_with_static_crop_letterbox_torch_list(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9333,
-            0.8997,
-            0.899,
-            0.886,
-            0.8851,
-            0.8332,
-            0.6993,
-        ]),
+        torch.tensor(
+            [
+                0.9333,
+                0.8997,
+                0.899,
+                0.886,
+                0.8851,
+                0.8332,
+                0.6993,
+            ]
+        ),
         atol=0.02,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([
-            0.9333,
-            0.8997,
-            0.899,
-            0.886,
-            0.8851,
-            0.8332,
-            0.6993,
-        ]),
+        torch.tensor(
+            [
+                0.9333,
+                0.8997,
+                0.899,
+                0.886,
+                0.8851,
+                0.8332,
+                0.6993,
+            ]
+        ),
         atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+            ],
+            dtype=torch.int32,
+        ),
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -691,32 +734,37 @@ def test_onnx_package_with_center_crop_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9417,
-            0.9379,
-            0.9327,
-            0.9145,
-            0.9115,
-            0.9024,
-            0.8951,
-            0.8713,
-            0.7543,
-        ]),
+        torch.tensor(
+            [
+                0.9417,
+                0.9379,
+                0.9327,
+                0.9145,
+                0.9115,
+                0.9024,
+                0.8951,
+                0.8713,
+                0.7543,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            1,
-            1,
-            1,
-            3,
-            3,
-            6,
-            3,
-            6,
-            3,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                1,
+                1,
+                1,
+                3,
+                3,
+                6,
+                3,
+                6,
+                3,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -763,61 +811,71 @@ def test_onnx_package_with_center_crop_batch_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9417,
-            0.9379,
-            0.9327,
-            0.9145,
-            0.9115,
-            0.9024,
-            0.8951,
-            0.8713,
-            0.7543,
-        ]),
+        torch.tensor(
+            [
+                0.9417,
+                0.9379,
+                0.9327,
+                0.9145,
+                0.9115,
+                0.9024,
+                0.8951,
+                0.8713,
+                0.7543,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([
-            0.9417,
-            0.9379,
-            0.9327,
-            0.9145,
-            0.9115,
-            0.9024,
-            0.8951,
-            0.8713,
-            0.7543,
-        ]),
+        torch.tensor(
+            [
+                0.9417,
+                0.9379,
+                0.9327,
+                0.9145,
+                0.9115,
+                0.9024,
+                0.8951,
+                0.8713,
+                0.7543,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            1,
-            1,
-            1,
-            3,
-            3,
-            6,
-            3,
-            6,
-            3,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                1,
+                1,
+                1,
+                3,
+                3,
+                6,
+                3,
+                6,
+                3,
+            ],
+            dtype=torch.int32,
+        ),
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([
-            1,
-            1,
-            1,
-            3,
-            3,
-            6,
-            3,
-            6,
-            3,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                1,
+                1,
+                1,
+                3,
+                3,
+                6,
+                3,
+                6,
+                3,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -867,28 +925,33 @@ def test_onnx_package_with_center_crop_torch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9045,
-            0.9044,
-            0.8649,
-            0.8351,
-            0.7959,
-            0.7359,
-            0.7029,
-        ]),
+        torch.tensor(
+            [
+                0.9045,
+                0.9044,
+                0.8649,
+                0.8351,
+                0.7959,
+                0.7359,
+                0.7029,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            3,
-            3,
-            3,
-            3,
-            3,
-            6,
-            3,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                3,
+                3,
+                3,
+                3,
+                3,
+                6,
+                3,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -934,53 +997,63 @@ def test_onnx_package_with_center_crop_batch_torch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9045,
-            0.9044,
-            0.8649,
-            0.8351,
-            0.7959,
-            0.7359,
-            0.7029,
-        ]),
+        torch.tensor(
+            [
+                0.9045,
+                0.9044,
+                0.8649,
+                0.8351,
+                0.7959,
+                0.7359,
+                0.7029,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([
-            0.9045,
-            0.9044,
-            0.8649,
-            0.8351,
-            0.7959,
-            0.7359,
-            0.7029,
-        ]),
+        torch.tensor(
+            [
+                0.9045,
+                0.9044,
+                0.8649,
+                0.8351,
+                0.7959,
+                0.7359,
+                0.7029,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            3,
-            3,
-            3,
-            3,
-            3,
-            6,
-            3,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                3,
+                3,
+                3,
+                3,
+                3,
+                6,
+                3,
+            ],
+            dtype=torch.int32,
+        ),
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([
-            3,
-            3,
-            3,
-            3,
-            3,
-            6,
-            3,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                3,
+                3,
+                3,
+                3,
+                3,
+                6,
+                3,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1030,53 +1103,63 @@ def test_onnx_package_with_center_crop_list_of_torch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9045,
-            0.9044,
-            0.8649,
-            0.8351,
-            0.7959,
-            0.7359,
-            0.7029,
-        ]),
+        torch.tensor(
+            [
+                0.9045,
+                0.9044,
+                0.8649,
+                0.8351,
+                0.7959,
+                0.7359,
+                0.7029,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([
-            0.9045,
-            0.9044,
-            0.8649,
-            0.8351,
-            0.7959,
-            0.7359,
-            0.7029,
-        ]),
+        torch.tensor(
+            [
+                0.9045,
+                0.9044,
+                0.8649,
+                0.8351,
+                0.7959,
+                0.7359,
+                0.7029,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            3,
-            3,
-            3,
-            3,
-            3,
-            6,
-            3,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                3,
+                3,
+                3,
+                3,
+                3,
+                6,
+                3,
+            ],
+            dtype=torch.int32,
+        ),
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([
-            3,
-            3,
-            3,
-            3,
-            3,
-            6,
-            3,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                3,
+                3,
+                3,
+                3,
+                3,
+                6,
+                3,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1124,30 +1207,35 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9569,
-            0.9367,
-            0.921,
-            0.9165,
-            0.8757,
-            0.715,
-            0.6055,
-            0.6008,
-        ]),
+        torch.tensor(
+            [
+                0.9569,
+                0.9367,
+                0.921,
+                0.9165,
+                0.8757,
+                0.715,
+                0.6055,
+                0.6008,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            1,
-            1,
-            1,
-            3,
-            3,
-            5,
-            3,
-            6,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                1,
+                1,
+                1,
+                3,
+                3,
+                5,
+                3,
+                6,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1235,57 +1323,67 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9569,
-            0.9367,
-            0.921,
-            0.9165,
-            0.8757,
-            0.715,
-            0.6055,
-            0.6008,
-        ]),
+        torch.tensor(
+            [
+                0.9569,
+                0.9367,
+                0.921,
+                0.9165,
+                0.8757,
+                0.715,
+                0.6055,
+                0.6008,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([
-            0.9569,
-            0.9367,
-            0.921,
-            0.9165,
-            0.8757,
-            0.715,
-            0.6055,
-            0.6008,
-        ]),
+        torch.tensor(
+            [
+                0.9569,
+                0.9367,
+                0.921,
+                0.9165,
+                0.8757,
+                0.715,
+                0.6055,
+                0.6008,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            1,
-            1,
-            1,
-            3,
-            3,
-            5,
-            3,
-            6,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                1,
+                1,
+                1,
+                3,
+                3,
+                5,
+                3,
+                6,
+            ],
+            dtype=torch.int32,
+        ),
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([
-            1,
-            1,
-            1,
-            3,
-            3,
-            5,
-            3,
-            6,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                1,
+                1,
+                1,
+                3,
+                3,
+                5,
+                3,
+                6,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1334,32 +1432,37 @@ def test_onnx_package_with_static_crop_and_center_crop_torch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.905,
-            0.8226,
-            0.8017,
-            0.7009,
-            0.6046,
-            0.5421,
-            0.5292,
-            0.5212,
-            0.5194,
-        ]),
+        torch.tensor(
+            [
+                0.905,
+                0.8226,
+                0.8017,
+                0.7009,
+                0.6046,
+                0.5421,
+                0.5292,
+                0.5212,
+                0.5194,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            3,
-            1,
-            3,
-            3,
-            5,
-            3,
-            3,
-            1,
-            1,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                3,
+                1,
+                3,
+                3,
+                5,
+                3,
+                3,
+                1,
+                1,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1407,61 +1510,71 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_torch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.905,
-            0.8226,
-            0.8017,
-            0.7009,
-            0.6046,
-            0.5421,
-            0.5292,
-            0.5212,
-            0.5194,
-        ]),
+        torch.tensor(
+            [
+                0.905,
+                0.8226,
+                0.8017,
+                0.7009,
+                0.6046,
+                0.5421,
+                0.5292,
+                0.5212,
+                0.5194,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([
-            0.905,
-            0.8226,
-            0.8017,
-            0.7009,
-            0.6046,
-            0.5421,
-            0.5292,
-            0.5212,
-            0.5194,
-        ]),
+        torch.tensor(
+            [
+                0.905,
+                0.8226,
+                0.8017,
+                0.7009,
+                0.6046,
+                0.5421,
+                0.5292,
+                0.5212,
+                0.5194,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([
-            3,
-            1,
-            3,
-            3,
-            5,
-            3,
-            3,
-            1,
-            1,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                3,
+                1,
+                3,
+                3,
+                5,
+                3,
+                3,
+                1,
+                1,
+            ],
+            dtype=torch.int32,
+        ),
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([
-            3,
-            1,
-            3,
-            3,
-            5,
-            3,
-            3,
-            1,
-            1,
-        ], dtype=torch.int32),
+        torch.tensor(
+            [
+                3,
+                1,
+                3,
+                3,
+                5,
+                3,
+                3,
+                1,
+                1,
+            ],
+            dtype=torch.int32,
+        ),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1556,47 +1669,55 @@ def test_onnx_package_with_nonsquare_letterbox_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.9022,
-            0.896,
-            0.8829,
-            0.8745,
-            0.8734,
-            0.8663,
-            0.8585,
-            0.8466,
-            0.8416,
-        ]),
+        torch.tensor(
+            [
+                0.9022,
+                0.896,
+                0.8829,
+                0.8745,
+                0.8734,
+                0.8663,
+                0.8585,
+                0.8466,
+                0.8416,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id.cpu(), torch.tensor([
-            2,
-            0,
-            0,
-            0,
-            0,
-            0,
-            2,
-            0,
-            2,
-        ], dtype=torch.int32)
+        predictions[0].class_id.cpu(),
+        torch.tensor(
+            [
+                2,
+                0,
+                0,
+                0,
+                0,
+                0,
+                2,
+                0,
+                2,
+            ],
+            dtype=torch.int32,
+        ),
     )
     assert torch.allclose(
-        predictions[0].xyxy.cpu(), torch.tensor(
-        [
-            [1704, 2575, 1899, 2769],
-            [1464, 2300, 1636, 2479],
-            [1502, 1881, 1721, 2104],
-            [1090, 2358, 1257, 2529],
-            [1179, 2627, 1368, 2854],
-            [931, 1844, 1103, 2013],
-            [1740, 2296, 1920, 2480],
-            [2688, 811, 2852, 977],
-            [1256, 2064, 1426, 2238],
-        ],
-        dtype=torch.int32,
-    ), atol=2
+        predictions[0].xyxy.cpu(),
+        torch.tensor(
+            [
+                [1704, 2575, 1899, 2769],
+                [1464, 2300, 1636, 2479],
+                [1502, 1881, 1721, 2104],
+                [1090, 2358, 1257, 2529],
+                [1179, 2627, 1368, 2854],
+                [931, 1844, 1103, 2013],
+                [1740, 2296, 1920, 2480],
+                [2688, 811, 2852, 977],
+                [1256, 2064, 1426, 2238],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
     )
 
 
@@ -1625,47 +1746,55 @@ def test_onnx_package_with_nonsquare_letterbox_numpy_batch(
     for pred in predictions:
         assert torch.allclose(
             pred.confidence.cpu(),
-            torch.tensor([
-            0.9022,
-            0.896,
-            0.8829,
-            0.8745,
-            0.8734,
-            0.8663,
-            0.8585,
-            0.8466,
-            0.8416,
-        ]),
+            torch.tensor(
+                [
+                    0.9022,
+                    0.896,
+                    0.8829,
+                    0.8745,
+                    0.8734,
+                    0.8663,
+                    0.8585,
+                    0.8466,
+                    0.8416,
+                ]
+            ),
             atol=0.01,
         )
         assert torch.allclose(
-            pred.class_id.cpu(), torch.tensor([
-            2,
-            0,
-            0,
-            0,
-            0,
-            0,
-            2,
-            0,
-            2,
-        ], dtype=torch.int32)
+            pred.class_id.cpu(),
+            torch.tensor(
+                [
+                    2,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    2,
+                    0,
+                    2,
+                ],
+                dtype=torch.int32,
+            ),
         )
         assert torch.allclose(
-            pred.xyxy.cpu(), torch.tensor(
-        [
-            [1704, 2575, 1899, 2769],
-            [1464, 2300, 1636, 2479],
-            [1502, 1881, 1721, 2104],
-            [1090, 2358, 1257, 2529],
-            [1179, 2627, 1368, 2854],
-            [931, 1844, 1103, 2013],
-            [1740, 2296, 1920, 2480],
-            [2688, 811, 2852, 977],
-            [1256, 2064, 1426, 2238],
-        ],
-        dtype=torch.int32,
-    ), atol=2
+            pred.xyxy.cpu(),
+            torch.tensor(
+                [
+                    [1704, 2575, 1899, 2769],
+                    [1464, 2300, 1636, 2479],
+                    [1502, 1881, 1721, 2104],
+                    [1090, 2358, 1257, 2529],
+                    [1179, 2627, 1368, 2854],
+                    [931, 1844, 1103, 2013],
+                    [1740, 2296, 1920, 2480],
+                    [2688, 811, 2852, 977],
+                    [1256, 2064, 1426, 2238],
+                ],
+                dtype=torch.int32,
+            ),
+            atol=2,
         )
 
 
@@ -1692,47 +1821,55 @@ def test_onnx_package_with_nonsquare_letterbox_torch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([
-            0.8914,
-            0.8833,
-            0.8738,
-            0.8713,
-            0.8623,
-            0.8522,
-            0.8473,
-            0.8245,
-            0.7112,
-        ]),
+        torch.tensor(
+            [
+                0.8914,
+                0.8833,
+                0.8738,
+                0.8713,
+                0.8623,
+                0.8522,
+                0.8473,
+                0.8245,
+                0.7112,
+            ]
+        ),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id.cpu(), torch.tensor([
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-        ], dtype=torch.int32)
+        predictions[0].class_id.cpu(),
+        torch.tensor(
+            [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            dtype=torch.int32,
+        ),
     )
     assert torch.allclose(
-        predictions[0].xyxy.cpu(), torch.tensor(
-        [
-            [1255, 2065, 1421, 2240],
-            [1709, 2577, 1888, 2764],
-            [1090, 2360, 1253, 2530],
-            [1464, 2300, 1637, 2482],
-            [1735, 2298, 1912, 2479],
-            [933, 1845, 1101, 2014],
-            [2688, 811, 2857, 977],
-            [1500, 1882, 1723, 2107],
-            [1175, 2628, 1367, 2854],
-        ],
-        dtype=torch.int32,
-    ), atol=2
+        predictions[0].xyxy.cpu(),
+        torch.tensor(
+            [
+                [1255, 2065, 1421, 2240],
+                [1709, 2577, 1888, 2764],
+                [1090, 2360, 1253, 2530],
+                [1464, 2300, 1637, 2482],
+                [1735, 2298, 1912, 2479],
+                [933, 1845, 1101, 2014],
+                [2688, 811, 2857, 977],
+                [1500, 1882, 1723, 2107],
+                [1175, 2628, 1367, 2854],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
     )
 
 
@@ -1762,47 +1899,55 @@ def test_onnx_package_with_nonsquare_letterbox_torch_batch(
     for pred in predictions:
         assert torch.allclose(
             pred.confidence.cpu(),
-            torch.tensor([
-            0.8914,
-            0.8833,
-            0.8738,
-            0.8713,
-            0.8623,
-            0.8522,
-            0.8473,
-            0.8245,
-            0.7112,
-        ]),
+            torch.tensor(
+                [
+                    0.8914,
+                    0.8833,
+                    0.8738,
+                    0.8713,
+                    0.8623,
+                    0.8522,
+                    0.8473,
+                    0.8245,
+                    0.7112,
+                ]
+            ),
             atol=0.01,
         )
         assert torch.allclose(
-            pred.class_id.cpu(), torch.tensor([
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-        ], dtype=torch.int32)
+            pred.class_id.cpu(),
+            torch.tensor(
+                [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+                dtype=torch.int32,
+            ),
         )
         assert torch.allclose(
-            pred.xyxy.cpu(), torch.tensor(
-        [
-            [1255, 2065, 1421, 2240],
-            [1709, 2577, 1888, 2764],
-            [1090, 2360, 1253, 2530],
-            [1464, 2300, 1637, 2482],
-            [1735, 2298, 1912, 2479],
-            [933, 1845, 1101, 2014],
-            [2688, 811, 2857, 977],
-            [1500, 1882, 1723, 2107],
-            [1175, 2628, 1367, 2854],
-        ],
-        dtype=torch.int32,
-    ), atol=2
+            pred.xyxy.cpu(),
+            torch.tensor(
+                [
+                    [1255, 2065, 1421, 2240],
+                    [1709, 2577, 1888, 2764],
+                    [1090, 2360, 1253, 2530],
+                    [1464, 2300, 1637, 2482],
+                    [1735, 2298, 1912, 2479],
+                    [933, 1845, 1101, 2014],
+                    [2688, 811, 2857, 977],
+                    [1500, 1882, 1723, 2107],
+                    [1175, 2628, 1367, 2854],
+                ],
+                dtype=torch.int32,
+            ),
+            atol=2,
         )
 
 
@@ -1832,47 +1977,55 @@ def test_onnx_package_with_nonsquare_letterbox_torch_list(
     for pred in predictions:
         assert torch.allclose(
             pred.confidence.cpu(),
-            torch.tensor([
-            0.8914,
-            0.8833,
-            0.8738,
-            0.8713,
-            0.8623,
-            0.8522,
-            0.8473,
-            0.8245,
-            0.7112,
-        ]),
+            torch.tensor(
+                [
+                    0.8914,
+                    0.8833,
+                    0.8738,
+                    0.8713,
+                    0.8623,
+                    0.8522,
+                    0.8473,
+                    0.8245,
+                    0.7112,
+                ]
+            ),
             atol=0.01,
         )
         assert torch.allclose(
-            pred.class_id.cpu(), torch.tensor([
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-        ], dtype=torch.int32)
+            pred.class_id.cpu(),
+            torch.tensor(
+                [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+                dtype=torch.int32,
+            ),
         )
         assert torch.allclose(
-            pred.xyxy.cpu(), torch.tensor(
-        [
-            [1255, 2065, 1421, 2240],
-            [1709, 2577, 1888, 2764],
-            [1090, 2360, 1253, 2530],
-            [1464, 2300, 1637, 2482],
-            [1735, 2298, 1912, 2479],
-            [933, 1845, 1101, 2014],
-            [2688, 811, 2857, 977],
-            [1500, 1882, 1723, 2107],
-            [1175, 2628, 1367, 2854],
-        ],
-        dtype=torch.int32,
-    ), atol=2
+            pred.xyxy.cpu(),
+            torch.tensor(
+                [
+                    [1255, 2065, 1421, 2240],
+                    [1709, 2577, 1888, 2764],
+                    [1090, 2360, 1253, 2530],
+                    [1464, 2300, 1637, 2482],
+                    [1735, 2298, 1912, 2479],
+                    [933, 1845, 1101, 2014],
+                    [2688, 811, 2857, 977],
+                    [1500, 1882, 1723, 2107],
+                    [1175, 2628, 1367, 2854],
+                ],
+                dtype=torch.int32,
+            ),
+            atol=2,
         )
 
 

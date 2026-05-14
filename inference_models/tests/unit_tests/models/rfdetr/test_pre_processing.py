@@ -18,7 +18,6 @@ from inference_models.models.rfdetr.pre_processing import (
     pre_process_network_input,
 )
 
-
 # ---------------------------------------------------------------------------
 # _needs_two_step_resize
 # ---------------------------------------------------------------------------
@@ -91,7 +90,9 @@ _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
-def _reference_pipeline(pil_at_intermediate: Image.Image, target_h: int, target_w: int) -> torch.Tensor:
+def _reference_pipeline(
+    pil_at_intermediate: Image.Image, target_h: int, target_w: int
+) -> torch.Tensor:
     """Mirrors `_pre_process_numpy`'s post-resize chain:
     PIL → TF.resize → TF.to_tensor → TF.normalize."""
     resized = TF.resize(pil_at_intermediate, (target_h, target_w))
@@ -325,12 +326,8 @@ def test_batched_4d_torch_tensor_unbinds_into_per_image_processing() -> None:
     assert tuple(batch_tensor.shape) == (2, 3, 64, 64)
     assert len(batch_meta) == 2
     expected = _reference_pipeline(Image.fromarray(img_np), target_h=64, target_w=64)
-    torch.testing.assert_close(
-        batch_tensor[0], expected.squeeze(0), atol=1e-6, rtol=0
-    )
-    torch.testing.assert_close(
-        batch_tensor[1], expected.squeeze(0), atol=1e-6, rtol=0
-    )
+    torch.testing.assert_close(batch_tensor[0], expected.squeeze(0), atol=1e-6, rtol=0)
+    torch.testing.assert_close(batch_tensor[1], expected.squeeze(0), atol=1e-6, rtol=0)
 
 
 def test_batched_input_produces_per_image_metadata() -> None:

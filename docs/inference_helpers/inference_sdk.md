@@ -130,10 +130,10 @@ Methods that support batching / parallelism:
 
 - `infer(...)` and `infer_async(...)`
 - `ocr_image(...)` and `ocr_image_async(...)` (enforcing `max_batch_size=1`)
-- `detect_gazes(...)` and `detect_gazes_async(...)`
+- `detect_gazes(...)` and `detect_gazes_async(...)` — **deprecated**, always raises `inference_sdk.http.errors.FeatureDeprecatedError`
 - `get_clip_image_embeddings(...)` and `get_clip_image_embeddings_async(...)`
 
-The client also supports [core foundation models](inference_sdk/core_models.md) (CLIP, DocTR, Gaze) and [running Workflows](inference_sdk/workflows.md) for multi-step pipelines.
+The client also supports [core foundation models](inference_sdk/core_models.md) (CLIP, DocTR) and [running Workflows](inference_sdk/workflows.md) for multi-step pipelines.
 
 ## Inference against stream
 

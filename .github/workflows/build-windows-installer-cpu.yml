@@ -205,7 +205,7 @@ jobs:
           pip install -U --index-url https://download.pytorch.org/whl/cpu torch torchvision 
           WHEEL_FILE=$(ls dist/inference-*.whl)
           echo "Found CPU wheel: $WHEEL_FILE"
-          pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
+          pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,grounding-dino]"
           echo "--- Installed inference details ---"
           pip show inference
           
