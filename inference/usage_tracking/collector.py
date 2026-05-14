@@ -370,9 +370,17 @@ class UsageCollector:
         if not resource_id and resource_details:
             resource_id = UsageCollector._calculate_resource_hash(resource_details)
         with self._resource_details_lock:
-            resource_details = self._resource_details.get(api_key, {}).get(
-                (category, resource_id), {}
+            cached_resource_details = self._resource_details.get(api_key, {}).get(
+                (category, resource_id)
             )
+            if cached_resource_details is not None:
+                cached_resource_details = dict(cached_resource_details)
+        # Cache miss must not silently drop the billable flag (and other fields)
+        # off the payload — fall back to the resource_details passed in by the caller.
+        if cached_resource_details:
+            resource_details = cached_resource_details
+        elif not resource_details:
+            resource_details = {}
         with self._system_info_lock:
             ip_address_hash = self._system_info["ip_address_hash"]
             is_gpu_available = self._system_info["is_gpu_available"]
