@@ -14,6 +14,18 @@ from profiling.memory.pytorch_harness import (
 from profiling.memory.pytorch_worker import worker_run
 from profiling.memory.torch_registry import list_torch_registry_rows
 
+BYTES_IN_GB = 1024**3
+MEMORY_FIELDS = (
+    ("Idle allocated", "idle_after_load_allocated_bytes"),
+    ("Idle reserved", "idle_after_load_reserved_bytes"),
+    ("Peak allocated", "peak_allocated_bytes"),
+    ("Peak reserved", "peak_reserved_bytes"),
+    ("End reserved", "end_reserved_bytes"),
+    ("Peak incremental allocated", "peak_incremental_allocated_bytes"),
+    ("Peak incremental reserved", "peak_incremental_reserved_bytes"),
+    ("Baseline free NVML", "baseline_gpu_free_bytes_nvml"),
+)
+
 
 def _load_json_dict(raw: Optional[str], path: Optional[str]) -> Dict[str, Any]:
     try:
@@ -51,6 +63,54 @@ def _cmd_list(console: Console) -> None:
             ",".join(sorted(r.supported_model_features or [])),
         )
     console.print(table)
+
+
+def _format_bytes_as_gb(value: Optional[int]) -> str:
+    if value is None:
+        return "n/a"
+
+    gb_value = value / BYTES_IN_GB
+    formatted_value = f"{gb_value:.3f}"
+
+    return formatted_value
+
+
+def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> None:
+    summary = Table(title="PyTorch Memory Profile")
+    summary.add_column("Field")
+    summary.add_column("Value")
+
+    shape_profile = result.get("shape_profile") or {}
+    shape_text = (
+        f"batch={shape_profile.get('batch_size')}, "
+        f"height={shape_profile.get('height')}, "
+        f"width={shape_profile.get('width')}"
+    )
+    summary.add_row("Model", str(result.get("model_id")))
+    summary.add_row("Runtime", str(result.get("runtime")))
+    summary.add_row("GPU", str(result.get("gpu_name")))
+    summary.add_row("Precision", str(result.get("precision")))
+    summary.add_row("Shape", shape_text)
+    summary.add_row("Method", str(result.get("method_name")))
+
+    memory = Table(title="Memory Metrics")
+    memory.add_column("Metric")
+    memory.add_column("GB", justify="right")
+    memory.add_column("Bytes", justify="right")
+
+    for label, key in MEMORY_FIELDS:
+        value = result.get(key)
+        bytes_text = "n/a" if value is None else str(value)
+        gb_text = _format_bytes_as_gb(value=value)
+
+        memory.add_row(
+            label,
+            gb_text,
+            bytes_text,
+        )
+
+    console.print(summary)
+    console.print(memory)
 
 
 @click.command(
@@ -288,6 +348,11 @@ def main(
         result = worker_run(payload)
     else:
         result = run_pytorch_profile_subprocess(payload)
+
+    _print_human_readable_result(
+        console,
+        result=result,
+    )
 
     text = json.dumps(result, indent=2)
     console.print(text)
