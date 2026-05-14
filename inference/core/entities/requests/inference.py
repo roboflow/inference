@@ -330,7 +330,7 @@ class LMMInferenceRequest(CVInferenceRequest):
     )
     enable_thinking: bool = Field(
         default=False,
-        description="If true, enables thinking/reasoning mode for models that support it (e.g. Qwen3.5-VL). The model's reasoning will be included in the response.",
+        description="If true, enables thinking/reasoning mode for models that support it (e.g. Qwen3.5). The model's reasoning will be included in the response.",
     )
     max_new_tokens: Optional[int] = Field(
         default=None,

@@ -1001,6 +1001,7 @@ if USE_INFERENCE_MODELS:
         for variant in [
             "qwen3_5-0.8b",
             "qwen3_5-2b",
+            "qwen3_5-4b",
             "qwen3_5-0.8b-peft",
             "qwen3_5-2b-peft",
         ]:

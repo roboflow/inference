@@ -181,6 +181,8 @@ class Qwen35HF:
         enable_thinking: bool = False,
         **kwargs,
     ) -> dict:
+        if isinstance(images, np.ndarray):
+            images = images[:, :, ::-1].copy()
         # Handle prompt and system prompt parsing logic from original implementation
         if prompt is None:
             prompt = "Describe what's in this image."
