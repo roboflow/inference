@@ -31,3 +31,5 @@ serialized_result = serialize_result(result=result)
 
 return serialized_result
 ```
+
+Always end files with a final empty line.

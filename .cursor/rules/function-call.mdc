@@ -19,16 +19,18 @@ def profile_model(
     ...
 ```
 
-Prefer calling functions with explicit keyword arguments, especially when
-passing through variables with matching names.
+When calling such functions, pass the primary argument positionally and pass
+keyword-only/configuration arguments with explicit names.
 
 ```python
 profile_model(
-    model_path=model_path,
+    model_path,
     device=device,
     batch_size=batch_size,
 )
 ```
 
-Do not force this pattern when positional arguments are clearer for a small,
-well-known API or when matching an established third-party interface.
+For functions without a clear primary positional argument, prefer explicit
+keyword calls when passing through variables with matching names. Do not force
+this pattern when positional arguments are clearer for a small, well-known API
+or when matching an established third-party interface.
