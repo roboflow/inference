@@ -6,15 +6,19 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
       
       
-        <link rel="canonical" href="https://inference.roboflow.com/using_inference/http_api/">
+        <link rel="canonical" href="https://inference.roboflow.com/server_configuration/https/">
       
       
+        <link rel="prev" href="../environmental_variables/">
+      
+      
+        <link rel="next" href="../accepted_input_formats/">
       
       
         
@@ -25,7 +29,7 @@
     
     
       
-        <title>Http api - Roboflow Inference</title>
+        <title>Serving inference over HTTPS - Roboflow Inference</title>
       
     
     
@@ -100,7 +104,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#quickstart" class="md-skip">
+        <a href="#serving-inference-over-https" class="md-skip">
           Skip to content
         </a>
       
@@ -139,7 +143,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Http api
+              Serving inference over HTTPS
             
           </span>
         </div>
@@ -258,10 +262,12 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
+      <li class="md-tabs__item md-tabs__item--active">
         <a href="../../reference/overview/" class="md-tabs__link">
           
   
@@ -529,6 +535,173 @@
       
   
   
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../inference_helpers/inference_sdk/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference SDK
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
   
   
     
@@ -566,14 +739,14 @@
   
   
   
-    <a href="../../reference/overview/" class="md-nav__link">
+    <a href="../../inference_helpers/inference_cli/" class="md-nav__link">
       
   
   
   <span class="md-ellipsis">
     
   
-    Reference
+    Inference CLI
   
 
     
@@ -587,6 +760,601 @@
     </a>
   
 
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_4" id="__nav_4_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference Server
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Inference Server
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/docker_configuration_options/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Configuration Options
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../environmental_variables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environmental variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serving over HTTPS
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serving over HTTPS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quickstart-with-self-signed-certs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quickstart with self-signed certs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-cert-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom cert paths
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#encrypted-private-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Encrypted private keys
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mutual-tls-client-certs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mutual TLS (client certs)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../accepted_input_formats/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security of input formats
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../service_telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Service telemetry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/inference_gpu_windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install "bare metal" Inference GPU on Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../enterprise/parallel_processing/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enterprise Features
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenAPI Spec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../using_inference/about/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference Python Package
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribute »
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/roboflow/inference/releases" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog »
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
       
     </li>
   
@@ -606,6 +1374,8 @@
                     
                     
                     
+                      
+                    
                     
                       <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
                       <div class="md-sidebar-button__wrapper">
@@ -621,6 +1391,8 @@
   
   
   
+    
+  
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
@@ -629,60 +1401,54 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#quickstart" class="md-nav__link">
+  <a href="#environment-variables" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Quickstart
+        Environment variables
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Quickstart">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#install-the-inference-server" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Install the Inference Server
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#run-inference" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run Inference
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#visualize-results" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Visualize Results
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#hosted-api" class="md-nav__link">
+  <a href="#quickstart-with-self-signed-certs" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Hosted API
+        Quickstart with self-signed certs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-cert-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom cert paths
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#encrypted-private-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Encrypted private keys
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mutual-tls-client-certs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mutual TLS (client certs)
       
     </span>
   </a>
@@ -706,7 +1472,7 @@
                 
                   
   
-    <a href="https://github.com/roboflow/inference/tree/main/docs/using_inference/http_api.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/roboflow/inference/tree/main/docs/server_configuration/https.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-file-pen" viewBox="0 0 24 24"><path d="M12.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v9.34"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10.378 12.622a1 1 0 0 1 3 3.003L8.36 20.637a2 2 0 0 1-.854.506l-2.867.837a.5.5 0 0 1-.62-.62l.836-2.869a2 2 0 0 1 .506-.853z"/></svg>
     </a>
@@ -714,99 +1480,96 @@
   
 
 
-  <h1 id="__skip">Http api</h1>
+<h1 id="serving-inference-over-https">Serving inference over HTTPS<a class="headerlink" href="#serving-inference-over-https" title="Permanent link">&para;</a></h1>
+<p>The inference server can serve HTTPS directly when you provide your own
+TLS certificate and private key. This is useful for self-hosted deployments
+where you cannot place a TLS-terminating reverse proxy in front of the
+container.</p>
+<p>HTTPS is configured entirely through environment variables.</p>
+<h2 id="environment-variables">Environment variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ENABLE_HTTPS</code></td>
+<td>Master switch. Set to <code>True</code> / <code>1</code> / <code>yes</code> to enable HTTPS.</td>
+<td><code>False</code></td>
+</tr>
+<tr>
+<td><code>SSL_CERTFILE</code></td>
+<td>Path inside the container to the PEM-encoded certificate.</td>
+<td><code>/etc/inference/certs/server.crt</code></td>
+</tr>
+<tr>
+<td><code>SSL_KEYFILE</code></td>
+<td>Path inside the container to the PEM-encoded private key.</td>
+<td><code>/etc/inference/certs/server.key</code></td>
+</tr>
+<tr>
+<td><code>SSL_KEYFILE_PASSWORD</code></td>
+<td>Passphrase for an encrypted private key.</td>
+<td>unset</td>
+</tr>
+<tr>
+<td><code>SSL_CA_CERTS</code></td>
+<td>CA bundle used to verify client certificates (mTLS).</td>
+<td>unset</td>
+</tr>
+</tbody>
+</table>
+<p>The cert and key paths default to <code>/etc/inference/certs/...</code>, so the
+simplest deployment only needs to mount your cert/key at those paths and
+flip <code>ENABLE_HTTPS=true</code>.</p>
+<p>If <code>ENABLE_HTTPS</code> is set but the cert or key is missing, the server
+refuses to start with an error listing the paths it tried to read.</p>
+<h2 id="quickstart-with-self-signed-certs">Quickstart with self-signed certs<a class="headerlink" href="#quickstart-with-self-signed-certs" title="Permanent link">&para;</a></h2>
+<p>The example below runs the CPU image on <code>https://localhost:9001</code> using a
+self-signed certificate. Replace the cert generation step with your own
+CA-issued certificate in production.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 1. Generate a self-signed cert/key pair valid for localhost</span>
+mkdir<span class="w"> </span>-p<span class="w"> </span>/tmp/inference-certs
+openssl<span class="w"> </span>req<span class="w"> </span>-x509<span class="w"> </span>-newkey<span class="w"> </span>rsa:2048<span class="w"> </span>-nodes<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-keyout<span class="w"> </span>/tmp/inference-certs/server.key<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-out<span class="w"> </span>/tmp/inference-certs/server.crt<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-days<span class="w"> </span><span class="m">365</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-subj<span class="w"> </span><span class="s2">&quot;/CN=localhost&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-addext<span class="w"> </span><span class="s2">&quot;subjectAltName=DNS:localhost,IP:127.0.0.1&quot;</span>
 
-<p>The HTTP Inference API provides a standard API through which to run inference on computer vision models. The HTTP API is a helpful way to treat your machine learning models as their own microservice. With this interface, you will run a docker container and make requests over HTTP. The requests contain all of the information Inference needs to run a computer vision model including the model ID, the input image data, and any configurable parameters used during processing (e.g. confidence threshold).</p>
-<h2 id="quickstart">Quickstart<a class="headerlink" href="#quickstart" title="Permanent link">&para;</a></h2>
-<h3 id="install-the-inference-server">Install the Inference Server<a class="headerlink" href="#install-the-inference-server" title="Permanent link">&para;</a></h3>
-<p><em>You can skip this step if you already have Inference installed and running.</em></p>
-<p>The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the <a href="https://docs.docker.com/get-docker/" target="_blank">official Docker installation guide</a>.</p>
-<p>Once you have Docker installed, you are ready to download Roboflow Inference. The command you need to run depends on what device you are using.</p>
-<p>Start the server using <code>inference server start</code>. After you have started the Inference Server, the Docker container will start running the server at <code>localhost:9001</code>.</p>
-<h3 id="run-inference">Run Inference<a class="headerlink" href="#run-inference" title="Permanent link">&para;</a></h3>
-<p>You can send a URL with an image, a NumPy array, or a base64-encoded image to an Inference server. The server will return a JSON response with the predictions. The easiest way to interact with the Roboflow Inference server is to sue the Inference SDK. To do this first install it with pip:</p>
-<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>inference-sdk
+<span class="c1"># 2. Run the inference server with HTTPS enabled</span>
+docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-p<span class="w"> </span><span class="m">9001</span>:9001<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">ENABLE_HTTPS</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>/tmp/inference-certs:/etc/inference/certs:ro<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>roboflow/roboflow-inference-server-cpu:latest
+
+<span class="c1"># 3. Validate from another shell</span>
+curl<span class="w"> </span>-sk<span class="w"> </span>https://localhost:9001/info
 </code></pre></div>
-<p>Next, instantiate a client and use the <code>infer(...)</code> method:</p>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span><span class="p">,</span> <span class="n">InferenceConfiguration</span>
-
-<span class="n">project_id</span> <span class="o">=</span> <span class="s2">&quot;soccer-players-5fuqs&quot;</span>
-<span class="n">model_version</span> <span class="o">=</span> <span class="s2">&quot;1&quot;</span>
-<span class="n">model_id</span> <span class="o">=</span> <span class="n">project_id</span> <span class="o">+</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">model_version</span>
-<span class="n">image_url</span> <span class="o">=</span> <span class="s2">&quot;https://media.roboflow.com/inference/soccer.jpg&quot;</span>
-
-<span class="n">client</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
-    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:9001&quot;</span><span class="p">,</span>
-    <span class="n">api_key</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span><span class="p">],</span>
-<span class="p">)</span>
-
-
-<span class="n">results</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">infer</span><span class="p">(</span><span class="n">image_url</span><span class="p">,</span> <span class="n">model_id</span><span class="o">=</span><span class="n">model_id</span><span class="p">)</span>
+<p><code>-k</code> (or <code>--insecure</code>) is only required because the cert is self-signed;
+clients that trust your CA do not need it.</p>
+<h2 id="custom-cert-paths">Custom cert paths<a class="headerlink" href="#custom-cert-paths" title="Permanent link">&para;</a></h2>
+<p>If your certs live somewhere other than the defaults, set the paths
+explicitly:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-p<span class="w"> </span><span class="m">9001</span>:9001<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">ENABLE_HTTPS</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">SSL_CERTFILE</span><span class="o">=</span>/run/secrets/tls/fullchain.pem<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">SSL_KEYFILE</span><span class="o">=</span>/run/secrets/tls/privkey.pem<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>/etc/letsencrypt/live/inference.example.com:/run/secrets/tls:ro<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>roboflow/roboflow-inference-server-cpu:latest
 </code></pre></div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The model id is composed of the string <code>&lt;project_id&gt;/&lt;version_id&gt;</code>. You can find these pieces of information by following the guide <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids">here</a>.</p>
-</div>
-<div class="admonition hint">
-<p class="admonition-title">Hint</p>
-<p>See <a href="../../../inference_helpers/inference_sdk">full docs for the Inference SDK</a>.</p>
-</div>
-<h3 id="visualize-results">Visualize Results<a class="headerlink" href="#visualize-results" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">cv2</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">supervision</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">sv</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span><span class="p">,</span> <span class="n">InferenceConfiguration</span>
-
-<span class="n">model_id</span> <span class="o">=</span> <span class="s2">&quot;soccer-players-5fuqs/1&quot;</span>
-<span class="n">image_file</span> <span class="o">=</span> <span class="s2">&quot;soccer.jpg&quot;</span>
-
-<span class="n">image</span> <span class="o">=</span> <span class="n">cv2</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="n">image_file</span><span class="p">)</span>
-
-<span class="c1">#Configure client</span>
-<span class="n">client</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
-    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;https://detect.roboflow.com&quot;</span><span class="p">,</span> <span class="c1"># route for local inference server</span>
-    <span class="n">api_key</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span><span class="p">],</span> <span class="c1"># api key for your workspace</span>
-<span class="p">)</span>
-
-<span class="c1">#Run inference</span>
-<span class="n">result</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">infer</span><span class="p">(</span><span class="n">image</span><span class="p">,</span> <span class="n">model_id</span><span class="o">=</span><span class="n">model_id</span><span class="p">)</span>
-
-<span class="c1">#Load results into Supervision Detection API</span>
-<span class="n">detections</span> <span class="o">=</span> <span class="n">sv</span><span class="o">.</span><span class="n">Detections</span><span class="o">.</span><span class="n">from_inference</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
-
-<span class="c1">#Create Supervision annotators</span>
-<span class="n">bounding_box_annotator</span> <span class="o">=</span> <span class="n">sv</span><span class="o">.</span><span class="n">BoxAnnotator</span><span class="p">()</span>
-<span class="n">label_annotator</span> <span class="o">=</span> <span class="n">sv</span><span class="o">.</span><span class="n">LabelAnnotator</span><span class="p">()</span>
-
-<span class="c1">#Extract labels array from inference results</span>
-<span class="n">labels</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="p">[</span><span class="s1">&#39;class&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">result</span><span class="p">[</span><span class="s1">&#39;predictions&#39;</span><span class="p">]]</span>
-
-<span class="c1">#Apply results to image using Supervision annotators</span>
-<span class="n">annotated_image</span> <span class="o">=</span> <span class="n">bounding_box_annotator</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">scene</span><span class="o">=</span><span class="n">image</span><span class="p">,</span> <span class="n">detections</span><span class="o">=</span><span class="n">detections</span><span class="p">)</span>
-<span class="n">annotated_image</span> <span class="o">=</span> <span class="n">label_annotator</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span>
-    <span class="n">scene</span><span class="o">=</span><span class="n">annotated_image</span><span class="p">,</span> <span class="n">detections</span><span class="o">=</span><span class="n">detections</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">labels</span>
-<span class="p">)</span>
-
-<span class="c1">#Write annotated image to file or display image</span>
-<span class="k">with</span> <span class="n">sv</span><span class="o">.</span><span class="n">ImageSink</span><span class="p">(</span><span class="n">target_dir_path</span><span class="o">=</span><span class="s2">&quot;./results/&quot;</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">sink</span><span class="p">:</span>
-    <span class="n">sink</span><span class="o">.</span><span class="n">save_image</span><span class="p">(</span><span class="n">annotated_image</span><span class="p">)</span>
-<span class="c1">#or sv.plot_image(annotated_image)</span>
-</code></pre></div>
-<h2 id="hosted-api">Hosted API<a class="headerlink" href="#hosted-api" title="Permanent link">&para;</a></h2>
-<p>Roboflow hosts a powerful and infinitely scalable version of the Roboflow Inference Server. This makes it even easier to integrate computer vision models into your software without adding any maintenance burden. And, since the Roboflow hosted APIs are running using the Inference package, it's easy to switch between using a hosted server and an on prem server without having to reinvent your client code. To use the hosted API, simply replace the <code>api_url</code> parameter passed to the Inference SDK client configuration. The hosted API base URL is <code>https://detect.roboflow.com</code>.</p>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span><span class="p">,</span> <span class="n">InferenceConfiguration</span>
-
-<span class="n">project_id</span> <span class="o">=</span> <span class="s2">&quot;soccer-players-5fuqs/1&quot;</span>
-<span class="n">image_url</span> <span class="o">=</span> <span class="s2">&quot;https://media.roboflow.com/inference/soccer.jpg&quot;</span>
-
-<span class="n">client</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
-    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;https://detect.roboflow.com&quot;</span><span class="p">,</span>
-    <span class="n">api_key</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span><span class="p">],</span>
-<span class="p">)</span>
-
-<span class="n">results</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">infer</span><span class="p">(</span><span class="n">image_url</span><span class="p">,</span> <span class="n">model_id</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">model_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</code></pre></div>
+<h2 id="encrypted-private-keys">Encrypted private keys<a class="headerlink" href="#encrypted-private-keys" title="Permanent link">&para;</a></h2>
+<p>When the key file is encrypted, supply the passphrase via
+<code>SSL_KEYFILE_PASSWORD</code>. Prefer Docker secrets or another secret store
+over baking the value into the image.</p>
+<h2 id="mutual-tls-client-certs">Mutual TLS (client certs)<a class="headerlink" href="#mutual-tls-client-certs" title="Permanent link">&para;</a></h2>
+<p>Set <code>SSL_CA_CERTS</code> to a CA bundle that should be used to verify client
+certificates. Only clients presenting a certificate signed by one of the
+listed CAs will be allowed.</p>
 
 
 
@@ -845,6 +1608,44 @@
       
         <footer class="md-footer">
   
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../environmental_variables/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Environmental variables">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Environmental variables
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../accepted_input_formats/" class="md-footer__link md-footer__link--next" aria-label="Next: Security of input formats">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Security of input formats
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
     
   
   <div class="md-footer-meta md-typeset">

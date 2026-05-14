@@ -38,8 +38,6 @@ Hardware device detection and selection helpers.
 
 ::: inference.core.entities.requests.easy_ocr
 
-::: inference.core.entities.requests.gaze
-
 ::: inference.core.entities.requests.groundingdino
 
 ::: inference.core.entities.requests.inference
@@ -67,8 +65,6 @@ Hardware device detection and selection helpers.
 ## `core/entities/responses`
 
 ::: inference.core.entities.responses.clip
-
-::: inference.core.entities.responses.gaze
 
 ::: inference.core.entities.responses.inference
 
@@ -125,6 +121,8 @@ High-level inference interfaces: camera, HTTP, and stream processing.
 ::: inference.core.interfaces.http.error_handlers
 
 ::: inference.core.interfaces.http.http_api
+
+::: inference.core.interfaces.http.uvicorn_config
 
 ## `core/interfaces/http/handlers`
 
@@ -332,10 +330,6 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3
 
-## `core/workflows/core_steps/models/foundation/gaze`
-
-::: inference.core.workflows.core_steps.models.foundation.gaze.v1
-
 ## `core/workflows/core_steps/models/foundation/google_gemini`
 
 ::: inference.core.workflows.core_steps.models.foundation.google_gemini.v3
@@ -345,6 +339,10 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 ::: inference.core.workflows.core_steps.models.foundation.openai.v3
 
 ::: inference.core.workflows.core_steps.models.foundation.openai.v4
+
+## `core/workflows/core_steps/models/foundation/openai_compatible`
+
+::: inference.core.workflows.core_steps.models.foundation.openai_compatible.v1
 
 ## `core/workflows/core_steps/models/foundation/segment_anything2_video`
 
@@ -557,8 +555,6 @@ Parallel HTTP inference via Celery workers for high-throughput deployments.
 ::: inference.models.gaze.gaze
 
 ::: inference.models.gaze.gaze_inference_models
-
-::: inference.models.gaze.l2cs
 
 ## `models/grounding_dino`
 

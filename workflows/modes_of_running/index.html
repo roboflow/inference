@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
@@ -1488,7 +1488,7 @@ Alternatively, the <code>inference</code> server (which can run Workflows) can b
 if you use too many of them or if the input images are too large.</p>
 </li>
 </ul>
-<p>Integrating via HTTP is simple: just send a <a href="https://detect.roboflow.com/docs#/default/infer_from_predefined_workflow__workspace_name__workflows__workflow_id__post">request</a>
+<p>Integrating via HTTP is simple: just send a <a href="https://serverless.roboflow.com/docs#/default/infer_from_predefined_workflow__workspace_name__workflows__workflow_id__post">request</a>
 to the server. You can do this using a HTTP client library in your preferred programming language, 
 leverage our Inference SDK in Python, or even use cURL. Explore the examples below to see how it’s done.</p>
 <div class="admonition example">
@@ -1497,7 +1497,7 @@ leverage our Inference SDK in Python, or even use cURL. Explore the examples bel
 <div class="tabbed-content">
 <div class="tabbed-block">
 <p>To run your workflow created in Roboflow APP with <code>cURL</code>, use the following command:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>--location<span class="w"> </span><span class="s1">&#39;https://detect.roboflow.com/infer/workflows/&lt;your-workspace-name&gt;/&lt;your-workflow-id&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>--location<span class="w"> </span><span class="s1">&#39;https://serverless.roboflow.com/infer/workflows/&lt;your-workspace-name&gt;/&lt;your-workflow-id&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--header<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--data<span class="w"> </span><span class="s1">&#39;{</span>
 <span class="s1">    &quot;api_key&quot;: &quot;&lt;YOUR-API-KEY&gt;&quot;,</span>
@@ -1529,7 +1529,7 @@ options are <code>url</code> and <code>base64</code> as <code>type</code> - and 
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
 
 <span class="n">client</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
-    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;https://detect.roboflow.com&quot;</span><span class="p">,</span>
+    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;https://serverless.roboflow.com&quot;</span><span class="p">,</span>
     <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;&lt;YOUR-API-KEY&gt;&quot;</span><span class="p">,</span>
 <span class="p">)</span>
 
@@ -1631,7 +1631,7 @@ definition.</p>
 <p>The above examples present how to run Workflow created and saved in Roboflow APP. It is also possible to
 create and run workflow that is created from scratch and may not contain API-KEY gated blocks (for instance 
 your own blocks). Then you should use the 
-<a href="https://detect.roboflow.com/docs#/default/infer_from_workflow_workflows_run_post">following endpoint</a> or
+<a href="https://serverless.roboflow.com/docs#/default/infer_from_workflow_workflows_run_post">following endpoint</a> or
 <a href="../../inference_helpers/inference_sdk/#inference-workflows">Inference SDK</a> as showcased in docs.</p>
 <h2 id="video-processing-using-inferencepipeline">Video processing using <code>InferencePipeline</code><a class="headerlink" href="#video-processing-using-inferencepipeline" title="Permanent link">&para;</a></h2>
 <p>For use cases involving video files or streams, we recommend using <a href="../../using_inference/inference_pipeline/">InferencePipeline</a>, which can run 

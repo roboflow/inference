@@ -8,7 +8,7 @@ Comprehensive workflow testing detections_rollup with object detection,
 keypoint detection, and instance segmentation. Tests the ability to rollup
 predictions from dynamic crops back to parent image coordinates.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiaVJDbVEwWjNadGRZNllBQkhDeGQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg2OTU5MjJ9.385jPrHhaznbDvV4mh2Q0mmA4Qkn2GQULNDOwkrHfvA?showGraph=true" loading="lazy" title="Roboflow Workflow for dimension rollup full" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiaVJDbVEwWjNadGRZNllBQkhDeGQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg3NTU1Njl9.LcecEyF7v-7AYZ_IKvPF2Khz3ByN_FHgS5sWu4bnHfY?showGraph=true" loading="lazy" title="Roboflow Workflow for dimension rollup full" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -281,7 +281,7 @@ rollup object detection predictions from dynamic crops back to parent
 image coordinates with configurable confidence merging strategies and
 overlap thresholds.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiT1RNZ0tmbE0ycUhOMldDZmFHZXciLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg2OTU5MjR9.5mZYU2-X7MTMHUMSXvHbXYEI-M23ojNox6lqDvGkN_o?showGraph=true" loading="lazy" title="Roboflow Workflow for dimension rollup object detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiT1RNZ0tmbE0ycUhOMldDZmFHZXciLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg3NTU1NzB9.NCF_NX4elubFdERdgAMSVmSVL6hhmXmMQYv7h4d8Yl8?showGraph=true" loading="lazy" title="Roboflow Workflow for dimension rollup object detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -364,7 +364,7 @@ Test dimension_rollup with keypoint detection predictions. Demonstrates how to
 rollup keypoint detections from dynamic crops back to parent image coordinates
 with configurable keypoint merge thresholds.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiNWxaRG4zb0ZIRFA3Vk1RZlVwYzgiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg2OTU5MjV9.tQiINzNIhCYemlDeDEjBoINMb95l5ULAVBdKuh3A8GY?showGraph=true" loading="lazy" title="Roboflow Workflow for dimension rollup keypoint detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiNWxaRG4zb0ZIRFA3Vk1RZlVwYzgiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg3NTU1NzF9.xqDjSrEmYfDo-NsJRypl3iCVvzqQocgkdZc4J0Dtw4U?showGraph=true" loading="lazy" title="Roboflow Workflow for dimension rollup keypoint detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -443,7 +443,7 @@ with configurable keypoint merge thresholds.
 Test dimension_rollup with instance segmentation predictions. Demonstrates how to
 rollup segmentation masks from dynamic crops back to parent image coordinates.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZDlITGRqbjZiZnVQajZMSElPVFoiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg2OTU5MjZ9.t41FFPtkjWfGqAVcIVZY1qPg_5hslvqdpxi1r9p262Q?showGraph=true" loading="lazy" title="Roboflow Workflow for dimension rollup segmentation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZDlITGRqbjZiZnVQajZMSElPVFoiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg3NTU1NzF9.P5jTvIf_xNtSX8oqjmLpj0ha79zJPUoyuvQQ4QXFVgk?showGraph=true" loading="lazy" title="Roboflow Workflow for dimension rollup segmentation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

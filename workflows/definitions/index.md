@@ -87,7 +87,7 @@ This means that a workflow defined for Execution Engine version `1.0.0` will fun
 newer versions, but workflows created for more recent versions may not be compatible with earlier ones.
 
 List of Execution Engine versions loaded on the Roboflow Hosted platform is available 
-[here](https://detect.roboflow.com/workflows/execution_engine/versions).
+[here](https://serverless.roboflow.com/workflows/execution_engine/versions).
 
 
 ## Inputs

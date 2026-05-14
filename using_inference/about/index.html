@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Core Python package reference for loading models, running inference, and building video pipelines with Roboflow Inference.">
       
       
         <meta name="author" content="Roboflow">
@@ -791,6 +791,8 @@
       
         
       
+        
+      
     
     
     
@@ -1328,22 +1330,42 @@
 <div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>--extra-index-url<span class="w"> </span>https://download.pytorch.org/whl/cu124<span class="w"> </span>inference-gpu<span class="w">  </span>
 <span class="c1"># please adjust the --extra-index-url to CUDA version installed in your OS</span>
 <span class="c1"># https://download.pytorch.org/whl/cu&lt;major&gt;&lt;minor&gt;, for instance https://download.pytorch.org/whl/cu130 for CUDA 13.0</span>
-<span class="c1"># alternativelly use</span>
+<span class="c1"># alternatively use</span>
 uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>inference-gpu
 </code></pre></div>
 <h2 id="quick-example">Quick Example<a class="headerlink" href="#quick-example" title="Permanent link">&para;</a></h2>
-<p><code>get_model()</code> loads a model by its ID, downloads the weights, and returns a model object you can call <code>.infer()</code> on.</p>
+<p>You can run inference either against an Inference Server over HTTP (with <code>inference-sdk</code>) or directly in your process (with the native <code>inference</code> package). The native <code>get_model()</code> call loads the model into your script and returns an object you can call <code>.infer()</code> on; the HTTP client sends the image to a server that does the same. See <a href="../../quickstart/run_a_model/#install">Run a Model</a> for package installation.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="inference-sdk-http-client" name="__tabbed_1" type="radio" /><input id="inference-native" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="inference-sdk-http-client">inference-sdk (HTTP client)</label><label for="inference-native">inference (native)</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
+
+<span class="n">client</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
+    <span class="c1"># api_url=&quot;http://localhost:9001&quot;,  # for Self-hosted</span>
+    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;https://serverless.roboflow.com&quot;</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">infer</span><span class="p">(</span>
+    <span class="s2">&quot;https://media.roboflow.com/inference/people-walking.jpg&quot;</span><span class="p">,</span>
+    <span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;rfdetr-small&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_model</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">get_model</span><span class="p">(</span><span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;rfdetr-small&quot;</span><span class="p">)</span>
 <span class="n">results</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">infer</span><span class="p">(</span><span class="s2">&quot;https://media.roboflow.com/inference/people-walking.jpg&quot;</span><span class="p">)</span>
 </code></pre></div>
+</div>
+</div>
+</div>
 <p>See <a href="../../quickstart/run_a_model/#model-ids">Model ID</a> to use models that require an API key, set the <code>ROBOFLOW_API_KEY</code> environment variable or pass it directly:</p>
 <div class="highlight"><pre><span></span><code><span class="n">model</span> <span class="o">=</span> <span class="n">get_model</span><span class="p">(</span><span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;my-project/1&quot;</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>See the <a href="../../quickstart/run_a_model/">Run a Model</a> guide for a more detailed walkthrough with visualization.</p>
 <h2 id="inference-pipeline">Inference Pipeline<a class="headerlink" href="#inference-pipeline" title="Permanent link">&para;</a></h2>
-<p><code>InferencePipeline</code> provides a streaming interface for running inference on video sources - webcams, RTSP streams, video files, and more. </p>
+<p><code>InferencePipeline</code> provides a streaming interface for running inference on video sources - webcams, RTSP streams, video files, and more. It is available only in the native <code>inference</code> package; the HTTP client does not provide a streaming-pipeline equivalent.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferencePipeline</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.stream.sinks</span><span class="w"> </span><span class="kn">import</span> <span class="n">render_boxes</span>
 
@@ -1367,6 +1389,9 @@ For more information, see the <a href="../inference_pipeline/">Inference Pipelin
 
 
 
+
+  
+  
 
 
 

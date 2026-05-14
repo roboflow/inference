@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://inference.roboflow.com/quickstart/aliases/">
       
       
-        <link rel="prev" href="../../fine-tuned/yolonas/">
+        <link rel="prev" href="../explore_models/">
       
       
         <link rel="next" href="../load_from_universe/">
@@ -29,7 +29,7 @@
     
     
       
-        <title>Aliases - Roboflow Inference</title>
+        <title>Pre-Trained Models - Roboflow Inference</title>
       
     
     
@@ -104,7 +104,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#supported-pre-trained-models" class="md-skip">
+        <a href="#pre-trained-models" class="md-skip">
           Skip to content
         </a>
       
@@ -143,7 +143,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Aliases
+              Pre-Trained Models
             
           </span>
         </div>
@@ -502,49 +502,9 @@
   
   
   
-    
-    
-      
+    <li class="md-nav__item">
+      <a href="../explore_models/" class="md-nav__link">
         
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-    
-    
-    
-      
-      
-    
-    
-      
-        
-        
-      
-    
-    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
-      
-        
-  
-  
-  
-    <a href="../explore_models/" class="md-nav__link">
-      
   
   
   <span class="md-ellipsis">
@@ -558,13 +518,7 @@
   
   
 
-      
-        <span class="md-nav__icon md-icon"></span>
-      
-    </a>
-  
-
-      
+      </a>
     </li>
   
 
@@ -582,6 +536,8 @@
       
       
       
+      
+        
       
       
         <label class="md-nav__link md-nav__link--active" for="__toc">
@@ -625,6 +581,8 @@
 <nav class="md-nav md-nav--secondary" aria-label="On this page">
   
   
+  
+    
   
   
     <label class="md-nav__title" for="__toc">
@@ -860,8 +818,6 @@
       
         
       
-        
-      
     
     
     
@@ -880,7 +836,7 @@
   
   
   
-    <a href="../inference_101/" class="md-nav__link">
+    <a href="../devices/" class="md-nav__link">
       
   
   
@@ -1064,6 +1020,8 @@
                     
                     
                     
+                      
+                    
                     
                       <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
                       <div class="md-sidebar-button__wrapper">
@@ -1078,6 +1036,8 @@
 <nav class="md-nav md-nav--secondary" aria-label="On this page">
   
   
+  
+    
   
   
     <label class="md-nav__title" for="__toc">
@@ -1194,20 +1154,35 @@
   
 
 
-  <h1 id="__skip">Aliases</h1>
+<h1 id="pre-trained-models">Pre-Trained Models<a class="headerlink" href="#pre-trained-models" title="Permanent link">&para;</a></h1>
+<p>This page lists the <strong>built-in pre-trained models</strong> that ship with Roboflow Inference - popular open architectures trained on the COCO dataset and exposed under short aliases like <code>rfdetr-small</code> or <code>yolov8n-640</code>.</p>
+<p>These aliases are convenience shortcuts: no API key is required to use them, and you don't have to know the underlying Roboflow project/version. Pick a model from the tables below and pass its alias as <code>model_id</code>.</p>
+<p>Run a pre-trained model alias with either the HTTP client or the native package. See <a href=".././run_a_model/">Run a Model</a> for package installation.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="inference-sdk-http-client" name="__tabbed_1" type="radio" /><input id="inference-native" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="inference-sdk-http-client">inference-sdk (HTTP client)</label><label for="inference-native">inference (native)</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
 
-<p>Inference supports running any of the 50,000+ pre-trained public models hosted on <a href="https://universe.roboflow.com">Roboflow Universe</a>, as well as fine-tuned models.</p>
-<p>We have defined IDs for common models for ease of use. These models do not require an API key for use unlike other public or private models.</p>
-<p>Using it in <code>inference</code> is as simple as:</p>
+<span class="n">client</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
+    <span class="c1"># api_url=&quot;http://localhost:9001&quot;,  # for Self-hosted</span>
+    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;https://serverless.roboflow.com&quot;</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">infer</span><span class="p">(</span>
+    <span class="s2">&quot;https://media.roboflow.com/inference/people-walking.jpg&quot;</span><span class="p">,</span>
+    <span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;rfdetr-small&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_model</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">get_model</span><span class="p">(</span><span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;rfdetr-small&quot;</span><span class="p">)</span>
 
 <span class="n">results</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">infer</span><span class="p">(</span><span class="s2">&quot;https://media.roboflow.com/inference/people-walking.jpg&quot;</span><span class="p">)</span>
 </code></pre></div>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>See the <a href=".././explore_models/">Use a fine-tuned model</a> guide for an example on how to deploy your own model.</p>
+</div>
+</div>
 </div>
 <h2 id="supported-pre-trained-models">Supported Pre-Trained Models<a class="headerlink" href="#supported-pre-trained-models" title="Permanent link">&para;</a></h2>
 <p>You can click the link associated with a model below to test the model in your browser, and use the ID with Inference to deploy the model to the edge.</p>
@@ -1865,7 +1840,7 @@ table {
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../fine-tuned/yolonas/" class="md-footer__link md-footer__link--prev" aria-label="Previous: YOLO-NAS">
+          <a href="../explore_models/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Fine-Tuned Models">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -1875,7 +1850,7 @@ table {
                 Previous
               </span>
               <div class="md-ellipsis">
-                YOLO-NAS
+                Fine-Tuned Models
               </div>
             </div>
           </a>

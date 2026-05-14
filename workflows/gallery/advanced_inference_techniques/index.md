@@ -16,7 +16,7 @@ for making predictions on each crop
 
 - Detections stitch - which combines partial predictions for each slice of the image into a single prediction
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiQTZ1TFpmeHQyYm90elV1ZE5Id24iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg2OTU5MzZ9.xog1K-7ptaVU6VRfvrALr7UCREXzjy3VG6kbSIxq5RI?showGraph=true" loading="lazy" title="Roboflow Workflow for sahi detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiQTZ1TFpmeHQyYm90elV1ZE5Id24iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg3NTU1NzV9.AtLaE9eWtzv1obrl2MTBcZ7kTMsuyiinrHA98e4wxQQ?showGraph=true" loading="lazy" title="Roboflow Workflow for sahi detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -89,7 +89,7 @@ for making predictions on each crop
 
 - Detections stitch - which combines partial predictions for each slice of the image into a single prediction
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoidEJ5ZFo1OXBUbWpYcERpOHZqQWQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg2OTU5Mzh9.gxpckBHF_g6VRunxiRR1XOH4qXJ7T4VnVVTacr8h-Js?showGraph=true" loading="lazy" title="Roboflow Workflow for sahi segmentation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoidEJ5ZFo1OXBUbWpYcERpOHZqQWQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg3NTU1NzZ9.Z7XLebpbVcK4jHSUwH8-9cGXkUbR4MgcGIpUShMNxzs?showGraph=true" loading="lazy" title="Roboflow Workflow for sahi segmentation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

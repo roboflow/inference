@@ -1,8 +1,8 @@
 # Roboflow Inference
 
-> Scalable, on-device computer vision deployment.
+> Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.
 
-Roboflow Inference is a high-performance computer vision inference server. Deploy object detection, classification, segmentation, and foundation models on-device or in the cloud.
+Roboflow Inference is an open-source (Apache 2.0) computer vision inference server for deploying object detection, classification, segmentation, keypoint detection, and foundation models (CLIP, SAM 2, Florence-2, PaliGemma, Grounding DINO, YOLO-World, and more). It includes Workflows — a low-code engine with 200+ composable blocks for chaining models, video stream processing, and business logic — and runs on CPU, GPU, NVIDIA Jetson, Raspberry Pi, Docker, or Roboflow's managed cloud. Maintained by Roboflow.
 
 ## Start
 
@@ -32,16 +32,7 @@ Roboflow Inference is a high-performance computer vision inference server. Deplo
 ## Models
 
 - [Run a Model](https://inference.roboflow.com/quickstart/run_a_model/index.md)
-- [define the image url to use for inference](https://inference.roboflow.com/quickstart/explore_models/index.md)
-- [RF-DETR](https://inference.roboflow.com/fine-tuned/rfdetr/index.md)
-- [YOLO26](https://inference.roboflow.com/fine-tuned/yolo26/index.md)
-- [YOLOv11](https://inference.roboflow.com/fine-tuned/yolov11/index.md)
-- [YOLOv10](https://inference.roboflow.com/fine-tuned/yolov10/index.md)
-- [YOLOv9](https://inference.roboflow.com/fine-tuned/yolov9/index.md)
-- [YOLOv8](https://inference.roboflow.com/fine-tuned/yolov8/index.md)
-- [YOLOv7](https://inference.roboflow.com/fine-tuned/yolov7/index.md)
-- [YOLOv5](https://inference.roboflow.com/fine-tuned/yolov5/index.md)
-- [YOLO-NAS](https://inference.roboflow.com/fine-tuned/yolonas/index.md)
+- [Fine-Tuned Models](https://inference.roboflow.com/quickstart/explore_models/index.md)
 - [Pre-Trained Models](https://inference.roboflow.com/quickstart/aliases/index.md)
 - [Universe Models](https://inference.roboflow.com/quickstart/load_from_universe/index.md)
 - [About](https://inference.roboflow.com/foundation/about/index.md)
@@ -59,11 +50,10 @@ Roboflow Inference is a high-performance computer vision inference server. Deplo
 - [Segment Anything (Segmentation)](https://inference.roboflow.com/foundation/sam/index.md)
 - [Segment Anything 2 (Segmentation)](https://inference.roboflow.com/foundation/sam2/index.md)
 - [Segment Anything 3 (Segmentation)](https://inference.roboflow.com/foundation/sam3/index.md)
-- [Qwen 3.5](https://inference.roboflow.com/foundation/qwen3.5-vl/index.md)
+- [Qwen 3.5](https://inference.roboflow.com/foundation/qwen3.5/index.md)
 - [SmolVLM2](https://inference.roboflow.com/foundation/smolvlm/index.md)
 - [YOLO-World (Object Detection)](https://inference.roboflow.com/foundation/yolo_world/index.md)
 - [OwlV2 (Object Detection)](https://inference.roboflow.com/foundation/owlv2/index.md)
-- [How Do I Run Inference?](https://inference.roboflow.com/quickstart/inference_101/index.md)
 - [What Devices Can I Use?](https://inference.roboflow.com/quickstart/devices/index.md)
 - [Retrieve Your API Key](https://inference.roboflow.com/quickstart/configure_api_key/index.md)
 
@@ -92,9 +82,9 @@ Roboflow Inference is a high-performance computer vision inference server. Deplo
 - [Data Transformations](https://inference.roboflow.com/workflows/gallery/workflows_with_data_transformations/index.md)
 - [Fusion Workflows](https://inference.roboflow.com/workflows/gallery/fusion_workflows/index.md)
 - [Flow Control](https://inference.roboflow.com/workflows/gallery/workflows_with_flow_control/index.md)
-- [Foundation Models](https://inference.roboflow.com/workflows/gallery/workflows_with_foundation_models/index.md)
 - [Business Logic](https://inference.roboflow.com/workflows/gallery/workflows_with_business_logic/index.md)
 - [Advanced Inference Techniques](https://inference.roboflow.com/workflows/gallery/advanced_inference_techniques/index.md)
+- [Foundation Models](https://inference.roboflow.com/workflows/gallery/workflows_with_foundation_models/index.md)
 - [Integration With External Apps](https://inference.roboflow.com/workflows/gallery/integration_with_external_apps/index.md)
 - [Block Gallery](https://inference.roboflow.com/workflows/blocks/index.md)
 - [Object Detection Model](https://inference.roboflow.com/workflows/blocks/object_detection_model/index.md)
@@ -112,7 +102,8 @@ Roboflow Inference is a high-performance computer vision inference server. Deplo
 - [Qwen3-VL](https://inference.roboflow.com/workflows/blocks/qwen3_vl/index.md)
 - [SmolVLM2](https://inference.roboflow.com/workflows/blocks/smol_vlm2/index.md)
 - [Moondream2](https://inference.roboflow.com/workflows/blocks/moondream2/index.md)
-- [Qwen3.5-VL](https://inference.roboflow.com/workflows/blocks/qwen3.5_vl/index.md)
+- [Qwen3.5-VL (Deprecated)](https://inference.roboflow.com/workflows/blocks/qwen3.5_vl/index.md)
+- [Qwen3.5](https://inference.roboflow.com/workflows/blocks/qwen3.5/index.md)
 - [YOLO-World Model](https://inference.roboflow.com/workflows/blocks/yolo_world_model/index.md)
 - [CogVLM](https://inference.roboflow.com/workflows/blocks/cog_vlm/index.md)
 - [SAM 3](https://inference.roboflow.com/workflows/blocks/sam3/index.md)
@@ -126,7 +117,7 @@ Roboflow Inference is a high-performance computer vision inference server. Deplo
 - [EasyOCR](https://inference.roboflow.com/workflows/blocks/easy_ocr/index.md)
 - [Barcode Detection](https://inference.roboflow.com/workflows/blocks/barcode_detection/index.md)
 - [QR Code Detection](https://inference.roboflow.com/workflows/blocks/qr_code_detection/index.md)
-- [Gaze Detection](https://inference.roboflow.com/workflows/blocks/gaze_detection/index.md)
+- [Gaze Detection (Deprecated)](https://inference.roboflow.com/workflows/blocks/gaze_detection/index.md)
 - [Stability AI Inpainting](https://inference.roboflow.com/workflows/blocks/stability_ai_inpainting/index.md)
 - [Stability AI Outpainting](https://inference.roboflow.com/workflows/blocks/stability_ai_outpainting/index.md)
 - [Google Vision OCR](https://inference.roboflow.com/workflows/blocks/google_vision_ocr/index.md)
@@ -137,6 +128,7 @@ Roboflow Inference is a high-performance computer vision inference server. Deplo
 - [Google Gemma API](https://inference.roboflow.com/workflows/blocks/google_gemma_api/index.md)
 - [Qwen 3.5 API](https://inference.roboflow.com/workflows/blocks/qwen3.5_api/index.md)
 - [Qwen 3.6 API](https://inference.roboflow.com/workflows/blocks/qwen3.6_api/index.md)
+- [OpenAI-Compatible LLM](https://inference.roboflow.com/workflows/blocks/open_ai_compatible_llm/index.md)
 - [MoonshotAI Kimi](https://inference.roboflow.com/workflows/blocks/moonshot_ai_kimi/index.md)
 - [Bounding Box Visualization](https://inference.roboflow.com/workflows/blocks/bounding_box_visualization/index.md)
 - [Dot Visualization](https://inference.roboflow.com/workflows/blocks/dot_visualization/index.md)
@@ -225,6 +217,7 @@ Roboflow Inference is a high-performance computer vision inference server. Deplo
 - [Background Subtraction](https://inference.roboflow.com/workflows/blocks/background_subtraction/index.md)
 - [SAM2 Video Tracker](https://inference.roboflow.com/workflows/blocks/sam2_video_tracker/index.md)
 - [Buffer](https://inference.roboflow.com/workflows/blocks/buffer/index.md)
+- [Image Stack](https://inference.roboflow.com/workflows/blocks/image_stack/index.md)
 - [Identify Outliers](https://inference.roboflow.com/workflows/blocks/identify_outliers/index.md)
 - [Identify Changes](https://inference.roboflow.com/workflows/blocks/identify_changes/index.md)
 - [Property Definition](https://inference.roboflow.com/workflows/blocks/property_definition/index.md)
@@ -322,6 +315,7 @@ Roboflow Inference is a high-performance computer vision inference server. Deplo
 - [About](https://inference.roboflow.com/quickstart/docker/index.md)
 - [Docker Configuration Options](https://inference.roboflow.com/quickstart/docker_configuration_options/index.md)
 - [Environmental variables](https://inference.roboflow.com/server_configuration/environmental_variables/index.md)
+- [Serving over HTTPS](https://inference.roboflow.com/server_configuration/https/index.md)
 - [Security of input formats](https://inference.roboflow.com/server_configuration/accepted_input_formats/index.md)
 - [Service telemetry](https://inference.roboflow.com/server_configuration/service_telemetry/index.md)
 - [Install "bare metal" Inference GPU on Windows](https://inference.roboflow.com/quickstart/inference_gpu_windows/index.md)

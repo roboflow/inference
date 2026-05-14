@@ -248,11 +248,11 @@ hide:
 
 
 
-            <a href="qwen3.5_vl">
+            <a href="qwen3.5">
               <div class="block">
                 
-                <div class="block_name"> <i class="fal fa-atom" > </i>  Qwen3.5-VL</div>
-                <div class="block_description">Run Qwen3.5-VL on an image.</div>
+                <div class="block_name"> <i class="fal fa-atom" > </i>  Qwen3.5</div>
+                <div class="block_description">Run Qwen3.5 on an image.</div>
                 <!-- <div class="block_license">APACHE-2.0</div> -->
               </div>
             </a>
@@ -458,21 +458,6 @@ hide:
 
 
 
-            <a href="gaze_detection">
-              <div class="block">
-                
-                <div class="block_name"> <i class="far fa-eyes" > </i>  Gaze Detection</div>
-                <div class="block_description">Detect faces and estimate gaze direction</div>
-                <!-- <div class="block_license">APACHE-2.0</div> -->
-              </div>
-            </a>
-
-
-          
-          
-
-
-
             <a href="stability_ai_inpainting">
               <div class="block">
                 
@@ -584,6 +569,21 @@ hide:
                 <div class="block_name"> <i class="fal fa-atom" > </i>  Qwen 3.6 API</div>
                 <div class="block_description">Run Qwen 3.6 vision-language models via OpenRouter.</div>
                 <!-- <div class="block_license">QWEN LICENSE</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
+            <a href="open_ai_compatible_llm">
+              <div class="block">
+                
+                <div class="block_name"> <i class="fal fa-atom" > </i>  OpenAI-Compatible LLM</div>
+                <div class="block_description">Send prompts to any OpenAI-compatible API endpoint.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
               </div>
             </a>
 
@@ -1966,6 +1966,21 @@ hide:
                 
                 <div class="block_name"> <i class="far fa-layer-group" > </i>  Buffer</div>
                 <div class="block_description">Returns an array of the last `length` values passed to it.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
+            <a href="image_stack">
+              <div class="block">
+                
+                <div class="block_name"> <i class="far fa-layer-group" > </i>  Image Stack</div>
+                <div class="block_description">Accumulate compressed video frames into a fixed-size FIFO stack.</div>
                 <!-- <div class="block_license">APACHE-2.0</div> -->
               </div>
             </a>

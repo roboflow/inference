@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
@@ -18,7 +18,7 @@
         <link rel="prev" href="../../quickstart/docker_configuration_options/">
       
       
-        <link rel="next" href="../accepted_input_formats/">
+        <link rel="next" href="../https/">
       
       
         
@@ -793,6 +793,8 @@
       
         
       
+        
+      
     
     
     
@@ -927,6 +929,34 @@
 
       </a>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../https/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serving over HTTPS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1421,6 +1451,31 @@
 <td>Variable to controll frequency of <code>inference-models</code> cache watchdog cycles - min is 15 mins.</td>
 <td><code>60</code></td>
 </tr>
+<tr>
+<td><code>ENABLE_HTTPS</code></td>
+<td>Toggles HTTPS for the inference server. When <code>True</code> the server reads <code>SSL_CERTFILE</code> / <code>SSL_KEYFILE</code> and serves traffic over TLS. See <a href=".././https/">HTTPS configuration</a>.</td>
+<td><code>False</code></td>
+</tr>
+<tr>
+<td><code>SSL_CERTFILE</code></td>
+<td>Path to a PEM-encoded TLS certificate served when <code>ENABLE_HTTPS=True</code>. Defaults to a sane mount point so customers only need to bind their cert to <code>/etc/inference/certs/server.crt</code>.</td>
+<td><code>/etc/inference/certs/server.crt</code></td>
+</tr>
+<tr>
+<td><code>SSL_KEYFILE</code></td>
+<td>Path to the PEM-encoded TLS private key paired with <code>SSL_CERTFILE</code>. Defaults to <code>/etc/inference/certs/server.key</code> so a single bind mount is enough to enable HTTPS.</td>
+<td><code>/etc/inference/certs/server.key</code></td>
+</tr>
+<tr>
+<td><code>SSL_KEYFILE_PASSWORD</code></td>
+<td>Optional passphrase used to decrypt <code>SSL_KEYFILE</code> when the private key is encrypted.</td>
+<td>Not set</td>
+</tr>
+<tr>
+<td><code>SSL_CA_CERTS</code></td>
+<td>Optional path to a CA bundle used when client certificate verification (mTLS) is required.</td>
+<td>Not set</td>
+</tr>
 </tbody>
 </table>
 
@@ -1483,13 +1538,13 @@
         
         
           
-          <a href="../accepted_input_formats/" class="md-footer__link md-footer__link--next" aria-label="Next: Security of input formats">
+          <a href="../https/" class="md-footer__link md-footer__link--next" aria-label="Next: Serving over HTTPS">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Security of input formats
+                Serving over HTTPS
               </div>
             </div>
             <div class="md-footer__button md-icon">

@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
@@ -1150,6 +1150,8 @@
       
         
       
+        
+      
     
     
     
@@ -1527,7 +1529,7 @@ use <code>-o {path_to_your_directory}</code> option. Those options work also in 
 <div class="highlight"><pre><span></span><code>inference<span class="w"> </span>infer<span class="w"> </span>-i<span class="w"> </span>https://<span class="o">[</span>YOUR_HOSTED_IMAGE_URL<span class="o">]</span><span class="w"> </span>-m<span class="w"> </span><span class="o">{</span>your_project<span class="o">}</span>/<span class="o">{</span>version<span class="o">}</span><span class="w"> </span>--api-key<span class="w"> </span><span class="o">{</span>YOUR_API_KEY<span class="o">}</span>
 </code></pre></div>
 <h3 id="using-hosted-api">Using Hosted API<a class="headerlink" href="#using-hosted-api" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>inference<span class="w"> </span>infer<span class="w"> </span>-i<span class="w"> </span>./image.jpg<span class="w"> </span>-m<span class="w"> </span><span class="o">{</span>your_project<span class="o">}</span>/<span class="o">{</span>version<span class="o">}</span><span class="w"> </span>--api-key<span class="w"> </span><span class="o">{</span>YOUR_API_KEY<span class="o">}</span><span class="w"> </span>-h<span class="w"> </span>https://detect.roboflow.com
+<div class="highlight"><pre><span></span><code>inference<span class="w"> </span>infer<span class="w"> </span>-i<span class="w"> </span>./image.jpg<span class="w"> </span>-m<span class="w"> </span><span class="o">{</span>your_project<span class="o">}</span>/<span class="o">{</span>version<span class="o">}</span><span class="w"> </span>--api-key<span class="w"> </span><span class="o">{</span>YOUR_API_KEY<span class="o">}</span><span class="w"> </span>-h<span class="w"> </span>https://serverless.roboflow.com
 </code></pre></div>
 <h3 id="predict-from-local-directory">Predict From Local Directory<a class="headerlink" href="#predict-from-local-directory" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>inference<span class="w"> </span>infer<span class="w"> </span>-i<span class="w"> </span><span class="o">{</span>your_directory_with_images<span class="o">}</span><span class="w"> </span>-m<span class="w"> </span><span class="o">{</span>your_project<span class="o">}</span>/<span class="o">{</span>version<span class="o">}</span><span class="w"> </span>-o<span class="w"> </span><span class="o">{</span>path_to_your_output_directory<span class="o">}</span><span class="w"> </span>--api-key<span class="w"> </span><span class="o">{</span>YOUR_API_KEY<span class="o">}</span>

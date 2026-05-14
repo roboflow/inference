@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
@@ -846,10 +846,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#gaze" class="md-nav__link">
+  <a href="#gaze-deprecated" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Gaze
+        Gaze (deprecated)
       
     </span>
   </a>
@@ -1033,6 +1033,8 @@
   
     
     
+      
+        
       
         
       
@@ -1285,10 +1287,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#gaze" class="md-nav__link">
+  <a href="#gaze-deprecated" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Gaze
+        Gaze (deprecated)
       
     </span>
   </a>
@@ -1322,13 +1324,13 @@
 
 <h1 id="core-models">Core Models<a class="headerlink" href="#core-models" title="Permanent link">&para;</a></h1>
 <p><code>InferenceHTTPClient</code> supports core models hosted via <code>inference</code>. Part of the models can be used on the Roboflow
-hosted inference platform (use <code>https://infer.roboflow.com</code> as url), other are possible to be deployed locally (usually
+hosted inference platform (use <code>https://serverless.roboflow.com</code> as url), other are possible to be deployed locally (usually
 local server will be available under <code>http://localhost:9001</code>).</p>
 <h2 id="clip">Clip<a class="headerlink" href="#clip" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
 
 <span class="n">CLIENT</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
-    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:9001&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;https://infer.roboflow.com&quot; to use hosted serving</span>
+    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:9001&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;https://serverless.roboflow.com&quot; to use hosted serving</span>
     <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span>
 <span class="p">)</span>
 
@@ -1352,7 +1354,7 @@ local server will be available under <code>http://localhost:9001</code>).</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
 
 <span class="n">CLIENT</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
-    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:9001&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;https://infer.roboflow.com&quot; to use hosted serving</span>
+    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:9001&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;https://serverless.roboflow.com&quot; to use hosted serving</span>
     <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span>
 <span class="p">)</span>
 
@@ -1370,7 +1372,7 @@ local server will be available under <code>http://localhost:9001</code>).</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
 
 <span class="n">CLIENT</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
-    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:9001&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;https://infer.roboflow.com&quot; to use hosted serving</span>
+    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:9001&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;https://serverless.roboflow.com&quot; to use hosted serving</span>
     <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span>
 <span class="p">)</span>
 
@@ -1378,18 +1380,15 @@ local server will be available under <code>http://localhost:9001</code>).</p>
 <span class="n">CLIENT</span><span class="o">.</span><span class="n">ocr_image</span><span class="p">(</span><span class="n">inference_input</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;./my_image.jpg&quot;</span><span class="p">,</span> <span class="s2">&quot;./other_image.jpg&quot;</span><span class="p">])</span>  <span class="c1"># batch image request</span>
 </code></pre></div>
 <p>Async equivalent: <code>CLIENT.ocr_image_async(...)</code></p>
-<h2 id="gaze">Gaze<a class="headerlink" href="#gaze" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
-
-<span class="n">CLIENT</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
-    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:9001&quot;</span><span class="p">,</span>  <span class="c1"># only local hosting supported</span>
-    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span>
-<span class="p">)</span>
-
-<span class="n">CLIENT</span><span class="o">.</span><span class="n">detect_gazes</span><span class="p">(</span><span class="n">inference_input</span><span class="o">=</span><span class="s2">&quot;./my_image.jpg&quot;</span><span class="p">)</span>  <span class="c1"># single image request</span>
-<span class="n">CLIENT</span><span class="o">.</span><span class="n">detect_gazes</span><span class="p">(</span><span class="n">inference_input</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;./my_image.jpg&quot;</span><span class="p">,</span> <span class="s2">&quot;./other_image.jpg&quot;</span><span class="p">])</span>  <span class="c1"># batch image request</span>
-</code></pre></div>
-<p>Async equivalent: <code>CLIENT.detect_gazes_async(...)</code></p>
+<h2 id="gaze-deprecated">Gaze (deprecated)<a class="headerlink" href="#gaze-deprecated" title="Permanent link">&para;</a></h2>
+<div class="admonition warning">
+<p class="admonition-title">Deprecated</p>
+<p><code>CLIENT.detect_gazes(...)</code> and <code>CLIENT.detect_gazes_async(...)</code> have
+been removed along with the MediaPipe dependency. They now short-
+circuit client-side and raise
+<code>inference_sdk.http.errors.FeatureDeprecatedError</code> without issuing a
+network call. Contact Roboflow if you require this capability.</p>
+</div>
 
 
 

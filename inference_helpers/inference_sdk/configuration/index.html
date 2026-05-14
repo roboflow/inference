@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
@@ -1150,6 +1150,8 @@
       
         
       
+        
+      
     
     
     
@@ -1594,7 +1596,7 @@ state and will be preserved until next change.</p>
 <span class="n">_</span> <span class="o">=</span> <span class="n">CLIENT</span><span class="o">.</span><span class="n">infer</span><span class="p">(</span><span class="n">image_url</span><span class="p">,</span> <span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;another-model/1&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="details-about-client-configuration">Details about client configuration<a class="headerlink" href="#details-about-client-configuration" title="Permanent link">&para;</a></h2>
-<p><code>inference-client</code> provides <code>InferenceConfiguration</code> dataclass to hold whole configuration.</p>
+<p><code>InferenceHTTPClient</code> provides the <code>InferenceConfiguration</code> dataclass to hold the full configuration.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceConfiguration</span>
 </code></pre></div>
 <p>Overriding fields in this config changes the behaviour of client (and API serving model). Specific fields are

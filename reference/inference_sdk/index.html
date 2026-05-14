@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
@@ -2127,6 +2127,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#inference_sdk.http.errors.FeatureDeprecatedError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FeatureDeprecatedError
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#inference_sdk.http.errors.HTTPCallErrorError" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2925,17 +2936,6 @@
     <span class="md-ellipsis">
       
         combine_clip_embeddings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#inference_sdk.http.utils.post_processing.combine_gaze_detections" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        combine_gaze_detections
       
     </span>
   </a>
@@ -4918,6 +4918,8 @@
       
         
       
+        
+      
     
     
     
@@ -6350,6 +6352,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#inference_sdk.http.errors.FeatureDeprecatedError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FeatureDeprecatedError
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#inference_sdk.http.errors.HTTPCallErrorError" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -7148,17 +7161,6 @@
     <span class="md-ellipsis">
       
         combine_clip_embeddings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#inference_sdk.http.utils.post_processing.combine_gaze_detections" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        combine_gaze_detections
       
     </span>
   </a>
@@ -12415,17 +12417,7 @@ inference requests.</p>
 <span class="normal">2890</span>
 <span class="normal">2891</span>
 <span class="normal">2892</span>
-<span class="normal">2893</span>
-<span class="normal">2894</span>
-<span class="normal">2895</span>
-<span class="normal">2896</span>
-<span class="normal">2897</span>
-<span class="normal">2898</span>
-<span class="normal">2899</span>
-<span class="normal">2900</span>
-<span class="normal">2901</span>
-<span class="normal">2902</span>
-<span class="normal">2903</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">InferenceHTTPClient</span><span class="p">:</span>
+<span class="normal">2893</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">InferenceHTTPClient</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;HTTP client for making inference requests to Roboflow&#39;s API.</span>
 
 <span class="sd">    This client handles authentication, request formatting, and error handling for</span>
@@ -13469,53 +13461,43 @@ inference requests.</p>
         <span class="p">)</span>
         <span class="k">return</span> <span class="n">unwrap_single_element_list</span><span class="p">(</span><span class="n">sequence</span><span class="o">=</span><span class="n">responses</span><span class="p">)</span>
 
-    <span class="nd">@wrap_errors</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">detect_gazes</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Detect gazes in input image(s).</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deprecated. Always raises FeatureDeprecatedError.</span>
 
-<span class="sd">        Args:</span>
-<span class="sd">            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            Union[dict, List[dict]]: Gaze detection results for the input image(s).</span>
+<span class="sd">        Gaze detection has been removed from inference along with the</span>
+<span class="sd">        MediaPipe dependency. This helper short-circuits client-side and</span>
+<span class="sd">        never issues a network call.</span>
 
 <span class="sd">        Raises:</span>
-<span class="sd">            WrongClientModeError: If not in API v1 mode.</span>
-<span class="sd">            HTTPCallErrorError: If there is an error in the HTTP call.</span>
-<span class="sd">            HTTPClientError: If there is an error with the server connection.</span>
+<span class="sd">            FeatureDeprecatedError: Always.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">__ensure_v1_client_mode</span><span class="p">()</span>  <span class="c1"># Lambda does not support Gaze, so we require v1 mode of client</span>
-        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_post_images</span><span class="p">(</span>
-            <span class="n">inference_input</span><span class="o">=</span><span class="n">inference_input</span><span class="p">,</span> <span class="n">endpoint</span><span class="o">=</span><span class="s2">&quot;/gaze/gaze_detection&quot;</span>
+        <span class="k">raise</span> <span class="n">FeatureDeprecatedError</span><span class="p">(</span>
+            <span class="n">feature</span><span class="o">=</span><span class="s2">&quot;InferenceHTTPClient.detect_gazes&quot;</span><span class="p">,</span>
+            <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;MediaPipe dependency removed from inference.&quot;</span><span class="p">,</span>
+            <span class="n">removal_release</span><span class="o">=</span><span class="s2">&quot;end of Q2 2026&quot;</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="k">return</span> <span class="n">combine_gaze_detections</span><span class="p">(</span><span class="n">detections</span><span class="o">=</span><span class="n">result</span><span class="p">)</span>
 
-    <span class="nd">@wrap_errors_async</span>
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">detect_gazes_async</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Detect gazes in input image(s) asynchronously.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deprecated. Always raises FeatureDeprecatedError.</span>
 
-<span class="sd">        Args:</span>
-<span class="sd">            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            Union[dict, List[dict]]: Gaze detection results for the input image(s).</span>
+<span class="sd">        Gaze detection has been removed from inference along with the</span>
+<span class="sd">        MediaPipe dependency. This helper short-circuits client-side and</span>
+<span class="sd">        never issues a network call.</span>
 
 <span class="sd">        Raises:</span>
-<span class="sd">            WrongClientModeError: If not in API v1 mode.</span>
-<span class="sd">            HTTPCallErrorError: If there is an error in the HTTP call.</span>
-<span class="sd">            HTTPClientError: If there is an error with the server connection.</span>
+<span class="sd">            FeatureDeprecatedError: Always.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">__ensure_v1_client_mode</span><span class="p">()</span>  <span class="c1"># Lambda does not support Gaze, so we require v1 mode of client</span>
-        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_post_images_async</span><span class="p">(</span>
-            <span class="n">inference_input</span><span class="o">=</span><span class="n">inference_input</span><span class="p">,</span> <span class="n">endpoint</span><span class="o">=</span><span class="s2">&quot;/gaze/gaze_detection&quot;</span>
+        <span class="k">raise</span> <span class="n">FeatureDeprecatedError</span><span class="p">(</span>
+            <span class="n">feature</span><span class="o">=</span><span class="s2">&quot;InferenceHTTPClient.detect_gazes_async&quot;</span><span class="p">,</span>
+            <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;MediaPipe dependency removed from inference.&quot;</span><span class="p">,</span>
+            <span class="n">removal_release</span><span class="o">=</span><span class="s2">&quot;end of Q2 2026&quot;</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="k">return</span> <span class="n">combine_gaze_detections</span><span class="p">(</span><span class="n">detections</span><span class="o">=</span><span class="n">result</span><span class="p">)</span>
 
     <span class="nd">@wrap_errors</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_clip_image_embeddings</span><span class="p">(</span>
@@ -15651,7 +15633,17 @@ inference requests.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1403</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1393</span>
+<span class="normal">1394</span>
+<span class="normal">1395</span>
+<span class="normal">1396</span>
+<span class="normal">1397</span>
+<span class="normal">1398</span>
+<span class="normal">1399</span>
+<span class="normal">1400</span>
+<span class="normal">1401</span>
+<span class="normal">1402</span>
+<span class="normal">1403</span>
 <span class="normal">1404</span>
 <span class="normal">1405</span>
 <span class="normal">1406</span>
@@ -15711,17 +15703,7 @@ inference requests.</p>
 <span class="normal">1460</span>
 <span class="normal">1461</span>
 <span class="normal">1462</span>
-<span class="normal">1463</span>
-<span class="normal">1464</span>
-<span class="normal">1465</span>
-<span class="normal">1466</span>
-<span class="normal">1467</span>
-<span class="normal">1468</span>
-<span class="normal">1469</span>
-<span class="normal">1470</span>
-<span class="normal">1471</span>
-<span class="normal">1472</span>
-<span class="normal">1473</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">1463</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">clip_compare</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">subject</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ImagesReference</span><span class="p">],</span>
@@ -15987,7 +15969,17 @@ inference requests.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1475</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1465</span>
+<span class="normal">1466</span>
+<span class="normal">1467</span>
+<span class="normal">1468</span>
+<span class="normal">1469</span>
+<span class="normal">1470</span>
+<span class="normal">1471</span>
+<span class="normal">1472</span>
+<span class="normal">1473</span>
+<span class="normal">1474</span>
+<span class="normal">1475</span>
 <span class="normal">1476</span>
 <span class="normal">1477</span>
 <span class="normal">1478</span>
@@ -16045,17 +16037,7 @@ inference requests.</p>
 <span class="normal">1530</span>
 <span class="normal">1531</span>
 <span class="normal">1532</span>
-<span class="normal">1533</span>
-<span class="normal">1534</span>
-<span class="normal">1535</span>
-<span class="normal">1536</span>
-<span class="normal">1537</span>
-<span class="normal">1538</span>
-<span class="normal">1539</span>
-<span class="normal">1540</span>
-<span class="normal">1541</span>
-<span class="normal">1542</span>
-<span class="normal">1543</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
+<span class="normal">1533</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">clip_compare_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">subject</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ImagesReference</span><span class="p">],</span>
@@ -16372,7 +16354,17 @@ no fields will be excluded.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2787</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2777</span>
+<span class="normal">2778</span>
+<span class="normal">2779</span>
+<span class="normal">2780</span>
+<span class="normal">2781</span>
+<span class="normal">2782</span>
+<span class="normal">2783</span>
+<span class="normal">2784</span>
+<span class="normal">2785</span>
+<span class="normal">2786</span>
+<span class="normal">2787</span>
 <span class="normal">2788</span>
 <span class="normal">2789</span>
 <span class="normal">2790</span>
@@ -16395,17 +16387,7 @@ no fields will be excluded.</p>
 <span class="normal">2807</span>
 <span class="normal">2808</span>
 <span class="normal">2809</span>
-<span class="normal">2810</span>
-<span class="normal">2811</span>
-<span class="normal">2812</span>
-<span class="normal">2813</span>
-<span class="normal">2814</span>
-<span class="normal">2815</span>
-<span class="normal">2816</span>
-<span class="normal">2817</span>
-<span class="normal">2818</span>
-<span class="normal">2819</span>
-<span class="normal">2820</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
+<span class="normal">2810</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
     <span class="n">info</span><span class="o">=</span><span class="s2">&quot;Video processing in inference server is under development. Breaking changes are possible.&quot;</span>
 <span class="p">)</span>
 <span class="nd">@wrap_errors</span>
@@ -16577,7 +16559,17 @@ or PIL images.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1708</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1698</span>
+<span class="normal">1699</span>
+<span class="normal">1700</span>
+<span class="normal">1701</span>
+<span class="normal">1702</span>
+<span class="normal">1703</span>
+<span class="normal">1704</span>
+<span class="normal">1705</span>
+<span class="normal">1706</span>
+<span class="normal">1707</span>
+<span class="normal">1708</span>
 <span class="normal">1709</span>
 <span class="normal">1710</span>
 <span class="normal">1711</span>
@@ -16602,17 +16594,7 @@ or PIL images.</p>
 <span class="normal">1730</span>
 <span class="normal">1731</span>
 <span class="normal">1732</span>
-<span class="normal">1733</span>
-<span class="normal">1734</span>
-<span class="normal">1735</span>
-<span class="normal">1736</span>
-<span class="normal">1737</span>
-<span class="normal">1738</span>
-<span class="normal">1739</span>
-<span class="normal">1740</span>
-<span class="normal">1741</span>
-<span class="normal">1742</span>
-<span class="normal">1743</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">1733</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">depth_estimation</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -16783,7 +16765,17 @@ for depth estimation.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1745</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1735</span>
+<span class="normal">1736</span>
+<span class="normal">1737</span>
+<span class="normal">1738</span>
+<span class="normal">1739</span>
+<span class="normal">1740</span>
+<span class="normal">1741</span>
+<span class="normal">1742</span>
+<span class="normal">1743</span>
+<span class="normal">1744</span>
+<span class="normal">1745</span>
 <span class="normal">1746</span>
 <span class="normal">1747</span>
 <span class="normal">1748</span>
@@ -16800,17 +16792,7 @@ for depth estimation.</p>
 <span class="normal">1759</span>
 <span class="normal">1760</span>
 <span class="normal">1761</span>
-<span class="normal">1762</span>
-<span class="normal">1763</span>
-<span class="normal">1764</span>
-<span class="normal">1765</span>
-<span class="normal">1766</span>
-<span class="normal">1767</span>
-<span class="normal">1768</span>
-<span class="normal">1769</span>
-<span class="normal">1770</span>
-<span class="normal">1771</span>
-<span class="normal">1772</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
+<span class="normal">1762</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">depth_estimation_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -16857,61 +16839,10 @@ for depth estimation.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Detect gazes in input image(s).</p>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                <code>inference_input</code>
-            </td>
-            <td>
-                  <code><span title="typing.Union">Union</span>[<span title="inference_sdk.http.entities.ImagesReference">ImagesReference</span>, <span title="typing.List">List</span>[<span title="inference_sdk.http.entities.ImagesReference">ImagesReference</span>]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Input image(s) for gaze detection.</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="typing.Union">Union</span>[<span title="dict">dict</span>, <span title="typing.List">List</span>[<span title="dict">dict</span>]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Union[dict, List[dict]]: Gaze detection results for the input image(s).</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
+        <p>Deprecated. Always raises FeatureDeprecatedError.</p>
+<p>Gaze detection has been removed from inference along with the
+MediaPipe dependency. This helper short-circuits client-side and
+never issues a network call.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -16925,31 +16856,11 @@ for depth estimation.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;WrongClientModeError&lt;/span&gt;" href="./#inference_sdk.http.errors.WrongClientModeError">WrongClientModeError</a></code>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;FeatureDeprecatedError&lt;/span&gt;" href="./#inference_sdk.http.errors.FeatureDeprecatedError">FeatureDeprecatedError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If not in API v1 mode.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;HTTPCallErrorError&lt;/span&gt;" href="./#inference_sdk.http.errors.HTTPCallErrorError">HTTPCallErrorError</a></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>If there is an error in the HTTP call.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;HTTPClientError&lt;/span&gt;" href="./#inference_sdk.http.errors.HTTPClientError">HTTPClientError</a></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>If there is an error with the server connection.</p>
+                <p>Always.</p>
               </div>
             </td>
           </tr>
@@ -16976,34 +16887,24 @@ for depth estimation.</p>
 <span class="normal">1234</span>
 <span class="normal">1235</span>
 <span class="normal">1236</span>
-<span class="normal">1237</span>
-<span class="normal">1238</span>
-<span class="normal">1239</span>
-<span class="normal">1240</span>
-<span class="normal">1241</span>
-<span class="normal">1242</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">detect_gazes</span><span class="p">(</span>
+<span class="normal">1237</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">detect_gazes</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Detect gazes in input image(s).</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Deprecated. Always raises FeatureDeprecatedError.</span>
 
-<span class="sd">    Args:</span>
-<span class="sd">        inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        Union[dict, List[dict]]: Gaze detection results for the input image(s).</span>
+<span class="sd">    Gaze detection has been removed from inference along with the</span>
+<span class="sd">    MediaPipe dependency. This helper short-circuits client-side and</span>
+<span class="sd">    never issues a network call.</span>
 
 <span class="sd">    Raises:</span>
-<span class="sd">        WrongClientModeError: If not in API v1 mode.</span>
-<span class="sd">        HTTPCallErrorError: If there is an error in the HTTP call.</span>
-<span class="sd">        HTTPClientError: If there is an error with the server connection.</span>
+<span class="sd">        FeatureDeprecatedError: Always.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">__ensure_v1_client_mode</span><span class="p">()</span>  <span class="c1"># Lambda does not support Gaze, so we require v1 mode of client</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_post_images</span><span class="p">(</span>
-        <span class="n">inference_input</span><span class="o">=</span><span class="n">inference_input</span><span class="p">,</span> <span class="n">endpoint</span><span class="o">=</span><span class="s2">&quot;/gaze/gaze_detection&quot;</span>
+    <span class="k">raise</span> <span class="n">FeatureDeprecatedError</span><span class="p">(</span>
+        <span class="n">feature</span><span class="o">=</span><span class="s2">&quot;InferenceHTTPClient.detect_gazes&quot;</span><span class="p">,</span>
+        <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;MediaPipe dependency removed from inference.&quot;</span><span class="p">,</span>
+        <span class="n">removal_release</span><span class="o">=</span><span class="s2">&quot;end of Q2 2026&quot;</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="k">return</span> <span class="n">combine_gaze_detections</span><span class="p">(</span><span class="n">detections</span><span class="o">=</span><span class="n">result</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -17027,61 +16928,10 @@ for depth estimation.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Detect gazes in input image(s) asynchronously.</p>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                <code>inference_input</code>
-            </td>
-            <td>
-                  <code><span title="typing.Union">Union</span>[<span title="inference_sdk.http.entities.ImagesReference">ImagesReference</span>, <span title="typing.List">List</span>[<span title="inference_sdk.http.entities.ImagesReference">ImagesReference</span>]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Input image(s) for gaze detection.</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="typing.Union">Union</span>[<span title="dict">dict</span>, <span title="typing.List">List</span>[<span title="dict">dict</span>]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Union[dict, List[dict]]: Gaze detection results for the input image(s).</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
+        <p>Deprecated. Always raises FeatureDeprecatedError.</p>
+<p>Gaze detection has been removed from inference along with the
+MediaPipe dependency. This helper short-circuits client-side and
+never issues a network call.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -17095,31 +16945,11 @@ for depth estimation.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;WrongClientModeError&lt;/span&gt;" href="./#inference_sdk.http.errors.WrongClientModeError">WrongClientModeError</a></code>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;FeatureDeprecatedError&lt;/span&gt;" href="./#inference_sdk.http.errors.FeatureDeprecatedError">FeatureDeprecatedError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If not in API v1 mode.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;HTTPCallErrorError&lt;/span&gt;" href="./#inference_sdk.http.errors.HTTPCallErrorError">HTTPCallErrorError</a></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>If there is an error in the HTTP call.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;HTTPClientError&lt;/span&gt;" href="./#inference_sdk.http.errors.HTTPClientError">HTTPClientError</a></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>If there is an error with the server connection.</p>
+                <p>Always.</p>
               </div>
             </td>
           </tr>
@@ -17129,7 +16959,12 @@ for depth estimation.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1244</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1239</span>
+<span class="normal">1240</span>
+<span class="normal">1241</span>
+<span class="normal">1242</span>
+<span class="normal">1243</span>
+<span class="normal">1244</span>
 <span class="normal">1245</span>
 <span class="normal">1246</span>
 <span class="normal">1247</span>
@@ -17141,39 +16976,24 @@ for depth estimation.</p>
 <span class="normal">1253</span>
 <span class="normal">1254</span>
 <span class="normal">1255</span>
-<span class="normal">1256</span>
-<span class="normal">1257</span>
-<span class="normal">1258</span>
-<span class="normal">1259</span>
-<span class="normal">1260</span>
-<span class="normal">1261</span>
-<span class="normal">1262</span>
-<span class="normal">1263</span>
-<span class="normal">1264</span>
-<span class="normal">1265</span>
-<span class="normal">1266</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">detect_gazes_async</span><span class="p">(</span>
+<span class="normal">1256</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">detect_gazes_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Detect gazes in input image(s) asynchronously.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Deprecated. Always raises FeatureDeprecatedError.</span>
 
-<span class="sd">    Args:</span>
-<span class="sd">        inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        Union[dict, List[dict]]: Gaze detection results for the input image(s).</span>
+<span class="sd">    Gaze detection has been removed from inference along with the</span>
+<span class="sd">    MediaPipe dependency. This helper short-circuits client-side and</span>
+<span class="sd">    never issues a network call.</span>
 
 <span class="sd">    Raises:</span>
-<span class="sd">        WrongClientModeError: If not in API v1 mode.</span>
-<span class="sd">        HTTPCallErrorError: If there is an error in the HTTP call.</span>
-<span class="sd">        HTTPClientError: If there is an error with the server connection.</span>
+<span class="sd">        FeatureDeprecatedError: Always.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">__ensure_v1_client_mode</span><span class="p">()</span>  <span class="c1"># Lambda does not support Gaze, so we require v1 mode of client</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_post_images_async</span><span class="p">(</span>
-        <span class="n">inference_input</span><span class="o">=</span><span class="n">inference_input</span><span class="p">,</span> <span class="n">endpoint</span><span class="o">=</span><span class="s2">&quot;/gaze/gaze_detection&quot;</span>
+    <span class="k">raise</span> <span class="n">FeatureDeprecatedError</span><span class="p">(</span>
+        <span class="n">feature</span><span class="o">=</span><span class="s2">&quot;InferenceHTTPClient.detect_gazes_async&quot;</span><span class="p">,</span>
+        <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;MediaPipe dependency removed from inference.&quot;</span><span class="p">,</span>
+        <span class="n">removal_release</span><span class="o">=</span><span class="s2">&quot;end of Q2 2026&quot;</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="k">return</span> <span class="n">combine_gaze_detections</span><span class="p">(</span><span class="n">detections</span><span class="o">=</span><span class="n">result</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -17303,7 +17123,17 @@ for depth estimation.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1268</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1258</span>
+<span class="normal">1259</span>
+<span class="normal">1260</span>
+<span class="normal">1261</span>
+<span class="normal">1262</span>
+<span class="normal">1263</span>
+<span class="normal">1264</span>
+<span class="normal">1265</span>
+<span class="normal">1266</span>
+<span class="normal">1267</span>
+<span class="normal">1268</span>
 <span class="normal">1269</span>
 <span class="normal">1270</span>
 <span class="normal">1271</span>
@@ -17321,17 +17151,7 @@ for depth estimation.</p>
 <span class="normal">1283</span>
 <span class="normal">1284</span>
 <span class="normal">1285</span>
-<span class="normal">1286</span>
-<span class="normal">1287</span>
-<span class="normal">1288</span>
-<span class="normal">1289</span>
-<span class="normal">1290</span>
-<span class="normal">1291</span>
-<span class="normal">1292</span>
-<span class="normal">1293</span>
-<span class="normal">1294</span>
-<span class="normal">1295</span>
-<span class="normal">1296</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">1286</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">get_clip_image_embeddings</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -17493,7 +17313,17 @@ for depth estimation.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1298</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1288</span>
+<span class="normal">1289</span>
+<span class="normal">1290</span>
+<span class="normal">1291</span>
+<span class="normal">1292</span>
+<span class="normal">1293</span>
+<span class="normal">1294</span>
+<span class="normal">1295</span>
+<span class="normal">1296</span>
+<span class="normal">1297</span>
+<span class="normal">1298</span>
 <span class="normal">1299</span>
 <span class="normal">1300</span>
 <span class="normal">1301</span>
@@ -17511,17 +17341,7 @@ for depth estimation.</p>
 <span class="normal">1313</span>
 <span class="normal">1314</span>
 <span class="normal">1315</span>
-<span class="normal">1316</span>
-<span class="normal">1317</span>
-<span class="normal">1318</span>
-<span class="normal">1319</span>
-<span class="normal">1320</span>
-<span class="normal">1321</span>
-<span class="normal">1322</span>
-<span class="normal">1323</span>
-<span class="normal">1324</span>
-<span class="normal">1325</span>
-<span class="normal">1326</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
+<span class="normal">1316</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_clip_image_embeddings_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -17677,7 +17497,17 @@ for depth estimation.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1328</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1318</span>
+<span class="normal">1319</span>
+<span class="normal">1320</span>
+<span class="normal">1321</span>
+<span class="normal">1322</span>
+<span class="normal">1323</span>
+<span class="normal">1324</span>
+<span class="normal">1325</span>
+<span class="normal">1326</span>
+<span class="normal">1327</span>
+<span class="normal">1328</span>
 <span class="normal">1329</span>
 <span class="normal">1330</span>
 <span class="normal">1331</span>
@@ -17703,17 +17533,7 @@ for depth estimation.</p>
 <span class="normal">1351</span>
 <span class="normal">1352</span>
 <span class="normal">1353</span>
-<span class="normal">1354</span>
-<span class="normal">1355</span>
-<span class="normal">1356</span>
-<span class="normal">1357</span>
-<span class="normal">1358</span>
-<span class="normal">1359</span>
-<span class="normal">1360</span>
-<span class="normal">1361</span>
-<span class="normal">1362</span>
-<span class="normal">1363</span>
-<span class="normal">1364</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">1354</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">get_clip_text_embeddings</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">text</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span>
@@ -17881,7 +17701,17 @@ for depth estimation.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1366</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1356</span>
+<span class="normal">1357</span>
+<span class="normal">1358</span>
+<span class="normal">1359</span>
+<span class="normal">1360</span>
+<span class="normal">1361</span>
+<span class="normal">1362</span>
+<span class="normal">1363</span>
+<span class="normal">1364</span>
+<span class="normal">1365</span>
+<span class="normal">1366</span>
 <span class="normal">1367</span>
 <span class="normal">1368</span>
 <span class="normal">1369</span>
@@ -17906,17 +17736,7 @@ for depth estimation.</p>
 <span class="normal">1388</span>
 <span class="normal">1389</span>
 <span class="normal">1390</span>
-<span class="normal">1391</span>
-<span class="normal">1392</span>
-<span class="normal">1393</span>
-<span class="normal">1394</span>
-<span class="normal">1395</span>
-<span class="normal">1396</span>
-<span class="normal">1397</span>
-<span class="normal">1398</span>
-<span class="normal">1399</span>
-<span class="normal">1400</span>
-<span class="normal">1401</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
+<span class="normal">1391</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_clip_text_embeddings_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">text</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span>
@@ -18073,7 +17893,17 @@ for depth estimation.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2670</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2660</span>
+<span class="normal">2661</span>
+<span class="normal">2662</span>
+<span class="normal">2663</span>
+<span class="normal">2664</span>
+<span class="normal">2665</span>
+<span class="normal">2666</span>
+<span class="normal">2667</span>
+<span class="normal">2668</span>
+<span class="normal">2669</span>
+<span class="normal">2670</span>
 <span class="normal">2671</span>
 <span class="normal">2672</span>
 <span class="normal">2673</span>
@@ -18088,17 +17918,7 @@ for depth estimation.</p>
 <span class="normal">2682</span>
 <span class="normal">2683</span>
 <span class="normal">2684</span>
-<span class="normal">2685</span>
-<span class="normal">2686</span>
-<span class="normal">2687</span>
-<span class="normal">2688</span>
-<span class="normal">2689</span>
-<span class="normal">2690</span>
-<span class="normal">2691</span>
-<span class="normal">2692</span>
-<span class="normal">2693</span>
-<span class="normal">2694</span>
-<span class="normal">2695</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
+<span class="normal">2685</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
     <span class="n">info</span><span class="o">=</span><span class="s2">&quot;Video processing in inference server is under development. Breaking changes are possible.&quot;</span>
 <span class="p">)</span>
 <span class="nd">@wrap_errors</span>
@@ -18560,22 +18380,22 @@ for depth estimation.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1545</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1535</span>
+<span class="normal">1536</span>
+<span class="normal">1537</span>
+<span class="normal">1538</span>
+<span class="normal">1539</span>
+<span class="normal">1540</span>
+<span class="normal">1541</span>
+<span class="normal">1542</span>
+<span class="normal">1543</span>
+<span class="normal">1544</span>
+<span class="normal">1545</span>
 <span class="normal">1546</span>
 <span class="normal">1547</span>
 <span class="normal">1548</span>
 <span class="normal">1549</span>
-<span class="normal">1550</span>
-<span class="normal">1551</span>
-<span class="normal">1552</span>
-<span class="normal">1553</span>
-<span class="normal">1554</span>
-<span class="normal">1555</span>
-<span class="normal">1556</span>
-<span class="normal">1557</span>
-<span class="normal">1558</span>
-<span class="normal">1559</span>
-<span class="normal">1560</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">1550</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">get_perception_encoder_image_embeddings</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -18617,7 +18437,17 @@ for depth estimation.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1562</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1552</span>
+<span class="normal">1553</span>
+<span class="normal">1554</span>
+<span class="normal">1555</span>
+<span class="normal">1556</span>
+<span class="normal">1557</span>
+<span class="normal">1558</span>
+<span class="normal">1559</span>
+<span class="normal">1560</span>
+<span class="normal">1561</span>
+<span class="normal">1562</span>
 <span class="normal">1563</span>
 <span class="normal">1564</span>
 <span class="normal">1565</span>
@@ -18635,17 +18465,7 @@ for depth estimation.</p>
 <span class="normal">1577</span>
 <span class="normal">1578</span>
 <span class="normal">1579</span>
-<span class="normal">1580</span>
-<span class="normal">1581</span>
-<span class="normal">1582</span>
-<span class="normal">1583</span>
-<span class="normal">1584</span>
-<span class="normal">1585</span>
-<span class="normal">1586</span>
-<span class="normal">1587</span>
-<span class="normal">1588</span>
-<span class="normal">1589</span>
-<span class="normal">1590</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">1580</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">get_perception_encoder_text_embeddings</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">text</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span>
@@ -19947,7 +19767,17 @@ of workflow execution at the server side.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2206</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2196</span>
+<span class="normal">2197</span>
+<span class="normal">2198</span>
+<span class="normal">2199</span>
+<span class="normal">2200</span>
+<span class="normal">2201</span>
+<span class="normal">2202</span>
+<span class="normal">2203</span>
+<span class="normal">2204</span>
+<span class="normal">2205</span>
+<span class="normal">2206</span>
 <span class="normal">2207</span>
 <span class="normal">2208</span>
 <span class="normal">2209</span>
@@ -19995,17 +19825,7 @@ of workflow execution at the server side.</p>
 <span class="normal">2251</span>
 <span class="normal">2252</span>
 <span class="normal">2253</span>
-<span class="normal">2254</span>
-<span class="normal">2255</span>
-<span class="normal">2256</span>
-<span class="normal">2257</span>
-<span class="normal">2258</span>
-<span class="normal">2259</span>
-<span class="normal">2260</span>
-<span class="normal">2261</span>
-<span class="normal">2262</span>
-<span class="normal">2263</span>
-<span class="normal">2264</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@deprecated</span><span class="p">(</span>
+<span class="normal">2254</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@deprecated</span><span class="p">(</span>
     <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Please use run_workflow(...) method. This method will be removed end of Q2 2024&quot;</span>
 <span class="p">)</span>
 <span class="nd">@wrap_errors</span>
@@ -20251,7 +20071,17 @@ uses the model's default threshold.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2435</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2425</span>
+<span class="normal">2426</span>
+<span class="normal">2427</span>
+<span class="normal">2428</span>
+<span class="normal">2429</span>
+<span class="normal">2430</span>
+<span class="normal">2431</span>
+<span class="normal">2432</span>
+<span class="normal">2433</span>
+<span class="normal">2434</span>
+<span class="normal">2435</span>
 <span class="normal">2436</span>
 <span class="normal">2437</span>
 <span class="normal">2438</span>
@@ -20293,17 +20123,7 @@ uses the model's default threshold.</p>
 <span class="normal">2474</span>
 <span class="normal">2475</span>
 <span class="normal">2476</span>
-<span class="normal">2477</span>
-<span class="normal">2478</span>
-<span class="normal">2479</span>
-<span class="normal">2480</span>
-<span class="normal">2481</span>
-<span class="normal">2482</span>
-<span class="normal">2483</span>
-<span class="normal">2484</span>
-<span class="normal">2485</span>
-<span class="normal">2486</span>
-<span class="normal">2487</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">2477</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">infer_from_yolo_world</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -20547,7 +20367,17 @@ uses the model's default threshold.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2489</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2479</span>
+<span class="normal">2480</span>
+<span class="normal">2481</span>
+<span class="normal">2482</span>
+<span class="normal">2483</span>
+<span class="normal">2484</span>
+<span class="normal">2485</span>
+<span class="normal">2486</span>
+<span class="normal">2487</span>
+<span class="normal">2488</span>
+<span class="normal">2489</span>
 <span class="normal">2490</span>
 <span class="normal">2491</span>
 <span class="normal">2492</span>
@@ -20588,17 +20418,7 @@ uses the model's default threshold.</p>
 <span class="normal">2527</span>
 <span class="normal">2528</span>
 <span class="normal">2529</span>
-<span class="normal">2530</span>
-<span class="normal">2531</span>
-<span class="normal">2532</span>
-<span class="normal">2533</span>
-<span class="normal">2534</span>
-<span class="normal">2535</span>
-<span class="normal">2536</span>
-<span class="normal">2537</span>
-<span class="normal">2538</span>
-<span class="normal">2539</span>
-<span class="normal">2540</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
+<span class="normal">2530</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">infer_from_yolo_world_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -20861,7 +20681,17 @@ The structure depends on the specific model used.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1592</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1582</span>
+<span class="normal">1583</span>
+<span class="normal">1584</span>
+<span class="normal">1585</span>
+<span class="normal">1586</span>
+<span class="normal">1587</span>
+<span class="normal">1588</span>
+<span class="normal">1589</span>
+<span class="normal">1590</span>
+<span class="normal">1591</span>
+<span class="normal">1592</span>
 <span class="normal">1593</span>
 <span class="normal">1594</span>
 <span class="normal">1595</span>
@@ -20910,17 +20740,7 @@ The structure depends on the specific model used.</p>
 <span class="normal">1638</span>
 <span class="normal">1639</span>
 <span class="normal">1640</span>
-<span class="normal">1641</span>
-<span class="normal">1642</span>
-<span class="normal">1643</span>
-<span class="normal">1644</span>
-<span class="normal">1645</span>
-<span class="normal">1646</span>
-<span class="normal">1647</span>
-<span class="normal">1648</span>
-<span class="normal">1649</span>
-<span class="normal">1650</span>
-<span class="normal">1651</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">1641</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">infer_lmm</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -21189,7 +21009,17 @@ that support it. If not provided, the server-side model default is used.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1653</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1643</span>
+<span class="normal">1644</span>
+<span class="normal">1645</span>
+<span class="normal">1646</span>
+<span class="normal">1647</span>
+<span class="normal">1648</span>
+<span class="normal">1649</span>
+<span class="normal">1650</span>
+<span class="normal">1651</span>
+<span class="normal">1652</span>
+<span class="normal">1653</span>
 <span class="normal">1654</span>
 <span class="normal">1655</span>
 <span class="normal">1656</span>
@@ -21232,17 +21062,7 @@ that support it. If not provided, the server-side model default is used.</p>
 <span class="normal">1693</span>
 <span class="normal">1694</span>
 <span class="normal">1695</span>
-<span class="normal">1696</span>
-<span class="normal">1697</span>
-<span class="normal">1698</span>
-<span class="normal">1699</span>
-<span class="normal">1700</span>
-<span class="normal">1701</span>
-<span class="normal">1702</span>
-<span class="normal">1703</span>
-<span class="normal">1704</span>
-<span class="normal">1705</span>
-<span class="normal">1706</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
+<span class="normal">1696</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">infer_lmm_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -21647,7 +21467,17 @@ inference pipeline.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2644</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2634</span>
+<span class="normal">2635</span>
+<span class="normal">2636</span>
+<span class="normal">2637</span>
+<span class="normal">2638</span>
+<span class="normal">2639</span>
+<span class="normal">2640</span>
+<span class="normal">2641</span>
+<span class="normal">2642</span>
+<span class="normal">2643</span>
+<span class="normal">2644</span>
 <span class="normal">2645</span>
 <span class="normal">2646</span>
 <span class="normal">2647</span>
@@ -21661,17 +21491,7 @@ inference pipeline.</p>
 <span class="normal">2655</span>
 <span class="normal">2656</span>
 <span class="normal">2657</span>
-<span class="normal">2658</span>
-<span class="normal">2659</span>
-<span class="normal">2660</span>
-<span class="normal">2661</span>
-<span class="normal">2662</span>
-<span class="normal">2663</span>
-<span class="normal">2664</span>
-<span class="normal">2665</span>
-<span class="normal">2666</span>
-<span class="normal">2667</span>
-<span class="normal">2668</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
+<span class="normal">2658</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
     <span class="n">info</span><span class="o">=</span><span class="s2">&quot;Video processing in inference server is under development. Breaking changes are possible.&quot;</span>
 <span class="p">)</span>
 <span class="nd">@wrap_errors</span>
@@ -23121,7 +22941,17 @@ currently running for this operation to succeed.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2697</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2687</span>
+<span class="normal">2688</span>
+<span class="normal">2689</span>
+<span class="normal">2690</span>
+<span class="normal">2691</span>
+<span class="normal">2692</span>
+<span class="normal">2693</span>
+<span class="normal">2694</span>
+<span class="normal">2695</span>
+<span class="normal">2696</span>
+<span class="normal">2697</span>
 <span class="normal">2698</span>
 <span class="normal">2699</span>
 <span class="normal">2700</span>
@@ -23139,17 +22969,7 @@ currently running for this operation to succeed.</p>
 <span class="normal">2712</span>
 <span class="normal">2713</span>
 <span class="normal">2714</span>
-<span class="normal">2715</span>
-<span class="normal">2716</span>
-<span class="normal">2717</span>
-<span class="normal">2718</span>
-<span class="normal">2719</span>
-<span class="normal">2720</span>
-<span class="normal">2721</span>
-<span class="normal">2722</span>
-<span class="normal">2723</span>
-<span class="normal">2724</span>
-<span class="normal">2725</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
+<span class="normal">2715</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
     <span class="n">info</span><span class="o">=</span><span class="s2">&quot;Video processing in inference server is under development. Breaking changes are possible.&quot;</span>
 <span class="p">)</span>
 <span class="nd">@wrap_errors</span>
@@ -23301,7 +23121,17 @@ currently paused for this operation to succeed.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2727</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2717</span>
+<span class="normal">2718</span>
+<span class="normal">2719</span>
+<span class="normal">2720</span>
+<span class="normal">2721</span>
+<span class="normal">2722</span>
+<span class="normal">2723</span>
+<span class="normal">2724</span>
+<span class="normal">2725</span>
+<span class="normal">2726</span>
+<span class="normal">2727</span>
 <span class="normal">2728</span>
 <span class="normal">2729</span>
 <span class="normal">2730</span>
@@ -23319,17 +23149,7 @@ currently paused for this operation to succeed.</p>
 <span class="normal">2742</span>
 <span class="normal">2743</span>
 <span class="normal">2744</span>
-<span class="normal">2745</span>
-<span class="normal">2746</span>
-<span class="normal">2747</span>
-<span class="normal">2748</span>
-<span class="normal">2749</span>
-<span class="normal">2750</span>
-<span class="normal">2751</span>
-<span class="normal">2752</span>
-<span class="normal">2753</span>
-<span class="normal">2754</span>
-<span class="normal">2755</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
+<span class="normal">2745</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
     <span class="n">info</span><span class="o">=</span><span class="s2">&quot;Video processing in inference server is under development. Breaking changes are possible.&quot;</span>
 <span class="p">)</span>
 <span class="nd">@wrap_errors</span>
@@ -23620,7 +23440,17 @@ the server before end of Q2 2024. Until that is done - use old method: infer_fro
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2266</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2256</span>
+<span class="normal">2257</span>
+<span class="normal">2258</span>
+<span class="normal">2259</span>
+<span class="normal">2260</span>
+<span class="normal">2261</span>
+<span class="normal">2262</span>
+<span class="normal">2263</span>
+<span class="normal">2264</span>
+<span class="normal">2265</span>
+<span class="normal">2266</span>
 <span class="normal">2267</span>
 <span class="normal">2268</span>
 <span class="normal">2269</span>
@@ -23673,17 +23503,7 @@ the server before end of Q2 2024. Until that is done - use old method: infer_fro
 <span class="normal">2316</span>
 <span class="normal">2317</span>
 <span class="normal">2318</span>
-<span class="normal">2319</span>
-<span class="normal">2320</span>
-<span class="normal">2321</span>
-<span class="normal">2322</span>
-<span class="normal">2323</span>
-<span class="normal">2324</span>
-<span class="normal">2325</span>
-<span class="normal">2326</span>
-<span class="normal">2327</span>
-<span class="normal">2328</span>
-<span class="normal">2329</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">2319</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">run_workflow</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">workspace_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -23940,7 +23760,17 @@ confidence scores, and bounding boxes.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1774</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1764</span>
+<span class="normal">1765</span>
+<span class="normal">1766</span>
+<span class="normal">1767</span>
+<span class="normal">1768</span>
+<span class="normal">1769</span>
+<span class="normal">1770</span>
+<span class="normal">1771</span>
+<span class="normal">1772</span>
+<span class="normal">1773</span>
+<span class="normal">1774</span>
 <span class="normal">1775</span>
 <span class="normal">1776</span>
 <span class="normal">1777</span>
@@ -23980,17 +23810,7 @@ confidence scores, and bounding boxes.</p>
 <span class="normal">1811</span>
 <span class="normal">1812</span>
 <span class="normal">1813</span>
-<span class="normal">1814</span>
-<span class="normal">1815</span>
-<span class="normal">1816</span>
-<span class="normal">1817</span>
-<span class="normal">1818</span>
-<span class="normal">1819</span>
-<span class="normal">1820</span>
-<span class="normal">1821</span>
-<span class="normal">1822</span>
-<span class="normal">1823</span>
-<span class="normal">1824</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">1814</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">sam2_segment_image</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -24228,7 +24048,17 @@ Defaults to None.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1826</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1816</span>
+<span class="normal">1817</span>
+<span class="normal">1818</span>
+<span class="normal">1819</span>
+<span class="normal">1820</span>
+<span class="normal">1821</span>
+<span class="normal">1822</span>
+<span class="normal">1823</span>
+<span class="normal">1824</span>
+<span class="normal">1825</span>
+<span class="normal">1826</span>
 <span class="normal">1827</span>
 <span class="normal">1828</span>
 <span class="normal">1829</span>
@@ -24257,17 +24087,7 @@ Defaults to None.</p>
 <span class="normal">1852</span>
 <span class="normal">1853</span>
 <span class="normal">1854</span>
-<span class="normal">1855</span>
-<span class="normal">1856</span>
-<span class="normal">1857</span>
-<span class="normal">1858</span>
-<span class="normal">1859</span>
-<span class="normal">1860</span>
-<span class="normal">1861</span>
-<span class="normal">1862</span>
-<span class="normal">1863</span>
-<span class="normal">1864</span>
-<span class="normal">1865</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
+<span class="normal">1855</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">sam2_segment_image_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -24556,7 +24376,17 @@ addition to individual object reconstructions. Defaults to True.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1867</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1857</span>
+<span class="normal">1858</span>
+<span class="normal">1859</span>
+<span class="normal">1860</span>
+<span class="normal">1861</span>
+<span class="normal">1862</span>
+<span class="normal">1863</span>
+<span class="normal">1864</span>
+<span class="normal">1865</span>
+<span class="normal">1866</span>
+<span class="normal">1867</span>
 <span class="normal">1868</span>
 <span class="normal">1869</span>
 <span class="normal">1870</span>
@@ -24622,17 +24452,7 @@ addition to individual object reconstructions. Defaults to True.</p>
 <span class="normal">1930</span>
 <span class="normal">1931</span>
 <span class="normal">1932</span>
-<span class="normal">1933</span>
-<span class="normal">1934</span>
-<span class="normal">1935</span>
-<span class="normal">1936</span>
-<span class="normal">1937</span>
-<span class="normal">1938</span>
-<span class="normal">1939</span>
-<span class="normal">1940</span>
-<span class="normal">1941</span>
-<span class="normal">1942</span>
-<span class="normal">1943</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">1933</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">sam3_3d_infer</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">ImagesReference</span><span class="p">,</span>
@@ -24955,7 +24775,17 @@ addition to individual object reconstructions. Defaults to True.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1945</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1935</span>
+<span class="normal">1936</span>
+<span class="normal">1937</span>
+<span class="normal">1938</span>
+<span class="normal">1939</span>
+<span class="normal">1940</span>
+<span class="normal">1941</span>
+<span class="normal">1942</span>
+<span class="normal">1943</span>
+<span class="normal">1944</span>
+<span class="normal">1945</span>
 <span class="normal">1946</span>
 <span class="normal">1947</span>
 <span class="normal">1948</span>
@@ -25013,17 +24843,7 @@ addition to individual object reconstructions. Defaults to True.</p>
 <span class="normal">2000</span>
 <span class="normal">2001</span>
 <span class="normal">2002</span>
-<span class="normal">2003</span>
-<span class="normal">2004</span>
-<span class="normal">2005</span>
-<span class="normal">2006</span>
-<span class="normal">2007</span>
-<span class="normal">2008</span>
-<span class="normal">2009</span>
-<span class="normal">2010</span>
-<span class="normal">2011</span>
-<span class="normal">2012</span>
-<span class="normal">2013</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
+<span class="normal">2003</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">sam3_3d_infer_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">ImagesReference</span><span class="p">,</span>
@@ -25259,7 +25079,17 @@ addition to individual object reconstructions. Defaults to True.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2015</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2005</span>
+<span class="normal">2006</span>
+<span class="normal">2007</span>
+<span class="normal">2008</span>
+<span class="normal">2009</span>
+<span class="normal">2010</span>
+<span class="normal">2011</span>
+<span class="normal">2012</span>
+<span class="normal">2013</span>
+<span class="normal">2014</span>
+<span class="normal">2015</span>
 <span class="normal">2016</span>
 <span class="normal">2017</span>
 <span class="normal">2018</span>
@@ -25287,17 +25117,7 @@ addition to individual object reconstructions. Defaults to True.</p>
 <span class="normal">2040</span>
 <span class="normal">2041</span>
 <span class="normal">2042</span>
-<span class="normal">2043</span>
-<span class="normal">2044</span>
-<span class="normal">2045</span>
-<span class="normal">2046</span>
-<span class="normal">2047</span>
-<span class="normal">2048</span>
-<span class="normal">2049</span>
-<span class="normal">2050</span>
-<span class="normal">2051</span>
-<span class="normal">2052</span>
-<span class="normal">2053</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">2043</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">sam3_concept_segment</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -25505,7 +25325,17 @@ addition to individual object reconstructions. Defaults to True.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2055</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2045</span>
+<span class="normal">2046</span>
+<span class="normal">2047</span>
+<span class="normal">2048</span>
+<span class="normal">2049</span>
+<span class="normal">2050</span>
+<span class="normal">2051</span>
+<span class="normal">2052</span>
+<span class="normal">2053</span>
+<span class="normal">2054</span>
+<span class="normal">2055</span>
 <span class="normal">2056</span>
 <span class="normal">2057</span>
 <span class="normal">2058</span>
@@ -25530,17 +25360,7 @@ addition to individual object reconstructions. Defaults to True.</p>
 <span class="normal">2077</span>
 <span class="normal">2078</span>
 <span class="normal">2079</span>
-<span class="normal">2080</span>
-<span class="normal">2081</span>
-<span class="normal">2082</span>
-<span class="normal">2083</span>
-<span class="normal">2084</span>
-<span class="normal">2085</span>
-<span class="normal">2086</span>
-<span class="normal">2087</span>
-<span class="normal">2088</span>
-<span class="normal">2089</span>
-<span class="normal">2090</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
+<span class="normal">2080</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">sam3_concept_segment_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -25670,7 +25490,17 @@ addition to individual object reconstructions. Defaults to True.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2158</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2148</span>
+<span class="normal">2149</span>
+<span class="normal">2150</span>
+<span class="normal">2151</span>
+<span class="normal">2152</span>
+<span class="normal">2153</span>
+<span class="normal">2154</span>
+<span class="normal">2155</span>
+<span class="normal">2156</span>
+<span class="normal">2157</span>
+<span class="normal">2158</span>
 <span class="normal">2159</span>
 <span class="normal">2160</span>
 <span class="normal">2161</span>
@@ -25682,17 +25512,7 @@ addition to individual object reconstructions. Defaults to True.</p>
 <span class="normal">2167</span>
 <span class="normal">2168</span>
 <span class="normal">2169</span>
-<span class="normal">2170</span>
-<span class="normal">2171</span>
-<span class="normal">2172</span>
-<span class="normal">2173</span>
-<span class="normal">2174</span>
-<span class="normal">2175</span>
-<span class="normal">2176</span>
-<span class="normal">2177</span>
-<span class="normal">2178</span>
-<span class="normal">2179</span>
-<span class="normal">2180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">2170</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">sam3_embed_image</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -25813,7 +25633,17 @@ addition to individual object reconstructions. Defaults to True.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2182</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2172</span>
+<span class="normal">2173</span>
+<span class="normal">2174</span>
+<span class="normal">2175</span>
+<span class="normal">2176</span>
+<span class="normal">2177</span>
+<span class="normal">2178</span>
+<span class="normal">2179</span>
+<span class="normal">2180</span>
+<span class="normal">2181</span>
+<span class="normal">2182</span>
 <span class="normal">2183</span>
 <span class="normal">2184</span>
 <span class="normal">2185</span>
@@ -25825,17 +25655,7 @@ addition to individual object reconstructions. Defaults to True.</p>
 <span class="normal">2191</span>
 <span class="normal">2192</span>
 <span class="normal">2193</span>
-<span class="normal">2194</span>
-<span class="normal">2195</span>
-<span class="normal">2196</span>
-<span class="normal">2197</span>
-<span class="normal">2198</span>
-<span class="normal">2199</span>
-<span class="normal">2200</span>
-<span class="normal">2201</span>
-<span class="normal">2202</span>
-<span class="normal">2203</span>
-<span class="normal">2204</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
+<span class="normal">2194</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">sam3_embed_image_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -25992,7 +25812,17 @@ Defaults to True.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2092</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2082</span>
+<span class="normal">2083</span>
+<span class="normal">2084</span>
+<span class="normal">2085</span>
+<span class="normal">2086</span>
+<span class="normal">2087</span>
+<span class="normal">2088</span>
+<span class="normal">2089</span>
+<span class="normal">2090</span>
+<span class="normal">2091</span>
+<span class="normal">2092</span>
 <span class="normal">2093</span>
 <span class="normal">2094</span>
 <span class="normal">2095</span>
@@ -26015,17 +25845,7 @@ Defaults to True.</p>
 <span class="normal">2112</span>
 <span class="normal">2113</span>
 <span class="normal">2114</span>
-<span class="normal">2115</span>
-<span class="normal">2116</span>
-<span class="normal">2117</span>
-<span class="normal">2118</span>
-<span class="normal">2119</span>
-<span class="normal">2120</span>
-<span class="normal">2121</span>
-<span class="normal">2122</span>
-<span class="normal">2123</span>
-<span class="normal">2124</span>
-<span class="normal">2125</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
+<span class="normal">2115</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">sam3_visual_segment</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -26194,7 +26014,17 @@ Defaults to True.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2127</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2117</span>
+<span class="normal">2118</span>
+<span class="normal">2119</span>
+<span class="normal">2120</span>
+<span class="normal">2121</span>
+<span class="normal">2122</span>
+<span class="normal">2123</span>
+<span class="normal">2124</span>
+<span class="normal">2125</span>
+<span class="normal">2126</span>
+<span class="normal">2127</span>
 <span class="normal">2128</span>
 <span class="normal">2129</span>
 <span class="normal">2130</span>
@@ -26213,17 +26043,7 @@ Defaults to True.</p>
 <span class="normal">2143</span>
 <span class="normal">2144</span>
 <span class="normal">2145</span>
-<span class="normal">2146</span>
-<span class="normal">2147</span>
-<span class="normal">2148</span>
-<span class="normal">2149</span>
-<span class="normal">2150</span>
-<span class="normal">2151</span>
-<span class="normal">2152</span>
-<span class="normal">2153</span>
-<span class="normal">2154</span>
-<span class="normal">2155</span>
-<span class="normal">2156</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
+<span class="normal">2146</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@wrap_errors_async</span>
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">sam3_visual_segment_async</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">inference_input</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ImagesReference</span><span class="p">]],</span>
@@ -26846,7 +26666,17 @@ One of: "LAZY", "EAGER". Defaults to "EAGER".</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2542</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2532</span>
+<span class="normal">2533</span>
+<span class="normal">2534</span>
+<span class="normal">2535</span>
+<span class="normal">2536</span>
+<span class="normal">2537</span>
+<span class="normal">2538</span>
+<span class="normal">2539</span>
+<span class="normal">2540</span>
+<span class="normal">2541</span>
+<span class="normal">2542</span>
 <span class="normal">2543</span>
 <span class="normal">2544</span>
 <span class="normal">2545</span>
@@ -26936,17 +26766,7 @@ One of: "LAZY", "EAGER". Defaults to "EAGER".</p>
 <span class="normal">2629</span>
 <span class="normal">2630</span>
 <span class="normal">2631</span>
-<span class="normal">2632</span>
-<span class="normal">2633</span>
-<span class="normal">2634</span>
-<span class="normal">2635</span>
-<span class="normal">2636</span>
-<span class="normal">2637</span>
-<span class="normal">2638</span>
-<span class="normal">2639</span>
-<span class="normal">2640</span>
-<span class="normal">2641</span>
-<span class="normal">2642</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
+<span class="normal">2632</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
     <span class="n">info</span><span class="o">=</span><span class="s2">&quot;Video processing in inference server is under development. Breaking changes are possible.&quot;</span>
 <span class="p">)</span>
 <span class="nd">@wrap_errors</span>
@@ -27170,7 +26990,17 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/client.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2757</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2747</span>
+<span class="normal">2748</span>
+<span class="normal">2749</span>
+<span class="normal">2750</span>
+<span class="normal">2751</span>
+<span class="normal">2752</span>
+<span class="normal">2753</span>
+<span class="normal">2754</span>
+<span class="normal">2755</span>
+<span class="normal">2756</span>
+<span class="normal">2757</span>
 <span class="normal">2758</span>
 <span class="normal">2759</span>
 <span class="normal">2760</span>
@@ -27188,17 +27018,7 @@ processing and free up associated resources.</p>
 <span class="normal">2772</span>
 <span class="normal">2773</span>
 <span class="normal">2774</span>
-<span class="normal">2775</span>
-<span class="normal">2776</span>
-<span class="normal">2777</span>
-<span class="normal">2778</span>
-<span class="normal">2779</span>
-<span class="normal">2780</span>
-<span class="normal">2781</span>
-<span class="normal">2782</span>
-<span class="normal">2783</span>
-<span class="normal">2784</span>
-<span class="normal">2785</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
+<span class="normal">2775</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@experimental</span><span class="p">(</span>
     <span class="n">info</span><span class="o">=</span><span class="s2">&quot;Video processing in inference server is under development. Breaking changes are possible.&quot;</span>
 <span class="p">)</span>
 <span class="nd">@wrap_errors</span>
@@ -29951,6 +29771,103 @@ processing and free up associated resources.</p>
     <span class="k">pass</span>
 </code></pre></div></td></tr></table></div>
               </details>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="inference_sdk.http.errors.FeatureDeprecatedError" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">FeatureDeprecatedError</span>
+
+
+<a href="#inference_sdk.http.errors.FeatureDeprecatedError" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;HTTPClientError&lt;/span&gt;" href="./#inference_sdk.http.errors.HTTPClientError">HTTPClientError</a></code></p>
+
+
+
+        <p>Raised when a deprecated SDK helper is invoked.</p>
+
+
+
+
+
+
+
+
+              <details class="mkdocstrings-source">
+                <summary>Source code in <code>inference_sdk/http/errors.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">FeatureDeprecatedError</span><span class="p">(</span><span class="n">HTTPClientError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Raised when a deprecated SDK helper is invoked.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">feature</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">reason</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">removal_release</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">replacement</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">feature</span> <span class="o">=</span> <span class="n">feature</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reason</span> <span class="o">=</span> <span class="n">reason</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">removal_release</span> <span class="o">=</span> <span class="n">removal_release</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">replacement</span> <span class="o">=</span> <span class="n">replacement</span>
+        <span class="n">public</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;SDK helper &#39;</span><span class="si">{</span><span class="n">feature</span><span class="si">}</span><span class="s2">&#39; has been removed.&quot;</span>
+        <span class="k">if</span> <span class="n">reason</span><span class="p">:</span>
+            <span class="n">public</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">reason</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">if</span> <span class="n">removal_release</span><span class="p">:</span>
+            <span class="n">public</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; Removed in </span><span class="si">{</span><span class="n">removal_release</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="k">if</span> <span class="n">replacement</span><span class="p">:</span>
+            <span class="n">public</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; Closest replacement: </span><span class="si">{</span><span class="n">replacement</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">public</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+              </details>
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
 
     </div>
 
@@ -35030,7 +34947,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">320</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">319</span>
+<span class="normal">320</span>
 <span class="normal">321</span>
 <span class="normal">322</span>
 <span class="normal">323</span>
@@ -35046,8 +34964,7 @@ processing and free up associated resources.</p>
 <span class="normal">333</span>
 <span class="normal">334</span>
 <span class="normal">335</span>
-<span class="normal">336</span>
-<span class="normal">337</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">adjust_bbox_coordinates_to_client_scaling_factor</span><span class="p">(</span>
+<span class="normal">336</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">adjust_bbox_coordinates_to_client_scaling_factor</span><span class="p">(</span>
     <span class="n">bbox</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
     <span class="n">scaling_factor</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
@@ -35161,7 +35078,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">268</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">267</span>
+<span class="normal">268</span>
 <span class="normal">269</span>
 <span class="normal">270</span>
 <span class="normal">271</span>
@@ -35180,8 +35098,7 @@ processing and free up associated resources.</p>
 <span class="normal">284</span>
 <span class="normal">285</span>
 <span class="normal">286</span>
-<span class="normal">287</span>
-<span class="normal">288</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">adjust_object_detection_predictions_to_client_scaling_factor</span><span class="p">(</span>
+<span class="normal">287</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">adjust_object_detection_predictions_to_client_scaling_factor</span><span class="p">(</span>
     <span class="n">predictions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">],</span>
     <span class="n">scaling_factor</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
@@ -35298,7 +35215,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">340</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">339</span>
+<span class="normal">340</span>
 <span class="normal">341</span>
 <span class="normal">342</span>
 <span class="normal">343</span>
@@ -35315,8 +35233,7 @@ processing and free up associated resources.</p>
 <span class="normal">354</span>
 <span class="normal">355</span>
 <span class="normal">356</span>
-<span class="normal">357</span>
-<span class="normal">358</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">adjust_points_coordinates_to_client_scaling_factor</span><span class="p">(</span>
+<span class="normal">357</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">adjust_points_coordinates_to_client_scaling_factor</span><span class="p">(</span>
     <span class="n">points</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">],</span>
     <span class="n">scaling_factor</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
@@ -35431,7 +35348,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">204</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">203</span>
+<span class="normal">204</span>
 <span class="normal">205</span>
 <span class="normal">206</span>
 <span class="normal">207</span>
@@ -35475,8 +35393,7 @@ processing and free up associated resources.</p>
 <span class="normal">245</span>
 <span class="normal">246</span>
 <span class="normal">247</span>
-<span class="normal">248</span>
-<span class="normal">249</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">adjust_prediction_to_client_scaling_factor</span><span class="p">(</span>
+<span class="normal">248</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">adjust_prediction_to_client_scaling_factor</span><span class="p">(</span>
     <span class="n">prediction</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
     <span class="n">scaling_factor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
@@ -35634,7 +35551,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">291</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">290</span>
+<span class="normal">291</span>
 <span class="normal">292</span>
 <span class="normal">293</span>
 <span class="normal">294</span>
@@ -35659,8 +35577,7 @@ processing and free up associated resources.</p>
 <span class="normal">313</span>
 <span class="normal">314</span>
 <span class="normal">315</span>
-<span class="normal">316</span>
-<span class="normal">317</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">adjust_prediction_with_bbox_and_points_to_client_scaling_factor</span><span class="p">(</span>
+<span class="normal">316</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">adjust_prediction_with_bbox_and_points_to_client_scaling_factor</span><span class="p">(</span>
     <span class="n">predictions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">],</span>
     <span class="n">scaling_factor</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
     <span class="n">points_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -35765,30 +35682,30 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">378</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span>
+<span class="normal">373</span>
+<span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
 <span class="normal">379</span>
 <span class="normal">380</span>
 <span class="normal">381</span>
 <span class="normal">382</span>
-<span class="normal">383</span>
-<span class="normal">384</span>
-<span class="normal">385</span>
-<span class="normal">386</span>
-<span class="normal">387</span>
-<span class="normal">388</span>
-<span class="normal">389</span>
-<span class="normal">390</span>
-<span class="normal">391</span>
-<span class="normal">392</span>
-<span class="normal">393</span>
-<span class="normal">394</span>
-<span class="normal">395</span>
-<span class="normal">396</span>
-<span class="normal">397</span>
-<span class="normal">398</span>
-<span class="normal">399</span>
-<span class="normal">400</span>
-<span class="normal">401</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">combine_clip_embeddings</span><span class="p">(</span><span class="n">embeddings</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="normal">383</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">combine_clip_embeddings</span><span class="p">(</span><span class="n">embeddings</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Combine clip embeddings.</span>
 
 <span class="sd">    Args:</span>
@@ -35812,113 +35729,6 @@ processing and free up associated resources.</p>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">new_embeddings</span> <span class="o">=</span> <span class="p">[</span><span class="n">embeddings</span><span class="p">]</span>
     <span class="k">return</span> <span class="n">new_embeddings</span>
-</code></pre></div></td></tr></table></div>
-            </details>
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
-<h4 id="inference_sdk.http.utils.post_processing.combine_gaze_detections" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <span class="doc doc-object-name doc-function-name">combine_gaze_detections</span>
-
-
-<a href="#inference_sdk.http.utils.post_processing.combine_gaze_detections" class="headerlink" title="Permanent link">&para;</a></h4>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">combine_gaze_detections</span><span class="p">(</span><span class="n">detections</span><span class="p">)</span>
-</code></pre></div>
-
-    <div class="doc doc-contents ">
-
-        <p>Combine gaze detections.</p>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                <code>detections</code>
-            </td>
-            <td>
-                  <code><span title="typing.Union">Union</span>[<span title="dict">dict</span>, <span title="typing.List">List</span>[<span title="typing.Union">Union</span>[<span title="dict">dict</span>, <span title="typing.List">List</span>[<span title="dict">dict</span>]]]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>The detections to combine.</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="typing.Union">Union</span>[<span title="dict">dict</span>, <span title="typing.List">List</span>[<span title="typing.Dict">Dict</span>]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>The combined detections.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-            <details class="mkdocstrings-source">
-              <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">361</span>
-<span class="normal">362</span>
-<span class="normal">363</span>
-<span class="normal">364</span>
-<span class="normal">365</span>
-<span class="normal">366</span>
-<span class="normal">367</span>
-<span class="normal">368</span>
-<span class="normal">369</span>
-<span class="normal">370</span>
-<span class="normal">371</span>
-<span class="normal">372</span>
-<span class="normal">373</span>
-<span class="normal">374</span>
-<span class="normal">375</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">combine_gaze_detections</span><span class="p">(</span>
-    <span class="n">detections</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]]],</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Combine gaze detections.</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        detections: The detections to combine.</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        The combined detections.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">issubclass</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">detections</span><span class="p">),</span> <span class="nb">list</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">detections</span>
-    <span class="n">detections</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span> <span class="k">if</span> <span class="nb">issubclass</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">),</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="p">[</span><span class="n">e</span><span class="p">]</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">detections</span><span class="p">]</span>
-    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">itertools</span><span class="o">.</span><span class="n">chain</span><span class="o">.</span><span class="n">from_iterable</span><span class="p">(</span><span class="n">detections</span><span class="p">))</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -36013,7 +35823,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">46</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">45</span>
+<span class="normal">46</span>
 <span class="normal">47</span>
 <span class="normal">48</span>
 <span class="normal">49</span>
@@ -36042,8 +35853,7 @@ processing and free up associated resources.</p>
 <span class="normal">72</span>
 <span class="normal">73</span>
 <span class="normal">74</span>
-<span class="normal">75</span>
-<span class="normal">76</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">decode_workflow_output</span><span class="p">(</span>
+<span class="normal">75</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">decode_workflow_output</span><span class="p">(</span>
     <span class="n">workflow_output</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
     <span class="n">expected_format</span><span class="p">:</span> <span class="n">VisualisationResponseFormat</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
@@ -36168,7 +35978,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">124</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">123</span>
+<span class="normal">124</span>
 <span class="normal">125</span>
 <span class="normal">126</span>
 <span class="normal">127</span>
@@ -36185,8 +35996,7 @@ processing and free up associated resources.</p>
 <span class="normal">138</span>
 <span class="normal">139</span>
 <span class="normal">140</span>
-<span class="normal">141</span>
-<span class="normal">142</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">decode_workflow_output_image</span><span class="p">(</span>
+<span class="normal">141</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">decode_workflow_output_image</span><span class="p">(</span>
     <span class="n">value</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
     <span class="n">expected_format</span><span class="p">:</span> <span class="n">VisualisationResponseFormat</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Image</span><span class="o">.</span><span class="n">Image</span><span class="p">]:</span>
@@ -36299,7 +36109,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 79</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 78</span>
+<span class="normal"> 79</span>
 <span class="normal"> 80</span>
 <span class="normal"> 81</span>
 <span class="normal"> 82</span>
@@ -36328,8 +36139,7 @@ processing and free up associated resources.</p>
 <span class="normal">105</span>
 <span class="normal">106</span>
 <span class="normal">107</span>
-<span class="normal">108</span>
-<span class="normal">109</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">decode_workflow_output_list</span><span class="p">(</span>
+<span class="normal">108</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">decode_workflow_output_list</span><span class="p">(</span>
     <span class="n">elements</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
     <span class="n">expected_format</span><span class="p">:</span> <span class="n">VisualisationResponseFormat</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
@@ -36454,7 +36264,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">24</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">23</span>
+<span class="normal">24</span>
 <span class="normal">25</span>
 <span class="normal">26</span>
 <span class="normal">27</span>
@@ -36472,8 +36283,7 @@ processing and free up associated resources.</p>
 <span class="normal">39</span>
 <span class="normal">40</span>
 <span class="normal">41</span>
-<span class="normal">42</span>
-<span class="normal">43</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">decode_workflow_outputs</span><span class="p">(</span>
+<span class="normal">42</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">decode_workflow_outputs</span><span class="p">(</span>
     <span class="n">workflow_outputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
     <span class="n">expected_format</span><span class="p">:</span> <span class="n">VisualisationResponseFormat</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
@@ -36597,23 +36407,23 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">404</span>
-<span class="normal">405</span>
-<span class="normal">406</span>
-<span class="normal">407</span>
-<span class="normal">408</span>
-<span class="normal">409</span>
-<span class="normal">410</span>
-<span class="normal">411</span>
-<span class="normal">412</span>
-<span class="normal">413</span>
-<span class="normal">414</span>
-<span class="normal">415</span>
-<span class="normal">416</span>
-<span class="normal">417</span>
-<span class="normal">418</span>
-<span class="normal">419</span>
-<span class="normal">420</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">filter_model_descriptions</span><span class="p">(</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span>
+<span class="normal">399</span>
+<span class="normal">400</span>
+<span class="normal">401</span>
+<span class="normal">402</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">filter_model_descriptions</span><span class="p">(</span>
     <span class="n">descriptions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ModelDescription</span><span class="p">],</span>
     <span class="n">model_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ModelDescription</span><span class="p">]:</span>
@@ -36708,7 +36518,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">112</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">111</span>
+<span class="normal">112</span>
 <span class="normal">113</span>
 <span class="normal">114</span>
 <span class="normal">115</span>
@@ -36716,8 +36527,7 @@ processing and free up associated resources.</p>
 <span class="normal">117</span>
 <span class="normal">118</span>
 <span class="normal">119</span>
-<span class="normal">120</span>
-<span class="normal">121</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">is_workflow_image</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="normal">120</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">is_workflow_image</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if the value is a workflow image.</span>
 
 <span class="sd">    Args:</span>
@@ -36805,7 +36615,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">252</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">251</span>
+<span class="normal">252</span>
 <span class="normal">253</span>
 <span class="normal">254</span>
 <span class="normal">255</span>
@@ -36817,8 +36628,7 @@ processing and free up associated resources.</p>
 <span class="normal">261</span>
 <span class="normal">262</span>
 <span class="normal">263</span>
-<span class="normal">264</span>
-<span class="normal">265</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">predictions_should_not_be_post_processed</span><span class="p">(</span><span class="n">prediction</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="normal">264</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">predictions_should_not_be_post_processed</span><span class="p">(</span><span class="n">prediction</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if the predictions should not be post-processed.</span>
 
 <span class="sd">    Args:</span>
@@ -36910,7 +36720,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">145</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">144</span>
+<span class="normal">145</span>
 <span class="normal">146</span>
 <span class="normal">147</span>
 <span class="normal">148</span>
@@ -36925,8 +36736,7 @@ processing and free up associated resources.</p>
 <span class="normal">157</span>
 <span class="normal">158</span>
 <span class="normal">159</span>
-<span class="normal">160</span>
-<span class="normal">161</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">response_contains_jpeg_image</span><span class="p">(</span><span class="n">response</span><span class="p">:</span> <span class="n">Response</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="normal">160</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">response_contains_jpeg_image</span><span class="p">(</span><span class="n">response</span><span class="p">:</span> <span class="n">Response</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if the response contains a JPEG image.</span>
 
 <span class="sd">    Args:</span>
@@ -37039,7 +36849,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">164</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">163</span>
+<span class="normal">164</span>
 <span class="normal">165</span>
 <span class="normal">166</span>
 <span class="normal">167</span>
@@ -37054,8 +36865,7 @@ processing and free up associated resources.</p>
 <span class="normal">176</span>
 <span class="normal">177</span>
 <span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">transform_base64_visualisation</span><span class="p">(</span>
+<span class="normal">179</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">transform_base64_visualisation</span><span class="p">(</span>
     <span class="n">visualisation</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">expected_format</span><span class="p">:</span> <span class="n">VisualisationResponseFormat</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Image</span><span class="o">.</span><span class="n">Image</span><span class="p">]:</span>
@@ -37168,7 +36978,8 @@ processing and free up associated resources.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_sdk/http/utils/post_processing.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">183</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">182</span>
+<span class="normal">183</span>
 <span class="normal">184</span>
 <span class="normal">185</span>
 <span class="normal">186</span>
@@ -37185,8 +36996,7 @@ processing and free up associated resources.</p>
 <span class="normal">197</span>
 <span class="normal">198</span>
 <span class="normal">199</span>
-<span class="normal">200</span>
-<span class="normal">201</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">transform_visualisation_bytes</span><span class="p">(</span>
+<span class="normal">200</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">transform_visualisation_bytes</span><span class="p">(</span>
     <span class="n">visualisation</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span>
     <span class="n">expected_format</span><span class="p">:</span> <span class="n">VisualisationResponseFormat</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Image</span><span class="o">.</span><span class="n">Image</span><span class="p">]:</span>

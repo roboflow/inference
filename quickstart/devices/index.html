@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://inference.roboflow.com/quickstart/devices/">
       
       
-        <link rel="prev" href="../inference_101/">
+        <link rel="prev" href="../../foundation/owlv2/">
       
       
         <link rel="next" href="../configure_api_key/">
@@ -502,49 +502,9 @@
   
   
   
-    
-    
-      
+    <li class="md-nav__item">
+      <a href="../explore_models/" class="md-nav__link">
         
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-    
-    
-    
-      
-      
-    
-    
-      
-        
-        
-      
-    
-    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
-      
-        
-  
-  
-  
-    <a href="../explore_models/" class="md-nav__link">
-      
   
   
   <span class="md-ellipsis">
@@ -558,13 +518,7 @@
   
   
 
-      
-        <span class="md-nav__icon md-icon"></span>
-      
-    </a>
-  
-
-      
+      </a>
     </li>
   
 
@@ -735,8 +689,6 @@
       
         
       
-        
-      
     
     
     
@@ -781,34 +733,6 @@
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../inference_101/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    How Do I Run Inference?
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
             
               
                 
@@ -889,21 +813,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#model-compatability" class="md-nav__link">
+  <a href="#self-hosted-on-cloud" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Model Compatability
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#cloud-platform-support" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cloud Platform Support
+        Self-Hosted on Cloud
       
     </span>
   </a>
@@ -972,7 +885,7 @@
   <span class="md-ellipsis">
     
   
-    Model Licenses
+    Model Licenses »
   
 
     
@@ -1189,21 +1102,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#model-compatability" class="md-nav__link">
+  <a href="#self-hosted-on-cloud" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Model Compatability
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#cloud-platform-support" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cloud Platform Support
+        Self-Hosted on Cloud
       
     </span>
   </a>
@@ -1256,144 +1158,10 @@
 <li>NVIDIA GPU</li>
 <li>NVIDIA Jetson (JetPack 4.5.x, JetPack 4.6.x, JetPack 5.x, JetPack 6.x)</li>
 </ul>
-<h2 id="model-compatability">Model Compatability<a class="headerlink" href="#model-compatability" title="Permanent link">&para;</a></h2>
-<p>The table below shows on what devices you can deploy models supported by Inference.</p>
-<p>See our <a href=".././docker/">Docker Getting Started</a> guide for more information on how to deploy Inference on your device.</p>
-<p>Table key:</p>
-<ul>
-<li>✅ Fully supported</li>
-<li>🚫 Not supported</li>
-<li>🚧 On roadmap, not currently supported</li>
-</ul>
-<table>
-<thead>
-<tr>
-<th>Model</th>
-<th>CPU</th>
-<th>GPU</th>
-<th>Jetson 4.5.x</th>
-<th>Jetson 4.6.x</th>
-<th>Jetson 5.x</th>
-<th>Roboflow Hosted Inference</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>YOLOv8 Object Detection</td>
-<td>✅</td>
-<td>✅</td>
-<td>🚫</td>
-<td>🚫</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>YOLOv8 Classification</td>
-<td>✅</td>
-<td>✅</td>
-<td>🚫</td>
-<td>🚫</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>YOLOv8 Segmentation</td>
-<td>✅</td>
-<td>✅</td>
-<td>🚫</td>
-<td>🚫</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>YOLOv5 Object Detection</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>YOLOv5 Classification</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>YOLOv5 Segmentation</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>CLIP</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>DocTR</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>Gaze</td>
-<td>✅</td>
-<td>✅</td>
-<td>🚫</td>
-<td>🚫</td>
-<td>🚫</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>SAM</td>
-<td>✅</td>
-<td>✅</td>
-<td>🚫</td>
-<td>🚫</td>
-<td>🚫</td>
-<td>🚫</td>
-</tr>
-<tr>
-<td>ViT Classification</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>YOLACT</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-</tbody>
-</table>
-<h2 id="cloud-platform-support">Cloud Platform Support<a class="headerlink" href="#cloud-platform-support" title="Permanent link">&para;</a></h2>
-<p>You can deploy Inference on any cloud platform such as AWS, GCP, or Azure.</p>
-<p>The installation and setup instructions are the same as for any edge device, once you have installed the relevant drivers on your cloud platform. We recommend deploying with an official "Deep Learning" image from your cloud provider if you are running inference on a GPU device. "Deep Learning" images should have the relevant drivers pre-installed so you can set up Inference without configuring GPU drivers manually</p>
+<h2 id="self-hosted-on-cloud">Self-Hosted on Cloud<a class="headerlink" href="#self-hosted-on-cloud" title="Permanent link">&para;</a></h2>
+<p>You can deploy Inference Server on any cloud platform such as AWS, GCP, or Azure. See <a href="/install/cloud">Deploy in Your Own Cloud</a>.</p>
 <h2 id="use-hosted-inference-from-roboflow">Use Hosted Inference from Roboflow<a class="headerlink" href="#use-hosted-inference-from-roboflow" title="Permanent link">&para;</a></h2>
 <p>You can also run your models in the cloud with the <a href="https://docs.roboflow.com/deploy/serverless-hosted-api-v2" target="_blank">Roboflow hosted inference offering</a>. The Roboflow hosted inference solution enables you to deploy your models in the cloud without having to manage your own infrastructure. Roboflow's hosted solution does not support all features available in Inference that you can run on your own infrastructure.</p>
-<p>To learn more about device compatibility with different models, refer to the <a href=".././compatability_matrix/">model compatibility matrix</a>.</p>
 
 
 
@@ -1437,7 +1205,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../inference_101/" class="md-footer__link md-footer__link--prev" aria-label="Previous: How Do I Run Inference?">
+          <a href="../../foundation/owlv2/" class="md-footer__link md-footer__link--prev" aria-label="Previous: OwlV2 (Object Detection)">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -1447,7 +1215,7 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                How Do I Run Inference?
+                OwlV2 (Object Detection)
               </div>
             </div>
           </a>

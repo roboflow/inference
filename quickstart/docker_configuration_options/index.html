@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
@@ -793,6 +793,8 @@
       
         
       
+        
+      
     
     
     
@@ -1128,6 +1130,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#https-tls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTPS / TLS
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#tensorrt-cache-directory" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1162,6 +1175,34 @@
     
   
     Environmental variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server_configuration/https/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serving over HTTPS
   
 
     
@@ -1715,6 +1756,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#https-tls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTPS / TLS
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#tensorrt-cache-directory" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1819,6 +1871,20 @@ docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </sp
 <h2 id="number-of-workers">Number of Workers<a class="headerlink" href="#number-of-workers" title="Permanent link">&para;</a></h2>
 <p><strong>NUM_WORKERS</strong>: Integer (default = 1)</p>
 <p>Sets the number of workers used by HTTP interfaces. </p>
+<h2 id="https-tls">HTTPS / TLS<a class="headerlink" href="#https-tls" title="Permanent link">&para;</a></h2>
+<p><strong>ENABLE_HTTPS</strong>: Boolean (default = <code>False</code>)</p>
+<p>When set, the inference server serves traffic over HTTPS instead of HTTP. The
+server reads the cert and private key from <code>SSL_CERTFILE</code> and <code>SSL_KEYFILE</code>.</p>
+<p><strong>SSL_CERTFILE</strong>: String (default = <code>/etc/inference/certs/server.crt</code>)
+<strong>SSL_KEYFILE</strong>: String (default = <code>/etc/inference/certs/server.key</code>)</p>
+<p>Paths to the PEM-encoded certificate and private key inside the container. The
+defaults are sane mount points so customers usually only need to bind their
+cert/key into <code>/etc/inference/certs/</code> and flip <code>ENABLE_HTTPS=true</code>.</p>
+<p><strong>SSL_KEYFILE_PASSWORD</strong>: String (optional)
+<strong>SSL_CA_CERTS</strong>: String (optional)</p>
+<p>Set <code>SSL_KEYFILE_PASSWORD</code> if your private key is encrypted. Set <code>SSL_CA_CERTS</code>
+to a CA bundle when you need client certificate verification (mTLS).</p>
+<p>Full walkthrough with self-signed certs: <a href="../../server_configuration/https/">Serving inference over HTTPS</a>.</p>
 <h2 id="tensorrt-cache-directory">TensorRT Cache Directory<a class="headerlink" href="#tensorrt-cache-directory" title="Permanent link">&para;</a></h2>
 <p><strong>TENSORRT_CACHE_PATH</strong>: String (default = MODEL_CACHE_DIR)</p>
 <p>Sets the container path to the TensorRT cache directory. Setting this path in conjunction with mounting a host volume can reduce the cold start time of TensorRT based servers.</p>

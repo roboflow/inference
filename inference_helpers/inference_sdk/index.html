@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="HTTP client guide for using Roboflow Inference Server from Python, including local, hosted, async, and batch inference.">
       
       
         <meta name="author" content="Roboflow">
@@ -1089,6 +1089,8 @@
       
         
       
+        
+      
     
     
     
@@ -1507,12 +1509,12 @@ then the load of single node can be optimised and parallel requests to different
 <ul>
 <li><code>infer(...)</code> and <code>infer_async(...)</code></li>
 <li><code>ocr_image(...)</code> and <code>ocr_image_async(...)</code> (enforcing <code>max_batch_size=1</code>)</li>
-<li><code>detect_gazes(...)</code> and <code>detect_gazes_async(...)</code></li>
+<li><code>detect_gazes(...)</code> and <code>detect_gazes_async(...)</code> — <strong>deprecated</strong>, always raises <code>inference_sdk.http.errors.FeatureDeprecatedError</code></li>
 <li><code>get_clip_image_embeddings(...)</code> and <code>get_clip_image_embeddings_async(...)</code></li>
 </ul>
-<p>The client also supports <a href="../inference_sdk/core_models/">core foundation models</a> (CLIP, DocTR, Gaze) and <a href="../inference_sdk/workflows/">running Workflows</a> for multi-step pipelines.</p>
+<p>The client also supports <a href="../inference_sdk/core_models/">core foundation models</a> (CLIP, DocTR) and <a href="../inference_sdk/workflows/">running Workflows</a> for multi-step pipelines.</p>
 <h2 id="inference-against-stream">Inference against stream<a class="headerlink" href="#inference-against-stream" title="Permanent link">&para;</a></h2>
-<p>One may want to infer against video or directory of images - and that modes are supported in <code>inference-client</code></p>
+<p>One may want to infer against video or a directory of images, and those modes are supported in <code>inference-sdk</code>.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
 
 <span class="c1"># Replace ROBOFLOW_API_KEY with your Roboflow API Key</span>
@@ -1533,9 +1535,9 @@ then the load of single node can be optimised and parallel requests to different
     <span class="k">pass</span>
 </code></pre></div>
 <h2 id="what-is-actually-returned-as-prediction">What is actually returned as prediction?<a class="headerlink" href="#what-is-actually-returned-as-prediction" title="Permanent link">&para;</a></h2>
-<p><code>inference_client</code> returns plain Python dictionaries that are responses from model serving API. Modification
-is done only in context of <code>visualization</code> key that keep server-generated prediction visualisation (it
-can be transcoded to the format of choice) and in terms of client-side re-scaling.</p>
+<p><code>InferenceHTTPClient</code> returns plain Python dictionaries that are responses from the model serving API. Modification
+is done only in the context of the <code>visualization</code> key, which keeps server-generated prediction visualisation and can
+be transcoded to the format of choice. Client-side rescaling only adjusts the input size.</p>
 
 
 
@@ -1544,6 +1546,9 @@ can be transcoded to the format of choice) and in terms of client-side re-scalin
 
 
 
+
+  
+  
 
 
 

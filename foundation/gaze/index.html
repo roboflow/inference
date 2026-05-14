@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
@@ -502,49 +502,9 @@
   
   
   
-    
-    
-      
+    <li class="md-nav__item">
+      <a href="../../quickstart/explore_models/" class="md-nav__link">
         
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-    
-    
-    
-      
-      
-    
-    
-      
-        
-        
-      
-    
-    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
-      
-        
-  
-  
-  
-    <a href="../../quickstart/explore_models/" class="md-nav__link">
-      
   
   
   <span class="md-ellipsis">
@@ -558,13 +518,7 @@
   
   
 
-      
-        <span class="md-nav__icon md-icon"></span>
-      
-    </a>
-  
-
-      
+      </a>
     </li>
   
 
@@ -1235,7 +1189,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../qwen3.5-vl/" class="md-nav__link">
+      <a href="../qwen3.5/" class="md-nav__link">
         
   
   
@@ -1363,8 +1317,6 @@
       
         
       
-        
-      
     
     
     
@@ -1383,7 +1335,7 @@
   
   
   
-    <a href="../../quickstart/inference_101/" class="md-nav__link">
+    <a href="../../quickstart/devices/" class="md-nav__link">
       
   
   
@@ -1660,6 +1612,15 @@
 
   <h1 id="__skip">Gaze</h1>
 
+<div class="admonition warning">
+<p class="admonition-title">Deprecated</p>
+<p>The Gaze detection feature has been deprecated due to the removal of
+the MediaPipe dependency from inference. The <code>/gaze/gaze_detection</code>
+HTTP endpoint and the <code>Gaze</code> model class now raise
+<code>FeatureDeprecatedError</code> (HTTP 410 Gone). The stub endpoint will be
+removed end of Q2 2026; set <code>CORE_MODEL_GAZE_ENABLED=False</code> to disable
+it now. Contact Roboflow if you require this capability.</p>
+</div>
 <p><a href="https://github.com/Ahmednull/L2CS-Net" target="_blank">L2CS-Net</a> is a gaze estimation model.</p>
 <p>You can detect the direction in which someone is looking using the L2CS-Net model.</p>
 <h2 id="execution-modes">Execution Modes<a class="headerlink" href="#execution-modes" title="Permanent link">&para;</a></h2>

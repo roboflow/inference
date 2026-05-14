@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Compare Roboflow Inference with Triton, TorchServe, ComfyUI, Node-RED, Edge Impulse, and DeepStream to choose the right deployment stack.">
       
       
         <meta name="author" content="Roboflow">
@@ -684,7 +684,7 @@
   <a href="#tensorflow-serving" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Tensorflow Serving
+        TensorFlow Serving
       
     </span>
   </a>
@@ -1323,7 +1323,7 @@
   <a href="#tensorflow-serving" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Tensorflow Serving
+        TensorFlow Serving
       
     </span>
   </a>
@@ -1461,7 +1461,7 @@
 
 
 <h1 id="inference-vs-alternatives">Inference vs Alternatives<a class="headerlink" href="#inference-vs-alternatives" title="Permanent link">&para;</a></h1>
-<p>With its wide aperature of functionality, Inference's features overlap
+<p>With its wide aperture of functionality, Inference's features overlap
 with many other pieces of software. This guide aims to help readers
 understand when they should (and should not) choose Inference over
 other tools.</p>
@@ -1495,27 +1495,27 @@ integrations with other tools.</p>
 <p><strong>Choose LitServe if:</strong> you are working on general-purpose machine learning
 tasks and were previously considering rolling your own server but want
 a more featureful starting point.</p>
-<h3 id="tensorflow-serving">Tensorflow Serving<a class="headerlink" href="#tensorflow-serving" title="Permanent link">&para;</a></h3>
-<p>If you're deeply engrained in the Tensorflow ecosystem and want to deploy a
-variety of Tensorflow models in different modalities like NLP, recommender
-systems, and audio in addition to CV models, Tensorflow Serving may be a
+<h3 id="tensorflow-serving">TensorFlow Serving<a class="headerlink" href="#tensorflow-serving" title="Permanent link">&para;</a></h3>
+<p>If you're deeply ingrained in the TensorFlow ecosystem and want to deploy a
+variety of TensorFlow models in different modalities like NLP, recommender
+systems, and audio in addition to CV models, TensorFlow Serving may be a
 good choice.</p>
 <p>It can be complex to setup and maintain and lacks features many users would
 consider table stakes (like pre- and post-processing which in many cases will
 need to be custom coded). Like several of the other servers listed here, it
 lacks depth in vision-specific functionality.</p>
-<p><strong>Choose Tensorflow Serving if:</strong> the Tensorflow ecosystem is very important
+<p><strong>Choose TensorFlow Serving if:</strong> the TensorFlow ecosystem is very important
 to you and you're willing to put in the legwork to take advantage of its
 advanced feature set.</p>
 <h3 id="torchserve">TorchServe<a class="headerlink" href="#torchserve" title="Permanent link">&para;</a></h3>
-<p>The PyTorch ecosystem's equivalent of Tensorflow Serving is TorchServe. It's
+<p>The PyTorch ecosystem's equivalent of TensorFlow Serving is TorchServe. It's
 optimized for serving PyTorch models across several domains including vision,
 NLP, tabular data, and audio.</p>
-<p>Like Tensorflow Serving, it is designed for large-scale cloud deployments and
+<p>Like TensorFlow Serving, it is designed for large-scale cloud deployments and
 can require custom configuration for things like pre- and post-processing and
 deploying multiple models. Because of its wide mandate it lacks many
 vision-specific features (like video streaming).</p>
-<p><strong>Chose TorchServe if:</strong> you're looking for a way to scale and customize the
+<p><strong>Choose TorchServe if:</strong> you're looking for a way to scale and customize the
 deployment of your PyTorch models and don't need vision-specific functionality.</p>
 <h3 id="fastapi-or-flask">FastAPI or Flask<a class="headerlink" href="#fastapi-or-flask" title="Permanent link">&para;</a></h3>
 <p>In the olden days, most people rolled their own servers to expose their ML
@@ -1536,7 +1536,7 @@ has a UI for chaining models and applying logic.</p>
 Workflows Block and a YOLO ComfyUI Node), but the ecosystem of nodes and the
 community focus of Comfy is squarely centered around generative models while
 Inference is focused on interfacing with the real-world.</p>
-<p><strong>Chose ComfyUI if:</strong> you're mainly interested in using generative image and video
+<p><strong>Choose ComfyUI if:</strong> you're mainly interested in using generative image and video
 models like Flux and don't need to use custom fine-tuned models in your pipeline
 to do things like selectively replacing specific objects.</p>
 <h3 id="node-red">Node-RED<a class="headerlink" href="#node-red" title="Permanent link">&para;</a></h3>
@@ -1562,7 +1562,7 @@ tasks like video processing and running modern, state-of-the-art ML models. It a
 requires some familiarity with embedded systems. It does not offer an equivalent to
 Workflows to create complex logic and integrate with other systems and typically
 requires custom coding your application logic to run on the embedded board.</p>
-<p><strong>Chose Edge Impulse if:</strong> you're working on an IoT or wearable device that's not
+<p><strong>Choose Edge Impulse if:</strong> you're working on an IoT or wearable device that's not
 capable of running more powerful models, framework, and logic.</p>
 <h3 id="nvidia-deepstream">NVIDIA DeepStream<a class="headerlink" href="#nvidia-deepstream" title="Permanent link">&para;</a></h3>
 <p>DeepStream is NVIDIA's platform for building highly optimized video processing
@@ -1585,6 +1585,9 @@ into optimizing a single project and high throughput is your primary objective.<
 
 
 
+
+  
+  
 
 
 

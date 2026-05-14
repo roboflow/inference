@@ -6,13 +6,13 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Scalable, on-device computer vision deployment.">
+        <meta name="description" content="Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.">
       
       
         <meta name="author" content="Roboflow">
       
       
-        <link rel="canonical" href="https://inference.roboflow.com/foundation/qwen3.5-vl/">
+        <link rel="canonical" href="https://inference.roboflow.com/foundation/qwen3.5/">
       
       
         <link rel="prev" href="../sam3/">
@@ -502,49 +502,9 @@
   
   
   
-    
-    
-      
+    <li class="md-nav__item">
+      <a href="../../quickstart/explore_models/" class="md-nav__link">
         
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-    
-    
-    
-      
-      
-    
-    
-      
-        
-        
-      
-    
-    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
-      
-        
-  
-  
-  
-    <a href="../../quickstart/explore_models/" class="md-nav__link">
-      
   
   
   <span class="md-ellipsis">
@@ -558,13 +518,7 @@
   
   
 
-      
-        <span class="md-nav__icon md-icon"></span>
-      
-    </a>
-  
-
-      
+      </a>
     </li>
   
 
@@ -1241,10 +1195,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-to-use-qwen-35-vl" class="md-nav__link">
+  <a href="#how-to-use-qwen-35" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How to Use Qwen 3.5-VL
+        How to Use Qwen 3.5
       
     </span>
   </a>
@@ -1367,8 +1321,6 @@
       
         
       
-        
-      
     
     
     
@@ -1387,7 +1339,7 @@
   
   
   
-    <a href="../../quickstart/inference_101/" class="md-nav__link">
+    <a href="../../quickstart/devices/" class="md-nav__link">
       
   
   
@@ -1631,10 +1583,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-to-use-qwen-35-vl" class="md-nav__link">
+  <a href="#how-to-use-qwen-35" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How to Use Qwen 3.5-VL
+        How to Use Qwen 3.5
       
     </span>
   </a>
@@ -1658,7 +1610,7 @@
                 
                   
   
-    <a href="https://github.com/roboflow/inference/tree/main/docs/foundation/qwen3.5-vl.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/roboflow/inference/tree/main/docs/foundation/qwen3.5.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-file-pen" viewBox="0 0 24 24"><path d="M12.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v9.34"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10.378 12.622a1 1 0 0 1 3 3.003L8.36 20.637a2 2 0 0 1-.854.506l-2.867.837a.5.5 0 0 1-.62-.62l.836-2.869a2 2 0 0 1 .506-.853z"/></svg>
     </a>
@@ -1667,11 +1619,11 @@
 
 
 <h1 id="qwen-35">Qwen 3.5<a class="headerlink" href="#qwen-35" title="Permanent link">&para;</a></h1>
-<p><a href="https://github.com/QwenLM/Qwen3.5" target="_blank">Qwen 3.5-VL</a> is a vision-language model developed by Alibaba.</p>
-<p>You can use Qwen 3.5-VL for a range of multimodal tasks, including image understanding, visual question answering, and document analysis. It also supports a "thinking" mode that lets the model generate reasoning tokens before answering.</p>
-<p>You can deploy Qwen 3.5-VL with Inference.</p>
+<p><a href="https://github.com/QwenLM/Qwen3.5" target="_blank">Qwen 3.5</a> is a vision-language model developed by Alibaba.</p>
+<p>You can use Qwen 3.5 for a range of multimodal tasks, including image understanding, visual question answering, and document analysis. It also supports a "thinking" mode that lets the model generate reasoning tokens before answering.</p>
+<p>You can deploy Qwen 3.5 with Inference.</p>
 <h3 id="model-variants">Model Variants<a class="headerlink" href="#model-variants" title="Permanent link">&para;</a></h3>
-<p>Qwen 3.5-VL is available in two sizes:</p>
+<p>Qwen 3.5 is available in three sizes:</p>
 <table>
 <thead>
 <tr>
@@ -1688,20 +1640,24 @@
 <td style="text-align: left;"><code>qwen3_5-2b</code></td>
 <td style="text-align: left;">2B</td>
 </tr>
+<tr>
+<td style="text-align: left;"><code>qwen3_5-4b</code></td>
+<td style="text-align: left;">4B</td>
+</tr>
 </tbody>
 </table>
 <h3 id="execution-modes">Execution Modes<a class="headerlink" href="#execution-modes" title="Permanent link">&para;</a></h3>
-<p>Qwen 3.5-VL supports both local and remote execution modes when used in workflows:</p>
+<p>Qwen 3.5 supports both local and remote execution modes when used in workflows:</p>
 <ul>
 <li><strong>Local execution</strong>: The model runs directly on your inference server (GPU recommended)</li>
 <li><strong>Remote execution</strong>: The model can be invoked via HTTP API on a remote inference server</li>
 </ul>
 <h3 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h3>
-<p>To install inference with the extra dependencies necessary to run Qwen 3.5-VL, run</p>
+<p>To install inference with the extra dependencies necessary to run Qwen 3.5, run</p>
 <p><code>pip install "inference[transformers]"</code></p>
 <p>or</p>
 <p><code>pip install "inference-gpu[transformers]"</code></p>
-<h3 id="how-to-use-qwen-35-vl">How to Use Qwen 3.5-VL<a class="headerlink" href="#how-to-use-qwen-35-vl" title="Permanent link">&para;</a></h3>
+<h3 id="how-to-use-qwen-35">How to Use Qwen 3.5<a class="headerlink" href="#how-to-use-qwen-35" title="Permanent link">&para;</a></h3>
 <p>Create a new Python file called <code>app.py</code> and add the following code:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference.models.qwen3_5vl.qwen3_5vl_inference_models</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">InferenceModelsQwen35VLAdapter</span><span class="p">,</span>
@@ -1726,7 +1682,7 @@
 <li><code>prompt</code> with the prompt for the model.</li>
 <li>The image URL with the path to the image that you want to run inference on.</li>
 </ol>
-<p>To use Qwen 3.5-VL with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>.</p>
+<p>To use Qwen 3.5 with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>.</p>
 <p>Then, run the Python script you have created:</p>
 <div class="highlight"><pre><span></span><code>python app.py
 </code></pre></div>

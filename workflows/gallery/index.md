@@ -18,9 +18,9 @@ Browse through the various categories to find inspiration and ideas for building
 	<li><a href="/workflows/gallery/workflows_with_data_transformations">Workflows with data transformations</a></li>
 	<li><a href="/workflows/gallery/fusion_workflows">Fusion Workflows</a></li>
 	<li><a href="/workflows/gallery/workflows_with_flow_control">Workflows with flow control</a></li>
-	<li><a href="/workflows/gallery/workflows_with_foundation_models">Workflows with foundation models</a></li>
 	<li><a href="/workflows/gallery/workflows_with_business_logic">Workflows with business logic</a></li>
 	<li><a href="/workflows/gallery/advanced_inference_techniques">Advanced inference techniques</a></li>
+	<li><a href="/workflows/gallery/workflows_with_foundation_models">Workflows with foundation models</a></li>
 	<li><a href="/workflows/gallery/integration_with_external_apps">Integration with external apps</a></li>
 </ul>
 
