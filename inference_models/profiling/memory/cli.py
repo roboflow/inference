@@ -70,7 +70,11 @@ def _cmd_list(console: Console) -> None:
     type=str,
     help="Model module (e.g. inference_models....).",
 )
-@click.option("--class-name", type=str, help="Model class name.")
+@click.option(
+    "--class-name",
+    type=str,
+    help="Model class name.",
+)
 @click.option(
     "--model-path",
     type=str,
@@ -85,28 +89,61 @@ def _cmd_list(console: Console) -> None:
     default=None,
     help="Label stored in the JSON result (defaults to --model-path).",
 )
-@click.option("--architecture", type=str, default=None)
-@click.option("--task-type", type=str, default=None)
-@click.option("--device", type=str, default="cuda:0", show_default=True)
+@click.option(
+    "--architecture",
+    type=str,
+    default=None,
+)
+@click.option(
+    "--task-type",
+    type=str,
+    default=None,
+)
+@click.option(
+    "--device",
+    type=str,
+    default="cuda:0",
+    show_default=True,
+)
 @click.option(
     "--batch-size",
-    type=click.IntRange(min=1),
+    type=click.IntRange(
+        min=1,
+    ),
     default=1,
     show_default=True,
 )
-@click.option("--height", type=click.IntRange(min=1), default=640, show_default=True)
-@click.option("--width", type=click.IntRange(min=1), default=640, show_default=True)
+@click.option(
+    "--height",
+    type=click.IntRange(
+        min=1,
+    ),
+    default=640,
+    show_default=True,
+)
+@click.option(
+    "--width",
+    type=click.IntRange(
+        min=1,
+    ),
+    default=640,
+    show_default=True,
+)
 @click.option(
     "--warmup",
     "warmup_iterations",
-    type=click.IntRange(min=0),
+    type=click.IntRange(
+        min=0,
+    ),
     default=2,
     show_default=True,
 )
 @click.option(
     "--measured",
     "measured_iterations",
-    type=click.IntRange(min=1),
+    type=click.IntRange(
+        min=1,
+    ),
     default=5,
     show_default=True,
 )
@@ -128,17 +165,33 @@ def _cmd_list(console: Console) -> None:
 )
 @click.option(
     "--infer-kwargs-path",
-    type=click.Path(exists=True, dir_okay=False, path_type=str),
+    type=click.Path(
+        exists=True,
+        dir_okay=False,
+        path_type=str,
+    ),
     default=None,
     help="JSON file path.",
 )
-@click.option("--from-pretrained-kwargs-json", type=str, default=None)
 @click.option(
-    "--from-pretrained-kwargs-path",
-    type=click.Path(exists=True, dir_okay=False, path_type=str),
+    "--from-pretrained-kwargs-json",
+    type=str,
     default=None,
 )
-@click.option("--precision", type=str, default=None)
+@click.option(
+    "--from-pretrained-kwargs-path",
+    type=click.Path(
+        exists=True,
+        dir_okay=False,
+        path_type=str,
+    ),
+    default=None,
+)
+@click.option(
+    "--precision",
+    type=str,
+    default=None,
+)
 @click.option(
     "--torch-profiler-memory",
     is_flag=True,
@@ -151,7 +204,10 @@ def _cmd_list(console: Console) -> None:
 )
 @click.option(
     "--output-json",
-    type=click.Path(dir_okay=False, path_type=str),
+    type=click.Path(
+        dir_okay=False,
+        path_type=str,
+    ),
     default=None,
     help="Write result JSON to this path.",
 )
