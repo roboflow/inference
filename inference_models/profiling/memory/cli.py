@@ -1,81 +1,35 @@
 from __future__ import annotations
 
-import argparse
 import json
-import sys
 from typing import Any, Dict, Optional
 
+import click
 from rich.console import Console
 from rich.table import Table
 
-from profiling.memory.pytorch_harness import dump_result_json, run_pytorch_profile_subprocess
+from profiling.memory.pytorch_harness import (
+    dump_result_json,
+    run_pytorch_profile_subprocess,
+)
 from profiling.memory.pytorch_worker import worker_run
 from profiling.memory.torch_registry import list_torch_registry_rows
 
 
 def _load_json_dict(raw: Optional[str], path: Optional[str]) -> Dict[str, Any]:
-    if path:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    if raw:
-        return json.loads(raw)
-    return {}
+    try:
+        if path:
+            with open(path, encoding="utf-8") as f:
+                value = json.load(f)
+        elif raw:
+            value = json.loads(raw)
+        else:
+            return {}
+    except json.JSONDecodeError as exc:
+        raise click.ClickException(f"Invalid JSON: {exc}") from exc
 
-
-def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description="PyTorch GPU memory profiling for inference_models registry classes "
-        "(see profiling/memory/docs/description.md)."
-    )
-    p.add_argument(
-        "--list-torch-models",
-        action="store_true",
-        help="Print Torch backend rows from models_registry and exit.",
-    )
-    p.add_argument("--module-name", type=str, help="Model module (e.g. inference_models....)")
-    p.add_argument("--class-name", type=str, help="Model class name.")
-    p.add_argument(
-        "--model-path",
-        type=str,
-        help="Path passed to from_pretrained (local package dir or hub id as supported by the model).",
-    )
-    p.add_argument(
-        "--model-id",
-        type=str,
-        default=None,
-        help="Label stored in the JSON result (defaults to --model-path).",
-    )
-    p.add_argument("--architecture", type=str, default=None)
-    p.add_argument("--task-type", type=str, default=None)
-    p.add_argument("--device", type=str, default="cuda:0")
-    p.add_argument("--batch-size", type=int, default=1)
-    p.add_argument("--height", type=int, default=640)
-    p.add_argument("--width", type=int, default=640)
-    p.add_argument("--warmup", type=int, default=2, dest="warmup_iterations")
-    p.add_argument("--measured", type=int, default=5, dest="measured_iterations")
-    p.add_argument(
-        "--method",
-        type=str,
-        default="infer",
-        help="Method to call with synthetic images (e.g. infer, embed_images, segment_images).",
-    )
-    p.add_argument("--infer-kwargs-json", type=str, default=None, help="Inline JSON object.")
-    p.add_argument("--infer-kwargs-path", type=str, default=None, help="JSON file path.")
-    p.add_argument("--from-pretrained-kwargs-json", type=str, default=None)
-    p.add_argument("--from-pretrained-kwargs-path", type=str, default=None)
-    p.add_argument("--precision", type=str, default=None)
-    p.add_argument(
-        "--torch-profiler-memory",
-        action="store_true",
-        help="Wrap measured iterations with torch.profiler (profile_memory=True).",
-    )
-    p.add_argument(
-        "--in-process",
-        action="store_true",
-        help="Run in the current process (debug only; breaks isolation between scenarios).",
-    )
-    p.add_argument("--output-json", type=str, default=None, help="Write result JSON to this path.")
-    return p.parse_args(argv)
+    if not isinstance(value, dict):
+        raise click.ClickException("JSON option values must decode to an object.")
+    return value
 
 
 def _cmd_list(console: Console) -> None:
@@ -99,63 +53,186 @@ def _cmd_list(console: Console) -> None:
     console.print(table)
 
 
-def main(argv: Optional[list[str]] = None) -> None:
-    args = _parse_args(argv)
+@click.command(
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help=(
+        "PyTorch GPU memory profiling for inference_models registry classes "
+        "(see profiling/memory/docs/description.md)."
+    ),
+)
+@click.option(
+    "--list-torch-models",
+    is_flag=True,
+    help="Print Torch backend rows from models_registry and exit.",
+)
+@click.option(
+    "--module-name",
+    type=str,
+    help="Model module (e.g. inference_models....).",
+)
+@click.option("--class-name", type=str, help="Model class name.")
+@click.option(
+    "--model-path",
+    type=str,
+    help=(
+        "Path passed to from_pretrained "
+        "(local package dir or hub id as supported by the model)."
+    ),
+)
+@click.option(
+    "--model-id",
+    type=str,
+    default=None,
+    help="Label stored in the JSON result (defaults to --model-path).",
+)
+@click.option("--architecture", type=str, default=None)
+@click.option("--task-type", type=str, default=None)
+@click.option("--device", type=str, default="cuda:0", show_default=True)
+@click.option(
+    "--batch-size",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+)
+@click.option("--height", type=click.IntRange(min=1), default=640, show_default=True)
+@click.option("--width", type=click.IntRange(min=1), default=640, show_default=True)
+@click.option(
+    "--warmup",
+    "warmup_iterations",
+    type=click.IntRange(min=0),
+    default=2,
+    show_default=True,
+)
+@click.option(
+    "--measured",
+    "measured_iterations",
+    type=click.IntRange(min=1),
+    default=5,
+    show_default=True,
+)
+@click.option(
+    "--method",
+    type=str,
+    default="infer",
+    show_default=True,
+    help=(
+        "Method to call with synthetic images "
+        "(e.g. infer, embed_images, segment_images)."
+    ),
+)
+@click.option(
+    "--infer-kwargs-json",
+    type=str,
+    default=None,
+    help="Inline JSON object.",
+)
+@click.option(
+    "--infer-kwargs-path",
+    type=click.Path(exists=True, dir_okay=False, path_type=str),
+    default=None,
+    help="JSON file path.",
+)
+@click.option("--from-pretrained-kwargs-json", type=str, default=None)
+@click.option(
+    "--from-pretrained-kwargs-path",
+    type=click.Path(exists=True, dir_okay=False, path_type=str),
+    default=None,
+)
+@click.option("--precision", type=str, default=None)
+@click.option(
+    "--torch-profiler-memory",
+    is_flag=True,
+    help="Wrap measured iterations with torch.profiler (profile_memory=True).",
+)
+@click.option(
+    "--in-process",
+    is_flag=True,
+    help="Run in the current process (debug only; breaks isolation between scenarios).",
+)
+@click.option(
+    "--output-json",
+    type=click.Path(dir_okay=False, path_type=str),
+    default=None,
+    help="Write result JSON to this path.",
+)
+def main(
+    list_torch_models: bool,
+    module_name: Optional[str],
+    class_name: Optional[str],
+    model_path: Optional[str],
+    model_id: Optional[str],
+    architecture: Optional[str],
+    task_type: Optional[str],
+    device: str,
+    batch_size: int,
+    height: int,
+    width: int,
+    warmup_iterations: int,
+    measured_iterations: int,
+    method: str,
+    infer_kwargs_json: Optional[str],
+    infer_kwargs_path: Optional[str],
+    from_pretrained_kwargs_json: Optional[str],
+    from_pretrained_kwargs_path: Optional[str],
+    precision: Optional[str],
+    torch_profiler_memory: bool,
+    in_process: bool,
+    output_json: Optional[str],
+) -> None:
     console = Console()
 
-    if args.list_torch_models:
+    if list_torch_models:
         _cmd_list(console)
         return
 
     missing = []
-    if not args.module_name:
+    if not module_name:
         missing.append("--module-name")
-    if not args.class_name:
+    if not class_name:
         missing.append("--class-name")
-    if not args.model_path:
+    if not model_path:
         missing.append("--model-path")
     if missing:
-        console.print(
-            "[red]Missing required arguments:[/red] "
+        raise click.UsageError(
+            "Missing required arguments: "
             + ", ".join(missing)
             + ". Use --list-torch-models or see --help."
         )
-        sys.exit(2)
 
-    infer_extra = _load_json_dict(args.infer_kwargs_json, args.infer_kwargs_path)
+    infer_extra = _load_json_dict(infer_kwargs_json, infer_kwargs_path)
     fp_extra = _load_json_dict(
-        args.from_pretrained_kwargs_json, args.from_pretrained_kwargs_path
+        from_pretrained_kwargs_json, from_pretrained_kwargs_path
     )
 
     payload: Dict[str, Any] = {
-        "module_name": args.module_name,
-        "class_name": args.class_name,
-        "model_name_or_path": args.model_path,
+        "module_name": module_name,
+        "class_name": class_name,
+        "model_name_or_path": model_path,
         "from_pretrained_kwargs": fp_extra,
-        "device_str": args.device,
-        "batch_size": args.batch_size,
-        "height": args.height,
-        "width": args.width,
+        "device_str": device,
+        "batch_size": batch_size,
+        "height": height,
+        "width": width,
         "infer_kwargs": infer_extra,
-        "task_type": args.task_type,
-        "method_name": args.method,
-        "warmup_iterations": args.warmup_iterations,
-        "measured_iterations": args.measured_iterations,
-        "model_id": args.model_id or args.model_path,
-        "architecture": args.architecture,
-        "precision": args.precision,
-        "torch_profiler_memory": args.torch_profiler_memory,
+        "task_type": task_type,
+        "method_name": method,
+        "warmup_iterations": warmup_iterations,
+        "measured_iterations": measured_iterations,
+        "model_id": model_id or model_path,
+        "architecture": architecture,
+        "precision": precision,
+        "torch_profiler_memory": torch_profiler_memory,
     }
 
-    if args.in_process:
+    if in_process:
         result = worker_run(payload)
     else:
         result = run_pytorch_profile_subprocess(payload)
 
     text = json.dumps(result, indent=2)
     console.print(text)
-    if args.output_json:
-        dump_result_json(result, args.output_json)
+    if output_json:
+        dump_result_json(result, output_json)
 
 
 if __name__ == "__main__":

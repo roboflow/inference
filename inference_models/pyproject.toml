@@ -137,6 +137,7 @@ test = [
   "requests-mock>=1.12.1"
 ]
 profiling-memory = [
+  "click>=8.1.0,<9.0.0",
   "nvidia-ml-py>=12.560.30,<13.0.0",
 ]
 docs = [
