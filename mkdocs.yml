@@ -84,17 +84,7 @@ nav:
   - Models:
       # - models.md # Was once the landing page for inference
       - Run a Model: quickstart/run_a_model.md
-      - 'Fine-Tuned Models':
-          - quickstart/explore_models.md
-          - RF-DETR: fine-tuned/rfdetr.md
-          - YOLO26: fine-tuned/yolo26.md
-          - YOLOv11: fine-tuned/yolov11.md
-          - YOLOv10: fine-tuned/yolov10.md
-          - YOLOv9: fine-tuned/yolov9.md
-          - YOLOv8: fine-tuned/yolov8.md
-          - YOLOv7: fine-tuned/yolov7.md
-          - YOLOv5: fine-tuned/yolov5.md
-          - YOLO-NAS: fine-tuned/yolonas.md
+      - 'Fine-Tuned Models': quickstart/explore_models.md
       - 'Pre-Trained Models': quickstart/aliases.md
       - 'Universe Models': quickstart/load_from_universe.md
       - 'Foundation Models':
@@ -118,10 +108,9 @@ nav:
           - YOLO-World (Object Detection): foundation/yolo_world.md
           - OwlV2 (Object Detection): foundation/owlv2.md
       - Deploy a Model:
-          - How Do I Run Inference?: quickstart/inference_101.md
           - What Devices Can I Use?: quickstart/devices.md
           - Retrieve Your API Key: quickstart/configure_api_key.md
-          - Model Licenses: https://roboflow.com/licensing
+          - Model Licenses »: https://roboflow.com/licensing
   - Workflows:
       - About Workflows: workflows/about.md
       - User Guide:
