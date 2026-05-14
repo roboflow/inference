@@ -219,11 +219,63 @@ def test_crop_image_on_zero_size_detections() -> None:
 
     # then
     assert len(result) == 3, "Expected 3 outputs"
-    assert result[0] == {"crops": None}, "Expected first element empty"
+    assert result[0] == {
+        "crops": None,
+        "predictions": None,
+    }, "Both manifest-declared keys must be present, even on zero-area"
+    assert set(result[1].keys()) == {
+        "crops",
+        "predictions",
+    }, "Happy path must produce both manifest-declared keys"
     assert (
         result[1]["crops"].parent_metadata.parent_id == "two"
     ), "Appropriate parent id (from detection id) must be attached"
-    assert result[2] == {"crops": None}, "Expected last element empty"
+    assert result[2] == {
+        "crops": None,
+        "predictions": None,
+    }, "Both manifest-declared keys must be present, even on zero-area"
+
+
+def test_crop_image_output_keys_match_manifest_on_mixed_detections() -> None:
+    # given a mix of zero-area and valid detections
+    np_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
+        numpy_image=np_image,
+    )
+    detections = sv.Detections(
+        xyxy=np.array(
+            [[0, 0, 0, 0], [80, 80, 120, 120]], dtype=np.float64
+        ),
+        class_id=np.array([1, 1]),
+        confidence=np.array([0.5, 0.5], dtype=np.float64),
+        data={
+            "detection_id": np.array(["zero", "valid"]),
+            "class_name": np.array(["cat", "cat"]),
+        },
+    )
+
+    # when
+    result = crop_image(
+        image=image,
+        detections=detections,
+        mask_opacity=0.0,
+        background_color=(0, 0, 0),
+    )
+
+    # then — every emitted dict must carry exactly the manifest output keys
+    expected_keys = {
+        output.name for output in BlockManifest.describe_outputs()
+    }
+    assert expected_keys == {"crops", "predictions"}, (
+        "Sanity: manifest declares the two outputs this test locks against. "
+        "If this changes, update the assertion below accordingly."
+    )
+    for i, element in enumerate(result):
+        assert set(element.keys()) == expected_keys, (
+            f"Element {i} keys {set(element.keys())} != manifest keys "
+            f"{expected_keys}"
+        )
 
 
 def test_crop_image_when_detections_without_ids_provided() -> None:
