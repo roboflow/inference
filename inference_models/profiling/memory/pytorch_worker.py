@@ -65,7 +65,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
     measured_iterations = int(payload["measured_iterations"])
     model_id = payload.get("model_id") or model_name_or_path
     architecture = payload.get("architecture")
-    precision = payload.get("precision")
+    quantization = payload.get("quantization")
     torch_profiler_memory = bool(payload.get("torch_profiler_memory"))
 
     if not torch.cuda.is_available():
@@ -170,7 +170,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         model_id=model_id,
         runtime="pytorch",
         gpu_name=gpu_name,
-        precision=precision,
+        quantization=quantization,
         shape_profile=ShapeProfile(
             batch_size=batch_size,
             height=height,

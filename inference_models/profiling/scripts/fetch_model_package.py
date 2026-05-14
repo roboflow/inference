@@ -75,11 +75,11 @@ def _make_package_dir(
     safe_model_id = model_id.replace("/", "-")
     package_dir = (
         target_dir
-        / model_architecture
         / task_type
+        / model_architecture
         / backend.value
-        / (quantization.value if quantization else "fp32")
         / safe_model_id
+        / (quantization.value if quantization else "fp32")
         / package_id
     )
 

@@ -13,6 +13,7 @@ from profiling.memory.pytorch_harness import (
 )
 from profiling.memory.pytorch_worker import worker_run
 from profiling.memory.torch_registry import list_torch_registry_rows
+from inference_models import Quantization
 
 BYTES_IN_GB = 1024**3
 MEMORY_FIELDS = (
@@ -248,9 +249,13 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     default=None,
 )
 @click.option(
-    "--precision",
-    type=str,
-    default=None,
+    "--quantization",
+    type=click.Choice(
+        [quantization.value for quantization in Quantization],
+    ),
+    default="fp32",
+    show_default=True,
+    help="Package quantization.",
 )
 @click.option(
     "--torch-profiler-memory",
@@ -290,7 +295,7 @@ def main(
     infer_kwargs_path: Optional[str],
     from_pretrained_kwargs_json: Optional[str],
     from_pretrained_kwargs_path: Optional[str],
-    precision: Optional[str],
+    quantization: Optional[str],
     torch_profiler_memory: bool,
     in_process: bool,
     output_json: Optional[str],
@@ -308,6 +313,8 @@ def main(
         missing.append("--class-name")
     if not model_path:
         missing.append("--model-path")
+    if not quantization:
+        missing.append("--quantization")
     if missing:
         raise click.UsageError(
             "Missing required arguments: "
@@ -340,7 +347,7 @@ def main(
         "measured_iterations": measured_iterations,
         "model_id": model_id or model_path,
         "architecture": architecture,
-        "precision": precision,
+        "quantization": quantization,
         "torch_profiler_memory": torch_profiler_memory,
     }
 
