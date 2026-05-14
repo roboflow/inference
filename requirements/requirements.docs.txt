@@ -1,5 +1,4 @@
 zensical==0.0.33
-mkdocs-git-revision-date-localized-plugin
 mkdocstrings[python]
 mkdocs-gen-files
 mkdocs-literate-nav
