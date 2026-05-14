@@ -4,10 +4,6 @@ import cv2
 import numpy as np
 import supervision as sv
 
-# DEBUG: lift numpy print threshold so failure messages show the full actual
-# array (pending snapshot update under inference_models 0.28.1 box clipping).
-np.set_printoptions(threshold=10**6)
-
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
@@ -157,7 +153,7 @@ def test_sahi_workflow_with_none_as_filtering_strategy(
                     [512, 493, 583, 613],
                     [775, 388, 1151, 640],
                     [775, 388, 1151, 640],
-                    [1025, 390, 1665, 640],
+                    [1025, 390, 1664, 640],
                     [1536, 506, 1717, 640],
                     [113, 512, 345, 660],
                     [424, 512, 583, 614],
@@ -165,9 +161,9 @@ def test_sahi_workflow_with_none_as_filtering_strategy(
                     [111, 519, 139, 537],
                     [325, 519, 356, 536],
                     [512, 512, 582, 613],
-                    [768, 509, 1152, 976],
+                    [768, 512, 1152, 976],
                     [765, 513, 1152, 980],
-                    [1023, 511, 1661, 954],
+                    [1024, 512, 1661, 954],
                     [1537, 512, 1749, 947],
                 ]
             ),
@@ -416,13 +412,13 @@ def test_sahi_workflow_with_nms_as_filtering_strategy(
                     [326, 519, 356, 537],
                     [775, 388, 1151, 640],
                     [775, 388, 1151, 640],
-                    [1025, 390, 1665, 640],
+                    [1025, 390, 1664, 640],
                     [1536, 506, 1717, 640],
                     [111, 519, 139, 537],
                     [512, 512, 582, 613],
-                    [768, 509, 1152, 976],
+                    [768, 512, 1152, 976],
                     [765, 513, 1152, 980],
-                    [1023, 511, 1661, 954],
+                    [1024, 512, 1661, 954],
                     [1537, 512, 1749, 947],
                 ]
             ),
@@ -529,15 +525,15 @@ def test_sahi_workflow_with_nmm_as_filtering_strategy(
             np.array(
                 [
                     [113, 479, 345, 660],
-                    [1025, 390, 1665, 640],
+                    [1025, 390, 1664, 640],
                     [424, 493, 583, 615],
                     [381, 520, 407, 538],
                     [1537, 512, 1749, 947],
-                    [1023, 511, 1661, 954],
+                    [1024, 512, 1661, 954],
                     [775, 388, 1151, 640],
                     [325, 519, 356, 537],
                     [111, 519, 139, 537],
-                    [768, 509, 1152, 976],
+                    [768, 512, 1152, 976],
                     [1536, 506, 1717, 640],
                     [775, 388, 1151, 640],
                     [765, 513, 1152, 980],
