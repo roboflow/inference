@@ -287,6 +287,9 @@ from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1
 from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
     Qwen35VLBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
+    Qwen35VLBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
     Qwen36OpenRouterBlockV1,
 )
@@ -932,6 +935,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
         Qwen35VLBlockV1,
+        Qwen35VLBlockV2,
         Qwen35OpenRouterBlockV1,
         Qwen36OpenRouterBlockV1,
         OpenAICompatibleBlockV1,
