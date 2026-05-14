@@ -69,7 +69,6 @@ nav:
           - YOLOv8: models/yolov8-keypoint-detection.md
           - YOLOv11: models/yolov11-keypoint-detection.md
           - YOLO26: models/yolo26-keypoint-detection.md
-          - MediaPipe Face Detection: models/mediapipe-face.md
       - Interactive Segmentation:
           - SAM: models/sam-interactive-segmentation.md
           - SAM2: models/sam2-interactive-segmentation.md

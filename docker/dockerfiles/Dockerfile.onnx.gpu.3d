@@ -20,7 +20,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
-    requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.yolo_world.txt \
@@ -42,7 +41,6 @@ RUN uv pip install --system \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
-    -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
     -r requirements.transformers.txt \

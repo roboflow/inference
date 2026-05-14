@@ -25,7 +25,8 @@ RUN python -m pip install \
     -r requirements.gpu.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
     "torch==2.4.1" \
-    "torchvision==0.19.1"
+    "torchvision==0.19.1" \
+    "transformers<=5.7.0"
 
 
 WORKDIR /app/

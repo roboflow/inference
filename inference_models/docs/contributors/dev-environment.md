@@ -39,9 +39,6 @@ uv sync --extra test --extra torch-cpu --extra onnx-cpu
 
 # Install with GPU backends (CUDA 12.8)
 uv sync --extra test --extra torch-cu128 --extra onnx-cu12 --extra trt10
-
-# Install with model-specific dependencies (e.g., MediaPipe)
-uv sync --extra test --extra mediapipe
 ```
 
 !!! tip "uv sync vs uv pip install"

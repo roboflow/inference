@@ -8,6 +8,7 @@ in remote workflow execution mode where the v3 model blocks select the v0 API
 with a mocked model manager and confirms each task type accepts the same
 confidence-mode values the v3 blocks send.
 """
+
 from typing import Optional, Union
 from unittest.mock import AsyncMock, MagicMock
 

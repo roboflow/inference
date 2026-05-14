@@ -31,11 +31,6 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Checkout
         uses: actions/checkout@v4
       - name: Read version from file
@@ -51,47 +46,47 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
-      - name: Build and Push
-        uses: depot/build-push-action@v1
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
-          project: grl7ffzxd7
-          tags: ${{ steps.tags.outputs.image_tags }}
-          platforms: linux/amd64
-          file: ${{ env.DOCKERFILE }}
-      - name: 'Authenticate gcloud'
-        uses: 'google-github-actions/auth@v2'
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Authenticate gcloud
+        uses: google-github-actions/auth@v2
         id: auth
         with:
-          workload_identity_provider: 'projects/878913763597/locations/global/workloadIdentityPools/github-actions/providers/github'
-          service_account: 'gha-inference@roboflow-staging.iam.gserviceaccount.com'
-          token_format: 'access_token'
+          workload_identity_provider: "projects/878913763597/locations/global/workloadIdentityPools/github-actions/providers/github"
+          service_account: "gha-inference@roboflow-staging.iam.gserviceaccount.com"
+          token_format: access_token
       - name: Login to Google Artifact Registry
         uses: docker/login-action@v3
         with:
           registry: us-docker.pkg.dev
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
-      - name: Set up build variables
-        id: set_up_build_variables
+      - name: Combine Docker Hub and Artifact Registry tags
+        id: all_tags
         run: |
-          TAGS=""
-          IFS=',' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.image_tags }}"
+          DH_TAGS="${{ steps.tags.outputs.image_tags }}"
+          GCP_PREFIX="us-docker.pkg.dev/roboflow-artifacts/"
+          GCP_TAGS=""
+          IFS=',' read -ra TAG_ARRAY <<< "$DH_TAGS"
           for tag in "${TAG_ARRAY[@]}"; do
-            if [ -n "$TAGS" ]; then
-              TAGS="${TAGS}","us-docker.pkg.dev/roboflow-artifacts/${tag}"
+            [ -z "$tag" ] && continue
+            if [ -n "$GCP_TAGS" ]; then
+              GCP_TAGS="${GCP_TAGS},${GCP_PREFIX}${tag}"
             else
-              TAGS="us-docker.pkg.dev/roboflow-artifacts/${tag}"
+              GCP_TAGS="${GCP_PREFIX}${tag}"
             fi
           done
-          echo "PROCESSED_TAGS=${TAGS}" >> "$GITHUB_OUTPUT"
-          echo "GCP artifacts to be pushed:"
-          echo "$TAGS"
-      - name: Build and push GPU image to GCP Artifact Registry
+          echo "all_tags=${DH_TAGS},${GCP_TAGS}" >> "$GITHUB_OUTPUT"
+          echo "Single build will push to Docker Hub and Artifact Registry:"
+          echo "${DH_TAGS},${GCP_TAGS}"
+      - name: Build and push (Docker Hub and GCP from one build)
         uses: depot/build-push-action@v1
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
           project: grl7ffzxd7
-          tags: ${{ steps.set_up_build_variables.outputs.PROCESSED_TAGS }}
+          tags: ${{ steps.all_tags.outputs.all_tags }}
           platforms: linux/amd64
           file: ${{ env.DOCKERFILE }}
