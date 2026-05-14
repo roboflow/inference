@@ -1,0 +1,26 @@
+---
+description: CLI option conventions for memory profiling tools
+globs: inference_models/profiling/memory/**/*.py
+alwaysApply: false
+---
+
+# Memory Profiling CLI Options
+
+When editing Python CLIs in `inference_models/profiling/memory`, use `click`
+for command-line options.
+
+Format each `@click.option(...)` decorator with every option argument and
+keyword parameter on its own line:
+
+```python
+@click.option(
+    "--batch-size",
+    type=click.IntRange(
+        min=1,
+    ),
+    default=1,
+    show_default=True,
+)
+```
+
+Avoid single-line option declarations, even for simple options.
