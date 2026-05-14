@@ -7,6 +7,12 @@ from typing import Any, Dict
 from profiling.memory.pytorch_worker import worker_main
 
 
+def _run_worker(queue: mp.Queue, data: Dict[str, Any]) -> None:
+    message = worker_main(data)
+
+    queue.put(message)
+
+
 def run_pytorch_profile_subprocess(
     payload: Dict[str, Any],
     *,
@@ -19,14 +25,9 @@ def run_pytorch_profile_subprocess(
     """
     ctx = mp.get_context(mp_context)
 
-    def _target(queue: mp.Queue, data: Dict[str, Any]) -> None:
-        message = worker_main(data)
-
-        queue.put(message)
-
     queue = ctx.Queue(maxsize=1)
     proc = ctx.Process(
-        target=_target,
+        target=_run_worker,
         args=(queue, payload),
     )
     proc.start()
