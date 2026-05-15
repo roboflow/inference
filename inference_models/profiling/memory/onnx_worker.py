@@ -11,7 +11,6 @@ from typing import Any, Callable, Dict, List, Optional
 
 import torch
 
-from inference_models.models.auto_loaders.entities import BackendType
 from profiling.memory.input_factory import (
     build_random_rgb_images,
     describe_shape_signature,
@@ -186,7 +185,7 @@ def _patch_onnxruntime_sessions(
     trace_dir: Path,
     sessions: List[Any],
 ) -> Any:
-    original_inference_session = onnxruntime.InferenceSession
+    original_inference_session_init_fn = onnxruntime.InferenceSession
 
     def create_profiling_session(*args: Any, **kwargs: Any) -> Any:
         session_options = kwargs.get("sess_options")
@@ -197,14 +196,14 @@ def _patch_onnxruntime_sessions(
         session_options.enable_profiling = True
         session_options.profile_file_prefix = str(trace_dir / "onnxruntime_profile")
 
-        session = original_inference_session(*args, **kwargs)
+        session = original_inference_session_init_fn(*args, **kwargs)
         sessions.append(session)
 
         return session
 
     onnxruntime.InferenceSession = create_profiling_session
 
-    return original_inference_session
+    return original_inference_session_init_fn
 
 
 def _finish_onnx_profiling(sessions: List[Any]) -> List[str]:
@@ -291,7 +290,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     trace_dir = Path(tempfile.mkdtemp(prefix="onnxruntime-profile-"))
     sessions: List[Any] = []
-    original_inference_session = _patch_onnxruntime_sessions(
+    original_inference_session_init_fn = _patch_onnxruntime_sessions(
         onnxruntime,
         trace_dir=trace_dir,
         sessions=sessions,
@@ -299,7 +298,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     from_pretrained_kwargs.setdefault(
         "onnx_execution_providers",
-        ["CUDAExecutionProvider"],
+        ["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     from_pretrained_kwargs.setdefault("device", device)
 
@@ -313,7 +312,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
             **from_pretrained_kwargs,
         )
     finally:
-        onnxruntime.InferenceSession = original_inference_session
+        onnxruntime.InferenceSession = original_inference_session_init_fn
 
     torch.cuda.synchronize(device)
 
