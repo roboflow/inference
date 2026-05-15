@@ -1,2 +1,2 @@
-aiortc>=1.9.0
+aiortc @ git+https://github.com/roboflow/aiortc-roboflow.git@feat/h264-nvenc-encoder  # roboflow fork adds h264_nvenc encoder + H.264-preferred SDP ordering
 av==14.2.0 # pinning due to: https://github.com/PyAV-Org/PyAV/issues/2082
