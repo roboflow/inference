@@ -10,14 +10,10 @@ from rich.console import Console
 from rich.table import Table
 
 from inference_models import BackendType, Quantization
-from profiling.memory.onnx_harness import run_onnx_profile_subprocess
 from profiling.memory.onnx_worker import worker_run as onnx_worker_run
-from profiling.memory.pytorch_harness import (
-    dump_result_json,
-    run_pytorch_profile_subprocess,
-)
+from profiling.memory.subprocess_harness import dump_result_json, run_profile_subprocess
 from profiling.memory.pytorch_worker import worker_run as pytorch_worker_run
-from profiling.memory.torch_registry import (
+from profiling.memory.backend_registry import (
     list_onnx_registry_rows,
     list_torch_registry_rows,
 )
@@ -440,12 +436,20 @@ def main(
         if in_process:
             result = onnx_worker_run(payload)
         else:
-            result = run_onnx_profile_subprocess(payload)
+            result = run_profile_subprocess(
+                payload,
+                worker_module="profiling.memory.onnx_worker",
+                harness_label="ONNX profiling",
+            )
     else:
         if in_process:
             result = pytorch_worker_run(payload)
         else:
-            result = run_pytorch_profile_subprocess(payload)
+            result = run_profile_subprocess(
+                payload,
+                worker_module="profiling.memory.pytorch_worker",
+                harness_label="PyTorch profiling",
+            )
 
     _print_human_readable_result(
         console,
