@@ -188,26 +188,11 @@ hide:
 
 
 
-            <a href="qwen2.5_vl">
+            <a href="qwen_vl">
               <div class="block">
                 
-                <div class="block_name"> <i class="fal fa-atom" > </i>  Qwen2.5-VL</div>
-                <div class="block_description">Run Qwen2.5-VL on an image.</div>
-                <!-- <div class="block_license">APACHE-2.0</div> -->
-              </div>
-            </a>
-
-
-          
-          
-
-
-
-            <a href="qwen3_vl">
-              <div class="block">
-                
-                <div class="block_name"> <i class="fal fa-atom" > </i>  Qwen3-VL</div>
-                <div class="block_description">Run Qwen3-VL on an image.</div>
+                <div class="block_name"> <i class="fal fa-atom" > </i>  Qwen-VL</div>
+                <div class="block_description">Run any Qwen vision model — natively or via OpenRouter.</div>
                 <!-- <div class="block_license">APACHE-2.0</div> -->
               </div>
             </a>
@@ -238,6 +223,21 @@ hide:
                 
                 <div class="block_name"> <i class="fal fa-atom" > </i>  Moondream2</div>
                 <div class="block_description">Run Moondream2 on an image.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
+            <a href="open_router">
+              <div class="block">
+                
+                <div class="block_name"> <i class="fal fa-globe" > </i>  OpenRouter</div>
+                <div class="block_description">Run any OpenRouter model by pasting its model slug.</div>
                 <!-- <div class="block_license">APACHE-2.0</div> -->
               </div>
             </a>
@@ -521,9 +521,9 @@ hide:
             <a href="llama3.2_vision">
               <div class="block">
                 
-                <div class="block_name"> <i class="far fa-brands fa-meta" > </i>  Llama 3.2 Vision</div>
-                <div class="block_description">Run Llama model with Vision capabilities</div>
-                <!-- <div class="block_license">LLAMA 3.2 COMMUNITY</div> -->
+                <div class="block_name"> <i class="fa-brands fa-meta" > </i>  Llama 3.2 Vision</div>
+                <div class="block_description">Run Llama 3.2 Vision via OpenRouter.</div>
+                <!-- <div class="block_license">LLAMA 3.2 COMMUNITY LICENSE</div> -->
               </div>
             </a>
 
@@ -533,42 +533,12 @@ hide:
 
 
 
-            <a href="google_gemma_api">
+            <a href="google_gemma">
               <div class="block">
                 
-                <div class="block_name"> <i class="fa-brands fa-google" > </i>  Google Gemma API</div>
+                <div class="block_name"> <i class="fa-brands fa-google" > </i>  Google Gemma</div>
                 <div class="block_description">Run Google's Gemma model with vision capabilities via OpenRouter.</div>
                 <!-- <div class="block_license">GEMMA TERMS OF USE</div> -->
-              </div>
-            </a>
-
-
-          
-          
-
-
-
-            <a href="qwen3.5_api">
-              <div class="block">
-                
-                <div class="block_name"> <i class="fal fa-atom" > </i>  Qwen 3.5 API</div>
-                <div class="block_description">Run Qwen 3.5 vision-language models via OpenRouter.</div>
-                <!-- <div class="block_license">QWEN LICENSE</div> -->
-              </div>
-            </a>
-
-
-          
-          
-
-
-
-            <a href="qwen3.6_api">
-              <div class="block">
-                
-                <div class="block_name"> <i class="fal fa-atom" > </i>  Qwen 3.6 API</div>
-                <div class="block_description">Run Qwen 3.6 vision-language models via OpenRouter.</div>
-                <!-- <div class="block_license">QWEN LICENSE</div> -->
               </div>
             </a>
 
@@ -1786,6 +1756,21 @@ hide:
                 
                 <div class="block_name"> <i class="far fa-location-crosshairs" > </i>  ByteTrack Tracker</div>
                 <div class="block_description">Tracks objects across frames. Best for most scenes.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
+            <a href="bo_tsort_tracker">
+              <div class="block">
+                
+                <div class="block_name"> <i class="far fa-location-crosshairs" > </i>  BoT-SORT Tracker</div>
+                <div class="block_description">ByteTrack-style association with optional camera motion compensation (BoT-SORT).</div>
                 <!-- <div class="block_license">APACHE-2.0</div> -->
               </div>
             </a>

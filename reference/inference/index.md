@@ -234,6 +234,8 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.utils.preprocess
 
+::: inference.core.utils.sqlite_wrapper
+
 ::: inference.core.utils.torchscript_guard
 
 ## `core/workflows/core_steps/analytics/detection_event_log`
@@ -298,13 +300,15 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.workflows.core_steps.classical_cv.threshold.v1
 
+## `core/workflows/core_steps/common`
+
+::: inference.core.workflows.core_steps.common.openrouter
+
+::: inference.core.workflows.core_steps.common.utils
+
 ## `core/workflows/core_steps/common/query_language/introspection`
 
 ::: inference.core.workflows.core_steps.common.query_language.introspection.core
-
-## `core/workflows/core_steps/common`
-
-::: inference.core.workflows.core_steps.common.utils
 
 ## `core/workflows/core_steps/flow_control/inner_workflow`
 
@@ -343,6 +347,14 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 ## `core/workflows/core_steps/models/foundation/openai_compatible`
 
 ::: inference.core.workflows.core_steps.models.foundation.openai_compatible.v1
+
+## `core/workflows/core_steps/models/foundation/openrouter`
+
+::: inference.core.workflows.core_steps.models.foundation.openrouter.v1
+
+## `core/workflows/core_steps/models/foundation/qwen_vlm`
+
+::: inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1
 
 ## `core/workflows/core_steps/models/foundation/segment_anything2_video`
 

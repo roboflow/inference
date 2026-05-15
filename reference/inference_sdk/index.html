@@ -38194,14 +38194,14 @@ processing and free up associated resources.</p>
     <span class="k">elif</span> <span class="n">image_placement</span> <span class="ow">is</span> <span class="n">ImagePlacement</span><span class="o">.</span><span class="n">DATA</span><span class="p">:</span>
         <span class="n">data</span> <span class="o">=</span> <span class="n">batch_inference_inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="bp">NotImplemented</span><span class="p">(</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;Not implemented request building method for </span><span class="si">{</span><span class="n">image_placement</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
     <span class="n">scaling_factors</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">batch_inference_inputs</span><span class="p">]</span>
 
     <span class="n">execution_id_value</span> <span class="o">=</span> <span class="n">execution_id</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">execution_id_value</span><span class="p">:</span>
-        <span class="n">headers</span> <span class="o">=</span> <span class="n">headers</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">headers</span> <span class="o">=</span> <span class="n">headers</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span> <span class="k">if</span> <span class="n">headers</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{}</span>
         <span class="n">headers</span><span class="p">[</span><span class="n">EXECUTION_ID_HEADER</span><span class="p">]</span> <span class="o">=</span> <span class="n">execution_id_value</span>
         <span class="k">if</span> <span class="n">ENABLE_INTERNAL_REMOTE_EXEC_HEADER</span><span class="p">:</span>
             <span class="n">_internal_secret</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;ROBOFLOW_INTERNAL_SERVICE_SECRET&quot;</span><span class="p">)</span>

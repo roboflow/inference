@@ -271,10 +271,16 @@
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;qwen3_vl&#x2f;</loc>
     </url>
     <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;qwen_vl&#x2f;</loc>
+    </url>
+    <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;smol_vlm2&#x2f;</loc>
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;moondream2&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;open_router&#x2f;</loc>
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;qwen3.5_vl&#x2f;</loc>
@@ -347,6 +353,9 @@
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;google_gemma_api&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;google_gemma&#x2f;</loc>
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;qwen3.5_api&#x2f;</loc>
@@ -587,6 +596,9 @@
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;byte_track_tracker&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;bo_tsort_tracker&#x2f;</loc>
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;sort_tracker&#x2f;</loc>
