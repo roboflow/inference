@@ -18,14 +18,32 @@ Inference 1.0 supports multiple inference runtime backends: ONNX, TensorRT, Hugg
 
 ## Quick Example
 
-`get_model()` loads a model by its ID, downloads the weights, and returns a model object you can call `.infer()` on.
+You can run inference either against an Inference Server over HTTP (with `inference-sdk`) or directly in your process (with the native `inference` package). The native `get_model()` call loads the model into your script and returns an object you can call `.infer()` on; the HTTP client sends the image to a server that does the same. See [Run a Model](../quickstart/run_a_model.md#install) for package installation.
 
-```python
-from inference import get_model
+=== "inference-sdk (HTTP client)"
 
-model = get_model(model_id="rfdetr-small")
-results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
-```
+    ```python
+    from inference_sdk import InferenceHTTPClient
+
+    client = InferenceHTTPClient(
+        # api_url="http://localhost:9001",  # for Self-hosted
+        api_url="https://serverless.roboflow.com",
+        api_key="ROBOFLOW_API_KEY",
+    )
+    results = client.infer(
+        "https://media.roboflow.com/inference/people-walking.jpg",
+        model_id="rfdetr-small",
+    )
+    ```
+
+=== "inference (native)"
+
+    ```python
+    from inference import get_model
+
+    model = get_model(model_id="rfdetr-small")
+    results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
+    ```
 
 See [Model ID](../quickstart/run_a_model.md#model-ids) to use models that require an API key, set the `ROBOFLOW_API_KEY` environment variable or pass it directly:
 
@@ -37,7 +55,7 @@ See the [Run a Model](../quickstart/run_a_model.md) guide for a more detailed wa
 
 ## Inference Pipeline
 
-`InferencePipeline` provides a streaming interface for running inference on video sources - webcams, RTSP streams, video files, and more. 
+`InferencePipeline` provides a streaming interface for running inference on video sources - webcams, RTSP streams, video files, and more. It is available only in the native `inference` package; the HTTP client does not provide a streaming-pipeline equivalent.
 
 ```python
 from inference import InferencePipeline
