@@ -53,37 +53,31 @@ if TRITON_AVAILABLE:
         bboxes_stride_q,
         PER_CLASS: tl.constexpr,
         HAS_REMAPPING: tl.constexpr,
-        BLOCK_C: tl.constexpr,
     ):
-        pid = tl.program_id(0)
-        if pid >= num_queries:
+        # One program per (query, class). The reference path does top-k-flat
+        # over the (Q*C) sigmoid grid (`num_select == num_queries`), so a
+        # single query can contribute multiple detections — once per class
+        # that survives remap + threshold. Per-query argmax would silently
+        # drop the others.
+        pid_q = tl.program_id(0)
+        pid_c = tl.program_id(1)
+        if pid_q >= num_queries or pid_c >= num_classes_total:
             return
-        offs_c = tl.arange(0, BLOCK_C)
-        mask_c = offs_c < num_classes_total
 
-        logits_row = tl.load(
-            logits_ptr + pid * logits_stride_q + offs_c,
-            mask=mask_c,
-            other=-float("inf"),
-        )
-        max_val = tl.max(logits_row, axis=0)
-        BIG = 1 << 30
-        is_max = logits_row == max_val
-        idx_or_big = tl.where(is_max & mask_c, offs_c, BIG)
-        raw_c = tl.min(idx_or_big, axis=0)
+        logit = tl.load(logits_ptr + pid_q * logits_stride_q + pid_c)
 
         if HAS_REMAPPING:
-            top_c = tl.load(class_map_ptr + raw_c)
+            top_c = tl.load(class_map_ptr + pid_c)
             valid = top_c >= 0
         else:
-            top_c = raw_c
-            valid = raw_c < num_classes_total
+            top_c = pid_c
+            valid = pid_c < num_classes_total
 
-        abs_max = tl.abs(max_val)
-        z = tl.exp(-abs_max)
+        abs_l = tl.abs(logit)
+        z = tl.exp(-abs_l)
         sig_pos = 1.0 / (1.0 + z)
         sig_neg = z / (1.0 + z)
-        conf = tl.where(max_val >= 0.0, sig_pos, sig_neg)
+        conf = tl.where(logit >= 0.0, sig_pos, sig_neg)
 
         if PER_CLASS:
             safe_c = tl.where(valid, top_c, 0)
@@ -96,10 +90,10 @@ if TRITON_AVAILABLE:
             return
 
         # Match the non-Triton path's FP32 evaluation order for bit-parity.
-        cx_pct = tl.load(bboxes_ptr + pid * bboxes_stride_q + 0)
-        cy_pct = tl.load(bboxes_ptr + pid * bboxes_stride_q + 1)
-        w_pct = tl.load(bboxes_ptr + pid * bboxes_stride_q + 2)
-        h_pct = tl.load(bboxes_ptr + pid * bboxes_stride_q + 3)
+        cx_pct = tl.load(bboxes_ptr + pid_q * bboxes_stride_q + 0)
+        cy_pct = tl.load(bboxes_ptr + pid_q * bboxes_stride_q + 1)
+        w_pct = tl.load(bboxes_ptr + pid_q * bboxes_stride_q + 2)
+        h_pct = tl.load(bboxes_ptr + pid_q * bboxes_stride_q + 3)
 
         x1_pct = cx_pct - 0.5 * w_pct
         y1_pct = cy_pct - 0.5 * h_pct
@@ -142,6 +136,11 @@ if TRITON_AVAILABLE:
 
         slot = tl.atomic_add(counter_ptr, 1)
 
+        # Cap output at num_queries — mirrors the reference's flat top-K
+        # cap. Host slices to min(counter, num_queries) to ignore overflow.
+        if slot >= num_queries:
+            return
+
         # Bitcast conf (fp32) as int32 so the whole record writes with int32
         # stores. Host views the same memory as int32 and extracts via
         # numpy.view(np.float32).
@@ -154,7 +153,7 @@ if TRITON_AVAILABLE:
         tl.store(combined_out_ptr + base + 3, y2_i)
         tl.store(combined_out_ptr + base + 4, conf_i32)
         tl.store(combined_out_ptr + base + 5, top_c)
-        tl.store(survivor_idx_out_ptr + slot, pid.to(tl.int32))
+        tl.store(survivor_idx_out_ptr + slot, pid_q.to(tl.int32))
         tl.store(mask_any_out_ptr + slot, 0)
 
 
@@ -355,8 +354,7 @@ def triton_rfdetr_fullpost(
     sw, sh = scale_wh
     orig_w, orig_h = orig_size_wh
 
-    BLOCK_C = max(32, _next_pow2(num_classes_total))
-    _rfdetr_fullpost_filter_kernel[(num_queries,)](
+    _rfdetr_fullpost_filter_kernel[(num_queries, num_classes_total)](
         logits_2d,
         bboxes_2d,
         thr_tensor,
@@ -379,7 +377,6 @@ def triton_rfdetr_fullpost(
         bboxes_2d.stride(0),
         PER_CLASS=1 if per_class else 0,
         HAS_REMAPPING=1 if has_remap else 0,
-        BLOCK_C=BLOCK_C,
     )
 
     mask_bin_full = _get_mask_bin_buffer(num_queries, orig_h, orig_w, device)

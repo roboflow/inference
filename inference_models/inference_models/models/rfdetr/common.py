@@ -187,7 +187,9 @@ def post_process_instance_segmentation_results(
             orig_size_wh=(meta.original_size.width, meta.original_size.height),
         )
         done_event.wait(torch.cuda.current_stream(bboxes.device))
-        n_survivors = int(counter.item())
+        # Counter is incremented unconditionally before the slot-cap guard, so
+        # cap by combined's row count (num_queries).
+        n_survivors = min(int(counter.item()), combined.shape[0])
         combined_slice = combined[:n_survivors]
         detections = InstanceDetections(
             xyxy=combined_slice[:, :4],
@@ -310,7 +312,9 @@ def post_process_instance_segmentation_results_to_rle_masks(
             orig_size_wh=(meta.original_size.width, meta.original_size.height),
         )
         done_event.wait(torch.cuda.current_stream(bboxes.device))
-        n_survivors = int(counter.item())
+        # Counter is incremented unconditionally before the slot-cap guard, so
+        # cap by combined's row count (num_queries).
+        n_survivors = min(int(counter.item()), combined.shape[0])
         orig_h = meta.original_size.height
         orig_w = meta.original_size.width
         if n_survivors == 0:
