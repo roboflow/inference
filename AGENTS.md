@@ -87,12 +87,3 @@ The repository follows PEP 8 and uses Black (88 characters), isort and flake8.
 - PR descriptions should explain what changed and why, list test commands run,
   and follow the templates in `.github`.
 - Update documentation when applicable.
-
-## Cursor Cloud specific instructions
-
-- System Python is 3.12 which works despite the 3.10 target.
-- For a lighter install (no GPU/CUDA), use individual requirements:
-  `pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.test.unit.txt && pip install -e . --no-deps`
-- Missing SDK deps (`dataclasses-json`, `aiohttp`, `py-cpuinfo`, `docker`) need manual install if doing a piecemeal setup instead of the full `pip install -e .`.
-- `make check_code_quality` has 2 pre-existing flake8 F824 warnings in `sinks/onvif_movement/v1.py` and `transformations/qr_code_generator/v1.py`; black and isort pass clean.
-- Run all unit tests with: `pytest tests/inference/unit_tests/ tests/inference_sdk/unit_tests/ tests/inference_cli/unit_tests/ tests/workflows/unit_tests/`
