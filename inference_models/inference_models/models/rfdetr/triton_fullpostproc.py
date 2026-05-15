@@ -1,16 +1,19 @@
 """Fused RF-DETR instance-segmentation post-processing in Triton.
 
-Two kernels replace the post-TRT chain for the common rfdetr-seg-nano path
-(batch=1, no static crop, STRETCH_TO resize, class remapping active):
+For the common rfdetr-seg-nano path (batch=1, no static crop, STRETCH_TO
+resize, class remapping active):
 
-  _rfdetr_fullpost_filter_kernel  (grid = num_queries)
-    sigmoid argmax + class remap + conf threshold + cxcywh->xyxy +
-    letterbox-denormalize + clip + banker's rounding; atomic_add into a
-    counter to reserve a compact output slot.
+  _rfdetr_fullpost_filter_kernel  (grid = num_queries * num_classes_total)
+    One program per (q, c) pair: sigmoid + class remap + conf threshold +
+    cxcywh->xyxy + letterbox-denormalize + clip + banker's rounding;
+    atomic_add into a counter to reserve a compact output slot.
 
-  _rfdetr_fullpost_mask_kernel_compact  (grid = num_queries * tile_y * tile_x)
-    Bilinear upsample masks (e.g. 78x78 -> orig_h x orig_w) + threshold > 0 +
-    uint8 emit. Early-exits on s >= counter[0] without an intermediate sync.
+  Mask upsample uses ``F.interpolate(bilinear, antialias=True)`` followed by
+  a ``> 0`` threshold — bit-for-bit identical to the reference path's
+  ``align_instance_segmentation_results`` mask handling. We reuse the
+  reference here (rather than a custom kernel) because cuDNN's antialiased
+  bilinear is hard to match in fp32 and the kernel-level win is in the
+  filter step, not the upsample.
 """
 from typing import Optional, Tuple
 
@@ -37,7 +40,6 @@ if TRITON_AVAILABLE:
         class_map_ptr,
         combined_out_ptr,
         survivor_idx_out_ptr,
-        mask_any_out_ptr,
         counter_ptr,
         num_queries,
         num_classes_total,
@@ -154,95 +156,10 @@ if TRITON_AVAILABLE:
         tl.store(combined_out_ptr + base + 4, conf_i32)
         tl.store(combined_out_ptr + base + 5, top_c)
         tl.store(survivor_idx_out_ptr + slot, pid_q.to(tl.int32))
-        tl.store(mask_any_out_ptr + slot, 0)
-
-
-    @triton.jit
-    def _rfdetr_fullpost_mask_kernel_compact(
-        masks_ptr,
-        survivor_idx_ptr,
-        counter_ptr,
-        out_ptr,
-        mask_any_ptr,
-        mask_h,
-        mask_w,
-        orig_h,
-        orig_w,
-        mask_scale_y,
-        mask_scale_x,
-        masks_stride_q,
-        masks_stride_h,
-        out_stride_s,
-        out_stride_h,
-        BLOCK_H: tl.constexpr,
-        BLOCK_W: tl.constexpr,
-    ):
-        s = tl.program_id(0)
-        tile_y = tl.program_id(1)
-        tile_x = tl.program_id(2)
-
-        # GPU-side early exit — skip programs past the live survivor count.
-        n_survivors = tl.load(counter_ptr)
-        if s >= n_survivors:
-            return
-
-        q = tl.load(survivor_idx_ptr + s)
-
-        offs_y = tile_y * BLOCK_H + tl.arange(0, BLOCK_H)
-        offs_x = tile_x * BLOCK_W + tl.arange(0, BLOCK_W)
-        mask_yy = offs_y < orig_h
-        mask_xx = offs_x < orig_w
-        m_outbox = mask_yy[:, None] & mask_xx[None, :]
-
-        src_y_f = (offs_y.to(tl.float32) + 0.5) * mask_scale_y - 0.5
-        src_x_f = (offs_x.to(tl.float32) + 0.5) * mask_scale_x - 0.5
-        src_y_2d = src_y_f[:, None]
-        src_x_2d = src_x_f[None, :]
-
-        y0 = tl.floor(src_y_2d).to(tl.int32)
-        x0 = tl.floor(src_x_2d).to(tl.int32)
-        y1 = y0 + 1
-        x1 = x0 + 1
-        dy = src_y_2d - y0.to(tl.float32)
-        dx = src_x_2d - x0.to(tl.float32)
-
-        y0c = tl.maximum(tl.minimum(y0, mask_h - 1), 0)
-        y1c = tl.maximum(tl.minimum(y1, mask_h - 1), 0)
-        x0c = tl.maximum(tl.minimum(x0, mask_w - 1), 0)
-        x1c = tl.maximum(tl.minimum(x1, mask_w - 1), 0)
-
-        base = q * masks_stride_q
-
-        p00 = tl.load(masks_ptr + base + y0c * masks_stride_h + x0c, mask=m_outbox, other=0.0)
-        p01 = tl.load(masks_ptr + base + y0c * masks_stride_h + x1c, mask=m_outbox, other=0.0)
-        p10 = tl.load(masks_ptr + base + y1c * masks_stride_h + x0c, mask=m_outbox, other=0.0)
-        p11 = tl.load(masks_ptr + base + y1c * masks_stride_h + x1c, mask=m_outbox, other=0.0)
-
-        w_tl = (1.0 - dy) * (1.0 - dx)
-        w_tr = (1.0 - dy) * dx
-        w_bl = dy * (1.0 - dx)
-        w_br = dy * dx
-        val = p00 * w_tl + p01 * w_tr + p10 * w_bl + p11 * w_br
-        bin_val = (val > 0.0).to(tl.int8)
-
-        out_offsets = offs_y[:, None] * out_stride_h + offs_x[None, :]
-        tl.store(out_ptr + s * out_stride_s + out_offsets, bin_val, mask=m_outbox)
-
-        tile_any = tl.max(bin_val.to(tl.int32), axis=0)
-        tile_any2 = tl.max(tile_any, axis=0)
-        tl.atomic_max(mask_any_ptr + s, tile_any2)
-
-
-def _next_pow2(n: int) -> int:
-    p = 1
-    while p < n:
-        p <<= 1
-    return p
 
 
 _THRESHOLD_CACHE: dict = {}
 _EMPTY_INT32 = torch.empty((1,), dtype=torch.int32)
-_MASK_BIN_BUFFER_CACHE: dict = {}
 _SCRATCH_CACHE: dict = {}
 _CLASS_MAPPING_INT32_CACHE: dict = {}
 
@@ -253,9 +170,8 @@ def _get_scratch_buffers(num_queries: int, device: torch.device):
     if cached is None:
         combined = torch.empty((num_queries, 6), dtype=torch.int32, device=device)
         survivor_idx = torch.empty((num_queries,), dtype=torch.int32, device=device)
-        mask_any = torch.empty((num_queries,), dtype=torch.int32, device=device)
         counter = torch.zeros((1,), dtype=torch.int32, device=device)
-        cached = (combined, survivor_idx, mask_any, counter)
+        cached = (combined, survivor_idx, counter)
         _SCRATCH_CACHE[key] = cached
     return cached
 
@@ -270,21 +186,6 @@ def _get_class_mapping_int32(class_mapping: torch.Tensor, device: torch.device) 
     cached = class_mapping.to(dtype=torch.int32, device=device).contiguous()
     _CLASS_MAPPING_INT32_CACHE[key] = cached
     return cached
-
-
-def _get_mask_bin_buffer(
-    capacity: int, orig_h: int, orig_w: int, device: torch.device
-) -> torch.Tensor:
-    # Rows beyond n_survivors may hold stale data from prior frames; callers
-    # must size their read by the atomic counter.
-    key = (capacity, orig_h, orig_w, device)
-    buf = _MASK_BIN_BUFFER_CACHE.get(key)
-    if buf is None:
-        buf = torch.empty(
-            (capacity, orig_h, orig_w), dtype=torch.uint8, device=device
-        )
-        _MASK_BIN_BUFFER_CACHE[key] = buf
-    return buf
 
 
 def _prepare_threshold(threshold, device: torch.device, num_classes: int):
@@ -304,7 +205,6 @@ def _prepare_threshold(threshold, device: torch.device, num_classes: int):
 def triton_rfdetr_fullpost(
     bboxes: torch.Tensor,
     logits: torch.Tensor,
-    masks: torch.Tensor,
     threshold: "torch.Tensor | float",
     num_classes: int,
     class_mapping: Optional[torch.Tensor],
@@ -316,28 +216,28 @@ def triton_rfdetr_fullpost(
     torch.Tensor,
     torch.Tensor,
     torch.Tensor,
-    torch.Tensor,
     "torch.cuda.Event",
 ]:
-    """Returns (combined, mask_bin, mask_any, counter, done_event). Buffers
-    are unsliced — the caller DtoH's ``counter`` to learn n_survivors and
-    slices to ``[:n_survivors]``. ``combined[:, 4]`` holds fp32 conf as
-    int32 bits; use ``numpy.view(np.float32)`` on the host."""
+    """Filter step only — returns (combined, survivor_idx, counter, done_event).
+
+    Buffers are unsliced — the caller waits on ``done_event``, reads
+    ``counter`` to learn n_survivors, and slices to ``[:n_survivors]``.
+    ``combined[:, 4]`` holds fp32 conf as int32 bits; reinterpret on the
+    host with ``.view(torch.float32)``. The mask upsample is intentionally
+    left to the caller (torch ``F.interpolate``) so the result is bit-exact
+    with the non-fullpost reference path.
+    """
     assert TRITON_AVAILABLE, "triton not available"
-    assert bboxes.is_cuda and logits.is_cuda and masks.is_cuda
-    assert bboxes.shape[0] == 1 and logits.shape[0] == 1 and masks.shape[0] == 1, "batch=1 only"
+    assert bboxes.is_cuda and logits.is_cuda
+    assert bboxes.shape[0] == 1 and logits.shape[0] == 1, "batch=1 only"
 
     device = bboxes.device
     num_queries, num_classes_total = logits.shape[1], logits.shape[2]
-    _, _, mask_h, mask_w = masks.shape
 
     logits_2d = logits[0] if logits[0].is_contiguous() else logits[0].contiguous()
     bboxes_2d = bboxes[0] if bboxes[0].is_contiguous() else bboxes[0].contiguous()
-    masks_3d = masks[0] if masks[0].is_contiguous() else masks[0].contiguous()
 
-    combined, survivor_idx, mask_any, counter = _get_scratch_buffers(
-        num_queries, device
-    )
+    combined, survivor_idx, counter = _get_scratch_buffers(num_queries, device)
     counter.zero_()
 
     thr_tensor, per_class = _prepare_threshold(threshold, device, num_classes)
@@ -361,7 +261,6 @@ def triton_rfdetr_fullpost(
         cmap,
         combined,
         survivor_idx,
-        mask_any,
         counter,
         num_queries,
         num_classes_total,
@@ -379,36 +278,7 @@ def triton_rfdetr_fullpost(
         HAS_REMAPPING=1 if has_remap else 0,
     )
 
-    mask_bin_full = _get_mask_bin_buffer(num_queries, orig_h, orig_w, device)
-
-    BLOCK_H = 16
-    BLOCK_W = 16
-    grid = (
-        num_queries,
-        (orig_h + BLOCK_H - 1) // BLOCK_H,
-        (orig_w + BLOCK_W - 1) // BLOCK_W,
-    )
-    _rfdetr_fullpost_mask_kernel_compact[grid](
-        masks_3d,
-        survivor_idx,
-        counter,
-        mask_bin_full,
-        mask_any,
-        int(mask_h),
-        int(mask_w),
-        int(orig_h),
-        int(orig_w),
-        float(mask_h / orig_h),
-        float(mask_w / orig_w),
-        masks_3d.stride(0),
-        masks_3d.stride(1),
-        mask_bin_full.stride(0),
-        mask_bin_full.stride(1),
-        BLOCK_H=BLOCK_H,
-        BLOCK_W=BLOCK_W,
-    )
-
     done_event = torch.cuda.Event()
     done_event.record(torch.cuda.current_stream(device))
 
-    return combined, mask_bin_full, mask_any, counter, done_event
+    return combined, survivor_idx, counter, done_event

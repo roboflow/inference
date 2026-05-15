@@ -40,6 +40,49 @@ else:
     triton_rfdetr_fullpost = None
 
 
+def _fullpost_upsample_masks(
+    masks: torch.Tensor,
+    survivor_q: torch.Tensor,
+    inference_size_wh: Tuple[int, int],
+    pad_ltrb: Tuple[int, int, int, int],
+    orig_size_hw: Tuple[int, int],
+) -> torch.Tensor:
+    """Replicate ``align_instance_segmentation_results``'s mask path
+    bit-for-bit (when ``size_after_pre_processing == inference_size`` and no
+    static crop applies — both guaranteed by ``_fullpost_eligible``).
+
+    Gathers surviving query rows from ``masks`` (shape ``(1, Q, mh, mw)``),
+    crops the letterbox padding in mask coordinates, bilinear-resizes to
+    ``(orig_h, orig_w)`` with ``antialias=True`` (matching torchvision's
+    ``functional.resize`` default), and thresholds at 0.
+    """
+    selected = masks[0].index_select(0, survivor_q.long())
+    if selected.shape[0] == 0:
+        orig_h, orig_w = orig_size_hw
+        return torch.empty(
+            (0, orig_h, orig_w), dtype=torch.bool, device=masks.device
+        )
+    _, mh, mw = selected.shape
+    inf_w, inf_h = inference_size_wh
+    pad_l, pad_t, pad_r, pad_b = pad_ltrb
+    mh_scale = mh / inf_h
+    mw_scale = mw / inf_w
+    mpt = round(mh_scale * pad_t)
+    mpb = round(mh_scale * pad_b)
+    mpl = round(mw_scale * pad_l)
+    mpr = round(mw_scale * pad_r)
+    selected = selected[:, mpt: mh - mpb, mpl: mw - mpr]
+    orig_h, orig_w = orig_size_hw
+    upsampled = torch.nn.functional.interpolate(
+        selected.unsqueeze(1),
+        size=(orig_h, orig_w),
+        mode="bilinear",
+        antialias=True,
+        align_corners=False,
+    ).squeeze(1)
+    return upsampled > 0.0
+
+
 def _fullpost_eligible(
     bboxes: torch.Tensor,
     pre_processing_meta: List[PreProcessingMetadata],
@@ -174,10 +217,9 @@ def post_process_instance_segmentation_results(
     if _fullpost_eligible(bboxes, pre_processing_meta, classes_re_mapping):
         meta = pre_processing_meta[0]
         thr_arg = threshold if isinstance(threshold, torch.Tensor) else float(threshold)
-        combined, mask_bin, mask_any, counter, done_event = triton_rfdetr_fullpost(
+        combined, survivor_idx, counter, done_event = triton_rfdetr_fullpost(
             bboxes=bboxes,
             logits=logits,
-            masks=masks,
             threshold=thr_arg,
             num_classes=num_classes,
             class_mapping=classes_re_mapping.class_mapping,
@@ -191,11 +233,18 @@ def post_process_instance_segmentation_results(
         # cap by combined's row count (num_queries).
         n_survivors = min(int(counter.item()), combined.shape[0])
         combined_slice = combined[:n_survivors]
+        mask_bin = _fullpost_upsample_masks(
+            masks=masks,
+            survivor_q=survivor_idx[:n_survivors],
+            inference_size_wh=(meta.inference_size.width, meta.inference_size.height),
+            pad_ltrb=(meta.pad_left, meta.pad_top, meta.pad_right, meta.pad_bottom),
+            orig_size_hw=(meta.original_size.height, meta.original_size.width),
+        )
         detections = InstanceDetections(
             xyxy=combined_slice[:, :4],
             confidence=combined_slice[:, 4].view(torch.float32),
             class_id=combined_slice[:, 5],
-            mask=mask_bin[:n_survivors].to(dtype=torch.bool),
+            mask=mask_bin,
         )
         detections.__dict__["_combined_gpu"] = combined
         detections.__dict__["_counter_gpu"] = counter
@@ -299,10 +348,9 @@ def post_process_instance_segmentation_results_to_rle_masks(
     if _fullpost_eligible(bboxes, pre_processing_meta, classes_re_mapping):
         meta = pre_processing_meta[0]
         thr_arg = threshold if isinstance(threshold, torch.Tensor) else float(threshold)
-        combined, mask_bin, _mask_any, counter, done_event = triton_rfdetr_fullpost(
+        combined, survivor_idx, counter, done_event = triton_rfdetr_fullpost(
             bboxes=bboxes,
             logits=logits,
-            masks=masks,
             threshold=thr_arg,
             num_classes=num_classes,
             class_mapping=classes_re_mapping.class_mapping,
@@ -334,7 +382,13 @@ def post_process_instance_segmentation_results_to_rle_masks(
                 )
             ]
         combined_slice = combined[:n_survivors]
-        mask_slice = mask_bin[:n_survivors].to(dtype=torch.bool)
+        mask_slice = _fullpost_upsample_masks(
+            masks=masks,
+            survivor_q=survivor_idx[:n_survivors],
+            inference_size_wh=(meta.inference_size.width, meta.inference_size.height),
+            pad_ltrb=(meta.pad_left, meta.pad_top, meta.pad_right, meta.pad_bottom),
+            orig_size_hw=(orig_h, orig_w),
+        )
         rle_masks = [
             torch_mask_to_coco_rle(mask=mask_slice[i]) for i in range(n_survivors)
         ]
