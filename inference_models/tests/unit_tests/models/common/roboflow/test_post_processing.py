@@ -294,13 +294,20 @@ class TestRescaleImageDetectionsClipping:
     @staticmethod
     def _meta(orig_h=400, orig_w=600) -> PreProcessingMetadata:
         return PreProcessingMetadata(
-            pad_left=0, pad_top=0, pad_right=0, pad_bottom=0,
+            pad_left=0,
+            pad_top=0,
+            pad_right=0,
+            pad_bottom=0,
             original_size=ImageDimensions(height=orig_h, width=orig_w),
             size_after_pre_processing=ImageDimensions(height=orig_h, width=orig_w),
             inference_size=ImageDimensions(height=640, width=640),
-            scale_width=1.0, scale_height=1.0,
+            scale_width=1.0,
+            scale_height=1.0,
             static_crop_offset=StaticCropOffset(
-                offset_x=0, offset_y=0, crop_width=orig_w, crop_height=orig_h,
+                offset_x=0,
+                offset_y=0,
+                crop_width=orig_w,
+                crop_height=orig_h,
             ),
         )
 
@@ -349,25 +356,36 @@ class TestRescaleKeyPointsDetectionsClipping:
     @staticmethod
     def _meta(orig_h=400, orig_w=600) -> PreProcessingMetadata:
         return PreProcessingMetadata(
-            pad_left=0, pad_top=0, pad_right=0, pad_bottom=0,
+            pad_left=0,
+            pad_top=0,
+            pad_right=0,
+            pad_bottom=0,
             original_size=ImageDimensions(height=orig_h, width=orig_w),
             size_after_pre_processing=ImageDimensions(height=orig_h, width=orig_w),
             inference_size=ImageDimensions(height=640, width=640),
-            scale_width=1.0, scale_height=1.0,
+            scale_width=1.0,
+            scale_height=1.0,
             static_crop_offset=StaticCropOffset(
-                offset_x=0, offset_y=0, crop_width=orig_w, crop_height=orig_h,
+                offset_x=0,
+                offset_y=0,
+                crop_width=orig_w,
+                crop_height=orig_h,
             ),
         )
 
     def test_clips_box_coords_for_keypoint_detections(self) -> None:
         # Row layout: [x1, y1, x2, y2, conf, cls_id, kp_x, kp_y, kp_conf]
-        detections = [torch.tensor(
-            [[-5.0, 10.0, 700.0, 350.0, 0.9, 0.0, 100.0, 100.0, 0.8]],
-            dtype=torch.float32,
-        )]
+        detections = [
+            torch.tensor(
+                [[-5.0, 10.0, 700.0, 350.0, 0.9, 0.0, 100.0, 100.0, 0.8]],
+                dtype=torch.float32,
+            )
+        ]
         rescale_key_points_detections(
-            detections, [self._meta(orig_h=400, orig_w=600)],
-            num_classes=1, key_points_slots_in_prediction=1,
+            detections,
+            [self._meta(orig_h=400, orig_w=600)],
+            num_classes=1,
+            key_points_slots_in_prediction=1,
         )
         out = detections[0]
         assert out[0, 0].item() == pytest.approx(0.0)
@@ -385,13 +403,20 @@ class TestAlignInstanceSegmentationResultsClipping:
     @staticmethod
     def _meta(orig_h=400, orig_w=600) -> PreProcessingMetadata:
         return PreProcessingMetadata(
-            pad_left=0, pad_top=0, pad_right=0, pad_bottom=0,
+            pad_left=0,
+            pad_top=0,
+            pad_right=0,
+            pad_bottom=0,
             original_size=ImageDimensions(height=orig_h, width=orig_w),
             size_after_pre_processing=ImageDimensions(height=orig_h, width=orig_w),
             inference_size=ImageDimensions(height=640, width=640),
-            scale_width=1.0, scale_height=1.0,
+            scale_width=1.0,
+            scale_height=1.0,
             static_crop_offset=StaticCropOffset(
-                offset_x=0, offset_y=0, crop_width=orig_w, crop_height=orig_h,
+                offset_x=0,
+                offset_y=0,
+                crop_width=orig_w,
+                crop_height=orig_h,
             ),
         )
 
