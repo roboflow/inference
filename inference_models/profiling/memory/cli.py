@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import click
 from rich.console import Console
@@ -35,6 +35,17 @@ ONNX_MEMORY_FIELDS = (
     ("Peak process GPU", "peak_process_gpu_bytes"),
     ("Delta peak", "delta_peak_bytes"),
 )
+
+
+def _parse_onnx_execution_providers(raw: str) -> List[str]:
+    providers = [part.strip() for part in raw.split(",") if part.strip()]
+    if not providers:
+        raise click.ClickException(
+            "--onnx-execution-providers must list at least one provider "
+            "(e.g. CUDAExecutionProvider,CPUExecutionProvider)."
+        )
+
+    return providers
 
 
 def _load_json_dict(raw: Optional[str], path: Optional[str]) -> Dict[str, Any]:
@@ -320,6 +331,16 @@ def _infer_default_backend() -> str:
     help="Wrap measured iterations with torch.profiler (profile_memory=True).",
 )
 @click.option(
+    "--onnx-execution-providers",
+    type=str,
+    default=None,
+    help=(
+        "Comma-separated ONNX Runtime execution providers in priority order "
+        "(e.g. CUDAExecutionProvider,CPUExecutionProvider). "
+        "Defaults to CUDA then CPU when omitted."
+    ),
+)
+@click.option(
     "--onnx-nvml-sampling-interval-seconds",
     type=float,
     default=0.01,
@@ -363,6 +384,7 @@ def main(
     from_pretrained_kwargs_path: Optional[str],
     quantization: Optional[str],
     torch_profiler_memory: bool,
+    onnx_execution_providers: Optional[str],
     onnx_nvml_sampling_interval_seconds: float,
     in_process: bool,
     output_json: Optional[str],
@@ -409,6 +431,16 @@ def main(
         raw=from_pretrained_kwargs_json,
         path=from_pretrained_kwargs_path,
     )
+
+    if onnx_execution_providers is not None:
+        if selected_backend != BackendType.ONNX.value:
+            raise click.ClickException(
+                "--onnx-execution-providers is only valid with --backend onnx."
+            )
+
+        fp_extra["onnx_execution_providers"] = _parse_onnx_execution_providers(
+            onnx_execution_providers,
+        )
 
     payload: Dict[str, Any] = {
         "module_name": module_name,
