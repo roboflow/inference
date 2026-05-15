@@ -186,11 +186,14 @@ def post_process_instance_segmentation_results(
             scale_wh=(meta.scale_width, meta.scale_height),
             orig_size_wh=(meta.original_size.width, meta.original_size.height),
         )
+        done_event.wait(torch.cuda.current_stream(bboxes.device))
+        n_survivors = int(counter.item())
+        combined_slice = combined[:n_survivors]
         detections = InstanceDetections(
-            xyxy=combined[:, :4],
-            confidence=combined[:, 4],
-            class_id=combined[:, 5],
-            mask=mask_bin,
+            xyxy=combined_slice[:, :4],
+            confidence=combined_slice[:, 4].view(torch.float32),
+            class_id=combined_slice[:, 5],
+            mask=mask_bin[:n_survivors].to(dtype=torch.bool),
         )
         detections.__dict__["_combined_gpu"] = combined
         detections.__dict__["_counter_gpu"] = counter
