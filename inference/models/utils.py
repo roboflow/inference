@@ -555,10 +555,18 @@ except:
         category=ModelDependencyMissing,
     )
 
-if CORE_MODEL_GAZE_ENABLED:
-    from inference.models import Gaze
+try:
+    if CORE_MODEL_GAZE_ENABLED:
+        from inference.models import Gaze
 
-    ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = Gaze
+        ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = Gaze
+except:
+    warnings.warn(
+        "Your `inference` configuration does not support Gaze Detection model. "
+        "This model got deprecated and remaining left-overs will be removed end of Q2 2026."
+        "To suppress this warning, set CORE_MODEL_GAZE_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
 
 try:
     if SMOLVLM2_ENABLED:
@@ -993,6 +1001,7 @@ if USE_INFERENCE_MODELS:
         for variant in [
             "qwen3_5-0.8b",
             "qwen3_5-2b",
+            "qwen3_5-4b",
             "qwen3_5-0.8b-peft",
             "qwen3_5-2b-peft",
         ]:

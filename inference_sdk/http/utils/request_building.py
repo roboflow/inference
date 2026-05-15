@@ -120,14 +120,14 @@ def assembly_request_data(
     elif image_placement is ImagePlacement.DATA:
         data = batch_inference_inputs[0][0]
     else:
-        raise NotImplemented(
+        raise NotImplementedError(
             f"Not implemented request building method for {image_placement}"
         )
     scaling_factors = [e[1] for e in batch_inference_inputs]
 
     execution_id_value = execution_id.get()
     if execution_id_value:
-        headers = headers.copy()
+        headers = headers.copy() if headers is not None else {}
         headers[EXECUTION_ID_HEADER] = execution_id_value
         if ENABLE_INTERNAL_REMOTE_EXEC_HEADER:
             _internal_secret = os.getenv("ROBOFLOW_INTERNAL_SERVICE_SECRET")

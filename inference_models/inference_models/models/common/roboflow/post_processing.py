@@ -266,6 +266,17 @@ def rescale_image_detections(
             device=image_detections.device,
         )
         image_detections[:, :4].add_(static_crop_offsets)
+    xyxy_max = torch.as_tensor(
+        [
+            image_metadata.original_size.width,
+            image_metadata.original_size.height,
+            image_metadata.original_size.width,
+            image_metadata.original_size.height,
+        ],
+        dtype=image_detections.dtype,
+        device=image_detections.device,
+    )
+    image_detections[:, :4].clamp_(min=torch.zeros_like(xyxy_max), max=xyxy_max)
     return image_detections
 
 
@@ -332,6 +343,17 @@ def rescale_key_points_detections(
                 device=image_detections.device,
             )
             image_detections[:, :4].add_(static_crop_offsets)
+        xyxy_max = torch.as_tensor(
+            [
+                metadata.original_size.width,
+                metadata.original_size.height,
+                metadata.original_size.width,
+                metadata.original_size.height,
+            ],
+            dtype=image_detections.dtype,
+            device=image_detections.device,
+        )
+        image_detections[:, :4].clamp_(min=torch.zeros_like(xyxy_max), max=xyxy_max)
     return detections
 
 
@@ -467,6 +489,17 @@ def align_instance_segmentation_results(
         )
         image_bboxes[:, :4].add_(static_crop_offsets)
         masks = mask_canvas
+    xyxy_max = torch.as_tensor(
+        [
+            original_size.width,
+            original_size.height,
+            original_size.width,
+            original_size.height,
+        ],
+        dtype=image_bboxes.dtype,
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].clamp_(min=torch.zeros_like(xyxy_max), max=xyxy_max)
     return image_bboxes, masks
 
 
@@ -521,6 +554,17 @@ def align_instance_segmentation_results_to_rle_masks(
             device=image_bboxes.device,
         )
         image_bboxes[:, :4].add_(static_crop_offsets)
+    xyxy_max = torch.as_tensor(
+        [
+            original_size.width,
+            original_size.height,
+            original_size.width,
+            original_size.height,
+        ],
+        dtype=image_bboxes.dtype,
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].clamp_(min=torch.zeros_like(xyxy_max), max=xyxy_max)
     n, mh, mw = masks.shape
     mask_h_scale = mh / inference_size.height
     mask_w_scale = mw / inference_size.width

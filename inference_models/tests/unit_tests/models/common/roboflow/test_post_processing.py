@@ -9,9 +9,17 @@ import pytest
 import torch
 
 from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
+from inference_models.entities import ImageDimensions
+from inference_models.models.common.roboflow.model_packages import (
+    PreProcessingMetadata,
+    StaticCropOffset,
+)
 from inference_models.models.common.roboflow.post_processing import (
     ConfidenceFilter,
+    align_instance_segmentation_results,
     post_process_nms_fused_model_output,
+    rescale_image_detections,
+    rescale_key_points_detections,
     run_nms_for_instance_segmentation,
     run_nms_for_key_points_detection,
     run_nms_for_object_detection,
@@ -279,3 +287,134 @@ class TestConfidenceFilter:
             default_confidence=0.25,
         )
         assert cf.get_threshold(["cat", "dog"]) == pytest.approx(0.25)
+
+
+class TestRescaleImageDetectionsClipping:
+
+    @staticmethod
+    def _meta(orig_h=400, orig_w=600) -> PreProcessingMetadata:
+        return PreProcessingMetadata(
+            pad_left=0, pad_top=0, pad_right=0, pad_bottom=0,
+            original_size=ImageDimensions(height=orig_h, width=orig_w),
+            size_after_pre_processing=ImageDimensions(height=orig_h, width=orig_w),
+            inference_size=ImageDimensions(height=640, width=640),
+            scale_width=1.0, scale_height=1.0,
+            static_crop_offset=StaticCropOffset(
+                offset_x=0, offset_y=0, crop_width=orig_w, crop_height=orig_h,
+            ),
+        )
+
+    def test_clips_negative_x1_y1_to_zero(self) -> None:
+        detections = torch.tensor(
+            [[-3.0, -5.0, 200.0, 200.0, 0.9, 0.0]], dtype=torch.float32
+        )
+        out = rescale_image_detections(detections, self._meta(orig_h=400, orig_w=600))
+        assert out[0, 0].item() == pytest.approx(0.0)
+        assert out[0, 1].item() == pytest.approx(0.0)
+        assert out[0, 2].item() == pytest.approx(200.0)
+        assert out[0, 3].item() == pytest.approx(200.0)
+
+    def test_clips_x2_y2_to_image_extent(self) -> None:
+        detections = torch.tensor(
+            [[10.0, 10.0, 700.0, 500.0, 0.9, 0.0]], dtype=torch.float32
+        )
+        out = rescale_image_detections(detections, self._meta(orig_h=400, orig_w=600))
+        assert out[0, 0].item() == pytest.approx(10.0)
+        assert out[0, 1].item() == pytest.approx(10.0)
+        assert out[0, 2].item() == pytest.approx(600.0)
+        assert out[0, 3].item() == pytest.approx(400.0)
+
+    def test_in_bounds_boxes_unchanged(self) -> None:
+        detections = torch.tensor(
+            [[50.0, 60.0, 400.0, 350.0, 0.8, 0.0]], dtype=torch.float32
+        )
+        out = rescale_image_detections(detections, self._meta(orig_h=400, orig_w=600))
+        assert torch.allclose(
+            out[0, :4],
+            torch.tensor([50.0, 60.0, 400.0, 350.0]),
+            atol=1e-6,
+        )
+
+    def test_clipping_preserves_score_and_class_columns(self) -> None:
+        detections = torch.tensor(
+            [[-1.0, -2.0, 1000.0, 1000.0, 0.42, 7.0]], dtype=torch.float32
+        )
+        out = rescale_image_detections(detections, self._meta(orig_h=400, orig_w=600))
+        assert out[0, 4].item() == pytest.approx(0.42)
+        assert out[0, 5].item() == pytest.approx(7.0)
+
+
+class TestRescaleKeyPointsDetectionsClipping:
+
+    @staticmethod
+    def _meta(orig_h=400, orig_w=600) -> PreProcessingMetadata:
+        return PreProcessingMetadata(
+            pad_left=0, pad_top=0, pad_right=0, pad_bottom=0,
+            original_size=ImageDimensions(height=orig_h, width=orig_w),
+            size_after_pre_processing=ImageDimensions(height=orig_h, width=orig_w),
+            inference_size=ImageDimensions(height=640, width=640),
+            scale_width=1.0, scale_height=1.0,
+            static_crop_offset=StaticCropOffset(
+                offset_x=0, offset_y=0, crop_width=orig_w, crop_height=orig_h,
+            ),
+        )
+
+    def test_clips_box_coords_for_keypoint_detections(self) -> None:
+        # Row layout: [x1, y1, x2, y2, conf, cls_id, kp_x, kp_y, kp_conf]
+        detections = [torch.tensor(
+            [[-5.0, 10.0, 700.0, 350.0, 0.9, 0.0, 100.0, 100.0, 0.8]],
+            dtype=torch.float32,
+        )]
+        rescale_key_points_detections(
+            detections, [self._meta(orig_h=400, orig_w=600)],
+            num_classes=1, key_points_slots_in_prediction=1,
+        )
+        out = detections[0]
+        assert out[0, 0].item() == pytest.approx(0.0)
+        assert out[0, 1].item() == pytest.approx(10.0)
+        assert out[0, 2].item() == pytest.approx(600.0)
+        assert out[0, 3].item() == pytest.approx(350.0)
+        assert out[0, 4].item() == pytest.approx(0.9)
+        assert out[0, 5].item() == pytest.approx(0.0)
+        assert out[0, 6].item() == pytest.approx(100.0)
+        assert out[0, 7].item() == pytest.approx(100.0)
+
+
+class TestAlignInstanceSegmentationResultsClipping:
+
+    @staticmethod
+    def _meta(orig_h=400, orig_w=600) -> PreProcessingMetadata:
+        return PreProcessingMetadata(
+            pad_left=0, pad_top=0, pad_right=0, pad_bottom=0,
+            original_size=ImageDimensions(height=orig_h, width=orig_w),
+            size_after_pre_processing=ImageDimensions(height=orig_h, width=orig_w),
+            inference_size=ImageDimensions(height=640, width=640),
+            scale_width=1.0, scale_height=1.0,
+            static_crop_offset=StaticCropOffset(
+                offset_x=0, offset_y=0, crop_width=orig_w, crop_height=orig_h,
+            ),
+        )
+
+    def test_clips_box_coords(self) -> None:
+        bboxes = torch.tensor(
+            [[10.0, 20.0, 700.0, 500.0, 0.9, 0.0]], dtype=torch.float32
+        )
+        masks = torch.zeros((1, 160, 160), dtype=torch.float32)
+        meta = self._meta(orig_h=400, orig_w=600)
+        out_bboxes, _ = align_instance_segmentation_results(
+            image_bboxes=bboxes,
+            masks=masks,
+            padding=(0, 0, 0, 0),
+            scale_width=1.0,
+            scale_height=1.0,
+            original_size=meta.original_size,
+            size_after_pre_processing=meta.size_after_pre_processing,
+            inference_size=meta.inference_size,
+            static_crop_offset=meta.static_crop_offset,
+            binarization_threshold=0.0,
+        )
+        # box clamped to image bounds (400×600)
+        assert out_bboxes[0, 0].item() == pytest.approx(10.0)
+        assert out_bboxes[0, 1].item() == pytest.approx(20.0)
+        assert out_bboxes[0, 2].item() == pytest.approx(600.0)
+        assert out_bboxes[0, 3].item() == pytest.approx(400.0)
