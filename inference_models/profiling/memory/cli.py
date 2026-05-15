@@ -190,8 +190,6 @@ def _infer_default_backend() -> str:
             BackendType.ONNX.value,
         ],
     ),
-    default=None,
-    show_default="torch for memory-profile-pytorch, onnx for memory-profile-onnx",
     help="Profiling backend harness to run.",
 )
 @click.option(
@@ -421,8 +419,6 @@ def main(
             + ". Use --list-torch-models or see --help."
         )
 
-    selected_backend = backend or _infer_default_backend()
-
     infer_extra = _load_json_dict(
         raw=infer_kwargs_json,
         path=infer_kwargs_path,
@@ -433,7 +429,7 @@ def main(
     )
 
     if onnx_execution_providers is not None:
-        if selected_backend != BackendType.ONNX.value:
+        if backend != BackendType.ONNX.value:
             raise click.ClickException(
                 "--onnx-execution-providers is only valid with --backend onnx."
             )
@@ -458,13 +454,13 @@ def main(
         "measured_iterations": measured_iterations,
         "model_id": model_id or model_path,
         "architecture": architecture,
-        "backend": selected_backend,
+        "backend": backend,
         "quantization": quantization,
         "torch_profiler_memory": torch_profiler_memory,
         "onnx_nvml_sampling_interval_seconds": onnx_nvml_sampling_interval_seconds,
     }
 
-    if selected_backend == BackendType.ONNX.value:
+    if backend == BackendType.ONNX.value:
         if in_process:
             result = onnx_worker_run(payload)
         else:
