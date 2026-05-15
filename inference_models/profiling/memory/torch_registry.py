@@ -12,28 +12,32 @@ from inference_models.utils.imports import LazyClass
 
 
 @dataclass(frozen=True)
-class TorchRegistryRow:
+class RegistryBackendRow:
     architecture: str
     task_type: Optional[str]
+    backend: BackendType
     module_name: str
     class_name: str
     required_model_features: Optional[Set[str]]
     supported_model_features: Optional[Set[str]]
 
 
-def iter_torch_registry_rows() -> Iterator[TorchRegistryRow]:
-    """Yield every PyTorch (``BackendType.TORCH``) entry from ``REGISTERED_MODELS``."""
+def iter_backend_registry_rows(
+    backend: BackendType,
+) -> Iterator[RegistryBackendRow]:
+    """Yield every registry entry for the requested backend."""
     for key, entry in REGISTERED_MODELS.items():
-        architecture, task_type, backend = key
-        if backend != BackendType.TORCH:
+        architecture, task_type, entry_backend = key
+        if entry_backend != backend:
             continue
 
         lazy = entry.model_class if isinstance(entry, RegistryEntry) else entry
         assert isinstance(lazy, LazyClass)
 
-        yield TorchRegistryRow(
+        yield RegistryBackendRow(
             architecture=architecture,
             task_type=task_type,
+            backend=entry_backend,
             module_name=lazy._module_name,
             class_name=lazy._class_name,
             required_model_features=(
@@ -49,10 +53,24 @@ def iter_torch_registry_rows() -> Iterator[TorchRegistryRow]:
         )
 
 
-def list_torch_registry_rows() -> List[TorchRegistryRow]:
+def list_backend_registry_rows(
+    backend: BackendType,
+) -> List[RegistryBackendRow]:
     rows = sorted(
-        iter_torch_registry_rows(),
+        iter_backend_registry_rows(backend),
         key=lambda r: (r.architecture, r.task_type or ""),
     )
+
+    return rows
+
+
+def list_torch_registry_rows() -> List[RegistryBackendRow]:
+    rows = list_backend_registry_rows(backend=BackendType.TORCH)
+
+    return rows
+
+
+def list_onnx_registry_rows() -> List[RegistryBackendRow]:
+    rows = list_backend_registry_rows(backend=BackendType.ONNX)
 
     return rows

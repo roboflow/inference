@@ -1,22 +1,29 @@
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import click
 from rich.console import Console
 from rich.table import Table
 
+from inference_models import BackendType, Quantization
+from profiling.memory.onnx_harness import run_onnx_profile_subprocess
+from profiling.memory.onnx_worker import worker_run as onnx_worker_run
 from profiling.memory.pytorch_harness import (
     dump_result_json,
     run_pytorch_profile_subprocess,
 )
-from profiling.memory.pytorch_worker import worker_run
-from profiling.memory.torch_registry import list_torch_registry_rows
-from inference_models import Quantization
+from profiling.memory.pytorch_worker import worker_run as pytorch_worker_run
+from profiling.memory.torch_registry import (
+    list_onnx_registry_rows,
+    list_torch_registry_rows,
+)
 
 BYTES_IN_GB = 1024**3
-MEMORY_FIELDS = (
+PYTORCH_MEMORY_FIELDS = (
     ("Idle allocated", "idle_after_load_allocated_bytes"),
     ("Idle reserved", "idle_after_load_reserved_bytes"),
     ("Peak allocated", "peak_allocated_bytes"),
@@ -25,6 +32,12 @@ MEMORY_FIELDS = (
     ("Peak incremental allocated", "peak_incremental_allocated_bytes"),
     ("Peak incremental reserved", "peak_incremental_reserved_bytes"),
     ("Baseline free NVML", "baseline_gpu_free_bytes_nvml"),
+)
+ONNX_MEMORY_FIELDS = (
+    ("Baseline process GPU", "baseline_process_gpu_bytes_nvml"),
+    ("Idle after session create", "idle_after_session_create_bytes"),
+    ("Peak process GPU", "peak_process_gpu_bytes"),
+    ("Delta peak", "delta_peak_bytes"),
 )
 
 
@@ -45,11 +58,20 @@ def _load_json_dict(raw: Optional[str], path: Optional[str]) -> Dict[str, Any]:
     return value
 
 
-def _cmd_list(console: Console) -> None:
-    rows = list_torch_registry_rows()
-    table = Table(title="REGISTERED_MODELS — BackendType.TORCH")
+def _cmd_list(
+    console: Console,
+    *,
+    backend: BackendType,
+) -> None:
+    if backend == BackendType.ONNX:
+        rows = list_onnx_registry_rows()
+    else:
+        rows = list_torch_registry_rows()
+
+    table = Table(title=f"REGISTERED_MODELS — BackendType.{backend.name}")
     table.add_column("architecture")
     table.add_column("task_type")
+    table.add_column("backend")
     table.add_column("module")
     table.add_column("class")
     table.add_column("required_features")
@@ -58,11 +80,13 @@ def _cmd_list(console: Console) -> None:
         table.add_row(
             r.architecture,
             r.task_type or "",
+            r.backend.value,
             r.module_name,
             r.class_name,
             ",".join(sorted(r.required_model_features or [])),
             ",".join(sorted(r.supported_model_features or [])),
         )
+
     console.print(table)
 
 
@@ -77,7 +101,8 @@ def _format_bytes_as_gb(value: Optional[int]) -> str:
 
 
 def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> None:
-    summary = Table(title="PyTorch Memory Profile")
+    backend = str(result.get("backend"))
+    summary = Table(title=f"{backend} Memory Profile")
     summary.add_column("Field")
     summary.add_column("Value")
 
@@ -93,13 +118,24 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     summary.add_row("Quantization", str(result.get("quantization")))
     summary.add_row("Shape", shape_text)
     summary.add_row("Method", str(result.get("method_name")))
+    if backend == BackendType.ONNX.value:
+        execution_providers = ", ".join(result.get("execution_providers") or [])
+        trace_files = ", ".join(result.get("trace_files") or [])
+        summary.add_row("ONNX Runtime", str(result.get("onnxruntime_version")))
+        summary.add_row("Execution providers", execution_providers)
+        summary.add_row("Trace files", trace_files)
 
     memory = Table(title="Memory Metrics")
     memory.add_column("Metric")
     memory.add_column("GB", justify="right")
     memory.add_column("Bytes", justify="right")
+    memory_fields = (
+        ONNX_MEMORY_FIELDS
+        if backend == BackendType.ONNX.value
+        else PYTORCH_MEMORY_FIELDS
+    )
 
-    for label, key in MEMORY_FIELDS:
+    for label, key in memory_fields:
         value = result.get(key)
         bytes_text = "n/a" if value is None else str(value)
         gb_text = _format_bytes_as_gb(value=value)
@@ -114,10 +150,18 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     console.print(memory)
 
 
+def _infer_default_backend() -> str:
+    executable_name = Path(sys.argv[0]).name
+    if "onnx" in executable_name:
+        return BackendType.ONNX.value
+
+    return BackendType.TORCH.value
+
+
 @click.command(
     context_settings={"help_option_names": ["-h", "--help"]},
     help=(
-        "PyTorch GPU memory profiling for inference_models registry classes "
+        "GPU memory profiling for inference_models registry classes "
         "(see profiling/memory/docs/description.md)."
     ),
 )
@@ -125,6 +169,23 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     "--list-torch-models",
     is_flag=True,
     help="Print Torch backend rows from models_registry and exit.",
+)
+@click.option(
+    "--list-onnx-models",
+    is_flag=True,
+    help="Print ONNX backend rows from models_registry and exit.",
+)
+@click.option(
+    "--backend",
+    type=click.Choice(
+        [
+            BackendType.TORCH.value,
+            BackendType.ONNX.value,
+        ],
+    ),
+    default=None,
+    show_default="torch for memory-profile-pytorch, onnx for memory-profile-onnx",
+    help="Profiling backend harness to run.",
 )
 @click.option(
     "--module-name",
@@ -263,6 +324,13 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     help="Wrap measured iterations with torch.profiler (profile_memory=True).",
 )
 @click.option(
+    "--onnx-nvml-sampling-interval-seconds",
+    type=float,
+    default=0.01,
+    show_default=True,
+    help="NVML polling interval for ONNX process-memory peaks.",
+)
+@click.option(
     "--in-process",
     is_flag=True,
     help="Run in the current process (debug only; breaks isolation between scenarios).",
@@ -278,6 +346,8 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
 )
 def main(
     list_torch_models: bool,
+    list_onnx_models: bool,
+    backend: str,
     module_name: Optional[str],
     class_name: Optional[str],
     model_path: Optional[str],
@@ -297,13 +367,24 @@ def main(
     from_pretrained_kwargs_path: Optional[str],
     quantization: Optional[str],
     torch_profiler_memory: bool,
+    onnx_nvml_sampling_interval_seconds: float,
     in_process: bool,
     output_json: Optional[str],
 ) -> None:
     console = Console()
 
     if list_torch_models:
-        _cmd_list(console)
+        _cmd_list(
+            console,
+            backend=BackendType.TORCH,
+        )
+        return
+
+    if list_onnx_models:
+        _cmd_list(
+            console,
+            backend=BackendType.ONNX,
+        )
         return
 
     missing = []
@@ -321,6 +402,8 @@ def main(
             + ", ".join(missing)
             + ". Use --list-torch-models or see --help."
         )
+
+    selected_backend = backend or _infer_default_backend()
 
     infer_extra = _load_json_dict(
         raw=infer_kwargs_json,
@@ -347,14 +430,22 @@ def main(
         "measured_iterations": measured_iterations,
         "model_id": model_id or model_path,
         "architecture": architecture,
+        "backend": selected_backend,
         "quantization": quantization,
         "torch_profiler_memory": torch_profiler_memory,
+        "onnx_nvml_sampling_interval_seconds": onnx_nvml_sampling_interval_seconds,
     }
 
-    if in_process:
-        result = worker_run(payload)
+    if selected_backend == BackendType.ONNX.value:
+        if in_process:
+            result = onnx_worker_run(payload)
+        else:
+            result = run_onnx_profile_subprocess(payload)
     else:
-        result = run_pytorch_profile_subprocess(payload)
+        if in_process:
+            result = pytorch_worker_run(payload)
+        else:
+            result = run_pytorch_profile_subprocess(payload)
 
     _print_human_readable_result(
         console,

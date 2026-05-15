@@ -16,8 +16,8 @@ class ShapeProfile(BaseModel):
     width: int = Field(default=640, ge=1)
 
 
-class PyTorchMemoryProfileResult(BaseModel):
-    """Normalized metrics for one PyTorch profiling worker run."""
+class BaseMemoryProfileResult(BaseModel):
+    """Common metadata for one memory profiling worker run."""
 
     model_id: str = Field(
         description="Weights path or logical model id used for this run"
@@ -27,18 +27,6 @@ class PyTorchMemoryProfileResult(BaseModel):
     quantization: Optional[str] = None
     shape_profile: ShapeProfile
     concurrency: int = Field(default=1, ge=1)
-
-    idle_after_load_allocated_bytes: int
-    idle_after_load_reserved_bytes: int
-
-    peak_allocated_bytes: int
-    peak_reserved_bytes: int
-    end_reserved_bytes: int
-
-    peak_incremental_allocated_bytes: int
-    peak_incremental_reserved_bytes: int
-
-    baseline_gpu_free_bytes_nvml: Optional[int] = None
 
     warmup_iterations: int
     measured_iterations: int
@@ -58,10 +46,45 @@ class PyTorchMemoryProfileResult(BaseModel):
         )
     )
 
-    torch_profiler_memory_enabled: bool = False
     extra: Dict[str, Any] = Field(default_factory=dict)
 
     def as_json_dict(self) -> Dict[str, Any]:
         json_dict = self.model_dump(mode="json")
 
         return json_dict
+
+
+class PyTorchMemoryProfileResult(BaseMemoryProfileResult):
+    """Normalized metrics for one PyTorch profiling worker run."""
+
+    backend: str = Field(default=BackendType.TORCH.value)
+
+    idle_after_load_allocated_bytes: int
+    idle_after_load_reserved_bytes: int
+
+    peak_allocated_bytes: int
+    peak_reserved_bytes: int
+    end_reserved_bytes: int
+
+    peak_incremental_allocated_bytes: int
+    peak_incremental_reserved_bytes: int
+
+    baseline_gpu_free_bytes_nvml: Optional[int] = None
+
+    torch_profiler_memory_enabled: bool = False
+
+
+class OnnxMemoryProfileResult(BaseMemoryProfileResult):
+    """Normalized metrics for one ONNX Runtime profiling worker run."""
+
+    backend: str = Field(default=BackendType.ONNX.value)
+
+    baseline_process_gpu_bytes_nvml: Optional[int] = None
+    idle_after_session_create_bytes: Optional[int] = None
+    peak_process_gpu_bytes: Optional[int] = None
+    delta_peak_bytes: Optional[int] = None
+
+    execution_providers: List[str] = Field(default_factory=list)
+    onnxruntime_version: Optional[str] = None
+    trace_files: List[str] = Field(default_factory=list)
+    nvml_sampling_interval_seconds: Optional[float] = None
