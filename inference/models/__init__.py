@@ -71,6 +71,8 @@ OPTIONAL_MODELS = {
     "LoRAQwen25VL": "inference.models.qwen25vl",
     "Qwen3VL": "inference.models.qwen3vl",
     "LoRAQwen3VL": "inference.models.qwen3vl",
+    "Qwen3_5VL": "inference.models.qwen3_5vl",
+    "LoRAQwen3_5VL": "inference.models.qwen3_5vl",
     "TrOCR": "inference.models.trocr",
     "SmolVLM": "inference.models.smolvlm",
     "LoRASmolVLM": "inference.models.smolvlm",

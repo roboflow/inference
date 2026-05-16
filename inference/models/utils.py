@@ -481,6 +481,27 @@ except:
         category=ModelDependencyMissing,
     )
 
+try:
+    if QWEN_3_5_ENABLED:
+        from inference.models import LoRAQwen3_5VL, Qwen3_5VL
+
+        qwen3_5vl_models = {
+            ("text-image-pairs", "qwen3_5-0.8b"): Qwen3_5VL,
+            ("text-image-pairs", "qwen3_5-2b"): Qwen3_5VL,
+            ("text-image-pairs", "qwen3_5-4b"): Qwen3_5VL,
+            ("text-image-pairs", "qwen3_5-0.8b-peft"): LoRAQwen3_5VL,
+            ("text-image-pairs", "qwen3_5-2b-peft"): LoRAQwen3_5VL,
+            ("text-image-pairs", "qwen3_5-4b-peft"): LoRAQwen3_5VL,
+        }
+        ROBOFLOW_MODEL_TYPES.update(qwen3_5vl_models)
+except:
+    warnings.warn(
+        "Your `inference` configuration does not support Qwen3.5-VL model. "
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set QWEN_3_5_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
 
 try:
     if CORE_MODEL_SAM_ENABLED:
