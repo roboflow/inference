@@ -290,6 +290,12 @@ from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 
 from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import (
     OpenRouterBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.action_recognition.v1 import (
+    ActionRecognitionBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.action_recognition.v2 import (
+    ActionRecognitionBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
@@ -961,6 +967,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Qwen36OpenRouterBlockV1,
         QwenVlmBlockV1,
         OpenAICompatibleBlockV1,
+        ActionRecognitionBlockV1,
+        ActionRecognitionBlockV2,
         KimiOpenRouterBlockV1,
         KimiOpenrouterBlockV2,
         OpenRouterBlockV1,
