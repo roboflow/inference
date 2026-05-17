@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib
+import tempfile
 import traceback
-from typing import Any, Callable, Dict, Optional
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 
@@ -46,6 +48,17 @@ def _invoke_method(
     result = fn(images, **infer_kwargs)
 
     return result
+
+
+def _export_torch_profiler_traces(prof: Any, *, trace_dir: Path) -> List[str]:
+    trace_path = trace_dir / "torch_profiler_trace.json"
+
+    try:
+        prof.export_chrome_trace(str(trace_path))
+    except Exception:
+        return []
+
+    return [str(trace_path)]
 
 
 def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -126,7 +139,9 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     torch.cuda.reset_peak_memory_stats(device)
     profiler_extra: Dict[str, Any] = {}
+    trace_files: List[str] = []
     if torch_profiler_memory:
+        trace_dir = Path(tempfile.mkdtemp(prefix="torch-profiler-"))
         activities = [
             torch.profiler.ProfilerActivity.CPU,
             torch.profiler.ProfilerActivity.CUDA,
@@ -137,6 +152,12 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
             record_shapes=False,
         ) as prof:
             run_inference_steps(measured_iterations)
+
+        trace_files = _export_torch_profiler_traces(
+            prof,
+            trace_dir=trace_dir,
+        )
+        profiler_extra["trace_dir"] = str(trace_dir)
         profiler_extra["profiler_key_averages_events"] = len(prof.key_averages())
     else:
         run_inference_steps(measured_iterations)
@@ -164,6 +185,10 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
     if baseline_free is None:
         notes.append(
             "NVML baseline unavailable (install profiling-memory extra or GPU driver)"
+        )
+    if torch_profiler_memory:
+        notes.append(
+            "Torch profiler Chrome trace written when --torch-profiler-memory is set"
         )
 
     result = TorchMemoryProfileResult(
@@ -194,6 +219,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         task_type=task_type,
         notes=notes,
         torch_profiler_memory_enabled=torch_profiler_memory,
+        trace_files=trace_files,
         extra=profiler_extra,
     )
     result_dict = result.as_json_dict()

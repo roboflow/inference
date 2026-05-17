@@ -72,6 +72,7 @@ class TorchMemoryProfileResult(BaseMemoryProfileResult):
     baseline_gpu_free_bytes_nvml: Optional[int] = None
 
     torch_profiler_memory_enabled: bool = False
+    trace_files: List[str] = Field(default_factory=list)
 
 
 class OnnxMemoryProfileResult(BaseMemoryProfileResult):

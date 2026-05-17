@@ -126,12 +126,14 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     summary.add_row("Quantization", str(result.get("quantization")))
     summary.add_row("Shape", shape_text)
     summary.add_row("Method", str(result.get("method_name")))
+    trace_files = ", ".join(result.get("trace_files") or [])
+    if trace_files:
+        summary.add_row("Trace files", trace_files)
+
     if backend == BackendType.ONNX.value:
         execution_providers = ", ".join(result.get("execution_providers") or [])
-        trace_files = ", ".join(result.get("trace_files") or [])
         summary.add_row("ONNX Runtime", str(result.get("onnxruntime_version")))
         summary.add_row("Execution providers", execution_providers)
-        summary.add_row("Trace files", trace_files)
 
     memory = Table(title="Memory Metrics")
     memory.add_column("Metric")
