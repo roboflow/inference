@@ -13,8 +13,8 @@ from profiling.memory.input_factory import (
     describe_shape_signature,
     merge_infer_kwargs,
 )
+from profiling.memory.sampler import NvmlProcessMemorySampler
 from profiling.memory.schema import OnnxMemoryProfileResult, ShapeProfile
-from profiling.memory.samplers import NvmlProcessMemorySampler
 
 
 def _resolve_class(

@@ -54,8 +54,8 @@ class BaseMemoryProfileResult(BaseModel):
         return json_dict
 
 
-class PyTorchMemoryProfileResult(BaseMemoryProfileResult):
-    """Normalized metrics for one PyTorch profiling worker run."""
+class TorchMemoryProfileResult(BaseMemoryProfileResult):
+    """Normalized metrics for one Torch profiling worker run."""
 
     backend: str = Field(default=BackendType.TORCH.value)
 

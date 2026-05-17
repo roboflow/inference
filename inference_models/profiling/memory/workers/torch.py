@@ -6,13 +6,12 @@ from typing import Any, Callable, Dict, Optional
 
 import torch
 
-from inference_models.models.auto_loaders.entities import BackendType
 from profiling.memory.input_factory import (
     build_random_rgb_images,
     describe_shape_signature,
     merge_infer_kwargs,
 )
-from profiling.memory.schema import PyTorchMemoryProfileResult, ShapeProfile
+from profiling.memory.schema import TorchMemoryProfileResult, ShapeProfile
 
 
 def _optional_nvml_free_bytes(device_index: int) -> Optional[int]:
@@ -167,7 +166,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
             "NVML baseline unavailable (install profiling-memory extra or GPU driver)"
         )
 
-    result = PyTorchMemoryProfileResult(
+    result = TorchMemoryProfileResult(
         model_id=model_id,
         gpu_name=gpu_name,
         quantization=quantization,

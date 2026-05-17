@@ -10,16 +10,17 @@ from rich.console import Console
 from rich.table import Table
 
 from inference_models import BackendType, Quantization
-from profiling.memory.onnx_worker import worker_run as onnx_worker_run
-from profiling.memory.subprocess_harness import dump_result_json, run_profile_subprocess
-from profiling.memory.pytorch_worker import worker_run as pytorch_worker_run
 from profiling.memory.backend_registry import (
     list_onnx_registry_rows,
     list_torch_registry_rows,
 )
+from profiling.memory.subprocess_harness import dump_result_json, run_profile_subprocess
+from profiling.memory.workers.onnx import worker_run as onnx_worker_run
+from profiling.memory.workers.torch import worker_run as torch_worker_run
+
 
 BYTES_IN_GB = 1024**3
-PYTORCH_MEMORY_FIELDS = (
+TORCH_MEMORY_FIELDS = (
     ("Idle allocated", "idle_after_load_allocated_bytes"),
     ("Idle reserved", "idle_after_load_reserved_bytes"),
     ("Peak allocated", "peak_allocated_bytes"),
@@ -139,7 +140,7 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     memory_fields = (
         ONNX_MEMORY_FIELDS
         if backend == BackendType.ONNX.value
-        else PYTORCH_MEMORY_FIELDS
+        else TORCH_MEMORY_FIELDS
     )
 
     for label, key in memory_fields:
@@ -466,17 +467,17 @@ def main(
         else:
             result = run_profile_subprocess(
                 payload,
-                worker_module="profiling.memory.onnx_worker",
+                worker_module="profiling.memory.workers.onnx",
                 harness_label="ONNX profiling",
             )
     else:
         if in_process:
-            result = pytorch_worker_run(payload)
+            result = torch_worker_run(payload)
         else:
             result = run_profile_subprocess(
                 payload,
-                worker_module="profiling.memory.pytorch_worker",
-                harness_label="PyTorch profiling",
+                worker_module="profiling.memory.workers.torch",
+                harness_label="Torch profiling",
             )
 
     _print_human_readable_result(
