@@ -107,7 +107,7 @@ class NvmlProcessMemorySampler:
 
             return process_bytes
 
-        return 0
+        return None
 
     def _get_nvml_process_entries(self) -> Optional[List[Any]]:
         entries: List[Any] = []
