@@ -13,10 +13,12 @@ from inference_models import BackendType, Quantization
 from profiling.memory.backend_registry import (
     list_onnx_registry_rows,
     list_torch_registry_rows,
+    list_trt_registry_rows,
 )
 from profiling.memory.subprocess_harness import dump_result_json, run_profile_subprocess
 from profiling.memory.workers.onnx import worker_run as onnx_worker_run
 from profiling.memory.workers.torch import worker_run as torch_worker_run
+from profiling.memory.workers.trt import worker_run as trt_worker_run
 
 
 BYTES_IN_GB = 1024**3
@@ -35,6 +37,13 @@ ONNX_MEMORY_FIELDS = (
     ("Idle after session create", "idle_after_session_create_bytes"),
     ("Peak process GPU", "peak_process_gpu_bytes"),
     ("Delta peak", "delta_peak_bytes"),
+)
+TRT_MEMORY_FIELDS = (
+    ("Baseline process GPU", "baseline_process_gpu_bytes_nvml"),
+    ("Idle after deserialize", "idle_after_deserialize_bytes"),
+    ("Peak request", "peak_request_bytes"),
+    ("Delta peak", "delta_peak_bytes"),
+    ("Engine file size", "engine_size_bytes"),
 )
 
 
@@ -73,6 +82,8 @@ def _cmd_list(
 ) -> None:
     if backend == BackendType.ONNX:
         rows = list_onnx_registry_rows()
+    elif backend == BackendType.TRT:
+        rows = list_trt_registry_rows()
     else:
         rows = list_torch_registry_rows()
 
@@ -135,15 +146,29 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
         summary.add_row("ONNX Runtime", str(result.get("onnxruntime_version")))
         summary.add_row("Execution providers", execution_providers)
 
+    if backend == BackendType.TRT.value:
+        summary.add_row("TensorRT", str(result.get("tensorrt_version")))
+        summary.add_row(
+            "Contexts profiled",
+            str(result.get("num_contexts_profiled")),
+        )
+        optimization_profile = result.get("optimization_profile")
+        if optimization_profile:
+            summary.add_row(
+                "Optimization profile",
+                json.dumps(optimization_profile, sort_keys=True),
+            )
+
     memory = Table(title="Memory Metrics")
     memory.add_column("Metric")
     memory.add_column("GB", justify="right")
     memory.add_column("Bytes", justify="right")
-    memory_fields = (
-        ONNX_MEMORY_FIELDS
-        if backend == BackendType.ONNX.value
-        else TORCH_MEMORY_FIELDS
-    )
+    if backend == BackendType.ONNX.value:
+        memory_fields = ONNX_MEMORY_FIELDS
+    elif backend == BackendType.TRT.value:
+        memory_fields = TRT_MEMORY_FIELDS
+    else:
+        memory_fields = TORCH_MEMORY_FIELDS
 
     for label, key in memory_fields:
         value = result.get(key)
@@ -158,14 +183,6 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
 
     console.print(summary)
     console.print(memory)
-
-
-def _infer_default_backend() -> str:
-    executable_name = Path(sys.argv[0]).name
-    if "onnx" in executable_name:
-        return BackendType.ONNX.value
-
-    return BackendType.TORCH.value
 
 
 @click.command(
@@ -186,11 +203,17 @@ def _infer_default_backend() -> str:
     help="Print ONNX backend rows from models_registry and exit.",
 )
 @click.option(
+    "--list-trt-models",
+    is_flag=True,
+    help="Print TensorRT backend rows from models_registry and exit.",
+)
+@click.option(
     "--backend",
     type=click.Choice(
         [
             BackendType.TORCH.value,
             BackendType.ONNX.value,
+            BackendType.TRT.value,
         ],
     ),
     help="Profiling backend harness to run.",
@@ -349,6 +372,32 @@ def _infer_default_backend() -> str:
     help="NVML polling interval for ONNX process-memory peaks.",
 )
 @click.option(
+    "--trt-nvml-sampling-interval-seconds",
+    type=float,
+    default=0.01,
+    show_default=True,
+    help="NVML polling interval for TensorRT process-memory peaks.",
+)
+@click.option(
+    "--num-execution-contexts",
+    type=click.IntRange(
+        min=1,
+    ),
+    default=1,
+    show_default=True,
+    help=(
+        "Number of concurrent execution contexts to record in results "
+        "(registry models currently load one context per instance)."
+    ),
+)
+@click.option(
+    "--profile-engine-build",
+    is_flag=True,
+    help=(
+        "Request Stage A engine-build profiling (not executed; runtime profile only)."
+    ),
+)
+@click.option(
     "--in-process",
     is_flag=True,
     help="Run in the current process (debug only; breaks isolation between scenarios).",
@@ -365,7 +414,8 @@ def _infer_default_backend() -> str:
 def main(
     list_torch_models: bool,
     list_onnx_models: bool,
-    backend: str,
+    list_trt_models: bool,
+    backend: Optional[str],
     module_name: Optional[str],
     class_name: Optional[str],
     model_path: Optional[str],
@@ -387,6 +437,9 @@ def main(
     torch_profiler_memory: bool,
     onnx_execution_providers: Optional[str],
     onnx_nvml_sampling_interval_seconds: float,
+    trt_nvml_sampling_interval_seconds: float,
+    num_execution_contexts: int,
+    profile_engine_build: bool,
     in_process: bool,
     output_json: Optional[str],
 ) -> None:
@@ -406,6 +459,13 @@ def main(
         )
         return
 
+    if list_trt_models:
+        _cmd_list(
+            console,
+            backend=BackendType.TRT,
+        )
+        return
+
     missing = []
     if not module_name:
         missing.append("--module-name")
@@ -419,7 +479,7 @@ def main(
         raise click.UsageError(
             "Missing required arguments: "
             + ", ".join(missing)
-            + ". Use --list-torch-models or see --help."
+            + ". Use --list-torch-models, --list-onnx-models, --list-trt-models, or --help."
         )
 
     infer_extra = _load_json_dict(
@@ -439,6 +499,11 @@ def main(
 
         fp_extra["onnx_execution_providers"] = _parse_onnx_execution_providers(
             onnx_execution_providers,
+        )
+
+    if profile_engine_build and backend != BackendType.TRT.value:
+        raise click.ClickException(
+            "--profile-engine-build is only valid with --backend trt."
         )
 
     payload: Dict[str, Any] = {
@@ -461,6 +526,9 @@ def main(
         "quantization": quantization,
         "torch_profiler_memory": torch_profiler_memory,
         "onnx_nvml_sampling_interval_seconds": onnx_nvml_sampling_interval_seconds,
+        "trt_nvml_sampling_interval_seconds": trt_nvml_sampling_interval_seconds,
+        "num_execution_contexts": num_execution_contexts,
+        "profile_engine_build": profile_engine_build,
     }
 
     if backend == BackendType.ONNX.value:
@@ -471,6 +539,15 @@ def main(
                 payload,
                 worker_module="profiling.memory.workers.onnx",
                 harness_label="ONNX profiling",
+            )
+    elif backend == BackendType.TRT.value:
+        if in_process:
+            result = trt_worker_run(payload)
+        else:
+            result = run_profile_subprocess(
+                payload,
+                worker_module="profiling.memory.workers.trt",
+                harness_label="TensorRT profiling",
             )
     else:
         if in_process:

@@ -159,6 +159,7 @@ docs = [
 [project.scripts]
 memory-profile-pytorch = "profiling.memory.cli:main"
 memory-profile-onnx = "profiling.memory.cli:main"
+memory-profile-trt = "profiling.memory.cli:main"
 
 [tool.uv.sources]
 torch = [

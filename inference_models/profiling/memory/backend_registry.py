@@ -74,3 +74,9 @@ def list_onnx_registry_rows() -> List[RegistryBackendRow]:
     rows = list_backend_registry_rows(backend=BackendType.ONNX)
 
     return rows
+
+
+def list_trt_registry_rows() -> List[RegistryBackendRow]:
+    rows = list_backend_registry_rows(backend=BackendType.TRT)
+
+    return rows

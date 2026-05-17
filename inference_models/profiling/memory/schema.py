@@ -75,6 +75,30 @@ class TorchMemoryProfileResult(BaseMemoryProfileResult):
     trace_files: List[str] = Field(default_factory=list)
 
 
+class TensorRTMemoryProfileResult(BaseMemoryProfileResult):
+    """Normalized metrics for one TensorRT runtime profiling worker run."""
+
+    backend: str = Field(default=BackendType.TRT.value)
+
+    baseline_process_gpu_bytes_nvml: Optional[int] = None
+    idle_after_deserialize_bytes: Optional[int] = None
+    peak_request_bytes: Optional[int] = None
+    delta_peak_bytes: Optional[int] = None
+
+    engine_size_bytes: Optional[int] = None
+    execution_context_bytes: Optional[int] = None
+    optimization_profile: Optional[Dict[str, Any]] = None
+    max_workspace_setting: Optional[int] = None
+    num_contexts_profiled: int = Field(default=1, ge=1)
+
+    profile_engine_build_enabled: bool = False
+    peak_engine_build_bytes: Optional[int] = None
+
+    tensorrt_version: Optional[str] = None
+    trace_files: List[str] = Field(default_factory=list)
+    nvml_sampling_interval_seconds: Optional[float] = None
+
+
 class OnnxMemoryProfileResult(BaseMemoryProfileResult):
     """Normalized metrics for one ONNX Runtime profiling worker run."""
 

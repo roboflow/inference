@@ -2,7 +2,12 @@
 
 from profiling.memory.schema import (
     OnnxMemoryProfileResult,
+    TensorRTMemoryProfileResult,
     TorchMemoryProfileResult,
 )
 
-__all__ = ["OnnxMemoryProfileResult", "TorchMemoryProfileResult"]
+__all__ = [
+    "OnnxMemoryProfileResult",
+    "TensorRTMemoryProfileResult",
+    "TorchMemoryProfileResult",
+]
