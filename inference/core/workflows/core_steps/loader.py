@@ -246,14 +246,23 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 import (
     GoogleGemmaBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemma.v2 import (
+    GoogleGemmaBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v1 import (
     KimiOpenRouterBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v2 import (
+    KimiOpenrouterBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
     LlamaVisionBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.llama_vision.v2 import (
+    LlamaVisionBlockV2,
 )
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
@@ -278,6 +287,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
 from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
     OpenAICompatibleBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import (
+    OpenRouterBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
@@ -287,6 +299,9 @@ from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1
 from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
     Qwen35VLBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
+    Qwen35VLBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
     Qwen36OpenRouterBlockV1,
 )
@@ -295,6 +310,9 @@ from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
 )
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
+    QwenVlmBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
     SegPreviewBlockV1,
@@ -435,6 +453,9 @@ from inference.core.workflows.core_steps.sinks.twilio.sms.v2 import (
     TwilioSMSNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
+from inference.core.workflows.core_steps.trackers.botsort.v1 import (
+    BoTSORTBlockV1 as TrackerBoTSORTBlockV1,
+)
 from inference.core.workflows.core_steps.trackers.bytetrack.v1 import (
     ByteTrackBlockV1 as TrackerByteTrackBlockV1,
 )
@@ -901,6 +922,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
         TrackerByteTrackBlockV1,
+        TrackerBoTSORTBlockV1,
         TrackerSORTBlockV1,
         TrackerOCSORTBlockV1,
         WebhookSinkBlockV1,
@@ -927,15 +949,21 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TwilioSMSNotificationBlockV2,
         GazeBlockV1,
         LlamaVisionBlockV1,
+        LlamaVisionBlockV2,
         GoogleGemmaBlockV1,
+        GoogleGemmaBlockV2,
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
         Qwen35VLBlockV1,
+        Qwen35VLBlockV2,
         Qwen35OpenRouterBlockV1,
         Qwen36OpenRouterBlockV1,
+        QwenVlmBlockV1,
         OpenAICompatibleBlockV1,
         KimiOpenRouterBlockV1,
+        KimiOpenrouterBlockV2,
+        OpenRouterBlockV1,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
