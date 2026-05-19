@@ -13,13 +13,15 @@ Within one Triton launch, each program owns one output detection rank and:
 - resizes the selected 78x78 mask to the original image size and thresholds it
 - optionally bit-packs the dense mask sidecar for lower DtoH transfer volume
 
-The resize uses cached 2-tap closed-form bilinear tables, so the per-inference
-hot path remains a single Triton launch without any CUDA bootstrap probes.
+The resize uses cached exact 2-tap bilinear tables extracted once from the
+reference CUDA resize operator, so the steady-state hot path remains a single
+Triton launch.
 
 Host-side work is limited to slicing the preallocated buffers once the kernel
 completes and wrapping them in ``InstanceDetections`` / RLE containers.
 """
 
+from functools import lru_cache
 from typing import Optional, Tuple
 
 import torch
@@ -506,12 +508,8 @@ if TRITON_AVAILABLE:
                         tl.store(out_ptr, bits.to(tl.uint8), mask=tile_mask)
 
 
-_THRESHOLD_CACHE: dict = {}
-_EMPTY_INT32 = torch.empty((1,), dtype=torch.int32)
-_EMPTY_INT32_DEVICE_CACHE: dict = {}
 _SCRATCH_CACHE: dict = {}
 _CLASS_MAPPING_INT32_CACHE: dict = {}
-_AA_RESIZE_CACHE: dict = {}
 _RLE_SCRATCH_CACHE: dict = {}
 
 
@@ -575,29 +573,24 @@ def _build_resize_axis_tables(
     )
 
 
+@lru_cache(maxsize=128)
 def _get_resize_tables(
     orig_h: int,
     orig_w: int,
     device: torch.device,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    key = (device, orig_h, orig_w)
-    cached = _AA_RESIZE_CACHE.get(key)
-    if cached is None:
-        y_indices, y_weights = _build_resize_axis_tables(
-            in_size=FASTPATH_MASK_H,
-            out_size=orig_h,
-            device=device,
-            horizontal=False,
-        )
-        x_indices, x_weights = _build_resize_axis_tables(
-            in_size=FASTPATH_MASK_W,
-            out_size=orig_w,
-            device=device,
-            horizontal=True,
-        )
-        cached = (y_indices, y_weights, x_indices, x_weights)
-        _AA_RESIZE_CACHE[key] = cached
-    y_indices, y_weights, x_indices, x_weights = cached
+    y_indices, y_weights = _build_resize_axis_tables(
+        in_size=FASTPATH_MASK_H,
+        out_size=orig_h,
+        device=device,
+        horizontal=False,
+    )
+    x_indices, x_weights = _build_resize_axis_tables(
+        in_size=FASTPATH_MASK_W,
+        out_size=orig_w,
+        device=device,
+        horizontal=True,
+    )
     return y_indices, y_weights, x_indices, x_weights
 
 
@@ -662,6 +655,13 @@ def _get_class_mapping_int32(
     return cached
 
 
+@lru_cache(maxsize=32)
+def _get_scalar_threshold_tensor(
+    threshold_value: float, device: torch.device
+) -> torch.Tensor:
+    return torch.tensor([threshold_value], dtype=torch.float32, device=device)
+
+
 def _prepare_threshold(threshold, device: torch.device, num_classes: int):
     if isinstance(threshold, torch.Tensor):
         tensor = threshold
@@ -672,20 +672,12 @@ def _prepare_threshold(threshold, device: torch.device, num_classes: int):
         ):
             tensor = tensor.to(dtype=torch.float32, device=device).contiguous()
         return tensor, True
-    key = (float(threshold), device)
-    cached = _THRESHOLD_CACHE.get(key)
-    if cached is None:
-        cached = torch.tensor([float(threshold)], dtype=torch.float32, device=device)
-        _THRESHOLD_CACHE[key] = cached
-    return cached, False
+    return _get_scalar_threshold_tensor(float(threshold), device), False
 
 
+@lru_cache(maxsize=None)
 def _get_empty_int32_on_device(device: torch.device) -> torch.Tensor:
-    cached = _EMPTY_INT32_DEVICE_CACHE.get(device)
-    if cached is None:
-        cached = torch.empty((1,), dtype=torch.int32, device=device)
-        _EMPTY_INT32_DEVICE_CACHE[device] = cached
-    return cached
+    return torch.empty((1,), dtype=torch.int32, device=device)
 
 
 def rfdetr_triton_postproc(
