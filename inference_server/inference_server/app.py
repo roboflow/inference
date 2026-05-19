@@ -36,7 +36,9 @@ async def _lifespan(app: FastAPI):
 
     MultiPartParser.spool_max_size = _cfg.MULTIPART_SPOOL_MB * 1024 * 1024
 
-    mode = _cfg.INFERENCE_DEPLOYMENT_MODE
+    mode = os.environ.get(
+        _cfg.INFERENCE_DEPLOYMENT_MODE_ENV, _cfg.INFERENCE_DEPLOYMENT_MODE_DEFAULT
+    )
     proxy: ModelManagerProxy
 
     if mode == _cfg.MODE_BUNDLED:
