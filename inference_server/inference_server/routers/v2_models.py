@@ -6,21 +6,18 @@ import asyncio
 import base64
 import json
 import logging
-import os
-import pickle
 import struct
-import time
 from typing import Any, Optional
 
 import aiohttp
 from fastapi import APIRouter, Depends, Request, Response
 from starlette.requests import ClientDisconnect
 
-from inference_server import state
+from inference_server.dependencies import get_model_manager
 from inference_server.errors import error_response
-from inference_server.serializers import serialize_json
+from inference_server.proxies.base import ClientDisconnected, ModelManagerProxy
+from inference_server.proxies.mmp_client import looks_like_image
 
-logger = logging.getLogger(__name__)
 from inference_model_manager.serializers_typed import (
     serialize_classification_compact,
     serialize_classification_rich,
@@ -36,6 +33,8 @@ from inference_model_manager.serializers_typed import (
     serialize_semantic_segmentation_compact,
     serialize_text,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v2/models")
 
@@ -71,7 +70,6 @@ _RICH_SERIALIZERS: dict[str, Any] = {
     "ClassificationPrediction": serialize_classification_rich,
     "MultiLabelClassificationPrediction": serialize_classification_rich,
     "InstanceSegmentationPrediction": serialize_instance_segmentation_rich,
-    # Types without a rich variant fall back to compact
 }
 
 _class_names_cache: dict[str, list | None] = {}
@@ -163,16 +161,7 @@ async def _fetch_image_from_url(url: str) -> tuple[Optional[bytes], Optional[Res
 async def _extract_images_and_params(
     request: Request,
 ) -> tuple[list[bytes], dict, Optional[Response]]:
-    """Extract image bytes (possibly multiple) and extra params from request body.
-
-    Supports:
-      - Raw body (image/jpeg, image/png, application/octet-stream) — single image
-      - Multipart form — one or more image= file parts + optional scalar fields + optional inputs= JSON part
-      - JSON body — base64 image(s): single {"type":"base64","value":"..."} or list of them
-
-    Returns (images_list, extra_params, error_response).
-    If error_response is not None, return it immediately.
-    """
+    """Extract image bytes (possibly multiple) and extra params from request body."""
     content_type = (
         (request.headers.get("content-type") or "").lower().split(";")[0].strip()
     )
@@ -229,13 +218,10 @@ async def _extract_images_and_params(
                 [],
                 {},
                 error_response(
-                    400,
-                    "MISSING_IMAGE",
-                    "JSON body must include inputs.image",
+                    400, "MISSING_IMAGE", "JSON body must include inputs.image"
                 ),
             )
 
-        # Normalize to list
         specs = image_spec if isinstance(image_spec, list) else [image_spec]
         images = []
         for i, spec in enumerate(specs):
@@ -273,180 +259,47 @@ async def _extract_images_and_params(
 
 
 # ---------------------------------------------------------------------------
-# SHM round-trip: write image → submit → read result → build envelope
+# Single-image inference via proxy
 # ---------------------------------------------------------------------------
 
 
-async def _submit_one_slot(
+async def _infer_one(
+    mm: ModelManagerProxy,
     image_bytes: bytes,
     model_id: str,
     instance: str,
+    task: Optional[str],
     params: dict,
-    *,
-    request: Optional[Request] = None,
-    _t_body_extract_ms: float = 0.0,
-    _t_ensure_loaded_ms: float = 0.0,
+    request: Optional[Request],
 ) -> tuple[Optional[object], Optional[Response]]:
-    """Alloc slot, write image, submit, read result. Returns (predictions, None) or (None, error)."""
-    _T = state.TIMING
-    if _T:
-        _t0 = time.monotonic()
-
+    """Run inference on one image via proxy. Returns (prediction, None) or (None, error)."""
     try:
-        slot_id = await state.alloc_slot(model_id, instance)
-    except (asyncio.TimeoutError, RuntimeError):
-        if _T:
-            state.pipeline_record(
-                {
-                    "timestamp": time.time(),
-                    "worker_pid": os.getpid(),
-                    "endpoint": "/v2/models/infer",
-                    "payload_bytes": len(image_bytes),
-                    "status": 503,
-                    "body_extract_ms": _t_body_extract_ms,
-                    "ensure_loaded_ms": _t_ensure_loaded_ms,
-                    "zmq_alloc_ms": (time.monotonic() - _t0) * 1000,
-                    "shm_write_ms": 0,
-                    "zmq_submit_ms": 0,
-                    "zmq_result_wait_ms": 0,
-                    "result_read_ms": 0,
-                    "serialize_ms": 0,
-                    "total_ms": (time.monotonic() - _t0) * 1000,
-                }
-            )
-        return None, error_response(
-            503, "SERVER_BUSY", "no slots available, try again", follow_up="retry in 1s"
+        prediction = await mm.infer(
+            model_id=model_id,
+            image=image_bytes,
+            task=task,
+            instance=instance,
+            params=params,
+            request=request,
         )
-
-    if _T:
-        _t_alloc = time.monotonic()
-
-    try:
-        state.write_input(slot_id, image_bytes, 0)
-        if _T:
-            _t_write = time.monotonic()
-
-        result = await state.submit_and_wait(
-            slot_id, model_id, instance, len(image_bytes), params, request=request
-        )
-        if _T:
-            _t_result = time.monotonic()
-
-        if result[0] == "error":
-            if _T:
-                state.pipeline_record(
-                    {
-                        "timestamp": time.time(),
-                        "worker_pid": os.getpid(),
-                        "endpoint": "/v2/models/infer",
-                        "payload_bytes": len(image_bytes),
-                        "status": 500,
-                        "body_extract_ms": _t_body_extract_ms,
-                        "ensure_loaded_ms": _t_ensure_loaded_ms,
-                        "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
-                        "shm_write_ms": (_t_write - _t_alloc) * 1000,
-                        "zmq_submit_ms": 0,
-                        "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
-                        "result_read_ms": 0,
-                        "serialize_ms": 0,
-                        "total_ms": (_t_result - _t0) * 1000,
-                    }
-                )
-            return None, error_response(500, "INFERENCE_FAILED", "inference failed")
-        if result[0] != "result":
-            return None, error_response(500, "INTERNAL_ERROR", "unexpected result type")
-
-        _, result_slot_id, result_sz = result
-
-        hdr = state.read_slot_header(result_slot_id)
-        if hdr is not None and hdr.status == state.SLOT_STATUS_ERROR:
-            err_msg = "inference failed"
-            if hdr.result_size > 0:
-                err_msg = state.read_result(result_slot_id, hdr.result_size).decode(
-                    "utf-8", errors="replace"
-                )
-            if _T:
-                state.pipeline_record(
-                    {
-                        "timestamp": time.time(),
-                        "worker_pid": os.getpid(),
-                        "endpoint": "/v2/models/infer",
-                        "payload_bytes": len(image_bytes),
-                        "status": 500,
-                        "body_extract_ms": _t_body_extract_ms,
-                        "ensure_loaded_ms": _t_ensure_loaded_ms,
-                        "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
-                        "shm_write_ms": (_t_write - _t_alloc) * 1000,
-                        "zmq_submit_ms": 0,
-                        "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
-                        "result_read_ms": 0,
-                        "serialize_ms": 0,
-                        "total_ms": (time.monotonic() - _t0) * 1000,
-                    }
-                )
-            return None, error_response(500, "INFERENCE_FAILED", err_msg)
-
-        raw = state.read_result(result_slot_id, result_sz)
-
-        try:
-            obj = pickle.loads(raw)
-        except Exception:
-            return None, error_response(
-                500, "DESERIALIZATION_FAILED", "result deserialization failed"
-            )
-
-        if _T:
-            _t_end = time.monotonic()
-            state.pipeline_record(
-                {
-                    "timestamp": time.time(),
-                    "worker_pid": os.getpid(),
-                    "endpoint": "/v2/models/infer",
-                    "payload_bytes": len(image_bytes),
-                    "status": 200,
-                    "body_extract_ms": _t_body_extract_ms,
-                    "ensure_loaded_ms": _t_ensure_loaded_ms,
-                    "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
-                    "shm_write_ms": (_t_write - _t_alloc) * 1000,
-                    "zmq_submit_ms": 0,
-                    "zmq_result_wait_ms": (_t_result - _t_write) * 1000,
-                    "result_read_ms": (_t_end - _t_result) * 1000,
-                    "serialize_ms": 0,
-                    "total_ms": (_t_end - _t0) * 1000,
-                }
-            )
-        return obj, None
-
+        return prediction, None
+    except ValueError as exc:
+        # MMPClient raises ValueError on payload-too-large
+        return None, error_response(413, "PAYLOAD_TOO_LARGE", str(exc))
     except asyncio.TimeoutError:
-        if _T:
-            state.pipeline_record(
-                {
-                    "timestamp": time.time(),
-                    "worker_pid": os.getpid(),
-                    "endpoint": "/v2/models/infer",
-                    "payload_bytes": len(image_bytes),
-                    "status": 504,
-                    "body_extract_ms": _t_body_extract_ms,
-                    "ensure_loaded_ms": _t_ensure_loaded_ms,
-                    "zmq_alloc_ms": (_t_alloc - _t0) * 1000,
-                    "shm_write_ms": 0,
-                    "zmq_submit_ms": 0,
-                    "zmq_result_wait_ms": (time.monotonic() - _t_alloc) * 1000,
-                    "result_read_ms": 0,
-                    "serialize_ms": 0,
-                    "total_ms": (time.monotonic() - _t0) * 1000,
-                }
-            )
         return None, error_response(504, "TIMEOUT", "inference timeout")
-
-    except state._ClientDisconnected:
-        logger.debug(
-            "[v2_slot] client disconnected during inference wait, slot=%d", slot_id
-        )
+    except ClientDisconnected:
         return None, Response(status_code=499)
-
-    finally:
-        state.free_slot(slot_id)
+    except RuntimeError as exc:
+        msg = str(exc) or "inference failed"
+        if "no slots" in msg.lower() or "alloc" in msg.lower():
+            return None, error_response(
+                503,
+                "SERVER_BUSY",
+                "no slots available, try again",
+                follow_up="retry in 1s",
+            )
+        return None, error_response(500, "INFERENCE_FAILED", msg)
 
 
 def _build_envelope(
@@ -471,6 +324,7 @@ def _build_envelope(
 
 
 async def _infer_images(
+    mm: ModelManagerProxy,
     images: list[bytes],
     model_id: str,
     instance: str,
@@ -478,19 +332,13 @@ async def _infer_images(
     params: dict,
     style: str = "rich",
     request: Optional[Request] = None,
-    _t_body_extract_ms: float = 0.0,
-    _t_ensure_loaded_ms: float = 0.0,
 ) -> Response:
     """Infer on one or more images. Returns v2 envelope with N predictions."""
     if not images:
         return error_response(400, "EMPTY_BODY", "no image data provided")
 
     for i, img in enumerate(images):
-        if len(img) > state.SHM_DATA_SIZE:
-            return error_response(
-                413, "PAYLOAD_TOO_LARGE", f"image[{i}] exceeds slot size"
-            )
-        if not state.looks_like_image(img):
+        if not looks_like_image(img):
             return error_response(
                 415,
                 "UNSUPPORTED_FORMAT",
@@ -498,39 +346,26 @@ async def _infer_images(
             )
 
     if len(images) == 1:
-        predictions, err = await _submit_one_slot(
-            images[0],
-            model_id,
-            instance,
-            params,
-            request=request,
-            _t_body_extract_ms=_t_body_extract_ms,
-            _t_ensure_loaded_ms=_t_ensure_loaded_ms,
+        prediction, err = await _infer_one(
+            mm, images[0], model_id, instance, task, params, request
         )
         if err is not None:
             return err
-        return _build_envelope([predictions], model_id, task, style=style)
+        return _build_envelope([prediction], model_id, task, style=style)
 
-    # Batch: submit all concurrently
-    slot_tasks = [
-        _submit_one_slot(
-            img,
-            model_id,
-            instance,
-            params,
-            request=request,
-            _t_body_extract_ms=_t_body_extract_ms,
-            _t_ensure_loaded_ms=_t_ensure_loaded_ms,
+    # Batch: fan out concurrently
+    results = await asyncio.gather(
+        *(
+            _infer_one(mm, img, model_id, instance, task, params, request)
+            for img in images
         )
-        for img in images
-    ]
-    results = await asyncio.gather(*slot_tasks)
+    )
 
     predictions_list = []
-    for predictions, err in results:
+    for prediction, err in results:
         if err is not None:
             return err
-        predictions_list.append(predictions)
+        predictions_list.append(prediction)
 
     return _build_envelope(predictions_list, model_id, task, style=style)
 
@@ -541,23 +376,12 @@ async def _infer_images(
 
 
 @router.post("/infer")
-async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> Response:
-    """v2 model inference — structured JSON response with typed predictions.
-
-    Query params:
-        model_id    Required.
-        task        Optional. Task name (default task if omitted).
-        instance    Optional. Multi-instance routing.
-        device      Optional. Device hint for cold-path load.
-        style       Optional. "compact" (default) or "rich" (501 for now).
-        *           Additional params forwarded to backend.
-
-    Image input (one of, supports batch via repeated image param/parts):
-        - Query param: image=<URL> (server fetches, max 50MB, 10s timeout). Repeat for batch.
-        - Raw body: image/jpeg, image/png, application/octet-stream (single image only)
-        - Multipart form: image= file parts (one or more), optional scalar fields, optional inputs= JSON part
-        - JSON body: {"inputs": {"image": <spec_or_list>, ...}} where spec is {"type":"base64","value":"..."}
-    """
+async def v2_infer(
+    request: Request,
+    api_key: str = Depends(_bearer_token),
+    mm: ModelManagerProxy = Depends(get_model_manager),
+) -> Response:
+    """v2 model inference — structured JSON response with typed predictions."""
     params = dict(request.query_params)
     model_id = params.pop("model_id", "")
     task = params.pop("task", None)
@@ -578,12 +402,11 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
     image_urls = [u for u in image_urls if u.startswith(("http://", "https://"))]
     params.pop("image", None)
 
-    _t_body_start = time.monotonic()
-
     try:
         if image_urls:
-            fetch_tasks = [_fetch_image_from_url(u) for u in image_urls]
-            fetch_results = await asyncio.gather(*fetch_tasks)
+            fetch_results = await asyncio.gather(
+                *(_fetch_image_from_url(u) for u in image_urls)
+            )
             images = []
             for img_bytes, err in fetch_results:
                 if err is not None:
@@ -591,7 +414,6 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
                 images.append(img_bytes)
             extra_params = {}
         else:
-            # Extract from request body (raw, multipart, JSON+base64)
             images, extra_params, err = await _extract_images_and_params(request)
             if err is not None:
                 return err
@@ -600,13 +422,8 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
         logger.debug("[v2_infer] client disconnected during body extraction")
         return Response(status_code=499)
 
-    _t_body_done = time.monotonic()
-    _t_body_extract_ms = (_t_body_done - _t_body_start) * 1000
-
     # Ensure model loaded
-    status = await state.ensure_loaded(model_id, instance, api_key, device)
-    _t_ensure_done = time.monotonic()
-    _t_ensure_loaded_ms = (_t_ensure_done - _t_body_done) * 1000
+    status = await mm.ensure_loaded(model_id, instance, api_key, device)
 
     if status[0] == "load_timeout":
         return error_response(
@@ -620,15 +437,8 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
         return error_response(500, "LOAD_FAILED", "model load failed")
 
     return await _infer_images(
-        images,
-        model_id,
-        instance,
-        task,
-        params,
-        style=style,
-        request=request,
-        _t_body_extract_ms=_t_body_extract_ms,
-        _t_ensure_loaded_ms=_t_ensure_loaded_ms,
+        mm, images, model_id, instance, task, params,
+        style=style, request=request,
     )
 
 
@@ -638,30 +448,29 @@ async def v2_infer(request: Request, api_key: str = Depends(_bearer_token)) -> R
 
 
 @router.get("/interface")
-async def v2_model_interface(request: Request) -> Response:
+async def v2_model_interface(
+    request: Request,
+    mm: ModelManagerProxy = Depends(get_model_manager),
+) -> Response:
     """Discover model interface — supported tasks, params, response types."""
     model_id = request.query_params.get("model_id", "")
     if not model_id:
         return error_response(400, "MISSING_PARAM", "model_id query param required")
 
     try:
-        stats = await state.fetch_stats(timeout_s=5.0)
-    except (asyncio.TimeoutError, Exception):
-        return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
-
-    models = stats.get("mmp_models", {})
-    model_info = models.get(model_id)
-    if model_info is None:
+        info = await mm.interface(model_id)
+    except RuntimeError as exc:
         return error_response(
             404,
             "MODEL_NOT_LOADED",
-            f"model '{model_id}' is not loaded",
+            str(exc),
             follow_up="load the model first via POST /v2/models/load",
         )
+    except Exception:
+        return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
-    tasks = model_info.get("tasks", {})
     return Response(
-        content=json.dumps({"model_id": model_id, "tasks": tasks}).encode(),
+        content=json.dumps(info).encode(),
         media_type="application/json",
     )
 
@@ -686,11 +495,13 @@ async def v2_model_compatibility() -> Response:
 
 
 @router.get("")
-async def v2_list_models() -> Response:
+async def v2_list_models(
+    mm: ModelManagerProxy = Depends(get_model_manager),
+) -> Response:
     """List currently loaded models with state, device, memory, queue depth."""
     try:
-        stats = await state.fetch_stats(timeout_s=5.0)
-    except (asyncio.TimeoutError, Exception):
+        stats = await mm.stats()
+    except Exception:
         return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
     models = stats.get("mmp_models", {})
@@ -707,28 +518,21 @@ async def v2_list_models() -> Response:
 
 @router.post("/load")
 async def v2_load_model(
-    request: Request, api_key: str = Depends(_bearer_token)
+    request: Request,
+    api_key: str = Depends(_bearer_token),
+    mm: ModelManagerProxy = Depends(get_model_manager),
 ) -> Response:
     """Load specified model."""
     model_id = request.query_params.get("model_id", "")
     if not model_id:
         return error_response(400, "MISSING_PARAM", "model_id query param required")
 
-    mid_bytes = model_id.encode()
-    key_bytes = api_key.encode()
-    payload = (
-        struct.pack(">H", len(mid_bytes))
-        + mid_bytes
-        + struct.pack(">H", len(key_bytes))
-        + key_bytes
-    )
-
     try:
-        result = await state.lifecycle_req(state.T_LOAD, payload)
+        result = await mm.load(model_id, api_key)
     except asyncio.TimeoutError:
         return error_response(504, "TIMEOUT", "load request timeout")
 
-    if result[0] == "error":
+    if result[0] != "ok":
         return error_response(500, "LOAD_FAILED", "model load failed")
     return Response(
         content=json.dumps({"model_id": model_id, "status": "loaded"}).encode(),
@@ -742,21 +546,21 @@ async def v2_load_model(
 
 
 @router.post("/unload")
-async def v2_unload_model(request: Request) -> Response:
+async def v2_unload_model(
+    request: Request,
+    mm: ModelManagerProxy = Depends(get_model_manager),
+) -> Response:
     """Unload specified model."""
     model_id = request.query_params.get("model_id", "")
     if not model_id:
         return error_response(400, "MISSING_PARAM", "model_id query param required")
 
-    mid_bytes = model_id.encode()
-    payload = struct.pack(">H", len(mid_bytes)) + mid_bytes
-
     try:
-        result = await state.lifecycle_req(state.T_UNLOAD, payload)
+        result = await mm.unload(model_id)
     except asyncio.TimeoutError:
         return error_response(504, "TIMEOUT", "unload request timeout")
 
-    if result[0] == "error":
+    if result[0] != "ok":
         return error_response(500, "UNLOAD_FAILED", "model unload failed")
     return Response(
         content=json.dumps({"model_id": model_id, "status": "unloaded"}).encode(),
@@ -770,21 +574,21 @@ async def v2_unload_model(request: Request) -> Response:
 
 
 @router.delete("")
-async def v2_unload_all() -> Response:
+async def v2_unload_all(
+    mm: ModelManagerProxy = Depends(get_model_manager),
+) -> Response:
     """Unload all models."""
     try:
-        stats = await state.fetch_stats(timeout_s=5.0)
-    except (asyncio.TimeoutError, Exception):
+        stats = await mm.stats()
+    except Exception:
         return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
     models = stats.get("mmp_models", {})
     errors = []
     for model_id in list(models.keys()):
-        mid_bytes = model_id.encode()
-        payload = struct.pack(">H", len(mid_bytes)) + mid_bytes
         try:
-            result = await state.lifecycle_req(state.T_UNLOAD, payload, timeout_s=10.0)
-            if result[0] == "error":
+            result = await mm.unload(model_id)
+            if result[0] != "ok":
                 errors.append(model_id)
         except asyncio.TimeoutError:
             errors.append(model_id)
