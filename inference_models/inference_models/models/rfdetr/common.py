@@ -20,12 +20,9 @@ from inference_models.models.common.roboflow.post_processing import (
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 from inference_models.models.rfdetr.post_processor import select_topk_predictions
 from inference_models.utils.file_system import read_json
+from inference_models.configuration import RFDETR_TRITON_FULLPOSTPROC
 
-_RFDETR_TRITON_FULLPOSTPROC = os.getenv("RFDETR_TRITON_FULLPOSTPROC", "false").lower() in (
-    "true",
-    "1",
-)
-if _RFDETR_TRITON_FULLPOSTPROC:
+if RFDETR_TRITON_FULLPOSTPROC:
     try:
         from inference_models.models.rfdetr.triton_fullpostproc import (
             TRITON_AVAILABLE as _TRITON_FULLPOST_AVAILABLE,

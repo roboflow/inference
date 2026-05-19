@@ -1,4 +1,5 @@
 import base64
+from functools import lru_cache
 import io
 from io import BytesIO
 from time import perf_counter
@@ -12,16 +13,16 @@ from pycocotools import mask as mask_utils
 # Pinned host buffers for async DtoH on the full-postproc Triton fast path.
 # Keyed by (name, dtype); reused across frames provided the cached buffer is
 # at least as large as the requested shape in every dimension.
-_PINNED_HOST_BUFFERS: dict = {}
+PINNED_HOST_BUFFERS: dict = {}
 
 
-def _get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
+def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
     key = (name, dtype)
-    buf = _PINNED_HOST_BUFFERS.get(key)
+    buf = PINNED_HOST_BUFFERS.get(key)
     if buf is not None and all(buf.shape[i] >= shape[i] for i in range(len(shape))):
         return buf[tuple(slice(0, s) for s in shape)]
     buf = torch.empty(shape, dtype=dtype, pin_memory=True)
-    _PINNED_HOST_BUFFERS[key] = buf
+    PINNED_HOST_BUFFERS[key] = buf
     return buf
 
 from inference.core.entities.requests import (
@@ -335,7 +336,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             H = preproc_metadata.original_size.height
             W = preproc_metadata.original_size.width
 
-            # Fast path: RF-DETR full-postproc Triton fusion emits an
+            # RF-DETR postproc Triton fusion emits an
             # unsliced (num_queries, 6) int32 record plus a GPU counter and a
             # completion event. We DtoH the 4-byte counter (single sync) to
             # learn n_survivors, then async-DtoH the compact slices.
@@ -354,7 +355,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 stream = torch.cuda.current_stream(device)
                 done_event.wait(stream)
 
-                counter_host = _get_pinned_buffer("counter", (1,), torch.int32)
+                counter_host = get_pinned_buffer("counter", (1,), torch.int32)
                 counter_host.copy_(counter_gpu, non_blocking=True)
                 stream.synchronize()
                 n_survivors = int(counter_host[0].item())
@@ -367,11 +368,11 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 else:
                     combined_slice = combined_gpu[:n_survivors]
                     mask_slice = det.mask[:n_survivors]
-                    combined_host = _get_pinned_buffer(
-                        "combined", combined_slice.shape, combined_slice.dtype
+                    combined_host = get_pinned_buffer(
+                        "combined", tuple(combined_slice.shape), combined_slice.dtype
                     )
-                    mask_host = _get_pinned_buffer(
-                        "mask", mask_slice.shape, mask_slice.dtype
+                    mask_host = get_pinned_buffer(
+                        "mask", tuple(mask_slice.shape), mask_slice.dtype
                     )
                     combined_host.copy_(combined_slice, non_blocking=True)
                     mask_host.copy_(mask_slice, non_blocking=True)
