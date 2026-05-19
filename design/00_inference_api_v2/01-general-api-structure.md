@@ -2,7 +2,7 @@
 
 ## Models endpoints
 
-* `POST /v2/models/infer` - predict from model
+* `POST /v2/models/run` - predict from model
 * `GET /v2/models/interface` - discover model interface
 * `GET /v2/models/compatibility` - discover models compatible with current server configuration
 * `GET /v2/models` - discover loaded models
