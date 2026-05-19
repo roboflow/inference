@@ -200,7 +200,9 @@ class EditImageMetadataBlockV1(WorkflowBlock):
 
 
 def get_workspace_name(api_key: str, cache: BaseCache) -> str:
-    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    api_key_hash = hashlib.md5(
+        api_key.encode("utf-8"), usedforsecurity=False
+    ).hexdigest()
     cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cached_workspace_name = cache.get(cache_key)
     if cached_workspace_name:
