@@ -107,7 +107,10 @@ class HFStreamingVideoBase:
         Subclasses may override this to lazy-import the transformers
         symbols (keeping the import cost off the module import path).
         """
-        if cls._transformers_model_cls is None or cls._transformers_processor_cls is None:
+        if (
+            cls._transformers_model_cls is None
+            or cls._transformers_processor_cls is None
+        ):
             raise NotImplementedError(
                 f"{cls.__name__} must set _transformers_model_cls and "
                 f"_transformers_processor_cls (or override "
@@ -201,9 +204,7 @@ class HFStreamingVideoBase:
         """
         with self._lock:
             image_np = _ensure_numpy_image(image)
-            session = (
-                state_dict.get(SESSION_KEY) if state_dict is not None else None
-            )
+            session = state_dict.get(SESSION_KEY) if state_dict is not None else None
             if session is None:
                 raise ModelRuntimeError(
                     message=(
@@ -236,9 +237,7 @@ class HFStreamingVideoBase:
     # Internals
     # ------------------------------------------------------------------
 
-    def _resolve_session(
-        self, state_dict: Optional[dict], reset: bool
-    ) -> Any:
+    def _resolve_session(self, state_dict: Optional[dict], reset: bool) -> Any:
         if reset:
             return self._new_session()
         if state_dict is not None:
@@ -297,9 +296,7 @@ def _ensure_numpy_image(image: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
 
 
 def _normalise_bboxes(
-    bboxes: Optional[
-        Union[Tuple[int, int, int, int], List[Tuple[int, int, int, int]]]
-    ],
+    bboxes: Optional[Union[Tuple[int, int, int, int], List[Tuple[int, int, int, int]]]],
 ) -> List[Tuple[float, float, float, float]]:
     if bboxes is None:
         return []

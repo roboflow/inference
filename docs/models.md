@@ -77,7 +77,7 @@ If you have an NVIDIA GPU, you can accelerate your inference with:
 pip install --extra-index-url https://download.pytorch.org/whl/cu124  inference-gpu
 # please adjust the --extra-index-url to CUDA version installed in your OS
 # https://download.pytorch.org/whl/cu<major><minor>, for instance https://download.pytorch.org/whl/cu130 for CUDA 13.0
-# alternativelly use
+# alternatively use
 uv pip install inference-gpu
 ```
 
@@ -98,7 +98,7 @@ Some functionality requires extra dependencies. These can be installed by specif
 | extra | description                                                                                                                                                                                                                         |
 |:-------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `clip` | Ability to use the core `CLIP` model (by OpenAI)                                                                                                                                                                                    |
-| `gaze` | Ability to use the core `Gaze` model                                                                                                                                                                                                |
+| `gaze` | ⚠ deprecated — see [`/foundation/gaze`](foundation/gaze.md). The extra is no longer published; the `Gaze` model now raises `FeatureDeprecatedError`.                                                                                |
 | `http` | Ability to run the http interface                                                                                                                                                                                                   |
 | `sam`  | Ability to run the core `Segment Anything` model (by Meta AI)                                                                                                                                                                       |
 | `doctr` | Ability to use the core `doctr` model (by <a href="https://github.com/mindee/doctr" target="_blank">Mindee</a>)                                                                                                                     |

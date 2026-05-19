@@ -50,7 +50,6 @@ from inference.core.entities.requests.clip import (
 )
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
@@ -97,7 +96,6 @@ from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
-from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     DepthEstimationResponse,
@@ -203,6 +201,7 @@ from inference.core.env import (
 from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
+    FeatureDeprecatedError,
     InputImageLoadError,
     MissingApiKeyError,
     MissingServiceSecretError,
@@ -328,6 +327,7 @@ import time
 
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
+from inference_sdk.http.entities import Confidence
 
 try:
     from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
@@ -1326,16 +1326,6 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The SAM2 model ID.
-        """
-
-        load_gaze_model = partial(load_core_model, core_model="gaze")
-        """Loads the GAZE model into the model manager.
-
-        Args:
-        Same as `load_core_model`.
-
-        Returns:
-        The GAZE model ID.
         """
 
         load_doctr_model = partial(load_core_model, core_model="doctr")
@@ -2401,6 +2391,8 @@ class HttpInterface(BaseInterface):
                 def load_model(model_id):
                     t_start = time.perf_counter()
                     de_aliased = resolve_roboflow_model_alias(model_id=model_id)
+                    model_id_alias = model_id if de_aliased != model_id else None
+                    loaded_model_id = model_id_alias or de_aliased
                     logger.info(
                         f"Preload: starting model load for '{model_id}' (resolved: '{de_aliased}')"
                     )
@@ -2408,6 +2400,7 @@ class HttpInterface(BaseInterface):
                         self.model_manager.add_model(
                             de_aliased,
                             PRELOAD_API_KEY,
+                            model_id_alias=model_id_alias,
                         )
                         load_time = time.perf_counter() - t_start
                         logger.info(
@@ -2427,7 +2420,7 @@ class HttpInterface(BaseInterface):
                         and model_id in PINNED_MODELS
                         and hasattr(self.model_manager, "pin_model")
                     ):
-                        self.model_manager.pin_model(de_aliased)
+                        self.model_manager.pin_model(loaded_model_id)
 
                 all_models = list(
                     dict.fromkeys((PRELOAD_MODELS or []) + (PINNED_MODELS or []))
@@ -3586,49 +3579,20 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/gaze/gaze_detection",
-                    response_model=List[GazeDetectionInferenceResponse],
-                    summary="Gaze Detection",
-                    description="Run the gaze detection model to detect gaze.",
+                    summary="Gaze Detection (deprecated)",
+                    description=(
+                        "Deprecated. Always returns HTTP 410 Gone. The endpoint stub "
+                        "will be removed end of Q2 2026."
+                    ),
+                    deprecated=True,
                 )
                 @with_route_exceptions
-                @usage_collector("request")
-                def gaze_detection(
-                    inference_request: GazeDetectionInferenceRequest,
-                    request: Request,
-                    api_key: Optional[str] = Query(
-                        None,
-                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-                    ),
-                    countinference: Optional[bool] = None,
-                    service_secret: Optional[str] = None,
-                ):
-                    """
-                    Detect gaze using the gaze detection model.
-
-                    Args:
-                        inference_request (M.GazeDetectionRequest): The request containing the image to be detected.
-                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
-                        request (Request, default Body()): The HTTP request.
-
-                    Returns:
-                        M.GazeDetectionResponse: The response containing all the detected faces and the corresponding gazes.
-                    """
-                    logger.debug(f"Reached /gaze/gaze_detection")
-                    gaze_model_id = load_gaze_model(
-                        inference_request,
-                        api_key=api_key,
-                        countinference=countinference,
-                        service_secret=service_secret,
+                def gaze_detection_deprecated():
+                    raise FeatureDeprecatedError(
+                        feature="/gaze/gaze_detection",
+                        removal_release="end of Q2 2026",
+                        reason="MediaPipe dependency removed from inference; endpoint is a 410 stub.",
                     )
-                    response = self.model_manager.infer_from_request_sync(
-                        gaze_model_id, inference_request
-                    )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(gaze_model_id, actor)
-                    return response
 
             if DEPTH_ESTIMATION_ENABLED:
 
@@ -3845,9 +3809,14 @@ class HttpInterface(BaseInterface):
                     None,
                     description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                 ),
-                confidence: float = Query(
+                confidence: Confidence = Query(
                     0.4,
-                    description="The confidence threshold used to filter out predictions",
+                    description=(
+                        "The confidence threshold used to filter out predictions. "
+                        'Pass a float in [0, 1], or "best" to use F1-optimal '
+                        'thresholds from model evaluation, or "default" to use '
+                        "the model's built-in default."
+                    ),
                 ),
                 keypoint_confidence: float = Query(
                     0.0,
@@ -3955,11 +3924,12 @@ class HttpInterface(BaseInterface):
                     f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
                 )
                 model_id = f"{dataset_id}/{version_id}"
-                if confidence >= 1:
-                    confidence /= 100
-                if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
-                    # allowing lower confidence results in RAM usage explosion
-                    confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
+                if isinstance(confidence, (int, float)):
+                    if confidence >= 1:
+                        confidence /= 100
+                    if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
+                        # allowing lower confidence results in RAM usage explosion
+                        confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
 
                 if overlap >= 1:
                     overlap /= 100
@@ -4167,18 +4137,3 @@ class HttpInterface(BaseInterface):
 
     def run(self):
         uvicorn.run(self.app, host="127.0.0.1", port=8080)
-
-
-def load_gaze_model(
-    inference_request: GazeDetectionInferenceRequest, api_key: Optional[str] = None
-) -> str:
-    """Loads the gaze detection model.
-
-    Args:
-        inference_request (GazeDetectionInferenceRequest): The inference request.
-        api_key (Optional[str], default None): The Roboflow API key.
-
-    Returns:
-        str: The model ID.
-    """
-    return inference_request.model_id

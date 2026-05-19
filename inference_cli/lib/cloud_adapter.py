@@ -132,8 +132,7 @@ def cloud_undeploy(cluster_name):
 def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key):
     check_sky_installed()
     if help:
-        print(
-            """
+        print("""
               Deploy Roboflow Inference to a cloud provider.
               If your chosen cloud provider is configured on your terminal, inference 
               deploy will automatically use your default credentials. If you have not 
@@ -179,8 +178,7 @@ def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key
               open an issue at https://github.com/roboflow/inference/issues if 
               you would like to see other cloud providers supported.
 
-        """
-        )
+        """)
         return
 
     if custom is None:

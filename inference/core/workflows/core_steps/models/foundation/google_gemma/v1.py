@@ -114,9 +114,11 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Google Gemma",
+            "name": "Google Gemma API",
             "version": "v1",
-            "short_description": "Run Google's Gemma model with vision capabilities.",
+            "deprecated": True,
+            "deprecation_message": "Use the Google Gemma v2 block, which adds a Roboflow-managed API key option, user-selectable privacy controls, and the same OpenRouter passthrough capabilities.",
+            "short_description": "Run Google's Gemma model with vision capabilities via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Gemma Terms of Use",
             "block_type": "model",

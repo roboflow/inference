@@ -121,6 +121,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
@@ -272,6 +273,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
@@ -479,6 +481,7 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         if "request" in kwargs:
             keypoint_confidence_threshold = kwargs["request"].keypoint_confidence
             kwargs["key_points_threshold"] = keypoint_confidence_threshold
@@ -690,6 +693,7 @@ class InferenceModelsClassificationAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
@@ -1024,6 +1028,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         return {str(k): v for k, v in enumerate(self.class_names)}
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),

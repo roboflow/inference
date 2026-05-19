@@ -1,3 +1,4 @@
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 from pydantic import BaseModel
@@ -117,6 +118,44 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     inference_request = model_manager.infer_from_request_sync.call_args.args[1]
     assert inference_request.model_id == "florence-2-base"
     assert inference_request.api_key == "query-api-key"
+
+
+def test_startup_preload_uses_same_alias_registry_key_as_live_requests(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "PRELOAD_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PINNED_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PRELOAD_API_KEY", "preload-key")
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        deadline = time.monotonic() + 1
+        response = client.get("/readiness")
+        while response.status_code != 200 and time.monotonic() < deadline:
+            time.sleep(0.01)
+            response = client.get("/readiness")
+
+    assert response.status_code == 200
+    model_manager.add_model.assert_called_once_with(
+        "florence-pretrains/3",
+        "preload-key",
+        model_id_alias="florence-2-base",
+    )
+    model_manager.pin_model.assert_called_once_with("florence-2-base")
 
 
 def test_serverless_auth_middleware_allows_authorized_key_and_caches(

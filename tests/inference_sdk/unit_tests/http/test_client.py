@@ -1850,6 +1850,50 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_
     }
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v1_threads_service_secret_and_countinference_as_query_params(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="coco/3",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", None)]
+    configuration = InferenceConfiguration(
+        confidence_threshold=0.5,
+        service_secret="internal-secret",
+        count_inference=False,
+    )
+    http_client.configure(inference_configuration=configuration)
+    requests_mock.post(
+        f"{api_url}/infer/object_detection",
+        json={"image": {"height": 480, "width": 640}, "predictions": []},
+    )
+
+    # when
+    http_client.infer_from_api_v1(
+        inference_input="https://some/image.jpg",
+        model_id="coco/3",
+    )
+
+    # then — credentials live on the URL query string, where FastAPI binds them
+    qs = requests_mock.request_history[0].qs
+    assert qs.get("service_secret") == ["internal-secret"]
+    assert qs.get("countinference") == ["false"]
+    # and they must NOT leak into the JSON body (the Pydantic body model would drop them anyway)
+    body = requests_mock.request_history[0].json()
+    assert "service_secret" not in body
+    assert "countinference" not in body
+    assert "count_inference" not in body
+
+
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
 @pytest.mark.parametrize("model_id_to_use", ["coco/3", "yolov8n-640"])
@@ -2500,197 +2544,6 @@ async def test_ocr_image_async_hen_faulty_response_returned(
         # when
         with pytest.raises(HTTPCallErrorError):
             _ = await http_client.ocr_image_async(inference_input="/some/image.jpg")
-
-
-def test_detect_gazes_in_v0_mode() -> None:
-    # given
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
-    http_client.select_api_v0()
-
-    # when
-    with pytest.raises(WrongClientModeError):
-        _ = http_client.detect_gazes(
-            inference_input="https://some.com/image.jpg",
-        )
-
-
-@pytest.mark.asyncio
-async def test_detect_gazes_async_in_v0_mode() -> None:
-    # given
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
-    http_client.select_api_v0()
-
-    # when
-    with pytest.raises(WrongClientModeError):
-        _ = await http_client.detect_gazes_async(
-            inference_input="https://some.com/image.jpg",
-        )
-
-
-@mock.patch.object(client, "load_static_inference_input")
-def test_detect_gazes_when_single_image_given(
-    load_static_inference_input_mock: MagicMock,
-    requests_mock: Mocker,
-) -> None:
-    api_url = "http://some.com"
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
-    expected_prediction = {
-        "predictions": [
-            {
-                "face": {
-                    "x": 272.0,
-                    "y": 112.0,
-                    "width": 92.0,
-                    "height": 92.0,
-                    "confidence": 0.9473056197166443,
-                    "class": "face",
-                    "class_confidence": None,
-                    "class_id": 0,
-                    "tracker_id": None,
-                    "landmarks": [
-                        {"x": 252.0, "y": 90.0},
-                        {"x": 295.0, "y": 90.0},
-                        {"x": 275.0, "y": 111.0},
-                        {"x": 274.0, "y": 130.0},
-                        {"x": 225.0, "y": 99.0},
-                        {"x": 316.0, "y": 101.0},
-                    ],
-                },
-                "yaw": -0.060329124331474304,
-                "pitch": -0.012491557747125626,
-            }
-        ],
-        "time": 0.22586208400025498,
-        "time_face_det": None,
-        "time_gaze_det": None,
-    }
-    requests_mock.post(
-        f"{api_url}/gaze/gaze_detection",
-        json=expected_prediction,
-    )
-
-    # when
-    result = http_client.detect_gazes(inference_input="/some/image.jpg")
-
-    # then
-    assert (
-        result == expected_prediction
-    ), "Result must match the value returned by HTTP endpoint"
-    assert requests_mock.request_history[0].json() == {
-        "api_key": "my-api-key",
-        "image": {"type": "base64", "value": "base64_image"},
-    }, "Request must contain API key and image encoded in standard format"
-
-
-@pytest.mark.asyncio
-@mock.patch.object(client, "load_static_inference_input_async")
-async def test_detect_gazes_async_when_single_image_given(
-    load_static_inference_input_async_mock: MagicMock,
-) -> None:
-    api_url = "http://some.com"
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
-    expected_prediction = {
-        "predictions": [
-            {
-                "face": {
-                    "x": 272.0,
-                    "y": 112.0,
-                    "width": 92.0,
-                    "height": 92.0,
-                    "confidence": 0.9473056197166443,
-                    "class": "face",
-                    "class_confidence": None,
-                    "class_id": 0,
-                    "tracker_id": None,
-                    "landmarks": [
-                        {"x": 252.0, "y": 90.0},
-                        {"x": 295.0, "y": 90.0},
-                        {"x": 275.0, "y": 111.0},
-                        {"x": 274.0, "y": 130.0},
-                        {"x": 225.0, "y": 99.0},
-                        {"x": 316.0, "y": 101.0},
-                    ],
-                },
-                "yaw": -0.060329124331474304,
-                "pitch": -0.012491557747125626,
-            }
-        ],
-        "time": 0.22586208400025498,
-        "time_face_det": None,
-        "time_gaze_det": None,
-    }
-
-    with aioresponses() as m:
-        m.post(
-            f"{api_url}/gaze/gaze_detection",
-            payload=expected_prediction,
-        )
-
-        # when
-        result = await http_client.detect_gazes_async(inference_input="/some/image.jpg")
-
-        # then
-        assert (
-            result == expected_prediction
-        ), "Result must match the value returned by HTTP endpoint"
-        m.assert_called_with(
-            f"{api_url}/gaze/gaze_detection",
-            "POST",
-            params=None,
-            data=None,
-            json={
-                "api_key": "my-api-key",
-                "image": {"type": "base64", "value": "base64_image"},
-            },
-            headers={"Content-Type": "application/json"},
-        )
-
-
-@mock.patch.object(client, "load_static_inference_input")
-def test_detect_gazes_when_faulty_response_returned(
-    load_static_inference_input_mock: MagicMock,
-    requests_mock: Mocker,
-) -> None:
-    # given
-    api_url = "http://some.com"
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
-    requests_mock.post(
-        f"{api_url}/gaze/gaze_detection",
-        json={
-            "message": "Cannot load gaze model.",
-        },
-        status_code=500,
-    )
-
-    with pytest.raises(HTTPCallErrorError):
-        _ = http_client.detect_gazes(inference_input="/some/image.jpg")
-
-
-@pytest.mark.asyncio
-@mock.patch.object(client, "load_static_inference_input_async")
-async def test_detect_gazes_when_faulty_response_returned(
-    load_static_inference_input_async_mock: AsyncMock,
-) -> None:
-    # given
-    api_url = "http://some.com"
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
-
-    with aioresponses() as m:
-        m.post(
-            f"{api_url}/gaze/gaze_detection",
-            payload={
-                "message": "Cannot load gaze model.",
-            },
-            status=500,
-        )
-
-        # when
-        with pytest.raises(HTTPCallErrorError):
-            _ = await http_client.detect_gazes_async(inference_input="/some/image.jpg")
 
 
 @mock.patch.object(client, "load_static_inference_input")

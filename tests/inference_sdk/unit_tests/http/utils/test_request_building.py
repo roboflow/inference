@@ -2,7 +2,11 @@ from unittest.mock import patch
 
 import pytest
 
-from inference_sdk.config import INTERNAL_REMOTE_EXEC_REQ_HEADER, execution_id
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    INTERNAL_REMOTE_EXEC_REQ_HEADER,
+    execution_id,
+)
 from inference_sdk.http.utils.request_building import (
     ImagePlacement,
     RequestData,
@@ -154,6 +158,43 @@ def test_prepare_requests_data() -> None:
         },
         image_scaling_factors=[0.75],
     )
+
+
+def test_assembly_request_data_when_execution_id_is_set_and_headers_are_empty() -> None:
+    # given
+    token = execution_id.set("test-exec-id")
+
+    try:
+        # when
+        result = assembly_request_data(
+            url="https://some.com",
+            batch_inference_inputs=[("image_1", None)],
+            headers=None,
+            parameters=None,
+            payload=None,
+            image_placement=ImagePlacement.DATA,
+        )
+
+        # then
+        assert result.headers == {EXECUTION_ID_HEADER: "test-exec-id"}
+    finally:
+        execution_id.reset(token)
+
+
+def test_assembly_request_data_when_image_placement_is_not_supported() -> None:
+    # when / then
+    with pytest.raises(
+        NotImplementedError,
+        match="Not implemented request building method",
+    ):
+        assembly_request_data(
+            url="https://some.com",
+            batch_inference_inputs=[("image_1", None)],
+            headers=None,
+            parameters=None,
+            payload=None,
+            image_placement=object(),
+        )
 
 
 class TestInternalRemoteExecHeader:

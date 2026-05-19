@@ -3,11 +3,11 @@
 import pytest
 import torch
 
+from inference.core.exceptions import PostProcessingError
 from inference.core.models.inference_models_adapters import (
     prepare_classification_response,
     prepare_multi_label_classification_response,
 )
-from inference.core.exceptions import PostProcessingError
 from inference_models import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,

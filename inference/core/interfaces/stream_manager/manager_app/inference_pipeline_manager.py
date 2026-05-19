@@ -20,8 +20,10 @@ from pydantic import ValidationError
 from inference.core import logger
 from inference.core.exceptions import (
     MissingApiKeyError,
+    RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPITimeoutError,
 )
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
@@ -238,6 +240,22 @@ class InferencePipelineManager(Process):
                 public_error_message="Requested Roboflow resources (models / workflows etc.) not available or "
                 "wrong API key used.",
                 error_type=ErrorType.NOT_FOUND,
+            )
+        except RoboflowAPITimeoutError as error:
+            self._handle_error(
+                request_id=request_id,
+                error=error,
+                public_error_message="Timed out connecting to Roboflow API during pipeline initialisation. "
+                "Set ROBOFLOW_API_REQUEST_TIMEOUT to control the timeout.",
+                error_type=ErrorType.OPERATION_ERROR,
+            )
+        except RoboflowAPIConnectionError as error:
+            self._handle_error(
+                request_id=request_id,
+                error=error,
+                public_error_message="Could not connect to Roboflow API during pipeline initialisation. "
+                "Check network connectivity.",
+                error_type=ErrorType.OPERATION_ERROR,
             )
         except WorkflowSyntaxError as error:
             self._handle_error(

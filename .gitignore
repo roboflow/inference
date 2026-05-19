@@ -1,5 +1,6 @@
 watch-dev.sh
 cpu_http.py
+.temp/
 
 # IDE
 .idea/

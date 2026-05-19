@@ -1,3 +1,11 @@
+!!! warning "Deprecated"
+    The Gaze detection feature has been deprecated due to the removal of
+    the MediaPipe dependency from inference. The `/gaze/gaze_detection`
+    HTTP endpoint and the `Gaze` model class now raise
+    `FeatureDeprecatedError` (HTTP 410 Gone). The stub endpoint will be
+    removed end of Q2 2026; set `CORE_MODEL_GAZE_ENABLED=False` to disable
+    it now. Contact Roboflow if you require this capability.
+
 <a href="https://github.com/Ahmednull/L2CS-Net" target="_blank">L2CS-Net</a> is a gaze estimation model.
 
 You can detect the direction in which someone is looking using the L2CS-Net model.
