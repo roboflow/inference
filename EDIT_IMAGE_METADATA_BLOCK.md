@@ -56,14 +56,13 @@ Platform writes to Firestore → ES re-indexes → image becomes filterable
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `images` | `Selector(kind=[IMAGE_KIND])` | yes | The image being processed (used only to align with the workflow batch dimensionality; no image bytes are sent to the API). |
-| `source_id` | `Union[str, Selector(kind=[STRING_KIND])]` | yes | The Roboflow source ID (Firestore document ID) of the image to write to. Per-image batched input. |
+| `source_id` | `Union[str, Selector(kind=[STRING_KIND])]` | yes | The Roboflow source ID (Firestore document ID) of the image to write to. Per-image batched input — also acts as the block's batch-dimensionality anchor. |
 | `metadata` | `Optional[Union[Dict, Selector(kind=[DICTIONARY_KIND])]]` | no | Key-value metadata to set on the image. |
 | `tags` | `Optional[Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])]]` | no | Tags to add to the image. |
 | `disable_sink` | `bool` | no | Kill switch. Defaults to `False`. |
 
 Batched parameters (declared in `get_parameters_accepting_batches()`):
-`["images", "source_id", "metadata", "tags"]`.
+`["source_id", "metadata", "tags"]`. The block does not take an `images` input — image bytes are never sent to the API, and the workflow engine drives the batch dimension off `source_id`.
 
 `metadata` and `tags` remain declared as batch-compatible inputs. Static values
 or scalar selectors are expected to be auto-batched by the workflow engine when

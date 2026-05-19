@@ -13,12 +13,10 @@ from inference.core.roboflow_api import (
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
-    WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     DICTIONARY_KIND,
-    IMAGE_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     Selector,
@@ -39,13 +37,13 @@ Update existing Roboflow source images with workflow-derived metadata and tags, 
 
 This block writes metadata key-value pairs and tags back to existing images in your Roboflow workspace. The block:
 
-1. Receives workflow images, Roboflow source image IDs, optional metadata, and optional tags
+1. Receives Roboflow source image IDs, optional metadata, and optional tags
 2. Resolves the target workspace from the configured Roboflow API key
 3. Skips rows where both metadata and tags are empty
 4. Merges duplicate source IDs using sequential semantics: later metadata values win, and tags are added as a de-duplicated set
 5. Uses the synchronous single-image metadata endpoint for one effective update
 6. Uses the asynchronous batch metadata endpoint for multiple effective updates
-7. Returns one status result per input image, in input order
+7. Returns one status result per input source ID, in input order
 
 The block does not send image bytes and does not create new images. It only updates existing source images. Removing metadata keys, removing tags, writing annotations, and creating images are intentionally out of scope for this workflow block.
 
@@ -82,10 +80,6 @@ class BlockManifest(WorkflowBlockManifest):
         "roboflow_core/roboflow_edit_image_metadata@v1",
         "EditImageMetadata",
     ]
-    images: Selector(kind=[IMAGE_KIND]) = Field(
-        description="Image(s) being processed. Used to align this sink with workflow batch dimensionality; image bytes are not sent to the metadata API.",
-        examples=["$inputs.image"],
-    )
     source_id: Union[str, Selector(kind=[STRING_KIND])] = Field(
         description="Roboflow source image ID to update. For batch workflows, provide one source ID per image.",
         examples=["$inputs.source_id", "source_abc123"],
@@ -112,7 +106,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
-        return ["images", "source_id", "metadata", "tags"]
+        return ["source_id", "metadata", "tags"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -142,7 +136,6 @@ class EditImageMetadataBlockV1(WorkflowBlock):
 
     def run(
         self,
-        images: Batch[WorkflowImageData],
         source_id: Batch[str],
         metadata: Optional[Batch[Optional[Dict[str, Any]]]] = None,
         tags: Optional[Batch[Optional[List[str]]]] = None,
@@ -161,12 +154,11 @@ class EditImageMetadataBlockV1(WorkflowBlock):
                     "error_status": False,
                     "message": "Sink was disabled by parameter `disable_sink`",
                 }
-                for _ in range(len(images))
+                for _ in range(len(source_id))
             ]
 
         workspace_id = get_workspace_name(api_key=self._api_key, cache=self._cache)
         updates, source_id_to_result_indices, results = build_effective_updates(
-            images_count=len(images),
             source_ids=source_id,
             metadata=metadata,
             tags=tags,
@@ -215,14 +207,14 @@ def get_workspace_name(api_key: str, cache: BaseCache) -> str:
 
 
 def build_effective_updates(
-    images_count: int,
     source_ids: Batch[str],
     metadata: Optional[Batch[Optional[Dict[str, Any]]]],
     tags: Optional[Batch[Optional[List[str]]]],
 ) -> Tuple[List[Dict[str, Any]], Dict[str, List[int]], List[Dict[str, Any]]]:
-    metadata_values = metadata or [None] * images_count
-    tag_values = tags or [None] * images_count
-    results: List[Optional[Dict[str, Any]]] = [None] * images_count
+    n = len(source_ids)
+    metadata_values = metadata or [None] * n
+    tag_values = tags or [None] * n
+    results: List[Optional[Dict[str, Any]]] = [None] * n
     updates_by_source_id: Dict[str, Dict[str, Any]] = {}
     source_id_to_result_indices: Dict[str, List[int]] = {}
 

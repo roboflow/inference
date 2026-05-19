@@ -1,8 +1,6 @@
 from unittest import mock
 from unittest.mock import MagicMock
 
-import numpy as np
-
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -12,7 +10,6 @@ from inference.core.workflows.execution_engine.core import ExecutionEngine
 WORKFLOW_WITH_EDIT_IMAGE_METADATA = {
     "version": "1.3.0",
     "inputs": [
-        {"type": "WorkflowImage", "name": "image"},
         {"type": "WorkflowBatchInput", "name": "source_id", "kind": ["string"]},
         {"type": "WorkflowParameter", "name": "metadata"},
         {"type": "WorkflowParameter", "name": "tags"},
@@ -21,7 +18,6 @@ WORKFLOW_WITH_EDIT_IMAGE_METADATA = {
         {
             "type": "roboflow_core/edit_image_metadata@v1",
             "name": "edit_metadata",
-            "images": "$inputs.image",
             "source_id": "$inputs.source_id",
             "metadata": "$inputs.metadata",
             "tags": "$inputs.tags",
@@ -44,7 +40,6 @@ def test_workflow_with_edit_image_metadata_auto_batches_scalar_metadata_and_tags
     batch_update_image_metadata_at_roboflow_mock: MagicMock,
     get_workspace_name_mock: MagicMock,
     model_manager: ModelManager,
-    dogs_image: np.ndarray,
 ) -> None:
     # given
     get_workspace_name_mock.return_value = "my-workspace"
@@ -63,7 +58,6 @@ def test_workflow_with_edit_image_metadata_auto_batches_scalar_metadata_and_tags
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": [dogs_image, dogs_image],
             "source_id": ["img-1", "img-2"],
             "metadata": {"location": "warehouse_a"},
             "tags": ["auto-labeled"],
