@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 
-from inference_server import configuration, state
+from inference_server import configuration
+from inference_server.dependencies import get_model_manager
 from inference_server.errors import error_response
+from inference_server.proxies.base import ModelManagerProxy
 
 router = APIRouter(prefix="/v2/server")
 
@@ -21,11 +22,13 @@ async def v2_health() -> Response:
 
 
 @router.get("/ready")
-async def v2_ready() -> Response:
+async def v2_ready(
+    mm: ModelManagerProxy = Depends(get_model_manager),
+) -> Response:
     """Readiness check — all preloaded models loaded and healthy."""
     try:
-        stats = await state.fetch_stats(timeout_s=3.0)
-    except (asyncio.TimeoutError, Exception):
+        stats = await mm.stats()
+    except Exception:
         return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
     preload_raw = os.environ.get(configuration.INFERENCE_PRELOAD_MODELS_ENV, "").strip()
@@ -46,11 +49,13 @@ async def v2_ready() -> Response:
 
 
 @router.get("/info")
-async def v2_info() -> Response:
+async def v2_info(
+    mm: ModelManagerProxy = Depends(get_model_manager),
+) -> Response:
     """Server information — version, loaded model count, capabilities."""
     try:
-        stats = await state.fetch_stats(timeout_s=3.0)
-    except (asyncio.TimeoutError, Exception):
+        stats = await mm.stats()
+    except Exception:
         stats = {}
 
     models = stats.get("mmp_models", {})
@@ -66,14 +71,16 @@ async def v2_info() -> Response:
 
 
 @router.get("/metrics")
-async def v2_metrics() -> Response:
+async def v2_metrics(
+    mm: ModelManagerProxy = Depends(get_model_manager),
+) -> Response:
     """JSON metrics from MMP stats snapshot.
 
     TODO: Phase 32f — add Prometheus text format option via Accept header.
     """
     try:
-        stats = await state.fetch_stats(timeout_s=3.0)
-    except (asyncio.TimeoutError, Exception):
+        stats = await mm.stats()
+    except Exception:
         return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
     return Response(content=json.dumps(stats).encode(), media_type="application/json")

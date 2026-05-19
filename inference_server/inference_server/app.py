@@ -23,7 +23,11 @@ from fastapi import FastAPI, Response
 from inference_server import configuration as _cfg
 from inference_server import state
 from inference_server.auth import validate_api_key
+from inference_server.proxies.base import ModelManagerProxy
+from inference_server.proxies.mm_wrapper import MMWrapper
+from inference_server.proxies.mmp_client import MMPClient
 from inference_server.routers import infer, v2_models, v2_server
+
 
 # ---------------------------------------------------------------------------
 # Lifespan — initialize per-process ZMQ + SHM
@@ -31,41 +35,63 @@ from inference_server.routers import infer, v2_models, v2_server
 
 
 @asynccontextmanager
-async def _lifespan(_: FastAPI):
-    # Re-read env vars set by server.py (before uvicorn forked this worker)
-    state.init_from_env()
-
+async def _lifespan(app: FastAPI):
     # Keep multipart uploads in memory — Starlette default is 1MB, which causes
     # disk rollover (write + read) for typical image uploads (2-10MB).
     from starlette.formparsers import MultiPartParser
 
     MultiPartParser.spool_max_size = _cfg.MULTIPART_SPOOL_MB * 1024 * 1024
 
-    identity = f"uv_{os.getpid()}_{uuid.uuid4().hex[:8]}".encode()
+    mode = _cfg.INFERENCE_DEPLOYMENT_MODE
+    proxy: ModelManagerProxy
 
-    state.ctx = zmq.asyncio.Context()
-    state.sock = state.ctx.socket(zmq.DEALER)
-    state.sock.setsockopt(zmq.IDENTITY, identity)
-    state.sock.setsockopt(zmq.SNDHWM, 0)
-    state.sock.setsockopt(zmq.RCVHWM, 0)
-    state.sock.setsockopt(zmq.LINGER, 0)
-    state.sock.connect(state.MMP_ADDR)
+    if mode == _cfg.MODE_BUNDLED:
+        from inference_model_manager.model_manager import ModelManager
 
-    state.shm = SharedMemory(name=state.SHM_NAME, create=False)
-    state.pending = {}
-    state.recv_task = asyncio.create_task(state.recv_loop(), name="zmq-recv")
-    state.start_pipeline_csv_writer()
+        proxy = MMWrapper(ModelManager())
+        await proxy.start()
+    elif mode == _cfg.MODE_MMP:
+        # Transitional: state.py setup is still required because routers
+        # call state.X helpers. MMPClient runs alongside; routers will
+        # migrate to it in a follow-up step, then state.py goes away.
+        state.init_from_env()
+
+        identity = f"uv_{os.getpid()}_{uuid.uuid4().hex[:8]}".encode()
+        state.ctx = zmq.asyncio.Context()
+        state.sock = state.ctx.socket(zmq.DEALER)
+        state.sock.setsockopt(zmq.IDENTITY, identity)
+        state.sock.setsockopt(zmq.SNDHWM, 0)
+        state.sock.setsockopt(zmq.RCVHWM, 0)
+        state.sock.setsockopt(zmq.LINGER, 0)
+        state.sock.connect(state.MMP_ADDR)
+        state.shm = SharedMemory(name=state.SHM_NAME, create=False)
+        state.pending = {}
+        state.recv_task = asyncio.create_task(state.recv_loop(), name="zmq-recv")
+        state.start_pipeline_csv_writer()
+
+        proxy = MMPClient()
+        await proxy.start()
+    else:
+        raise RuntimeError(
+            f"unknown {_cfg.INFERENCE_DEPLOYMENT_MODE_ENV}={mode!r} "
+            f"(expected {_cfg.MODE_BUNDLED!r} or {_cfg.MODE_MMP!r})"
+        )
+
+    app.state.model_manager = proxy
 
     yield
 
-    state.recv_task.cancel()
-    try:
-        await state.recv_task
-    except asyncio.CancelledError:
-        pass
-    state.sock.close()
-    state.ctx.term()
-    state.shm.close()
+    await proxy.shutdown()
+
+    if mode == _cfg.MODE_MMP:
+        state.recv_task.cancel()
+        try:
+            await state.recv_task
+        except asyncio.CancelledError:
+            pass
+        state.sock.close()
+        state.ctx.term()
+        state.shm.close()
 
 
 # ---------------------------------------------------------------------------

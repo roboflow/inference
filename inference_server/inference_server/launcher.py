@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import threading
 from typing import Optional, Union
 
@@ -33,8 +32,6 @@ from inference_server import configuration
 
 logger = logging.getLogger(__name__)
 
-_MODE_INPROCESS = "inprocess"
-_MODE_ORCHESTRATED = "orchestrated"
 
 
 # ---------------------------------------------------------------------------
@@ -203,17 +200,15 @@ def launch(
         ModelManager (inprocess) or LaunchHandle (orchestrated).
     """
     if mode is None:
-        mode = os.environ.get(
-            configuration.INFERENCE_DEPLOYMENT_MODE_ENV, _MODE_INPROCESS
-        )
+        mode = configuration.INFERENCE_DEPLOYMENT_MODE
 
-    if mode == _MODE_ORCHESTRATED:
+    if mode == configuration.MODE_MMP:
         return launch_orchestrated(**kwargs)
-    if mode == _MODE_INPROCESS:
+    if mode == configuration.MODE_BUNDLED:
         return launch_inprocess(
             max_pinned_memory_mb=kwargs.get("max_pinned_memory_mb", 0),
         )
     raise ValueError(
         f"Unknown deployment mode {mode!r}. "
-        f"Choose {_MODE_INPROCESS!r} or {_MODE_ORCHESTRATED!r}."
+        f"Choose {configuration.MODE_BUNDLED!r} or {configuration.MODE_MMP!r}."
     )
