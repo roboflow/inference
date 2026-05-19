@@ -384,10 +384,16 @@ def merge_crop_predictions(
                     j
                 ]  # Shape: (num_keypoints, 2)
 
-                # Vectorised offset — avoids a per-keypoint Python loop
-                kp_array = np.asarray(keypoints_xy, dtype=np.float64)
-                kp_array += np.array([x_min, y_min], dtype=np.float64)
-                keypoint_data["keypoints_xy"] = kp_array.tolist()
+                # Vectorised offset — avoids a per-keypoint Python loop.
+                # copy=True prevents mutating the source array; reshape handles
+                # edge cases where keypoints_xy arrives as a flat/empty array.
+                kp_array = np.array(keypoints_xy, dtype=np.float64, copy=True)
+                if kp_array.size == 0:
+                    keypoint_data["keypoints_xy"] = []
+                else:
+                    kp_array = kp_array.reshape(-1, 2)
+                    kp_array = kp_array + np.array([x_min, y_min], dtype=np.float64)
+                    keypoint_data["keypoints_xy"] = kp_array.tolist()
 
                 # Copy other keypoint data
                 if "keypoints_class_name" in child_pred.data:
@@ -831,6 +837,10 @@ def _merge_overlapping_masks(
         if px != py:
             parent[px] = py
 
+    # Precompute per-mask pixel counts so IoU union can be derived arithmetically
+    # (area_i + area_j - intersection) instead of materialising a full OR array.
+    mask_areas = [int(np.count_nonzero(m)) for m in masks]
+
     for i in range(n):
         mask_i = masks[i]
         for j in range(i + 1, n):
@@ -850,7 +860,8 @@ def _merge_overlapping_masks(
                 if intersection_count > 0:
                     union(i, j)
             else:
-                union_count = int(np.count_nonzero(mask_i | mask_j))
+                # Compute union via arithmetic to avoid allocating a temporary OR array
+                union_count = mask_areas[i] + mask_areas[j] - intersection_count
                 iou = intersection_count / union_count if union_count > 0 else 0.0
                 if iou >= overlap_threshold:
                     union(i, j)
@@ -959,6 +970,13 @@ def _find_overlapping_bbox_groups(
 
     Performs all intersection/IoU computations as batched numpy operations, avoiding
     per-pair Python overhead and eliminating the need for Shapely geometry objects.
+
+    This is a vectorised all-pairs broadphase: for each box it computes intersections
+    against all subsequent boxes in one numpy call. This removes per-pair Python
+    overhead and avoids Shapely geometry objects, but worst-case runtime is O(n²) in
+    the number of predictions. For typical rollup workloads (tens of detections per
+    class) this is faster than an STRtree due to lower constant overhead, but for
+    very large detection sets a spatial index would be preferable.
 
     Args:
         predictions: List of dictionaries with 'bbox' key
