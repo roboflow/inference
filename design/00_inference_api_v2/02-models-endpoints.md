@@ -57,11 +57,13 @@ curl -X POST https://serverless.roboflow.com/v2/models/run \
   --url-query 'model_id=whatever/model-id/we?can?figure-out' \
   --d @- <<'EOF'
 {
-  "image": [
-    {"type": "url", "value": "https://images.com/my-other-awesome-image.jpg"},
-    {"type": "url", "value": "https://images.com/my-other-awesome-image.jpg"}
-  ],
-  "confidence": 0.3,
+  "inputs" {
+      "image": [
+        {"type": "url", "value": "https://images.com/my-other-awesome-image.jpg"},
+        {"type": "url", "value": "https://images.com/my-other-awesome-image.jpg"}
+      ],
+      "confidence": 0.3
+    }
 }
   EOF
 ```

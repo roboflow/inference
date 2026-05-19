@@ -12,8 +12,8 @@
 ## Workflows endpoints
 * `POST /v2/workflows/run` - run workflow
 * `POST /v2/workflows/interface` - discover workflow interface
-* `POST /v2/workflows/validate` - validate workflow
-* `GET /v2/workflows/system/blocks` - describe available blocks
+* `POST /v2/workflows/validate` - validate workflow 
+* `GET /v2/workflows/system/blocks` - describe available blocks 
 * `GET /v2/workflows/system/definition-schema` - get workflow definition schema
 * `GET /v2/workflows/system/engine-versions` - get available engine versions
 
