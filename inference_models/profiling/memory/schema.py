@@ -91,9 +91,6 @@ class TensorRTMemoryProfileResult(BaseMemoryProfileResult):
     max_workspace_setting: Optional[int] = None
     num_contexts_profiled: int = Field(default=1, ge=1)
 
-    profile_engine_build_enabled: bool = False
-    peak_engine_build_bytes: Optional[int] = None
-
     tensorrt_version: Optional[str] = None
     trace_files: List[str] = Field(default_factory=list)
     nvml_sampling_interval_seconds: Optional[float] = None

@@ -392,13 +392,6 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     ),
 )
 @click.option(
-    "--profile-engine-build",
-    is_flag=True,
-    help=(
-        "Request Stage A engine-build profiling (not executed; runtime profile only)."
-    ),
-)
-@click.option(
     "--in-process",
     is_flag=True,
     help="Run in the current process (debug only; breaks isolation between scenarios).",
@@ -440,7 +433,6 @@ def main(
     onnx_nvml_sampling_interval_seconds: float,
     trt_nvml_sampling_interval_seconds: float,
     num_execution_contexts: int,
-    profile_engine_build: bool,
     in_process: bool,
     output_json: Optional[str],
 ) -> None:
@@ -502,11 +494,6 @@ def main(
             onnx_execution_providers,
         )
 
-    if profile_engine_build and backend != BackendType.TRT.value:
-        raise click.ClickException(
-            "--profile-engine-build is only valid with --backend trt."
-        )
-
     payload: Dict[str, Any] = {
         "module_name": module_name,
         "class_name": class_name,
@@ -529,7 +516,6 @@ def main(
         "onnx_nvml_sampling_interval_seconds": onnx_nvml_sampling_interval_seconds,
         "trt_nvml_sampling_interval_seconds": trt_nvml_sampling_interval_seconds,
         "num_execution_contexts": num_execution_contexts,
-        "profile_engine_build": profile_engine_build,
     }
 
     if backend == BackendType.ONNX.value:

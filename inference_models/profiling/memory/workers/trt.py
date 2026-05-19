@@ -115,7 +115,6 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         or 0.01
     )
     num_contexts_profiled = int(payload.get("num_execution_contexts") or 1)
-    profile_engine_build = bool(payload.get("profile_engine_build"))
 
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for this TensorRT memory profiler harness.")
@@ -205,11 +204,6 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
             "num_execution_contexts > 1 requested; registry from_pretrained currently "
             "creates one execution context per model instance"
         )
-    if profile_engine_build:
-        notes.append(
-            "Engine build profiling (Stage A) is not run by this harness; "
-            "prebuilt engine.plan packages use runtime profile only"
-        )
 
     result = TensorRTMemoryProfileResult(
         model_id=model_id,
@@ -230,7 +224,6 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         architecture=architecture,
         task_type=task_type,
         notes=notes,
-        profile_engine_build_enabled=profile_engine_build,
         baseline_process_gpu_bytes_nvml=baseline_process_gpu_bytes,
         idle_after_deserialize_bytes=idle_after_deserialize_bytes,
         peak_request_bytes=peak_request_bytes,
