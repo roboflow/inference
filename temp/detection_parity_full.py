@@ -1,7 +1,7 @@
 """Full coco/val2017 detection + mask parity: fused-postproc Triton path vs reference.
 
-Driven by RFDETR_TRITON_FULLPOSTPROC (true/false). The env var is read once at
-import time, so we run two subprocesses (fullpost on, fullpost off), stream
+Driven by RFDETR_TRITON_POSTPROC (true/false). The env var is read once at
+import time, so we run two subprocesses (postproc on, postproc off), stream
 per-image detections to a pickle file (one pickle.dump per record), then
 compare in lockstep.
 
@@ -24,7 +24,7 @@ PY = sys.executable
 SELF = Path(__file__).resolve()
 OUT_ON = "/tmp/det_parity_full_on.pkl"
 OUT_OFF = "/tmp/det_parity_full_off.pkl"
-# Cap images per pass: fullpost caches a per-(orig_h, orig_w) GPU buffer in
+# Cap images per pass: postproc caches a per-(orig_h, orig_w) GPU buffer in
 # _get_mask_bin_buffer, so the working set grows with distinct image sizes and
 # OOMs near ~5k images on a 14 GiB card. 1500 covers a wide variety of shapes
 # while staying well under that ceiling.
@@ -52,18 +52,18 @@ def do_run(out_path):
     from inference_models import AutoModel
     import inference_models.models.rfdetr.common as common_mod
 
-    fullpost_calls = {"count": 0}
-    original_fp = getattr(common_mod, "triton_rfdetr_fullpost", None)
+    postproc_calls = {"count": 0}
+    original_fp = getattr(common_mod, "rfdetr_triton_postproc", None)
     if original_fp is not None:
         def counting_fp(*a, **kw):
-            fullpost_calls["count"] += 1
+            postproc_calls["count"] += 1
             return original_fp(*a, **kw)
-        common_mod.triton_rfdetr_fullpost = counting_fp
+        common_mod.rfdetr_triton_postproc = counting_fp
 
-    fp_flag = os.environ.get("RFDETR_TRITON_FULLPOSTPROC", "<unset>")
+    fp_flag = os.environ.get("RFDETR_TRITON_POSTPROC", "<unset>")
     print(
-        f"[run] RFDETR_TRITON_FULLPOSTPROC={fp_flag} "
-        f"(module ready={getattr(common_mod, '_TRITON_FULLPOST_READY', False)})"
+        f"[run] RFDETR_TRITON_POSTPROC={fp_flag} "
+        f"(module ready={getattr(common_mod, '_TRITON_POSTPROC_READY', False)})"
     )
 
     paths = sorted(COCO.glob("*.jpg"))[:MAX_IMAGES]
@@ -73,7 +73,7 @@ def do_run(out_path):
     t0 = time.perf_counter()
     with open(out_path, "wb") as f:
         # placeholder header — rewritten at end
-        pickle.dump({"_kind": "header", "fullpost_calls": -1, "n_records": -1}, f)
+        pickle.dump({"_kind": "header", "postproc_calls": -1, "n_records": -1}, f)
         for idx, p in enumerate(paths):
             im = cv2.imread(str(p), cv2.IMREAD_COLOR)
             if im is None:
@@ -105,8 +105,8 @@ def do_run(out_path):
 
     # append a footer with the totals (header is ignored on read; iterator just walks records + footer)
     with open(out_path, "ab") as f:
-        pickle.dump({"_kind": "footer", "fullpost_calls": fullpost_calls["count"], "n_records": n_records}, f)
-    print(f"[run] fullpost_kernel_calls={fullpost_calls['count']}  records={n_records}  saved -> {out_path}")
+        pickle.dump({"_kind": "footer", "postproc_calls": postproc_calls["count"], "n_records": n_records}, f)
+    print(f"[run] postproc_kernel_calls={postproc_calls['count']}  records={n_records}  saved -> {out_path}")
 
 
 def iou_box(a, b):
@@ -147,8 +147,8 @@ def do_compare(on_path, off_path):
         if r_off.get("_kind") == "header":
             r_off = next(off_iter)
         if r_on.get("_kind") == "footer" or r_off.get("_kind") == "footer":
-            on_fp_calls = r_on.get("fullpost_calls", on_fp_calls)
-            off_fp_calls = r_off.get("fullpost_calls", off_fp_calls)
+            on_fp_calls = r_on.get("postproc_calls", on_fp_calls)
+            off_fp_calls = r_off.get("postproc_calls", off_fp_calls)
             break
 
         assert r_on["path"] == r_off["path"], (r_on["path"], r_off["path"])
@@ -198,14 +198,14 @@ def do_compare(on_path, off_path):
         for r in it:
             if r.get("_kind") == "footer":
                 if current_calls_attr == "on_fp_calls":
-                    on_fp_calls = r["fullpost_calls"]
+                    on_fp_calls = r["postproc_calls"]
                 else:
-                    off_fp_calls = r["fullpost_calls"]
+                    off_fp_calls = r["postproc_calls"]
 
     print()
-    print(f"==== full coco/val2017 parity: fullpost=true vs fullpost=false ({n_imgs} images) ====")
-    print(f"  fullpost calls (fp=true)     : {on_fp_calls}")
-    print(f"  fullpost calls (fp=false)    : {off_fp_calls}")
+    print(f"==== full coco/val2017 parity: postproc=true vs postproc=false ({n_imgs} images) ====")
+    print(f"  postproc calls (fp=true)     : {on_fp_calls}")
+    print(f"  postproc calls (fp=false)    : {off_fp_calls}")
     print(f"  dets fp=true / fp=false      : {tot_on} / {tot_off}")
     print(f"  matched (IoU>0.5)            : {matched} ({100*matched/max(1,tot_off):.2f}% of fp=false)")
     print(f"  count-mismatch images        : {count_mm}")
@@ -222,8 +222,8 @@ def do_compare(on_path, off_path):
     expected = n_imgs
     ok_on  = "[PASS]" if on_fp_calls  == expected else "[FAIL]"
     ok_off = "[PASS]" if off_fp_calls == 0 else "[FAIL]"
-    print(f"  {ok_on} fp=true  -> fullpost fired {on_fp_calls}/{expected}")
-    print(f"  {ok_off} fp=false -> fullpost fired {off_fp_calls} (expected 0)")
+    print(f"  {ok_on} fp=true  -> postproc fired {on_fp_calls}/{expected}")
+    print(f"  {ok_off} fp=false -> postproc fired {off_fp_calls} (expected 0)")
 
 
 def main():
@@ -243,8 +243,8 @@ def main():
 
     for fp_value, out in (("true", OUT_ON), ("false", OUT_OFF)):
         env = os.environ.copy()
-        env["RFDETR_TRITON_FULLPOSTPROC"] = fp_value
-        print(f"\n---- child: fullpost={fp_value} out={out} ----", flush=True)
+        env["RFDETR_TRITON_POSTPROC"] = fp_value
+        print(f"\n---- child: postproc={fp_value} out={out} ----", flush=True)
         subprocess.run([PY, str(SELF), "--mode", "run", "--out", out], check=True, env=env)
 
     do_compare(OUT_ON, OUT_OFF)

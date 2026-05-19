@@ -20,24 +20,24 @@ from inference_models.models.common.roboflow.post_processing import (
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 from inference_models.models.rfdetr.post_processor import select_topk_predictions
 from inference_models.utils.file_system import read_json
-from inference_models.configuration import RFDETR_TRITON_FULLPOSTPROC
+from inference_models.configuration import RFDETR_TRITON_POSTPROC
 
-if RFDETR_TRITON_FULLPOSTPROC:
+if RFDETR_TRITON_POSTPROC:
     try:
-        from inference_models.models.rfdetr.triton_fullpostproc import (
-            TRITON_AVAILABLE as _TRITON_FULLPOST_AVAILABLE,
-            triton_rfdetr_fullpost,
+        from inference_models.models.rfdetr.triton_postprocproc import (
+            TRITON_AVAILABLE as _TRITON_POSTPROC_AVAILABLE,
+            rfdetr_triton_postproc,
         )
-        _TRITON_FULLPOST_READY = _TRITON_FULLPOST_AVAILABLE and torch.cuda.is_available()
+        _TRITON_POSTPROC_READY = _TRITON_POSTPROC_AVAILABLE and torch.cuda.is_available()
     except Exception:
-        _TRITON_FULLPOST_READY = False
-        triton_rfdetr_fullpost = None
+        _TRITON_POSTPROC_READY = False
+        rfdetr_triton_postproc = None
 else:
-    _TRITON_FULLPOST_READY = False
-    triton_rfdetr_fullpost = None
+    _TRITON_POSTPROC_READY = False
+    rfdetr_triton_postproc = None
 
 
-def _fullpost_upsample_masks(
+def triton_postproc_upsample_masks(
     masks: torch.Tensor,
     survivor_q: torch.Tensor,
     inference_size_wh: Tuple[int, int],
@@ -46,7 +46,7 @@ def _fullpost_upsample_masks(
 ) -> torch.Tensor:
     """Replicate ``align_instance_segmentation_results``'s mask path
     bit-for-bit (when ``size_after_pre_processing == inference_size`` and no
-    static crop applies — both guaranteed by ``_fullpost_eligible``).
+    static crop applies — both guaranteed by ``post_triton_eligible``).
 
     Gathers surviving query rows from ``masks`` (shape ``(1, Q, mh, mw)``),
     crops the letterbox padding in mask coordinates, bilinear-resizes to
@@ -80,14 +80,19 @@ def _fullpost_upsample_masks(
     return upsampled > 0.0
 
 
-def _fullpost_eligible(
+def post_triton_eligible(
     bboxes: torch.Tensor,
+    logits: torch.Tensor,
     pre_processing_meta: List[PreProcessingMetadata],
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> bool:
-    if not _TRITON_FULLPOST_READY or not bboxes.is_cuda:
+    if not _TRITON_POSTPROC_READY:
         return False
-    if bboxes.shape[0] != 1 or len(pre_processing_meta) != 1:
+    if not bboxes.is_cuda or not logits.is_cuda:
+        return False
+    if bboxes.device != logits.device:
+        return False
+    if bboxes.shape[0] != 1 or logits.shape[0] != 1 or len(pre_processing_meta) != 1:
         return False
     meta = pre_processing_meta[0]
     if meta.nonsquare_intermediate_size is not None:
@@ -211,10 +216,10 @@ def post_process_instance_segmentation_results(
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> List[InstanceDetections]:
-    if _fullpost_eligible(bboxes, pre_processing_meta, classes_re_mapping):
+    if post_triton_eligible(bboxes, logits, pre_processing_meta, classes_re_mapping):
         meta = pre_processing_meta[0]
         thr_arg = threshold if isinstance(threshold, torch.Tensor) else float(threshold)
-        combined, survivor_idx, counter, done_event = triton_rfdetr_fullpost(
+        combined, survivor_idx, counter, done_event = rfdetr_triton_postproc(
             bboxes=bboxes,
             logits=logits,
             threshold=thr_arg,
@@ -230,7 +235,7 @@ def post_process_instance_segmentation_results(
         # cap by combined's row count (num_queries).
         n_survivors = min(int(counter.item()), combined.shape[0])
         combined_slice = combined[:n_survivors]
-        mask_bin = _fullpost_upsample_masks(
+        mask_bin = triton_postproc_upsample_masks(
             masks=masks,
             survivor_q=survivor_idx[:n_survivors],
             inference_size_wh=(meta.inference_size.width, meta.inference_size.height),
@@ -342,10 +347,10 @@ def post_process_instance_segmentation_results_to_rle_masks(
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> List[InstanceDetections]:
-    if _fullpost_eligible(bboxes, pre_processing_meta, classes_re_mapping):
+    if post_triton_eligible(bboxes, logits, pre_processing_meta, classes_re_mapping):
         meta = pre_processing_meta[0]
         thr_arg = threshold if isinstance(threshold, torch.Tensor) else float(threshold)
-        combined, survivor_idx, counter, done_event = triton_rfdetr_fullpost(
+        combined, survivor_idx, counter, done_event = rfdetr_triton_postproc(
             bboxes=bboxes,
             logits=logits,
             threshold=thr_arg,
@@ -379,7 +384,7 @@ def post_process_instance_segmentation_results_to_rle_masks(
                 )
             ]
         combined_slice = combined[:n_survivors]
-        mask_slice = _fullpost_upsample_masks(
+        mask_slice = triton_postproc_upsample_masks(
             masks=masks,
             survivor_q=survivor_idx[:n_survivors],
             inference_size_wh=(meta.inference_size.width, meta.inference_size.height),

@@ -3,7 +3,7 @@
 For the common rfdetr-seg-nano path (batch=1, no static crop, STRETCH_TO
 resize, class remapping active):
 
-  _rfdetr_fullpost_filter_kernel  (grid = num_queries * num_classes_total)
+  rfdetr_postproc_triton_kernel  (grid = num_queries * num_classes_total)
     One program per (q, c) pair: sigmoid + class remap + conf threshold +
     cxcywh->xyxy + letterbox-denormalize + clip + banker's rounding;
     atomic_add into a counter to reserve a compact output slot.
@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover
 if TRITON_AVAILABLE:
 
     @triton.jit
-    def _rfdetr_fullpost_filter_kernel(
+    def rfdetr_postproc_triton_kernel(
         logits_ptr,
         bboxes_ptr,
         threshold_ptr,
@@ -202,7 +202,7 @@ def _prepare_threshold(threshold, device: torch.device, num_classes: int):
     return cached, False
 
 
-def triton_rfdetr_fullpost(
+def rfdetr_triton_postproc(
     bboxes: torch.Tensor,
     logits: torch.Tensor,
     threshold: "torch.Tensor | float",
@@ -225,12 +225,8 @@ def triton_rfdetr_fullpost(
     ``combined[:, 4]`` holds fp32 conf as int32 bits; reinterpret on the
     host with ``.view(torch.float32)``. The mask upsample is intentionally
     left to the caller (torch ``F.interpolate``) so the result is bit-exact
-    with the non-fullpost reference path.
+    with the non-postproc reference path.
     """
-    assert TRITON_AVAILABLE, "triton not available"
-    assert bboxes.is_cuda and logits.is_cuda
-    assert bboxes.shape[0] == 1 and logits.shape[0] == 1, "batch=1 only"
-
     device = bboxes.device
     num_queries, num_classes_total = logits.shape[1], logits.shape[2]
 
@@ -253,8 +249,10 @@ def triton_rfdetr_fullpost(
     pad_l, pad_t, _, _ = pad_ltrb
     sw, sh = scale_wh
     orig_w, orig_h = orig_size_wh
+    per_class_constexpr = 1 if per_class else 0
+    has_remap_constexpr = 1 if has_remap else 0
 
-    _rfdetr_fullpost_filter_kernel[(num_queries, num_classes_total)](
+    rfdetr_postproc_triton_kernel[(num_queries, num_classes_total)](
         logits_2d,
         bboxes_2d,
         thr_tensor,
@@ -274,8 +272,8 @@ def triton_rfdetr_fullpost(
         int(orig_h),
         logits_2d.stride(0),
         bboxes_2d.stride(0),
-        PER_CLASS=1 if per_class else 0,
-        HAS_REMAPPING=1 if has_remap else 0,
+        PER_CLASS=tl.constexpr(per_class_constexpr),
+        HAS_REMAPPING=tl.constexpr(has_remap_constexpr),
     )
 
     done_event = torch.cuda.Event()
