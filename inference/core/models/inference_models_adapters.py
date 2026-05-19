@@ -326,8 +326,6 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
     ) -> List[InstanceSegmentationInferenceResponse]:
         return_in_rle = kwargs.get("response_mask_format") == "rle"
         mapped_kwargs = self.map_inference_kwargs(kwargs)
-        if "response_mask_format" in kwargs:
-            mapped_kwargs["response_mask_format"] = kwargs["response_mask_format"]
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
         )
