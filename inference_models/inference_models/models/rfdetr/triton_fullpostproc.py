@@ -541,7 +541,7 @@ def _get_scratch_buffers(
         mask_bin = torch.empty(
             (num_queries, orig_h, orig_w), dtype=torch.uint8, device=device
         )
-        counter = torch.zeros((1,), dtype=torch.int32, device=device)
+        counter = torch.empty((1,), dtype=torch.int32, device=device)
         cached = (shape, combined, mask_bin, counter)
         _SCRATCH_CACHE[device] = cached
     _, combined, mask_bin, counter = cached
@@ -663,7 +663,6 @@ def rfdetr_triton_postproc(
         orig_w=orig_w,
         device=device,
     )
-    counter.zero_()
     if emit_rle:
         rle_counts, rle_lengths_scratch = _get_rle_buffers(
             num_queries=num_queries,
