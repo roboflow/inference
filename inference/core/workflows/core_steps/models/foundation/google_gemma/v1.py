@@ -116,6 +116,8 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Google Gemma API",
             "version": "v1",
+            "deprecated": True,
+            "deprecation_message": "Use the Google Gemma v2 block, which adds a Roboflow-managed API key option, user-selectable privacy controls, and the same OpenRouter passthrough capabilities.",
             "short_description": "Run Google's Gemma model with vision capabilities via OpenRouter.",
             "long_description": LONG_DESCRIPTION,
             "license": "Gemma Terms of Use",
