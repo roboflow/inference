@@ -385,6 +385,7 @@ def post_process_instance_segmentation_results_to_rle_masks(
             mask=instances_masks,
         )
         if not emit_in_kernel_rle:
+            detections.__dict__["_combined_gpu"] = combined_slice
             detections.__dict__["_mask_gpu"] = mask_bin[:n_survivors].view(torch.bool)
             detections.__dict__["_postproc_done_event"] = done_event
         return [detections]
