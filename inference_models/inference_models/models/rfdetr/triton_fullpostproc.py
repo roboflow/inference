@@ -301,13 +301,10 @@ if TRITON_AVAILABLE:
                         mask=tile_mask,
                         other=0.0,
                     )
+                    interp_top = wx_a[None, :] * m00 + wx_b[None, :] * m01
+                    interp_bottom = wx_a[None, :] * m10 + wx_b[None, :] * m11
                     bits = (
-                        (
-                            (wy_a[:, None] * wx_a[None, :]) * m00
-                            + (wy_a[:, None] * wx_b[None, :]) * m01
-                            + (wy_b[:, None] * wx_a[None, :]) * m10
-                            + (wy_b[:, None] * wx_b[None, :]) * m11
-                        )
+                        (wy_a[:, None] * interp_top + wy_b[:, None] * interp_bottom)
                         > 0.0
                     ).to(tl.int32)
 
@@ -470,12 +467,9 @@ if TRITON_AVAILABLE:
                         mask=tile_mask,
                         other=0.0,
                     )
-                    interp = (
-                        (wy_a[:, None] * wx_a[None, :]) * m00
-                        + (wy_a[:, None] * wx_b[None, :]) * m01
-                        + (wy_b[:, None] * wx_a[None, :]) * m10
-                        + (wy_b[:, None] * wx_b[None, :]) * m11
-                    )
+                    interp_top = wx_a[None, :] * m00 + wx_b[None, :] * m01
+                    interp_bottom = wx_a[None, :] * m10 + wx_b[None, :] * m11
+                    interp = wy_a[:, None] * interp_top + wy_b[:, None] * interp_bottom
                     bits = (interp > 0.0).to(tl.int32)
                     if PACK_DENSE_MASKS:
                         packed = tl.sum(
@@ -527,20 +521,55 @@ def _build_resize_axis_tables(
     device: torch.device,
     horizontal: bool,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Returns 2-tap resize tables without invoking CUDA bootstrap kernels."""
+    """Returns exact 2-tap tables extracted from the reference CUDA resize op."""
 
-    del horizontal
-    coords = torch.arange(out_size, dtype=torch.float64)
-    scale = torch.tensor(float(in_size) / float(out_size), dtype=torch.float32).item()
-    src = (coords + 0.5) * scale - 0.5
-    src.clamp_(0.0, float(in_size - 1))
-    lo = torch.floor(src).to(torch.int32)
-    hi = torch.clamp(lo + 1, max=in_size - 1)
-    frac = src - lo.to(torch.float64)
-    w_lo = (1.0 - frac).to(torch.float32)
-    w_hi = frac.to(torch.float32)
-    indices = torch.stack((lo, hi), dim=1).contiguous()
-    weights = torch.stack((w_lo, w_hi), dim=1).contiguous()
+    basis = torch.eye(in_size, dtype=torch.float32, device=device)
+    if horizontal:
+        resized = torch.nn.functional.interpolate(
+            basis[:, None, None, :],
+            size=(1, out_size),
+            mode="bilinear",
+            align_corners=False,
+            antialias=True,
+        )[:, 0, 0, :]
+    else:
+        resized = torch.nn.functional.interpolate(
+            basis[:, None, :, None],
+            size=(out_size, 1),
+            mode="bilinear",
+            align_corners=False,
+            antialias=True,
+        )[:, 0, :, 0]
+
+    resized_cpu = resized.cpu()
+    indices = torch.empty((out_size, 2), dtype=torch.int32)
+    weights = torch.zeros((out_size, 2), dtype=torch.float32)
+    for out_idx in range(out_size):
+        support = torch.nonzero(
+            resized_cpu[:, out_idx].abs() > 0, as_tuple=False
+        ).flatten()
+        if support.numel() == 0:
+            raise ValueError(
+                f"Reference bilinear AA resize produced no support for axis "
+                f"{out_idx} of shape {in_size}->{out_size}."
+            )
+        if support.numel() > 2:
+            raise ValueError(
+                "RF-DETR Triton fullpost fast path only supports 2-tap "
+                "upsample resize tables, but the reference resize produced "
+                f"{support.numel()} taps for shape {in_size}->{out_size}."
+            )
+
+        idx_a = int(support[0])
+        indices[out_idx, 0] = idx_a
+        weights[out_idx, 0] = resized_cpu[idx_a, out_idx]
+        if support.numel() == 1:
+            indices[out_idx, 1] = idx_a
+            weights[out_idx, 1] = 0.0
+        else:
+            idx_b = int(support[1])
+            indices[out_idx, 1] = idx_b
+            weights[out_idx, 1] = resized_cpu[idx_b, out_idx]
     return indices.to(device=device, non_blocking=True), weights.to(
         device=device, non_blocking=True
     )
@@ -551,9 +580,9 @@ def _get_resize_tables(
     orig_w: int,
     device: torch.device,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    cached = _AA_RESIZE_CACHE.get(device)
-    shape = (orig_h, orig_w)
-    if cached is None or cached[0] != shape:
+    key = (device, orig_h, orig_w)
+    cached = _AA_RESIZE_CACHE.get(key)
+    if cached is None:
         y_indices, y_weights = _build_resize_axis_tables(
             in_size=FASTPATH_MASK_H,
             out_size=orig_h,
@@ -566,9 +595,9 @@ def _get_resize_tables(
             device=device,
             horizontal=True,
         )
-        cached = (shape, y_indices, y_weights, x_indices, x_weights)
-        _AA_RESIZE_CACHE[device] = cached
-    _, y_indices, y_weights, x_indices, x_weights = cached
+        cached = (y_indices, y_weights, x_indices, x_weights)
+        _AA_RESIZE_CACHE[key] = cached
+    y_indices, y_weights, x_indices, x_weights = cached
     return y_indices, y_weights, x_indices, x_weights
 
 
