@@ -18,6 +18,7 @@ hot path remains a single Triton launch without any CUDA bootstrap probes.
 Host-side work is limited to slicing the preallocated buffers once the kernel
 completes and wrapping them in ``InstanceDetections`` / RLE containers.
 """
+
 from typing import Optional, Tuple
 
 import torch
@@ -167,8 +168,15 @@ if TRITON_AVAILABLE:
         if pid_det == 0:
             tl.store(counter_ptr, keep_count)
 
+        base = pid_det * 6
         active = pid_det < keep_count
         if not active:
+            tl.store(combined_out_ptr + base + 0, 0)
+            tl.store(combined_out_ptr + base + 1, 0)
+            tl.store(combined_out_ptr + base + 2, 0)
+            tl.store(combined_out_ptr + base + 3, 0)
+            tl.store(combined_out_ptr + base + 4, 0)
+            tl.store(combined_out_ptr + base + 5, -1)
             return
 
         cx_pct = tl.load(bboxes_ptr + selected_q * bboxes_stride_q + 0)
@@ -205,7 +213,6 @@ if TRITON_AVAILABLE:
         conf_bits_out = selected_conf.to(tl.float32, bitcast=False).to(
             tl.int32, bitcast=True
         )
-        base = pid_det * 6
         tl.store(combined_out_ptr + base + 0, x1_i)
         tl.store(combined_out_ptr + base + 1, y1_i)
         tl.store(combined_out_ptr + base + 2, x2_i)
@@ -238,7 +245,9 @@ if TRITON_AVAILABLE:
                     x_weights_ptr + x_table_offset + 1, mask=x_mask, other=0.0
                 )
                 col_base = (
-                    rle_counts_ptr + pid_det * rle_counts_stride_q + x * counts_stride_col
+                    rle_counts_ptr
+                    + pid_det * rle_counts_stride_q
+                    + x * counts_stride_col
                 )
                 run_length_vec = tl.zeros((RLE_TILE_W,), dtype=tl.int32)
                 prev_value_vec = tl.zeros((RLE_TILE_W,), dtype=tl.int32)
@@ -306,7 +315,9 @@ if TRITON_AVAILABLE:
                         bit_row = tl.sum(bits * row_mask, axis=0)
                         update_mask = x_mask & valid_row
                         change_row = update_mask & (bit_row != prev_value_vec)
-                        tl.store(col_base + counts_idx_vec, run_length_vec, mask=change_row)
+                        tl.store(
+                            col_base + counts_idx_vec, run_length_vec, mask=change_row
+                        )
                         counts_idx_vec += change_row.to(tl.int32)
                         prev_value_vec = tl.where(update_mask, bit_row, prev_value_vec)
                         run_length_vec = tl.where(
@@ -382,7 +393,9 @@ if TRITON_AVAILABLE:
                         final_len + copy_len,
                     )
                     final_len = tl.where(valid_col, updated_final_len, final_len)
-                    prev_end_value = tl.where(valid_col, (col_len - 1) & 1, prev_end_value)
+                    prev_end_value = tl.where(
+                        valid_col, (col_len - 1) & 1, prev_end_value
+                    )
 
             tl.store(lengths_row_ptr + 0, final_len)
         else:
@@ -469,6 +482,7 @@ if TRITON_AVAILABLE:
 
 _THRESHOLD_CACHE: dict = {}
 _EMPTY_INT32 = torch.empty((1,), dtype=torch.int32)
+_EMPTY_INT32_DEVICE_CACHE: dict = {}
 _SCRATCH_CACHE: dict = {}
 _CLASS_MAPPING_INT32_CACHE: dict = {}
 _AA_RESIZE_CACHE: dict = {}
@@ -485,9 +499,7 @@ def _build_resize_axis_tables(
 
     del horizontal
     coords = torch.arange(out_size, dtype=torch.float64)
-    scale = torch.tensor(
-        float(in_size) / float(out_size), dtype=torch.float32
-    ).item()
+    scale = torch.tensor(float(in_size) / float(out_size), dtype=torch.float32).item()
     src = (coords + 0.5) * scale - 0.5
     src.clamp_(0.0, float(in_size - 1))
     lo = torch.floor(src).to(torch.int32)
@@ -558,7 +570,9 @@ def _get_rle_buffers(
     max_counts = orig_w * (orig_h + 1)
     shape = (num_queries, max_counts, orig_w)
     if cached is None or cached[0] != shape:
-        counts = torch.empty((num_queries, max_counts), dtype=torch.int32, device=device)
+        counts = torch.empty(
+            (num_queries, max_counts), dtype=torch.int32, device=device
+        )
         lengths = torch.empty((num_queries, orig_w), dtype=torch.int32, device=device)
         cached = (shape, counts, lengths)
         _RLE_SCRATCH_CACHE[device] = cached
@@ -600,6 +614,14 @@ def _prepare_threshold(threshold, device: torch.device, num_classes: int):
         cached = torch.tensor([float(threshold)], dtype=torch.float32, device=device)
         _THRESHOLD_CACHE[key] = cached
     return cached, False
+
+
+def _get_empty_int32_on_device(device: torch.device) -> torch.Tensor:
+    cached = _EMPTY_INT32_DEVICE_CACHE.get(device)
+    if cached is None:
+        cached = torch.empty((1,), dtype=torch.int32, device=device)
+        _EMPTY_INT32_DEVICE_CACHE[device] = cached
+    return cached
 
 
 def rfdetr_triton_postproc(
@@ -680,11 +702,11 @@ def rfdetr_triton_postproc(
         cmap = _get_class_mapping_int32(class_mapping, device)
     else:
         has_remap = False
-        cmap = _EMPTY_INT32.to(device, non_blocking=True)
+        cmap = _get_empty_int32_on_device(device)
 
     _ = inference_size_wh
     _ = scale_wh
-    dummy_int32 = _EMPTY_INT32.to(device, non_blocking=True)
+    dummy_int32 = _get_empty_int32_on_device(device)
 
     rfdetr_fullpostproc_triton_kernel[(num_queries,)](
         logits_2d,

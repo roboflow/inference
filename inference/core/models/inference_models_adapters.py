@@ -9,21 +9,6 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 from pycocotools import mask as mask_utils
 
-# Pinned host buffers for async DtoH on the full-postproc Triton fast path.
-# Keyed by (name, dtype); reused across frames provided the cached buffer is
-# at least as large as the requested shape in every dimension.
-PINNED_HOST_BUFFERS: dict = {}
-
-
-def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
-    key = (name, dtype)
-    buf = PINNED_HOST_BUFFERS.get(key)
-    if buf is not None and all(buf.shape[i] >= shape[i] for i in range(len(shape))):
-        return buf[tuple(slice(0, s) for s in shape)]
-    buf = torch.empty(shape, dtype=dtype, pin_memory=True)
-    PINNED_HOST_BUFFERS[key] = buf
-    return buf
-
 from inference.core.entities.requests import (
     ClassificationInferenceRequest,
     InferenceRequest,
@@ -101,6 +86,21 @@ DEFAULT_COLOR_PALETTE = [
     "#FF97CA",
     "#FF39C9",
 ]
+
+# Pinned host buffers for async DtoH on the full-postproc Triton fast path.
+# Keyed by (name, dtype); reused across frames provided the cached buffer is
+# at least as large as the requested shape in every dimension.
+PINNED_HOST_BUFFERS: dict = {}
+
+
+def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
+    key = (name, dtype)
+    buf = PINNED_HOST_BUFFERS.get(key)
+    if buf is not None and all(buf.shape[i] >= shape[i] for i in range(len(shape))):
+        return buf[tuple(slice(0, s) for s in shape)]
+    buf = torch.empty(shape, dtype=dtype, pin_memory=True)
+    PINNED_HOST_BUFFERS[key] = buf
+    return buf
 
 
 class InferenceModelsObjectDetectionAdapter(Model):
@@ -326,6 +326,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
     ) -> List[InstanceSegmentationInferenceResponse]:
         return_in_rle = kwargs.get("response_mask_format") == "rle"
         mapped_kwargs = self.map_inference_kwargs(kwargs)
+        mapped_kwargs["defer_count_to_adapter"] = not return_in_rle
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
         )
@@ -338,6 +339,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             combined_gpu = getattr(det, "_combined_gpu", None)
             mask_gpu = getattr(det, "_mask_gpu", None)
             mask_cpu = getattr(det, "_mask_cpu", None)
+            defer_count_to_adapter = getattr(det, "_defer_count_to_adapter", False)
             done_event = getattr(det, "_postproc_done_event", None)
             if (
                 not return_in_rle
@@ -348,57 +350,99 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 device = mask_gpu.device
                 stream = torch.cuda.current_stream(device)
                 done_event.wait(stream)
-                n_survivors = int(det.xyxy.shape[0])
 
-                if n_survivors == 0:
-                    xyxy = np.empty((0, 4), dtype=np.int32)
-                    confs = np.empty((0,), dtype=np.float32)
-                    class_ids = np.empty((0,), dtype=np.int32)
-                    polys_or_rles = []
-                else:
-                    mask_slice = mask_gpu[:n_survivors]
-                    mask_host = get_pinned_buffer(
-                        "mask", tuple(mask_slice.shape), mask_slice.dtype
+                if (
+                    defer_count_to_adapter
+                    and isinstance(combined_gpu, torch.Tensor)
+                    and combined_gpu.is_cuda
+                ):
+                    combined_host = get_pinned_buffer(
+                        "combined_full",
+                        tuple(combined_gpu.shape),
+                        combined_gpu.dtype,
                     )
-                    if (
-                        isinstance(combined_gpu, torch.Tensor)
-                        and combined_gpu.is_cuda
-                        and tuple(combined_gpu.shape)
-                        == (n_survivors, det.xyxy.shape[1] + 2)
-                    ):
-                        combined_slice = combined_gpu[:n_survivors]
-                        combined_host = get_pinned_buffer(
-                            "combined",
-                            tuple(combined_slice.shape),
-                            combined_slice.dtype,
-                        )
-                        combined_host.copy_(combined_slice, non_blocking=True)
-                        mask_host.copy_(mask_slice, non_blocking=True)
-                        stream.synchronize()
-                        combined_np = combined_host.numpy()
-                        xyxy = combined_np[:, :4]
-                        confs = combined_np[:, 4].view(np.float32)
-                        class_ids = combined_np[:, 5]
-                        polys_or_rles = masks2poly(mask_host.numpy())
+                    combined_host.copy_(combined_gpu, non_blocking=True)
+                    stream.synchronize()
+                    combined_np = combined_host.numpy()
+                    class_column = combined_np[:, 5]
+                    inactive_indices = np.flatnonzero(class_column < 0)
+                    n_survivors = (
+                        int(inactive_indices[0])
+                        if inactive_indices.size > 0
+                        else int(class_column.shape[0])
+                    )
+                    if n_survivors == 0:
+                        xyxy = np.empty((0, 4), dtype=np.int32)
+                        confs = np.empty((0,), dtype=np.float32)
+                        class_ids = np.empty((0,), dtype=np.int32)
+                        polys_or_rles = []
                     else:
-                        xyxy_host = get_pinned_buffer(
-                            "xyxy", tuple(det.xyxy.shape), det.xyxy.dtype
+                        combined_slice = combined_np[:n_survivors]
+                        mask_slice = mask_gpu[:n_survivors]
+                        mask_host = get_pinned_buffer(
+                            "mask", tuple(mask_slice.shape), mask_slice.dtype
                         )
-                        conf_host = get_pinned_buffer(
-                            "conf", tuple(det.confidence.shape), det.confidence.dtype
-                        )
-                        class_host = get_pinned_buffer(
-                            "class_id", tuple(det.class_id.shape), det.class_id.dtype
-                        )
-                        xyxy_host.copy_(det.xyxy, non_blocking=True)
-                        conf_host.copy_(det.confidence, non_blocking=True)
-                        class_host.copy_(det.class_id, non_blocking=True)
                         mask_host.copy_(mask_slice, non_blocking=True)
                         stream.synchronize()
-                        xyxy = xyxy_host.numpy()
-                        confs = conf_host.numpy()
-                        class_ids = class_host.numpy()
+                        xyxy = combined_slice[:, :4]
+                        confs = combined_slice[:, 4].view(np.float32)
+                        class_ids = combined_slice[:, 5]
                         polys_or_rles = masks2poly(mask_host.numpy())
+                else:
+                    n_survivors = int(det.xyxy.shape[0])
+                    if n_survivors == 0:
+                        xyxy = np.empty((0, 4), dtype=np.int32)
+                        confs = np.empty((0,), dtype=np.float32)
+                        class_ids = np.empty((0,), dtype=np.int32)
+                        polys_or_rles = []
+                    else:
+                        mask_slice = mask_gpu[:n_survivors]
+                        mask_host = get_pinned_buffer(
+                            "mask", tuple(mask_slice.shape), mask_slice.dtype
+                        )
+                        if (
+                            isinstance(combined_gpu, torch.Tensor)
+                            and combined_gpu.is_cuda
+                            and tuple(combined_gpu.shape)
+                            == (n_survivors, det.xyxy.shape[1] + 2)
+                        ):
+                            combined_slice = combined_gpu[:n_survivors]
+                            combined_host = get_pinned_buffer(
+                                "combined",
+                                tuple(combined_slice.shape),
+                                combined_slice.dtype,
+                            )
+                            combined_host.copy_(combined_slice, non_blocking=True)
+                            mask_host.copy_(mask_slice, non_blocking=True)
+                            stream.synchronize()
+                            combined_np = combined_host.numpy()
+                            xyxy = combined_np[:, :4]
+                            confs = combined_np[:, 4].view(np.float32)
+                            class_ids = combined_np[:, 5]
+                            polys_or_rles = masks2poly(mask_host.numpy())
+                        else:
+                            xyxy_host = get_pinned_buffer(
+                                "xyxy", tuple(det.xyxy.shape), det.xyxy.dtype
+                            )
+                            conf_host = get_pinned_buffer(
+                                "conf",
+                                tuple(det.confidence.shape),
+                                det.confidence.dtype,
+                            )
+                            class_host = get_pinned_buffer(
+                                "class_id",
+                                tuple(det.class_id.shape),
+                                det.class_id.dtype,
+                            )
+                            xyxy_host.copy_(det.xyxy, non_blocking=True)
+                            conf_host.copy_(det.confidence, non_blocking=True)
+                            class_host.copy_(det.class_id, non_blocking=True)
+                            mask_host.copy_(mask_slice, non_blocking=True)
+                            stream.synchronize()
+                            xyxy = xyxy_host.numpy()
+                            confs = conf_host.numpy()
+                            class_ids = class_host.numpy()
+                            polys_or_rles = masks2poly(mask_host.numpy())
             elif not return_in_rle and isinstance(mask_cpu, np.ndarray):
                 xyxy = det.xyxy.detach().cpu().numpy()
                 confs = det.confidence.detach().cpu().numpy()
