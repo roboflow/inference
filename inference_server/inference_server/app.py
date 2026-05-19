@@ -10,18 +10,12 @@ Per-process state (ZMQ, SHM, protocol helpers) lives in state.py.
 
 from __future__ import annotations
 
-import asyncio
 import os
-import uuid
 from contextlib import asynccontextmanager
-from multiprocessing.shared_memory import SharedMemory
 
-import zmq
-import zmq.asyncio
 from fastapi import FastAPI, Response
 
 from inference_server import configuration as _cfg
-from inference_server import state
 from inference_server.auth import validate_api_key
 from inference_server.proxies.base import ModelManagerProxy
 from inference_server.proxies.mm_wrapper import MMWrapper
@@ -49,49 +43,20 @@ async def _lifespan(app: FastAPI):
         from inference_model_manager.model_manager import ModelManager
 
         proxy = MMWrapper(ModelManager())
-        await proxy.start()
     elif mode == _cfg.MODE_MMP:
-        # Transitional: state.py setup is still required because routers
-        # call state.X helpers. MMPClient runs alongside; routers will
-        # migrate to it in a follow-up step, then state.py goes away.
-        state.init_from_env()
-
-        identity = f"uv_{os.getpid()}_{uuid.uuid4().hex[:8]}".encode()
-        state.ctx = zmq.asyncio.Context()
-        state.sock = state.ctx.socket(zmq.DEALER)
-        state.sock.setsockopt(zmq.IDENTITY, identity)
-        state.sock.setsockopt(zmq.SNDHWM, 0)
-        state.sock.setsockopt(zmq.RCVHWM, 0)
-        state.sock.setsockopt(zmq.LINGER, 0)
-        state.sock.connect(state.MMP_ADDR)
-        state.shm = SharedMemory(name=state.SHM_NAME, create=False)
-        state.pending = {}
-        state.recv_task = asyncio.create_task(state.recv_loop(), name="zmq-recv")
-        state.start_pipeline_csv_writer()
-
         proxy = MMPClient()
-        await proxy.start()
     else:
         raise RuntimeError(
             f"unknown {_cfg.INFERENCE_DEPLOYMENT_MODE_ENV}={mode!r} "
             f"(expected {_cfg.MODE_BUNDLED!r} or {_cfg.MODE_MMP!r})"
         )
 
+    await proxy.start()
     app.state.model_manager = proxy
 
     yield
 
     await proxy.shutdown()
-
-    if mode == _cfg.MODE_MMP:
-        state.recv_task.cancel()
-        try:
-            await state.recv_task
-        except asyncio.CancelledError:
-            pass
-        state.sock.close()
-        state.ctx.term()
-        state.shm.close()
 
 
 # ---------------------------------------------------------------------------

@@ -92,11 +92,21 @@ class ModelManagerProxy(Protocol):
         instance: str = "",
         params: Optional[dict] = None,
         request: Optional[Request] = None,
+        raw_pickle: bool = False,
     ) -> Any:
-        """Run inference on a single image. Returns the raw prediction
-        object emitted by the backend model (e.g. `Detections`,
-        `ClassificationPrediction`, str for text models, np.ndarray for
-        embeddings). The framework's output_serializer dispatches on type.
+        """Run inference on a single image.
+
+        Returns the typed prediction object emitted by the backend model
+        (e.g. `Detections`, `ClassificationPrediction`, str for text models,
+        np.ndarray for embeddings). The framework's output_serializer
+        dispatches on type.
+
+        `raw_pickle=True` requests raw pickle bytes instead of the typed
+        object. Used by the fast binary `/infer` endpoint that returns
+        the result as `application/octet-stream`. In MMP mode this skips
+        a `pickle.loads` round-trip (worker already pickled the result);
+        in bundled mode the wrapper calls `pickle.dumps` once on the
+        typed result. Either way, exactly one pickle pass occurs.
 
         Batch is handled by the framework fanning out N concurrent `infer`
         calls; the proxy stays single-image.
