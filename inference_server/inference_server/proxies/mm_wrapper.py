@@ -1,7 +1,7 @@
 """MMWrapper — ModelManagerProxy impl that wraps a ModelManager in-process.
 
-Used in `inprocess` deployment mode (Workflows / InferencePipeline / dev).
-No SHM, no ZMQ. Calls `inference_model_manager.ModelManager` methods directly.
+Used in `bundled` deployment mode. No SHM, no ZMQ. Calls
+`inference_model_manager.ModelManager` methods directly.
 
 Sync ModelManager methods (load / unload / stats) are wrapped via
 `run_in_executor` so the proxy interface stays async on both impls
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import pickle
 from typing import Any, Optional
 
 from fastapi import Request
@@ -100,15 +101,19 @@ class MMWrapper:
         instance: str = "",
         params: Optional[dict] = None,
         request: Optional[Request] = None,
+        raw_pickle: bool = False,
     ) -> Any:
         # `instance` and `request` are ignored in-process: no multi-instance
         # routing (single ModelManager), no client-disconnect race
         # (process_async runs in executor; cancellation propagates via task).
         call_kwargs = dict(params) if params else {}
         call_kwargs["images"] = image
-        return await self.manager.process_async(
+        prediction = await self.manager.process_async(
             model_id, task=task, **call_kwargs
         )
+        if raw_pickle:
+            return pickle.dumps(prediction)
+        return prediction
 
     async def stats(self) -> dict:
         return await asyncio.get_running_loop().run_in_executor(
