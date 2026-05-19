@@ -396,9 +396,83 @@ Details here - to be agreed.
 
 ## GET `/v2/models/interface`
 
-Endpoint to run get model interface. This endpoint should be used by client to discover:
+Endpoint to run get model interface. This endpoint is supposed to help users understanding the format of specific model
+inputs / outputs, given we do have a single endpoint to run predictions. 
 
-* all parameters influencing predictions, and their accepted formats and defaults
-* response formats (different options available, human- / agent- understandable description and schema definition)
-* compatibility with the server (flag to tell if current setup is able to run the model)
-* to be decided - do we want to provide here (maybe optional) additional information about model - like available model packages (seems resonable when we want to let people select them) - **alternative: additional endpoint regarding model info or rename of endpoint to match semantics of the operation**
+We are not able to rely on Swagger, since our contract is dynamic - so the proposed solution is a hybrid approach, where
+part of endpoint interface is fixed across models (representation of specific data types, general formats of requests 
+and responses, ways of shipping certain information in request). The interface discovery should help clients:
+
+* understand what are parameters of the model and how to use them
+
+* build custom clients on their own (would be great if fully possible using coding agents).
+
+
+Proposed response format is the following:
+```json
+{ 
+  "type": "roboflow-inference-server-model-interface-v1",
+  "control_parameters": {
+    "model_id": "...",
+    "model_package_id": "..."
+  },
+  "request_formats": {
+    "query_params_major": {
+      "description": "Explain how params can be used to specify input",
+      "technical_details": "..."
+    },
+    "json_payload": {
+       "description": "Explain how params can be used to specify input",
+        "technical_details": "..."
+    },
+    "multipart_request": {
+       "description": "Explain how params can be used to specify input",
+        "technical_details": "..."
+    }
+  },
+  "model_inputs": {
+    "name": {
+      "description": "human-level description of the parameter",
+      "type": "identifier-of-the-type",
+      "representation": [
+        {"$ref": "#/definitions/myElement", "relevant_request_formats": ["json_payload", "multipart_request"]}
+      ]
+    }
+  },
+  "model_outputs": {
+    "name": {
+      "description": "human-level description of the parameter",
+      "type": "identifier-of-the-type",
+      "representation": [
+        {"$ref": "#/definitions/myElement", "response_style": "compact", "response_format": "json"}
+      ]
+    }
+  },
+  "definitions": {
+    "ref-id": "swagger object definition - used to provide representation of data, referred elsewhere in the payload via $ref: '#/definitions/myElement'"  
+  }
+}
+
+
+```
+
+Additionally, GET `/v2/models/interface` should support query params:
+* `model_id` - provides model identifier, url-encoded if needed (required)
+* `response_style` (optional)
+* `response_format`
+* `request_format`
+to filter out pieces not relevant for client.
+
+
+Now - since this is a custom format of API description we need to figure out how best to build the representation 
+server side. Since the majority of schema is fixed and can be constructed by server framework, we can provide 
+helper functions to make that happened - what is important is how to easily allow per-model type declaration of 
+the contract for anyone contributing to the server (without hardening the entry barer for contribution).
+
+Proposition is as follows:
+* define set of known types as python constants (being objects defining descriptions and swagger defs)
+* define mappings of those types into inputs and outputs representations, such that those can be generated in the fly once declared
+* let people use those definitions to effectively build mapping between input/output name and type
+
+
+

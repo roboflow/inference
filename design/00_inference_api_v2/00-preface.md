@@ -13,7 +13,7 @@ Current HTTP API has grown organically (to 60+ endpoints) has grown organically 
 * **Coexistence** - `v2` mounts alongside `v1` under a `/v2` prefix; `v1` remains for backward compatibility during migration.
 
 ## Authorization
-We wnat to standardise auth such that it's both secure and usable w/o body parsing - hence standart bearer token auth is proposed.
+We want to standardise auth such that it's both secure and usable w/o body parsing - hence standart bearer token auth is proposed.
 
 ```
 Authorization: Bearer <api_key>
