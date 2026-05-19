@@ -1,7 +1,6 @@
 """MMPClient — ZMQ DEALER + SHMPool client to ModelManagerProcess.
 
-Encapsulates the FastAPI-worker-side state currently held as module globals
-in `inference_server.state`:
+Owns the FastAPI-worker-side connection state:
   - DEALER socket connected to MMP ROUTER
   - SHMPool attach by name
   - `_pending: dict[req_id, asyncio.Future]` + recv-loop task

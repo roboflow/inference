@@ -1,24 +1,20 @@
 """Integration tests for v2 server endpoints with real MMP.
 
-Starts MMP in a background thread, manually inits state module globals
-(simulating what lifespan does), then uses httpx AsyncClient as ASGI transport.
+Starts MMP in a background thread, constructs an MMPClient against it and
+attaches to app.state, then uses httpx AsyncClient as ASGI transport.
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 import threading
-import uuid
-from multiprocessing.shared_memory import SharedMemory
 
 import httpx
 import pytest
 import pytest_asyncio
-import zmq
-import zmq.asyncio
 
 from inference_model_manager.model_manager_process import ModelManagerProcess
+from inference_server.proxies.mmp_client import MMPClient
 
 _TEST_INPUT_MB = 0.1
 _TIMEOUT_S = 5.0
@@ -56,29 +52,18 @@ def mmp_harness():
 
 @pytest_asyncio.fixture()
 async def client(mmp_harness):
-    """Async httpx client with manually initialized state globals."""
+    """Async httpx client with an MMPClient attached to app.state."""
     import inference_server.app as app_mod
-    import inference_server.state as st
 
     app_mod._DEBUG_BENCHMARK_MODE = True
 
-    # Manually init state globals (same as lifespan)
-    identity = f"test_{os.getpid()}_{uuid.uuid4().hex[:8]}".encode()
-    ctx = zmq.asyncio.Context()
-    sock = ctx.socket(zmq.DEALER)
-    sock.setsockopt(zmq.IDENTITY, identity)
-    sock.setsockopt(zmq.SNDHWM, 0)
-    sock.setsockopt(zmq.RCVHWM, 0)
-    sock.setsockopt(zmq.LINGER, 0)
-    sock.connect(mmp_harness.addr)
-
-    shm = SharedMemory(name=mmp_harness.shm_name, create=False)
-
-    st.ctx = ctx
-    st.sock = sock
-    st.shm = shm
-    st.pending = {}
-    st.recv_task = asyncio.create_task(st.recv_loop(), name="zmq-recv-test")
+    proxy = MMPClient(
+        mmp_addr=mmp_harness.addr,
+        shm_name=mmp_harness.shm_name,
+        shm_data_size=int(_TEST_INPUT_MB * 1024 * 1024),
+    )
+    await proxy.start()
+    app_mod.app.state.model_manager = proxy
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app_mod.app),
@@ -86,14 +71,7 @@ async def client(mmp_harness):
     ) as c:
         yield c
 
-    st.recv_task.cancel()
-    try:
-        await st.recv_task
-    except asyncio.CancelledError:
-        pass
-    sock.close()
-    ctx.term()
-    shm.close()
+    await proxy.shutdown()
 
 
 @pytest.mark.asyncio
