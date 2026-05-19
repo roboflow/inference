@@ -69,7 +69,7 @@ def _read_model_package_metadata(
     optimization_profile: Optional[Dict[str, Any]] = None
     trt_config_path = package_dir / "trt_config.json"
     if trt_config_path.is_file():
-        with open(trt_config_path, encoding="utf-8") as config_file:
+        with trt_config_path.open(encoding="utf-8") as config_file:
             loaded_config = json.load(config_file)
 
         if isinstance(loaded_config, dict):
@@ -78,7 +78,7 @@ def _read_model_package_metadata(
     max_workspace_setting: Optional[int] = None
     build_config_path = package_dir / "build_config.json"
     if build_config_path.is_file():
-        with open(build_config_path, encoding="utf-8") as build_config_file:
+        with build_config_path.open(encoding="utf-8") as build_config_file:
             loaded_build_config = json.load(build_config_file)
 
         if isinstance(loaded_build_config, dict):

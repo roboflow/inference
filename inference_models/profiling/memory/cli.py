@@ -61,7 +61,8 @@ def _parse_onnx_execution_providers(raw: str) -> List[str]:
 def _load_json_dict(raw: Optional[str], path: Optional[str]) -> Dict[str, Any]:
     try:
         if path:
-            with open(path, encoding="utf-8") as f:
+            json_path = Path(path)
+            with json_path.open(encoding="utf-8") as f:
                 value = json.load(f)
         elif raw:
             value = json.loads(raw)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 import multiprocessing as mp
+from pathlib import Path
 from typing import Any, Dict
 
 
@@ -73,7 +74,8 @@ def run_profile_subprocess(
 def dump_result_json(
     result: Dict[str, Any],
     *,
-    path: str,
+    path: str | Path,
 ) -> None:
-    with open(path, "w", encoding="utf-8") as f:
+    output_path = Path(path)
+    with output_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
