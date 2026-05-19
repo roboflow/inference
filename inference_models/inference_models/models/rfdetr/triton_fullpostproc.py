@@ -170,6 +170,38 @@ def _next_power_of_two(value: int) -> int:
     return 1 << (value - 1).bit_length()
 
 
+def _simple_mask_fastpath_supported(
+    geometry: RFDETRTritonPostprocGeometry,
+    *,
+    mask_h: int,
+    mask_w: int,
+    emit_rle: bool,
+) -> bool:
+    """Returns true when we can use direct 2x2 bilinear mask upsampling.
+
+    This path is intentionally narrow: it only handles the original stretch-style
+    regime where the low-res mask covers the full image canvas and can be
+    upsampled directly onto the original image without crop/paste geometry.
+    """
+
+    if emit_rle:
+        return False
+    if geometry.output_offset_x != 0 or geometry.output_offset_y != 0:
+        return False
+    if geometry.output_w != geometry.orig_w or geometry.output_h != geometry.orig_h:
+        return False
+    if geometry.mask_offset_x != 0 or geometry.mask_offset_y != 0:
+        return False
+    if geometry.mask_input_w != mask_w or geometry.mask_input_h != mask_h:
+        return False
+    if (
+        geometry.output_w < geometry.mask_input_w
+        or geometry.output_h < geometry.mask_input_h
+    ):
+        return False
+    return True
+
+
 if TRITON_AVAILABLE:
 
     @triton.jit
@@ -219,6 +251,7 @@ if TRITON_AVAILABLE:
         HAS_REMAPPING: tl.constexpr,
         EMIT_RLE: tl.constexpr,
         PACK_DENSE_MASKS: tl.constexpr,
+        SIMPLE_MASK_FASTPATH: tl.constexpr,
         NUM_QUERIES: tl.constexpr,
         NUM_CLASSES_TOTAL: tl.constexpr,
         MASK_H: tl.constexpr,
@@ -548,67 +581,126 @@ if TRITON_AVAILABLE:
             if PACK_DENSE_MASKS:
                 packed_col_offsets = tl.arange(0, MASK_TILE_W // 8)
                 bit_weights = (1 << tl.arange(0, 8)).to(tl.int32)
+            if SIMPLE_MASK_FASTPATH:
+                mask_scale_y = tl.full((), MASK_H, tl.float32) / orig_h.to(tl.float32)
+                mask_scale_x = tl.full((), MASK_W, tl.float32) / orig_w.to(tl.float32)
 
             for out_y in tl.range(0, orig_h, MASK_TILE_H, num_stages=1):
                 y = out_y + row_offsets
                 y_mask = y < orig_h
-                y_local = y - output_offset_y
-                y_active = y_mask & (y_local >= 0) & (y_local < output_h)
-                y_table_index = tl.where(y_active, y_local, 0)
-                y_table_base = y_table_index * MAX_Y_TAPS
-                y_counts = tl.load(y_counts_ptr + y_table_index, mask=y_active, other=0)
+                if SIMPLE_MASK_FASTPATH:
+                    src_y_f = (y.to(tl.float32) + 0.5) * mask_scale_y - 0.5
+                    src_y0_i = tl.floor(src_y_f).to(tl.int32)
+                    src_y1_i = src_y0_i + 1
+                    dy = src_y_f - src_y0_i.to(tl.float32)
+                    src_y0_clamped = tl.maximum(tl.minimum(src_y0_i, MASK_H - 1), 0)
+                    src_y1_clamped = tl.maximum(tl.minimum(src_y1_i, MASK_H - 1), 0)
+                else:
+                    y_local = y - output_offset_y
+                    y_active = y_mask & (y_local >= 0) & (y_local < output_h)
+                    y_table_index = tl.where(y_active, y_local, 0)
+                    y_table_base = y_table_index * MAX_Y_TAPS
+                    y_counts = tl.load(
+                        y_counts_ptr + y_table_index, mask=y_active, other=0
+                    )
 
                 for out_x in tl.range(0, orig_w, MASK_TILE_W, num_stages=1):
                     x = out_x + col_offsets
                     x_mask = x < orig_w
-                    x_local = x - output_offset_x
-                    x_active = x_mask & (x_local >= 0) & (x_local < output_w)
-                    tile_mask = y_active[:, None] & x_active[None, :]
-                    x_table_index = tl.where(x_active, x_local, 0)
-                    x_table_base = x_table_index * MAX_X_TAPS
-                    x_counts = tl.load(
-                        x_counts_ptr + x_table_index, mask=x_active, other=0
-                    )
+                    if SIMPLE_MASK_FASTPATH:
+                        tile_mask = y_mask[:, None] & x_mask[None, :]
+                        src_x_f = (x.to(tl.float32) + 0.5) * mask_scale_x - 0.5
+                        src_x0_i = tl.floor(src_x_f).to(tl.int32)
+                        src_x1_i = src_x0_i + 1
+                        dx = src_x_f - src_x0_i.to(tl.float32)
+                        src_x0_clamped = tl.maximum(tl.minimum(src_x0_i, MASK_W - 1), 0)
+                        src_x1_clamped = tl.maximum(tl.minimum(src_x1_i, MASK_W - 1), 0)
 
-                    interp = tl.zeros((MASK_TILE_H, MASK_TILE_W), dtype=tl.float32)
-                    for y_tap in tl.static_range(0, MAX_Y_TAPS):
-                        y_tap_valid = y_active & (y_tap < y_counts)
-                        src_y = mask_offset_y + tl.load(
-                            y_indices_ptr + y_table_base + y_tap,
-                            mask=y_tap_valid,
-                            other=0,
-                        )
-                        wy = tl.load(
-                            y_weights_ptr + y_table_base + y_tap,
-                            mask=y_tap_valid,
+                        p00 = tl.load(
+                            mask_base
+                            + src_y0_clamped[:, None] * masks_stride_h
+                            + src_x0_clamped[None, :] * masks_stride_w,
+                            mask=tile_mask,
                             other=0.0,
                         )
-                        src_y_valid = y_tap_valid & (src_y >= 0) & (src_y < MASK_H)
+                        p01 = tl.load(
+                            mask_base
+                            + src_y0_clamped[:, None] * masks_stride_h
+                            + src_x1_clamped[None, :] * masks_stride_w,
+                            mask=tile_mask,
+                            other=0.0,
+                        )
+                        p10 = tl.load(
+                            mask_base
+                            + src_y1_clamped[:, None] * masks_stride_h
+                            + src_x0_clamped[None, :] * masks_stride_w,
+                            mask=tile_mask,
+                            other=0.0,
+                        )
+                        p11 = tl.load(
+                            mask_base
+                            + src_y1_clamped[:, None] * masks_stride_h
+                            + src_x1_clamped[None, :] * masks_stride_w,
+                            mask=tile_mask,
+                            other=0.0,
+                        )
+                        interp = (
+                            p00 * ((1.0 - dy)[:, None] * (1.0 - dx)[None, :])
+                            + p01 * ((1.0 - dy)[:, None] * dx[None, :])
+                            + p10 * (dy[:, None] * (1.0 - dx)[None, :])
+                            + p11 * (dy[:, None] * dx[None, :])
+                        )
+                    else:
+                        x_local = x - output_offset_x
+                        x_active = x_mask & (x_local >= 0) & (x_local < output_w)
+                        tile_mask = y_active[:, None] & x_active[None, :]
+                        x_table_index = tl.where(x_active, x_local, 0)
+                        x_table_base = x_table_index * MAX_X_TAPS
+                        x_counts = tl.load(
+                            x_counts_ptr + x_table_index, mask=x_active, other=0
+                        )
 
-                        for x_tap in tl.static_range(0, MAX_X_TAPS):
-                            x_tap_valid = x_active & (x_tap < x_counts)
-                            src_x = mask_offset_x + tl.load(
-                                x_indices_ptr + x_table_base + x_tap,
-                                mask=x_tap_valid,
+                        interp = tl.zeros((MASK_TILE_H, MASK_TILE_W), dtype=tl.float32)
+                        for y_tap in tl.static_range(0, MAX_Y_TAPS):
+                            y_tap_valid = y_active & (y_tap < y_counts)
+                            src_y = mask_offset_y + tl.load(
+                                y_indices_ptr + y_table_base + y_tap,
+                                mask=y_tap_valid,
                                 other=0,
                             )
-                            wx = tl.load(
-                                x_weights_ptr + x_table_base + x_tap,
-                                mask=x_tap_valid,
+                            wy = tl.load(
+                                y_weights_ptr + y_table_base + y_tap,
+                                mask=y_tap_valid,
                                 other=0.0,
                             )
-                            src_x_valid = x_tap_valid & (src_x >= 0) & (src_x < MASK_W)
+                            src_y_valid = y_tap_valid & (src_y >= 0) & (src_y < MASK_H)
 
-                            tap_values = tl.load(
-                                mask_base
-                                + src_y[:, None] * masks_stride_h
-                                + src_x[None, :] * masks_stride_w,
-                                mask=tile_mask
-                                & src_y_valid[:, None]
-                                & src_x_valid[None, :],
-                                other=0.0,
-                            )
-                            interp += wy[:, None] * wx[None, :] * tap_values
+                            for x_tap in tl.static_range(0, MAX_X_TAPS):
+                                x_tap_valid = x_active & (x_tap < x_counts)
+                                src_x = mask_offset_x + tl.load(
+                                    x_indices_ptr + x_table_base + x_tap,
+                                    mask=x_tap_valid,
+                                    other=0,
+                                )
+                                wx = tl.load(
+                                    x_weights_ptr + x_table_base + x_tap,
+                                    mask=x_tap_valid,
+                                    other=0.0,
+                                )
+                                src_x_valid = (
+                                    x_tap_valid & (src_x >= 0) & (src_x < MASK_W)
+                                )
+
+                                tap_values = tl.load(
+                                    mask_base
+                                    + src_y[:, None] * masks_stride_h
+                                    + src_x[None, :] * masks_stride_w,
+                                    mask=tile_mask
+                                    & src_y_valid[:, None]
+                                    & src_x_valid[None, :],
+                                    other=0.0,
+                                )
+                                interp += wy[:, None] * wx[None, :] * tap_values
 
                     bits = (interp > 0.0).to(tl.int32)
                     if PACK_DENSE_MASKS:
@@ -827,6 +919,11 @@ def _get_empty_int32_on_device(device: torch.device) -> torch.Tensor:
     return torch.empty((1,), dtype=torch.int32, device=device)
 
 
+@lru_cache(maxsize=None)
+def _get_empty_float32_on_device(device: torch.device) -> torch.Tensor:
+    return torch.empty((1,), dtype=torch.float32, device=device)
+
+
 def rfdetr_triton_postproc(
     bboxes: torch.Tensor,
     logits: torch.Tensor,
@@ -908,13 +1005,40 @@ def rfdetr_triton_postproc(
         device=device,
         pack_dense_masks=pack_dense_masks and not emit_rle,
     )
-    y_indices, y_weights, y_counts, x_indices, x_weights, x_counts = _get_resize_tables(
-        input_h=geometry.mask_input_h,
-        input_w=geometry.mask_input_w,
-        output_h=geometry.output_h,
-        output_w=geometry.output_w,
-        device=device,
+    simple_mask_fastpath = _simple_mask_fastpath_supported(
+        geometry,
+        mask_h=mask_h,
+        mask_w=mask_w,
+        emit_rle=emit_rle,
     )
+    dummy_int32 = _get_empty_int32_on_device(device)
+    dummy_float32 = _get_empty_float32_on_device(device)
+    if simple_mask_fastpath:
+        y_indices = dummy_int32
+        y_weights = dummy_float32
+        y_counts = dummy_int32
+        x_indices = dummy_int32
+        x_weights = dummy_float32
+        x_counts = dummy_int32
+        max_y_taps = 1
+        max_x_taps = 1
+    else:
+        (
+            y_indices,
+            y_weights,
+            y_counts,
+            x_indices,
+            x_weights,
+            x_counts,
+        ) = _get_resize_tables(
+            input_h=geometry.mask_input_h,
+            input_w=geometry.mask_input_w,
+            output_h=geometry.output_h,
+            output_w=geometry.output_w,
+            device=device,
+        )
+        max_y_taps = y_indices.shape[1]
+        max_x_taps = x_indices.shape[1]
     if emit_rle:
         rle_counts, rle_lengths_scratch = _get_rle_buffers(
             num_queries=num_queries,
@@ -933,8 +1057,6 @@ def rfdetr_triton_postproc(
     else:
         has_remap = False
         cmap = _get_empty_int32_on_device(device)
-
-    dummy_int32 = _get_empty_int32_on_device(device)
 
     rfdetr_fullpostproc_triton_kernel[(num_queries,)](
         logits_2d,
@@ -982,6 +1104,7 @@ def rfdetr_triton_postproc(
         HAS_REMAPPING=1 if has_remap else 0,
         EMIT_RLE=1 if emit_rle else 0,
         PACK_DENSE_MASKS=1 if (pack_dense_masks and not emit_rle) else 0,
+        SIMPLE_MASK_FASTPATH=1 if simple_mask_fastpath else 0,
         NUM_QUERIES=num_queries,
         NUM_CLASSES_TOTAL=num_classes_total,
         MASK_H=mask_h,
@@ -993,8 +1116,8 @@ def rfdetr_triton_postproc(
         RLE_TILE_H=_RLE_TILE_H,
         RLE_TILE_W=_RLE_TILE_W,
         RLE_MERGE_TILE=_RLE_MERGE_TILE,
-        MAX_Y_TAPS=y_indices.shape[1],
-        MAX_X_TAPS=x_indices.shape[1],
+        MAX_Y_TAPS=max_y_taps,
+        MAX_X_TAPS=max_x_taps,
         num_warps=4,
         num_stages=1,
     )
