@@ -427,6 +427,17 @@ def merge_crop_predictions(
                     mask, x_min, y_min, parent_image_shape
                 )
 
+                # Also store the transformed bbox for cheap pre-filtering
+                raw_bbox = child_pred.xyxy[j]
+                transformed_bbox = np.array(
+                    [
+                        raw_bbox[0] + x_min,
+                        raw_bbox[1] + y_min,
+                        raw_bbox[2] + x_min,
+                        raw_bbox[3] + y_min,
+                    ]
+                )
+
                 # Store prediction with transformed mask
                 if class_id not in class_predictions:
                     class_predictions[class_id] = []
@@ -436,7 +447,7 @@ def merge_crop_predictions(
                         "mask": transformed_mask,
                         "confidence": confidence,
                         "class_id": class_id,
-                        "bbox": None,  # Will compute from mask
+                        "bbox": transformed_bbox,
                         "keypoint_data": keypoint_data,
                         "detection_data": detection_data,  # Store per-detection metadata
                     }
@@ -796,6 +807,15 @@ def _merge_overlapping_masks(
     n = len(predictions)
     masks = [p["mask"] for p in predictions]
 
+    # Pre-compute bbox arrays for cheap spatial pre-filtering.
+    # Bboxes are stored alongside masks when predictions are collected.
+    bboxes_present = all(
+        p.get("bbox") is not None for p in predictions
+    )
+    if bboxes_present:
+        bboxes = np.array([p["bbox"] for p in predictions], dtype=np.float64)
+        bx1, by1, bx2, by2 = bboxes[:, 0], bboxes[:, 1], bboxes[:, 2], bboxes[:, 3]
+
     parent = list(range(n))
 
     def find(x: int) -> int:
@@ -816,6 +836,16 @@ def _merge_overlapping_masks(
     for i in range(n):
         mask_i = masks[i]
         for j in range(i + 1, n):
+            # Cheap bbox pre-filter: skip pixel-level AND if bboxes don't overlap
+            if bboxes_present:
+                if (
+                    bx2[i] <= bx1[j]
+                    or bx2[j] <= bx1[i]
+                    or by2[i] <= by1[j]
+                    or by2[j] <= by1[i]
+                ):
+                    continue
+
             mask_j = masks[j]
             intersection_count = int(np.count_nonzero(mask_i & mask_j))
             if overlap_threshold <= 0.0:
