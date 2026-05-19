@@ -47,7 +47,7 @@ dependencies = [
   "CairoSVG>=2.9.0,<3.0.0",
   "fonttools>=4.60.2,<5.0.0",
   "Pygments>=2.20.0,<3.0.0",
-  "sam3==0.1.2; sys_platform != 'darwin'",
+  "sam3==0.1.3; sys_platform != 'darwin'",
   "triton<4.0.0; sys_platform != 'darwin'",
   "argon2-cffi>=25.1.0,<26.0.0",
 ]
