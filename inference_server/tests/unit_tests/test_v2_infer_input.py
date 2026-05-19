@@ -82,10 +82,10 @@ class _FakeFormData(dict):
 
 @pytest.mark.asyncio
 async def test_raw_body():
-    from inference_server.routers.v2_models import _extract_images_and_params
+    from inference_server.framework.input_parsers import extract_images_and_params
 
     req = _FakeRequest(content_type="image/jpeg", body=_JPEG)
-    imgs, params, err = await _extract_images_and_params(req)
+    imgs, params, err = await extract_images_and_params(req)
     assert err is None
     assert len(imgs) == 1
     assert imgs[0] == _JPEG
@@ -94,11 +94,11 @@ async def test_raw_body():
 
 @pytest.mark.asyncio
 async def test_multipart_form_single():
-    from inference_server.routers.v2_models import _extract_images_and_params
+    from inference_server.framework.input_parsers import extract_images_and_params
 
     form = _FakeFormData({"image": _FakeUploadFile(_JPEG), "confidence": "0.5"})
     req = _FakeRequest(content_type="multipart/form-data", form_data=form)
-    imgs, params, err = await _extract_images_and_params(req)
+    imgs, params, err = await extract_images_and_params(req)
     assert err is None
     assert len(imgs) == 1
     assert imgs[0] == _JPEG
@@ -107,7 +107,7 @@ async def test_multipart_form_single():
 
 @pytest.mark.asyncio
 async def test_multipart_form_with_inputs_json():
-    from inference_server.routers.v2_models import _extract_images_and_params
+    from inference_server.framework.input_parsers import extract_images_and_params
 
     form = _FakeFormData(
         {
@@ -116,7 +116,7 @@ async def test_multipart_form_with_inputs_json():
         }
     )
     req = _FakeRequest(content_type="multipart/form-data", form_data=form)
-    imgs, params, err = await _extract_images_and_params(req)
+    imgs, params, err = await extract_images_and_params(req)
     assert err is None
     assert len(imgs) == 1
     assert params["confidence"] == 0.3
@@ -125,23 +125,23 @@ async def test_multipart_form_with_inputs_json():
 
 @pytest.mark.asyncio
 async def test_multipart_form_missing_image():
-    from inference_server.routers.v2_models import _extract_images_and_params
+    from inference_server.framework.input_parsers import extract_images_and_params
 
     form = _FakeFormData({"confidence": "0.5"})
     req = _FakeRequest(content_type="multipart/form-data", form_data=form)
-    imgs, params, err = await _extract_images_and_params(req)
+    imgs, params, err = await extract_images_and_params(req)
     assert err is not None
     assert err.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_json_base64_single():
-    from inference_server.routers.v2_models import _extract_images_and_params
+    from inference_server.framework.input_parsers import extract_images_and_params
 
     b64 = base64.b64encode(_JPEG).decode()
     body = {"inputs": {"image": {"type": "base64", "value": b64}, "confidence": 0.5}}
     req = _FakeRequest(content_type="application/json", json_body=body)
-    imgs, params, err = await _extract_images_and_params(req)
+    imgs, params, err = await extract_images_and_params(req)
     assert err is None
     assert len(imgs) == 1
     assert imgs[0] == _JPEG
@@ -150,24 +150,24 @@ async def test_json_base64_single():
 
 @pytest.mark.asyncio
 async def test_json_missing_image():
-    from inference_server.routers.v2_models import _extract_images_and_params
+    from inference_server.framework.input_parsers import extract_images_and_params
 
     body = {"inputs": {"confidence": 0.5}}
     req = _FakeRequest(content_type="application/json", json_body=body)
-    imgs, params, err = await _extract_images_and_params(req)
+    imgs, params, err = await extract_images_and_params(req)
     assert err is not None
     assert err.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_json_invalid_base64():
-    from inference_server.routers.v2_models import _extract_images_and_params
+    from inference_server.framework.input_parsers import extract_images_and_params
 
     body = {
         "inputs": {"image": {"type": "base64", "value": "!!!===not valid base64===!!!"}}
     }
     req = _FakeRequest(content_type="application/json", json_body=body)
-    imgs, params, err = await _extract_images_and_params(req)
+    imgs, params, err = await extract_images_and_params(req)
     # base64.b64decode is lenient — no crash is the requirement
     assert err is None or err.status_code == 400
 
@@ -179,12 +179,12 @@ async def test_json_invalid_base64():
 
 @pytest.mark.asyncio
 async def test_multipart_form_batch():
-    from inference_server.routers.v2_models import _extract_images_and_params
+    from inference_server.framework.input_parsers import extract_images_and_params
 
     jpeg2 = _JPEG + b"\x00"  # slightly different
     form = _FakeFormData({"image": [_FakeUploadFile(_JPEG), _FakeUploadFile(jpeg2)]})
     req = _FakeRequest(content_type="multipart/form-data", form_data=form)
-    imgs, params, err = await _extract_images_and_params(req)
+    imgs, params, err = await extract_images_and_params(req)
     assert err is None
     assert len(imgs) == 2
     assert imgs[0] == _JPEG
@@ -193,7 +193,7 @@ async def test_multipart_form_batch():
 
 @pytest.mark.asyncio
 async def test_json_base64_batch():
-    from inference_server.routers.v2_models import _extract_images_and_params
+    from inference_server.framework.input_parsers import extract_images_and_params
 
     b64 = base64.b64encode(_JPEG).decode()
     body = {
@@ -205,7 +205,7 @@ async def test_json_base64_batch():
         }
     }
     req = _FakeRequest(content_type="application/json", json_body=body)
-    imgs, params, err = await _extract_images_and_params(req)
+    imgs, params, err = await extract_images_and_params(req)
     assert err is None
     assert len(imgs) == 2
 
@@ -217,18 +217,18 @@ async def test_json_base64_batch():
 
 @pytest.mark.asyncio
 async def test_fetch_image_from_url_invalid_scheme():
-    from inference_server.routers.v2_models import _fetch_image_from_url
+    from inference_server.framework.input_parsers import fetch_image_from_url
 
-    _, err = await _fetch_image_from_url("ftp://example.com/image.jpg")
+    _, err = await fetch_image_from_url("ftp://example.com/image.jpg")
     assert err is not None
     assert err.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_fetch_image_from_url_bad_domain():
-    from inference_server.routers.v2_models import _fetch_image_from_url
+    from inference_server.framework.input_parsers import fetch_image_from_url
 
-    _, err = await _fetch_image_from_url(
+    _, err = await fetch_image_from_url(
         "https://this-domain-does-not-exist-12345.invalid/img.jpg"
     )
     assert err is not None

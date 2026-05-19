@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
-import struct
 from typing import Any, Optional
 
-import aiohttp
 from fastapi import APIRouter, Depends, Request, Response
 from starlette.requests import ClientDisconnect
 
 from inference_server.dependencies import get_model_manager
 from inference_server.errors import error_response
+from inference_server.framework.input_parsers import (
+    extract_images_and_params,
+    fetch_image_from_url,
+)
 from inference_server.proxies.base import ClientDisconnected, ModelManagerProxy
 from inference_server.proxies.mmp_client import looks_like_image
 
@@ -100,162 +101,6 @@ def _typed_serialize(
     if isinstance(predictions, str):
         return serialize_text(predictions, proxy)
     return serialize_passthrough(predictions, proxy)
-
-
-# ---------------------------------------------------------------------------
-# URL image fetch
-# ---------------------------------------------------------------------------
-
-_URL_FETCH_TIMEOUT_S = 10
-_URL_FETCH_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
-
-
-async def _fetch_image_from_url(url: str) -> tuple[Optional[bytes], Optional[Response]]:
-    """Fetch image bytes from URL. Returns (bytes, None) or (None, error_response)."""
-    if not url.startswith(("http://", "https://")):
-        return None, error_response(
-            400, "INVALID_URL", "image URL must start with http:// or https://"
-        )
-    timeout = aiohttp.ClientTimeout(total=_URL_FETCH_TIMEOUT_S)
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return None, error_response(
-                        502,
-                        "URL_FETCH_FAILED",
-                        f"fetching image URL returned status {resp.status}",
-                    )
-                content_length = resp.content_length or 0
-                if content_length > _URL_FETCH_MAX_BYTES:
-                    return None, error_response(
-                        413,
-                        "URL_IMAGE_TOO_LARGE",
-                        f"image at URL exceeds {_URL_FETCH_MAX_BYTES // (1024*1024)}MB limit",
-                    )
-                data = await resp.read()
-                if len(data) > _URL_FETCH_MAX_BYTES:
-                    return None, error_response(
-                        413,
-                        "URL_IMAGE_TOO_LARGE",
-                        f"image at URL exceeds {_URL_FETCH_MAX_BYTES // (1024*1024)}MB limit",
-                    )
-                return data, None
-    except asyncio.TimeoutError:
-        return None, error_response(
-            504,
-            "URL_FETCH_TIMEOUT",
-            f"fetching image URL timed out after {_URL_FETCH_TIMEOUT_S}s",
-        )
-    except aiohttp.ClientError as exc:
-        return None, error_response(
-            502, "URL_FETCH_FAILED", f"fetching image URL failed: {exc}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# Input extraction — detect Content-Type, produce image bytes + extra params
-# ---------------------------------------------------------------------------
-
-
-async def _extract_images_and_params(
-    request: Request,
-) -> tuple[list[bytes], dict, Optional[Response]]:
-    """Extract image bytes (possibly multiple) and extra params from request body."""
-    content_type = (
-        (request.headers.get("content-type") or "").lower().split(";")[0].strip()
-    )
-
-    # --- Multipart form ---
-    if content_type == "multipart/form-data":
-        form = await request.form()
-        images: list[bytes] = []
-        extra_params: dict = {}
-        for key, value in form.multi_items():
-            if key == "image":
-                images.append(await value.read())
-            elif key == "inputs" and isinstance(value, str):
-                try:
-                    extra_params.update(json.loads(value))
-                except json.JSONDecodeError:
-                    logger.warning("v2_infer: invalid JSON in 'inputs' form field")
-            elif isinstance(value, str):
-                extra_params[key] = value
-        if not images:
-            return (
-                [],
-                {},
-                error_response(
-                    400,
-                    "MISSING_IMAGE",
-                    "multipart form must include at least one 'image' file part",
-                ),
-            )
-        return images, extra_params, None
-
-    # --- JSON body with base64 ---
-    if content_type == "application/json":
-        try:
-            body = await request.json()
-        except Exception:
-            return (
-                [],
-                {},
-                error_response(400, "INVALID_JSON", "request body is not valid JSON"),
-            )
-
-        inputs = body.get("inputs", {})
-        if not isinstance(inputs, dict):
-            return (
-                [],
-                {},
-                error_response(400, "INVALID_INPUTS", "'inputs' must be an object"),
-            )
-
-        image_spec = inputs.pop("image", None)
-        if image_spec is None:
-            return (
-                [],
-                {},
-                error_response(
-                    400, "MISSING_IMAGE", "JSON body must include inputs.image"
-                ),
-            )
-
-        specs = image_spec if isinstance(image_spec, list) else [image_spec]
-        images = []
-        for i, spec in enumerate(specs):
-            if not isinstance(spec, dict) or spec.get("type") != "base64":
-                return (
-                    [],
-                    {},
-                    error_response(
-                        400,
-                        "INVALID_IMAGE",
-                        f'inputs.image[{i}] must be {{"type": "base64", "value": "..."}}',
-                    ),
-                )
-            try:
-                images.append(base64.b64decode(spec["value"]))
-            except Exception:
-                return (
-                    [],
-                    {},
-                    error_response(
-                        400,
-                        "DECODE_FAILED",
-                        f"base64 decode failed for inputs.image[{i}]",
-                    ),
-                )
-
-        return images, inputs, None
-
-    # --- Raw body (default) — single image ---
-    chunks = []
-    async for chunk in request.stream():
-        chunks.append(chunk)
-    image_bytes = b"".join(chunks) if chunks else b""
-    return [image_bytes] if image_bytes else [], {}, None
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +250,7 @@ async def v2_infer(
     try:
         if image_urls:
             fetch_results = await asyncio.gather(
-                *(_fetch_image_from_url(u) for u in image_urls)
+                *(fetch_image_from_url(u) for u in image_urls)
             )
             images = []
             for img_bytes, err in fetch_results:
@@ -414,7 +259,7 @@ async def v2_infer(
                 images.append(img_bytes)
             extra_params = {}
         else:
-            images, extra_params, err = await _extract_images_and_params(request)
+            images, extra_params, err = await extract_images_and_params(request)
             if err is not None:
                 return err
         params.update(extra_params)
