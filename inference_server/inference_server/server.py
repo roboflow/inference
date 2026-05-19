@@ -224,6 +224,8 @@ def main() -> None:
     os.environ[configuration.INFERENCE_SHM_DATA_SIZE_ENV] = str(
         int(input_mb * 1024 * 1024)
     )
+    # server.main started MMP — workers must use MMPClient, not bundled.
+    os.environ[configuration.INFERENCE_DEPLOYMENT_MODE_ENV] = configuration.MODE_MMP
 
     # ── Preload models ────────────────────────────────────────────────────
     preload = os.environ.get(configuration.INFERENCE_PRELOAD_MODELS_ENV, "").strip()
