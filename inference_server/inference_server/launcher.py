@@ -183,25 +183,22 @@ def launch_orchestrated(
 # ---------------------------------------------------------------------------
 
 
-def launch(
-    mode: Optional[str] = None,
-    **kwargs,
-) -> Union[ModelManager, LaunchHandle]:
+def launch(mode: str, **kwargs) -> Union[ModelManager, LaunchHandle]:
     """Wire up the inference stack.
 
+    Mode is required — callers read env at their own boundary (e.g.
+    `app.py` lifespan, `server.main`) so this function stays testable
+    without env manipulation.
+
     Args:
-        mode: ``"inprocess"`` or ``"orchestrated"``.
-              Defaults to ``INFERENCE_DEPLOYMENT_MODE`` env var,
-              or ``"inprocess"`` if unset.
+        mode: ``configuration.MODE_BUNDLED`` — return a ModelManager for
+            in-process use (Workflows, InferencePipeline, dev).
+            ``configuration.MODE_MMP`` — start a ModelManagerProcess in a
+            daemon thread, return a LaunchHandle exposing its ZMQ address
+            and SHM name (used by `server.main` to wire uvicorn workers).
         **kwargs: Forwarded to :func:`launch_inprocess` or
                   :func:`launch_orchestrated`.
-
-    Returns:
-        ModelManager (inprocess) or LaunchHandle (orchestrated).
     """
-    if mode is None:
-        mode = configuration.INFERENCE_DEPLOYMENT_MODE
-
     if mode == configuration.MODE_MMP:
         return launch_orchestrated(**kwargs)
     if mode == configuration.MODE_BUNDLED:
