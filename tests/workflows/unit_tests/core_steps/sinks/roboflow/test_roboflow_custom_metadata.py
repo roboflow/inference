@@ -18,6 +18,7 @@ from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 impor
 def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
     # given
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
@@ -41,6 +42,7 @@ def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     # given
     api_key = "my_api_key"
     cache = MemoryCache()
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     get_roboflow_workspace_mock.return_value = "workspace_from_api"
@@ -67,6 +69,7 @@ def test_add_custom_metadata_request_success(
     add_custom_metadata_mock.return_value = True
     cache = MemoryCache()
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache.set(key=expected_cache_key, value="my_workspace")
@@ -103,6 +106,7 @@ def test_add_custom_metadata_request_failure(
     add_custom_metadata_mock.side_effect = Exception("API error")
     cache = MemoryCache()
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache.set(key=expected_cache_key, value="my_workspace")
