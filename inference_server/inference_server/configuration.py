@@ -71,8 +71,14 @@ DEBUG_BENCHMARK_MODE = os.environ.get("DEBUG_BENCHMARK_MODE", "").strip() == "1"
 # ── Preload / readiness (server.main, routers/v2_server) ──────────────────
 INFERENCE_PRELOAD_MODELS_ENV = "INFERENCE_PRELOAD_MODELS"
 
-# ── Deployment mode (launcher.launch) ─────────────────────────────────────
+# ── Deployment mode (launcher.launch, app.py lifespan) ────────────────────
 INFERENCE_DEPLOYMENT_MODE_ENV = "INFERENCE_DEPLOYMENT_MODE"
+MODE_BUNDLED = "bundled"      # MMWrapper over an in-process ModelManager
+MODE_MMP = "mmp"              # MMPClient over ZMQ+SHM to ModelManagerProcess
+INFERENCE_DEPLOYMENT_MODE_DEFAULT = MODE_MMP
+INFERENCE_DEPLOYMENT_MODE = os.environ.get(
+    INFERENCE_DEPLOYMENT_MODE_ENV, INFERENCE_DEPLOYMENT_MODE_DEFAULT
+)
 
 # ── API key fallback (server._preload_models) ─────────────────────────────
 ROBOFLOW_API_KEY_ENV = "ROBOFLOW_API_KEY"
