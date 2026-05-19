@@ -302,6 +302,7 @@ class MMPClient:
         instance: str = "",
         params: Optional[dict] = None,
         request: Optional[Request] = None,
+        raw_pickle: bool = False,
     ) -> Any:
         if len(image) > self.shm_data_size:
             raise ValueError(
@@ -335,6 +336,8 @@ class MMPClient:
                 raise RuntimeError(err_msg)
 
             raw = self._read_result(result_slot_id, result_sz)
+            if raw_pickle:
+                return raw
             try:
                 return pickle.loads(raw)
             except Exception as exc:
