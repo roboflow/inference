@@ -35,6 +35,7 @@ from inference.core.roboflow_api import (
     ServerlessUsageCheckResponse,
     add_custom_metadata,
     annotate_image_at_roboflow,
+    batch_update_image_metadata_at_roboflow,
     build_roboflow_api_headers,
     delete_cached_workflow_response_if_exists,
     get_from_url,
@@ -52,6 +53,7 @@ from inference.core.roboflow_api import (
     raise_from_lambda,
     register_image_at_roboflow,
     send_inference_results_to_model_monitoring,
+    update_image_metadata_at_roboflow,
     wrap_roboflow_api_errors,
     wrap_roboflow_api_errors_async,
 )
@@ -1801,6 +1803,102 @@ def test_annotate_image_at_roboflow_when_successful_response_expected(
         == "api_key=my_api_key&name=local_id.txt&prediction=true"
     )
     assert result == {"success": True}
+
+
+def test_update_image_metadata_at_roboflow_when_successful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/image_1/metadata"),
+        json={"success": True},
+    )
+
+    # when
+    result = update_image_metadata_at_roboflow(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        image_id="image_1",
+        metadata={"color": "red", "score": 0.8},
+        add_tags=["auto"],
+    )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+    assert requests_mock.last_request.json() == {
+        "metadata": {"color": "red", "score": 0.8},
+        "addTags": ["auto"],
+    }
+    assert result == {"success": True}
+
+
+def test_update_image_metadata_at_roboflow_when_wrong_image_id_used(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/missing/metadata"),
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotNotFoundError):
+        _ = update_image_metadata_at_roboflow(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            image_id="missing",
+            add_tags=["auto"],
+        )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+
+
+def test_batch_update_image_metadata_at_roboflow_when_successful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/metadata"),
+        json={"taskId": "task-123", "url": "/my_workspace/asynctasks/task-123"},
+    )
+    updates = [
+        {"imageId": "image_1", "metadata": {"color": "red"}},
+        {"imageId": "image_2", "addTags": ["auto"]},
+    ]
+
+    # when
+    result = batch_update_image_metadata_at_roboflow(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        updates=updates,
+    )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+    assert requests_mock.last_request.json() == {"updates": updates}
+    assert result == {"taskId": "task-123", "url": "/my_workspace/asynctasks/task-123"}
+
+
+def test_batch_update_image_metadata_at_roboflow_when_preflight_error_occurs(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/metadata"),
+        status_code=400,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        _ = batch_update_image_metadata_at_roboflow(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            updates=[{"imageId": "image_1", "addTags": ["auto"]}],
+        )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
 
 
 @mock.patch.object(roboflow_api.requests, "get")

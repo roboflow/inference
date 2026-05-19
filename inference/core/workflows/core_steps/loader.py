@@ -415,6 +415,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     RoboflowDatasetUploadBlockV2,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.edit_image_metadata.v1 import (
+    EditImageMetadataBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
 )
@@ -763,6 +766,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
+        EditImageMetadataBlockV1,
         ContinueIfBlockV1,
         InnerWorkflowBlockV1,
         RateLimiterBlockV1,
