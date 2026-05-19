@@ -809,9 +809,7 @@ def _merge_overlapping_masks(
 
     # Pre-compute bbox arrays for cheap spatial pre-filtering.
     # Bboxes are stored alongside masks when predictions are collected.
-    bboxes_present = all(
-        p.get("bbox") is not None for p in predictions
-    )
+    bboxes_present = all(p.get("bbox") is not None for p in predictions)
     if bboxes_present:
         bboxes = np.array([p["bbox"] for p in predictions], dtype=np.float64)
         bx1, by1, bx2, by2 = bboxes[:, 0], bboxes[:, 1], bboxes[:, 2], bboxes[:, 3]
