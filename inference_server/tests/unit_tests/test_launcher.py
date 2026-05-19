@@ -8,9 +8,8 @@ import threading
 import pytest
 
 from inference_model_manager.model_manager import ModelManager
+from inference_server.configuration import MODE_BUNDLED, MODE_MMP
 from inference_server.launcher import (
-    _MODE_INPROCESS,
-    _MODE_ORCHESTRATED,
     LaunchHandle,
     launch,
     launch_inprocess,
@@ -143,12 +142,12 @@ class TestLaunchOrchestrated:
 
 class TestLaunch:
     def test_inprocess_returns_model_manager(self) -> None:
-        result = launch(_MODE_INPROCESS)
+        result = launch(MODE_BUNDLED)
         assert isinstance(result, ModelManager)
 
     def test_orchestrated_returns_launch_handle(self) -> None:
         handle = launch(
-            _MODE_ORCHESTRATED,
+            MODE_MMP,
             n_slots=4,
             input_mb=1.0,
             mmp_start_timeout=5.0,
@@ -162,24 +161,6 @@ class TestLaunch:
         with pytest.raises(ValueError, match="Unknown deployment mode"):
             launch("foobar")
 
-    def test_default_mode_is_inprocess(self, monkeypatch) -> None:
-        monkeypatch.delenv("INFERENCE_DEPLOYMENT_MODE", raising=False)
-        result = launch()
-        assert isinstance(result, ModelManager)
-
-    def test_env_var_selects_inprocess(self, monkeypatch) -> None:
-        monkeypatch.setenv("INFERENCE_DEPLOYMENT_MODE", _MODE_INPROCESS)
-        result = launch()
-        assert isinstance(result, ModelManager)
-
-    def test_env_var_selects_orchestrated(self, monkeypatch) -> None:
-        monkeypatch.setenv("INFERENCE_DEPLOYMENT_MODE", _MODE_ORCHESTRATED)
-        handle = launch(n_slots=4, input_mb=1.0, mmp_start_timeout=5.0)
-        try:
-            assert isinstance(handle, LaunchHandle)
-        finally:
-            handle.shutdown()
-
     def test_max_pinned_memory_forwarded_inprocess(self) -> None:
-        mm = launch(_MODE_INPROCESS, max_pinned_memory_mb=256)
+        mm = launch(MODE_BUNDLED, max_pinned_memory_mb=256)
         assert mm._max_pinned_memory_bytes == 256 * 1024 * 1024
