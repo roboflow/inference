@@ -45,6 +45,16 @@ def numpy_mask_to_coco_rle(mask: np.ndarray) -> dict:
     return counts_to_coco_rle(counts=counts, image_size=tuple(mask_bool.shape))
 
 
+def unpack_bitpacked_masks_numpy(bitpacked_masks: np.ndarray, width: int) -> np.ndarray:
+    packed = np.asarray(bitpacked_masks, dtype=np.uint8)
+    if packed.ndim != 3:
+        raise ValueError(
+            f"Expected bitpacked masks with shape (N, H, Wbytes), got {packed.shape}."
+        )
+    unpacked = np.unpackbits(np.ascontiguousarray(packed), axis=-1, bitorder="little")
+    return np.ascontiguousarray(unpacked[..., :width])
+
+
 class LazyInstancesRLEMasks(InstancesRLEMasks):
     """Materializes COCO RLE counts only when a caller actually needs them."""
 
@@ -52,6 +62,8 @@ class LazyInstancesRLEMasks(InstancesRLEMasks):
         self,
         image_size: tuple,
         mask_gpu: Optional[torch.Tensor] = None,
+        mask_packed_gpu: Optional[torch.Tensor] = None,
+        mask_packed_width: Optional[int] = None,
         mask_cpu: Optional[np.ndarray] = None,
         rle_counts_gpu: Optional[torch.Tensor] = None,
         rle_lengths_gpu: Optional[torch.Tensor] = None,
@@ -63,6 +75,8 @@ class LazyInstancesRLEMasks(InstancesRLEMasks):
         self._masks: list = []
         self._materialized = False
         self._mask_gpu = mask_gpu
+        self._mask_packed_gpu = mask_packed_gpu
+        self._mask_packed_width = mask_packed_width
         self._mask_cpu = mask_cpu
         self._rle_counts_gpu = rle_counts_gpu
         self._rle_lengths_gpu = rle_lengths_gpu
@@ -82,6 +96,21 @@ class LazyInstancesRLEMasks(InstancesRLEMasks):
 
     def _ensure_mask_cpu(self) -> np.ndarray:
         if self._mask_cpu is not None:
+            return self._mask_cpu
+        if self._mask_packed_gpu is not None:
+            device = self._mask_packed_gpu.device
+            stream = torch.cuda.current_stream(device)
+            if self._done_event is not None:
+                self._done_event.wait(stream)
+            packed_cpu = self._mask_packed_gpu.cpu().numpy()
+            width = (
+                self._mask_packed_width
+                if self._mask_packed_width is not None
+                else self.image_size[1]
+            )
+            self._mask_cpu = unpack_bitpacked_masks_numpy(packed_cpu, width=width).view(
+                np.bool_
+            )
             return self._mask_cpu
         if self._mask_gpu is None:
             self._mask_cpu = np.empty(

@@ -11,6 +11,7 @@ Within one Triton launch, each program owns one output detection rank and:
 - applies class remap + confidence filtering
 - denormalizes / rescales / rounds the selected box
 - resizes the selected 78x78 mask to the original image size and thresholds it
+- optionally bit-packs the dense mask sidecar for lower DtoH transfer volume
 
 The resize uses cached 2-tap closed-form bilinear tables, so the per-inference
 hot path remains a single Triton launch without any CUDA bootstrap probes.
@@ -81,6 +82,7 @@ if TRITON_AVAILABLE:
         PER_CLASS: tl.constexpr,
         HAS_REMAPPING: tl.constexpr,
         EMIT_RLE: tl.constexpr,
+        PACK_DENSE_MASKS: tl.constexpr,
         NUM_QUERIES: tl.constexpr,
         NUM_CLASSES_TOTAL: tl.constexpr,
         MASK_H: tl.constexpr,
@@ -401,6 +403,9 @@ if TRITON_AVAILABLE:
         else:
             row_offsets = tl.arange(0, MASK_TILE_H)
             col_offsets = tl.arange(0, MASK_TILE_W)
+            if PACK_DENSE_MASKS:
+                packed_col_offsets = tl.arange(0, MASK_TILE_W // 8)
+                bit_weights = (1 << tl.arange(0, 8)).to(tl.int32)
 
             for out_y in tl.range(0, orig_h, MASK_TILE_H, num_stages=1):
                 y = out_y + row_offsets
@@ -471,13 +476,40 @@ if TRITON_AVAILABLE:
                         + (wy_b[:, None] * wx_a[None, :]) * m10
                         + (wy_b[:, None] * wx_b[None, :]) * m11
                     )
-                    out_ptr = (
-                        mask_out_ptr
-                        + pid_det * mask_out_stride_q
-                        + y[:, None] * mask_out_stride_h
-                        + x[None, :] * mask_out_stride_w
-                    )
-                    tl.store(out_ptr, (interp > 0.0).to(tl.uint8), mask=tile_mask)
+                    bits = (interp > 0.0).to(tl.int32)
+                    if PACK_DENSE_MASKS:
+                        packed = tl.sum(
+                            tl.reshape(bits, (MASK_TILE_H, MASK_TILE_W // 8, 8))
+                            * bit_weights[None, None, :],
+                            axis=2,
+                        ).to(tl.uint8)
+                        byte_mask = (
+                            tl.sum(
+                                tl.reshape(x_mask.to(tl.int32), (MASK_TILE_W // 8, 8)),
+                                axis=1,
+                            )
+                            > 0
+                        )
+                        out_ptr = (
+                            mask_out_ptr
+                            + pid_det * mask_out_stride_q
+                            + y[:, None] * mask_out_stride_h
+                            + (out_x // 8 + packed_col_offsets)[None, :]
+                            * mask_out_stride_w
+                        )
+                        tl.store(
+                            out_ptr,
+                            packed,
+                            mask=y_mask[:, None] & byte_mask[None, :],
+                        )
+                    else:
+                        out_ptr = (
+                            mask_out_ptr
+                            + pid_det * mask_out_stride_q
+                            + y[:, None] * mask_out_stride_h
+                            + x[None, :] * mask_out_stride_w
+                        )
+                        tl.store(out_ptr, bits.to(tl.uint8), mask=tile_mask)
 
 
 _THRESHOLD_CACHE: dict = {}
@@ -545,17 +577,20 @@ def _get_scratch_buffers(
     orig_h: int,
     orig_w: int,
     device: torch.device,
+    pack_dense_masks: bool,
 ):
-    cached = _SCRATCH_CACHE.get(device)
-    shape = (num_queries, orig_h, orig_w)
+    key = (device, pack_dense_masks)
+    cached = _SCRATCH_CACHE.get(key)
+    mask_w = (orig_w + 7) // 8 if pack_dense_masks else orig_w
+    shape = (num_queries, orig_h, mask_w)
     if cached is None or cached[0] != shape:
         combined = torch.empty((num_queries, 6), dtype=torch.int32, device=device)
         mask_bin = torch.empty(
-            (num_queries, orig_h, orig_w), dtype=torch.uint8, device=device
+            (num_queries, orig_h, mask_w), dtype=torch.uint8, device=device
         )
         counter = torch.empty((1,), dtype=torch.int32, device=device)
         cached = (shape, combined, mask_bin, counter)
-        _SCRATCH_CACHE[device] = cached
+        _SCRATCH_CACHE[key] = cached
     _, combined, mask_bin, counter = cached
     return combined, mask_bin, counter
 
@@ -635,6 +670,7 @@ def rfdetr_triton_postproc(
     scale_wh: Tuple[float, float],
     orig_size_wh: Tuple[int, int],
     emit_rle: bool = False,
+    pack_dense_masks: bool = False,
 ) -> Tuple[
     torch.Tensor,
     torch.Tensor,
@@ -646,11 +682,11 @@ def rfdetr_triton_postproc(
     """Returns fast-path scratch buffers and completion event.
 
     ``combined`` is ``(Q, 6)`` int32 where column 4 is fp32 confidence bits.
-    ``mask_bin`` is ``(Q, H, W)`` uint8 whose bytes are reinterpreted as bool
-    on the host without an extra copy. ``counter`` stores the number of kept
-    detections from the reference flat top-k output. When ``emit_rle`` is true,
-    ``rle_counts`` and ``rle_lengths`` hold COCO-style uncompressed run-length
-    counts for each surviving detection.
+    ``mask_bin`` is uint8 scratch: either ``(Q, H, W)`` dense bytes or
+    ``(Q, H, ceil(W / 8))`` bit-packed bytes when ``pack_dense_masks`` is true.
+    ``counter`` stores the number of kept detections from the reference flat
+    top-k output. When ``emit_rle`` is true, ``rle_counts`` and ``rle_lengths``
+    hold COCO-style uncompressed run-length counts for each surviving detection.
     """
 
     device = bboxes.device
@@ -679,6 +715,7 @@ def rfdetr_triton_postproc(
         orig_h=orig_h,
         orig_w=orig_w,
         device=device,
+        pack_dense_masks=pack_dense_masks and not emit_rle,
     )
     y_indices, y_weights, x_indices, x_weights = _get_resize_tables(
         orig_h=orig_h,
@@ -738,6 +775,7 @@ def rfdetr_triton_postproc(
         PER_CLASS=1 if per_class else 0,
         HAS_REMAPPING=1 if has_remap else 0,
         EMIT_RLE=1 if emit_rle else 0,
+        PACK_DENSE_MASKS=1 if (pack_dense_masks and not emit_rle) else 0,
         NUM_QUERIES=FASTPATH_NUM_QUERIES,
         NUM_CLASSES_TOTAL=FASTPATH_NUM_CLASSES_TOTAL,
         MASK_H=FASTPATH_MASK_H,

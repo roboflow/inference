@@ -42,7 +42,7 @@ from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
-from inference.core.utils.postprocess import mask2poly, masks2poly
+from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import (
@@ -338,16 +338,20 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
             combined_gpu = getattr(det, "_combined_gpu", None)
             mask_gpu = getattr(det, "_mask_gpu", None)
+            mask_packed_gpu = getattr(det, "_mask_packed_gpu", None)
             mask_cpu = getattr(det, "_mask_cpu", None)
             defer_count_to_adapter = getattr(det, "_defer_count_to_adapter", False)
             done_event = getattr(det, "_postproc_done_event", None)
+            dense_mask_cuda = isinstance(mask_gpu, torch.Tensor) and mask_gpu.is_cuda
+            packed_mask_cuda = (
+                isinstance(mask_packed_gpu, torch.Tensor) and mask_packed_gpu.is_cuda
+            )
             if (
                 not return_in_rle
                 and done_event is not None
-                and isinstance(mask_gpu, torch.Tensor)
-                and mask_gpu.is_cuda
+                and (dense_mask_cuda or packed_mask_cuda)
             ):
-                device = mask_gpu.device
+                device = mask_gpu.device if dense_mask_cuda else mask_packed_gpu.device
                 stream = torch.cuda.current_stream(device)
                 done_event.wait(stream)
 
@@ -378,16 +382,29 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                         polys_or_rles = []
                     else:
                         combined_slice = combined_np[:n_survivors]
-                        mask_slice = mask_gpu[:n_survivors]
-                        mask_host = get_pinned_buffer(
-                            "mask", tuple(mask_slice.shape), mask_slice.dtype
-                        )
-                        mask_host.copy_(mask_slice, non_blocking=True)
-                        stream.synchronize()
                         xyxy = combined_slice[:, :4]
                         confs = combined_slice[:, 4].view(np.float32)
                         class_ids = combined_slice[:, 5]
-                        polys_or_rles = masks2poly(mask_host.numpy())
+                        if packed_mask_cuda:
+                            packed_slice = mask_packed_gpu[:n_survivors]
+                            packed_host = get_pinned_buffer(
+                                "mask_packed",
+                                tuple(packed_slice.shape),
+                                packed_slice.dtype,
+                            )
+                            packed_host.copy_(packed_slice, non_blocking=True)
+                            stream.synchronize()
+                            polys_or_rles = bitpacked_masks2poly(
+                                packed_host.numpy(), width=W
+                            )
+                        else:
+                            mask_slice = mask_gpu[:n_survivors]
+                            mask_host = get_pinned_buffer(
+                                "mask", tuple(mask_slice.shape), mask_slice.dtype
+                            )
+                            mask_host.copy_(mask_slice, non_blocking=True)
+                            stream.synchronize()
+                            polys_or_rles = masks2poly(mask_host.numpy())
                 else:
                     n_survivors = int(det.xyxy.shape[0])
                     if n_survivors == 0:

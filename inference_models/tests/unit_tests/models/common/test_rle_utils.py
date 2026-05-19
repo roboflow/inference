@@ -10,6 +10,7 @@ from inference_models.models.common.rle_utils import (
     coco_rle_masks_to_numpy_mask,
     coco_rle_masks_to_torch_mask,
     torch_mask_to_coco_rle,
+    unpack_bitpacked_masks_numpy,
 )
 
 
@@ -329,6 +330,15 @@ def test_roundtrip_many_masks_preserves_all() -> None:
         assert torch.equal(decoded[i], m)
 
 
+@pytest.mark.parametrize("h,w,n", [(1, 1, 1), (7, 13, 3), (20, 32, 2)])
+def test_unpack_bitpacked_masks_numpy_roundtrip(h: int, w: int, n: int) -> None:
+    rng = np.random.default_rng(seed=1234)
+    masks = rng.integers(0, 2, size=(n, h, w), dtype=np.uint8)
+    packed = np.packbits(masks, axis=-1, bitorder="little")
+    unpacked = unpack_bitpacked_masks_numpy(packed, width=w)
+    np.testing.assert_array_equal(unpacked, masks)
+
+
 def test_lazy_instances_rle_masks_materializes_from_cpu_counts() -> None:
     masks = [
         _make_rectangle_mask(24, 32, (2, 3, 18, 20)),
@@ -378,3 +388,30 @@ def test_lazy_instances_rle_masks_materializes_from_cuda_counts() -> None:
     decoded = coco_rle_masks_to_torch_mask(wrapped)
     for i, mask in enumerate(masks):
         assert torch.equal(decoded[i], mask)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_lazy_instances_rle_masks_materializes_from_cuda_bitpacked_masks() -> None:
+    masks = torch.stack(
+        [
+            _make_rectangle_mask(21, 29, (2, 3, 18, 20)),
+            _make_rectangle_mask(21, 29, (8, 10, 20, 28)),
+        ],
+        dim=0,
+    )
+    packed = np.packbits(masks.numpy().astype(np.uint8), axis=-1, bitorder="little")
+    packed_gpu = torch.from_numpy(np.ascontiguousarray(packed)).to(
+        device="cuda", dtype=torch.uint8
+    )
+    event = torch.cuda.Event()
+    event.record(torch.cuda.current_stream())
+
+    wrapped = LazyInstancesRLEMasks(
+        image_size=(21, 29),
+        mask_packed_gpu=packed_gpu,
+        mask_packed_width=29,
+        done_event=event,
+    )
+
+    decoded = coco_rle_masks_to_torch_mask(wrapped)
+    assert torch.equal(decoded.cpu(), masks)

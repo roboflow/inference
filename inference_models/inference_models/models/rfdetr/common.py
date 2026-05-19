@@ -351,6 +351,7 @@ def post_process_instance_segmentation_results_to_rle_masks(
                 scale_wh=(meta.scale_width, meta.scale_height),
                 orig_size_wh=(meta.original_size.width, meta.original_size.height),
                 emit_rle=emit_in_kernel_rle,
+                pack_dense_masks=defer_count_to_adapter and not emit_in_kernel_rle,
             )
         )
         done_event.wait(torch.cuda.current_stream(bboxes.device))
@@ -366,12 +367,13 @@ def post_process_instance_segmentation_results_to_rle_masks(
                 class_id=empty_cls,
                 mask=LazyInstancesRLEMasks(
                     image_size=(orig_h, orig_w),
-                    mask_gpu=mask_bin.view(torch.bool),
+                    mask_packed_gpu=mask_bin,
+                    mask_packed_width=orig_w,
                     done_event=done_event,
                 ),
             )
             detections.__dict__["_combined_gpu"] = combined
-            detections.__dict__["_mask_gpu"] = mask_bin.view(torch.bool)
+            detections.__dict__["_mask_packed_gpu"] = mask_bin
             detections.__dict__["_defer_count_to_adapter"] = True
             detections.__dict__["_postproc_done_event"] = done_event
             return [detections]
