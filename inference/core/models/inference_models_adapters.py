@@ -326,6 +326,8 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
     ) -> List[InstanceSegmentationInferenceResponse]:
         return_in_rle = kwargs.get("response_mask_format") == "rle"
         mapped_kwargs = self.map_inference_kwargs(kwargs)
+        if "response_mask_format" in kwargs:
+            mapped_kwargs["response_mask_format"] = kwargs["response_mask_format"]
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
         )
@@ -335,29 +337,25 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             H = preproc_metadata.original_size.height
             W = preproc_metadata.original_size.width
 
-            # RF-DETR postproc Triton fusion emits an
-            # unsliced (num_queries, 6) int32 record plus a GPU counter and a
-            # completion event. We DtoH the 4-byte counter (single sync) to
-            # learn n_survivors, then async-DtoH the compact slices.
-            combined_gpu = getattr(det, "_combined_gpu", None)
-            counter_gpu = getattr(det, "_counter_gpu", None)
+            mask_gpu = getattr(det, "_mask_gpu", None)
+            mask_cpu = getattr(det, "_mask_cpu", None)
             done_event = getattr(det, "_postproc_done_event", None)
             if (
                 not return_in_rle
-                and combined_gpu is not None
-                and counter_gpu is not None
                 and done_event is not None
-                and isinstance(det.mask, torch.Tensor)
-                and det.mask.is_cuda
+                and isinstance(mask_gpu, torch.Tensor)
+                and mask_gpu.is_cuda
+                and isinstance(det.xyxy, torch.Tensor)
+                and det.xyxy.is_cuda
+                and isinstance(det.confidence, torch.Tensor)
+                and det.confidence.is_cuda
+                and isinstance(det.class_id, torch.Tensor)
+                and det.class_id.is_cuda
             ):
-                device = combined_gpu.device
+                device = mask_gpu.device
                 stream = torch.cuda.current_stream(device)
                 done_event.wait(stream)
-
-                counter_host = get_pinned_buffer("counter", (1,), torch.int32)
-                counter_host.copy_(counter_gpu, non_blocking=True)
-                stream.synchronize()
-                n_survivors = int(counter_host[0].item())
+                n_survivors = int(det.xyxy.shape[0])
 
                 if n_survivors == 0:
                     xyxy = np.empty((0, 4), dtype=np.int32)
@@ -365,23 +363,33 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     class_ids = np.empty((0,), dtype=np.int32)
                     polys_or_rles = []
                 else:
-                    combined_slice = combined_gpu[:n_survivors]
-                    mask_slice = det.mask[:n_survivors]
-                    combined_host = get_pinned_buffer(
-                        "combined", tuple(combined_slice.shape), combined_slice.dtype
+                    mask_slice = mask_gpu[:n_survivors]
+                    xyxy_host = get_pinned_buffer(
+                        "xyxy", tuple(det.xyxy.shape), det.xyxy.dtype
+                    )
+                    conf_host = get_pinned_buffer(
+                        "conf", tuple(det.confidence.shape), det.confidence.dtype
+                    )
+                    class_host = get_pinned_buffer(
+                        "class_id", tuple(det.class_id.shape), det.class_id.dtype
                     )
                     mask_host = get_pinned_buffer(
                         "mask", tuple(mask_slice.shape), mask_slice.dtype
                     )
-                    combined_host.copy_(combined_slice, non_blocking=True)
+                    xyxy_host.copy_(det.xyxy, non_blocking=True)
+                    conf_host.copy_(det.confidence, non_blocking=True)
+                    class_host.copy_(det.class_id, non_blocking=True)
                     mask_host.copy_(mask_slice, non_blocking=True)
                     stream.synchronize()
-                    combined_cpu = combined_host.numpy()
-                    xyxy = combined_cpu[:, :4]
-                    # combined[:, 4] holds fp32 conf bits stored as int32.
-                    confs = combined_cpu[:, 4].view(np.float32)
-                    class_ids = combined_cpu[:, 5]
+                    xyxy = xyxy_host.numpy()
+                    confs = conf_host.numpy()
+                    class_ids = class_host.numpy()
                     polys_or_rles = masks2poly(mask_host.numpy())
+            elif not return_in_rle and isinstance(mask_cpu, np.ndarray):
+                xyxy = det.xyxy.detach().cpu().numpy()
+                confs = det.confidence.detach().cpu().numpy()
+                class_ids = det.class_id.detach().cpu().numpy()
+                polys_or_rles = masks2poly(mask_cpu)
             else:
                 xyxy = det.xyxy.detach().cpu().numpy()
                 confs = det.confidence.detach().cpu().numpy()

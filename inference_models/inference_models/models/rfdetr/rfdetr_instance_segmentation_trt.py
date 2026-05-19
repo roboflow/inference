@@ -318,6 +318,7 @@ class RFDetrForInstanceSegmentationTRT(
                     threshold=confidence_filter.get_threshold(self.class_names),
                     num_classes=len(self.class_names),
                     classes_re_mapping=self._classes_re_mapping,
+                    emit_in_kernel_rle=kwargs.get("response_mask_format") == "rle",
                 )
         self._post_process_stream.synchronize()
         return results

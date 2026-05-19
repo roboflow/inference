@@ -6,6 +6,7 @@ import torch
 
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import (
+    LazyInstancesRLEMasks,
     coco_rle_masks_to_numpy_mask,
     coco_rle_masks_to_torch_mask,
     torch_mask_to_coco_rle,
@@ -28,6 +29,25 @@ def _rle_from_tensors(masks: List[torch.Tensor]) -> InstancesRLEMasks:
     h, w = masks[0].shape
     encoded = [torch_mask_to_coco_rle(m) for m in masks]
     return InstancesRLEMasks.from_coco_rle_masks(image_size=(h, w), masks=encoded)
+
+
+def _uncompressed_counts_from_mask(mask: torch.Tensor) -> np.ndarray:
+    mask_flat = np.ravel(mask.detach().cpu().numpy().astype(bool), order="F")
+    if mask_flat.size == 0:
+        return np.empty((0,), dtype=np.int32)
+    transitions = np.flatnonzero(mask_flat[1:] != mask_flat[:-1]) + 1
+    counts = np.diff(
+        np.concatenate(
+            (
+                np.array([0], dtype=np.int64),
+                transitions.astype(np.int64, copy=False),
+                np.array([mask_flat.size], dtype=np.int64),
+            )
+        )
+    ).astype(np.int32, copy=False)
+    if mask_flat[0]:
+        counts = np.concatenate((np.array([0], dtype=np.int32), counts))
+    return counts
 
 
 def test_torch_mask_to_coco_rle_returns_dict_with_size_and_counts() -> None:
@@ -307,3 +327,54 @@ def test_roundtrip_many_masks_preserves_all() -> None:
     assert decoded.shape == (n, h, w)
     for i, m in enumerate(masks):
         assert torch.equal(decoded[i], m)
+
+
+def test_lazy_instances_rle_masks_materializes_from_cpu_counts() -> None:
+    masks = [
+        _make_rectangle_mask(24, 32, (2, 3, 18, 20)),
+        _make_rectangle_mask(24, 32, (8, 10, 20, 28)),
+    ]
+    counts = [_uncompressed_counts_from_mask(mask) for mask in masks]
+    lengths = np.array([len(c) for c in counts], dtype=np.int32)
+    counts_cpu = np.zeros((len(counts), int(lengths.max())), dtype=np.int32)
+    for i, count in enumerate(counts):
+        counts_cpu[i, : len(count)] = count
+
+    wrapped = LazyInstancesRLEMasks(
+        image_size=(24, 32),
+        rle_counts_cpu=counts_cpu,
+        rle_lengths_cpu=lengths,
+    )
+
+    decoded = coco_rle_masks_to_torch_mask(wrapped)
+    for i, mask in enumerate(masks):
+        assert torch.equal(decoded[i], mask)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_lazy_instances_rle_masks_materializes_from_cuda_counts() -> None:
+    masks = [
+        _make_rectangle_mask(20, 20, (0, 0, 8, 8)),
+        _make_rectangle_mask(20, 20, (10, 10, 20, 20)),
+    ]
+    counts = [_uncompressed_counts_from_mask(mask) for mask in masks]
+    lengths = np.array([len(c) for c in counts], dtype=np.int32)
+    counts_cpu = np.zeros((len(counts), int(lengths.max())), dtype=np.int32)
+    for i, count in enumerate(counts):
+        counts_cpu[i, : len(count)] = count
+
+    counts_gpu = torch.from_numpy(counts_cpu).to(device="cuda", dtype=torch.int32)
+    lengths_gpu = torch.from_numpy(lengths).to(device="cuda", dtype=torch.int32)
+    event = torch.cuda.Event()
+    event.record(torch.cuda.current_stream())
+
+    wrapped = LazyInstancesRLEMasks(
+        image_size=(20, 20),
+        rle_counts_gpu=counts_gpu,
+        rle_lengths_gpu=lengths_gpu,
+        done_event=event,
+    )
+
+    decoded = coco_rle_masks_to_torch_mask(wrapped)
+    for i, mask in enumerate(masks):
+        assert torch.equal(decoded[i], mask)

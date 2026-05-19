@@ -469,5 +469,6 @@ class RFDetrForInstanceSegmentationTorch(
                 threshold=confidence_filter.get_threshold(self.class_names),
                 num_classes=len(self.class_names),
                 classes_re_mapping=self._classes_re_mapping,
+                emit_in_kernel_rle=kwargs.get("response_mask_format") == "rle",
             )
         return results

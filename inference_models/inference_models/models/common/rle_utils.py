@@ -7,6 +7,11 @@ from pycocotools import mask as mask_utils
 from inference_models.models.base.types import InstancesRLEMasks
 
 
+def counts_to_coco_rle(counts: list, image_size: tuple) -> dict:
+    h, w = image_size
+    return mask_utils.frPyObjects({"counts": counts, "size": [h, w]}, h, w)
+
+
 def torch_mask_to_coco_rle(mask: torch.Tensor) -> dict:
     # Convert to uncompressed run length encoding in GPU
     # coco tools expect fortran order (column-wise)
@@ -17,10 +22,128 @@ def torch_mask_to_coco_rle(mask: torch.Tensor) -> dict:
     if values[0] == 1:
         counts.insert(0, 0)
 
-    h, w = mask.shape
-    # compress
-    rle = mask_utils.frPyObjects({"counts": counts, "size": [h, w]}, h, w)
-    return rle
+    return counts_to_coco_rle(counts=counts, image_size=tuple(mask.shape))
+
+
+def numpy_mask_to_coco_rle(mask: np.ndarray) -> dict:
+    mask_bool = np.asarray(mask, dtype=bool)
+    mask_flat = np.ravel(mask_bool, order="F")
+    if mask_flat.size == 0:
+        return counts_to_coco_rle(counts=[], image_size=tuple(mask_bool.shape))
+    transitions = np.flatnonzero(mask_flat[1:] != mask_flat[:-1]) + 1
+    counts = np.diff(
+        np.concatenate(
+            (
+                np.array([0], dtype=np.int64),
+                transitions.astype(np.int64, copy=False),
+                np.array([mask_flat.size], dtype=np.int64),
+            )
+        )
+    ).tolist()
+    if mask_flat[0]:
+        counts.insert(0, 0)
+    return counts_to_coco_rle(counts=counts, image_size=tuple(mask_bool.shape))
+
+
+class LazyInstancesRLEMasks(InstancesRLEMasks):
+    """Materializes COCO RLE counts only when a caller actually needs them."""
+
+    def __init__(
+        self,
+        image_size: tuple,
+        mask_gpu: Optional[torch.Tensor] = None,
+        mask_cpu: Optional[np.ndarray] = None,
+        rle_counts_gpu: Optional[torch.Tensor] = None,
+        rle_lengths_gpu: Optional[torch.Tensor] = None,
+        rle_counts_cpu: Optional[np.ndarray] = None,
+        rle_lengths_cpu: Optional[np.ndarray] = None,
+        done_event: Optional["torch.cuda.Event"] = None,
+    ):
+        self.image_size = image_size
+        self._masks: list = []
+        self._materialized = False
+        self._mask_gpu = mask_gpu
+        self._mask_cpu = mask_cpu
+        self._rle_counts_gpu = rle_counts_gpu
+        self._rle_lengths_gpu = rle_lengths_gpu
+        self._rle_counts_cpu = rle_counts_cpu
+        self._rle_lengths_cpu = rle_lengths_cpu
+        self._done_event = done_event
+
+    @property
+    def masks(self) -> list:
+        self._ensure_materialized()
+        return self._masks
+
+    @masks.setter
+    def masks(self, value: list) -> None:
+        self._masks = value
+        self._materialized = True
+
+    def _ensure_mask_cpu(self) -> np.ndarray:
+        if self._mask_cpu is not None:
+            return self._mask_cpu
+        if self._mask_gpu is None:
+            self._mask_cpu = np.empty(
+                (0, self.image_size[0], self.image_size[1]), dtype=bool
+            )
+            return self._mask_cpu
+        device = self._mask_gpu.device
+        stream = torch.cuda.current_stream(device)
+        if self._done_event is not None:
+            self._done_event.wait(stream)
+        mask_cpu = self._mask_gpu.cpu().numpy()
+        if mask_cpu.dtype == np.uint8:
+            mask_cpu = mask_cpu.view(np.bool_)
+        else:
+            mask_cpu = mask_cpu.astype(bool, copy=False)
+        self._mask_cpu = mask_cpu
+        return self._mask_cpu
+
+    def _ensure_rle_cpu(self) -> None:
+        if self._rle_counts_cpu is not None and self._rle_lengths_cpu is not None:
+            return
+        if self._rle_counts_gpu is None or self._rle_lengths_gpu is None:
+            return
+        device = self._rle_lengths_gpu.device
+        stream = torch.cuda.current_stream(device)
+        if self._done_event is not None:
+            self._done_event.wait(stream)
+        lengths_cpu = self._rle_lengths_gpu.cpu().numpy().astype(np.int32, copy=False)
+        if lengths_cpu.size == 0:
+            counts_cpu = np.empty((0, 0), dtype=np.int32)
+        else:
+            max_len = int(lengths_cpu.max())
+            counts_slice = self._rle_counts_gpu[:, :max_len]
+            counts_cpu = counts_slice.cpu().numpy().astype(np.int32, copy=False)
+        self._rle_lengths_cpu = lengths_cpu
+        self._rle_counts_cpu = counts_cpu
+
+    def _ensure_materialized(self) -> None:
+        if self._materialized:
+            return
+        self._ensure_rle_cpu()
+        if self._rle_counts_cpu is not None and self._rle_lengths_cpu is not None:
+            self._masks = [
+                counts_to_coco_rle(
+                    counts=self._rle_counts_cpu[i, : int(self._rle_lengths_cpu[i])]
+                    .astype(np.int64, copy=False)
+                    .tolist(),
+                    image_size=self.image_size,
+                )["counts"]
+                for i in range(self._rle_lengths_cpu.shape[0])
+            ]
+        else:
+            mask_cpu = self._ensure_mask_cpu()
+            self._masks = [
+                numpy_mask_to_coco_rle(mask=mask_cpu[i])["counts"]
+                for i in range(mask_cpu.shape[0])
+            ]
+        self._materialized = True
+
+    def to_coco_rle_masks(self) -> list:
+        self._ensure_materialized()
+        return super().to_coco_rle_masks()
 
 
 def coco_rle_masks_to_numpy_mask(instances_masks: InstancesRLEMasks) -> np.ndarray:
