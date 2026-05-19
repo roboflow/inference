@@ -21,12 +21,9 @@ from inference_models.configuration import RFDETR_TRITON_POSTPROC
 if RFDETR_TRITON_POSTPROC:
     try:
         from inference_models.models.rfdetr.triton_fullpostproc import (
-            FASTPATH_MASK_H,
-            FASTPATH_MASK_W,
-            FASTPATH_NUM_CLASSES_TOTAL,
-            FASTPATH_NUM_QUERIES,
             TRITON_AVAILABLE as _TRITON_POSTPROC_AVAILABLE,
             rfdetr_triton_postproc,
+            rfdetr_triton_postproc_geometry_supported,
         )
 
         _TRITON_POSTPROC_READY = (
@@ -35,9 +32,11 @@ if RFDETR_TRITON_POSTPROC:
     except Exception:
         _TRITON_POSTPROC_READY = False
         rfdetr_triton_postproc = None
+        rfdetr_triton_postproc_geometry_supported = None
 else:
     _TRITON_POSTPROC_READY = False
     rfdetr_triton_postproc = None
+    rfdetr_triton_postproc_geometry_supported = None
 
 
 def post_triton_eligible(
@@ -48,6 +47,8 @@ def post_triton_eligible(
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> bool:
     if not _TRITON_POSTPROC_READY:
+        return False
+    if bboxes.ndim != 3 or logits.ndim != 3 or masks.ndim != 4:
         return False
     if not bboxes.is_cuda or not logits.is_cuda or not masks.is_cuda:
         return False
@@ -60,35 +61,45 @@ def post_triton_eligible(
         or len(pre_processing_meta) != 1
     ):
         return False
+    if bboxes.shape[2] != 4:
+        return False
+    num_queries = bboxes.shape[1]
+    num_classes_total = logits.shape[2]
+    mask_h = masks.shape[2]
+    mask_w = masks.shape[3]
     if (
-        bboxes.shape[1] != FASTPATH_NUM_QUERIES
-        or logits.shape[1] != FASTPATH_NUM_QUERIES
-        or logits.shape[2] != FASTPATH_NUM_CLASSES_TOTAL
-        or masks.shape[1] != FASTPATH_NUM_QUERIES
-        or masks.shape[2] != FASTPATH_MASK_H
-        or masks.shape[3] != FASTPATH_MASK_W
+        num_queries <= 0
+        or num_classes_total <= 0
+        or mask_h <= 0
+        or mask_w <= 0
+        or logits.shape[1] != num_queries
+        or masks.shape[1] != num_queries
     ):
         return False
     meta = pre_processing_meta[0]
-    if meta.nonsquare_intermediate_size is not None:
+    if rfdetr_triton_postproc_geometry_supported is None:
         return False
-    if meta.static_crop_offset.offset_x != 0 or meta.static_crop_offset.offset_y != 0:
-        return False
-    if (
-        meta.pad_left != 0
-        or meta.pad_top != 0
-        or meta.pad_right != 0
-        or meta.pad_bottom != 0
-    ):
-        return False
-    if (
-        meta.size_after_pre_processing.height < FASTPATH_MASK_H
-        or meta.size_after_pre_processing.width < FASTPATH_MASK_W
-    ):
-        return False
-    if classes_re_mapping is None:
-        return False
-    return True
+    denorm_size = meta.nonsquare_intermediate_size or meta.inference_size
+    return rfdetr_triton_postproc_geometry_supported(
+        denorm_size_wh=(denorm_size.width, denorm_size.height),
+        pad_ltrb=(
+            meta.pad_left,
+            meta.pad_top,
+            meta.pad_right,
+            meta.pad_bottom,
+        ),
+        scale_wh=(meta.scale_width, meta.scale_height),
+        orig_size_wh=(meta.original_size.width, meta.original_size.height),
+        size_after_pre_processing_wh=(
+            meta.size_after_pre_processing.width,
+            meta.size_after_pre_processing.height,
+        ),
+        static_crop_offset_xy=(
+            meta.static_crop_offset.offset_x,
+            meta.static_crop_offset.offset_y,
+        ),
+        mask_size_hw=(mask_h, mask_w),
+    )
 
 
 def parse_model_type(config_path: str) -> str:
@@ -207,6 +218,7 @@ def post_process_instance_segmentation_results(
         bboxes, logits, masks, pre_processing_meta, classes_re_mapping
     ):
         meta = pre_processing_meta[0]
+        denorm_size = meta.nonsquare_intermediate_size or meta.inference_size
         thr_arg = threshold if isinstance(threshold, torch.Tensor) else float(threshold)
         combined, mask_bin, counter, done_event, _, _ = rfdetr_triton_postproc(
             bboxes=bboxes,
@@ -214,10 +226,28 @@ def post_process_instance_segmentation_results(
             masks=masks,
             threshold=thr_arg,
             num_classes=num_classes,
-            class_mapping=classes_re_mapping.class_mapping,
-            inference_size_wh=(meta.inference_size.width, meta.inference_size.height),
+            class_mapping=(
+                classes_re_mapping.class_mapping
+                if classes_re_mapping is not None
+                else None
+            ),
+            denorm_size_wh=(denorm_size.width, denorm_size.height),
+            pad_ltrb=(
+                meta.pad_left,
+                meta.pad_top,
+                meta.pad_right,
+                meta.pad_bottom,
+            ),
             scale_wh=(meta.scale_width, meta.scale_height),
             orig_size_wh=(meta.original_size.width, meta.original_size.height),
+            size_after_pre_processing_wh=(
+                meta.size_after_pre_processing.width,
+                meta.size_after_pre_processing.height,
+            ),
+            static_crop_offset_xy=(
+                meta.static_crop_offset.offset_x,
+                meta.static_crop_offset.offset_y,
+            ),
         )
         done_event.wait(torch.cuda.current_stream(bboxes.device))
         n_survivors = int(counter.item())
@@ -335,6 +365,7 @@ def post_process_instance_segmentation_results_to_rle_masks(
         bboxes, logits, masks, pre_processing_meta, classes_re_mapping
     ):
         meta = pre_processing_meta[0]
+        denorm_size = meta.nonsquare_intermediate_size or meta.inference_size
         thr_arg = threshold if isinstance(threshold, torch.Tensor) else float(threshold)
         combined, mask_bin, counter, done_event, rle_counts, rle_lengths = (
             rfdetr_triton_postproc(
@@ -343,13 +374,28 @@ def post_process_instance_segmentation_results_to_rle_masks(
                 masks=masks,
                 threshold=thr_arg,
                 num_classes=num_classes,
-                class_mapping=classes_re_mapping.class_mapping,
-                inference_size_wh=(
-                    meta.inference_size.width,
-                    meta.inference_size.height,
+                class_mapping=(
+                    classes_re_mapping.class_mapping
+                    if classes_re_mapping is not None
+                    else None
+                ),
+                denorm_size_wh=(denorm_size.width, denorm_size.height),
+                pad_ltrb=(
+                    meta.pad_left,
+                    meta.pad_top,
+                    meta.pad_right,
+                    meta.pad_bottom,
                 ),
                 scale_wh=(meta.scale_width, meta.scale_height),
                 orig_size_wh=(meta.original_size.width, meta.original_size.height),
+                size_after_pre_processing_wh=(
+                    meta.size_after_pre_processing.width,
+                    meta.size_after_pre_processing.height,
+                ),
+                static_crop_offset_xy=(
+                    meta.static_crop_offset.offset_x,
+                    meta.static_crop_offset.offset_y,
+                ),
                 emit_rle=emit_in_kernel_rle,
                 pack_dense_masks=defer_count_to_adapter and not emit_in_kernel_rle,
             )
