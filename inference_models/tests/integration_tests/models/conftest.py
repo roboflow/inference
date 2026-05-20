@@ -1441,7 +1441,6 @@ def sam2_package() -> str:
 
 
 @pytest.fixture(scope="module")
-<<<<<<< HEAD
 def sam2_video_package() -> str:
     """Streaming SAM2 via HuggingFace ``Sam2VideoModel``.
 
@@ -1712,10 +1711,8 @@ def yolov10_object_detection_trt_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLOV10_TRT_PACKAGE_URL,
         package_name="yolov10-object-detection-trt",
-=======
 def sam3_package() -> str:
     return download_model_package(
         model_package_zip_url=SAM3_PACKAGE_URL,
         package_name="sam3",
->>>>>>> 26492f7b2 (wip)
     )
