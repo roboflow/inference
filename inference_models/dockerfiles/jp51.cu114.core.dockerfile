@@ -1,5 +1,14 @@
 FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3 AS builder
 
+# Tell apt that libopencv-dev is already satisfied (the CUDA OpenCV in
+# opencv-dev 4.5.0 from the base image covers it). This prevents apt from
+# pulling in NVIDIA's libopencv-dev which conflicts on file ownership.
+RUN mkdir -p /tmp/dummy/DEBIAN \
+ && printf 'Package: libopencv-dev\nVersion: 4.5.0\nArchitecture: arm64\nMaintainer: local <local@local>\nDescription: dummy satisfying libopencv-dev (real CUDA OpenCV lives in opencv-dev)\n' > /tmp/dummy/DEBIAN/control \
+ && dpkg-deb --build /tmp/dummy /tmp/libopencv-dev-dummy.deb \
+ && dpkg -i /tmp/libopencv-dev-dummy.deb \
+ && rm -rf /tmp/dummy /tmp/libopencv-dev-dummy.deb
+
 # install Python 3.12
 RUN apt-get update -y && apt-get install -y \
     libssl-dev \
