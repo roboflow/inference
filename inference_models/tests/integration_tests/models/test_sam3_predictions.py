@@ -124,8 +124,8 @@ def test_sam3_segment_images_with_point_prompting(
 ) -> None:
     # given
     model = SAM3Torch.from_pretrained(sam3_package, device=DEFAULT_DEVICE)
-    input_point = np.array([[500, 375]])
-    input_label = np.array([1])
+    input_point = np.array([[[500, 375]]])
+    input_label = np.array([[1]])
 
     # when
     results = model.segment_images(
@@ -156,8 +156,8 @@ def test_sam3_segment_images_with_multiple_points(
 ) -> None:
     # given
     model = SAM3Torch.from_pretrained(sam3_package, device=DEFAULT_DEVICE)
-    input_points = np.array([[500, 375], [600, 400], [450, 350]])
-    input_labels = np.array([1, 1, 1])
+    input_points = np.array([[[500, 375], [600, 400], [450, 350]]])
+    input_labels = np.array([[1, 1, 1]])
 
     # when
     results = model.segment_images(
@@ -179,8 +179,8 @@ def test_sam3_segment_images_with_embeddings(
 ) -> None:
     # given
     model = SAM3Torch.from_pretrained(sam3_package, device=DEFAULT_DEVICE)
-    input_point = np.array([[500, 375]])
-    input_label = np.array([1])
+    input_point = np.array([[[500, 375]]])
+    input_label = np.array([[1]])
 
     # when
     embeddings = model.embed_images(truck_image_numpy)
@@ -252,14 +252,14 @@ def test_sam3_segment_images_with_combined_prompting(
     # given
     model = SAM3Torch.from_pretrained(sam3_package, device=DEFAULT_DEVICE)
     input_box = np.array([425, 600, 700, 875])
-    input_point = np.array([[575, 750]])
-    input_label = np.array([0])  # negative point
+    input_point = np.array([[[575, 750]]])
+    input_label = np.array([[0]])  # negative point
 
     # when
     results = model.segment_images(
         truck_image_numpy,
-        point_coordinates=[input_point],
-        point_labels=[input_label],
+        point_coordinates=input_point,
+        point_labels=input_label,
         boxes=input_box,
     )
 
@@ -276,8 +276,8 @@ def test_sam3_segment_images_with_mask_prompting(
 ) -> None:
     # given
     model = SAM3Torch.from_pretrained(sam3_package, device=DEFAULT_DEVICE)
-    input_point = np.array([[500, 375]])
-    input_label = np.array([1])
+    input_point = np.array([[[500, 375]]])
+    input_label = np.array([[1]])
 
     # when - first pass to get a mask
     first_results = model.segment_images(
@@ -320,15 +320,15 @@ def test_sam3_segment_images_with_misaligned_batch_sizes(
 ) -> None:
     # given
     model = SAM3Torch.from_pretrained(sam3_package, device=DEFAULT_DEVICE)
-    input_point = np.array([[575, 750]])
-    input_label = np.array([0])
+    input_point = np.array([[[575, 750]]])
+    input_label = np.array([[0]])
 
-    # when / then - misaligned point_labels
+    # when / then - misaligned point_labels (2 prompts of labels vs 1 prompt of coords)
     with pytest.raises(ModelInputError):
         _ = model.segment_images(
             truck_image_numpy,
-            point_coordinates=[input_point],
-            point_labels=[input_label, input_label],  # 2 labels for 1 image
+            point_coordinates=input_point,
+            point_labels=np.array([[0], [0]]),
         )
 
 
@@ -450,8 +450,8 @@ def test_sam3_segment_images_multi_mask_output(
 ) -> None:
     # given
     model = SAM3Torch.from_pretrained(sam3_package, device=DEFAULT_DEVICE)
-    input_point = np.array([[500, 375]])
-    input_label = np.array([1])
+    input_point = np.array([[[500, 375]]])
+    input_label = np.array([[1]])
 
     # when - with multi_mask_output=True (default)
     results_multi = model.segment_images(
@@ -485,8 +485,8 @@ def test_sam3_segment_images_return_logits(
 ) -> None:
     # given
     model = SAM3Torch.from_pretrained(sam3_package, device=DEFAULT_DEVICE)
-    input_point = np.array([[500, 375]])
-    input_label = np.array([1])
+    input_point = np.array([[[500, 375]]])
+    input_label = np.array([[1]])
 
     # when - with return_logits=True
     results_logits = model.segment_images(
