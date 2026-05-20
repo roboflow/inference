@@ -1,18 +1,45 @@
+from types import SimpleNamespace
+from typing import Any, List
 from unittest import mock
-from unittest.mock import MagicMock
 
 import pytest
 
 from inference.core.cache import MemoryCache
 from inference.core.workflows.core_steps.sinks.roboflow.edit_image_metadata import v1
 from inference.core.workflows.core_steps.sinks.roboflow.edit_image_metadata.v1 import (
-    SINGLE_UPDATE_SUCCESS_MESSAGE,
     SKIPPED_EMPTY_UPDATE_MESSAGE,
+    UPDATE_SUCCESS_MESSAGE,
     BlockManifest,
     EditImageMetadataBlockV1,
     build_effective_updates,
 )
 from inference.core.workflows.execution_engine.entities.base import Batch
+
+
+def make_batch(content: List[Any]) -> Batch:
+    return Batch(content=content, indices=[(i,) for i in range(len(content))])
+
+
+@pytest.fixture
+def block() -> EditImageMetadataBlockV1:
+    return EditImageMetadataBlockV1(cache=MemoryCache(), api_key="my_api_key")
+
+
+@pytest.fixture
+def mocked_v1():
+    with (
+        mock.patch.object(v1, "get_workspace_name") as workspace_mock,
+        mock.patch.object(v1, "update_image_metadata_at_roboflow") as single_mock,
+        mock.patch.object(v1, "batch_update_image_metadata_at_roboflow") as batch_mock,
+    ):
+        workspace_mock.return_value = "my-workspace"
+        single_mock.return_value = {"success": True}
+        batch_mock.return_value = {"taskId": "task-123"}
+        yield SimpleNamespace(
+            workspace=workspace_mock,
+            update_single=single_mock,
+            update_batch=batch_mock,
+        )
 
 
 def test_manifest_parsing_valid() -> None:
@@ -41,40 +68,23 @@ def test_manifest_parsing_valid() -> None:
 def test_build_effective_updates_skips_empty_rows_and_merges_duplicate_source_ids() -> (
     None
 ):
-    updates, source_id_to_result_indices, results = build_effective_updates(
-        source_ids=Batch(
-            content=["img-1", "img-2", "img-1", "img-3"],
-            indices=[(0,), (1,), (2,), (3,)],
+    effective = build_effective_updates(
+        source_ids=make_batch(["img-1", "img-2", "img-1", "img-3"]),
+        metadata=make_batch(
+            [{"color": "red", "score": 0.1}, None, {"color": "blue"}, {}]
         ),
-        metadata=Batch(
-            content=[
-                {"color": "red", "score": 0.1},
-                None,
-                {"color": "blue"},
-                {},
-            ],
-            indices=[(0,), (1,), (2,), (3,)],
-        ),
-        tags=Batch(
-            content=[
-                ["shared", "first"],
-                None,
-                ["shared", "last"],
-                [],
-            ],
-            indices=[(0,), (1,), (2,), (3,)],
-        ),
+        tags=make_batch([["shared", "first"], None, ["shared", "last"], []]),
     )
 
-    assert updates == [
+    assert effective.updates == [
         {
             "imageId": "img-1",
             "metadata": {"color": "blue", "score": 0.1},
             "addTags": ["first", "shared", "last"],
         }
     ]
-    assert source_id_to_result_indices == {"img-1": [0, 2]}
-    assert results == [
+    assert effective.result_indices_by_id == {"img-1": [0, 2]}
+    assert effective.results == [
         None,
         {"error_status": False, "message": SKIPPED_EMPTY_UPDATE_MESSAGE},
         None,
@@ -83,53 +93,36 @@ def test_build_effective_updates_skips_empty_rows_and_merges_duplicate_source_id
 
 
 def test_run_when_api_key_is_not_specified() -> None:
-    block = EditImageMetadataBlockV1(cache=MemoryCache(), api_key=None)
+    block_no_key = EditImageMetadataBlockV1(cache=MemoryCache(), api_key=None)
 
     with pytest.raises(ValueError):
-        block.run(
-            source_id=Batch(content=["img-1"], indices=[(0,)]),
-            metadata=Batch(content=[{"color": "red"}], indices=[(0,)]),
+        block_no_key.run(
+            source_id=make_batch(["img-1"]),
+            metadata=make_batch([{"color": "red"}]),
         )
 
 
-def test_run_when_disabled() -> None:
-    block = EditImageMetadataBlockV1(cache=MemoryCache(), api_key="my_api_key")
+def test_run_when_disabled(block: EditImageMetadataBlockV1) -> None:
+    result = block.run(source_id=make_batch(["img-1", "img-2"]), disable_sink=True)
 
-    result = block.run(
-        source_id=Batch(content=["img-1", "img-2"], indices=[(0,), (1,)]),
-        disable_sink=True,
-    )
-
-    assert result == [
-        {
-            "error_status": False,
-            "message": "Sink was disabled by parameter `disable_sink`",
-        },
-        {
-            "error_status": False,
-            "message": "Sink was disabled by parameter `disable_sink`",
-        },
-    ]
+    disabled = {
+        "error_status": False,
+        "message": "Sink was disabled by parameter `disable_sink`",
+    }
+    assert result == [disabled, disabled]
 
 
-@mock.patch.object(v1, "get_workspace_name")
-@mock.patch.object(v1, "update_image_metadata_at_roboflow")
 def test_run_single_effective_update_calls_single_endpoint(
-    update_image_metadata_at_roboflow_mock: MagicMock,
-    get_workspace_name_mock: MagicMock,
+    block: EditImageMetadataBlockV1, mocked_v1
 ) -> None:
-    get_workspace_name_mock.return_value = "my-workspace"
-    update_image_metadata_at_roboflow_mock.return_value = {"success": True}
-    block = EditImageMetadataBlockV1(cache=MemoryCache(), api_key="my_api_key")
-
     result = block.run(
-        source_id=Batch(content=["img-1"], indices=[(0,)]),
-        metadata=Batch(content=[{"color": "red"}], indices=[(0,)]),
-        tags=Batch(content=[["auto"]], indices=[(0,)]),
+        source_id=make_batch(["img-1"]),
+        metadata=make_batch([{"color": "red"}]),
+        tags=make_batch([["auto"]]),
     )
 
-    assert result == [{"error_status": False, "message": SINGLE_UPDATE_SUCCESS_MESSAGE}]
-    update_image_metadata_at_roboflow_mock.assert_called_once_with(
+    assert result == [{"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}]
+    mocked_v1.update_single.assert_called_once_with(
         api_key="my_api_key",
         workspace_id="my-workspace",
         image_id="img-1",
@@ -138,58 +131,39 @@ def test_run_single_effective_update_calls_single_endpoint(
     )
 
 
-@mock.patch.object(v1, "get_workspace_name")
-@mock.patch.object(v1, "update_image_metadata_at_roboflow")
 def test_run_single_endpoint_error_returns_per_image_error(
-    update_image_metadata_at_roboflow_mock: MagicMock,
-    get_workspace_name_mock: MagicMock,
+    block: EditImageMetadataBlockV1, mocked_v1
 ) -> None:
-    get_workspace_name_mock.return_value = "my-workspace"
-    update_image_metadata_at_roboflow_mock.side_effect = Exception("API error")
-    block = EditImageMetadataBlockV1(cache=MemoryCache(), api_key="my_api_key")
+    mocked_v1.update_single.side_effect = Exception("API error")
 
     result = block.run(
-        source_id=Batch(content=["img-1"], indices=[(0,)]),
-        metadata=Batch(content=[{"color": "red"}], indices=[(0,)]),
+        source_id=make_batch(["img-1"]),
+        metadata=make_batch([{"color": "red"}]),
     )
 
     assert result[0]["error_status"] is True
     assert "API error" in result[0]["message"]
 
 
-@mock.patch.object(v1, "get_workspace_name")
-@mock.patch.object(v1, "batch_update_image_metadata_at_roboflow")
 def test_run_batch_endpoint_uses_merged_updates_and_preserves_input_order(
-    batch_update_image_metadata_at_roboflow_mock: MagicMock,
-    get_workspace_name_mock: MagicMock,
+    block: EditImageMetadataBlockV1, mocked_v1
 ) -> None:
-    get_workspace_name_mock.return_value = "my-workspace"
-    batch_update_image_metadata_at_roboflow_mock.return_value = {"taskId": "task-123"}
-    block = EditImageMetadataBlockV1(cache=MemoryCache(), api_key="my_api_key")
-
     result = block.run(
-        source_id=Batch(
-            content=["img-1", "img-2", "img-1", "img-3"],
-            indices=[(0,), (1,), (2,), (3,)],
+        source_id=make_batch(["img-1", "img-2", "img-1", "img-3"]),
+        metadata=make_batch(
+            [{"color": "red"}, {"score": 0.9}, {"color": "blue"}, None]
         ),
-        metadata=Batch(
-            content=[{"color": "red"}, {"score": 0.9}, {"color": "blue"}, None],
-            indices=[(0,), (1,), (2,), (3,)],
-        ),
-        tags=Batch(
-            content=[["a", "x"], ["b"], ["a", "c"], None],
-            indices=[(0,), (1,), (2,), (3,)],
-        ),
+        tags=make_batch([["a", "x"], ["b"], ["a", "c"], None]),
     )
 
-    submitted = {"error_status": False, "message": "Submitted as async task task-123"}
+    submitted = {"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}
     assert result == [
         submitted,
         submitted,
         submitted,
         {"error_status": False, "message": SKIPPED_EMPTY_UPDATE_MESSAGE},
     ]
-    batch_update_image_metadata_at_roboflow_mock.assert_called_once_with(
+    mocked_v1.update_batch.assert_called_once_with(
         api_key="my_api_key",
         workspace_id="my-workspace",
         updates=[
@@ -203,40 +177,25 @@ def test_run_batch_endpoint_uses_merged_updates_and_preserves_input_order(
     )
 
 
-@mock.patch.object(v1, "get_workspace_name")
-@mock.patch.object(v1, "batch_update_image_metadata_at_roboflow")
 def test_run_batch_endpoint_error_raises(
-    batch_update_image_metadata_at_roboflow_mock: MagicMock,
-    get_workspace_name_mock: MagicMock,
+    block: EditImageMetadataBlockV1, mocked_v1
 ) -> None:
-    get_workspace_name_mock.return_value = "my-workspace"
-    batch_update_image_metadata_at_roboflow_mock.side_effect = Exception(
-        "preflight error"
-    )
-    block = EditImageMetadataBlockV1(cache=MemoryCache(), api_key="my_api_key")
+    mocked_v1.update_batch.side_effect = Exception("preflight error")
 
     with pytest.raises(Exception, match="preflight error"):
         block.run(
-            source_id=Batch(content=["img-1", "img-2"], indices=[(0,), (1,)]),
-            metadata=Batch(content=[{"a": 1}, {"b": 2}], indices=[(0,), (1,)]),
+            source_id=make_batch(["img-1", "img-2"]),
+            metadata=make_batch([{"a": 1}, {"b": 2}]),
         )
 
 
-@mock.patch.object(v1, "get_workspace_name")
 def test_run_raises_when_effective_update_count_exceeds_batch_limit(
-    get_workspace_name_mock: MagicMock,
+    block: EditImageMetadataBlockV1, mocked_v1
 ) -> None:
-    get_workspace_name_mock.return_value = "my-workspace"
-    block = EditImageMetadataBlockV1(cache=MemoryCache(), api_key="my_api_key")
     count = v1.MAX_BATCH_UPDATES + 1
-    indices = [(i,) for i in range(count)]
 
     with pytest.raises(ValueError, match="at most 1000 updates"):
         block.run(
-            source_id=Batch(
-                content=[f"img-{i}" for i in range(count)], indices=indices
-            ),
-            metadata=Batch(
-                content=[{"value": i} for i in range(count)], indices=indices
-            ),
+            source_id=make_batch([f"img-{i}" for i in range(count)]),
+            metadata=make_batch([{"value": i} for i in range(count)]),
         )

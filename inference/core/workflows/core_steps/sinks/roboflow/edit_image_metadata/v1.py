@@ -1,6 +1,6 @@
 import hashlib
 import logging
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, NamedTuple, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
@@ -41,9 +41,9 @@ This block writes metadata key-value pairs and tags back to existing images in y
 2. Resolves the target workspace from the configured Roboflow API key
 3. Skips rows where both metadata and tags are empty
 4. Merges duplicate source IDs using sequential semantics: later metadata values win, and tags are added as a de-duplicated set
-5. Uses the synchronous single-image metadata endpoint for one effective update
-6. Uses the asynchronous batch metadata endpoint for multiple effective updates
-7. Returns one status result per input source ID, in input order
+5. Returns one status result per input source ID, in input order
+
+Re-running the same workflow against the same source IDs is safe: metadata keys are upserted (last write wins) and tags are unioned. There is no destructive write.
 
 The block does not send image bytes and does not create new images. It only updates existing source images. Removing metadata keys, removing tags, writing annotations, and creating images are intentionally out of scope for this workflow block.
 
@@ -55,7 +55,7 @@ This block requires a valid Roboflow API key. The API key determines the workspa
 MAX_BATCH_UPDATES = 1000
 WORKSPACE_NAME_CACHE_EXPIRE = 900  # 15 min
 SKIPPED_EMPTY_UPDATE_MESSAGE = "Skipped because no metadata or tags were provided"
-SINGLE_UPDATE_SUCCESS_MESSAGE = "Metadata updated"
+UPDATE_SUCCESS_MESSAGE = "Metadata updated"
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -75,11 +75,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal[
-        "roboflow_core/edit_image_metadata@v1",
-        "roboflow_core/roboflow_edit_image_metadata@v1",
-        "EditImageMetadata",
-    ]
+    type: Literal["roboflow_core/edit_image_metadata@v1"]
     source_id: Union[str, Selector(kind=[STRING_KIND])] = Field(
         description="Roboflow source image ID to update. For batch workflows, provide one source ID per image.",
         examples=["$inputs.source_id", "source_abc123"],
@@ -157,38 +153,39 @@ class EditImageMetadataBlockV1(WorkflowBlock):
                 for _ in range(len(source_id))
             ]
 
-        workspace_id = get_workspace_name(api_key=self._api_key, cache=self._cache)
-        updates, source_id_to_result_indices, results = build_effective_updates(
-            source_ids=source_id,
-            metadata=metadata,
-            tags=tags,
-        )
-
-        if not updates:
-            return results
-        if len(updates) > MAX_BATCH_UPDATES:
+        if len(source_id) > MAX_BATCH_UPDATES:
             raise ValueError(
                 f"EditImageMetadata block supports at most {MAX_BATCH_UPDATES} updates per run(). "
                 "Reduce the workflow batch size."
             )
 
-        if len(updates) == 1:
+        workspace_id = get_workspace_name(api_key=self._api_key, cache=self._cache)
+        effective = build_effective_updates(
+            source_ids=source_id,
+            metadata=metadata,
+            tags=tags,
+        )
+
+        if not effective.updates:
+            return effective.results
+
+        if len(effective.updates) == 1:
             submitted_result = call_single_endpoint(
                 workspace_id=workspace_id,
-                update=updates[0],
+                update=effective.updates[0],
                 api_key=self._api_key,
             )
         else:
             submitted_result = call_batch_endpoint(
                 workspace_id=workspace_id,
-                updates=updates,
+                updates=effective.updates,
                 api_key=self._api_key,
             )
 
-        for update in updates:
-            for result_index in source_id_to_result_indices[update["imageId"]]:
-                results[result_index] = submitted_result
-        return results
+        for update in effective.updates:
+            for result_index in effective.result_indices_by_id[update["imageId"]]:
+                effective.results[result_index] = submitted_result
+        return effective.results
 
 
 def get_workspace_name(api_key: str, cache: BaseCache) -> str:
@@ -206,17 +203,23 @@ def get_workspace_name(api_key: str, cache: BaseCache) -> str:
     return workspace_name_from_api
 
 
+class EffectiveUpdates(NamedTuple):
+    updates: List[Dict[str, Any]]
+    result_indices_by_id: Dict[str, List[int]]
+    results: List[Optional[Dict[str, Any]]]
+
+
 def build_effective_updates(
     source_ids: Batch[str],
     metadata: Optional[Batch[Optional[Dict[str, Any]]]],
     tags: Optional[Batch[Optional[List[str]]]],
-) -> Tuple[List[Dict[str, Any]], Dict[str, List[int]], List[Dict[str, Any]]]:
+) -> EffectiveUpdates:
     n = len(source_ids)
     metadata_values = metadata or [None] * n
     tag_values = tags or [None] * n
     results: List[Optional[Dict[str, Any]]] = [None] * n
     updates_by_source_id: Dict[str, Dict[str, Any]] = {}
-    source_id_to_result_indices: Dict[str, List[int]] = {}
+    result_indices_by_id: Dict[str, List[int]] = {}
 
     for result_index, (source, image_metadata, image_tags) in enumerate(
         zip(source_ids, metadata_values, tag_values)
@@ -232,14 +235,15 @@ def build_effective_updates(
         if image_metadata:
             merged.setdefault("metadata", {}).update(image_metadata)
         if image_tags:
-            merged.setdefault("addTags", [])
-            for tag in image_tags:
-                if tag in merged["addTags"]:
-                    merged["addTags"].remove(tag)
-                merged["addTags"].append(tag)
-        source_id_to_result_indices.setdefault(source, []).append(result_index)
+            combined = [*merged.get("addTags", []), *image_tags]
+            merged["addTags"] = list(dict.fromkeys(reversed(combined)))[::-1]
+        result_indices_by_id.setdefault(source, []).append(result_index)
 
-    return list(updates_by_source_id.values()), source_id_to_result_indices, results  # type: ignore
+    return EffectiveUpdates(
+        updates=list(updates_by_source_id.values()),
+        result_indices_by_id=result_indices_by_id,
+        results=results,
+    )
 
 
 def call_single_endpoint(
@@ -247,18 +251,27 @@ def call_single_endpoint(
     update: Dict[str, Any],
     api_key: str,
 ) -> Dict[str, Any]:
+    image_id = update["imageId"]
     try:
         update_image_metadata_at_roboflow(
             api_key=api_key,
             workspace_id=workspace_id,
-            image_id=update["imageId"],
+            image_id=image_id,
             metadata=update.get("metadata"),
             add_tags=update.get("addTags"),
         )
-        return {"error_status": False, "message": SINGLE_UPDATE_SUCCESS_MESSAGE}
+        logging.info(
+            "Updated image metadata: workspace_id=%s image_id=%s",
+            workspace_id,
+            image_id,
+        )
+        return {"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}
     except Exception as error:
         logging.warning(
-            f"Could not update metadata for image ID: {update['imageId']}. Reason: {error}"
+            "Could not update metadata: workspace_id=%s image_id=%s reason=%s",
+            workspace_id,
+            image_id,
+            error,
         )
         return {
             "error_status": True,
@@ -279,7 +292,10 @@ def call_batch_endpoint(
     task_id = response.get("taskId")
     if not task_id:
         raise ValueError(f"Malformed image metadata batch response: {response}")
-    return {
-        "error_status": False,
-        "message": f"Submitted as async task {task_id}",
-    }
+    logging.info(
+        "Submitted image metadata batch update: workspace_id=%s task_id=%s updates=%d",
+        workspace_id,
+        task_id,
+        len(updates),
+    )
+    return {"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}

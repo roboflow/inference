@@ -66,8 +66,8 @@ def test_workflow_with_edit_image_metadata_auto_batches_scalar_metadata_and_tags
 
     # then
     assert len(result) == 2
-    assert result[0]["message"] == "Submitted as async task task-123"
-    assert result[1]["message"] == "Submitted as async task task-123"
+    assert result[0]["message"] == "Metadata updated"
+    assert result[1]["message"] == "Metadata updated"
     batch_update_image_metadata_at_roboflow_mock.assert_called_once_with(
         api_key="my_api_key",
         workspace_id="my-workspace",
