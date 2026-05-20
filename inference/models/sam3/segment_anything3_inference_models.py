@@ -182,7 +182,9 @@ class InferenceModelsSAM3Adapter(Model):
 def _sam3_prompt_to_dict(p: Sam3Prompt) -> Dict[str, Any]:
     d: Dict[str, Any] = {"text": p.text}
     if p.boxes:
-        d["boxes"] = p.boxes  # backend's _build_visual_query handles pydantic Box/BoxXYXY
+        d["boxes"] = (
+            p.boxes
+        )  # backend's _build_visual_query handles pydantic Box/BoxXYXY
         d["box_labels"] = p.box_labels or []
     return d
 

@@ -105,9 +105,7 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
         t1 = perf_counter()
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())
-            return Sam2EmbeddingResponse(
-                time=perf_counter() - t1, image_id=image_id
-            )
+            return Sam2EmbeddingResponse(time=perf_counter() - t1, image_id=image_id)
         if isinstance(request, Sam2SegmentationRequest):
             masks, scores, low_res_logits = self.segment_image(**request.dict())
             if request.format == "json" or request.format == "polygon":
@@ -283,9 +281,7 @@ def _build_rle_response(
         rle = mask_utils.encode(np.asfortranarray(mb))
         rle["counts"] = rle["counts"].decode("utf-8")
         predictions.append(
-            Sam2SegmentationPrediction(
-                masks=rle, confidence=float(score), format="rle"
-            )
+            Sam2SegmentationPrediction(masks=rle, confidence=float(score), format="rle")
         )
     return Sam2SegmentationResponse(
         time=perf_counter() - inference_start_timestamp,
