@@ -16,13 +16,16 @@ RUN apt-get update -y && apt-get install -y \
     libswscale-dev \
     libavutil-dev \
     libgstreamer1.0-dev \
-    libgstreamer-plugins-base1.0-dev
+    libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-bad1.0-dev \
+    libjson-glib-dev \
+    libnice-dev
 
 RUN mkdir -p /build/python-3.12
 WORKDIR /build/python-3.12
 RUN wget https://www.python.org/ftp/python/3.12.12/Python-3.12.12.tgz && tar -xzf Python-3.12.12.tgz
 WORKDIR /build/python-3.12/Python-3.12.12
-RUN ./configure --enable-optimizations
+RUN ./configure --enable-optimizations --enable-shared --prefix=/usr/local LDFLAGS="-Wl,-rpath,/usr/local/lib"
 RUN make -j$(nproc) && make altinstall
 
 RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.12 1
@@ -162,6 +165,7 @@ RUN mkdir -p /build/jetson-utils
 WORKDIR /build/jetson-utils
 RUN git clone https://github.com/dusty-nv/jetson-utils
 WORKDIR /build/jetson-utils/jetson-utils
+RUN sed -i 's/2\.7 3\.6 3\.7 3\.8 3\.10 3\.12/3.12/' python/CMakeLists.txt  # in-place patch for build process to select py3.12 only
 RUN mkdir build
 WORKDIR /build/jetson-utils/jetson-utils/build
 RUN cmake ../
@@ -213,8 +217,11 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     libavformat-dev \
     libswscale-dev \
     libavutil-dev \
-    libgstreamer1.0-dev \
-    libgstreamer-plugins-base1.0-dev \
+    libgstreamer1.0 \
+    libgstreamer-plugins-base1.0 \
+    libgstreamer-plugins-bad1.0 \
+    libjson-glib \
+    libnice
     && rm -rf /var/lib/apt/lists/*
 
 # Install OpenCV
