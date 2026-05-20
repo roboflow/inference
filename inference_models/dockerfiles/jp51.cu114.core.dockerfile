@@ -221,7 +221,7 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     libgstreamer-plugins-base1.0 \
     libgstreamer-plugins-bad1.0 \
     libjson-glib \
-    libnice
+    libnice \
     && rm -rf /var/lib/apt/lists/*
 
 # Install OpenCV
