@@ -158,6 +158,17 @@ RUN CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ FORCE_CUDA=1 PATH=/build/cm
 RUN python3.12 -m pip install dist/torchvision-*.whl
 RUN cp dist/torchvision-*.whl /build/out/wheels/
 
+RUN mkdir -p /build/jetson-utils
+WORKDIR /build/jetson-utils
+RUN git clone https://github.com/dusty-nv/jetson-utils
+WORKDIR /build/jetson-utils/jetson-utils
+RUN mkdir build
+WORKDIR /build/jetson-utils/jetson-utils/build
+RUN cmake ../
+RUN make -j$(nproc)
+RUN make install
+RUN ldconfig
+
 FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3 AS target
 
 RUN apt-get update -y && apt-get install -y \
