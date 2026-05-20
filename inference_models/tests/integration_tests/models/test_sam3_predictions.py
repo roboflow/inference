@@ -1,3 +1,5 @@
+import gc
+
 import numpy as np
 import pytest
 import torch
@@ -5,6 +7,14 @@ import torch
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.errors import ModelInputError
 from inference_models.models.sam3.sam3_torch import SAM3Torch
+
+
+@pytest.fixture(autouse=True)
+def _free_gpu_after_test():
+    yield
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 @pytest.mark.slow
@@ -323,12 +333,12 @@ def test_sam3_segment_images_with_misaligned_batch_sizes(
     input_point = np.array([[[575, 750]]])
     input_label = np.array([[0]])
 
-    # when / then - misaligned point_labels (2 prompts of labels vs 1 prompt of coords)
+    # when / then - misaligned outer batch (1 image of coords vs 2 of labels)
     with pytest.raises(ModelInputError):
         _ = model.segment_images(
             truck_image_numpy,
-            point_coordinates=input_point,
-            point_labels=np.array([[0], [0]]),
+            point_coordinates=[input_point],
+            point_labels=[input_label, input_label],
         )
 
 
