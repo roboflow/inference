@@ -177,78 +177,78 @@ WORKDIR /build/jetson-utils/jetson-utils
 RUN sed -i 's/2\.7 3\.6 3\.7 3\.8 3\.10 3\.12/3.12/' python/CMakeLists.txt  # in-place patch for build process to select py3.12 only
 RUN mkdir build
 WORKDIR /build/jetson-utils/jetson-utils/build
-RUN cmake ../
-RUN make -j$(nproc)
-RUN make install
-RUN ldconfig
-
-FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3 AS target
-
-RUN apt-get update -y && apt-get install -y \
-    libssl-dev \
-    git \
-    unzip \
-    libbz2-dev \
-    libssl-dev \
-    libsqlite3-dev \
-    zlib1g-dev \
-    liblzma-dev \
-    ffmpeg
-
-RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
-
-
-COPY --from=builder /root/GCC-11 /opt/gcc-11
-COPY --from=builder /build/out/wheels /compiled_python_packages
-COPY --from=builder /usr/include /usr/include
-COPY --from=builder /usr/lib /usr/lib
-COPY --from=builder /usr/share /usr/share
-COPY --from=builder /usr/src /usr/src
-COPY --from=builder /usr/local/bin /usr/local/bin
-COPY --from=builder /usr/local/include /usr/local/include
-COPY --from=builder /usr/local/lib /usr/local/lib
-COPY --from=builder /usr/local/share /usr/local/share
-COPY --from=builder /usr/local/cuda-11.8 /usr/local/cuda-11.8
-RUN rm /etc/alternatives/cuda /etc/alternatives/cuda-11
-RUN ln -s /usr/local/cuda-11.8 /etc/alternatives/cuda
-RUN ln -s /usr/local/cuda-11.8 /etc/alternatives/cuda-11
-RUN rm -rf /usr/local/cuda-11.4
-ENV LD_LIBRARY_PATH="/opt/gcc-11/lib64:$$LD_LIBRARY_PATH"
-
-
-RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.12 1
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.12 1
-
-# Install ffmpeg/gstreamer dev packages for OpenCV build (must be after COPY from builder)
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
-    pkg-config \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev \
-    libavutil-dev \
-    libgstreamer1.0 \
-    libgstreamer-plugins-base1.0 \
-    libgstreamer-plugins-bad1.0 \
-    libjson-glib \
-    libnice \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install OpenCV
-RUN mkdir -p /build/opencv
-WORKDIR  /build/opencv
-RUN curl -L https://github.com/opencv/opencv/archive/4.13.0.zip -o opencv-4.13.0.zip
-RUN curl -L https://github.com/opencv/opencv_contrib/archive/4.13.0.zip -o opencv_contrib-4.13.0.zip
-RUN unzip opencv-4.13.0.zip
-RUN unzip opencv_contrib-4.13.0.zip
-WORKDIR /build/opencv/opencv-4.13.0
-RUN mkdir release
-WORKDIR /build/opencv/opencv-4.13.0/release
-RUN cmake -D WITH_CUDA=ON -D WITH_CUDNN=ON -D CUDA_ARCH_BIN="8.7" -D CUDA_ARCH_PTX="" -D OPENCV_GENERATE_PKGCONFIG=ON -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib-4.13.0/modules -D WITH_FFMPEG=ON -D WITH_GSTREAMER=ON -D WITH_LIBV4L=ON -D BUILD_opencv_python3=ON -D BUILD_TESTS=OFF -D BUILD_PERF_TESTS=OFF -D BUILD_EXAMPLES=OFF -D CMAKE_BUILD_TYPE=RELEASE -D CMAKE_INSTALL_PREFIX=/usr/local -D PYTHON3_INCLUDE_DIR=/usr/local/include/python3.12 -D OPENCV_PYTHON3_INSTALL_PATH=/usr/local/lib/python3.12/site-packages -D PYTHON3_EXECUTABLE=/usr/local/bin/python3.12 -D PYTHON_VERSION=312 -DBUILD_SHARED_LIBS=OFF -DWITH_OPENCLAMDFFT=OFF -DWITH_OPENCLAMDBLAS=OFF -DWITH_VA_INTEL=OFF ..
-RUN make -j$(nproc)
-RUN make install && ldconfig
-RUN python3.12 -m pip wheel ./python_loader --wheel-dir /build/out/wheels --verbose
-RUN python3.12 -m pip install /build/out/wheels/opencv-4.13.0-py3-none-any.whl
-
-WORKDIR /
-
-ENTRYPOINT ["bash"]
+#RUN cmake ../
+#RUN make -j$(nproc)
+#RUN make install
+#RUN ldconfig
+#
+#FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3 AS target
+#
+#RUN apt-get update -y && apt-get install -y \
+#    libssl-dev \
+#    git \
+#    unzip \
+#    libbz2-dev \
+#    libssl-dev \
+#    libsqlite3-dev \
+#    zlib1g-dev \
+#    liblzma-dev \
+#    ffmpeg
+#
+#RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
+#
+#
+#COPY --from=builder /root/GCC-11 /opt/gcc-11
+#COPY --from=builder /build/out/wheels /compiled_python_packages
+#COPY --from=builder /usr/include /usr/include
+#COPY --from=builder /usr/lib /usr/lib
+#COPY --from=builder /usr/share /usr/share
+#COPY --from=builder /usr/src /usr/src
+#COPY --from=builder /usr/local/bin /usr/local/bin
+#COPY --from=builder /usr/local/include /usr/local/include
+#COPY --from=builder /usr/local/lib /usr/local/lib
+#COPY --from=builder /usr/local/share /usr/local/share
+#COPY --from=builder /usr/local/cuda-11.8 /usr/local/cuda-11.8
+#RUN rm /etc/alternatives/cuda /etc/alternatives/cuda-11
+#RUN ln -s /usr/local/cuda-11.8 /etc/alternatives/cuda
+#RUN ln -s /usr/local/cuda-11.8 /etc/alternatives/cuda-11
+#RUN rm -rf /usr/local/cuda-11.4
+#ENV LD_LIBRARY_PATH="/opt/gcc-11/lib64:$$LD_LIBRARY_PATH"
+#
+#
+#RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.12 1
+#RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.12 1
+#
+## Install ffmpeg/gstreamer dev packages for OpenCV build (must be after COPY from builder)
+#RUN apt-get update -y && apt-get install -y --no-install-recommends \
+#    pkg-config \
+#    libavcodec-dev \
+#    libavformat-dev \
+#    libswscale-dev \
+#    libavutil-dev \
+#    libgstreamer1.0 \
+#    libgstreamer-plugins-base1.0 \
+#    libgstreamer-plugins-bad1.0 \
+#    libjson-glib \
+#    libnice \
+#    && rm -rf /var/lib/apt/lists/*
+#
+## Install OpenCV
+#RUN mkdir -p /build/opencv
+#WORKDIR  /build/opencv
+#RUN curl -L https://github.com/opencv/opencv/archive/4.13.0.zip -o opencv-4.13.0.zip
+#RUN curl -L https://github.com/opencv/opencv_contrib/archive/4.13.0.zip -o opencv_contrib-4.13.0.zip
+#RUN unzip opencv-4.13.0.zip
+#RUN unzip opencv_contrib-4.13.0.zip
+#WORKDIR /build/opencv/opencv-4.13.0
+#RUN mkdir release
+#WORKDIR /build/opencv/opencv-4.13.0/release
+#RUN cmake -D WITH_CUDA=ON -D WITH_CUDNN=ON -D CUDA_ARCH_BIN="8.7" -D CUDA_ARCH_PTX="" -D OPENCV_GENERATE_PKGCONFIG=ON -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib-4.13.0/modules -D WITH_FFMPEG=ON -D WITH_GSTREAMER=ON -D WITH_LIBV4L=ON -D BUILD_opencv_python3=ON -D BUILD_TESTS=OFF -D BUILD_PERF_TESTS=OFF -D BUILD_EXAMPLES=OFF -D CMAKE_BUILD_TYPE=RELEASE -D CMAKE_INSTALL_PREFIX=/usr/local -D PYTHON3_INCLUDE_DIR=/usr/local/include/python3.12 -D OPENCV_PYTHON3_INSTALL_PATH=/usr/local/lib/python3.12/site-packages -D PYTHON3_EXECUTABLE=/usr/local/bin/python3.12 -D PYTHON_VERSION=312 -DBUILD_SHARED_LIBS=OFF -DWITH_OPENCLAMDFFT=OFF -DWITH_OPENCLAMDBLAS=OFF -DWITH_VA_INTEL=OFF ..
+#RUN make -j$(nproc)
+#RUN make install && ldconfig
+#RUN python3.12 -m pip wheel ./python_loader --wheel-dir /build/out/wheels --verbose
+#RUN python3.12 -m pip install /build/out/wheels/opencv-4.13.0-py3-none-any.whl
+#
+#WORKDIR /
+#
+#ENTRYPOINT ["bash"]

@@ -1,8 +1,10 @@
 from time import perf_counter
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union, Literal
 
 import numpy as np
 import onnxruntime
+import torch
+import torch.nn.functional as F
 
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -78,6 +80,29 @@ class InferenceModelsClipAdapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self,
+        action: Literal["compare", "embed-image", "embed-text"],
+        **kwargs
+    ) -> torch.Tensor:
+        if action == "embed-image":
+            return self._model.embed_images(**kwargs)
+        elif action == "embed-text":
+            return self._model.embed_text(**kwargs)
+        subject_type = kwargs.get("subject_type", "image")
+        prompt_type = kwargs.get("prompt_type", "text")
+        if subject_type == "image":
+            subject_embeddings = self._model.embed_images(images=kwargs["subject"], **kwargs)
+        else:
+            subject_embeddings = self._model.embed_text(text=kwargs["subject"], **kwargs)
+        if prompt_type == "image":
+            prompt_embeddings = self._model.embed_images(images=kwargs["prompt"], **kwargs)
+        else:
+            prompt_embeddings = self._model.embed_text(text=kwargs["prompt"], **kwargs)
+        subject_embeddings_norm = F.normalize(subject_embeddings, dim=1)
+        prompt_embeddings_norm = F.normalize(prompt_embeddings, dim=1)
+        return subject_embeddings_norm @ prompt_embeddings_norm.T
 
     def compare(
         self,

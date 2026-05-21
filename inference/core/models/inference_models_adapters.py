@@ -60,6 +60,7 @@ from inference_models import (
     PreProcessingOverrides,
     SemanticSegmentationModel,
 )
+from inference_models.models.base.semantic_segmentation import SemanticSegmentationResult
 from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 
@@ -119,6 +120,13 @@ class InferenceModelsObjectDetectionAdapter(Model):
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
+    ) -> List[Detections]:
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
@@ -271,6 +279,13 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
+    ) -> List[InstanceDetections]:
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
@@ -692,6 +707,13 @@ class InferenceModelsClassificationAdapter(Model):
         )
         self.class_names = list(self._model.class_names)
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
+    ) -> Union[ClassificationPrediction, List[MultiLabelClassificationPrediction]]:
+        return self._model(images, **kwargs)
+
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
@@ -1026,6 +1048,13 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
     def class_map(self):
         # match segment.roboflow.com
         return {str(k): v for k, v in enumerate(self.class_names)}
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
+    ) -> List[SemanticSegmentationResult]:
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"

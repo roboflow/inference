@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Any
 
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
@@ -70,6 +70,12 @@ class WithLogger(ModelManagerDecorator):
         """
         logger.info(f"📥 [{model_id}] request={request}.")
         res = super().infer_from_request_sync(model_id, request, **kwargs)
+        logger.info(f"📥 [{model_id}] res={res}.")
+        return res
+
+    def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
+        logger.info(f"📥 [{model_id}] request={kwargs}.")
+        res = super().run_tensor_native_inference(model_id, **kwargs)
         logger.info(f"📥 [{model_id}] res={res}.")
         return res
 
