@@ -780,7 +780,7 @@ def update_image_metadata_at_roboflow(
     image_id: str,
     metadata: Optional[Dict[str, Any]] = None,
     add_tags: Optional[List[str]] = None,
-) -> dict:
+) -> Dict[str, Any]:
     payload = {}
     if metadata is not None:
         payload["metadata"] = metadata
@@ -810,7 +810,7 @@ def batch_update_image_metadata_at_roboflow(
     api_key: str,
     workspace_id: WorkspaceID,
     updates: List[Dict[str, Any]],
-) -> dict:
+) -> Dict[str, Any]:
     api_url = wrap_url(
         _add_params_to_url(
             url=f"{API_BASE_URL}/{workspace_id}/images/metadata",

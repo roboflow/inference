@@ -47,47 +47,56 @@ def test_manifest_parsing_valid() -> None:
         "type": "roboflow_core/edit_image_metadata@v1",
         "name": "edit_metadata",
         "source_id": "$inputs.source_id",
-        "metadata": "$inputs.metadata",
-        "tags": "$inputs.tags",
+        "metadata": {"location": "$inputs.location", "static": "abc"},
+        "tags": ["static-tag", "$inputs.dynamic_tag"],
         "disable_sink": "$inputs.disable_sink",
     }
 
     manifest = BlockManifest.model_validate(raw_manifest)
 
     assert manifest.source_id == "$inputs.source_id"
-    assert manifest.metadata == "$inputs.metadata"
-    assert manifest.tags == "$inputs.tags"
+    assert manifest.metadata == {"location": "$inputs.location", "static": "abc"}
+    assert manifest.tags == ["static-tag", "$inputs.dynamic_tag"]
     assert manifest.disable_sink == "$inputs.disable_sink"
-    assert BlockManifest.get_parameters_accepting_batches() == [
-        "source_id",
-        "metadata",
-        "tags",
-    ]
+    assert BlockManifest.get_parameters_accepting_batches() == ["source_id"]
 
 
-def test_build_effective_updates_skips_empty_rows_and_merges_duplicate_source_ids() -> (
+def test_build_effective_updates_broadcasts_scalar_metadata_and_tags_and_merges_duplicates() -> (
     None
 ):
     effective = build_effective_updates(
-        source_ids=make_batch(["img-1", "img-2", "img-1", "img-3"]),
-        metadata=make_batch(
-            [{"color": "red", "score": 0.1}, None, {"color": "blue"}, {}]
-        ),
-        tags=make_batch([["shared", "first"], None, ["shared", "last"], []]),
+        source_ids=make_batch(["img-1", "img-2", "img-1"]),
+        metadata={"color": "red", "score": 0.1},
+        tags=["shared", "first"],
     )
 
     assert effective.updates == [
         {
             "imageId": "img-1",
-            "metadata": {"color": "blue", "score": 0.1},
-            "addTags": ["first", "shared", "last"],
-        }
+            "metadata": {"color": "red", "score": 0.1},
+            "addTags": ["shared", "first"],
+        },
+        {
+            "imageId": "img-2",
+            "metadata": {"color": "red", "score": 0.1},
+            "addTags": ["shared", "first"],
+        },
     ]
-    assert effective.result_indices_by_id == {"img-1": [0, 2]}
+    assert effective.result_indices_by_id == {"img-1": [0, 2], "img-2": [1]}
+    assert effective.results == [None, None, None]
+
+
+def test_build_effective_updates_skips_rows_when_metadata_and_tags_are_empty() -> None:
+    effective = build_effective_updates(
+        source_ids=make_batch(["img-1", "img-2"]),
+        metadata=None,
+        tags=None,
+    )
+
+    assert effective.updates == []
+    assert effective.result_indices_by_id == {}
     assert effective.results == [
-        None,
         {"error_status": False, "message": SKIPPED_EMPTY_UPDATE_MESSAGE},
-        None,
         {"error_status": False, "message": SKIPPED_EMPTY_UPDATE_MESSAGE},
     ]
 
@@ -98,7 +107,7 @@ def test_run_when_api_key_is_not_specified() -> None:
     with pytest.raises(ValueError):
         block_no_key.run(
             source_id=make_batch(["img-1"]),
-            metadata=make_batch([{"color": "red"}]),
+            metadata={"color": "red"},
         )
 
 
@@ -117,8 +126,8 @@ def test_run_single_effective_update_calls_single_endpoint(
 ) -> None:
     result = block.run(
         source_id=make_batch(["img-1"]),
-        metadata=make_batch([{"color": "red"}]),
-        tags=make_batch([["auto"]]),
+        metadata={"color": "red"},
+        tags=["auto"],
     )
 
     assert result == [{"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}]
@@ -138,41 +147,31 @@ def test_run_single_endpoint_error_returns_per_image_error(
 
     result = block.run(
         source_id=make_batch(["img-1"]),
-        metadata=make_batch([{"color": "red"}]),
+        metadata={"color": "red"},
     )
 
     assert result[0]["error_status"] is True
     assert "API error" in result[0]["message"]
 
 
-def test_run_batch_endpoint_uses_merged_updates_and_preserves_input_order(
+def test_run_batch_endpoint_broadcasts_shared_metadata_and_dedupes_source_ids(
     block: EditImageMetadataBlockV1, mocked_v1
 ) -> None:
     result = block.run(
         source_id=make_batch(["img-1", "img-2", "img-1", "img-3"]),
-        metadata=make_batch(
-            [{"color": "red"}, {"score": 0.9}, {"color": "blue"}, None]
-        ),
-        tags=make_batch([["a", "x"], ["b"], ["a", "c"], None]),
+        metadata={"color": "red"},
+        tags=["a", "x"],
     )
 
     submitted = {"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}
-    assert result == [
-        submitted,
-        submitted,
-        submitted,
-        {"error_status": False, "message": SKIPPED_EMPTY_UPDATE_MESSAGE},
-    ]
+    assert result == [submitted, submitted, submitted, submitted]
     mocked_v1.update_batch.assert_called_once_with(
         api_key="my_api_key",
         workspace_id="my-workspace",
         updates=[
-            {
-                "imageId": "img-1",
-                "metadata": {"color": "blue"},
-                "addTags": ["x", "a", "c"],
-            },
-            {"imageId": "img-2", "metadata": {"score": 0.9}, "addTags": ["b"]},
+            {"imageId": "img-1", "metadata": {"color": "red"}, "addTags": ["a", "x"]},
+            {"imageId": "img-2", "metadata": {"color": "red"}, "addTags": ["a", "x"]},
+            {"imageId": "img-3", "metadata": {"color": "red"}, "addTags": ["a", "x"]},
         ],
     )
 
@@ -185,7 +184,7 @@ def test_run_batch_endpoint_error_raises(
     with pytest.raises(Exception, match="preflight error"):
         block.run(
             source_id=make_batch(["img-1", "img-2"]),
-            metadata=make_batch([{"a": 1}, {"b": 2}]),
+            metadata={"a": 1},
         )
 
 
@@ -197,5 +196,5 @@ def test_run_raises_when_effective_update_count_exceeds_batch_limit(
     with pytest.raises(ValueError, match="at most 1000 updates"):
         block.run(
             source_id=make_batch([f"img-{i}" for i in range(count)]),
-            metadata=make_batch([{"value": i} for i in range(count)]),
+            metadata={"value": "x"},
         )

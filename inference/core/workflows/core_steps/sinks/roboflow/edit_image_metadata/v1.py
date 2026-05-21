@@ -16,7 +16,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
-    DICTIONARY_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     Selector,
@@ -80,15 +79,34 @@ class BlockManifest(WorkflowBlockManifest):
         description="Roboflow source image ID to update. For batch workflows, provide one source ID per image.",
         examples=["$inputs.source_id", "source_abc123"],
     )
-    metadata: Optional[Union[Dict[str, Any], Selector(kind=[DICTIONARY_KIND])]] = Field(
-        default=None,
-        description="Optional key-value metadata to set on the image. Metadata is stored as user_metadata and can be used for filtering in Roboflow.",
-        examples=[{"color": "red", "score": 0.98}, "$inputs.metadata"],
+    metadata: Dict[str, Union[str, int, float, bool, Selector()]] = Field(
+        default_factory=dict,
+        description=(
+            "Optional key-value metadata to set on the image. "
+            "Values can be static strings, numbers, booleans, or references to "
+            "workflow inputs/steps (e.g. `$inputs.camera_id`)."
+        ),
+        examples=[
+            {"color": "red", "score": 0.98},
+            {"camera": "$inputs.camera_id", "source": "edge"},
+        ],
     )
-    tags: Optional[Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])]] = Field(
+    tags: Optional[
+        Union[
+            List[Union[Selector(kind=[STRING_KIND]), str]],
+            Selector(kind=[LIST_OF_VALUES_KIND]),
+        ]
+    ] = Field(
         default=None,
-        description="Optional tags to add to the image.",
-        examples=[["auto-labeled", "red"], "$inputs.tags"],
+        description=(
+            "Optional tags to add to the image. Each entry may be a static "
+            "string or a reference to a workflow input/step (e.g. `$inputs.label`)."
+        ),
+        examples=[
+            ["auto-labeled", "red"],
+            ["static-tag", "$inputs.label"],
+            "$inputs.tags",
+        ],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
@@ -102,7 +120,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
-        return ["source_id", "metadata", "tags"]
+        return ["source_id"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -133,8 +151,8 @@ class EditImageMetadataBlockV1(WorkflowBlock):
     def run(
         self,
         source_id: Batch[str],
-        metadata: Optional[Batch[Optional[Dict[str, Any]]]] = None,
-        tags: Optional[Batch[Optional[List[str]]]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        tags: Optional[List[str]] = None,
         disable_sink: bool = False,
     ) -> BlockResult:
         if self._api_key is None:
@@ -211,12 +229,12 @@ class EffectiveUpdates(NamedTuple):
 
 def build_effective_updates(
     source_ids: Batch[str],
-    metadata: Optional[Batch[Optional[Dict[str, Any]]]],
-    tags: Optional[Batch[Optional[List[str]]]],
+    metadata: Optional[Dict[str, Any]],
+    tags: Optional[List[str]],
 ) -> EffectiveUpdates:
     n = len(source_ids)
-    metadata_values = metadata or [None] * n
-    tag_values = tags or [None] * n
+    metadata_values: List[Optional[Dict[str, Any]]] = [metadata] * n
+    tag_values: List[Optional[List[str]]] = [tags] * n
     results: List[Optional[Dict[str, Any]]] = [None] * n
     updates_by_source_id: Dict[str, Dict[str, Any]] = {}
     result_indices_by_id: Dict[str, List[int]] = {}
