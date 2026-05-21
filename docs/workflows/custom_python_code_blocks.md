@@ -422,19 +422,3 @@ When the deadline elapses, the block raises `DynamicBlockTimeoutError`. The
 error message includes the configured timeout, and any `stdout` / `stderr`
 printed by your code before the deadline is preserved on the error object for
 diagnostics.
-
-#### Caveat: orphan thread compute
-
-The watchdog returns a structured error to the worker immediately at the
-configured deadline, **but it does not terminate your code on Modal**. Python
-cannot kill a running thread, and Modal's FastAPI web-endpoint architecture
-does not support per-invocation timeout overrides. In practice this means
-pathological code (infinite loops, very long network calls) will keep
-consuming Modal compute on the container until the container is recycled.
-
-For ordinary slow-but-finite work this is invisible — the worker advances to
-the next frame, you see a clean error, and the next workflow execution runs
-on a fresh container or an existing warm one. But if you're paying for Modal
-compute and your block can hang indefinitely, prefer adding an internal
-deadline (`signal.alarm`, `asyncio.wait_for` around your own work) rather
-than relying solely on the watchdog.

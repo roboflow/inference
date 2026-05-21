@@ -89,8 +89,6 @@ def assembly_custom_python_block(
             if not workspace_id:
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
-            # The per-frame timeout is resolved inside ModalExecutor.__init__
-            # from CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS (env var → 20s default).
             executor = ModalExecutor(workspace_id)
             return executor.execute_remote(
                 block_type_name=block_type_name,
