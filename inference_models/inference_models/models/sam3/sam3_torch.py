@@ -253,7 +253,7 @@ class SAM3Torch:
 
         return result_embeddings
 
-    def segment_images(
+    def segment_with_visual_prompts(
         self,
         images: Optional[
             Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]
@@ -274,7 +274,7 @@ class SAM3Torch:
     ) -> List[SAM3Prediction]:
         if images is None and embeddings is None:
             raise ModelInputError(
-                message="Attempted to use SAM3 model segment_images(...) method not providing valid input - "
+                message="Attempted to use SAM3 model segment_with_visual_prompts(...) method not providing valid input - "
                 "neither `images` nor `embeddings` parameter is given. If you run inference locally, "
                 "verify your integration making sure that the model interface is used correctly. Running "
                 "on Roboflow platform - contact us to get help.",
@@ -448,7 +448,7 @@ class SAM3Torch:
             logits=logits_tensor,
         )
 
-    def segment_with_text(
+    def segment_with_text_prompts(
         self,
         images: Union[np.ndarray, List[np.ndarray]],
         prompts: List[Dict],
@@ -458,7 +458,7 @@ class SAM3Torch:
         images_list = maybe_wrap_in_list(images)
         if images_list is None:
             raise ModelInputError(
-                message="No images provided to segment_with_text()",
+                message="No images provided to segment_with_text_prompts()",
                 help_url="https://todo",
             )
 

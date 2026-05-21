@@ -98,7 +98,7 @@ def test_sam3_segment_images_without_prompting_numpy(
     model = SAM3Torch.from_pretrained(sam3_package, device=DEFAULT_DEVICE)
 
     # when
-    results = model.segment_images(truck_image_numpy)
+    results = model.segment_with_visual_prompts(truck_image_numpy)
 
     # then
     assert len(results) == 1
@@ -117,7 +117,7 @@ def test_sam3_segment_images_without_prompting_batch_numpy(
     model = SAM3Torch.from_pretrained(sam3_package, device=DEFAULT_DEVICE)
 
     # when
-    results = model.segment_images([truck_image_numpy, truck_image_numpy])
+    results = model.segment_with_visual_prompts([truck_image_numpy, truck_image_numpy])
 
     # then
     assert len(results) == 2
@@ -138,7 +138,7 @@ def test_sam3_segment_images_with_point_prompting(
     input_label = np.array([[1]])
 
     # when
-    results = model.segment_images(
+    results = model.segment_with_visual_prompts(
         truck_image_numpy,
         point_coordinates=input_point,
         point_labels=input_label,
@@ -170,7 +170,7 @@ def test_sam3_segment_images_with_multiple_points(
     input_labels = np.array([[1, 1, 1]])
 
     # when
-    results = model.segment_images(
+    results = model.segment_with_visual_prompts(
         truck_image_numpy,
         point_coordinates=input_points,
         point_labels=input_labels,
@@ -194,7 +194,7 @@ def test_sam3_segment_images_with_embeddings(
 
     # when
     embeddings = model.embed_images(truck_image_numpy)
-    results = model.segment_images(
+    results = model.segment_with_visual_prompts(
         embeddings=[embeddings[0], embeddings[0]],
         point_coordinates=input_point,
         point_labels=input_label,
@@ -218,7 +218,7 @@ def test_sam3_segment_images_with_box_prompting(
     input_box = np.array([425, 600, 700, 875])
 
     # when
-    results = model.segment_images(
+    results = model.segment_with_visual_prompts(
         truck_image_numpy,
         boxes=input_box,
     )
@@ -242,7 +242,7 @@ def test_sam3_segment_images_with_box_prompting_and_embeddings(
 
     # when
     embeddings = model.embed_images(truck_image_numpy)
-    results = model.segment_images(
+    results = model.segment_with_visual_prompts(
         embeddings=[embeddings[0], embeddings[0]],
         boxes=input_box,
     )
@@ -266,7 +266,7 @@ def test_sam3_segment_images_with_combined_prompting(
     input_label = np.array([[0]])  # negative point
 
     # when
-    results = model.segment_images(
+    results = model.segment_with_visual_prompts(
         truck_image_numpy,
         point_coordinates=input_point,
         point_labels=input_label,
@@ -290,13 +290,13 @@ def test_sam3_segment_images_with_mask_prompting(
     input_label = np.array([[1]])
 
     # when - first pass to get a mask
-    first_results = model.segment_images(
+    first_results = model.segment_with_visual_prompts(
         images=truck_image_numpy,
         point_coordinates=input_point,
         point_labels=input_label,
     )
     # second pass using the logits as mask input
-    second_results = model.segment_images(
+    second_results = model.segment_with_visual_prompts(
         images=truck_image_numpy,
         mask_input=first_results[0].logits,
         point_coordinates=input_point,
@@ -319,7 +319,7 @@ def test_sam3_segment_images_raises_on_missing_input(
 
     # when / then
     with pytest.raises(ModelInputError):
-        _ = model.segment_images()
+        _ = model.segment_with_visual_prompts()
 
 
 @pytest.mark.slow
@@ -335,7 +335,7 @@ def test_sam3_segment_images_with_misaligned_batch_sizes(
 
     # when / then - misaligned outer batch (1 image of coords vs 2 of labels)
     with pytest.raises(ModelInputError):
-        _ = model.segment_images(
+        _ = model.segment_with_visual_prompts(
             truck_image_numpy,
             point_coordinates=[input_point],
             point_labels=[input_label, input_label],
@@ -354,7 +354,7 @@ def test_sam3_segment_with_text_single_prompt(
     prompts = [{"text": "truck"}]
 
     # when
-    results = model.segment_with_text(
+    results = model.segment_with_text_prompts(
         images=truck_image_numpy,
         prompts=prompts,
         output_prob_thresh=0.3,
@@ -384,7 +384,7 @@ def test_sam3_segment_with_text_multiple_prompts(
     ]
 
     # when
-    results = model.segment_with_text(
+    results = model.segment_with_text_prompts(
         images=truck_image_numpy,
         prompts=prompts,
         output_prob_thresh=0.3,
@@ -415,7 +415,7 @@ def test_sam3_segment_with_text_visual_prompt(
     ]
 
     # when
-    results = model.segment_with_text(
+    results = model.segment_with_text_prompts(
         images=truck_image_numpy,
         prompts=prompts,
         output_prob_thresh=0.3,
@@ -439,7 +439,7 @@ def test_sam3_segment_with_text_batch_images(
     prompts = [{"text": "truck"}]
 
     # when
-    results = model.segment_with_text(
+    results = model.segment_with_text_prompts(
         images=[truck_image_numpy, truck_image_numpy],
         prompts=prompts,
         output_prob_thresh=0.3,
@@ -464,7 +464,7 @@ def test_sam3_segment_images_multi_mask_output(
     input_label = np.array([[1]])
 
     # when - with multi_mask_output=True (default)
-    results_multi = model.segment_images(
+    results_multi = model.segment_with_visual_prompts(
         truck_image_numpy,
         point_coordinates=input_point,
         point_labels=input_label,
@@ -472,7 +472,7 @@ def test_sam3_segment_images_multi_mask_output(
     )
 
     # when - with multi_mask_output=False
-    results_single = model.segment_images(
+    results_single = model.segment_with_visual_prompts(
         truck_image_numpy,
         point_coordinates=input_point,
         point_labels=input_label,
@@ -499,7 +499,7 @@ def test_sam3_segment_images_return_logits(
     input_label = np.array([[1]])
 
     # when - with return_logits=True
-    results_logits = model.segment_images(
+    results_logits = model.segment_with_visual_prompts(
         truck_image_numpy,
         point_coordinates=input_point,
         point_labels=input_label,
@@ -507,7 +507,7 @@ def test_sam3_segment_images_return_logits(
     )
 
     # when - with return_logits=False (default)
-    results_binary = model.segment_images(
+    results_binary = model.segment_with_visual_prompts(
         truck_image_numpy,
         point_coordinates=input_point,
         point_labels=input_label,

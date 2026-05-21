@@ -42,7 +42,7 @@ class InferenceModelsSAM3Adapter(Model):
 
     Replaces inference.models.sam3.segment_anything3.SegmentAnything3.
     Handles Sam3SegmentationRequest with text and/or visual (box) prompts via
-    SAM3Torch.segment_with_text.
+    SAM3Torch.segment_with_text_prompts.
     """
 
     def __init__(
@@ -113,9 +113,9 @@ class InferenceModelsSAM3Adapter(Model):
 
         prompt_dicts = [_sam3_prompt_to_dict(p) for p in prompts]
 
-        # segment_with_text returns List[per-image] of List[per-prompt] dicts
+        # segment_with_text_prompts returns List[per-image] of List[per-prompt] dicts
         # with keys: prompt_index, masks (N,H,W ndarray), scores (list).
-        per_image_results = self._model.segment_with_text(
+        per_image_results = self._model.segment_with_text_prompts(
             images=[np_image],
             prompts=prompt_dicts,
             output_prob_thresh=float(min_threshold),

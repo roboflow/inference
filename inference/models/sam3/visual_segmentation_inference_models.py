@@ -53,7 +53,7 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
 
     Replaces inference.models.sam3.visual_segmentation.Sam3ForInteractiveImageSegmentation.
     Handles Sam2EmbeddingRequest / Sam2SegmentationRequest with point/box prompts via
-    SAM3Torch.embed_images and SAM3Torch.segment_images (sharing Sam2 request/response
+    SAM3Torch.embed_images and SAM3Torch.segment_with_visual_prompts (sharing Sam2 request/response
     schemas, as the legacy class did).
     """
 
@@ -189,7 +189,7 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
         if mask_input is not None and isinstance(mask_input, list):
             mask_input = np.array(mask_input)
 
-        prediction = self._model.segment_images(
+        prediction = self._model.segment_with_visual_prompts(
             images=loaded_image,
             image_hashes=image_id,
             point_coordinates=args["point_coords"],

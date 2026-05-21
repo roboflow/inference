@@ -15,7 +15,7 @@ mask_annotator = sv.MaskAnnotator()
 box_annotator = sv.BoxAnnotator(color=sv.Color.BLACK)
 
 img = cv.imread("image.png")
-predictions = model.segment_images(
+predictions = model.segment_with_visual_prompts(
     images=img,
     boxes=[[(100, 200, 300, 400)]],  # xyxy format
 )
@@ -47,7 +47,7 @@ model = AutoModel.from_pretrained("sam3")
 mask_annotator = sv.MaskAnnotator()
 
 img = cv.imread("image.png")
-predictions = model.segment_images(
+predictions = model.segment_with_visual_prompts(
     images=img,
     point_coordinates=[[[250, 300]]],  # xy format
     point_labels=[[[1]]],  # 1 = foreground, 0 = background
@@ -81,7 +81,7 @@ model = AutoModel.from_pretrained("sam3")
 mask_annotator = sv.MaskAnnotator()
 
 img = cv.imread("image.png")
-results = model.segment_with_text(
+results = model.segment_with_text_prompts(
     images=img,
     prompts=[
         {"text": "person"},
@@ -121,7 +121,7 @@ model = AutoModel.from_pretrained("sam3")
 mask_annotator = sv.MaskAnnotator()
 
 img = cv.imread("image.png")
-results = model.segment_with_text(
+results = model.segment_with_text_prompts(
     images=img,
     prompts=[
         {
@@ -164,13 +164,13 @@ model = AutoModel.from_pretrained(
 img = cv.imread("image.png")
 
 # First call computes and caches embeddings
-predictions = model.segment_images(
+predictions = model.segment_with_visual_prompts(
     images=img,
     boxes=[[(100, 200, 300, 400)]],
 )
 
 # Subsequent calls with same image use cached embeddings
-predictions = model.segment_images(
+predictions = model.segment_with_visual_prompts(
     images=img,
     boxes=[[(150, 250, 350, 450)]],  # Different prompt, same image
 )
