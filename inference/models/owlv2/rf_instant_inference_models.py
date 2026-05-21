@@ -1,4 +1,7 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
+
+import numpy as np
+import torch
 
 from inference.core.entities.requests import ObjectDetectionInferenceRequest
 from inference.core.entities.responses import (
@@ -85,6 +88,13 @@ class InferenceModelsRFInstantModelAdapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
+    ) -> List[Detections]:
+        return self._model.infer(images=images, **kwargs)
 
     def infer(
         self,

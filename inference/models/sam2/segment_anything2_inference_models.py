@@ -3,7 +3,7 @@ import hashlib
 from io import BytesIO
 from threading import RLock
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, TypeVar, Union
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, TypeVar, Union, Literal
 
 import numpy as np
 import sam2.utils.misc
@@ -18,6 +18,7 @@ from inference_models.models.sam2.cache import (
     Sam2ImageEmbeddingsInMemoryCache,
     Sam2LowResolutionMasksInMemoryCache,
 )
+from inference_models.models.sam2.entities import SAM2ImageEmbeddings, SAM2Prediction
 from inference_models.models.sam2.sam2_torch import SAM2Torch
 
 sam2.utils.misc.get_sdp_backends = lambda z: [
@@ -123,6 +124,15 @@ class InferenceModelsSAM2Adapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self,
+        action: Literal["embed", "segment"],
+        **kwargs
+    ) -> List[Union[SAM2ImageEmbeddings, SAM2Prediction]]:
+        if action == "embed":
+            self._model.embed_images(**kwargs)
+        return self._model.segment_images(**kwargs)
 
     @usage_collector("model")
     def infer_from_request(self, request: Sam2InferenceRequest):

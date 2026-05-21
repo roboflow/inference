@@ -4,6 +4,7 @@ from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import numpy as np
+import torch
 
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -62,6 +63,13 @@ class InferenceModelsEasyOCRAdapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
+    ) -> Tuple[List[str], List[Detections]]:
+        return self._model.infer(images=images, **kwargs)
 
     def predict(self, image_in: np.ndarray, **kwargs) -> Tuple[str, Detections]:
         parsed_texts, parsed_structures = self._model.infer(images=image_in, **kwargs)

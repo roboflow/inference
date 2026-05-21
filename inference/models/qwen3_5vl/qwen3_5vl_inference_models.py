@@ -1,5 +1,6 @@
-from typing import Any, List
+from typing import Any, List, Union
 
+import numpy as np
 import torch
 
 from inference.core.entities.responses import (
@@ -45,6 +46,14 @@ class InferenceModelsQwen35VLAdapter(Model):
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         return kwargs
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
+    ) -> List[str]:
+        kwargs = self.map_inference_kwargs(kwargs)
+        return self._model.prompt(images=images, **kwargs)
 
     def preprocess(self, image: Any, prompt: str = "", **kwargs):
         is_batch = isinstance(image, list)

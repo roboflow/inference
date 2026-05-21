@@ -126,6 +126,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs
     ) -> List[Detections]:
+        kwargs = self.map_inference_kwargs(**kwargs)
         return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
@@ -285,6 +286,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs
     ) -> List[InstanceDetections]:
+        kwargs = self.map_inference_kwargs(**kwargs)
         return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
@@ -712,6 +714,7 @@ class InferenceModelsClassificationAdapter(Model):
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs
     ) -> Union[ClassificationPrediction, List[MultiLabelClassificationPrediction]]:
+        kwargs = self.map_inference_kwargs(**kwargs)
         return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
@@ -1054,6 +1057,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs
     ) -> List[SemanticSegmentationResult]:
+        kwargs = self.map_inference_kwargs(**kwargs)
         return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:

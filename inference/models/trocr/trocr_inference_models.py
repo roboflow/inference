@@ -1,7 +1,8 @@
 from time import perf_counter
-from typing import Any, Tuple
+from typing import Any, Tuple, Union, List
 
 import numpy as np
+import torch
 
 from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.responses.ocr import OCRInferenceResponse
@@ -47,6 +48,13 @@ class InferenceModelsTrOCRAdapter(Model):
             backend=backend,
             **kwargs,
         )
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
+    ) -> List[str]:
+        return self._model(images=images, **kwargs)
 
     def preprocess(
         self, image: Any, **kwargs
