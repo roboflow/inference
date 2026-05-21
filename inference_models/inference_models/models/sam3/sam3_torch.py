@@ -64,6 +64,7 @@ class SAM3Torch:
         sam3_low_resolution_masks_cache: Optional[Sam3LowResolutionMasksCache] = None,
         compile_model: bool = False,
         enable_inst_interactivity: bool = True,
+        sam3_allow_client_generated_hash_ids: bool = False,
         **kwargs,
     ) -> "SAM3Torch":
         if sam3_image_embeddings_cache is None:
@@ -130,6 +131,7 @@ class SAM3Torch:
             sam3_image_embeddings_cache=sam3_image_embeddings_cache,
             sam3_low_resolution_masks_cache=sam3_low_resolution_masks_cache,
             enable_inst_interactivity=enable_inst_interactivity,
+            sam3_allow_client_generated_hash_ids=sam3_allow_client_generated_hash_ids,
         )
 
     def __init__(
@@ -142,6 +144,7 @@ class SAM3Torch:
         sam3_image_embeddings_cache: Sam3ImageEmbeddingsCache,
         sam3_low_resolution_masks_cache: Sam3LowResolutionMasksCache,
         enable_inst_interactivity: bool = True,
+        sam3_allow_client_generated_hash_ids: bool = False,
     ):
         self._model = model
         self._transform = transform
@@ -151,13 +154,25 @@ class SAM3Torch:
         self._sam3_image_embeddings_cache = sam3_image_embeddings_cache
         self._sam3_low_resolution_masks_cache = sam3_low_resolution_masks_cache
         self._enable_inst_interactivity = enable_inst_interactivity
+        self._sam3_allow_client_generated_hash_ids = (
+            sam3_allow_client_generated_hash_ids
+        )
 
     def embed_images(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         use_embeddings_cache: bool = True,
+        image_hashes: Optional[Union[str, List[str]]] = None,
         **kwargs,
     ) -> List[SAM3ImageEmbeddings]:
+        if not self._sam3_allow_client_generated_hash_ids and image_hashes is not None:
+            raise ModelInputError(
+                message="When using SAM3 model, you are not allowed to provide image hashes, unless you "
+                "explicitly allow it by setting `sam3_allow_client_generated_hash_ids` to `True` when loading "
+                "the model. If you run inference locally, verify your integration making sure that the model "
+                "interface is used correctly. Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
         images_list = maybe_wrap_in_list(images)
         if images_list is None:
             raise ModelInputError(
@@ -165,7 +180,18 @@ class SAM3Torch:
                 help_url="https://todo",
             )
 
-        image_hashes = [compute_image_hash(img) for img in images_list]
+        if image_hashes is None:
+            image_hashes = [compute_image_hash(img) for img in images_list]
+        else:
+            if isinstance(image_hashes, str):
+                image_hashes = [image_hashes]
+            if len(image_hashes) != len(images_list):
+                raise ModelInputError(
+                    message="When using SAM3 model with client-generated `image_hashes`, the number of "
+                    f"provided hashes ({len(image_hashes)}) must match the number of provided images "
+                    f"({len(images_list)}). Please verify your integration.",
+                    help_url="https://todo",
+                )
         original_sizes = [get_image_size(img) for img in images_list]
 
         embeddings_from_cache: Dict[int, SAM3ImageEmbeddings] = {}
@@ -251,6 +277,7 @@ class SAM3Torch:
         embeddings: Optional[
             Union[List[SAM3ImageEmbeddings], SAM3ImageEmbeddings]
         ] = None,
+        image_hashes: Optional[Union[str, List[str]]] = None,
         point_coordinates: Optional[Union[List[ArrayOrTensor], ArrayOrTensor]] = None,
         point_labels: Optional[Union[List[ArrayOrTensor], ArrayOrTensor]] = None,
         boxes: Optional[Union[List[ArrayOrTensor], ArrayOrTensor]] = None,
@@ -262,10 +289,10 @@ class SAM3Torch:
         use_embeddings_cache: bool = True,
         **kwargs,
     ) -> List[SAM3Prediction]:
-        if images is None and embeddings is None:
+        if images is None and embeddings is None and image_hashes is None:
             raise ModelInputError(
                 message="Attempted to use SAM3 model segment_with_visual_prompts(...) method not providing valid input - "
-                "neither `images` nor `embeddings` parameter is given. If you run inference locally, "
+                "neither `images` nor `embeddings` nor `image_hashes` parameter is given. If you run inference locally, "
                 "verify your integration making sure that the model interface is used correctly. Running "
                 "on Roboflow platform - contact us to get help.",
                 help_url="https://todo",
@@ -275,8 +302,37 @@ class SAM3Torch:
             embeddings_list = self.embed_images(
                 images=images,
                 use_embeddings_cache=use_embeddings_cache,
+                image_hashes=image_hashes,
                 **kwargs,
             )
+        elif image_hashes is not None:
+            if isinstance(image_hashes, str):
+                image_hashes = [image_hashes]
+            if (
+                not use_embeddings_cache
+                or not self._sam3_allow_client_generated_hash_ids
+            ):
+                raise ModelInputError(
+                    message="Attempted to use SAM3 model segment_with_visual_prompts(...) method providing "
+                    "`image_hashes` without enabling `use_embeddings_cache` or "
+                    "`sam3_allow_client_generated_hash_ids` which is not allowed. If you run inference "
+                    "locally, verify your integration making sure that the model interface is used "
+                    "correctly. Running on Roboflow platform - contact us to get help.",
+                    help_url="https://todo",
+                )
+            embeddings_list = []
+            for h in image_hashes:
+                cache_content = self._sam3_image_embeddings_cache.retrieve_embeddings(
+                    key=h
+                )
+                if cache_content is None:
+                    raise ModelInputError(
+                        message="Attempted to use SAM3 model segment_with_visual_prompts(...) method providing "
+                        "`image_hashes` for which no embeddings were found in the cache. This may be an effect "
+                        "of cache expiry or invalid integration.",
+                        help_url="https://todo",
+                    )
+                embeddings_list.append(cache_content.to(device=self._device))
         else:
             embeddings_list = maybe_wrap_in_list(embeddings)
 

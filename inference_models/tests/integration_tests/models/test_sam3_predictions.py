@@ -6,12 +6,26 @@ import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.errors import ModelInputError
+from inference_models.models.sam3.cache import (
+    Sam3ImageEmbeddingsInMemoryCache,
+    Sam3LowResolutionMasksInMemoryCache,
+)
 from inference_models.models.sam3.sam3_torch import SAM3Torch
 
 
 @pytest.fixture(scope="module")
 def sam3_model(sam3_package: str) -> SAM3Torch:
-    model = SAM3Torch.from_pretrained(sam3_package, device=DEFAULT_DEVICE)
+    model = SAM3Torch.from_pretrained(
+        sam3_package,
+        device=DEFAULT_DEVICE,
+        sam3_image_embeddings_cache=Sam3ImageEmbeddingsInMemoryCache.init(
+            size_limit=None, send_to_cpu=True
+        ),
+        sam3_low_resolution_masks_cache=Sam3LowResolutionMasksInMemoryCache.init(
+            size_limit=None, send_to_cpu=True
+        ),
+        sam3_allow_client_generated_hash_ids=True,
+    )
     yield model
     del model
     gc.collect()
@@ -561,3 +575,59 @@ def test_sam3_caching_disabled(
     assert len(results2) == 1
     assert results1[0].embeddings is not None
     assert results2[0].embeddings is not None
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+@pytest.mark.gpu_only
+def test_sam3_embed_then_segment_with_client_hash(
+    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+) -> None:
+    """SAM2-style embed-then-segment flow: caller provides image_id at embed time
+    and reuses it at segment time without re-sending image bytes."""
+    # given
+    model = sam3_model
+    client_hash = "client-provided-hash-segment-flow"
+    input_point = np.array([[[500, 375]]])
+    input_label = np.array([[1]])
+
+    # when - embed with client-provided hash
+    embed_result = model.embed_images(
+        truck_image_numpy, image_hashes=client_hash
+    )
+
+    # then - returned embedding carries the client hash
+    assert len(embed_result) == 1
+    assert embed_result[0].image_hash == client_hash
+
+    # when - segment using only the hash (no image bytes)
+    seg_result = model.segment_with_visual_prompts(
+        image_hashes=client_hash,
+        point_coordinates=input_point,
+        point_labels=input_label,
+    )
+
+    # then - segmentation succeeds via cache lookup
+    assert len(seg_result) == 1
+    assert seg_result[0].masks is not None
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+@pytest.mark.gpu_only
+def test_sam3_segment_with_unknown_hash_raises(
+    sam3_model: SAM3Torch,
+) -> None:
+    """segment_with_visual_prompts with a hash never seen by the cache must raise."""
+    # given
+    model = sam3_model
+    input_point = np.array([[[500, 375]]])
+    input_label = np.array([[1]])
+
+    # when / then
+    with pytest.raises(ModelInputError):
+        model.segment_with_visual_prompts(
+            image_hashes="never-embedded-hash",
+            point_coordinates=input_point,
+            point_labels=input_label,
+        )

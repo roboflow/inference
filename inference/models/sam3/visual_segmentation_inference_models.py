@@ -95,6 +95,7 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
             allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             sam3_image_embeddings_cache=sam3_image_embeddings_cache,
             sam3_low_resolution_masks_cache=sam3_low_resolution_masks_cache,
+            sam3_allow_client_generated_hash_ids=True,
             weights_provider_extra_headers=extra_weights_provider_headers,
             backend=backend,
             **kwargs,
