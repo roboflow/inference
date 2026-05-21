@@ -45,8 +45,7 @@ def _free_gpu_after_test():
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_embeddings_numpy(
-    sam3_model: SAM3Torch,
-    truck_image_numpy: np.ndarray
+    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -64,8 +63,7 @@ def test_sam3_embeddings_numpy(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_embeddings_torch(
-    sam3_model: SAM3Torch,
-    truck_image_torch: torch.Tensor
+    sam3_model: SAM3Torch, truck_image_torch: torch.Tensor
 ) -> None:
     # given
     model = sam3_model
@@ -82,8 +80,7 @@ def test_sam3_embeddings_torch(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_embeddings_batch_numpy(
-    sam3_model: SAM3Torch,
-    truck_image_numpy: np.ndarray
+    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -101,8 +98,7 @@ def test_sam3_embeddings_batch_numpy(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_embeddings_caching(
-    sam3_model: SAM3Torch,
-    truck_image_numpy: np.ndarray
+    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -120,8 +116,7 @@ def test_sam3_embeddings_caching(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_without_prompting_numpy(
-    sam3_model: SAM3Torch,
-    truck_image_numpy: np.ndarray
+    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -140,8 +135,7 @@ def test_sam3_segment_images_without_prompting_numpy(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_without_prompting_batch_numpy(
-    sam3_model: SAM3Torch,
-    truck_image_numpy: np.ndarray
+    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -215,8 +209,7 @@ def test_sam3_segment_images_with_multiple_points(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_embeddings(
-    sam3_model: SAM3Torch,
-    truck_image_numpy: np.ndarray
+    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -288,8 +281,7 @@ def test_sam3_segment_images_with_box_prompting_and_embeddings(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_combined_prompting(
-    sam3_model: SAM3Torch,
-    truck_image_numpy: np.ndarray
+    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -314,8 +306,7 @@ def test_sam3_segment_images_with_combined_prompting(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_mask_prompting(
-    sam3_model: SAM3Torch,
-    truck_image_numpy: np.ndarray
+    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -346,7 +337,7 @@ def test_sam3_segment_images_with_mask_prompting(
 @pytest.mark.gpu_only
 def test_sam3_segment_images_raises_on_missing_input(
     sam3_model: SAM3Torch,
-    ) -> None:
+) -> None:
     # given
     model = sam3_model
 
@@ -359,8 +350,7 @@ def test_sam3_segment_images_raises_on_missing_input(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_misaligned_batch_sizes(
-    sam3_model: SAM3Torch,
-    truck_image_numpy: np.ndarray
+    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -560,8 +550,7 @@ def test_sam3_segment_images_return_logits(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_caching_disabled(
-    sam3_model: SAM3Torch,
-    truck_image_numpy: np.ndarray
+    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -592,9 +581,7 @@ def test_sam3_embed_then_segment_with_client_hash(
     input_label = np.array([[1]])
 
     # when - embed with client-provided hash
-    embed_result = model.embed_images(
-        truck_image_numpy, image_hashes=client_hash
-    )
+    embed_result = model.embed_images(truck_image_numpy, image_hashes=client_hash)
 
     # then - returned embedding carries the client hash
     assert len(embed_result) == 1

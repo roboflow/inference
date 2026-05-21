@@ -24,10 +24,7 @@ from sam3.train.transforms.basic_for_api import (
 )
 
 from inference_models.configuration import DEFAULT_DEVICE, SAM3_IMAGE_SIZE
-from inference_models.errors import (
-    CorruptedModelPackageError,
-    ModelInputError,
-)
+from inference_models.errors import CorruptedModelPackageError, ModelInputError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.sam3.cache import (
     Sam3ImageEmbeddingsCache,
