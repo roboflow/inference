@@ -360,13 +360,11 @@ def call_batch_endpoint(
         workspace_id=workspace_id,
         updates=updates,
     )
-    task_id = response.get("taskId")
-    if not task_id:
-        raise ValueError(f"Malformed image metadata batch response: {response}")
+    if not response.get("taskId"):
+        raise ValueError("Malformed image metadata batch response: missing taskId")
     logging.info(
-        "Submitted image metadata batch update: workspace_id=%s task_id=%s updates=%d",
+        "Submitted image metadata batch update: workspace_id=%s updates=%d",
         workspace_id,
-        task_id,
         len(updates),
     )
     return {"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}
