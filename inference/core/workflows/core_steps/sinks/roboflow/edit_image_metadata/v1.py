@@ -186,7 +186,9 @@ class EditImageMetadataBlockV1(WorkflowBlock):
     def run(
         self,
         source_id: Batch[str],
-        metadata: Optional[Union[Dict[str, Any], Batch[Optional[Dict[str, Any]]]]] = None,
+        metadata: Optional[
+            Union[Dict[str, Any], Batch[Optional[Dict[str, Any]]]]
+        ] = None,
         tags: Optional[Union[List[str], Batch[Optional[List[str]]]]] = None,
         disable_sink: bool = False,
         fire_and_forget: bool = True,
