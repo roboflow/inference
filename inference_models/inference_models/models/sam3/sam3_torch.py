@@ -1,6 +1,7 @@
 import hashlib
 import json
 from copy import copy, deepcopy
+from threading import RLock
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
@@ -157,6 +158,7 @@ class SAM3Torch:
         self._sam3_allow_client_generated_hash_ids = (
             sam3_allow_client_generated_hash_ids
         )
+        self._predict_inst_lock = RLock()
 
     def embed_images(
         self,
@@ -457,15 +459,20 @@ class SAM3Torch:
             elif isinstance(mask_input, torch.Tensor):
                 mask_input_tensor = mask_input.to(self._device)
 
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            masks, scores, low_res_logits = self._model.predict_inst(
-                embeddings.embeddings,
-                mask_input=mask_input_tensor,
-                multimask_output=multi_mask_output,
-                return_logits=True,
-                normalize_coords=True,
-                **args,
-            )
+        # predict_inst mutates shared state (_is_image_set, _features) on the
+        # inst_interactive_predictor. Without the lock, concurrent requests race —
+        # one thread's cleanup can clear _is_image_set between another thread's
+        # set and its predict, raising "An image must be set with .set_image(...)".
+        with self._predict_inst_lock:
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                masks, scores, low_res_logits = self._model.predict_inst(
+                    embeddings.embeddings,
+                    mask_input=mask_input_tensor,
+                    multimask_output=multi_mask_output,
+                    return_logits=True,
+                    normalize_coords=True,
+                    **args,
+                )
 
         masks, scores, low_res_logits = choose_most_confident_prediction(
             masks=masks,
