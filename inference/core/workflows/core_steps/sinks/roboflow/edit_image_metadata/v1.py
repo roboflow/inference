@@ -16,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    DICTIONARY_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     Selector,
@@ -79,16 +80,21 @@ class BlockManifest(WorkflowBlockManifest):
         description="Roboflow source image ID to update. For batch workflows, provide one source ID per image.",
         examples=["$inputs.source_id", "source_abc123"],
     )
-    metadata: Dict[str, Union[str, int, float, bool, Selector()]] = Field(
+    metadata: Union[
+        Dict[str, Union[str, int, float, bool, Selector()]],
+        Selector(kind=[DICTIONARY_KIND]),
+    ] = Field(
         default_factory=dict,
         description=(
-            "Optional key-value metadata to set on the image. "
-            "Values can be static strings, numbers, booleans, or references to "
-            "workflow inputs/steps (e.g. `$inputs.camera_id`)."
+            "Optional key-value metadata to set on the image. Either an inline "
+            "dict whose values may be static or selector references (e.g. "
+            "`$inputs.camera_id`), or a whole-field selector to a per-row dict "
+            "produced by an upstream step."
         ),
         examples=[
             {"color": "red", "score": 0.98},
             {"camera": "$inputs.camera_id", "source": "edge"},
+            "$steps.classifier.top_label_dict",
         ],
     )
     tags: Optional[
@@ -123,6 +129,10 @@ class BlockManifest(WorkflowBlockManifest):
         return ["source_id"]
 
     @classmethod
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return ["metadata", "tags"]
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
@@ -151,8 +161,8 @@ class EditImageMetadataBlockV1(WorkflowBlock):
     def run(
         self,
         source_id: Batch[str],
-        metadata: Optional[Dict[str, Any]] = None,
-        tags: Optional[List[str]] = None,
+        metadata: Optional[Union[Dict[str, Any], Batch[Optional[Dict[str, Any]]]]] = None,
+        tags: Optional[Union[List[str], Batch[Optional[List[str]]]]] = None,
         disable_sink: bool = False,
     ) -> BlockResult:
         if self._api_key is None:
@@ -229,12 +239,16 @@ class EffectiveUpdates(NamedTuple):
 
 def build_effective_updates(
     source_ids: Batch[str],
-    metadata: Optional[Dict[str, Any]],
-    tags: Optional[List[str]],
+    metadata: Optional[Union[Dict[str, Any], Batch[Optional[Dict[str, Any]]]]],
+    tags: Optional[Union[List[str], Batch[Optional[List[str]]]]],
 ) -> EffectiveUpdates:
     n = len(source_ids)
-    metadata_values: List[Optional[Dict[str, Any]]] = [metadata] * n
-    tag_values: List[Optional[List[str]]] = [tags] * n
+    metadata_values: List[Optional[Dict[str, Any]]] = (
+        list(metadata) if isinstance(metadata, Batch) else [metadata] * n
+    )
+    tag_values: List[Optional[List[str]]] = (
+        list(tags) if isinstance(tags, Batch) else [tags] * n
+    )
     results: List[Optional[Dict[str, Any]]] = [None] * n
     updates_by_source_id: Dict[str, Dict[str, Any]] = {}
     result_indices_by_id: Dict[str, List[int]] = {}
