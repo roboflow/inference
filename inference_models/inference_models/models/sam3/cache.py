@@ -77,7 +77,7 @@ class Sam3ImageEmbeddingsInMemoryCache(Sam3ImageEmbeddingsCache):
                 f"error running on Roboflow platform - contact us to get help.",
                 help_url="https://todo",
             )
-        while len(self._state) > self._size_limit:
+        while len(self._state) >= self._size_limit:
             _ = self._state.popitem(last=False)
 
 
@@ -150,8 +150,8 @@ class Sam3LowResolutionMasksInMemoryCache(Sam3LowResolutionMasksCache):
                 f"error running on Roboflow platform - contact us to get help.",
                 help_url="https://todo",
             )
-        while len(self._ordering_state) > self._size_limit:
-            image_key, prompt_hash = self._ordering_state.popitem(last=False)
+        while len(self._ordering_state) >= self._size_limit:
+            (image_key, prompt_hash), _ = self._ordering_state.popitem(last=False)
             entries_for_image = self._cache_state[image_key]
             to_remove_idx = None
             for i, element in enumerate(entries_for_image):
