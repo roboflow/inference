@@ -32,7 +32,7 @@ from inference.core.env import (
 )
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
-from inference.core.utils.image_utils import load_image_bgr
+from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel
@@ -131,7 +131,7 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
 
     def preproc_image(self, image: InferenceRequestImage):
         if image is not None:
-            return load_image_bgr(image)
+            return load_image_rgb(image)
         return None
 
     def embed_image(
