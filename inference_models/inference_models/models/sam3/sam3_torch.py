@@ -22,7 +22,7 @@ from sam3.train.transforms.basic_for_api import (
     ToTensorAPI,
 )
 
-from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.configuration import DEFAULT_DEVICE, SAM3_IMAGE_SIZE
 from inference_models.errors import (
     CorruptedModelPackageError,
     ModelInputError,
@@ -45,7 +45,7 @@ ArrayOrTensor = Union[np.ndarray, torch.Tensor]
 T = TypeVar("T")
 
 MAX_SAM3_BATCH_SIZE = 8
-DEFAULT_SAM3_IMAGE_SIZE = 1024
+DEFAULT_SAM3_IMAGE_SIZE = SAM3_IMAGE_SIZE
 
 SUPPORTED_VERSIONS = {
     "sam3_final",
