@@ -130,6 +130,12 @@ class WorkflowsProcessingSpecificationV1(BaseModel):
     max_video_fps: Optional[Union[int, float]] = Field(
         serialization_alias="maxVideoFPS", default=None
     )
+    custom_python_block_timeout_seconds: Optional[int] = Field(
+        serialization_alias="customPythonBlockTimeoutSeconds",
+        default=None,
+        ge=1,
+        le=120,
+    )
 
 
 class WorkflowProcessingJobV1(BaseModel):

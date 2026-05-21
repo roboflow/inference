@@ -200,6 +200,15 @@ class DynamicBlockCodeError(WorkflowExecutionEngineError):
         )
 
 
+class DynamicBlockTimeoutError(DynamicBlockCodeError):
+    """Raised when a Custom Python Block exceeds its configured per-frame timeout
+    on Modal. Subclasses :class:`DynamicBlockCodeError` so the CS-237 classifier
+    can match on the class name while inheriting the structured payload
+    (``stdout``, ``stderr``, ``block_type_name``)."""
+
+    pass
+
+
 class NotSupportedExecutionEngineError(WorkflowExecutionEngineError):
     pass
 

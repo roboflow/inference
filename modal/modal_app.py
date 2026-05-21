@@ -6,6 +6,9 @@ in sandboxes. It's separated from the main executor to avoid requiring Modal
 as a dependency for the main inference package.
 """
 
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from io import StringIO
 from typing import Any, Dict
 import base64
 import hashlib
@@ -15,9 +18,19 @@ import traceback
 
 import modal
 
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
-    capture_output,
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.constants import (
+    MODAL_TIMEOUT_ERROR_TYPE,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
+    bind_capture_to,
+)
+
+# Bounds for the in-handler watchdog timeout. The @app.cls(timeout=130)
+# decorator gives 10s of headroom above 120s so the watchdog always wins
+# the race against Modal's per-invocation hard kill.
+DEFAULT_WATCHDOG_TIMEOUT_SECONDS = 20
+MIN_WATCHDOG_TIMEOUT_SECONDS = 1
+MAX_WATCHDOG_TIMEOUT_SECONDS = 120
 
 # Create the Modal App
 app = modal.App("webexec")
@@ -58,10 +71,14 @@ def get_inference_image():
     return image
 
 
+# `timeout=130` is the per-invocation hard ceiling Modal enforces; the
+# in-handler watchdog in `execute_block` is capped at 120s, leaving 10s of
+# headroom for the structured timeout response to reach the client. See
+# WATCHDOG NOTE in `execute_block` for the full reasoning.
 @app.cls(
     image=get_inference_image(),
     restrict_modal_access=True,  # Restrict Modal access for security
-    timeout=20,
+    timeout=130,
     enable_memory_snapshot=True,  # Enable memory snapshotting for faster cold starts
     scaledown_window=60,
     cloud="aws",
@@ -125,6 +142,17 @@ class Executor:
         imports = request.get("imports", [])
         run_function_name = request.get("run_function_name", "")
         inputs_json = request.get("inputs_json", "{}")
+
+        # Resolve the per-frame watchdog deadline. Clamp to [1, 120]; on any
+        # malformed value (negative, non-int, missing), fall back to the legacy
+        # 20s default so older clients without `timeout_seconds` keep working.
+        raw_timeout = request.get("timeout_seconds")
+        try:
+            timeout_seconds = int(raw_timeout) if raw_timeout is not None else DEFAULT_WATCHDOG_TIMEOUT_SECONDS
+        except (TypeError, ValueError):
+            timeout_seconds = DEFAULT_WATCHDOG_TIMEOUT_SECONDS
+        if not MIN_WATCHDOG_TIMEOUT_SECONDS <= timeout_seconds <= MAX_WATCHDOG_TIMEOUT_SECONDS:
+            timeout_seconds = DEFAULT_WATCHDOG_TIMEOUT_SECONDS
 
         # Get the hash of this code to identify it uniquely
         code_hash = self._get_code_hash(code_str, imports)
@@ -348,18 +376,73 @@ from datetime import datetime
             sig = inspect.signature(user_function)
             params = list(sig.parameters.keys())
 
-            try:
-                with capture_output() as (stdout_buf, stderr_buf):
-                    # If function expects 'self' as first param, create a simple object to pass
+            # WATCHDOG NOTE
+            # -------------
+            # We run user code on a worker thread and wait up to
+            # `timeout_seconds` for it to finish. On timeout we return a
+            # structured response immediately. Things to know:
+            #
+            #   (a) Python cannot kill a running thread. When the watchdog
+            #       fires, the worker thread keeps executing user code on
+            #       this Modal container.
+            #   (b) The orphan thread continues consuming Modal compute
+            #       (which the user is billed for) until either user code
+            #       finishes naturally OR the container is recycled
+            #       (scaledown, deploy, version change, lifecycle).
+            #   (c) The @app.cls(timeout=130) decorator bounds a SINGLE
+            #       INVOCATION of this handler. It does NOT fire for
+            #       timed-out frames, because the handler returned normally
+            #       once the watchdog fired. Pathological user code (e.g.,
+            #       infinite loops) can therefore run past the configured
+            #       deadline until something else recycles the container.
+            #   (d) We accept (a)–(c) as the cost of using
+            #       @modal.fastapi_endpoint, which does not honor
+            #       `Cls.with_options(timeout=...)` per-call overrides. The
+            #       real value of this watchdog is:
+            #         1. the worker (workflows-data-processor) advances to
+            #            the next frame at exactly N seconds rather than
+            #            waiting up to 130s for Modal to kill the
+            #            invocation,
+            #         2. the client receives a clean structured error with
+            #            stdout/stderr captured up to the timeout, instead
+            #            of a raw `requests.ReadTimeout`,
+            #         3. `error_type=CustomPythonBlockTimeout` is a stable
+            #            seam for the per-frame failure classifier (CS-237).
+            #
+            # Pre-allocate buffers in the main thread and have the worker
+            # bind them as its thread-local capture targets — without that,
+            # `_ThreadDispatchStream` would see no buffer on the worker
+            # thread and writes would not be captured.
+            stdout_buf, stderr_buf = StringIO(), StringIO()
+
+            def _run_user_code():
+                with bind_capture_to(stdout_buf, stderr_buf):
                     if params and params[0] == "self":
 
                         class BlockSelf:
                             pass
 
-                        block_self = BlockSelf()
-                        result = user_function(block_self, **inputs)
-                    else:
-                        result = user_function(**inputs)
+                        return user_function(BlockSelf(), **inputs)
+                    return user_function(**inputs)
+
+            executor = ThreadPoolExecutor(max_workers=1)
+            try:
+                future = executor.submit(_run_user_code)
+                try:
+                    result = future.result(timeout=timeout_seconds)
+                except FutureTimeoutError:
+                    # Hand off the orphan thread; we don't block on it.
+                    # See WATCHDOG NOTE (a)–(d) above.
+                    return {
+                        "success": False,
+                        "error": (
+                            f"Custom Python Block exceeded the configured timeout "
+                            f"of {timeout_seconds}s"
+                        ),
+                        "error_type": MODAL_TIMEOUT_ERROR_TYPE,
+                        "stdout": stdout_buf.getvalue() or None,
+                        "stderr": stderr_buf.getvalue() or None,
+                    }
 
                 json_result = serialize_for_modal_remote_execution(result)
 
@@ -370,7 +453,8 @@ from datetime import datetime
                     "stderr": stderr_buf.getvalue() or None,
                 }
             except Exception as e:
-                # On error, capture stdout/stderr and return error details
+                # User code raised. Capture stdout/stderr that were tee'd
+                # via bind_capture_to and surface error details.
                 result = {
                     "success": False,
                     "error": str(e),
@@ -379,7 +463,9 @@ from datetime import datetime
                     "stderr": stderr_buf.getvalue() or None,
                 }
 
-                # Get the line number and function name from evaluated code
+                # Get the line number and function name from evaluated code.
+                # `future.result()` preserves the worker thread's traceback,
+                # so tb[-1] still points into the user code that raised.
                 tb = traceback.extract_tb(e.__traceback__)
                 if tb:
                     frame = tb[-1]
@@ -387,6 +473,12 @@ from datetime import datetime
                     result["function_name"] = frame.name
 
                 return result
+            finally:
+                # Don't block the handler return on the orphan thread; the
+                # executor's __del__ would otherwise call shutdown(wait=True).
+                # The thread keeps running until user code finishes or the
+                # container is recycled (see WATCHDOG NOTE).
+                executor.shutdown(wait=False)
 
         except Exception as e:
             # Outer exception handler for non-execution errors (deserialization, etc.)

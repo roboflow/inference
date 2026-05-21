@@ -404,3 +404,37 @@ as if that was normal block exposed through static plugin:
     "class_y": "dog"
 }
 ```
+
+### Per-frame timeout (Modal execution mode)
+
+When Custom Python Blocks run in Modal mode (`WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal`),
+each block invocation has a per-frame deadline enforced by a soft watchdog
+inside the Modal handler. The default is **20 seconds**. You can raise this up
+to a maximum of **120 seconds** by setting the environment variable
+`CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS` on the worker container (e.g. the
+`workflows-data-processor` running your batch job).
+
+For batch jobs triggered via the `inference rf-cloud batch-processing` CLI you
+can pass this per-job using the `--custom-python-block-timeout` flag on
+`process-images-with-workflow` and `process-videos-with-workflow`.
+
+When the deadline elapses, the block raises `DynamicBlockTimeoutError`. The
+error message includes the configured timeout, and any `stdout` / `stderr`
+printed by your code before the deadline is preserved on the error object for
+diagnostics.
+
+#### Caveat: orphan thread compute
+
+The watchdog returns a structured error to the worker immediately at the
+configured deadline, **but it does not terminate your code on Modal**. Python
+cannot kill a running thread, and Modal's FastAPI web-endpoint architecture
+does not support per-invocation timeout overrides. In practice this means
+pathological code (infinite loops, very long network calls) will keep
+consuming Modal compute on the container until the container is recycled.
+
+For ordinary slow-but-finite work this is invisible — the worker advances to
+the next frame, you see a clean error, and the next workflow execution runs
+on a fresh container or an existing warm one. But if you're paying for Modal
+compute and your block can hang indefinitely, prefer adding an internal
+deadline (`signal.alarm`, `asyncio.wait_for` around your own work) rather
+than relying solely on the watchdog.

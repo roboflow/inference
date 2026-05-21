@@ -401,6 +401,7 @@ def trigger_job_with_workflows_images_processing(
     api_key: str,
     inference_backend: Optional[InferenceBackend] = None,
     job_name: Optional[str] = None,
+    custom_python_block_timeout_seconds: Optional[int] = None,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV2(
@@ -422,6 +423,7 @@ def trigger_job_with_workflows_images_processing(
         persist_images_outputs=save_image_outputs,
         images_outputs_to_be_persisted=image_outputs_to_save,
         aggregation_format=aggregation_format,
+        custom_python_block_timeout_seconds=custom_python_block_timeout_seconds,
     )
     if not job_id:
         job_id = f"job-{_generate_random_string(length=12)}"
@@ -464,6 +466,7 @@ def trigger_job_with_workflows_videos_processing(
     api_key: str,
     inference_backend: Optional[InferenceBackend] = None,
     job_name: Optional[str] = None,
+    custom_python_block_timeout_seconds: Optional[int] = None,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV2(
@@ -486,6 +489,7 @@ def trigger_job_with_workflows_videos_processing(
         images_outputs_to_be_persisted=image_outputs_to_save,
         aggregation_format=aggregation_format,
         max_video_fps=max_video_fps,
+        custom_python_block_timeout_seconds=custom_python_block_timeout_seconds,
     )
     if not job_id:
         job_id = f"job-{_generate_random_string(length=12)}"

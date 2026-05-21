@@ -230,6 +230,19 @@ def process_images_with_workflow(
     job_name: Annotated[
         Optional[str], typer.Option("--job-name", "-jn", help="Name of your job")
     ] = None,
+    custom_python_block_timeout: Annotated[
+        Optional[int],
+        typer.Option(
+            "--custom-python-block-timeout",
+            help=(
+                "Per-frame timeout for Custom Python Blocks, in seconds (1–120). "
+                "Only meaningful if the workflow uses custom Python blocks. "
+                "Default: 20s."
+            ),
+            min=1,
+            max=120,
+        ),
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -261,6 +274,7 @@ def process_images_with_workflow(
             api_key=api_key,
             inference_backend=inference_backend,
             job_name=job_name,
+            custom_python_block_timeout_seconds=custom_python_block_timeout,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:
@@ -399,6 +413,19 @@ def process_videos_with_workflow(
     job_name: Annotated[
         Optional[str], typer.Option("--job-name", "-jn", help="Name of your job")
     ] = None,
+    custom_python_block_timeout: Annotated[
+        Optional[int],
+        typer.Option(
+            "--custom-python-block-timeout",
+            help=(
+                "Per-frame timeout for Custom Python Blocks, in seconds (1–120). "
+                "Only meaningful if the workflow uses custom Python blocks. "
+                "Default: 20s."
+            ),
+            min=1,
+            max=120,
+        ),
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -431,6 +458,7 @@ def process_videos_with_workflow(
             api_key=api_key,
             inference_backend=inference_backend,
             job_name=job_name,
+            custom_python_block_timeout_seconds=custom_python_block_timeout,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:

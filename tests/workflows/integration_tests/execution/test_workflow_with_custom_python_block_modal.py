@@ -511,3 +511,76 @@ def run(self, value: float) -> BlockResult:
 
     # Results should be the same
     assert local_result[0]["result"] == modal_result[0]["result"] == 10
+
+
+# ---------------------------------------------------------------------------
+# Configurable per-frame timeout (CS-239 Task 1)
+# ---------------------------------------------------------------------------
+
+
+SLOW_SLEEPING_BLOCK = """
+def run(self, sleep_seconds: float) -> BlockResult:
+    import sys
+    import time
+    sys.stdout.write("entering slow block\\n")
+    sys.stdout.flush()
+    time.sleep(sleep_seconds)
+    return {"done": True}
+"""
+
+
+@pytest.mark.skipif(SKIP_MODAL_TESTS, reason=SKIP_REASON)
+class TestModalCustomPythonBlockTimeout:
+    """Integration tests for the configurable per-frame Custom Python Block
+    timeout. Each test hits the deployed Modal endpoint and verifies the
+    watchdog semantics end-to-end."""
+
+    def _build_slow_block_python_code(self):
+        from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+            PythonCode,
+        )
+
+        return PythonCode(
+            type="PythonCode",
+            imports=[],
+            run_function_code=SLOW_SLEEPING_BLOCK,
+            run_function_name="run",
+            init_function_code=None,
+            init_function_name="init",
+        )
+
+    def test_slow_block_succeeds_when_within_timeout(self) -> None:
+        """A block that sleeps for 2s SHOULD succeed when the budget is 60s."""
+        from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+            ModalExecutor,
+        )
+
+        executor = ModalExecutor(custom_python_block_timeout_seconds=60)
+        result = executor.execute_remote(
+            block_type_name="SlowBlock",
+            python_code=self._build_slow_block_python_code(),
+            inputs={"sleep_seconds": 2.0},
+        )
+        assert result == {"done": True}
+
+    def test_slow_block_raises_typed_timeout_when_exceeding(self) -> None:
+        """A block that sleeps for 30s MUST raise DynamicBlockTimeoutError
+        when the budget is 5s."""
+        from inference.core.workflows.errors import DynamicBlockTimeoutError
+        from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+            ModalExecutor,
+        )
+
+        executor = ModalExecutor(custom_python_block_timeout_seconds=5)
+        with pytest.raises(DynamicBlockTimeoutError) as exc:
+            executor.execute_remote(
+                block_type_name="SlowBlock",
+                python_code=self._build_slow_block_python_code(),
+                inputs={"sleep_seconds": 30.0},
+            )
+
+        # The configured timeout value must appear in the message.
+        assert "5s" in exc.value.public_message
+        # The stdout `print("entering slow block")` happened before the
+        # timeout — the watchdog binding must have captured it.
+        assert exc.value.stdout and "entering slow block" in exc.value.stdout

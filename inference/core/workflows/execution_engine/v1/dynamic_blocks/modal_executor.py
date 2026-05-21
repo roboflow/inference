@@ -15,13 +15,21 @@ import numpy as np
 import requests
 
 from inference.core.env import (
+    CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS,
     MODAL_ANONYMOUS_WORKSPACE_NAME,
     MODAL_TOKEN_ID,
     MODAL_TOKEN_SECRET,
     MODAL_WORKSPACE_NAME,
 )
 from inference.core.logger import logger
-from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
+from inference.core.workflows.errors import (
+    DynamicBlockCodeError,
+    DynamicBlockError,
+    DynamicBlockTimeoutError,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.constants import (
+    MODAL_TIMEOUT_ERROR_TYPE,
+)
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
 )
@@ -30,6 +38,19 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     extract_code_snippet,
 )
 from inference.core.workflows.prototypes.block import BlockResult
+
+# Default and bounds match the Modal handler's watchdog (modal/modal_app.py).
+DEFAULT_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS = 20
+MIN_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS = 1
+MAX_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS = 120
+# Client-side buffer added to the watchdog deadline so the server has time
+# to send the structured timeout response before the client gives up. See
+# design.md "Three-layer timeout" decision.
+CLIENT_TIMEOUT_HEADROOM_SECONDS = 10
+# Fixed budget used by `validate_code_in_modal` regardless of the
+# user-configured per-frame timeout. Validation runs compile()+ast.parse(),
+# which complete in milliseconds — keeping this small is defence in depth.
+VALIDATION_TIMEOUT_SECONDS = 30
 
 # Check if Modal credentials are available
 if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
@@ -183,14 +204,54 @@ def deserialize_for_modal_remote_execution(json_str: str) -> BlockResult:
 class ModalExecutor:
     """Manages execution of Custom Python Blocks in Modal sandboxes via web endpoints."""
 
-    def __init__(self, workspace_id: Optional[str] = None):
+    def __init__(
+        self,
+        workspace_id: Optional[str] = None,
+        custom_python_block_timeout_seconds: Optional[int] = None,
+    ):
         """Initialize the Modal executor for a specific workspace.
 
         Args:
-            workspace_id: The workspace ID to namespace execution, defaults to "anonymous"
+            workspace_id: The workspace ID to namespace execution, defaults to "anonymous".
+            custom_python_block_timeout_seconds: Per-frame watchdog deadline in
+                seconds. Precedence: constructor arg → env var
+                ``CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS`` → 20s default.
+                Out-of-range values fall back to the default.
         """
         self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
         self._base_url = None
+        self._timeout_seconds: int = self._resolve_timeout(
+            custom_python_block_timeout_seconds
+        )
+
+    @staticmethod
+    def _resolve_timeout(constructor_arg: Optional[int]) -> int:
+        candidate = (
+            constructor_arg
+            if constructor_arg is not None
+            else CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS
+        )
+        if candidate is None:
+            return DEFAULT_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS
+        if (
+            not isinstance(candidate, int)
+            or isinstance(candidate, bool)
+            or not (
+                MIN_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS
+                <= candidate
+                <= MAX_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS
+            )
+        ):
+            logger.warning(
+                "ModalExecutor: timeout %r is invalid or outside the [%d, %d] range; "
+                "falling back to default of %ds.",
+                candidate,
+                MIN_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS,
+                MAX_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS,
+                DEFAULT_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS,
+            )
+            return DEFAULT_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS
+        return candidate
 
     def _get_endpoint_url(self, workspace_id: str) -> str:
         """Get the web endpoint URL for a workspace.
@@ -239,6 +300,7 @@ class ModalExecutor:
         python_code: PythonCode,
         inputs: Dict[str, Any],
         workspace_id: Optional[str] = None,
+        _timeout_override_seconds: Optional[int] = None,
     ) -> BlockResult:
         """Execute a Custom Python Block in a Modal sandbox via web endpoint.
 
@@ -247,12 +309,20 @@ class ModalExecutor:
             python_code: The Python code to execute
             inputs: Input data for the function
             workspace_id: Optional workspace ID override
+            _timeout_override_seconds: Internal override used by
+                :func:`validate_code_in_modal` to apply a fixed small budget
+                regardless of the configured per-frame timeout. Not part of
+                the public API; do not set from external callers.
 
         Returns:
             BlockResult from the execution
 
         Raises:
-            DynamicBlockError: If Modal is not available or Modal request fails
+            DynamicBlockError: If Modal credentials are not configured.
+            DynamicBlockTimeoutError: If the in-handler watchdog fired or the
+                client read timeout fired before the server responded.
+            DynamicBlockCodeError: For user-code execution errors and
+                non-timeout HTTP/connection failures.
             Exception: If remote execution throws an exception
         """
         # Check if Modal is available
@@ -261,6 +331,17 @@ class ModalExecutor:
                 public_message="Modal credentials not configured. Please set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables.",
                 context="modal_executor | credentials_check",
             )
+
+        # Resolve effective per-frame timeout (watchdog on the server, plus
+        # CLIENT_TIMEOUT_HEADROOM_SECONDS of buffer on the client). The
+        # `_timeout_override_seconds` path exists solely for the validation
+        # codepath; see VALIDATION_TIMEOUT_SECONDS.
+        watchdog_timeout = (
+            _timeout_override_seconds
+            if _timeout_override_seconds is not None
+            else self._timeout_seconds
+        )
+        request_timeout = watchdog_timeout + CLIENT_TIMEOUT_HEADROOM_SECONDS
 
         # Use provided workspace_id or fall back to instance default
         workspace = workspace_id if workspace_id else self.workspace_id
@@ -278,6 +359,7 @@ class ModalExecutor:
                 "imports": python_code.imports or [],
                 "run_function_name": python_code.run_function_name,
                 "inputs_json": inputs_json,
+                "timeout_seconds": watchdog_timeout,
             }
 
             if (
@@ -300,7 +382,7 @@ class ModalExecutor:
             response = requests.post(
                 endpoint_url,
                 json=request_payload,
-                timeout=30,  # 30 second timeout
+                timeout=request_timeout,
                 headers={
                     "Content-Type": "application/json",
                     "Modal-Key": MODAL_TOKEN_ID,
@@ -310,13 +392,31 @@ class ModalExecutor:
 
             # Check HTTP status
             if response.status_code != 200:
-                raise DynamicBlockError(
+                raise DynamicBlockCodeError(
                     public_message=f"Modal endpoint returned status {response.status_code}: {response.text}",
                     context="modal_executor | http_request",
+                    block_type_name=block_type_name,
                 )
 
             # Parse response
             result = response.json()
+
+            # Structured timeout response from the in-handler watchdog —
+            # handled BEFORE the generic !success branch so the typed
+            # exception carries the captured stdout/stderr.
+            if result.get("error_type") == MODAL_TIMEOUT_ERROR_TYPE:
+                raise DynamicBlockTimeoutError(
+                    public_message=(
+                        f"Custom Python Block exceeded the configured timeout of "
+                        f"{watchdog_timeout}s on this frame. Simplify the block, "
+                        "reduce inner loops, or raise the timeout under Advanced "
+                        f"Options (max {MAX_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS}s)."
+                    ),
+                    context="modal_executor | watchdog_timeout",
+                    block_type_name=block_type_name,
+                    stdout=result.get("stdout"),
+                    stderr=result.get("stderr"),
+                )
 
             # Check for errors
             if not result.get("success", False):
@@ -366,11 +466,29 @@ class ModalExecutor:
             json_result = result.get("result", "{}")
             return deserialize_for_modal_remote_execution(json_result)
 
+        except requests.exceptions.ReadTimeout as e:
+            # Defence in depth: the server-side watchdog should respond first,
+            # but if it didn't, surface the same typed exception so callers
+            # don't have to special-case the network path.
+            raise DynamicBlockTimeoutError(
+                public_message=(
+                    f"Custom Python Block exceeded the configured timeout of "
+                    f"{watchdog_timeout}s on this frame (client read timeout). "
+                    "Simplify the block, reduce inner loops, or raise the timeout "
+                    f"under Advanced Options (max {MAX_CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS}s)."
+                ),
+                context="modal_executor | client_read_timeout",
+                block_type_name=block_type_name,
+            ) from e
         except requests.exceptions.RequestException as e:
-            raise DynamicBlockError(
+            # Non-timeout HTTP/connection failure. Re-class to the execution-
+            # engine side (was previously DynamicBlockError, a compiler-side
+            # exception, which categorised runtime failures incorrectly).
+            raise DynamicBlockCodeError(
                 public_message=f"Failed to connect to Modal endpoint: {str(e)}",
                 context="modal_executor | http_connection",
-            )
+                block_type_name=block_type_name,
+            ) from e
 
 
 def validate_code_in_modal(
@@ -434,12 +552,17 @@ def validate_syntax():
     executor = ModalExecutor(workspace_id=workspace)
 
     try:
-        # For validation, we don't need complex inputs, just pass empty JSON
+        # For validation, we don't need complex inputs, just pass empty JSON.
+        # `_timeout_override_seconds=VALIDATION_TIMEOUT_SECONDS` pins the
+        # validation budget to a small fixed value (compile + ast.parse run
+        # in milliseconds) regardless of the user-configured per-frame
+        # timeout — defence in depth, see design.md decision 8.
         result = executor.execute_remote(
             block_type_name="validation",
             python_code=validation_code,
             inputs={},
             workspace_id=workspace,
+            _timeout_override_seconds=VALIDATION_TIMEOUT_SECONDS,
         )
 
         if result.get("valid") is False:

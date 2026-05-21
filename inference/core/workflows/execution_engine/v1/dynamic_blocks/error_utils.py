@@ -86,6 +86,28 @@ def capture_output() -> Generator[Tuple[StringIO, StringIO], None, None]:
         _thread_local._capture_stderr = None
 
 
+@contextmanager
+def bind_capture_to(
+    stdout_buf: StringIO, stderr_buf: StringIO
+) -> Generator[None, None, None]:
+    """Bind caller-provided buffers as the current thread's capture targets.
+
+    Unlike :func:`capture_output`, this does not allocate buffers — the caller
+    supplies them. Designed for the Modal handler's watchdog pattern: the main
+    thread allocates the buffers and reads ``getvalue()`` on timeout, while a
+    worker thread enters this context manager around user-code execution so
+    its writes are tee'd into those same buffers.
+    """
+    _install_dispatchers()
+    _thread_local._capture_stdout = stdout_buf
+    _thread_local._capture_stderr = stderr_buf
+    try:
+        yield
+    finally:
+        _thread_local._capture_stdout = None
+        _thread_local._capture_stderr = None
+
+
 def extract_code_snippet(
     code: Optional[str], error_line: int, context: int = 10
 ) -> str:

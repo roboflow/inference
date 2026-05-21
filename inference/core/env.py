@@ -723,6 +723,38 @@ MODAL_ANONYMOUS_WORKSPACE_NAME = os.getenv(
     "MODAL_ANONYMOUS_WORKSPACE_NAME", "anonymous"
 )
 
+
+def _parse_custom_python_block_timeout_seconds() -> Optional[int]:
+    raw = os.getenv("CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS")
+    if raw is None or raw == "":
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        warnings.warn(
+            f"CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS={raw!r} is not an integer; "
+            "falling back to default (20s).",
+            stacklevel=2,
+        )
+        return None
+    if not 1 <= value <= 120:
+        warnings.warn(
+            f"CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS={value} is outside the valid range "
+            "[1, 120]; falling back to default (20s).",
+            stacklevel=2,
+        )
+        return None
+    return value
+
+
+# Optional per-frame timeout (in seconds, range [1, 120]) for Custom Python Blocks
+# executed via Modal. When None, ModalExecutor applies a 20s default that matches
+# the legacy effective behaviour. Out-of-range / unparseable values are logged
+# and fall back to None.
+CUSTOM_PYTHON_BLOCK_TIMEOUT_SECONDS: Optional[int] = (
+    _parse_custom_python_block_timeout_seconds()
+)
+
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))
 
 INFERENCE_WARNINGS_DISABLED = str2bool(
