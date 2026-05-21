@@ -7,6 +7,7 @@ import pytest
 from inference.core.cache import MemoryCache
 from inference.core.workflows.core_steps.sinks.roboflow.edit_image_metadata import v1
 from inference.core.workflows.core_steps.sinks.roboflow.edit_image_metadata.v1 import (
+    QUEUED_UPDATE_MESSAGE,
     SKIPPED_EMPTY_UPDATE_MESSAGE,
     UPDATE_SUCCESS_MESSAGE,
     BlockManifest,
@@ -22,7 +23,12 @@ def make_batch(content: List[Any]) -> Batch:
 
 @pytest.fixture
 def block() -> EditImageMetadataBlockV1:
-    return EditImageMetadataBlockV1(cache=MemoryCache(), api_key="my_api_key")
+    return EditImageMetadataBlockV1(
+        cache=MemoryCache(),
+        api_key="my_api_key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
 
 
 @pytest.fixture
@@ -102,7 +108,12 @@ def test_build_effective_updates_skips_rows_when_metadata_and_tags_are_empty() -
 
 
 def test_run_when_api_key_is_not_specified() -> None:
-    block_no_key = EditImageMetadataBlockV1(cache=MemoryCache(), api_key=None)
+    block_no_key = EditImageMetadataBlockV1(
+        cache=MemoryCache(),
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
 
     with pytest.raises(ValueError):
         block_no_key.run(
@@ -198,3 +209,23 @@ def test_run_raises_when_effective_update_count_exceeds_batch_limit(
             source_id=make_batch([f"img-{i}" for i in range(count)]),
             metadata={"value": "x"},
         )
+
+
+def test_run_fire_and_forget_offloads_instead_of_calling_api(mocked_v1) -> None:
+    background_tasks = mock.MagicMock()
+    block = EditImageMetadataBlockV1(
+        cache=MemoryCache(),
+        api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
+    )
+
+    result = block.run(
+        source_id=make_batch(["img-1"]),
+        metadata={"color": "red"},
+        fire_and_forget=True,
+    )
+
+    background_tasks.add_task.assert_called_once()
+    mocked_v1.update_single.assert_not_called()
+    assert result == [{"error_status": False, "message": QUEUED_UPDATE_MESSAGE}]
