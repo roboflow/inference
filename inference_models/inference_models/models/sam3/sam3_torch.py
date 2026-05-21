@@ -227,17 +227,7 @@ class SAM3Torch:
         result_embeddings = []
 
         for image, image_hash, size in zip(images, image_hashes, original_sizes):
-            if isinstance(image, torch.Tensor):
-                np_image = image.cpu().numpy()
-                if np_image.shape[0] == 3:
-                    np_image = np_image.transpose(1, 2, 0)
-                np_image = (
-                    (np_image * 255).astype(np.uint8)
-                    if np_image.max() <= 1
-                    else np_image
-                )
-            else:
-                np_image = image
+            np_image = _normalize_to_hwc_uint8(image)
 
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 processor = Sam3Processor(self._model)
@@ -464,14 +454,10 @@ class SAM3Torch:
 
         results = []
         for image in images_list:
-            np_image = image.cpu().numpy() if isinstance(image, torch.Tensor) else image
-            if np_image.shape[0] == 3:
-                np_image = np_image.transpose(1, 2, 0)
-            if np_image.max() <= 1:
-                np_image = np_image * 255
+            np_image = _normalize_to_hwc_uint8(image)
 
             h, w = np_image.shape[:2]
-            pil_image = Image.fromarray(np_image.astype(np.uint8))
+            pil_image = Image.fromarray(np_image)
 
             with torch.inference_mode():
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
@@ -636,6 +622,15 @@ def equalize_batch_size(
             )
 
     return point_coordinates, point_labels, boxes, mask_input
+
+
+def _normalize_to_hwc_uint8(image: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
+    np_image = image.cpu().numpy() if isinstance(image, torch.Tensor) else image
+    if np_image.shape[0] == 3:
+        np_image = np_image.transpose(1, 2, 0)
+    if np_image.max() <= 1:
+        np_image = np_image * 255
+    return np_image.astype(np.uint8)
 
 
 def pad_points(args: Dict) -> Dict:
