@@ -1,6 +1,6 @@
 import hashlib
 import json
-from copy import copy
+from copy import copy, deepcopy
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
@@ -639,7 +639,7 @@ def equalize_batch_size(
 
 
 def pad_points(args: Dict) -> Dict:
-    args = copy(args)
+    args = deepcopy(args)
     if args.get("point_coords") is not None:
         point_labels = args.get("point_labels")
         if (
