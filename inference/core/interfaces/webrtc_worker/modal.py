@@ -446,6 +446,7 @@ if modal is not None:
                 source=workflow_id,
                 category="modal",
                 api_key=webrtc_request.api_key,
+                resource_id=workflow_id,
                 resource_details={
                     "plan": webrtc_plan,
                     "billable": True,
