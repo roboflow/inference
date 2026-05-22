@@ -384,7 +384,7 @@ def test_triton_fast_path_matches_reference_pipeline_for_rgb_numpy(
     enable_triton_fast_path(monkeypatch=monkeypatch)
 
     image_pre_processing = ImagePreProcessing()
-    network_input = build_network_input(
+    network_input = _build_network_input(
         training_h=64,
         training_w=64,
         resize_mode=ResizeMode.STRETCH_TO,
