@@ -221,6 +221,7 @@ RUN cd /usr/local/lib/python3.10/dist-packages && \
 FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TRITON_VERSION=3.6.0
 ENV LANG=en_US.UTF-8
 
 WORKDIR /app
@@ -257,6 +258,10 @@ RUN apt-get update -y && \
     libatlas3-base \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --no-cache-dir \
+    --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
+    "triton==${TRITON_VERSION}"
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
