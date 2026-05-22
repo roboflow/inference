@@ -58,6 +58,10 @@ on [Roboflow Universe](https://universe.roboflow.com).
 You will need to set your Roboflow API key in your Inference environment to use this
 block. To learn more about setting your Roboflow API key, [refer to the Inference
 documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+This version of block introduces breaking change in behaviour of mask construction - it uses 
+`rle` format instead `polygon` making it possible to retrieve 
+shapes of any kind from remote server.
 """
 
 
@@ -81,7 +85,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/roboflow_instance_segmentation_model@v3"]
+    type: Literal["roboflow_core/roboflow_instance_segmentation_model@v4"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     confidence_mode: Union[
@@ -212,7 +216,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
+class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
 
     def __init__(
         self,
@@ -317,6 +321,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
             source="workflow-execution",
+            response_mask_format="rle",
         )
         self._model_manager.add_model(
             model_id=model_id,
@@ -374,6 +379,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             max_candidates=max_candidates,
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
+            response_mask_format="rle",
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
