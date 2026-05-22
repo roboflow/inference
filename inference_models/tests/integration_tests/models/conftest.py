@@ -223,6 +223,9 @@ VIT_SINGLE_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-
 VIT_MULTI_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-label-cls-trt-t4-package.zip"
 
 YOLOV10_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov10-trt-t4-package.zip"
+SAM3_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam3.zip"
+)
 
 
 @pytest.fixture(scope="module")
@@ -1708,4 +1711,12 @@ def yolov10_object_detection_trt_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLOV10_TRT_PACKAGE_URL,
         package_name="yolov10-object-detection-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def sam3_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SAM3_PACKAGE_URL,
+        package_name="sam3",
     )
