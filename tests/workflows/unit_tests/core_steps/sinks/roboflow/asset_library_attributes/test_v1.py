@@ -5,12 +5,14 @@ from unittest import mock
 import pytest
 
 from inference.core.cache import MemoryCache
-from inference.core.workflows.core_steps.sinks.roboflow.edit_image_metadata import v1
-from inference.core.workflows.core_steps.sinks.roboflow.edit_image_metadata.v1 import (
+from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes import (
+    v1,
+)
+from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
     SKIPPED_EMPTY_UPDATE_MESSAGE,
     UPDATE_SUCCESS_MESSAGE,
     BlockManifest,
-    EditImageMetadataBlockV1,
+    RoboflowAssetLibraryAttributesBlockV1,
     build_effective_updates,
 )
 from inference.core.workflows.execution_engine.entities.base import Batch
@@ -21,11 +23,11 @@ def make_batch(content: List[Any]) -> Batch:
 
 
 @pytest.fixture
-def block() -> EditImageMetadataBlockV1:
-    return EditImageMetadataBlockV1(
+def block() -> RoboflowAssetLibraryAttributesBlockV1:
+    return RoboflowAssetLibraryAttributesBlockV1(
         cache=MemoryCache(),
         api_key="my_api_key",
-        update_metadata_offloader=None,
+        update_attributes_offloader=None,
     )
 
 
@@ -33,22 +35,19 @@ def block() -> EditImageMetadataBlockV1:
 def mocked_v1():
     with (
         mock.patch.object(v1, "get_workspace_name") as workspace_mock,
-        mock.patch.object(v1, "update_image_metadata_at_roboflow") as single_mock,
         mock.patch.object(v1, "batch_update_image_metadata_at_roboflow") as batch_mock,
     ):
         workspace_mock.return_value = "my-workspace"
-        single_mock.return_value = {"success": True}
         batch_mock.return_value = {"taskId": "task-123"}
         yield SimpleNamespace(
             workspace=workspace_mock,
-            update_single=single_mock,
             update_batch=batch_mock,
         )
 
 
 def test_manifest_parsing_valid() -> None:
     raw_manifest = {
-        "type": "roboflow_core/edit_image_metadata@v1",
+        "type": "roboflow_core/asset_library_attributes@v1",
         "name": "edit_metadata",
         "source_id": "$inputs.source_id",
         "metadata": {"location": "$inputs.location", "static": "abc"},
@@ -106,10 +105,10 @@ def test_build_effective_updates_skips_rows_when_metadata_and_tags_are_empty() -
 
 
 def test_run_when_api_key_is_not_specified() -> None:
-    block_no_key = EditImageMetadataBlockV1(
+    block_no_key = RoboflowAssetLibraryAttributesBlockV1(
         cache=MemoryCache(),
         api_key=None,
-        update_metadata_offloader=None,
+        update_attributes_offloader=None,
     )
 
     with pytest.raises(ValueError):
@@ -119,7 +118,7 @@ def test_run_when_api_key_is_not_specified() -> None:
         )
 
 
-def test_run_when_disabled(block: EditImageMetadataBlockV1) -> None:
+def test_run_when_disabled(block: RoboflowAssetLibraryAttributesBlockV1) -> None:
     result = block.run(source_id=make_batch(["img-1", "img-2"]), disable_sink=True)
 
     disabled = {
@@ -129,8 +128,8 @@ def test_run_when_disabled(block: EditImageMetadataBlockV1) -> None:
     assert result == [disabled, disabled]
 
 
-def test_run_single_effective_update_calls_single_endpoint(
-    block: EditImageMetadataBlockV1, mocked_v1
+def test_run_single_effective_update_calls_batch_endpoint(
+    block: RoboflowAssetLibraryAttributesBlockV1, mocked_v1
 ) -> None:
     result = block.run(
         source_id=make_batch(["img-1"]),
@@ -139,19 +138,19 @@ def test_run_single_effective_update_calls_single_endpoint(
     )
 
     assert result == [{"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}]
-    mocked_v1.update_single.assert_called_once_with(
+    mocked_v1.update_batch.assert_called_once_with(
         api_key="my_api_key",
         workspace_id="my-workspace",
-        image_id="img-1",
-        metadata={"color": "red"},
-        add_tags=["auto"],
+        updates=[
+            {"imageId": "img-1", "metadata": {"color": "red"}, "addTags": ["auto"]}
+        ],
     )
 
 
-def test_run_single_endpoint_error_returns_per_image_error(
-    block: EditImageMetadataBlockV1, mocked_v1
+def test_run_single_effective_update_error_returns_per_image_error(
+    block: RoboflowAssetLibraryAttributesBlockV1, mocked_v1
 ) -> None:
-    mocked_v1.update_single.side_effect = Exception("API error")
+    mocked_v1.update_batch.side_effect = Exception("API error")
 
     result = block.run(
         source_id=make_batch(["img-1"]),
@@ -163,7 +162,7 @@ def test_run_single_endpoint_error_returns_per_image_error(
 
 
 def test_run_batch_endpoint_broadcasts_shared_metadata_and_dedupes_source_ids(
-    block: EditImageMetadataBlockV1, mocked_v1
+    block: RoboflowAssetLibraryAttributesBlockV1, mocked_v1
 ) -> None:
     result = block.run(
         source_id=make_batch(["img-1", "img-2", "img-1", "img-3"]),
@@ -184,20 +183,24 @@ def test_run_batch_endpoint_broadcasts_shared_metadata_and_dedupes_source_ids(
     )
 
 
-def test_run_batch_endpoint_error_raises(
-    block: EditImageMetadataBlockV1, mocked_v1
+def test_run_batch_endpoint_error_returns_per_image_error(
+    block: RoboflowAssetLibraryAttributesBlockV1, mocked_v1
 ) -> None:
     mocked_v1.update_batch.side_effect = Exception("preflight error")
 
-    with pytest.raises(Exception, match="preflight error"):
-        block.run(
-            source_id=make_batch(["img-1", "img-2"]),
-            metadata={"a": 1},
-        )
+    result = block.run(
+        source_id=make_batch(["img-1", "img-2"]),
+        metadata={"a": 1},
+    )
+
+    assert result[0]["error_status"] is True
+    assert result[1]["error_status"] is True
+    assert "preflight error" in result[0]["message"]
+    assert "preflight error" in result[1]["message"]
 
 
 def test_run_raises_when_effective_update_count_exceeds_batch_limit(
-    block: EditImageMetadataBlockV1, mocked_v1
+    block: RoboflowAssetLibraryAttributesBlockV1, mocked_v1
 ) -> None:
     count = v1.MAX_BATCH_UPDATES + 1
 
@@ -212,10 +215,10 @@ def test_run_uses_injected_offloader_instead_of_calling_api(mocked_v1) -> None:
     offloader = mock.MagicMock(
         return_value={"error_status": False, "message": "queued"}
     )
-    block = EditImageMetadataBlockV1(
+    block = RoboflowAssetLibraryAttributesBlockV1(
         cache=MemoryCache(),
         api_key="my_api_key",
-        update_metadata_offloader=offloader,
+        update_attributes_offloader=offloader,
     )
 
     result = block.run(
@@ -232,7 +235,6 @@ def test_run_uses_injected_offloader_instead_of_calling_api(mocked_v1) -> None:
         ],
         api_key="my_api_key",
     )
-    mocked_v1.update_single.assert_not_called()
     mocked_v1.update_batch.assert_not_called()
     assert result == [
         {"error_status": False, "message": "queued"},

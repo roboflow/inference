@@ -439,8 +439,8 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     RoboflowDatasetUploadBlockV2,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.edit_image_metadata.v1 import (
-    EditImageMetadataBlockV1,
+from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
+    RoboflowAssetLibraryAttributesBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
@@ -679,7 +679,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
-    "update_metadata_offloader": None,
+    "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
@@ -795,7 +795,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
-        EditImageMetadataBlockV1,
+        RoboflowAssetLibraryAttributesBlockV1,
         ContinueIfBlockV1,
         InnerWorkflowBlockV1,
         RateLimiterBlockV1,

@@ -8,7 +8,6 @@ from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import (
     batch_update_image_metadata_at_roboflow,
     get_roboflow_workspace,
-    update_image_metadata_at_roboflow,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -28,40 +27,40 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Write metadata and tags to existing Roboflow images."
+SHORT_DESCRIPTION = "Update attributes and tags for Asset Library images."
 
 LONG_DESCRIPTION = """
-Update existing Roboflow source images with workflow-derived metadata and tags, enabling Asset Library enrichment workflows where model outputs become filterable image fields.
+Submit attribute and tag updates for existing Asset Library images, enabling enrichment workflows where model outputs become filterable image fields.
 
 ## How This Block Works
 
-This block writes metadata key-value pairs and tags back to existing images in your Roboflow workspace. The block:
+This block submits key-value attributes and tags for existing Asset Library images in your Roboflow workspace. Attribute values are stored as image metadata. The block:
 
-1. Receives Roboflow source image IDs, optional metadata, and optional tags
+1. Receives Asset Library source image IDs, optional attributes, and optional tags
 2. Resolves the target workspace from the configured Roboflow API key
-3. Skips rows where both metadata and tags are empty
-4. Merges duplicate source IDs using sequential semantics: later metadata values win, and tags are added as a de-duplicated set
-5. Returns one status result per input source ID, in input order
+3. Skips rows where both attributes and tags are empty
+4. Merges duplicate source IDs using sequential semantics: later attribute values win, and tags are added as a de-duplicated set
+5. Submits one batch update request and returns one submission status per input source ID, in input order
 
-Re-running the same workflow against the same source IDs is safe: metadata keys are upserted (last write wins) and tags are unioned. There is no destructive write.
+Re-running the same workflow against the same source IDs is safe: attribute keys are upserted (last write wins) and tags are unioned. There is no destructive write.
 
-The block does not send image bytes and does not create new images. It only updates existing source images. Removing metadata keys, removing tags, writing annotations, and creating images are intentionally out of scope for this workflow block.
+The block does not send image bytes and does not create new images. It only updates existing Asset Library source images. Removing attribute keys, removing tags, writing annotations, and creating images are intentionally out of scope for this workflow block.
 
 ## Requirements
 
-This block requires a valid Roboflow API key. The API key determines the workspace whose source images can be updated.
+This block requires a valid Roboflow API key. The API key determines the workspace whose Asset Library images can be updated.
 """
 
 MAX_BATCH_UPDATES = 1000
 WORKSPACE_NAME_CACHE_EXPIRE = 900  # 15 min
-SKIPPED_EMPTY_UPDATE_MESSAGE = "Skipped because no metadata or tags were provided"
-UPDATE_SUCCESS_MESSAGE = "Metadata updated"
+SKIPPED_EMPTY_UPDATE_MESSAGE = "Skipped because no attributes or tags were provided"
+UPDATE_SUCCESS_MESSAGE = "Image attributes update submitted"
 
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Edit Image Metadata",
+            "name": "Roboflow Asset Library Attributes",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -75,9 +74,9 @@ class BlockManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal["roboflow_core/edit_image_metadata@v1"]
+    type: Literal["roboflow_core/asset_library_attributes@v1"]
     source_id: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        description="Roboflow source image ID to update. For batch workflows, provide one source ID per image.",
+        description="Asset Library source image ID to update. For batch workflows, provide one source ID per image.",
         examples=["$inputs.source_id", "source_abc123"],
     )
     metadata: Union[
@@ -86,10 +85,10 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default_factory=dict,
         description=(
-            "Optional key-value metadata to set on the image. Either an inline "
-            "dict whose values may be static or selector references (e.g. "
-            "`$inputs.camera_id`), or a whole-field selector to a per-row dict "
-            "produced by an upstream step."
+            "Optional key-value attributes to set on the Asset Library image. "
+            "Attributes are stored as image metadata. Either an inline dict whose "
+            "values may be static or selector references (e.g. `$inputs.camera_id`), "
+            "or a whole-field selector to a per-row dict produced by an upstream step."
         ),
         examples=[
             {"color": "red", "score": 0.98},
@@ -105,7 +104,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=None,
         description=(
-            "Optional tags to add to the image. Each entry may be a static "
+            "Optional tags to add to the Asset Library image. Each entry may be a static "
             "string or a reference to a workflow input/step (e.g. `$inputs.label`)."
         ),
         examples=[
@@ -116,7 +115,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="If True, the block execution is disabled and no metadata writes occur.",
+        description="If True, the block execution is disabled and no Asset Library attribute writes occur.",
         examples=[False, "$inputs.disable_sink"],
     )
 
@@ -144,8 +143,8 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.10.0,<2.0.0"
 
 
-class UpdateMetadataOffloader(Protocol):
-    """Callable contract for offloading the Roboflow metadata-update request.
+class UpdateAssetLibraryAttributesOffloader(Protocol):
+    """Callable contract for offloading the Roboflow image-attributes request.
 
     Implementations decide how to actually deliver the updates — call the
     Roboflow API inline, enqueue to a background worker, write to a log, etc.
@@ -159,37 +158,35 @@ class UpdateMetadataOffloader(Protocol):
     ) -> Dict[str, Any]: ...
 
 
-def call_image_metadata_endpoint(
+def call_asset_library_attributes_endpoint(
     workspace_id: str,
     updates: List[Dict[str, Any]],
     api_key: str,
 ) -> Dict[str, Any]:
-    if len(updates) == 1:
-        return call_single_endpoint(
-            workspace_id=workspace_id, update=updates[0], api_key=api_key
-        )
     return call_batch_endpoint(
         workspace_id=workspace_id, updates=updates, api_key=api_key
     )
 
 
-class EditImageMetadataBlockV1(WorkflowBlock):
+class RoboflowAssetLibraryAttributesBlockV1(WorkflowBlock):
 
     def __init__(
         self,
         api_key: Optional[str],
         cache: BaseCache,
-        update_metadata_offloader: Optional[UpdateMetadataOffloader] = None,
+        update_attributes_offloader: Optional[
+            UpdateAssetLibraryAttributesOffloader
+        ] = None,
     ):
         self._api_key = api_key
         self._cache = cache
-        self._offloader: UpdateMetadataOffloader = (
-            update_metadata_offloader or call_image_metadata_endpoint
+        self._offloader: UpdateAssetLibraryAttributesOffloader = (
+            update_attributes_offloader or call_asset_library_attributes_endpoint
         )
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key", "cache", "update_metadata_offloader"]
+        return ["api_key", "cache", "update_attributes_offloader"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -206,7 +203,7 @@ class EditImageMetadataBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
-                "EditImageMetadata block cannot run without Roboflow API key. "
+                "Roboflow Asset Library Attributes block cannot run without Roboflow API key. "
                 "If you do not know how to get API key - visit "
                 "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
                 "retrieve one."
@@ -222,7 +219,7 @@ class EditImageMetadataBlockV1(WorkflowBlock):
 
         if len(source_id) > MAX_BATCH_UPDATES:
             raise ValueError(
-                f"EditImageMetadata block supports at most {MAX_BATCH_UPDATES} updates per run(). "
+                f"Roboflow Asset Library Attributes block supports at most {MAX_BATCH_UPDATES} updates per run(). "
                 "Reduce the workflow batch size."
             )
 
@@ -310,54 +307,27 @@ def build_effective_updates(
     )
 
 
-def call_single_endpoint(
-    workspace_id: str,
-    update: Dict[str, Any],
-    api_key: str,
-) -> Dict[str, Any]:
-    image_id = update["imageId"]
-    try:
-        update_image_metadata_at_roboflow(
-            api_key=api_key,
-            workspace_id=workspace_id,
-            image_id=image_id,
-            metadata=update.get("metadata"),
-            add_tags=update.get("addTags"),
-        )
-        logging.info(
-            "Updated image metadata: workspace_id=%s image_id=%s",
-            workspace_id,
-            image_id,
-        )
-        return {"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}
-    except Exception as error:
-        logging.warning(
-            "Could not update metadata: workspace_id=%s image_id=%s reason=%s",
-            workspace_id,
-            image_id,
-            error,
-        )
-        return {
-            "error_status": True,
-            "message": f"Error while updating image metadata. Error type: {type(error)}. Details: {error}",
-        }
-
-
 def call_batch_endpoint(
     workspace_id: str,
     updates: List[Dict[str, Any]],
     api_key: str,
 ) -> Dict[str, Any]:
-    response = batch_update_image_metadata_at_roboflow(
-        api_key=api_key,
-        workspace_id=workspace_id,
-        updates=updates,
-    )
-    if not response.get("taskId"):
-        raise ValueError("Malformed image metadata batch response: missing taskId")
+    try:
+        response = batch_update_image_metadata_at_roboflow(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            updates=updates,
+        )
+        if not response.get("taskId"):
+            raise ValueError("Malformed image metadata batch response: missing taskId")
+    except Exception as error:
+        logging.warning("Could not submit Asset Library attributes batch update")
+        return {
+            "error_status": True,
+            "message": f"Error while submitting Asset Library attributes update. Error type: {type(error)}. Details: {error}",
+        }
     logging.info(
-        "Submitted image metadata batch update: workspace_id=%s updates=%d",
-        workspace_id,
+        "Submitted Asset Library attributes batch update: updates=%d",
         len(updates),
     )
     return {"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}

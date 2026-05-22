@@ -4,10 +4,12 @@ from unittest.mock import MagicMock
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.sinks.roboflow.edit_image_metadata import v1
+from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes import (
+    v1,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
-WORKFLOW_WITH_EDIT_IMAGE_METADATA = {
+WORKFLOW_WITH_ASSET_LIBRARY_ATTRIBUTES = {
     "version": "1.3.0",
     "inputs": [
         {"type": "WorkflowBatchInput", "name": "source_id", "kind": ["string"]},
@@ -16,8 +18,8 @@ WORKFLOW_WITH_EDIT_IMAGE_METADATA = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/edit_image_metadata@v1",
-            "name": "edit_metadata",
+            "type": "roboflow_core/asset_library_attributes@v1",
+            "name": "asset_library_attributes",
             "source_id": "$inputs.source_id",
             "metadata": {"location": "$inputs.location"},
             "tags": ["$inputs.extra_tag"],
@@ -28,7 +30,7 @@ WORKFLOW_WITH_EDIT_IMAGE_METADATA = {
         {
             "type": "JsonField",
             "name": "message",
-            "selector": "$steps.edit_metadata.message",
+            "selector": "$steps.asset_library_attributes.message",
         }
     ],
 }
@@ -36,7 +38,7 @@ WORKFLOW_WITH_EDIT_IMAGE_METADATA = {
 
 @mock.patch.object(v1, "get_workspace_name")
 @mock.patch.object(v1, "batch_update_image_metadata_at_roboflow")
-def test_workflow_with_edit_image_metadata_auto_batches_scalar_metadata_and_tags(
+def test_workflow_with_asset_library_attributes_auto_batches_scalar_metadata_and_tags(
     batch_update_image_metadata_at_roboflow_mock: MagicMock,
     get_workspace_name_mock: MagicMock,
     model_manager: ModelManager,
@@ -50,7 +52,7 @@ def test_workflow_with_edit_image_metadata_auto_batches_scalar_metadata_and_tags
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=WORKFLOW_WITH_EDIT_IMAGE_METADATA,
+        workflow_definition=WORKFLOW_WITH_ASSET_LIBRARY_ATTRIBUTES,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -66,8 +68,8 @@ def test_workflow_with_edit_image_metadata_auto_batches_scalar_metadata_and_tags
 
     # then
     assert len(result) == 2
-    assert result[0]["message"] == "Metadata updated"
-    assert result[1]["message"] == "Metadata updated"
+    assert result[0]["message"] == "Image attributes update submitted"
+    assert result[1]["message"] == "Image attributes update submitted"
     batch_update_image_metadata_at_roboflow_mock.assert_called_once_with(
         api_key="my_api_key",
         workspace_id="my-workspace",
@@ -90,13 +92,21 @@ WORKFLOW_WITH_PER_ROW_METADATA_AND_TAGS = {
     "version": "1.3.0",
     "inputs": [
         {"type": "WorkflowBatchInput", "name": "source_id", "kind": ["string"]},
-        {"type": "WorkflowBatchInput", "name": "per_row_metadata", "kind": ["dictionary"]},
-        {"type": "WorkflowBatchInput", "name": "per_row_tags", "kind": ["list_of_values"]},
+        {
+            "type": "WorkflowBatchInput",
+            "name": "per_row_metadata",
+            "kind": ["dictionary"],
+        },
+        {
+            "type": "WorkflowBatchInput",
+            "name": "per_row_tags",
+            "kind": ["list_of_values"],
+        },
     ],
     "steps": [
         {
-            "type": "roboflow_core/edit_image_metadata@v1",
-            "name": "edit_metadata",
+            "type": "roboflow_core/asset_library_attributes@v1",
+            "name": "asset_library_attributes",
             "source_id": "$inputs.source_id",
             "metadata": "$inputs.per_row_metadata",
             "tags": "$inputs.per_row_tags",
@@ -107,7 +117,7 @@ WORKFLOW_WITH_PER_ROW_METADATA_AND_TAGS = {
         {
             "type": "JsonField",
             "name": "message",
-            "selector": "$steps.edit_metadata.message",
+            "selector": "$steps.asset_library_attributes.message",
         }
     ],
 }
@@ -115,7 +125,7 @@ WORKFLOW_WITH_PER_ROW_METADATA_AND_TAGS = {
 
 @mock.patch.object(v1, "get_workspace_name")
 @mock.patch.object(v1, "batch_update_image_metadata_at_roboflow")
-def test_workflow_with_edit_image_metadata_accepts_per_row_metadata_and_tags(
+def test_workflow_with_asset_library_attributes_accepts_per_row_metadata_and_tags(
     batch_update_image_metadata_at_roboflow_mock: MagicMock,
     get_workspace_name_mock: MagicMock,
     model_manager: ModelManager,
@@ -145,8 +155,8 @@ def test_workflow_with_edit_image_metadata_accepts_per_row_metadata_and_tags(
 
     # then
     assert len(result) == 2
-    assert result[0]["message"] == "Metadata updated"
-    assert result[1]["message"] == "Metadata updated"
+    assert result[0]["message"] == "Image attributes update submitted"
+    assert result[1]["message"] == "Image attributes update submitted"
     batch_update_image_metadata_at_roboflow_mock.assert_called_once_with(
         api_key="my_api_key",
         workspace_id="my-workspace",
@@ -166,8 +176,8 @@ WORKFLOW_WITH_INLINE_SCALAR_SELECTORS = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/edit_image_metadata@v1",
-            "name": "edit_metadata",
+            "type": "roboflow_core/asset_library_attributes@v1",
+            "name": "asset_library_attributes",
             "source_id": "$inputs.source_id",
             "metadata": {"literal": "abc", "camera": "$inputs.camera_id"},
             "tags": ["static-tag", "$inputs.dynamic_tag"],
@@ -178,7 +188,7 @@ WORKFLOW_WITH_INLINE_SCALAR_SELECTORS = {
         {
             "type": "JsonField",
             "name": "message",
-            "selector": "$steps.edit_metadata.message",
+            "selector": "$steps.asset_library_attributes.message",
         }
     ],
 }
@@ -186,7 +196,7 @@ WORKFLOW_WITH_INLINE_SCALAR_SELECTORS = {
 
 @mock.patch.object(v1, "get_workspace_name")
 @mock.patch.object(v1, "batch_update_image_metadata_at_roboflow")
-def test_workflow_with_edit_image_metadata_resolves_inline_scalar_selectors(
+def test_workflow_with_asset_library_attributes_resolves_inline_scalar_selectors(
     batch_update_image_metadata_at_roboflow_mock: MagicMock,
     get_workspace_name_mock: MagicMock,
     model_manager: ModelManager,
@@ -216,8 +226,8 @@ def test_workflow_with_edit_image_metadata_resolves_inline_scalar_selectors(
 
     # then
     assert len(result) == 2
-    assert result[0]["message"] == "Metadata updated"
-    assert result[1]["message"] == "Metadata updated"
+    assert result[0]["message"] == "Image attributes update submitted"
+    assert result[1]["message"] == "Image attributes update submitted"
     batch_update_image_metadata_at_roboflow_mock.assert_called_once_with(
         api_key="my_api_key",
         workspace_id="my-workspace",
