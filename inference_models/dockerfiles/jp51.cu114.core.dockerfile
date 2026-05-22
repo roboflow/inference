@@ -249,9 +249,9 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     libgstreamer1.0 \
     libgstreamer-plugins-base1.0 \
     libgstreamer-plugins-bad1.0 \
-    libjson-glib \
-    libnice \
-    libglew \
+    libjson-glib-1.0-0 \
+    libnice10 \
+    libglew2.1 \
     libgstrtspserver-1.0 \
     && rm -rf /var/lib/apt/lists/*
 
