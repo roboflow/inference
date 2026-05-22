@@ -842,6 +842,23 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[("interactive-instance-segmentation", "sam2")] = (
                     InferenceModelsSAM2Adapter
                 )
+            elif task == "embed" and variant == "sam3":
+                from inference.models.sam3.segment_anything3_inference_models import (
+                    InferenceModelsSAM3Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSAM3Adapter
+                ROBOFLOW_MODEL_TYPES[("instance-segmentation", "sam3-large")] = (
+                    InferenceModelsSAM3Adapter
+                )
+            elif task == "interactive-segmentation" and variant == "sam3":
+                from inference.models.sam3.visual_segmentation_inference_models import (
+                    InferenceModelsSAM3InteractiveAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsSAM3InteractiveAdapter
+                )
             elif task == "embed" and variant == "clip":
                 from inference.models.clip.clip_inference_models import (
                     InferenceModelsClipAdapter,

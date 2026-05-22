@@ -244,9 +244,7 @@ def test_crop_image_output_keys_match_manifest_on_mixed_detections() -> None:
         numpy_image=np_image,
     )
     detections = sv.Detections(
-        xyxy=np.array(
-            [[0, 0, 0, 0], [80, 80, 120, 120]], dtype=np.float64
-        ),
+        xyxy=np.array([[0, 0, 0, 0], [80, 80, 120, 120]], dtype=np.float64),
         class_id=np.array([1, 1]),
         confidence=np.array([0.5, 0.5], dtype=np.float64),
         data={
@@ -264,9 +262,7 @@ def test_crop_image_output_keys_match_manifest_on_mixed_detections() -> None:
     )
 
     # then — every emitted dict must carry exactly the manifest output keys
-    expected_keys = {
-        output.name for output in BlockManifest.describe_outputs()
-    }
+    expected_keys = {output.name for output in BlockManifest.describe_outputs()}
     assert expected_keys == {"crops", "predictions"}, (
         "Sanity: manifest declares the two outputs this test locks against. "
         "If this changes, update the assertion below accordingly."
