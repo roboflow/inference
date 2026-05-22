@@ -374,6 +374,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             max_candidates=max_candidates,
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
+            response_mask_format="rle",
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
