@@ -47,6 +47,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
     ensure_dynamic_blocks_allowed,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge import (
+    collect_dynamic_blocks_definitions_from_raw_workflow_definition,
     validate_inner_workflow_composition_from_raw_workflow_definition,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.inline import (
@@ -121,8 +122,10 @@ def compile_workflow_graph(
     )
     cached_value = COMPILATION_CACHE.get(key=key)
     if cached_value is not None:
-        dynamic_blocks_definitions = workflow_definition.get(
-            "dynamic_blocks_definitions", []
+        dynamic_blocks_definitions = (
+            collect_dynamic_blocks_definitions_from_raw_workflow_definition(
+                workflow_definition
+            )
         )
         ensure_dynamic_blocks_allowed(
             dynamic_blocks_definitions=dynamic_blocks_definitions
@@ -134,6 +137,9 @@ def compile_workflow_graph(
             init_parameters=init_parameters,
         )
     )
+    validate_inner_workflow_composition_from_raw_workflow_definition(
+        raw_workflow_definition
+    )
     statically_defined_blocks = load_workflow_blocks(
         execution_engine_version=execution_engine_version,
         profiler=profiler,
@@ -141,17 +147,17 @@ def compile_workflow_graph(
     initializers = load_initializers(profiler=profiler)
     kinds_serializers = load_kinds_serializers(profiler=profiler)
     kinds_deserializers = load_kinds_deserializers(profiler=profiler)
+    dynamic_blocks_definitions = (
+        collect_dynamic_blocks_definitions_from_raw_workflow_definition(
+            raw_workflow_definition
+        )
+    )
     dynamic_blocks = compile_dynamic_blocks(
-        dynamic_blocks_definitions=raw_workflow_definition.get(
-            "dynamic_blocks_definitions", []
-        ),
+        dynamic_blocks_definitions=dynamic_blocks_definitions,
         profiler=profiler,
         api_key=init_parameters.get("workflows_core.api_key", None),
     )
     available_blocks = statically_defined_blocks + dynamic_blocks
-    validate_inner_workflow_composition_from_raw_workflow_definition(
-        raw_workflow_definition
-    )
     inlined_raw_workflow_definition: Dict[str, Any] = inline_inner_workflow_steps(
         raw_workflow_definition,
         available_blocks=available_blocks,

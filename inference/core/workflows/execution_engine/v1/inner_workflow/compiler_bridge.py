@@ -34,6 +34,46 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
 )
 
 
+def collect_dynamic_blocks_definitions_from_raw_workflow_definition(
+    raw_workflow_definition: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    definitions: List[Dict[str, Any]] = []
+    seen: Set[str] = set()
+    visiting: Set[int] = set()
+
+    def visit(workflow_definition: Dict[str, Any]) -> None:
+        workflow_object_id = id(workflow_definition)
+        if workflow_object_id in visiting:
+            raise InnerWorkflowInvalidStepEntryError(
+                "Circular inner_workflow definition detected while collecting dynamic block definitions."
+            )
+        visiting.add(workflow_object_id)
+
+        for dynamic_block_definition in (
+            workflow_definition.get("dynamic_blocks_definitions") or []
+        ):
+            definition_key = json.dumps(
+                dynamic_block_definition, sort_keys=True, separators=(",", ":")
+            )
+            if definition_key in seen:
+                continue
+            seen.add(definition_key)
+            definitions.append(dynamic_block_definition)
+
+        for step in workflow_definition.get("steps") or []:
+            if (
+                isinstance(step, dict)
+                and step.get("type") == USE_INNER_WORKFLOW_BLOCK_TYPE
+                and isinstance(step.get("workflow_definition"), dict)
+            ):
+                visit(step["workflow_definition"])
+
+        visiting.remove(workflow_object_id)
+
+    visit(raw_workflow_definition)
+    return definitions
+
+
 def validate_inner_workflow_composition_from_raw_workflow_definition(
     raw_workflow_definition: Dict[str, Any],
 ) -> None:
