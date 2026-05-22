@@ -335,6 +335,9 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
     SegmentAnything3BlockV3,
 )
+from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
+    RoboflowInstanceSegmentationModelBlockV4,
+)
 
 if SAM3_3D_OBJECTS_ENABLED:
     from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
@@ -934,6 +937,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
         RoboflowInstanceSegmentationModelBlockV3,
+        RoboflowInstanceSegmentationModelBlockV4,
         RoboflowSemanticSegmentationModelBlockV1,
         RoboflowSemanticSegmentationModelBlockV2,
         RoboflowKeypointDetectionModelBlockV2,
