@@ -194,6 +194,9 @@ from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
+from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
+    OverlapAnalysisBlockV1,
+)
 from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
 )
@@ -630,6 +633,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     CONTOURS_KIND,
     DETECTION_KIND,
+    DETECTIONS_OVERLAPS_KIND,
     DICTIONARY_KIND,
     EMBEDDING_KIND,
     FLOAT_KIND,
@@ -834,6 +838,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CropVisualizationBlockV1,
         DetectionsConsensusBlockV1,
         DetectionsStitchBlockV1,
+        OverlapAnalysisBlockV1,
         DistanceMeasurementBlockV1,
         DominantColorBlockV1,
         DotVisualizationBlockV1,
@@ -1013,6 +1018,7 @@ def load_kinds() -> List[Kind]:
         DICTIONARY_KIND,
         DETECTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
+        DETECTIONS_OVERLAPS_KIND,
         POINT_KIND,
         ZONE_KIND,
         OBJECT_DETECTION_PREDICTION_KIND,
