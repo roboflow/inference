@@ -84,9 +84,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Detections checked against each reference.",
         examples=["$steps.model_b.predictions"],
     )
-    min_overlap: Union[
-        FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
+    min_overlap: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
         default=0.1,
         description=(
             "Minimum (intersection / reference_area) ratio for a pair to be "
