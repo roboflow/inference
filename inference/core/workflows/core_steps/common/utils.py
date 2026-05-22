@@ -33,6 +33,8 @@ from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,
     POLYGON_KEY_IN_SV_DETECTIONS,
     PREDICTION_TYPE_KEY,
+    RLE_MASK_KEY_IN_INFERENCE_RESPONSE,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
@@ -124,6 +126,14 @@ def convert_inference_detections_batch_to_sv_detections(
         if INFERENCE_ID_KEY in p:
             detections[INFERENCE_ID_KEY] = np.array(
                 [p[INFERENCE_ID_KEY]] * len(detections)
+            )
+        rle_masks = [
+            d.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE) or d.get("rle")
+            for d in raw_predictions
+        ]
+        if any(m is not None for m in rle_masks):
+            detections.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
+                rle_masks, dtype=object
             )
         batch_of_detections.append(detections)
     return batch_of_detections
