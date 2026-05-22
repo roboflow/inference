@@ -5,6 +5,7 @@ from inference.core.env import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     API_KEY,
+    ENABLE_TENSOR_DATA_REPRESENTATION,
     SAM3_3D_OBJECTS_ENABLED,
     WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     WORKFLOW_DISABLED_BLOCK_PATTERNS,
@@ -113,18 +114,15 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_boolean_kind,
     deserialize_bytes_kind,
     deserialize_classification_prediction_kind,
-    deserialize_detections_kind,
     deserialize_dictionary_kind,
     deserialize_float_kind,
     deserialize_float_zero_to_one_kind,
-    deserialize_image_kind,
     deserialize_integer_kind,
     deserialize_list_of_values_kind,
     deserialize_numpy_array,
     deserialize_optional_string_kind,
     deserialize_point_kind,
     deserialize_rgb_color_kind,
-    deserialize_rle_detections_kind,
     deserialize_string_kind,
     deserialize_timestamp,
     deserialize_video_metadata_kind,
@@ -132,14 +130,34 @@ from inference.core.workflows.core_steps.common.deserializers import (
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
-    serialise_image,
-    serialise_rle_sv_detections,
-    serialise_sv_detections,
     serialize_secret,
     serialize_timestamp,
     serialize_video_metadata_kind,
     serialize_wildcard_kind,
 )
+
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.common.deserializers_tensor import (
+        deserialize_detections_kind,
+        deserialize_image_kind,
+        deserialize_rle_detections_kind,
+    )
+    from inference.core.workflows.core_steps.common.serializers_tensor import (
+        serialise_image,
+        serialise_rle_sv_detections,
+        serialise_sv_detections,
+    )
+else:
+    from inference.core.workflows.core_steps.common.deserializers import (
+        deserialize_detections_kind,
+        deserialize_image_kind,
+        deserialize_rle_detections_kind,
+    )
+    from inference.core.workflows.core_steps.common.serializers import (
+        serialise_image,
+        serialise_rle_sv_detections,
+        serialise_sv_detections,
+    )
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
@@ -395,9 +413,14 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 imp
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
     RoboflowObjectDetectionModelBlockV2,
 )
-from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 import (
-    RoboflowObjectDetectionModelBlockV3,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v3_tensor import (
+        RoboflowObjectDetectionModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 import (
+        RoboflowObjectDetectionModelBlockV3,
+    )
 from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
     RoboflowSemanticSegmentationModelBlockV1,
 )
