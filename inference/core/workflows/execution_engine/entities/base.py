@@ -18,9 +18,11 @@ from typing import (
 
 import cv2
 import numpy as np
+import torch
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, Literal
 
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.utils.image_utils import (
     attempt_loading_image_from_string,
     encode_image_to_jpeg_bytes,
@@ -273,8 +275,14 @@ class WorkflowImageData:
         base64_image: Optional[str] = None,
         numpy_image: Optional[np.ndarray] = None,
         video_metadata: Optional[VideoMetadata] = None,
+        tensor_image: Optional[torch.Tensor] = None,
     ):
-        if not base64_image and numpy_image is None and not image_reference:
+        if (
+            not base64_image
+            and numpy_image is None
+            and not image_reference
+            and tensor_image is None
+        ):
             raise ValueError("Could not initialise empty `WorkflowImageData`.")
         self._parent_metadata = parent_metadata
         self._workflow_root_ancestor_metadata = (
@@ -285,6 +293,7 @@ class WorkflowImageData:
         self._image_reference = image_reference
         self._base64_image = base64_image
         self._numpy_image = numpy_image
+        self._tensor_image = tensor_image
         self._video_metadata = video_metadata
 
     @classmethod
@@ -300,10 +309,11 @@ class WorkflowImageData:
         * image_reference
         * base64_image
         * numpy_image
+        * tensor_image
         * video_metadata
 
-        When more than one from ["numpy_image", "base64_image", "image_reference"] args are
-        given, they MUST be compliant.
+        When more than one from ["numpy_image", "base64_image", "image_reference", "tensor_image"]
+        args are given, they MUST be compliant.
         """
         parent_metadata = origin_image_data._parent_metadata
         workflow_root_ancestor_metadata = (
@@ -312,11 +322,16 @@ class WorkflowImageData:
         image_reference = origin_image_data._image_reference
         base64_image = origin_image_data._base64_image
         numpy_image = origin_image_data._numpy_image
+        tensor_image = origin_image_data._tensor_image
         video_metadata = origin_image_data._video_metadata
-        if any(k in kwargs for k in ["numpy_image", "base64_image", "image_reference"]):
+        if any(
+            k in kwargs
+            for k in ["numpy_image", "base64_image", "image_reference", "tensor_image"]
+        ):
             numpy_image = kwargs.get("numpy_image")
             base64_image = kwargs.get("base64_image")
             image_reference = kwargs.get("image_reference")
+            tensor_image = kwargs.get("tensor_image")
         if "parent_metadata" in kwargs:
             if workflow_root_ancestor_metadata is parent_metadata:
                 workflow_root_ancestor_metadata = kwargs["parent_metadata"]
@@ -333,6 +348,7 @@ class WorkflowImageData:
             image_reference=image_reference,
             base64_image=base64_image,
             numpy_image=numpy_image,
+            tensor_image=tensor_image,
             video_metadata=video_metadata,
         )
 
@@ -383,15 +399,63 @@ class WorkflowImageData:
             video_metadata=video_metadata,
         )
 
+    @classmethod
+    def create_crop_from_tensor(
+        cls,
+        origin_image_data: "WorkflowImageData",
+        crop_identifier: str,
+        cropped_tensor_image: torch.Tensor,
+        offset_x: int,
+        offset_y: int,
+        preserve_video_metadata: bool = False,
+    ) -> "WorkflowImageData":
+        """
+        Tensor-native mirror of `create_crop`. Identical metadata math;
+        the child carries `tensor_image` instead of `numpy_image`.
+        """
+        origin_h, origin_w = origin_image_data._read_shape_without_materialization()
+        parent_metadata = ImageParentMetadata(
+            parent_id=crop_identifier,
+            origin_coordinates=OriginCoordinatesSystem(
+                left_top_x=offset_x,
+                left_top_y=offset_y,
+                origin_width=origin_w,
+                origin_height=origin_h,
+            ),
+        )
+        workflow_root_ancestor_coordinates = replace(
+            origin_image_data.workflow_root_ancestor_metadata.origin_coordinates,
+            left_top_x=origin_image_data.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
+            + offset_x,
+            left_top_y=origin_image_data.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
+            + offset_y,
+        )
+        workflow_root_ancestor_metadata = ImageParentMetadata(
+            parent_id=origin_image_data.workflow_root_ancestor_metadata.parent_id,
+            origin_coordinates=workflow_root_ancestor_coordinates,
+        )
+        video_metadata = None
+        if preserve_video_metadata and origin_image_data._video_metadata is not None:
+            video_metadata = copy(origin_image_data._video_metadata)
+            video_metadata.video_identifier = (
+                f"{video_metadata.video_identifier} | crop: {crop_identifier}"
+            )
+        return WorkflowImageData(
+            parent_metadata=parent_metadata,
+            workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+            tensor_image=cropped_tensor_image,
+            video_metadata=video_metadata,
+        )
+
     @property
     def parent_metadata(self) -> ImageParentMetadata:
         if self._parent_metadata.origin_coordinates is None:
-            numpy_image = self.numpy_image
+            h, w = self._read_shape_without_materialization()
             origin_coordinates = OriginCoordinatesSystem(
                 left_top_y=0,
                 left_top_x=0,
-                origin_width=numpy_image.shape[1],
-                origin_height=numpy_image.shape[0],
+                origin_width=w,
+                origin_height=h,
             )
             self._parent_metadata = replace(
                 self._parent_metadata, origin_coordinates=origin_coordinates
@@ -401,12 +465,12 @@ class WorkflowImageData:
     @property
     def workflow_root_ancestor_metadata(self) -> ImageParentMetadata:
         if self._workflow_root_ancestor_metadata.origin_coordinates is None:
-            numpy_image = self.numpy_image
+            h, w = self._read_shape_without_materialization()
             origin_coordinates = OriginCoordinatesSystem(
                 left_top_y=0,
                 left_top_x=0,
-                origin_width=numpy_image.shape[1],
-                origin_height=numpy_image.shape[0],
+                origin_width=w,
+                origin_height=h,
             )
             self._workflow_root_ancestor_metadata = replace(
                 self._workflow_root_ancestor_metadata,
@@ -414,9 +478,29 @@ class WorkflowImageData:
             )
         return self._workflow_root_ancestor_metadata
 
+    def _read_shape_without_materialization(self) -> Tuple[int, int]:
+        """Returns (height, width). Prefers whichever representation is set
+        so tensor-mode never triggers device→host materialization."""
+        if self._numpy_image is not None:
+            return self._numpy_image.shape[0], self._numpy_image.shape[1]
+        if self._tensor_image is not None:
+            return (
+                int(self._tensor_image.shape[0]),
+                int(self._tensor_image.shape[1]),
+            )
+        np_img = self.numpy_image
+        return np_img.shape[0], np_img.shape[1]
+
     @property
     def numpy_image(self) -> np.ndarray:
+        # Layout contract:
+        #   numpy_image: HWC uint8 BGR  (cv2 native)
+        #   tensor_image: HWC uint8 RGB  (inference-models / torch convention)
         if self._numpy_image is not None:
+            return self._numpy_image
+        if self._tensor_image is not None:
+            rgb_np = self._tensor_image.detach().to("cpu").numpy()
+            self._numpy_image = rgb_np[:, :, ::-1].copy()
             return self._numpy_image
         if self._base64_image:
             self._numpy_image = attempt_loading_image_from_string(self._base64_image)[0]
@@ -428,6 +512,15 @@ class WorkflowImageData:
         else:
             self._numpy_image = cv2.imread(self._image_reference)
         return self._numpy_image
+
+    @property
+    def tensor_image(self) -> torch.Tensor:
+        if self._tensor_image is not None:
+            return self._tensor_image
+        bgr_np = self.numpy_image
+        rgb_np = bgr_np[:, :, ::-1].copy()
+        self._tensor_image = torch.from_numpy(rgb_np)
+        return self._tensor_image
 
     @property
     def base64_image(self) -> str:
