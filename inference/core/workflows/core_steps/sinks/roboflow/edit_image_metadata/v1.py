@@ -1,10 +1,17 @@
 import hashlib
 import logging
-from concurrent.futures import ThreadPoolExecutor
-from functools import partial
-from typing import Any, Dict, List, Literal, NamedTuple, Optional, Type, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    NamedTuple,
+    Optional,
+    Protocol,
+    Type,
+    Union,
+)
 
-from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
 from inference.core.cache.base import BaseCache
@@ -122,17 +129,6 @@ class BlockManifest(WorkflowBlockManifest):
         description="If True, the block execution is disabled and no metadata writes occur.",
         examples=[False, "$inputs.disable_sink"],
     )
-    fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
-        default=True,
-        description=(
-            "If True, the Roboflow API call is dispatched to a background "
-            "executor and the block returns immediately. The `error_status` "
-            "and `message` outputs become best-effort and will not reflect "
-            "API failures. If False, the call runs synchronously and outputs "
-            "reflect the real result."
-        ),
-        examples=[True, False, "$inputs.fire_and_forget"],
-    )
 
     @classmethod
     def get_air_gapped_availability(cls) -> AirGappedAvailability:
@@ -158,7 +154,33 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-QUEUED_UPDATE_MESSAGE = "Metadata update dispatched in background"
+class UpdateMetadataOffloader(Protocol):
+    """Callable contract for offloading the Roboflow metadata-update request.
+
+    Implementations decide how to actually deliver the updates — call the
+    Roboflow API inline, enqueue to a background worker, write to a log, etc.
+    """
+
+    def __call__(
+        self,
+        workspace_id: str,
+        updates: List[Dict[str, Any]],
+        api_key: str,
+    ) -> Dict[str, Any]: ...
+
+
+def call_image_metadata_endpoint(
+    workspace_id: str,
+    updates: List[Dict[str, Any]],
+    api_key: str,
+) -> Dict[str, Any]:
+    if len(updates) == 1:
+        return call_single_endpoint(
+            workspace_id=workspace_id, update=updates[0], api_key=api_key
+        )
+    return call_batch_endpoint(
+        workspace_id=workspace_id, updates=updates, api_key=api_key
+    )
 
 
 class EditImageMetadataBlockV1(WorkflowBlock):
@@ -167,17 +189,17 @@ class EditImageMetadataBlockV1(WorkflowBlock):
         self,
         api_key: Optional[str],
         cache: BaseCache,
-        background_tasks: Optional[BackgroundTasks],
-        thread_pool_executor: Optional[ThreadPoolExecutor],
+        update_metadata_offloader: Optional[UpdateMetadataOffloader] = None,
     ):
         self._api_key = api_key
         self._cache = cache
-        self._background_tasks = background_tasks
-        self._thread_pool_executor = thread_pool_executor
+        self._offloader: UpdateMetadataOffloader = (
+            update_metadata_offloader or call_image_metadata_endpoint
+        )
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key", "cache", "background_tasks", "thread_pool_executor"]
+        return ["api_key", "cache", "update_metadata_offloader"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -191,7 +213,6 @@ class EditImageMetadataBlockV1(WorkflowBlock):
         ] = None,
         tags: Optional[Union[List[str], Batch[Optional[List[str]]]]] = None,
         disable_sink: bool = False,
-        fire_and_forget: bool = True,
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
@@ -225,29 +246,11 @@ class EditImageMetadataBlockV1(WorkflowBlock):
         if not effective.updates:
             return effective.results
 
-        if len(effective.updates) == 1:
-            task = partial(
-                call_single_endpoint,
-                workspace_id=workspace_id,
-                update=effective.updates[0],
-                api_key=self._api_key,
-            )
-        else:
-            task = partial(
-                call_batch_endpoint,
-                workspace_id=workspace_id,
-                updates=effective.updates,
-                api_key=self._api_key,
-            )
-
-        if fire_and_forget and self._background_tasks is not None:
-            self._background_tasks.add_task(task)
-            submitted_result = {"error_status": False, "message": QUEUED_UPDATE_MESSAGE}
-        elif fire_and_forget and self._thread_pool_executor is not None:
-            self._thread_pool_executor.submit(task)
-            submitted_result = {"error_status": False, "message": QUEUED_UPDATE_MESSAGE}
-        else:
-            submitted_result = task()
+        submitted_result = self._offloader(
+            workspace_id=workspace_id,
+            updates=effective.updates,
+            api_key=self._api_key,
+        )
 
         for update in effective.updates:
             for result_index in effective.result_indices_by_id[update["imageId"]]:

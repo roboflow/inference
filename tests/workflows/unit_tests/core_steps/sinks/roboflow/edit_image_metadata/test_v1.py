@@ -7,7 +7,6 @@ import pytest
 from inference.core.cache import MemoryCache
 from inference.core.workflows.core_steps.sinks.roboflow.edit_image_metadata import v1
 from inference.core.workflows.core_steps.sinks.roboflow.edit_image_metadata.v1 import (
-    QUEUED_UPDATE_MESSAGE,
     SKIPPED_EMPTY_UPDATE_MESSAGE,
     UPDATE_SUCCESS_MESSAGE,
     BlockManifest,
@@ -26,8 +25,7 @@ def block() -> EditImageMetadataBlockV1:
     return EditImageMetadataBlockV1(
         cache=MemoryCache(),
         api_key="my_api_key",
-        background_tasks=None,
-        thread_pool_executor=None,
+        update_metadata_offloader=None,
     )
 
 
@@ -111,8 +109,7 @@ def test_run_when_api_key_is_not_specified() -> None:
     block_no_key = EditImageMetadataBlockV1(
         cache=MemoryCache(),
         api_key=None,
-        background_tasks=None,
-        thread_pool_executor=None,
+        update_metadata_offloader=None,
     )
 
     with pytest.raises(ValueError):
@@ -211,21 +208,33 @@ def test_run_raises_when_effective_update_count_exceeds_batch_limit(
         )
 
 
-def test_run_fire_and_forget_offloads_instead_of_calling_api(mocked_v1) -> None:
-    background_tasks = mock.MagicMock()
+def test_run_uses_injected_offloader_instead_of_calling_api(mocked_v1) -> None:
+    offloader = mock.MagicMock(
+        return_value={"error_status": False, "message": "queued"}
+    )
     block = EditImageMetadataBlockV1(
         cache=MemoryCache(),
         api_key="my_api_key",
-        background_tasks=background_tasks,
-        thread_pool_executor=None,
+        update_metadata_offloader=offloader,
     )
 
     result = block.run(
-        source_id=make_batch(["img-1"]),
+        source_id=make_batch(["img-1", "img-2"]),
         metadata={"color": "red"},
-        fire_and_forget=True,
+        tags=["a"],
     )
 
-    background_tasks.add_task.assert_called_once()
+    offloader.assert_called_once_with(
+        workspace_id="my-workspace",
+        updates=[
+            {"imageId": "img-1", "metadata": {"color": "red"}, "addTags": ["a"]},
+            {"imageId": "img-2", "metadata": {"color": "red"}, "addTags": ["a"]},
+        ],
+        api_key="my_api_key",
+    )
     mocked_v1.update_single.assert_not_called()
-    assert result == [{"error_status": False, "message": QUEUED_UPDATE_MESSAGE}]
+    mocked_v1.update_batch.assert_not_called()
+    assert result == [
+        {"error_status": False, "message": "queued"},
+        {"error_status": False, "message": "queued"},
+    ]
