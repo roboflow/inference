@@ -36,12 +36,17 @@ def mocked_v1():
     with (
         mock.patch.object(v1, "get_workspace_name") as workspace_mock,
         mock.patch.object(v1, "batch_update_image_metadata_at_roboflow") as batch_mock,
+        mock.patch.object(
+            v1, "update_image_metadata_at_roboflow"
+        ) as single_mock,
     ):
         workspace_mock.return_value = "my-workspace"
         batch_mock.return_value = {"taskId": "task-123"}
+        single_mock.return_value = {"status": "ok"}
         yield SimpleNamespace(
             workspace=workspace_mock,
             update_batch=batch_mock,
+            update_single=single_mock,
         )
 
 
@@ -128,7 +133,7 @@ def test_run_when_disabled(block: RoboflowAssetLibraryAttributesBlockV1) -> None
     assert result == [disabled, disabled]
 
 
-def test_run_single_effective_update_calls_batch_endpoint(
+def test_run_single_effective_update_calls_single_image_endpoint(
     block: RoboflowAssetLibraryAttributesBlockV1, mocked_v1
 ) -> None:
     result = block.run(
@@ -138,19 +143,20 @@ def test_run_single_effective_update_calls_batch_endpoint(
     )
 
     assert result == [{"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}]
-    mocked_v1.update_batch.assert_called_once_with(
+    mocked_v1.update_single.assert_called_once_with(
         api_key="my_api_key",
         workspace_id="my-workspace",
-        updates=[
-            {"imageId": "img-1", "metadata": {"color": "red"}, "addTags": ["auto"]}
-        ],
+        image_id="img-1",
+        metadata={"color": "red"},
+        add_tags=["auto"],
     )
+    mocked_v1.update_batch.assert_not_called()
 
 
 def test_run_single_effective_update_error_returns_per_image_error(
     block: RoboflowAssetLibraryAttributesBlockV1, mocked_v1
 ) -> None:
-    mocked_v1.update_batch.side_effect = Exception("API error")
+    mocked_v1.update_single.side_effect = Exception("API error")
 
     result = block.run(
         source_id=make_batch(["img-1"]),

@@ -8,6 +8,7 @@ from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import (
     batch_update_image_metadata_at_roboflow,
     get_roboflow_workspace,
+    update_image_metadata_at_roboflow,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -163,6 +164,10 @@ def call_asset_library_attributes_endpoint(
     updates: List[Dict[str, Any]],
     api_key: str,
 ) -> Dict[str, Any]:
+    if len(updates) == 1:
+        return call_single_image_endpoint(
+            workspace_id=workspace_id, update=updates[0], api_key=api_key
+        )
     return call_batch_endpoint(
         workspace_id=workspace_id, updates=updates, api_key=api_key
     )
@@ -307,6 +312,32 @@ def build_effective_updates(
     )
 
 
+def call_single_image_endpoint(
+    workspace_id: str,
+    update: Dict[str, Any],
+    api_key: str,
+) -> Dict[str, Any]:
+    try:
+        update_image_metadata_at_roboflow(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            image_id=update["imageId"],
+            metadata=update.get("metadata"),
+            add_tags=update.get("addTags"),
+        )
+    except Exception as error:
+        logging.warning(
+            "Could not update Asset Library attributes for image %s: %s",
+            update["imageId"],
+            error,
+        )
+        return {
+            "error_status": True,
+            "message": f"Error while updating Asset Library attributes. Error type: {type(error)}. Details: {error}",
+        }
+    return {"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}
+
+
 def call_batch_endpoint(
     workspace_id: str,
     updates: List[Dict[str, Any]],
@@ -321,7 +352,9 @@ def call_batch_endpoint(
         if not response.get("taskId"):
             raise ValueError("Malformed image metadata batch response: missing taskId")
     except Exception as error:
-        logging.warning("Could not submit Asset Library attributes batch update")
+        logging.warning(
+            "Could not submit Asset Library attributes batch update: %s", error
+        )
         return {
             "error_status": True,
             "message": f"Error while submitting Asset Library attributes update. Error type: {type(error)}. Details: {error}",
