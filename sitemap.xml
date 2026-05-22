@@ -736,6 +736,9 @@
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;kinds&#x2f;detection&#x2f;</loc>
     </url>
     <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;kinds&#x2f;detections_overlaps&#x2f;</loc>
+    </url>
+    <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;kinds&#x2f;dictionary&#x2f;</loc>
     </url>
     <url>

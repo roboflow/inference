@@ -76,6 +76,7 @@ providing compile-time verification of Workflows definitions.
 * [`classification_prediction`](../kinds/classification_prediction.md): Predictions from classifier
 * [`contours`](../kinds/contours.md): List of numpy arrays where each array represents contour points
 * [`detection`](../kinds/detection.md): Single element of detections-based prediction (like `object_detection_prediction`)
+* [`detections_overlaps`](../kinds/detections_overlaps.md): List of per-pair detection overlap records
 * [`dictionary`](../kinds/dictionary.md): Dictionary
 * [`embedding`](../kinds/embedding.md): A list of floating point numbers representing a vector embedding.
 * [`float_zero_to_one`](../kinds/float_zero_to_one.md): `float` value in range `[0.0, 1.0]`

@@ -10,7 +10,7 @@ The background subtraction block uses MOG2 (Mixture of Gaussians) algorithm to i
 differ significantly from the background model. This is useful for motion detection, object tracking,
 and video analysis tasks.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiRVpISzZtejU1VDBudW1sNXBYeDkiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg4NzQ1NjN9.kYRWstLXwBAeAmEY2Vh14dKWG2HCdeH_FBugwsXt6m0?showGraph=true" loading="lazy" title="Roboflow Workflow for background subtraction" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiRVpISzZtejU1VDBudW1sNXBYeDkiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzk0NzE0OTd9.bWMA5WENmMrljQrW_O2z6NGwgUDxQul5siQTO0QdNMI?showGraph=true" loading="lazy" title="Roboflow Workflow for background subtraction" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -47,7 +47,7 @@ and video analysis tasks.
 
 In this example, we demonstrate how to remove distortions from the camera based on coefficients provided.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoidXNwbmdDRlVnNlU5Q0tkdmpxUFUiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg4NzQ1NjR9.EM6GhD87za1mCGi9jPWyzZWBgZWSZvCjP-LrRePnhcE?showGraph=true" loading="lazy" title="Roboflow Workflow for camera calibration" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoidXNwbmdDRlVnNlU5Q0tkdmpxUFUiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzk0NzE0OTh9.HezL1AudA4G70SAuZd8WBE3LvWsTJgXqK_FhHlPTSPE?showGraph=true" loading="lazy" title="Roboflow Workflow for camera calibration" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -128,7 +128,7 @@ In this example, we demonstrate how to remove distortions from the camera based 
 In this example, we demonstrate how to evaluate camera focus using the Tenengrad focus measure
 with visualization overlays including zebra warnings, focus peaking, HUD, and composition grid.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiQVIzRkJubjZFUzZzRHdXTVRONXYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg4NzQ1NjV9.AhbChoW9GP_LFX0DZQcwgQJQJgt3Z53xffo5rs6AxgI?showGraph=true" loading="lazy" title="Roboflow Workflow for camera focus" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiQVIzRkJubjZFUzZzRHdXTVRONXYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzk0NzE0OTl9.qwdzk7c1zcSQkRGDfXPSwDofmHQXDaQ9-XEq0oGLIKk?showGraph=true" loading="lazy" title="Roboflow Workflow for camera focus" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -174,7 +174,7 @@ with visualization overlays including zebra warnings, focus peaking, HUD, and co
 In this example we show how classical contour detection works in cooperation
 with blocks performing its pre-processing (conversion to gray and blur).
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiaElHRDVGMkEwa29KN3Jhd1l2b2wiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg4NzQ1NjZ9.mELn1aK5LV4C8Uyj6GljPd3LObgP2SPZv5Di2Q4gNsA?showGraph=true" loading="lazy" title="Roboflow Workflow for contours detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiaElHRDVGMkEwa29KN3Jhd1l2b2wiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzk0NzE0OTl9.oNNjV4l7uf9-WKYOWWi56WMoEv2hb0jyFeR7WC_FQXs?showGraph=true" loading="lazy" title="Roboflow Workflow for contours detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -260,7 +260,7 @@ This example shows how Dominant Color block and Pixel Color Count block can be u
 
 First, dominant color gets detected and then number of pixels with that color is calculated.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoibU55eDdhMDd0VzZPWjFxRzFrb0EiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg4NzQ1Njd9.xy-QXwsqM1uygWpC_Mb4A0nHN8SmC08QRlm1Qj_csMk?showGraph=true" loading="lazy" title="Roboflow Workflow for pixels counting" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoibU55eDdhMDd0VzZPWjFxRzFrb0EiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzk0NzE1MDB9.2fNOTqqcRrp0Bwjjviiu983jq06Iz3xg_XIKfV3U3UI?showGraph=true" loading="lazy" title="Roboflow Workflow for pixels counting" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -301,7 +301,7 @@ First, dominant color gets detected and then number of pixels with that color is
 
 This example shows how Dominant Color block can be used against input image.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiVlpaS1dGYnprWDc5TWw0bkdzaDYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg4NzQ1Njd9.Ekqtapo4aCqXND-cDU4gLx6dT9uMymiAKkUrEQXMEk8?showGraph=true" loading="lazy" title="Roboflow Workflow for dominant color" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiVlpaS1dGYnprWDc5TWw0bkdzaDYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzk0NzE1MDF9.FpQQcC-hX7xD_TxW7wy3XNZi5USQwv7rbaL2SOuF5GU?showGraph=true" loading="lazy" title="Roboflow Workflow for dominant color" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -337,7 +337,7 @@ This example shows how Dominant Color block can be used against input image.
 In this example dynamic zone with 4 vertices is calculated from detected segmentations.
 Perspective correction is applied to the input image as well as to detected segmentations based on this zone.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiTFQ5Q05SZTdJeHJhMXJEM1ZvckQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg4NzQ1Njl9.SVkbD8bGXVlJeUBR1F6US8mMI7KqaUQVSDojL6x8Q8Q?showGraph=true" loading="lazy" title="Roboflow Workflow for dynamic_zone_and_perspective_converter" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiTFQ5Q05SZTdJeHJhMXJEM1ZvckQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzk0NzE1MDd9.2PFaAHUhy82Z2K9jysp3vygi-ZsO_RjtCgnCucFDRjU?showGraph=true" loading="lazy" title="Roboflow Workflow for dynamic_zone_and_perspective_converter" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -458,7 +458,7 @@ Perspective correction is applied to the input image as well as to detected segm
 
 This example shows how the Image Preprocessing block can be used to resize an input image.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiYWN3cksxTmZ5YXZ2WnpXMld1SHQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg4NzQ1NzB9.eCgRDqRAdCrii-akNYca31ClzN-A25jQstgsYz9qx1w?showGraph=true" loading="lazy" title="Roboflow Workflow for resize image" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiYWN3cksxTmZ5YXZ2WnpXMld1SHQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzk0NzE1MDd9.TCBkzFJ4vdDHpr9iynd_KSbauv3_wA0sm_2Gg2HPXng?showGraph=true" loading="lazy" title="Roboflow Workflow for resize image" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -500,7 +500,7 @@ The motion detector uses background subtraction to identify moving elements in t
 It outputs a motion flag, an alarm flag (which triggers when motion starts), detected objects,
 and a visualization of the detected motion.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMFBKWmU0ZE12bExJck1qNFlWTEciLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg4NzQ1NzB9.gbaQK5gbK6EwkPfrnRQ36T8jUYz0ml40QzktuhUo4PQ?showGraph=true" loading="lazy" title="Roboflow Workflow for motion detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMFBKWmU0ZE12bExJck1qNFlWTEciLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzk0NzE1MTF9.O_2UyqCU63rQNECBK1SGqg35zk3KKDFa0PCyYRtJMWU?showGraph=true" loading="lazy" title="Roboflow Workflow for motion detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -571,7 +571,7 @@ Please note that a single image can be passed as template, and batch of images
 are passed as images to look for template. This workflow does also validate
 Execution Engine capabilities to broadcast batch-oriented inputs properly.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiV1hSSWNVWVk3bEpzMHZiZ0g2a24iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg4NzQ1NzF9.6gS2Fhc_hHxpuaxE_1Y3QhyyuuyYWnDYXdi-Z_wek8M?showGraph=true" loading="lazy" title="Roboflow Workflow for sift" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiV1hSSWNVWVk3bEpzMHZiZ0g2a24iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzk0NzE1MTJ9.Y0m0a3t1sIainZszWMp38gUN1gQRtUCqzZw71z05tiU?showGraph=true" loading="lazy" title="Roboflow Workflow for sift" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -671,7 +671,7 @@ Given enough shared details order of the images does not influence final result.
 
 Please note that images need to have enough common details for the algorithm to stitch them properly.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiYzlpQ0tGVThkRnh2eU1FcWlXZTQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzg4NzQ1NzJ9.bzd65P1Wm3vlKRpu5L5S46w-kzcVQJiillthtP3y6mw?showGraph=true" loading="lazy" title="Roboflow Workflow for stitch_images" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiYzlpQ0tGVThkRnh2eU1FcWlXZTQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3Nzk0NzE1MTN9.-DqSD3yGcKDWRWMc3_089dQ28D7-SFVeiD5jy-nf1f8?showGraph=true" loading="lazy" title="Roboflow Workflow for stitch_images" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

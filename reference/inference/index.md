@@ -322,6 +322,10 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.workflows.core_steps.fusion.detections_stitch.v1
 
+## `core/workflows/core_steps/fusion/overlap_analysis`
+
+::: inference.core.workflows.core_steps.fusion.overlap_analysis.v1
+
 ## `core/workflows/core_steps`
 
 ::: inference.core.workflows.core_steps.loader
@@ -624,7 +628,11 @@ Parallel HTTP inference via Celery workers for high-throughput deployments.
 
 ::: inference.models.sam3.segment_anything3
 
+::: inference.models.sam3.segment_anything3_inference_models
+
 ::: inference.models.sam3.visual_segmentation
+
+::: inference.models.sam3.visual_segmentation_inference_models
 
 ## `models/sam3_3d`
 

@@ -1685,6 +1685,7 @@
 <li><code>-ms, --machine-size [xs|s|m|l|xl]</code>: (Deprecated - use --workers-per-machine) Size of machine</li>
 <li><code>--max-runtime-seconds INTEGER</code>: Max processing duration</li>
 <li><code>--max-parallel-tasks INTEGER</code>: Max number of concurrent processing tasks</li>
+<li><code>--max-image-failure-rate FLOAT</code>: Maximum fraction of images per shard that may fail before the shard is aborted (0.0-1.0). Default: 10 absolute failures per shard (~3.9% on a full 256-image shard, higher effective tolerance on partial last shards). No client-side validation is performed; out-of-range values are rejected by the server with HTTP 400.</li>
 <li><code>--aggregation-format [csv|jsonl]</code>: Format of results aggregation</li>
 <li><code>-j, --job-id TEXT</code>: Identifier of job (if not given - will be generated)</li>
 <li><code>-a, --api-key TEXT</code>: Roboflow API key for your workspace. If not given - env variable <code>ROBOFLOW_API_KEY</code> will be used</li>
@@ -1764,6 +1765,7 @@
 <li><code>--workers-per-machine INTEGER</code>: Number of workers to run on a single machine - more workers equals better resources utilisation, but may cause out of memory errors for bulky Workflows.</li>
 <li><code>--max-runtime-seconds INTEGER</code>: Max processing duration</li>
 <li><code>--max-parallel-tasks INTEGER</code>: Max number of concurrent processing tasks</li>
+<li><code>--max-image-failure-rate FLOAT</code>: Maximum fraction of images per shard that may fail before the shard is aborted (0.0-1.0). Default: 10 absolute failures per shard (~3.9% on a full 256-image shard, higher effective tolerance on partial last shards). No client-side validation is performed; out-of-range values are rejected by the server with HTTP 400.</li>
 <li><code>--debug-mode / --no-debug-mode</code>: Flag enabling errors stack traces to be displayed (helpful for debugging)  [default: no-debug-mode]</li>
 <li><code>--help</code>: Show this message and exit.</li>
 </ul>

@@ -255,6 +255,7 @@ Roboflow Inference is an open-source (Apache 2.0) computer vision inference serv
 - [classification_prediction](https://inference.roboflow.com/workflows/kinds/classification_prediction/index.md)
 - [contours](https://inference.roboflow.com/workflows/kinds/contours/index.md)
 - [detection](https://inference.roboflow.com/workflows/kinds/detection/index.md)
+- [detections_overlaps](https://inference.roboflow.com/workflows/kinds/detections_overlaps/index.md)
 - [dictionary](https://inference.roboflow.com/workflows/kinds/dictionary/index.md)
 - [embedding](https://inference.roboflow.com/workflows/kinds/embedding/index.md)
 - [float_zero_to_one](https://inference.roboflow.com/workflows/kinds/float_zero_to_one/index.md)
