@@ -1122,3 +1122,208 @@ def test_parent_origin_validation_rejects_negative_height() -> None:
             width=100,
             height=-100,
         )
+
+
+# ---------------------------------------------------------------------------
+# Tensor-native representation tests
+# ---------------------------------------------------------------------------
+
+
+import torch  # noqa: E402  (kept low to avoid touching the existing import block)
+
+
+def test_init_workflow_image_data_from_tensor_only() -> None:
+    # given
+    tensor = torch.zeros((10, 20, 3), dtype=torch.uint8)
+
+    # when
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=tensor,
+    )
+
+    # then
+    assert image.tensor_image is tensor
+
+
+def test_workflow_image_data_numpy_fallback_does_rgb_to_bgr() -> None:
+    # given
+    # Tensor is HWC uint8 RGB by convention. Bake distinct R/G/B values so
+    # the channel order is asserted, not just the shape.
+    tensor = torch.zeros((2, 2, 3), dtype=torch.uint8)
+    tensor[..., 0] = 10  # R
+    tensor[..., 1] = 20  # G
+    tensor[..., 2] = 30  # B
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=tensor,
+    )
+
+    # when
+    numpy_image = image.numpy_image
+
+    # then
+    # numpy is HWC uint8 BGR, so [..., 0]=B=30, [..., 1]=G=20, [..., 2]=R=10.
+    assert numpy_image.shape == (2, 2, 3)
+    assert numpy_image.dtype == np.uint8
+    assert np.all(numpy_image[..., 0] == 30)
+    assert np.all(numpy_image[..., 1] == 20)
+    assert np.all(numpy_image[..., 2] == 10)
+
+
+def test_workflow_image_data_tensor_fallback_does_bgr_to_rgb() -> None:
+    # given
+    # numpy is HWC uint8 BGR.
+    numpy_image = np.zeros((2, 2, 3), dtype=np.uint8)
+    numpy_image[..., 0] = 30  # B
+    numpy_image[..., 1] = 20  # G
+    numpy_image[..., 2] = 10  # R
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=numpy_image,
+    )
+
+    # when
+    tensor = image.tensor_image
+
+    # then
+    # tensor is HWC uint8 RGB.
+    assert tuple(tensor.shape) == (2, 2, 3)
+    assert tensor.dtype == torch.uint8
+    assert torch.all(tensor[..., 0] == 10)
+    assert torch.all(tensor[..., 1] == 20)
+    assert torch.all(tensor[..., 2] == 30)
+
+
+def test_workflow_image_data_numpy_fallback_caches() -> None:
+    # given
+    tensor = torch.zeros((3, 4, 3), dtype=torch.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=tensor,
+    )
+
+    # when
+    first = image.numpy_image
+    second = image.numpy_image
+
+    # then
+    assert first is second, "lazy materialization should cache the numpy array"
+
+
+def test_workflow_image_data_tensor_fallback_caches() -> None:
+    # given
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((3, 4, 3), dtype=np.uint8),
+    )
+
+    # when
+    first = image.tensor_image
+    second = image.tensor_image
+
+    # then
+    assert first is second, "lazy materialization should cache the tensor"
+
+
+def test_workflow_image_data_parent_metadata_without_forcing_materialization() -> None:
+    # given
+    # Tensor-only construction. Reading parent_metadata must populate
+    # origin coordinates without going through numpy materialization.
+    tensor = torch.zeros((7, 11, 3), dtype=torch.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=tensor,
+    )
+
+    # when
+    parent_metadata = image.parent_metadata
+
+    # then
+    assert parent_metadata.origin_coordinates == OriginCoordinatesSystem(
+        left_top_x=0,
+        left_top_y=0,
+        origin_width=11,
+        origin_height=7,
+    )
+    # Sanity: shape was read from the tensor; the numpy cache is still empty.
+    assert image._numpy_image is None
+
+
+def test_workflow_image_create_crop_from_tensor() -> None:
+    # given
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(parent_id="root"),
+        tensor_image=torch.zeros((192, 168, 3), dtype=torch.uint8),
+    )
+    cropped = torch.zeros((64, 60, 3), dtype=torch.uint8)
+
+    # when
+    result = WorkflowImageData.create_crop_from_tensor(
+        origin_image_data=image,
+        crop_identifier="my_crop",
+        cropped_tensor_image=cropped,
+        offset_x=100,
+        offset_y=20,
+    )
+
+    # then
+    assert result.tensor_image is cropped
+    assert result.parent_metadata.parent_id == "my_crop"
+    assert result.parent_metadata.origin_coordinates == OriginCoordinatesSystem(
+        left_top_x=100,
+        left_top_y=20,
+        origin_width=168,
+        origin_height=192,
+    )
+    assert result.workflow_root_ancestor_metadata.parent_id == "root"
+    assert (
+        result.workflow_root_ancestor_metadata.origin_coordinates
+        == OriginCoordinatesSystem(
+            left_top_x=100,
+            left_top_y=20,
+            origin_width=168,
+            origin_height=192,
+        )
+    )
+
+
+def test_workflow_image_copy_and_replace_preserves_tensor() -> None:
+    # given
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=torch.zeros((3, 4, 3), dtype=torch.uint8),
+    )
+
+    # when
+    # copy_and_replace with no image-related kwargs must carry the tensor over.
+    result = WorkflowImageData.copy_and_replace(
+        origin_image_data=image,
+        parent_metadata=ImageParentMetadata(parent_id="new_parent"),
+    )
+
+    # then
+    assert result.tensor_image is image.tensor_image
+    assert result.parent_metadata.parent_id == "new_parent"
+
+
+def test_workflow_image_copy_and_replace_swaps_tensor_for_numpy() -> None:
+    # given
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=torch.zeros((3, 4, 3), dtype=torch.uint8),
+    )
+    replacement = np.zeros((5, 6, 3), dtype=np.uint8)
+
+    # when
+    result = WorkflowImageData.copy_and_replace(
+        origin_image_data=image,
+        numpy_image=replacement,
+    )
+
+    # then
+    # When any image-representation kwarg is provided, the others reset to
+    # whatever was passed (None by default). Tensor should be gone.
+    assert result._tensor_image is None
+    assert result.numpy_image is replacement
