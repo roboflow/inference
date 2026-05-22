@@ -22,14 +22,14 @@ jobs:
 
     steps:
       - name: Check out inference repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: inference_repo
           fetch-depth: 0
 
       - name: Create GitHub App token (enterprise blocks)
         id: enterprise_blocks_token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.ENTERPRISE_BLOCKS_APP_ID }}
           private-key: ${{ secrets.ENTERPRISE_BLOCKS_PEM }}
@@ -37,7 +37,7 @@ jobs:
           repositories: workflows-enterprise-blocks
 
       - name: Check out enterprise blocks
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: roboflow/workflows-enterprise-blocks
           ref: main
@@ -45,7 +45,7 @@ jobs:
           token: ${{ steps.enterprise_blocks_token.outputs.token }}
 
       - name: Set up Node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
 
@@ -59,7 +59,7 @@ jobs:
         working-directory: ./inference_repo/theme_build
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           check-latest: true
@@ -149,7 +149,7 @@ jobs:
 
       - name: Upload site artifact
         if: ${{ github.event_name == 'workflow_dispatch' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docs-site-preview
           path: ./inference_repo/site

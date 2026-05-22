@@ -21,19 +21,27 @@ def build_human_friendly_block_name(
             return manual_title
 
     class_name = fully_qualified_name.split(".")[-1]
+    if len(class_name) == 0:
+        return f"Unrecognized Block Name: {fully_qualified_name}"
     words = _words_from_class_name(class_name=class_name)
-    if words[-1] == "Block":
+    if len(words) > 0 and words[-1] == "Block":
         words.pop()
+    if len(words) == 0:
+        return f"Unrecognized Block Name: {fully_qualified_name}"
     return " ".join(words)
 
 
 def _words_from_class_name(class_name: str) -> List[str]:
     words = []
     for segment in class_name.split("_"):
-        if segment:
-            words.extend(_words_from_class_segment(class_segment=segment))
+        if not segment:
+            continue
+        segment_words = _snake_cased_words_from_class_segment(class_segment=segment)
+        if len(segment_words) == 0:
+            segment_words = [segment]
+        words.extend(segment_words)
     return words
 
 
-def _words_from_class_segment(class_segment: str) -> List[str]:
+def _snake_cased_words_from_class_segment(class_segment: str) -> List[str]:
     return CLASS_NAME_WORD_PATTERN.findall(class_segment)

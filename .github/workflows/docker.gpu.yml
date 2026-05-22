@@ -32,7 +32,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
       - name: Determine Image Tags
@@ -59,7 +59,7 @@ jobs:
           service_account: "gha-inference@roboflow-staging.iam.gserviceaccount.com"
           token_format: access_token
       - name: Login to Google Artifact Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: us-docker.pkg.dev
           username: oauth2accesstoken
