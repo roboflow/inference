@@ -126,7 +126,9 @@ class InferenceModelsObjectDetectionAdapter(Model):
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs
     ) -> List[Detections]:
+        caller_color_format = kwargs.pop("input_color_format", None)
         kwargs = self.map_inference_kwargs(**kwargs)
+        kwargs["input_color_format"] = caller_color_format
         return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
@@ -286,7 +288,9 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs
     ) -> List[InstanceDetections]:
+        caller_color_format = kwargs.pop("input_color_format", None)
         kwargs = self.map_inference_kwargs(**kwargs)
+        kwargs["input_color_format"] = caller_color_format
         return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
@@ -714,7 +718,9 @@ class InferenceModelsClassificationAdapter(Model):
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs
     ) -> Union[ClassificationPrediction, List[MultiLabelClassificationPrediction]]:
+        caller_color_format = kwargs.pop("input_color_format", None)
         kwargs = self.map_inference_kwargs(**kwargs)
+        kwargs["input_color_format"] = caller_color_format
         return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
@@ -1057,7 +1063,9 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs
     ) -> List[SemanticSegmentationResult]:
+        caller_color_format = kwargs.pop("input_color_format", None)
         kwargs = self.map_inference_kwargs(**kwargs)
+        kwargs["input_color_format"] = caller_color_format
         return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
