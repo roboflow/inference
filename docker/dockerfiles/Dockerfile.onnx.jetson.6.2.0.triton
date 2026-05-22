@@ -1,0 +1,11 @@
+FROM roboflow/roboflow-inference-server-jetson-6.2.0:1.2.9
+
+ARG TRITON_VERSION=3.6.0
+
+COPY docker/scripts/triton_interpret_smoke_test.py \
+    /usr/local/bin/triton_interpret_smoke_test.py
+
+RUN python3 -m pip install --no-cache-dir \
+    --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
+    "triton==${TRITON_VERSION}"
+
