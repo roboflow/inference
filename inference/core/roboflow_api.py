@@ -36,6 +36,7 @@ from inference.core.entities.types import (
 )
 from inference.core.env import (
     API_BASE_URL,
+    API_PROXY_BASE_URL,
     ENFORCE_CREDITS_VERIFICATION,
     GCP_SERVERLESS,
     INTERNAL_WEIGHTS_URL_SUFFIX,
@@ -105,6 +106,7 @@ NOT_FOUND_ERROR_MESSAGE = (
 
 ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
+API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
 
 
 @dataclass(frozen=True)
@@ -1209,6 +1211,16 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     return f"{url}?{parameters_string}"
 
 
+def _api_base_url_for_endpoint(endpoint: str) -> str:
+    endpoint_path = endpoint.strip("/")
+    if any(
+        endpoint_path == prefix or endpoint_path.startswith(f"{prefix}/")
+        for prefix in API_PROXY_ENDPOINT_PREFIXES
+    ):
+        return API_PROXY_BASE_URL
+    return API_BASE_URL
+
+
 @wrap_roboflow_api_errors()
 def send_inference_results_to_model_monitoring(
     api_key: str,
@@ -1300,8 +1312,9 @@ def post_to_roboflow_api(
         if params:
             url_params.extend(params)
 
+        api_base_url = _api_base_url_for_endpoint(endpoint=endpoint).rstrip("/")
         full_url = _add_params_to_url(
-            url=f"{API_BASE_URL}/{endpoint.strip('/')}", params=url_params
+            url=f"{api_base_url}/{endpoint.strip('/')}", params=url_params
         )
         wrapped_url = wrap_url(full_url)
 
