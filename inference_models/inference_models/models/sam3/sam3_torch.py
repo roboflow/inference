@@ -50,6 +50,20 @@ SUPPORTED_VERSIONS = {
 }
 
 
+def _eject_sam3_leaked_bf16_autocast(sam3_model) -> None:
+    inst_predictor = getattr(sam3_model, "inst_interactive_predictor", None)
+    if inst_predictor is None:
+        return
+    tracker = getattr(inst_predictor, "model", None)
+    ctx = getattr(tracker, "bf16_context", None)
+    if ctx is None:
+        return
+    try:
+        ctx.__exit__(None, None, None)
+    finally:
+        tracker.bf16_context = None
+
+
 class SAM3Torch:
     @classmethod
     def from_pretrained(
@@ -106,6 +120,12 @@ class SAM3Torch:
             compile=compile_model,
             enable_inst_interactivity=enable_inst_interactivity,
         )
+        # sam3==0.1.3 Sam3TrackerPredictor.__init__ enters a CUDA bf16
+        # torch.autocast context and never exits it, leaking bf16 globally
+        # for the rest of the process and breaking unrelated models in the
+        # same pytest session. Eject it; SAM3 inference paths in this file
+        # re-enter autocast in scoped `with` blocks where actually needed.
+        _eject_sam3_leaked_bf16_autocast(sam3_model)
 
         transform = ComposeAPI(
             transforms=[
