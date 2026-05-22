@@ -46,7 +46,7 @@ MAX_SAM3_BATCH_SIZE = 8
 DEFAULT_SAM3_IMAGE_SIZE = SAM3_IMAGE_SIZE
 
 SUPPORTED_VERSIONS = {
-    "sam3_final",
+    "base",
 }
 
 
