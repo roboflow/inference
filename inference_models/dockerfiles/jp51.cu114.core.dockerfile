@@ -172,21 +172,35 @@ RUN cp dist/torchvision-*.whl /build/out/wheels/
 
 RUN apt-get update -y && apt-get install -y \
     libglew-dev \
-    libgstrtspserver-1.0-dev
-
-RUN mkdir -p /build/jetson-utils
-WORKDIR /build/jetson-utils
-RUN git clone https://github.com/dusty-nv/jetson-utils
-WORKDIR /build/jetson-utils/jetson-utils
-RUN sed -i 's/2\.7 3\.6 3\.7 3\.8 3\.10 3\.12/3.12/' python/CMakeLists.txt  # in-place patch for build process to select py3.12 only
-RUN mkdir build
-WORKDIR /build/jetson-utils/jetson-utils/build
-RUN cmake ../
-RUN make -j$(nproc)
-RUN make install
-RUN ldconfig
-RUN python3.12 -m pip install termcolor tabulate docker  # dependencies of jetson-utils
-RUN echo "/usr/lib/python3.12/dist-packages" > /usr/local/lib/python3.12/site-packages/jetson_utils.pth  # enforce /usr/local/lib discovery
+    libgstrtspserver-1.0-dev \
+    && mkdir -p /build/jetson-utils \
+    && cd /build/jetson-utils \
+    && git clone https://github.com/dusty-nv/jetson-utils \
+    && cd /build/jetson-utils/jetson-utils \
+    && git checkout fae4b4250f985ab92180b6ec955b79995b7a34ff \
+    && sed -i 's/2\.7 3\.6 3\.7 3\.8 3\.10 3\.12/3.12/' python/CMakeLists.txt \
+    && mkdir build \
+    && cd /build/jetson-utils/jetson-utils/build \
+    && cmake ../ \
+    && make -j$(nproc) \
+    && make install \
+    && ldconfig \
+    && python3.12 -m pip install termcolor tabulate docker \
+    && echo "/usr/lib/python3.12/dist-packages" > /usr/local/lib/python3.12/site-packages/jetson_utils.pth
+#
+#RUN mkdir -p /build/jetson-utils
+#WORKDIR /build/jetson-utils
+#RUN git clone https://github.com/dusty-nv/jetson-utils
+#WORKDIR /build/jetson-utils/jetson-utils
+#RUN sed -i 's/2\.7 3\.6 3\.7 3\.8 3\.10 3\.12/3.12/' python/CMakeLists.txt  # in-place patch for build process to select py3.12 only
+#RUN mkdir build
+#WORKDIR /build/jetson-utils/jetson-utils/build
+#RUN cmake ../
+#RUN make -j$(nproc)
+#RUN make install
+#RUN ldconfig
+#RUN python3.12 -m pip install termcolor tabulate docker  # dependencies of jetson-utils
+#RUN echo "/usr/lib/python3.12/dist-packages" > /usr/local/lib/python3.12/site-packages/jetson_utils.pth  # enforce /usr/local/lib discovery
 
 FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3 AS target
 
