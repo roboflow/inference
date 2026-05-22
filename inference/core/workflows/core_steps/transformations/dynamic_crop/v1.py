@@ -214,7 +214,7 @@ def crop_image(
     ):
         cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
         if not cropped_image.size:
-            crops.append({"crops": None})
+            crops.append({"crops": None, "predictions": None})
             continue
         if mask_opacity > 0 and detections.mask is not None:
             detection_mask = detections.mask[idx]
