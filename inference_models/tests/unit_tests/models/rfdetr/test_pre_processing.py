@@ -5,6 +5,7 @@ import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
 
+import inference_models.models.rfdetr.pre_processing as rfdetr_pre_processing
 from inference_models.entities import ImageDimensions
 from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
@@ -360,3 +361,226 @@ def test_batched_input_produces_per_image_metadata() -> None:
     torch.testing.assert_close(
         batch_tensor[1], expected_b.squeeze(0), atol=1e-6, rtol=0
     )
+
+
+def enable_triton_fast_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        rfdetr_pre_processing, "USE_TRITON_FOR_PREPROCESSING", True
+    )
+    monkeypatch.setattr(rfdetr_pre_processing, "_TRITON_AVAILABLE", True)
+
+
+def skip_if_triton_gpu_path_unavailable() -> None:
+    pytest.importorskip("triton")
+    if not torch.cuda.is_available():  # pragma: no cover - host-dependent
+        pytest.skip("CUDA not available")
+
+
+@pytest.mark.gpu_only
+def test_triton_fast_path_matches_reference_pipeline_for_rgb_numpy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skip_if_triton_gpu_path_unavailable()
+    enable_triton_fast_path(monkeypatch=monkeypatch)
+
+    image_pre_processing = ImagePreProcessing()
+    network_input = build_network_input(
+        training_h=64,
+        training_w=64,
+        resize_mode=ResizeMode.STRETCH_TO,
+        dataset_version_dims=None,
+    )
+    rng = np.random.default_rng(seed=123)
+    image = rng.integers(0, 256, size=(192, 168, 3), dtype=np.uint8)
+
+    actual_tensor, actual_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cuda"),
+        input_color_format="rgb",
+    )
+
+    expected = _reference_pipeline(Image.fromarray(image), target_h=64, target_w=64)
+    torch.testing.assert_close(actual_tensor.cpu(), expected, atol=1e-5, rtol=0)
+    assert actual_meta[0].original_size == ImageDimensions(width=168, height=192)
+    assert actual_meta[0].inference_size == ImageDimensions(width=64, height=64)
+
+
+@pytest.mark.gpu_only
+def test_triton_fast_path_matches_reference_pipeline_for_bgr_numpy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skip_if_triton_gpu_path_unavailable()
+    enable_triton_fast_path(monkeypatch=monkeypatch)
+
+    image_pre_processing = ImagePreProcessing()
+    network_input = _build_network_input(
+        training_h=64,
+        training_w=64,
+        resize_mode=ResizeMode.STRETCH_TO,
+        dataset_version_dims=None,
+    )
+    rng = np.random.default_rng(seed=456)
+    rgb_image = rng.integers(0, 256, size=(96, 144, 3), dtype=np.uint8)
+    bgr_image = rgb_image[:, :, ::-1].copy()
+
+    actual_tensor = pre_process_network_input(
+        images=bgr_image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cuda"),
+        input_color_format="bgr",
+    )[0]
+
+    expected = _reference_pipeline(Image.fromarray(rgb_image), target_h=64, target_w=64)
+    torch.testing.assert_close(actual_tensor.cpu(), expected, atol=1e-5, rtol=0)
+
+
+@pytest.mark.gpu_only
+def test_triton_fast_path_matches_reference_pipeline_for_platform_style_stretch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skip_if_triton_gpu_path_unavailable()
+    enable_triton_fast_path(monkeypatch=monkeypatch)
+
+    image_pre_processing = ImagePreProcessing()
+    network_input = _build_network_input(
+        training_h=64,
+        training_w=64,
+        resize_mode=ResizeMode.STRETCH_TO,
+        dataset_version_dims=TrainingInputSize(height=48, width=80),
+    )
+    rng = np.random.default_rng(seed=789)
+    image = rng.integers(0, 256, size=(128, 200, 3), dtype=np.uint8)
+
+    actual_tensor = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cuda"),
+        input_color_format="rgb",
+    )[0]
+
+    expected = _reference_pipeline(Image.fromarray(image), target_h=64, target_w=64)
+    torch.testing.assert_close(actual_tensor.cpu(), expected, atol=1e-5, rtol=0)
+
+
+def test_pre_process_network_input_dispatches_to_triton_fast_path_when_eligible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enable_triton_fast_path(monkeypatch=monkeypatch)
+
+    image_pre_processing = ImagePreProcessing()
+    network_input = _build_network_input(
+        training_h=64,
+        training_w=64,
+        resize_mode=ResizeMode.STRETCH_TO,
+        dataset_version_dims=TrainingInputSize(height=48, width=80),
+    )
+    image = np.zeros((32, 48, 3), dtype=np.uint8)
+    sentinel_tensor = torch.empty((1, 3, 64, 64), dtype=torch.float32)
+    sentinel_meta = ["sentinel-meta"]
+    captured_kwargs = {}
+
+    def fake_triton_path_preprocess(**kwargs):
+        captured_kwargs.update(kwargs)
+        return sentinel_tensor, sentinel_meta
+
+    monkeypatch.setattr(
+        rfdetr_pre_processing,
+        "triton_path_preprocess",
+        fake_triton_path_preprocess,
+    )
+
+    actual_tensor, actual_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cuda"),
+        input_color_format="rgb",
+    )
+
+    assert actual_tensor is sentinel_tensor
+    assert actual_meta is sentinel_meta
+    assert captured_kwargs["target_device"] == torch.device("cuda")
+    assert captured_kwargs["target_size"] == ImageDimensions(width=64, height=64)
+    assert captured_kwargs["input_color_mode"] == ColorMode.RGB
+    assert len(captured_kwargs["image_list"]) == 1
+
+
+@pytest.mark.parametrize(
+    "image_pre_processing, network_input, expected",
+    [
+        (
+            ImagePreProcessing(),
+            _build_network_input(
+                training_h=64,
+                training_w=64,
+                resize_mode=ResizeMode.STRETCH_TO,
+                dataset_version_dims=None,
+            ),
+            True,
+        ),
+        (
+            ImagePreProcessing(),
+            _build_network_input(
+                training_h=64,
+                training_w=64,
+                resize_mode=ResizeMode.STRETCH_TO,
+                dataset_version_dims=TrainingInputSize(height=48, width=80),
+            ),
+            True,
+        ),
+        (
+            ImagePreProcessing(),
+            _build_network_input(
+                training_h=64,
+                training_w=64,
+                resize_mode=ResizeMode.LETTERBOX,
+                dataset_version_dims=TrainingInputSize(height=48, width=80),
+            ),
+            False,
+        ),
+        (
+            ImagePreProcessing.model_validate(
+                {
+                    "contrast": {
+                        "enabled": True,
+                        "type": "Contrast Stretching",
+                    }
+                }
+            ),
+            _build_network_input(
+                training_h=64,
+                training_w=64,
+                resize_mode=ResizeMode.STRETCH_TO,
+                dataset_version_dims=None,
+            ),
+            False,
+        ),
+    ],
+    ids=[
+        "stretch_without_dataset_dims",
+        "stretch_with_dataset_dims",
+        "two_step_letterbox",
+        "contrast_enabled",
+    ],
+)
+def test_triton_path_eligible_respects_configuration(
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
+    expected: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enable_triton_fast_path(monkeypatch=monkeypatch)
+
+    actual = rfdetr_pre_processing.triton_path_eligible(
+        image_list=[np.zeros((32, 48, 3), dtype=np.uint8)],
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cuda"),
+        pre_processing_overrides=None,
+    )
+
+    assert actual is expected
