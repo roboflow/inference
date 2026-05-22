@@ -28,12 +28,12 @@ IMAGE_PATHS = [
     ASSETS_DIR / "truck.jpg",
     ASSETS_DIR / "melee.jpg",
 ]
-MATCH_IOU_THRESHOLD = 0.5
-MIN_BOX_IOU = 0.9
-MIN_MEAN_BOX_IOU = 0.97
-MAX_SCORE_DELTA = 0.02
-MIN_MASK_IOU = 0.9
-MIN_MEAN_MASK_IOU = 0.97
+MATCH_IOU_THRESHOLD = 0.99
+MIN_BOX_IOU = 0.99
+MIN_MEAN_BOX_IOU = 0.99
+MAX_SCORE_DELTA = 0.003
+MIN_MASK_IOU = 0.99
+MIN_MEAN_MASK_IOU = 0.99
 
 
 def ensure_backend_dependencies_available(backend: str) -> None:
