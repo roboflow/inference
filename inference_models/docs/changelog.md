@@ -2,6 +2,12 @@
 
 ## `0.28.1`
 
+### Added
+
+- Triton Python packages are now included in the Jetson ONNX Docker images built from
+  `Dockerfile.onnx.jetson.6.0.0`, `Dockerfile.onnx.jetson.6.2.0`, and
+  `Dockerfile.onnx.jetson.7.1.0`.
+
 ### Fixed
 
 - Detections at image edges are now clipped to the image dimensions.
