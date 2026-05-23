@@ -4,6 +4,7 @@ import logging
 import os
 import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
 from threading import Lock, Thread
@@ -517,6 +518,9 @@ class HttpInterface(BaseInterface):
         model_manager (ModelManager): The manager for handling different models.
     """
 
+    async def startup_hook(self) -> None:
+        """Subclass extension point: extra async work to run on app startup."""
+
     def __init__(
         self,
         model_manager: ModelManager,
@@ -535,6 +539,25 @@ class HttpInterface(BaseInterface):
 
         description = "Roboflow inference server"
 
+        @asynccontextmanager
+        async def lifespan(_app: FastAPI):
+            # startup
+            if should_preload:
+                startup_thread = Thread(
+                    target=initialize_models,
+                    args=(model_init_state,),
+                    daemon=True,
+                )
+                startup_thread.start()
+                logger.info("Model initialization started in the background.")
+            await self.startup_hook()
+            yield
+            # shutdown
+            logger.info("Shutting down %s", description)
+            await usage_collector.async_push_usage_payloads()
+            if OTEL_TRACING_ENABLED:
+                shutdown_telemetry()
+
         app = FastAPI(
             title="Roboflow Inference Server",
             description=description,
@@ -549,6 +572,7 @@ class HttpInterface(BaseInterface):
                 "name": "Apache 2.0",
                 "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
             },
+            lifespan=lifespan,
             root_path=root_path,
         )
         # Ensure in-memory logging is initialized as early as possible for all runtimes
@@ -582,13 +606,6 @@ class HttpInterface(BaseInterface):
                 return await call_next(request)
             finally:
                 current_request_path.reset(token)
-
-        @app.on_event("shutdown")
-        async def on_shutdown():
-            logger.info("Shutting down %s", description)
-            await usage_collector.async_push_usage_payloads()
-            if OTEL_TRACING_ENABLED:
-                shutdown_telemetry()
 
         self._instrumentator = InferenceInstrumentator(
             app, model_manager=model_manager, endpoint="/metrics"
@@ -2483,15 +2500,6 @@ class HttpInterface(BaseInterface):
                 # Update the readiness state in a thread-safe manner
                 with state.lock:
                     state.is_ready = True
-
-            @app.on_event("startup")
-            def startup_model_init():
-                """Initialize the models on startup."""
-                startup_thread = Thread(
-                    target=initialize_models, args=(model_init_state,), daemon=True
-                )
-                startup_thread.start()
-                logger.info("Model initialization started in the background.")
 
         # Attach health/readiness endpoints
         @app.get("/readiness", status_code=200)
