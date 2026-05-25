@@ -196,9 +196,14 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
     VLMAsDetectorBlockV2,
 )
 from inference.core.workflows.core_steps.fusion.buffer.v1 import BufferBlockV1
-from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
-    DetectionsClassesReplacementBlockV1,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1_tensor import (
+        DetectionsClassesReplacementBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
+        DetectionsClassesReplacementBlockV1,
+    )
 from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
     DetectionsConsensusBlockV1,
 )
@@ -548,9 +553,14 @@ from inference.core.workflows.core_steps.trackers.ocsort.v1 import (
 from inference.core.workflows.core_steps.trackers.sort.v1 import (
     SORTBlockV1 as TrackerSORTBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
-    AbsoluteStaticCropBlockV1,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1_tensor import (
+        AbsoluteStaticCropBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
+        AbsoluteStaticCropBlockV1,
+    )
 from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import (
     BoundingRectBlockV1,
 )
@@ -602,9 +612,14 @@ from inference.core.workflows.core_steps.transformations.perspective_correction.
 from inference.core.workflows.core_steps.transformations.qr_code_generator.v1 import (
     QRCodeGeneratorBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
-    RelativeStaticCropBlockV1,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.relative_static_crop.v1_tensor import (
+        RelativeStaticCropBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
+        RelativeStaticCropBlockV1,
+    )
 from inference.core.workflows.core_steps.transformations.stabilize_detections.v1 import (
     StabilizeTrackedDetectionsBlockV1,
 )
