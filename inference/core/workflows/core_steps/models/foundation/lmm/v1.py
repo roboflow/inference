@@ -43,7 +43,7 @@ from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
     Runtime,
-    RuntimeIssue,
+    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -172,9 +172,9 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.4.0,<2.0.0"
 
     @classmethod
-    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
         return {
-            Runtime.HOSTED_SERVERLESS: RuntimeIssue(
+            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
                 severity=Severity.HARD,
                 note=(
                     "LMM_ENABLED=False on Roboflow Hosted Serverless: the "

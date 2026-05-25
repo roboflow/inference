@@ -8,7 +8,7 @@ from inference.core.workflows.execution_engine.entities.types import SECRET_KIND
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
-    RuntimeIssue,
+    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -91,8 +91,8 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.4.0,<2.0.0"
 
     @classmethod
-    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
-        no_env_access = RuntimeIssue(
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        no_env_access = RuntimeRestriction(
             severity=Severity.HARD,
             note=(
                 "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"

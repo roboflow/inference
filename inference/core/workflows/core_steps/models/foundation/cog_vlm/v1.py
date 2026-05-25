@@ -24,7 +24,7 @@ from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
     Runtime,
-    RuntimeIssue,
+    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -134,9 +134,9 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
-    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
         return {
-            Runtime.HOSTED_SERVERLESS: RuntimeIssue(
+            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
                 severity=Severity.HARD,
                 note=(
                     "LMM_ENABLED=False on Roboflow Hosted Serverless: the "
@@ -145,7 +145,7 @@ class BlockManifest(WorkflowBlockManifest):
                     "GPU and is too heavy for the CPU-only serverless fleet."
                 ),
             ),
-            Runtime.SELF_HOSTED_CPU: RuntimeIssue(
+            Runtime.SELF_HOSTED_CPU: RuntimeRestriction(
                 severity=Severity.HARD,
                 note="Requires a GPU; run_locally() loads a model that needs CUDA.",
             ),

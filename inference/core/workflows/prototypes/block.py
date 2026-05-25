@@ -33,7 +33,7 @@ class AirGappedAvailability:
 
 
 class Severity(str, Enum):
-    """Severity of a runtime issue for a workflow block in a given runtime.
+    """Severity of a runtime restriction for a workflow block in a given runtime.
 
     SOFT: the block runs to completion and returns the right output shape,
     but the values are degraded or meaningless (e.g. tracker IDs reset across
@@ -50,7 +50,7 @@ class Severity(str, Enum):
 class Runtime(str, Enum):
     """Canonical runtimes a workflow block can be executed in.
 
-    Runtimes not listed in ``get_runtime_issues()`` are considered OK.
+    Runtimes not listed in ``get_runtime_restrictions()`` are considered OK.
     """
 
     HOSTED_SERVERLESS = "hosted_serverless"
@@ -61,7 +61,7 @@ class Runtime(str, Enum):
 
 
 @dataclass(frozen=True)
-class RuntimeIssue:
+class RuntimeRestriction:
     """A single per-runtime caveat for a workflow block.
 
     ``note`` is a one-line, human-readable explanation of the failure mode
@@ -78,7 +78,7 @@ class RuntimeIssue:
 
 
 # ----------------------------------------------------------------------------
-# Common runtime-issue presets.
+# Common runtime-restriction presets.
 #
 # Many blocks share the same per-runtime failure mode (e.g. all stateful
 # video blocks degrade the same way on stateless HTTP runtimes). Reusing
@@ -87,7 +87,7 @@ class RuntimeIssue:
 # ----------------------------------------------------------------------------
 
 
-STATEFUL_VIDEO_HTTP_SOFT_ISSUE = RuntimeIssue(
+STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
     severity=Severity.SOFT,
     note=(
         "Block keeps per-video state in process memory (keyed by "
@@ -100,7 +100,7 @@ STATEFUL_VIDEO_HTTP_SOFT_ISSUE = RuntimeIssue(
 )
 
 
-COOLDOWN_HTTP_SOFT_ISSUE = RuntimeIssue(
+COOLDOWN_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
     severity=Severity.SOFT,
     note=(
         "Cooldown / rate-limit timer is stored in process memory. On "
@@ -166,10 +166,10 @@ class WorkflowBlockManifest(BaseModel, ABC):
         return AirGappedAvailability(available=True)
 
     @classmethod
-    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
         """Per-runtime caveats for this block.
 
-        Return a mapping ``{Runtime: RuntimeIssue}`` describing where the
+        Return a mapping ``{Runtime: RuntimeRestriction}`` describing where the
         block degrades (``Severity.SOFT``) or fails outright
         (``Severity.HARD``). Runtimes not present in the dict are assumed
         to work normally.

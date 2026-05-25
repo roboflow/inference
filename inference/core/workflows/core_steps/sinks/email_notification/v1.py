@@ -33,10 +33,10 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
-    COOLDOWN_HTTP_SOFT_ISSUE,
+    COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
     Runtime,
-    RuntimeIssue,
+    RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -273,10 +273,10 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.4.0,<2.0.0"
 
     @classmethod
-    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
         return {
-            Runtime.HOSTED_SERVERLESS: COOLDOWN_HTTP_SOFT_ISSUE,
-            Runtime.DEDICATED_DEPLOYMENT: COOLDOWN_HTTP_SOFT_ISSUE,
+            Runtime.HOSTED_SERVERLESS: COOLDOWN_HTTP_SOFT_RESTRICTION,
+            Runtime.DEDICATED_DEPLOYMENT: COOLDOWN_HTTP_SOFT_RESTRICTION,
         }
 
 

@@ -32,7 +32,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
-    RuntimeIssue,
+    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -241,8 +241,8 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
-    def get_runtime_issues(cls) -> Dict[Runtime, RuntimeIssue]:
-        no_lan_or_remote = RuntimeIssue(
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        no_lan_or_remote = RuntimeRestriction(
             severity=Severity.HARD,
             note=(
                 "Block requires LAN access to a PTZ camera and "
