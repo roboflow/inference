@@ -371,17 +371,23 @@ from inference.core.workflows.core_steps.models.foundation.stability_ai.outpaint
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
-    RoboflowInstanceSegmentationModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
-    RoboflowInstanceSegmentationModelBlockV2,
-)
 if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1_tensor import (
+        RoboflowInstanceSegmentationModelBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2_tensor import (
+        RoboflowInstanceSegmentationModelBlockV2,
+    )
     from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3_tensor import (
         RoboflowInstanceSegmentationModelBlockV3,
     )
 else:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
+        RoboflowInstanceSegmentationModelBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
+        RoboflowInstanceSegmentationModelBlockV2,
+    )
     from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
         RoboflowInstanceSegmentationModelBlockV3,
     )
