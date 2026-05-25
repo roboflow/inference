@@ -102,7 +102,7 @@ def test_attach_metadata_populates_all_expected_keys_for_detections() -> None:
         image=image,
         model_id="some-model/1",
         prediction_type="object-detection",
-        class_names=["cat", "dog"],
+        class_names={0: "cat", 1: "dog"},
     )
 
     # then
@@ -111,7 +111,7 @@ def test_attach_metadata_populates_all_expected_keys_for_detections() -> None:
     assert metadata[INFERENCE_ID_KEY] == inference_id
     assert metadata[MODEL_ID_KEY] == "some-model/1"
     assert metadata[PREDICTION_TYPE_KEY] == "object-detection"
-    assert metadata[CLASS_NAMES_KEY] == ["cat", "dog"]
+    assert metadata[CLASS_NAMES_KEY] == {0: "cat", 1: "dog"}
     assert metadata[IMAGE_DIMENSIONS_KEY] == (120, 200)
     assert metadata[PARENT_ID_KEY] == "p1"
     assert metadata[PARENT_DIMENSIONS_KEY] == (120, 200)
@@ -132,7 +132,7 @@ def test_attach_metadata_returns_minted_uuid_when_no_existing_id() -> None:
         image=image,
         model_id="m/1",
         prediction_type="object-detection",
-        class_names=[],
+        class_names={},
     )
 
     # then
@@ -152,7 +152,7 @@ def test_attach_metadata_preserves_inference_id_from_existing_metadata() -> None
         image=image,
         model_id="m/1",
         prediction_type="object-detection",
-        class_names=["a"],
+        class_names={0: "a"},
     )
 
     # then
@@ -171,7 +171,7 @@ def test_attach_metadata_uses_explicit_argument_when_metadata_lacks_id() -> None
         image=image,
         model_id="m/1",
         prediction_type="object-detection",
-        class_names=[],
+        class_names={},
         inference_id="explicit-id",
     )
 
@@ -190,7 +190,7 @@ def test_attach_metadata_existing_metadata_id_wins_over_explicit_argument() -> N
         image=image,
         model_id="m/1",
         prediction_type="object-detection",
-        class_names=[],
+        class_names={},
         inference_id="from-argument",
     )
 
@@ -211,7 +211,7 @@ def test_attach_metadata_preserves_unrelated_keys_in_existing_metadata() -> None
         image=image,
         model_id="m/1",
         prediction_type="object-detection",
-        class_names=[],
+        class_names={},
     )
 
     # then
@@ -236,7 +236,7 @@ def test_attach_metadata_omits_class_names_key_when_class_names_is_none() -> Non
     assert CLASS_NAMES_KEY not in prediction.image_metadata
 
 
-def test_attach_metadata_writes_empty_class_names_list_when_explicit_empty() -> None:
+def test_attach_metadata_writes_empty_class_names_dict_when_explicit_empty() -> None:
     # given
     image = _make_image()
     prediction = _make_detections()
@@ -247,11 +247,49 @@ def test_attach_metadata_writes_empty_class_names_list_when_explicit_empty() -> 
         image=image,
         model_id="m/1",
         prediction_type="object-detection",
-        class_names=[],
+        class_names={},
     )
 
     # then
-    assert prediction.image_metadata[CLASS_NAMES_KEY] == []
+    assert prediction.image_metadata[CLASS_NAMES_KEY] == {}
+
+
+def test_attach_metadata_supports_sparse_class_names_dict() -> None:
+    # given
+    image = _make_image()
+    prediction = _make_detections()
+
+    # when
+    attach_prediction_metadata(
+        prediction,
+        image=image,
+        model_id="m/1",
+        prediction_type="object-detection",
+        class_names={3: "person", 17: "cat"},
+    )
+
+    # then
+    assert prediction.image_metadata[CLASS_NAMES_KEY] == {3: "person", 17: "cat"}
+
+
+def test_attach_metadata_defensively_copies_class_names_dict() -> None:
+    # given
+    image = _make_image()
+    prediction = _make_detections()
+    original = {0: "a"}
+
+    # when
+    attach_prediction_metadata(
+        prediction,
+        image=image,
+        model_id="m/1",
+        prediction_type="object-detection",
+        class_names=original,
+    )
+    original[1] = "b"
+
+    # then
+    assert prediction.image_metadata[CLASS_NAMES_KEY] == {0: "a"}
 
 
 def test_attach_metadata_handles_empty_detections() -> None:
@@ -269,13 +307,13 @@ def test_attach_metadata_handles_empty_detections() -> None:
         image=image,
         model_id="m/1",
         prediction_type="object-detection",
-        class_names=["only-class"],
+        class_names={0: "only-class"},
     )
 
     # then
     assert isinstance(inference_id, str)
     assert prediction.image_metadata[PREDICTION_TYPE_KEY] == "object-detection"
-    assert prediction.image_metadata[CLASS_NAMES_KEY] == ["only-class"]
+    assert prediction.image_metadata[CLASS_NAMES_KEY] == {0: "only-class"}
 
 
 def test_attach_metadata_raises_for_classification_prediction() -> None:
@@ -293,5 +331,5 @@ def test_attach_metadata_raises_for_classification_prediction() -> None:
             image=image,
             model_id="m/1",
             prediction_type="classification",
-            class_names=["a"],
+            class_names={0: "a"},
         )

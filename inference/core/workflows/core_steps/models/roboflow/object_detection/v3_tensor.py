@@ -14,6 +14,7 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.remote_response_converters import (
+    class_id_to_name_from_responses,
     dict_response_to_object_detections,
 )
 from inference.core.workflows.core_steps.common.tensor_prediction_metadata import (
@@ -291,7 +292,9 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
                 active_learning_target_dataset=active_learning_target_dataset,
             )
         )
-        class_names = self._model_manager.get_class_names(model_id=model_id)
+        class_names = dict(
+            enumerate(self._model_manager.get_class_names(model_id=model_id))
+        )
         results: BlockResult = []
         for image, prediction in zip(images, predictions):
             inference_id = attach_prediction_metadata(
@@ -358,9 +361,12 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
         predictions = [
             dict_response_to_object_detections(response) for response in responses
         ]
-        # Remote path: the model is not loaded locally, so the global
-        # class_names list isn't available. Per-detection class strings
-        # are preserved in `bboxes_metadata` by the response converter.
+        # Remote path: the model isn't loaded locally so there's no
+        # canonical class table to enumerate. Build a sparse class_id ->
+        # class_name dict from the per-detection labels the API returned;
+        # downstream consumers do `class_names[class_id]` exactly as in
+        # local mode (the dict is just partial here).
+        class_names = class_id_to_name_from_responses(responses)
         results: BlockResult = []
         for image, prediction in zip(images, predictions):
             inference_id = attach_prediction_metadata(
@@ -368,7 +374,7 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
                 image=image,
                 model_id=model_id,
                 prediction_type="object-detection",
-                class_names=None,
+                class_names=class_names,
             )
             results.append(
                 {

@@ -16,7 +16,7 @@ dedicated helper lands with the classification tensor block.
 """
 
 import uuid
-from typing import List, Optional, Union
+from typing import Dict, Optional, Union
 
 from inference_models.models.base.classification import (
     ClassificationPrediction,
@@ -58,7 +58,7 @@ def attach_prediction_metadata(
     image: WorkflowImageData,
     model_id: str,
     prediction_type: str,
-    class_names: Optional[List[str]] = None,
+    class_names: Optional[Dict[int, str]] = None,
     inference_id: Optional[str] = None,
 ) -> str:
     """Populate `prediction.image_metadata` from `WorkflowImageData`'s
@@ -68,11 +68,11 @@ def attach_prediction_metadata(
     `image_metadata[INFERENCE_ID_KEY]`, then from the `inference_id`
     argument, then minted via `uuid.uuid4()` if neither is set.
 
-    `class_names` is the model's global class list. Pass `None` only when
-    the global list is genuinely unavailable (e.g. remote-execution path
-    where the model is not loaded locally and the response embeds class
-    strings per detection in `bboxes_metadata` instead). When `None`,
-    the `class_names` key is omitted from `image_metadata`.
+    `class_names` is a `class_id -> class_name` mapping. Local mode
+    passes the full mapping built from the model's class list; remote
+    mode passes a partial mapping built by walking response predictions
+    (only class_ids that appeared in the response are present). `None`
+    omits the key entirely.
 
     Raises `TypeError` for `ClassificationPrediction` (plural
     `images_metadata` requires a dedicated helper).
@@ -116,6 +116,6 @@ def attach_prediction_metadata(
         ),
     }
     if class_names is not None:
-        new_metadata[CLASS_NAMES_KEY] = list(class_names)
+        new_metadata[CLASS_NAMES_KEY] = dict(class_names)
     prediction.image_metadata = new_metadata
     return resolved_inference_id

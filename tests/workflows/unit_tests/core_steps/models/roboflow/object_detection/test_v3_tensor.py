@@ -107,7 +107,7 @@ def test_run_locally_returns_predictions_with_metadata_attached() -> None:
         assert meta is not None
         assert meta[MODEL_ID_KEY] == "model/1"
         assert meta[PREDICTION_TYPE_KEY] == "object-detection"
-        assert meta[CLASS_NAMES_KEY] == ["cat", "dog"]
+        assert meta[CLASS_NAMES_KEY] == {0: "cat", 1: "dog"}
 
 
 def test_run_locally_passes_input_color_format_rgb_to_adapter() -> None:
@@ -354,7 +354,63 @@ def test_run_remotely_converts_response_dict_to_inference_models_detections() ->
     assert result[0]["inference_id"] == "remote-inf-1"
 
 
-def test_run_remotely_omits_class_names_from_metadata() -> None:
+def test_run_remotely_builds_sparse_class_names_dict_from_response() -> None:
+    # given
+    image = _make_image()
+    images = Batch(content=[image], indices=[(0,)])
+    http_client = MagicMock()
+    http_client.infer.return_value = [
+        {
+            "image": {"width": 64, "height": 64},
+            "predictions": [
+                {
+                    "x": 30.0,
+                    "y": 30.0,
+                    "width": 4.0,
+                    "height": 4.0,
+                    "class": "cat",
+                    "class_id": 0,
+                    "confidence": 0.5,
+                },
+                {
+                    "x": 40.0,
+                    "y": 40.0,
+                    "width": 4.0,
+                    "height": 4.0,
+                    "class": "dog",
+                    "class_id": 1,
+                    "confidence": 0.5,
+                },
+            ],
+        },
+    ]
+    model_manager = MagicMock()
+    block = _make_block(model_manager, step_execution_mode=StepExecutionMode.REMOTE)
+
+    # when
+    with _patch_inference_http_client(http_client):
+        result = block.run_remotely(
+            images=images,
+            model_id="m/1",
+            class_agnostic_nms=False,
+            class_filter=None,
+            confidence=0.5,
+            iou_threshold=0.3,
+            max_detections=300,
+            max_candidates=3000,
+            disable_active_learning=True,
+            active_learning_target_dataset=None,
+        )
+
+    # then
+    metadata = result[0]["predictions"].image_metadata
+    assert metadata is not None
+    assert metadata[CLASS_NAMES_KEY] == {0: "cat", 1: "dog"}
+    assert metadata[MODEL_ID_KEY] == "m/1"
+    assert metadata[PREDICTION_TYPE_KEY] == "object-detection"
+
+
+def test_run_remotely_class_names_dict_is_empty_when_response_has_no_predictions() -> None:
     # given
     image = _make_image()
     images = Batch(content=[image], indices=[(0,)])
@@ -383,9 +439,7 @@ def test_run_remotely_omits_class_names_from_metadata() -> None:
     # then
     metadata = result[0]["predictions"].image_metadata
     assert metadata is not None
-    assert CLASS_NAMES_KEY not in metadata
-    assert metadata[MODEL_ID_KEY] == "m/1"
-    assert metadata[PREDICTION_TYPE_KEY] == "object-detection"
+    assert metadata[CLASS_NAMES_KEY] == {}
 
 
 def test_run_remotely_mints_inference_id_when_response_lacks_one() -> None:

@@ -16,7 +16,7 @@ state.
 """
 
 import uuid
-from typing import List, Optional
+from typing import Dict, Iterable, List, Optional
 
 import torch
 
@@ -81,9 +81,6 @@ def dict_response_to_object_detections(
                 DETECTION_ID_KEY: p.get(DETECTION_ID_KEY) or str(uuid.uuid4()),
                 PARENT_ID_KEY: p.get(PARENT_ID_KEY, ""),
             }
-            class_name = p.get("class")
-            if class_name is not None:
-                per_box["class"] = class_name
             bboxes_metadata.append(per_box)
         xyxy = torch.tensor(xyxy_rows, dtype=torch.float32)
         class_id = torch.tensor(class_ids, dtype=torch.int64)
@@ -103,3 +100,34 @@ def dict_response_to_object_detections(
         image_metadata=image_metadata or None,
         bboxes_metadata=bboxes_metadata,
     )
+
+
+def class_id_to_name_from_responses(
+    responses: Iterable[dict],
+    *,
+    predictions_key: str = "predictions",
+) -> Dict[int, str]:
+    """Merge `class_id -> class_name` mapping across a batch of HTTP API
+    response dicts.
+
+    The mapping is sparse: only class_ids that appeared in at least one
+    detection across the batch are included. The model has a fixed
+    class table, so values across responses are consistent — first-seen
+    wins on the off chance of duplicates.
+
+    Used by tensor-mode workflow blocks' remote path so the
+    `class_names` attached to each prediction's `image_metadata` is the
+    same `Dict[int, str]` shape the local path produces (via
+    `dict(enumerate(model_manager.get_class_names(...)))`).
+    """
+    mapping: Dict[int, str] = {}
+    for response in responses:
+        for p in response.get(predictions_key) or []:
+            class_id = p.get("class_id")
+            class_name = p.get("class")
+            if class_id is None or class_name is None:
+                continue
+            class_id_int = int(class_id)
+            if class_id_int not in mapping:
+                mapping[class_id_int] = class_name
+    return mapping

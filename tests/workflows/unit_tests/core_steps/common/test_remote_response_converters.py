@@ -1,6 +1,7 @@
 import torch
 
 from inference.core.workflows.core_steps.common.remote_response_converters import (
+    class_id_to_name_from_responses,
     dict_response_to_object_detections,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -115,42 +116,6 @@ def test_dict_response_to_object_detections_returns_none_metadata_when_no_image_
     assert detections.image_metadata is None
 
 
-def test_dict_response_to_object_detections_attaches_per_box_class_name() -> None:
-    # given
-    response = {
-        "image": {"width": 100, "height": 100},
-        "predictions": [
-            {
-                "x": 10.0,
-                "y": 10.0,
-                "width": 4.0,
-                "height": 4.0,
-                "class": "cat",
-                "class_id": 0,
-                "confidence": 0.5,
-            },
-            {
-                "x": 50.0,
-                "y": 50.0,
-                "width": 8.0,
-                "height": 8.0,
-                "class": "dog",
-                "class_id": 1,
-                "confidence": 0.7,
-            },
-        ],
-    }
-
-    # when
-    detections = dict_response_to_object_detections(response)
-
-    # then
-    assert detections.bboxes_metadata is not None
-    assert len(detections.bboxes_metadata) == 2
-    assert detections.bboxes_metadata[0]["class"] == "cat"
-    assert detections.bboxes_metadata[1]["class"] == "dog"
-
-
 def test_dict_response_to_object_detections_preserves_detection_and_parent_ids() -> None:
     # given
     response = {
@@ -204,3 +169,97 @@ def test_dict_response_to_object_detections_mints_detection_id_when_absent() -> 
     assigned = detections.bboxes_metadata[0][DETECTION_ID_KEY]
     assert isinstance(assigned, str)
     assert len(assigned) > 0
+
+
+# ---------------------------------------------------------------------------
+# class_id_to_name_from_responses
+# ---------------------------------------------------------------------------
+
+
+def test_class_id_to_name_from_responses_collects_pairs_across_batch() -> None:
+    # given
+    responses = [
+        {
+            "predictions": [
+                {"class_id": 0, "class": "cat"},
+                {"class_id": 1, "class": "dog"},
+            ],
+        },
+        {
+            "predictions": [
+                {"class_id": 2, "class": "bird"},
+            ],
+        },
+    ]
+
+    # when
+    mapping = class_id_to_name_from_responses(responses)
+
+    # then
+    assert mapping == {0: "cat", 1: "dog", 2: "bird"}
+
+
+def test_class_id_to_name_from_responses_first_seen_wins_on_duplicate_id() -> None:
+    # given
+    responses = [
+        {"predictions": [{"class_id": 0, "class": "cat"}]},
+        {"predictions": [{"class_id": 0, "class": "kitten"}]},
+    ]
+
+    # when
+    mapping = class_id_to_name_from_responses(responses)
+
+    # then
+    assert mapping == {0: "cat"}
+
+
+def test_class_id_to_name_from_responses_skips_entries_missing_id_or_name() -> None:
+    # given
+    responses = [
+        {
+            "predictions": [
+                {"class_id": 0, "class": "cat"},
+                {"class_id": 1},  # no class name
+                {"class": "dog"},  # no class id
+            ],
+        },
+    ]
+
+    # when
+    mapping = class_id_to_name_from_responses(responses)
+
+    # then
+    assert mapping == {0: "cat"}
+
+
+def test_class_id_to_name_from_responses_empty_batch_returns_empty_dict() -> None:
+    # when
+    mapping = class_id_to_name_from_responses([])
+
+    # then
+    assert mapping == {}
+
+
+def test_class_id_to_name_from_responses_handles_missing_predictions_key() -> None:
+    # given
+    responses = [{"image": {"width": 1, "height": 1}}]
+
+    # when
+    mapping = class_id_to_name_from_responses(responses)
+
+    # then
+    assert mapping == {}
+
+
+def test_class_id_to_name_from_responses_coerces_class_id_to_int() -> None:
+    # given — some APIs return class_id as a numpy int or string number
+    responses = [
+        {"predictions": [{"class_id": "5", "class": "person"}]},
+    ]
+
+    # when
+    mapping = class_id_to_name_from_responses(responses)
+
+    # then
+    assert mapping == {5: "person"}
+    assert isinstance(list(mapping.keys())[0], int)
