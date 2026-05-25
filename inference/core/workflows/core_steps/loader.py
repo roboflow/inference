@@ -377,9 +377,14 @@ from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
     RoboflowInstanceSegmentationModelBlockV2,
 )
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
-    RoboflowInstanceSegmentationModelBlockV3,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3_tensor import (
+        RoboflowInstanceSegmentationModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
+        RoboflowInstanceSegmentationModelBlockV3,
+    )
 from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
     RoboflowKeypointDetectionModelBlockV1,
 )
