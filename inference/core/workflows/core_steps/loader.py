@@ -431,15 +431,26 @@ else:
     from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3 import (
         RoboflowClassificationModelBlockV3,
     )
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
-    RoboflowMultiLabelClassificationModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
-    RoboflowMultiLabelClassificationModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
-    RoboflowMultiLabelClassificationModelBlockV3,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV2,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
+        RoboflowMultiLabelClassificationModelBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
+        RoboflowMultiLabelClassificationModelBlockV2,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
+        RoboflowMultiLabelClassificationModelBlockV3,
+    )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.roboflow.object_detection.v1_tensor import (
         RoboflowObjectDetectionModelBlockV1,
