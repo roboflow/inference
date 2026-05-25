@@ -8,6 +8,7 @@ from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.env import (
+    LMM_ENABLED,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -173,6 +174,8 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        if LMM_ENABLED:
+            return {}
         return {
             Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
                 severity=Severity.HARD,

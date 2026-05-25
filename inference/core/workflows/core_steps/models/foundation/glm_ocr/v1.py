@@ -5,6 +5,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.env import (
+    GLM_OCR_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
@@ -224,20 +225,22 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        return {
-            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
-                severity=Severity.HARD,
-                note=(
-                    "GLM_OCR_ENABLED=False on Roboflow Hosted Serverless: "
-                    "the GLM-OCR endpoint is not registered, so "
-                    "run_remotely() returns 404. Block also requires a GPU."
-                ),
-            ),
+        restrictions = {
             Runtime.SELF_HOSTED_CPU: RuntimeRestriction(
                 severity=Severity.HARD,
                 note="Requires a GPU; run_locally() loads a model that needs CUDA.",
             ),
         }
+        if not GLM_OCR_ENABLED:
+            restrictions[Runtime.HOSTED_SERVERLESS] = RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "GLM_OCR_ENABLED=False on Roboflow Hosted Serverless: "
+                    "the GLM-OCR endpoint is not registered, so "
+                    "run_remotely() returns 404."
+                ),
+            )
+        return restrictions
 
 
 def _resolve_prompt(

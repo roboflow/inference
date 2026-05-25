@@ -2,6 +2,7 @@ from typing import Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
+from inference.core.env import LMM_ENABLED
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import (
@@ -125,6 +126,8 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        if LMM_ENABLED:
+            return {}
         return {
             Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
                 severity=Severity.HARD,
