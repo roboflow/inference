@@ -3,6 +3,7 @@ from typing import Dict, List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
 
+from inference.core.env import ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import SECRET_KIND
 from inference.core.workflows.prototypes.block import (
@@ -92,6 +93,9 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        if ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES:
+            return {}
+
         no_env_access = RuntimeRestriction(
             severity=Severity.HARD,
             note=(

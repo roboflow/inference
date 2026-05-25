@@ -10,6 +10,7 @@ from inference.core.entities.responses.sam3_3d import Sam3_3D_Objects_Response
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    SAM3_3D_OBJECTS_ENABLED,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -115,20 +116,22 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        return {
-            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
-                severity=Severity.HARD,
-                note=(
-                    "SAM3_3D_OBJECTS_ENABLED=False on Roboflow Hosted "
-                    "Serverless: the SAM3 3D endpoint is not registered, so "
-                    "run_remotely() returns 404. Block also requires a GPU."
-                ),
-            ),
+        restrictions = {
             Runtime.SELF_HOSTED_CPU: RuntimeRestriction(
                 severity=Severity.HARD,
                 note="Requires a GPU; run_locally() loads a model that needs CUDA.",
             ),
         }
+        if not SAM3_3D_OBJECTS_ENABLED:
+            restrictions[Runtime.HOSTED_SERVERLESS] = RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "SAM3_3D_OBJECTS_ENABLED=False on Roboflow Hosted "
+                    "Serverless: the SAM3 3D endpoint is not registered, so "
+                    "run_remotely() returns 404."
+                ),
+            )
+        return restrictions
 
 
 class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):

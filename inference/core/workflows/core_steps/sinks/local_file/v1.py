@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator
 
+from inference.core.env import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -170,17 +171,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        return {
-            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
-                severity=Severity.HARD,
-                note=(
-                    "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"
-                    "ACCESSING_LOCAL_STORAGE is False (Roboflow Hosted "
-                    "Serverless default). Even when access is allowed, the "
-                    "container disk is ephemeral, so files are lost when "
-                    "the worker scales down."
-                ),
-            ),
+        restrictions = {
             Runtime.DEDICATED_DEPLOYMENT: RuntimeRestriction(
                 severity=Severity.SOFT,
                 note=(
@@ -190,6 +181,23 @@ class BlockManifest(WorkflowBlockManifest):
                 ),
             ),
         }
+        if not ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE:
+            restrictions[Runtime.HOSTED_SERVERLESS] = RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"
+                    "ACCESSING_LOCAL_STORAGE is False."
+                ),
+            )
+        else:
+            restrictions[Runtime.HOSTED_SERVERLESS] = RuntimeRestriction(
+                severity=Severity.SOFT,
+                note=(
+                    "Container disk is ephemeral, so files are lost when "
+                    "the worker scales down."
+                ),
+            )
+        return restrictions
 
 
 class LocalFileSinkBlockV1(WorkflowBlock):
