@@ -1,0 +1,121 @@
+"""Attach workflows-level metadata to inference_models native prediction
+types.
+
+Per `[ITERATE PRED.2]` in the tensor-data-representation plan: per-prediction
+global state (inference_id, model_id, prediction_type, class_names, image
+dimensions, parent_* and root_parent_* coordinates and ids) lives on the
+`image_metadata` dict carried by `inference_models.Detections`,
+`InstanceDetections`, `MultiLabelClassificationPrediction`, and
+`SemanticSegmentationResult`. This collapses what numpy-mode sv.Detections
+replicates per detection into one dict per prediction.
+
+`ClassificationPrediction` is intentionally not handled here — its metadata
+slot is plural (`images_metadata: List[dict]`) because single-label
+classification returns one prediction object for the whole batch. A
+dedicated helper lands with the classification tensor block.
+"""
+
+import uuid
+from typing import List, Optional, Union
+
+from inference_models.models.base.classification import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.semantic_segmentation import (
+    SemanticSegmentationResult,
+)
+
+from inference.core.workflows.execution_engine.constants import (
+    IMAGE_DIMENSIONS_KEY,
+    INFERENCE_ID_KEY,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+)
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+
+CLASS_NAMES_KEY = "class_names"
+MODEL_ID_KEY = "model_id"
+
+PredictionWithSingularMetadata = Union[
+    Detections,
+    InstanceDetections,
+    MultiLabelClassificationPrediction,
+    SemanticSegmentationResult,
+]
+
+
+def attach_prediction_metadata(
+    prediction: PredictionWithSingularMetadata,
+    *,
+    image: WorkflowImageData,
+    model_id: str,
+    prediction_type: str,
+    class_names: Optional[List[str]] = None,
+    inference_id: Optional[str] = None,
+) -> str:
+    """Populate `prediction.image_metadata` from `WorkflowImageData`'s
+    parent / root-parent metadata. Mutates `prediction` in place.
+
+    Returns the resolved inference_id — read from existing
+    `image_metadata[INFERENCE_ID_KEY]`, then from the `inference_id`
+    argument, then minted via `uuid.uuid4()` if neither is set.
+
+    `class_names` is the model's global class list. Pass `None` only when
+    the global list is genuinely unavailable (e.g. remote-execution path
+    where the model is not loaded locally and the response embeds class
+    strings per detection in `bboxes_metadata` instead). When `None`,
+    the `class_names` key is omitted from `image_metadata`.
+
+    Raises `TypeError` for `ClassificationPrediction` (plural
+    `images_metadata` requires a dedicated helper).
+    """
+    if isinstance(prediction, ClassificationPrediction):
+        raise TypeError(
+            "ClassificationPrediction uses plural `images_metadata` "
+            "(per-image list for a single-label batch). Use a dedicated "
+            "attach helper when the classification tensor block lands."
+        )
+    existing = prediction.image_metadata or {}
+    resolved_inference_id = (
+        existing.get(INFERENCE_ID_KEY) or inference_id or str(uuid.uuid4())
+    )
+    h, w = image._read_shape_without_materialization()
+    parent = image.parent_metadata
+    root = image.workflow_root_ancestor_metadata
+    new_metadata = {
+        **existing,
+        INFERENCE_ID_KEY: resolved_inference_id,
+        MODEL_ID_KEY: model_id,
+        PREDICTION_TYPE_KEY: prediction_type,
+        IMAGE_DIMENSIONS_KEY: (h, w),
+        PARENT_ID_KEY: parent.parent_id,
+        PARENT_DIMENSIONS_KEY: (
+            parent.origin_coordinates.origin_height,
+            parent.origin_coordinates.origin_width,
+        ),
+        PARENT_COORDINATES_KEY: (
+            parent.origin_coordinates.left_top_x,
+            parent.origin_coordinates.left_top_y,
+        ),
+        ROOT_PARENT_ID_KEY: root.parent_id,
+        ROOT_PARENT_DIMENSIONS_KEY: (
+            root.origin_coordinates.origin_height,
+            root.origin_coordinates.origin_width,
+        ),
+        ROOT_PARENT_COORDINATES_KEY: (
+            root.origin_coordinates.left_top_x,
+            root.origin_coordinates.left_top_y,
+        ),
+    }
+    if class_names is not None:
+        new_metadata[CLASS_NAMES_KEY] = list(class_names)
+    prediction.image_metadata = new_metadata
+    return resolved_inference_id
