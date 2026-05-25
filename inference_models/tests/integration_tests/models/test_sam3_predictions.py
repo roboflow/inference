@@ -10,11 +10,14 @@ from inference_models.models.sam3.cache import (
     Sam3ImageEmbeddingsInMemoryCache,
     Sam3LowResolutionMasksInMemoryCache,
 )
-from inference_models.models.sam3.sam3_torch import SAM3Torch
 
 
 @pytest.fixture(scope="module")
-def sam3_model(sam3_package: str) -> SAM3Torch:
+def sam3_model(sam3_package: str):
+    # sam3 is GPU-only and absent from CPU/vino builds, so import the model class
+    # inside the fixture (same inline-import pattern as the TRT model tests).
+    from inference_models.models.sam3.sam3_torch import SAM3Torch
+
     model = SAM3Torch.from_pretrained(
         sam3_package,
         device=DEFAULT_DEVICE,
@@ -45,7 +48,7 @@ def _free_gpu_after_test():
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_embeddings_numpy(
-    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+    sam3_model, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -63,7 +66,7 @@ def test_sam3_embeddings_numpy(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_embeddings_torch(
-    sam3_model: SAM3Torch, truck_image_torch: torch.Tensor
+    sam3_model, truck_image_torch: torch.Tensor
 ) -> None:
     # given
     model = sam3_model
@@ -80,7 +83,7 @@ def test_sam3_embeddings_torch(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_embeddings_batch_numpy(
-    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+    sam3_model, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -98,7 +101,7 @@ def test_sam3_embeddings_batch_numpy(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_embeddings_caching(
-    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+    sam3_model, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -116,7 +119,7 @@ def test_sam3_embeddings_caching(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_without_prompting_numpy(
-    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+    sam3_model, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -135,7 +138,7 @@ def test_sam3_segment_images_without_prompting_numpy(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_without_prompting_batch_numpy(
-    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+    sam3_model, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -153,7 +156,7 @@ def test_sam3_segment_images_without_prompting_batch_numpy(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_point_prompting(
-    sam3_model: SAM3Torch,
+    sam3_model,
     truck_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -185,7 +188,7 @@ def test_sam3_segment_images_with_point_prompting(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_multiple_points(
-    sam3_model: SAM3Torch,
+    sam3_model,
     truck_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -209,7 +212,7 @@ def test_sam3_segment_images_with_multiple_points(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_embeddings(
-    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+    sam3_model, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -234,7 +237,7 @@ def test_sam3_segment_images_with_embeddings(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_box_prompting(
-    sam3_model: SAM3Torch,
+    sam3_model,
     truck_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -257,7 +260,7 @@ def test_sam3_segment_images_with_box_prompting(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_box_prompting_and_embeddings(
-    sam3_model: SAM3Torch,
+    sam3_model,
     truck_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -281,7 +284,7 @@ def test_sam3_segment_images_with_box_prompting_and_embeddings(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_combined_prompting(
-    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+    sam3_model, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -306,7 +309,7 @@ def test_sam3_segment_images_with_combined_prompting(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_mask_prompting(
-    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+    sam3_model, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -336,7 +339,7 @@ def test_sam3_segment_images_with_mask_prompting(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_raises_on_missing_input(
-    sam3_model: SAM3Torch,
+    sam3_model,
 ) -> None:
     # given
     model = sam3_model
@@ -350,7 +353,7 @@ def test_sam3_segment_images_raises_on_missing_input(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_with_misaligned_batch_sizes(
-    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+    sam3_model, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -370,7 +373,7 @@ def test_sam3_segment_images_with_misaligned_batch_sizes(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_with_text_single_prompt(
-    sam3_model: SAM3Torch,
+    sam3_model,
     truck_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -396,7 +399,7 @@ def test_sam3_segment_with_text_single_prompt(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_with_text_multiple_prompts(
-    sam3_model: SAM3Torch,
+    sam3_model,
     truck_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -425,7 +428,7 @@ def test_sam3_segment_with_text_multiple_prompts(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_with_text_visual_prompt(
-    sam3_model: SAM3Torch,
+    sam3_model,
     truck_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -455,7 +458,7 @@ def test_sam3_segment_with_text_visual_prompt(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_with_text_batch_images(
-    sam3_model: SAM3Torch,
+    sam3_model,
     truck_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -479,7 +482,7 @@ def test_sam3_segment_with_text_batch_images(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_multi_mask_output(
-    sam3_model: SAM3Torch,
+    sam3_model,
     truck_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -514,7 +517,7 @@ def test_sam3_segment_images_multi_mask_output(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_images_return_logits(
-    sam3_model: SAM3Torch,
+    sam3_model,
     truck_image_numpy: np.ndarray,
 ) -> None:
     # given
@@ -550,7 +553,7 @@ def test_sam3_segment_images_return_logits(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_caching_disabled(
-    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+    sam3_model, truck_image_numpy: np.ndarray
 ) -> None:
     # given
     model = sam3_model
@@ -570,7 +573,7 @@ def test_sam3_caching_disabled(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_embed_then_segment_with_client_hash(
-    sam3_model: SAM3Torch, truck_image_numpy: np.ndarray
+    sam3_model, truck_image_numpy: np.ndarray
 ) -> None:
     """SAM2-style embed-then-segment flow: caller provides image_id at embed time
     and reuses it at segment time without re-sending image bytes."""
@@ -603,7 +606,7 @@ def test_sam3_embed_then_segment_with_client_hash(
 @pytest.mark.torch_models
 @pytest.mark.gpu_only
 def test_sam3_segment_with_unknown_hash_raises(
-    sam3_model: SAM3Torch,
+    sam3_model,
 ) -> None:
     """segment_with_visual_prompts with a hash never seen by the cache must raise."""
     # given
