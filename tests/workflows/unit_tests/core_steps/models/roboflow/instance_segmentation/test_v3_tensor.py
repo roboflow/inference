@@ -190,6 +190,26 @@ def test_run_locally_passes_input_color_format_rgb_to_adapter() -> None:
     assert kwargs["mask_decode_mode"] == "accurate"
 
 
+def test_run_locally_enforces_mask_format_rle_to_adapter() -> None:
+    # given
+    image = _make_image()
+    images = Batch(content=[image], indices=[(0,)])
+    model_manager = MagicMock()
+    model_manager.run_tensor_native_inference.return_value = [
+        _make_instance_detections_with_rle(n=0)
+    ]
+    model_manager.get_class_names.return_value = []
+    block = _make_block(model_manager)
+
+    # when
+    block.run_locally(images=images, **_local_kwargs())
+
+    # then — compact representation is non-default; the block must request it
+    # explicitly rather than relying on the adapter's auto-selection.
+    _, kwargs = model_manager.run_tensor_native_inference.call_args
+    assert kwargs["mask_format"] == "rle"
+
+
 def test_run_locally_handles_empty_predictions_batch_member() -> None:
     # given
     image = _make_image()

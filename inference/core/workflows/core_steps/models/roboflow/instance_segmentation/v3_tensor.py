@@ -302,15 +302,19 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
     ) -> BlockResult:
         tensor_inputs = [img.tensor_image for img in images]
         self._model_manager.add_model(model_id=model_id, api_key=self._api_key)
-        # Adapter's map_inference_kwargs auto-selects `mask_format="rle"`
-        # when the model supports it (inference_models_adapters.py:304),
-        # so InstanceDetections.mask comes back as InstancesRLEMasks when
-        # available — no caller action needed for RLE preservation locally.
+        # Compact representation is non-default — the model's post_process
+        # defaults `mask_format="dense"`. Workflow tensor mode must enforce
+        # RLE explicitly from the caller so InstanceDetections.mask comes
+        # back as `InstancesRLEMasks` and stays compact end-to-end. If the
+        # underlying model doesn't list "rle" in supported_mask_formats it
+        # raises `ModelInputError` — we want that loud failure rather than
+        # silent dense fallback.
         predictions: List[InstanceDetections] = (
             self._model_manager.run_tensor_native_inference(
                 model_id=model_id,
                 images=tensor_inputs,
                 input_color_format="rgb",
+                mask_format="rle",
                 confidence=confidence,
                 iou_threshold=iou_threshold,
                 class_agnostic_nms=class_agnostic_nms,
