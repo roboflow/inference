@@ -433,6 +433,9 @@ from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
+from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
+    RoboflowAssetLibraryAttributesBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -441,9 +444,6 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import
 )
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     RoboflowDatasetUploadBlockV2,
-)
-from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
-    RoboflowAssetLibraryAttributesBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
