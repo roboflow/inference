@@ -349,34 +349,77 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 i
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
     AnthropicClaudeBlockV3,
 )
-from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
-    ClipModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
-    ClipComparisonBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 import (
-    ClipComparisonBlockV2,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.clip.v1_tensor import (
+        ClipModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
+        ClipModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1_tensor import (
+        ClipComparisonBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
+        ClipComparisonBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2_tensor import (
+        ClipComparisonBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 import (
+        ClipComparisonBlockV2,
+    )
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
-    DepthEstimationBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
-    EasyOCRBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
-    Florence2BlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
-    Florence2BlockV2,
-)
-from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
-from inference.core.workflows.core_steps.models.foundation.glm_ocr.v1 import (
-    GLMOCRBlockV1,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1_tensor import (
+        DepthEstimationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
+        DepthEstimationBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1_tensor import (
+        EasyOCRBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
+        EasyOCRBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v1_tensor import (
+        Florence2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
+        Florence2BlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v2_tensor import (
+        Florence2BlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
+        Florence2BlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.gaze.v1_tensor import GazeBlockV1
+else:
+    from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.glm_ocr.v1_tensor import (
+        GLMOCRBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.glm_ocr.v1 import (
+        GLMOCRBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
@@ -411,10 +454,18 @@ from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBloc
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.moondream2.v1 import (
-    Moondream2BlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.moondream2.v1_tensor import (
+        Moondream2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.moondream2.v1 import (
+        Moondream2BlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.ocr.v1_tensor import OCRModelBlockV1
+else:
+    from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
 )
@@ -433,57 +484,122 @@ from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 
 from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import (
     OpenRouterBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
-    PerceptionEncoderModelBlockV1,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1_tensor import (
+        PerceptionEncoderModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
+        PerceptionEncoderModelBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
     Qwen35OpenRouterBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
-    Qwen35VLBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
-    Qwen35VLBlockV2,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1_tensor import (
+        Qwen35VLBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
+        Qwen35VLBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2_tensor import (
+        Qwen35VLBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
+        Qwen35VLBlockV2,
+    )
 from inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
     Qwen36OpenRouterBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
-    Qwen3VLBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
-    Qwen25VLBlockV1,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1_tensor import (
+        Qwen3VLBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
+        Qwen3VLBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.qwen.v1_tensor import (
+        Qwen25VLBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
+        Qwen25VLBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
     QwenVlmBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
-    SegPreviewBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
-    SegmentAnything2BlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
-    SegmentAnything2VideoBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
-    SegmentAnything3BlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 import (
-    SegmentAnything3BlockV2,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
-    SegmentAnything3BlockV3,
-)
-
-if SAM3_3D_OBJECTS_ENABLED:
-    from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
-        SegmentAnything3_3D_ObjectsBlockV1,
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.seg_preview.v1_tensor import (
+        SegPreviewBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
+        SegPreviewBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1_tensor import (
+        SegmentAnything2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+        SegmentAnything2BlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1_tensor import (
+        SegmentAnything2VideoBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
+        SegmentAnything2VideoBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
+        SegmentAnything3BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
+        SegmentAnything3BlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2_tensor import (
+        SegmentAnything3BlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 import (
+        SegmentAnything3BlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3_tensor import (
+        SegmentAnything3BlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
+        SegmentAnything3BlockV3,
     )
 
-from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
-    SmolVLM2BlockV1,
-)
+if SAM3_3D_OBJECTS_ENABLED:
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1_tensor import (
+            SegmentAnything3_3D_ObjectsBlockV1,
+        )
+    else:
+        from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
+            SegmentAnything3_3D_ObjectsBlockV1,
+        )
+
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.smolvlm.v1_tensor import (
+        SmolVLM2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
+        SmolVLM2BlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
     StabilityAIImageGenBlockV1,
 )
