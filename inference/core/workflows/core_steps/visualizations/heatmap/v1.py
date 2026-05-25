@@ -22,7 +22,13 @@ from inference.core.workflows.execution_engine.entities.types import (
     VIDEO_METADATA_KIND,
     Selector,
 )
-from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference.core.workflows.prototypes.block import (
+    BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
+    WorkflowBlockManifest,
+)
 
 TYPE: str = "roboflow_core/heatmap_visualization@v1"
 SHORT_DESCRIPTION = "Draw a heatmap based on detections in an image."
@@ -142,6 +148,24 @@ class HeatmapManifest(PredictionsVisualizationManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        restriction = RuntimeRestriction(
+            severity=Severity.SOFT,
+            note=(
+                "Heatmap accumulation and stationary-object filtering keep "
+                "per-video tracking state in process memory. On stateless or "
+                "multi-replica HTTP runtimes successive frames may be served "
+                "by different worker processes, so heat history resets or "
+                "splits across workers. Use an InferencePipeline for stable "
+                "cross-frame visualizations."
+            ),
+        )
+        return {
+            Runtime.HOSTED_SERVERLESS: restriction,
+            Runtime.DEDICATED_DEPLOYMENT: restriction,
+        }
 
 
 class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):

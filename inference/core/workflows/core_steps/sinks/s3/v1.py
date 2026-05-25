@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 from time import sleep
-from typing import Any, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -17,6 +17,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -214,6 +217,25 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        restriction = RuntimeRestriction(
+            severity=Severity.SOFT,
+            note=(
+                "Append-log mode buffers entries in process memory before "
+                "uploading the accumulated object to S3. On stateless or "
+                "multi-replica HTTP runtimes successive requests may be "
+                "served by different worker processes, so append-log objects "
+                "can reset or split across workers. Use separate_files mode "
+                "or an InferencePipeline when each entry must be captured in "
+                "a single ordered log."
+            ),
+        )
+        return {
+            Runtime.HOSTED_SERVERLESS: restriction,
+            Runtime.DEDICATED_DEPLOYMENT: restriction,
+        }
 
 
 class S3SinkBlockV1(WorkflowBlock):

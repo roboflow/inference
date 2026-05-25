@@ -35,11 +35,11 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     AirGappedAvailability,
     BlockResult,
     Runtime,
     RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -224,9 +224,20 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        restriction = RuntimeRestriction(
+            severity=Severity.SOFT,
+            note=(
+                "Aggregation buffers are stored in process memory while the "
+                "reporting interval is tracked in cache. On stateless or "
+                "multi-replica HTTP runtimes predictions may be collected by "
+                "different worker processes, so reports can under-collect or "
+                "flush partial aggregation windows. Use an InferencePipeline "
+                "for stable video aggregation."
+            ),
+        )
         return {
-            Runtime.HOSTED_SERVERLESS: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-            Runtime.DEDICATED_DEPLOYMENT: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            Runtime.HOSTED_SERVERLESS: restriction,
+            Runtime.DEDICATED_DEPLOYMENT: restriction,
         }
 
 

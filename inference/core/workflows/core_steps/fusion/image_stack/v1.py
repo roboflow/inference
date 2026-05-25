@@ -19,6 +19,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -155,6 +158,23 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        restriction = RuntimeRestriction(
+            severity=Severity.SOFT,
+            note=(
+                "Frame stack is stored in process memory per video_identifier. "
+                "On stateless or multi-replica HTTP runtimes successive frames "
+                "may be served by different worker processes, so the stack "
+                "resets or contains only a partial frame history. Use an "
+                "InferencePipeline for stable cross-frame results."
+            ),
+        )
+        return {
+            Runtime.HOSTED_SERVERLESS: restriction,
+            Runtime.DEDICATED_DEPLOYMENT: restriction,
+        }
 
 
 def _compress_frame(

@@ -1,4 +1,4 @@
-from typing import Any, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field, field_validator
@@ -17,7 +17,13 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     Selector,
 )
-from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference.core.workflows.prototypes.block import (
+    BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
+    WorkflowBlockManifest,
+)
 
 SHORT_DESCRIPTION = "Draw traces based on detections tracking results."
 LONG_DESCRIPTION = """
@@ -126,6 +132,23 @@ class TraceManifest(ColorableVisualizationManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        restriction = RuntimeRestriction(
+            severity=Severity.SOFT,
+            note=(
+                "Trajectory history is stored inside a cached TraceAnnotator "
+                "in process memory. On stateless or multi-replica HTTP "
+                "runtimes successive frames may be served by different worker "
+                "processes, so traces reset or split across workers. Use an "
+                "InferencePipeline for stable cross-frame visualizations."
+            ),
+        )
+        return {
+            Runtime.HOSTED_SERVERLESS: restriction,
+            Runtime.DEDICATED_DEPLOYMENT: restriction,
+        }
 
 
 class TraceVisualizationBlockV1(ColorableVisualizationBlock):

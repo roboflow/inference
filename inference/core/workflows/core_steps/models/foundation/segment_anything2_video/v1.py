@@ -57,10 +57,10 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     BlockResult,
     Runtime,
     RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -193,8 +193,28 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
         return {
-            Runtime.HOSTED_SERVERLESS: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-            Runtime.DEDICATED_DEPLOYMENT: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "SAM2 Video Tracker only supports LOCAL workflow step "
+                    "execution. Remote HTTP execution would ship each frame "
+                    "to a separate process and break the per-video SAM2 "
+                    "session that holds temporal memory."
+                ),
+            ),
+            Runtime.DEDICATED_DEPLOYMENT: RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "SAM2 Video Tracker only supports LOCAL workflow step "
+                    "execution. Remote HTTP execution would ship each frame "
+                    "to a separate process and break the per-video SAM2 "
+                    "session that holds temporal memory."
+                ),
+            ),
+            Runtime.SELF_HOSTED_CPU: RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Requires a GPU; the streaming SAM2 video model needs CUDA.",
+            ),
         }
 
     @classmethod

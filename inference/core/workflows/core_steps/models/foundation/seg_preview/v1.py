@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import Any, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import requests
@@ -42,6 +42,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -106,6 +109,18 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        return {
+            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "Seg Preview runs through a remote GPU inference proxy "
+                    "and is not available on Roboflow Hosted Serverless."
+                ),
+            ),
+        }
 
     @classmethod
     def get_air_gapped_availability(cls) -> AirGappedAvailability:

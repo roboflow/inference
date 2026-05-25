@@ -58,6 +58,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -215,6 +218,23 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+        return {
+            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "CORE_MODEL_SAM3_ENABLED=False on Roboflow Hosted "
+                    "Serverless: the SAM3 endpoint is not registered, so "
+                    "run_remotely() returns 404. Block also requires a GPU."
+                ),
+            ),
+            Runtime.SELF_HOSTED_CPU: RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Requires a GPU; run_locally() loads a model that needs CUDA.",
+            ),
+        }
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:

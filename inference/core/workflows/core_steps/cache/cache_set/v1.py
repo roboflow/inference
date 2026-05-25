@@ -17,10 +17,10 @@ from inference.core.workflows.execution_engine.entities.types import (
     WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     BlockResult,
     Runtime,
     RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -133,8 +133,23 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
         return {
-            Runtime.HOSTED_SERVERLESS: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-            Runtime.DEDICATED_DEPLOYMENT: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "Cache blocks only support LOCAL workflow step execution; "
+                    "non-local execution raises NotImplementedError."
+                ),
+            ),
+            Runtime.DEDICATED_DEPLOYMENT: RuntimeRestriction(
+                severity=Severity.SOFT,
+                note=(
+                    "Cache values are stored in process memory per "
+                    "video_identifier. On multi-replica HTTP deployments "
+                    "successive requests may be served by different worker "
+                    "processes, so cached values can reset or split across "
+                    "workers."
+                ),
+            ),
         }
 
 
