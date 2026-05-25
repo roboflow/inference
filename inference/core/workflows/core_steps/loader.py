@@ -451,12 +451,20 @@ else:
     from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 import (
         RoboflowObjectDetectionModelBlockV3,
     )
-from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
-    RoboflowSemanticSegmentationModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2 import (
-    RoboflowSemanticSegmentationModelBlockV2,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1_tensor import (
+        RoboflowSemanticSegmentationModelBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2_tensor import (
+        RoboflowSemanticSegmentationModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
+        RoboflowSemanticSegmentationModelBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2 import (
+        RoboflowSemanticSegmentationModelBlockV2,
+    )
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
 )

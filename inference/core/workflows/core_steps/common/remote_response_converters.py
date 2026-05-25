@@ -15,14 +15,20 @@ by `attach_prediction_metadata` with the full per-prediction global
 state.
 """
 
+import base64
 import uuid
 from typing import Dict, Iterable, List, Optional
 
+import cv2
+import numpy as np
 import torch
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.semantic_segmentation import (
+    SemanticSegmentationResult,
+)
 from inference_models.models.base.types import InstancesRLEMasks
 
 from inference.core.workflows.execution_engine.constants import (
@@ -305,6 +311,68 @@ def dict_response_to_key_points(
         image_metadata=image_metadata or None,
         key_points_metadata=key_points_metadata,
     )
+
+
+def dict_response_to_semantic_segmentation_result(
+    response: dict,
+    *,
+    predictions_key: str = "predictions",
+) -> SemanticSegmentationResult:
+    """Build `inference_models.SemanticSegmentationResult` from one
+    semantic-segmentation HTTP-API response dict.
+
+    Response shape per inventory:
+        {
+          "predictions": {
+              "segmentation_mask": "<base64 PNG, H x W single channel>",
+              "confidence_mask": "<base64 PNG, optional>",
+              "class_map": {"<intensity>": "<label>", ...},
+          },
+          "inference_id"?: str,
+          "image": {"width": int, "height": int},
+        }
+
+    `segmentation_mask` decodes to a torch tensor of shape (H, W) with
+    each pixel value = class_id. `confidence_mask` decodes to (H, W)
+    confidence per pixel when present.
+    """
+    pred = response.get(predictions_key) or {}
+    mask_b64 = pred.get("segmentation_mask")
+    if mask_b64 is None:
+        raise ValueError(
+            "semantic-segmentation response missing `predictions.segmentation_mask`."
+        )
+    segmentation_map = _decode_b64_mask(mask_b64, dtype=torch.int64)
+    confidence_b64 = pred.get("confidence_mask")
+    if confidence_b64 is not None:
+        confidence = _decode_b64_mask(confidence_b64, dtype=torch.float32) / 255.0
+    else:
+        confidence = torch.zeros_like(segmentation_map, dtype=torch.float32)
+    image_metadata: dict = {}
+    class_map = pred.get("class_map")
+    if class_map is not None:
+        image_metadata["class_map"] = class_map
+    response_inference_id = response.get(INFERENCE_ID_KEY)
+    if response_inference_id is not None:
+        image_metadata[INFERENCE_ID_KEY] = response_inference_id
+    return SemanticSegmentationResult(
+        segmentation_map=segmentation_map,
+        confidence=confidence,
+        image_metadata=image_metadata or None,
+    )
+
+
+def _decode_b64_mask(encoded: str, *, dtype: torch.dtype) -> torch.Tensor:
+    raw = base64.b64decode(encoded)
+    arr = np.frombuffer(raw, dtype=np.uint8)
+    decoded = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+    if decoded is None:
+        raise ValueError("Failed to decode base64-encoded mask PNG.")
+    if decoded.ndim == 3:
+        # Color mask shouldn't happen for semantic segmentation, but if
+        # it does take the first channel.
+        decoded = decoded[..., 0]
+    return torch.from_numpy(decoded.copy()).to(dtype)
 
 
 def class_id_to_name_from_responses(
