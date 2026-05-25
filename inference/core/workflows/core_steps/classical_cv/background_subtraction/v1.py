@@ -1,4 +1,4 @@
-from typing import Dict, List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
 import cv2
 import numpy as np
@@ -17,10 +17,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     BlockResult,
-    Runtime,
-    RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -118,13 +115,6 @@ The motion mask image from this block can be connected to:
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
-
-    @classmethod
-    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        return {
-            Runtime.HOSTED_SERVERLESS: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-            Runtime.DEDICATED_DEPLOYMENT: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-        }
 
 
 class BackgroundSubtractionBlockV1(WorkflowBlock):
