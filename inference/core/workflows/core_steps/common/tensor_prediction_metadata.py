@@ -23,6 +23,7 @@ from inference_models.models.base.classification import (
     MultiLabelClassificationPrediction,
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
@@ -47,6 +48,7 @@ MODEL_ID_KEY = "model_id"
 PredictionWithSingularMetadata = Union[
     Detections,
     InstanceDetections,
+    KeyPoints,
     MultiLabelClassificationPrediction,
     SemanticSegmentationResult,
 ]

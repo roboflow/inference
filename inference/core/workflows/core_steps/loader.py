@@ -391,15 +391,26 @@ else:
     from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
         RoboflowInstanceSegmentationModelBlockV3,
     )
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
-    RoboflowKeypointDetectionModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2 import (
-    RoboflowKeypointDetectionModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3 import (
-    RoboflowKeypointDetectionModelBlockV3,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1_tensor import (
+        RoboflowKeypointDetectionModelBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2_tensor import (
+        RoboflowKeypointDetectionModelBlockV2,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3_tensor import (
+        RoboflowKeypointDetectionModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
+        RoboflowKeypointDetectionModelBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2 import (
+        RoboflowKeypointDetectionModelBlockV2,
+    )
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3 import (
+        RoboflowKeypointDetectionModelBlockV3,
+    )
 from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1 import (
     RoboflowClassificationModelBlockV1,
 )

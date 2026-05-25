@@ -21,6 +21,7 @@ from typing import Dict, Iterable, List, Optional
 import torch
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.types import InstancesRLEMasks
 
@@ -213,6 +214,96 @@ def dict_response_to_instance_detections(
         mask=mask,
         image_metadata=image_metadata or None,
         bboxes_metadata=bboxes_metadata,
+    )
+
+
+def dict_response_to_key_points(
+    response: dict,
+    *,
+    predictions_key: str = "predictions",
+    image_key: str = "image",
+) -> KeyPoints:
+    """Build a single `inference_models.KeyPoints` from one keypoint-detection
+    HTTP-API response dict.
+
+    Response dict shape:
+        {
+          "image": {"width": int, "height": int},
+          "predictions": [
+              {"x": cx, "y": cy, "width": w, "height": h,
+               "class": str, "class_id": int, "confidence": float,
+               "keypoints": [{"x": kx, "y": ky, "confidence": kc,
+                              "class_id": kcid, "class": str}, ...],
+               "detection_id"?: str, "parent_id"?: str},
+              ...
+          ],
+          "inference_id"?: str,
+        }
+
+    Bbox info per instance lands in `key_points_metadata` (xyxy, bbox
+    class info, detection_id, parent_id). Keypoint tensors are padded
+    to `max_kps` length so shape is `(instances, max_kps, 2)` /
+    `(instances, max_kps)` — same convention as numpy's
+    `add_inference_keypoints_to_sv_detections`.
+    """
+    raw_predictions = response.get(predictions_key) or []
+    n = len(raw_predictions)
+    if n == 0:
+        xy = torch.zeros((0, 0, 2), dtype=torch.float32)
+        class_id = torch.zeros((0,), dtype=torch.int64)
+        confidence = torch.zeros((0, 0), dtype=torch.float32)
+        key_points_metadata: Optional[List[dict]] = None
+    else:
+        per_instance_kps: List[List[List[float]]] = []
+        per_instance_confs: List[List[float]] = []
+        class_ids: List[int] = []
+        key_points_metadata = []
+        for p in raw_predictions:
+            kps = p.get("keypoints") or []
+            per_instance_kps.append([[float(k["x"]), float(k["y"])] for k in kps])
+            per_instance_confs.append([float(k.get("confidence", 0.0)) for k in kps])
+            class_ids.append(int(p.get("class_id", 0)))
+            cx, cy = float(p.get("x", 0.0)), float(p.get("y", 0.0))
+            w, h = float(p.get("width", 0.0)), float(p.get("height", 0.0))
+            key_points_metadata.append(
+                {
+                    DETECTION_ID_KEY: p.get(DETECTION_ID_KEY) or str(uuid.uuid4()),
+                    PARENT_ID_KEY: p.get(PARENT_ID_KEY, ""),
+                    "bbox_xyxy": [
+                        cx - w / 2.0,
+                        cy - h / 2.0,
+                        cx + w / 2.0,
+                        cy + h / 2.0,
+                    ],
+                    "bbox_confidence": float(p.get("confidence", 0.0)),
+                }
+            )
+        # Pad keypoint lists to uniform length so we get a proper tensor.
+        max_kps = max((len(k) for k in per_instance_kps), default=0)
+        padded_xy = torch.zeros((n, max_kps, 2), dtype=torch.float32)
+        padded_conf = torch.zeros((n, max_kps), dtype=torch.float32)
+        for i, (kps, confs) in enumerate(zip(per_instance_kps, per_instance_confs)):
+            k = len(kps)
+            if k:
+                padded_xy[i, :k] = torch.tensor(kps, dtype=torch.float32)
+                padded_conf[i, :k] = torch.tensor(confs, dtype=torch.float32)
+        xy = padded_xy
+        confidence = padded_conf
+        class_id = torch.tensor(class_ids, dtype=torch.int64)
+    image_section = response.get(image_key) or {}
+    image_metadata: dict = {}
+    if WIDTH_KEY in image_section and HEIGHT_KEY in image_section:
+        image_metadata[WIDTH_KEY] = int(image_section[WIDTH_KEY])
+        image_metadata[HEIGHT_KEY] = int(image_section[HEIGHT_KEY])
+    response_inference_id = response.get(INFERENCE_ID_KEY)
+    if response_inference_id is not None:
+        image_metadata[INFERENCE_ID_KEY] = response_inference_id
+    return KeyPoints(
+        xy=xy,
+        class_id=class_id,
+        confidence=confidence,
+        image_metadata=image_metadata or None,
+        key_points_metadata=key_points_metadata,
     )
 
 
