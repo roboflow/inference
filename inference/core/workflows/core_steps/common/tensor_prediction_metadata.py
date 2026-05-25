@@ -121,3 +121,70 @@ def attach_prediction_metadata(
         new_metadata[CLASS_NAMES_KEY] = dict(class_names)
     prediction.image_metadata = new_metadata
     return resolved_inference_id
+
+
+def attach_classification_prediction_metadata(
+    prediction: ClassificationPrediction,
+    *,
+    images,
+    model_id: str,
+    prediction_type: str,
+    class_names: Optional[Dict[int, str]] = None,
+    inference_ids: Optional[List[str]] = None,
+) -> List[str]:
+    """Populate `prediction.images_metadata` (plural list) for a batch-shaped
+    `ClassificationPrediction`. Single-label classification returns one
+    prediction object for the whole batch; this helper writes one
+    metadata dict per image in the batch and returns the list of
+    resolved inference_ids.
+
+    `images` is a Batch[WorkflowImageData] (or any iterable). `inference_ids`,
+    when provided, must align with the batch length; missing entries are
+    minted via uuid4.
+    """
+    images_list = list(images)
+    bs = len(images_list)
+    existing = list(prediction.images_metadata or [{} for _ in range(bs)])
+    if len(existing) < bs:
+        existing.extend({} for _ in range(bs - len(existing)))
+    resolved_ids: List[str] = []
+    for i, image in enumerate(images_list):
+        per_image_existing = existing[i] or {}
+        explicit = inference_ids[i] if inference_ids and i < len(inference_ids) else None
+        resolved_id = (
+            per_image_existing.get(INFERENCE_ID_KEY) or explicit or str(uuid.uuid4())
+        )
+        h, w = image._read_shape_without_materialization()
+        parent = image.parent_metadata
+        root = image.workflow_root_ancestor_metadata
+        new_meta = {
+            **per_image_existing,
+            INFERENCE_ID_KEY: resolved_id,
+            MODEL_ID_KEY: model_id,
+            PREDICTION_TYPE_KEY: prediction_type,
+            IMAGE_DIMENSIONS_KEY: (h, w),
+            PARENT_ID_KEY: parent.parent_id,
+            PARENT_DIMENSIONS_KEY: (
+                parent.origin_coordinates.origin_height,
+                parent.origin_coordinates.origin_width,
+            ),
+            PARENT_COORDINATES_KEY: (
+                parent.origin_coordinates.left_top_x,
+                parent.origin_coordinates.left_top_y,
+            ),
+            ROOT_PARENT_ID_KEY: root.parent_id,
+            ROOT_PARENT_DIMENSIONS_KEY: (
+                root.origin_coordinates.origin_height,
+                root.origin_coordinates.origin_width,
+            ),
+            ROOT_PARENT_COORDINATES_KEY: (
+                root.origin_coordinates.left_top_x,
+                root.origin_coordinates.left_top_y,
+            ),
+        }
+        if class_names is not None:
+            new_meta[CLASS_NAMES_KEY] = dict(class_names)
+        existing[i] = new_meta
+        resolved_ids.append(resolved_id)
+    prediction.images_metadata = existing
+    return resolved_ids

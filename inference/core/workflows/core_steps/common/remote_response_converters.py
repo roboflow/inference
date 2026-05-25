@@ -23,6 +23,10 @@ import cv2
 import numpy as np
 import torch
 
+from inference_models.models.base.classification import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
+)
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
@@ -373,6 +377,80 @@ def _decode_b64_mask(encoded: str, *, dtype: torch.dtype) -> torch.Tensor:
         # it does take the first channel.
         decoded = decoded[..., 0]
     return torch.from_numpy(decoded.copy()).to(dtype)
+
+
+def dict_responses_to_classification_prediction(
+    responses: List[dict],
+) -> ClassificationPrediction:
+    """Build a single batch-shaped `ClassificationPrediction` from a list
+    of single-label classification HTTP-API response dicts (one per
+    image).
+
+    Response shape per response (single-label):
+        {"top": "<class name>", "confidence": <float>,
+         "predictions": [{"class": str, "class_id": int, "confidence": float}, ...]}
+
+    Class_id resolved by matching the response's `top` class name
+    against the entries in `predictions`. Falls back to 0 when no match.
+    """
+    class_ids: List[int] = []
+    confidences: List[float] = []
+    for response in responses:
+        top_class = response.get("top")
+        top_conf = float(response.get("confidence", 0.0))
+        class_id = 0
+        predictions = response.get("predictions") or []
+        if isinstance(predictions, list):
+            for p in predictions:
+                if p.get("class") == top_class:
+                    class_id = int(p.get("class_id", 0))
+                    break
+        elif isinstance(predictions, dict) and top_class in predictions:
+            class_id = int(predictions[top_class].get("class_id", 0))
+        class_ids.append(class_id)
+        confidences.append(top_conf)
+    return ClassificationPrediction(
+        class_id=torch.tensor(class_ids, dtype=torch.int64),
+        confidence=torch.tensor(confidences, dtype=torch.float32),
+    )
+
+
+def dict_response_to_multi_label_classification(
+    response: dict,
+    *,
+    predictions_key: str = "predictions",
+    predicted_classes_key: str = "predicted_classes",
+) -> MultiLabelClassificationPrediction:
+    """Build a single `MultiLabelClassificationPrediction` from one
+    multi-label HTTP-API response dict.
+
+    Response shape:
+        {"predictions": {"<class_name>": {"class_id": int, "confidence": float}, ...},
+         "predicted_classes": ["<class_name>", ...]}
+
+    Only the classes listed in `predicted_classes` (those above
+    threshold) populate the tensors. Order follows the `predicted_classes`
+    list.
+    """
+    predictions_dict = response.get(predictions_key) or {}
+    predicted = response.get(predicted_classes_key) or []
+    class_ids: List[int] = []
+    confidences: List[float] = []
+    for class_name in predicted:
+        entry = predictions_dict.get(class_name)
+        if entry is None:
+            continue
+        class_ids.append(int(entry.get("class_id", 0)))
+        confidences.append(float(entry.get("confidence", 0.0)))
+    image_metadata: dict = {}
+    response_inference_id = response.get(INFERENCE_ID_KEY)
+    if response_inference_id is not None:
+        image_metadata[INFERENCE_ID_KEY] = response_inference_id
+    return MultiLabelClassificationPrediction(
+        class_ids=torch.tensor(class_ids, dtype=torch.int64),
+        confidence=torch.tensor(confidences, dtype=torch.float32),
+        image_metadata=image_metadata or None,
+    )
 
 
 def class_id_to_name_from_responses(
