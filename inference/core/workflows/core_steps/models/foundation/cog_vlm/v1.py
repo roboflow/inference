@@ -3,6 +3,7 @@ from typing import Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
+from inference.core.env import LMM_ENABLED
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
@@ -135,21 +136,22 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        return {
-            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
-                severity=Severity.HARD,
-                note=(
-                    "LMM_ENABLED=False on Roboflow Hosted Serverless: the "
-                    "/llm_v1 and /infer/cog_vlm endpoints are not registered, "
-                    "so run_remotely() returns 404. Block also requires a "
-                    "GPU and is too heavy for the CPU-only serverless fleet."
-                ),
-            ),
+        restrictions = {
             Runtime.SELF_HOSTED_CPU: RuntimeRestriction(
                 severity=Severity.HARD,
                 note="Requires a GPU; run_locally() loads a model that needs CUDA.",
             ),
         }
+        if not LMM_ENABLED:
+            restrictions[Runtime.HOSTED_SERVERLESS] = RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "LMM_ENABLED=False on Roboflow Hosted Serverless: the "
+                    "/llm_v1 and /infer/cog_vlm endpoints are not registered, "
+                    "so run_remotely() returns 404."
+                ),
+            )
+        return restrictions
 
 
 class CogVLMBlockV1(WorkflowBlock):
