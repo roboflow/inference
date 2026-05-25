@@ -28,6 +28,8 @@ same identifier in both branches.
 """
 from typing import Any, List, Type
 
+import supervision as sv
+
 from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
@@ -39,6 +41,7 @@ from inference_models.models.base.object_detection import Detections
 from inference.core.workflows.core_steps.common.to_supervision import (
     classification_prediction_to_dict_per_image,
     multi_label_classification_to_dict,
+    sv_detections_to_inference_models_detections,
     to_supervision_with_metadata,
 )
 from inference.core.workflows.execution_engine.entities.base import Batch
@@ -59,7 +62,12 @@ def make_tensor_wrapper_block(numpy_block_cls: Type[WorkflowBlock]) -> Type[Work
         def run(self, *args: Any, **kwargs: Any) -> Any:
             args = tuple(_maybe_materialise(a) for a in args)
             kwargs = {k: _maybe_materialise(v) for k, v in kwargs.items()}
-            return super().run(*args, **kwargs)
+            result = super().run(*args, **kwargs)
+            # Convert any sv.Detections in the output back to
+            # inference_models.Detections so downstream tensor-native
+            # consumers see a consistent type. Sinks/visualizers whose
+            # outputs are images / status dicts are unaffected (passthrough).
+            return _maybe_unmaterialise(result)
 
     _TensorWrapperBlock.__name__ = numpy_block_cls.__name__
     _TensorWrapperBlock.__qualname__ = numpy_block_cls.__qualname__
@@ -90,4 +98,18 @@ def _maybe_materialise(value: Any) -> Any:
         )
     if isinstance(value, list):
         return [_maybe_materialise(v) for v in value]
+    return value
+
+
+def _maybe_unmaterialise(value: Any) -> Any:
+    """Reverse direction at the output boundary: convert sv-shaped values
+    back to inference_models native so downstream consumers see a
+    consistent type. Recurses through dicts and lists (BlockResult shape).
+    Passthrough for everything else (images, status payloads, scalars)."""
+    if isinstance(value, sv.Detections):
+        return sv_detections_to_inference_models_detections(value)
+    if isinstance(value, dict):
+        return {k: _maybe_unmaterialise(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_maybe_unmaterialise(v) for v in value]
     return value
