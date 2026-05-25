@@ -1,7 +1,11 @@
+import pytest
 import torch
+
+from inference_models.models.base.types import InstancesRLEMasks
 
 from inference.core.workflows.core_steps.common.remote_response_converters import (
     class_id_to_name_from_responses,
+    dict_response_to_instance_detections,
     dict_response_to_object_detections,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -40,7 +44,7 @@ def test_dict_response_to_object_detections_converts_center_xywh_to_xyxy() -> No
     assert torch.allclose(detections.xyxy[0], torch.tensor([80.0, 170.0, 120.0, 230.0]))
     assert detections.class_id[0].item() == 5
     assert detections.class_id.dtype == torch.int64
-    assert detections.confidence[0].item() == 0.9
+    assert detections.confidence[0].item() == pytest.approx(0.9)
     assert detections.confidence.dtype == torch.float32
 
 
@@ -263,3 +267,146 @@ def test_class_id_to_name_from_responses_coerces_class_id_to_int() -> None:
     # then
     assert mapping == {5: "person"}
     assert isinstance(list(mapping.keys())[0], int)
+
+
+# ---------------------------------------------------------------------------
+# dict_response_to_instance_detections
+# ---------------------------------------------------------------------------
+
+
+def test_dict_response_to_instance_detections_builds_rle_masks_from_response() -> None:
+    # given
+    response = {
+        "image": {"width": 64, "height": 48},
+        "predictions": [
+            {
+                "x": 32.0,
+                "y": 24.0,
+                "width": 20.0,
+                "height": 16.0,
+                "class": "cat",
+                "class_id": 0,
+                "confidence": 0.9,
+                "rle": {"size": [48, 64], "counts": "rle-bytes-1"},
+            },
+            {
+                "x": 10.0,
+                "y": 10.0,
+                "width": 4.0,
+                "height": 4.0,
+                "class": "dog",
+                "class_id": 1,
+                "confidence": 0.7,
+                "rle": {"size": [48, 64], "counts": "rle-bytes-2"},
+            },
+        ],
+    }
+
+    # when
+    detections = dict_response_to_instance_detections(response)
+
+    # then
+    assert detections.xyxy.shape == (2, 4)
+    assert detections.class_id.tolist() == [0, 1]
+    assert isinstance(detections.mask, InstancesRLEMasks)
+    assert detections.mask.image_size == (48, 64)
+    assert detections.mask.masks == ["rle-bytes-1", "rle-bytes-2"]
+
+
+def test_dict_response_to_instance_detections_uses_response_image_dims_for_mask_size() -> None:
+    # given — response.image dims should win over per-detection rle.size if they ever conflict
+    response = {
+        "image": {"width": 100, "height": 50},
+        "predictions": [
+            {
+                "x": 10.0,
+                "y": 10.0,
+                "width": 4.0,
+                "height": 4.0,
+                "class_id": 0,
+                "confidence": 0.5,
+                "rle": {"size": [999, 999], "counts": "x"},
+            }
+        ],
+    }
+
+    # when
+    detections = dict_response_to_instance_detections(response)
+
+    # then
+    assert detections.mask.image_size == (50, 100)
+
+
+def test_dict_response_to_instance_detections_falls_back_to_rle_size_when_image_dims_missing() -> None:
+    # given
+    response = {
+        "predictions": [
+            {
+                "x": 10.0,
+                "y": 10.0,
+                "width": 4.0,
+                "height": 4.0,
+                "class_id": 0,
+                "confidence": 0.5,
+                "rle": {"size": [128, 256], "counts": "x"},
+            }
+        ],
+    }
+
+    # when
+    detections = dict_response_to_instance_detections(response)
+
+    # then
+    assert detections.mask.image_size == (128, 256)
+
+
+def test_dict_response_to_instance_detections_empty_predictions() -> None:
+    # given
+    response = {"image": {"width": 64, "height": 64}, "predictions": []}
+
+    # when
+    detections = dict_response_to_instance_detections(response)
+
+    # then
+    assert detections.xyxy.shape == (0, 4)
+    assert isinstance(detections.mask, InstancesRLEMasks)
+    assert detections.mask.image_size == (64, 64)
+    assert detections.mask.masks == []
+
+
+def test_dict_response_to_instance_detections_raises_when_rle_missing() -> None:
+    # given — caller forgot to set response_mask_format="rle"
+    response = {
+        "image": {"width": 64, "height": 64},
+        "predictions": [
+            {
+                "x": 10.0,
+                "y": 10.0,
+                "width": 4.0,
+                "height": 4.0,
+                "class_id": 0,
+                "confidence": 0.5,
+                # No "rle" field — represents polygon-mode response.
+            }
+        ],
+    }
+
+    # when / then
+    with pytest.raises(ValueError, match="missing `rle`"):
+        dict_response_to_instance_detections(response)
+
+
+def test_dict_response_to_instance_detections_propagates_top_level_inference_id() -> None:
+    # given
+    response = {
+        "image": {"width": 64, "height": 64},
+        "predictions": [],
+        INFERENCE_ID_KEY: "inf-xyz",
+    }
+
+    # when
+    detections = dict_response_to_instance_detections(response)
+
+    # then
+    assert detections.image_metadata is not None
+    assert detections.image_metadata[INFERENCE_ID_KEY] == "inf-xyz"
