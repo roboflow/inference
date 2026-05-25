@@ -1,7 +1,8 @@
-import uuid
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
+
+from inference_models.models.base.object_detection import Detections
 
 from inference.core.env import (
     HOSTED_DETECT_URL,
@@ -12,16 +13,12 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parents_coordinates_to_batch_of_sv_detections,
-    attach_prediction_type_info_to_sv_detections_batch,
-    convert_inference_detections_batch_to_sv_detections,
-    filter_out_unwanted_classes_from_sv_detections_batch,
+from inference.core.workflows.core_steps.common.remote_response_converters import (
+    dict_response_to_object_detections,
 )
-from inference.core.workflows.core_steps.common.utils_tensor import (
-    attach_parents_coordinates_to_batch_of_sv_detections_tensor,
+from inference.core.workflows.core_steps.common.tensor_prediction_metadata import (
+    attach_prediction_metadata,
 )
-from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -279,44 +276,39 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
     ) -> BlockResult:
         tensor_inputs = [img.tensor_image for img in images]
         self._model_manager.add_model(model_id=model_id, api_key=self._api_key)
-        sv_detections_batch = self._model_manager.run_tensor_native_inference(
-            model_id=model_id,
-            images=tensor_inputs,
-            input_color_format="rgb",
-            confidence=confidence,
-            iou_threshold=iou_threshold,
-            class_agnostic_nms=class_agnostic_nms,
-            class_filter=class_filter,
-            max_detections=max_detections,
-            max_candidates=max_candidates,
-            disable_active_learning=disable_active_learning,
-            active_learning_target_dataset=active_learning_target_dataset,
-        )
-        inference_ids = [
-            _read_or_generate_inference_id(det) for det in sv_detections_batch
-        ]
-        sv_detections_batch = attach_prediction_type_info_to_sv_detections_batch(
-            predictions=sv_detections_batch,
-            prediction_type="object-detection",
-        )
-        sv_detections_batch = filter_out_unwanted_classes_from_sv_detections_batch(
-            predictions=sv_detections_batch,
-            classes_to_accept=class_filter,
-        )
-        sv_detections_batch = (
-            attach_parents_coordinates_to_batch_of_sv_detections_tensor(
-                predictions=sv_detections_batch,
-                images=images,
+        predictions: List[Detections] = (
+            self._model_manager.run_tensor_native_inference(
+                model_id=model_id,
+                images=tensor_inputs,
+                input_color_format="rgb",
+                confidence=confidence,
+                iou_threshold=iou_threshold,
+                class_agnostic_nms=class_agnostic_nms,
+                class_filter=class_filter,
+                max_detections=max_detections,
+                max_candidates=max_candidates,
+                disable_active_learning=disable_active_learning,
+                active_learning_target_dataset=active_learning_target_dataset,
             )
         )
-        return [
-            {
-                "inference_id": inference_id,
-                "predictions": prediction,
-                "model_id": model_id,
-            }
-            for inference_id, prediction in zip(inference_ids, sv_detections_batch)
-        ]
+        class_names = self._model_manager.get_class_names(model_id=model_id)
+        results: BlockResult = []
+        for image, prediction in zip(images, predictions):
+            inference_id = attach_prediction_metadata(
+                prediction,
+                image=image,
+                model_id=model_id,
+                prediction_type="object-detection",
+                class_names=class_names,
+            )
+            results.append(
+                {
+                    "inference_id": inference_id,
+                    "predictions": prediction,
+                    "model_id": model_id,
+                }
+            )
+        return results
 
     def run_remotely(
         self,
@@ -357,58 +349,32 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
         )
         client.configure(inference_configuration=client_config)
         non_empty_inference_images = [i.base64_image for i in images]
-        predictions = client.infer(
+        responses = client.infer(
             inference_input=non_empty_inference_images,
             model_id=model_id,
         )
-        if not isinstance(predictions, list):
-            predictions = [predictions]
-        return self._post_process_remote_result(
-            images=images,
-            predictions=predictions,
-            class_filter=class_filter,
-            model_id=model_id,
-        )
-
-    def _post_process_remote_result(
-        self,
-        images: Batch[WorkflowImageData],
-        predictions: List[dict],
-        class_filter: Optional[List[str]],
-        model_id: str,
-    ) -> BlockResult:
-        inference_ids = [
-            p.get(INFERENCE_ID_KEY) or str(uuid.uuid4()) for p in predictions
+        if not isinstance(responses, list):
+            responses = [responses]
+        predictions = [
+            dict_response_to_object_detections(response) for response in responses
         ]
-        predictions = convert_inference_detections_batch_to_sv_detections(predictions)
-        predictions = attach_prediction_type_info_to_sv_detections_batch(
-            predictions=predictions,
-            prediction_type="object-detection",
-        )
-        predictions = filter_out_unwanted_classes_from_sv_detections_batch(
-            predictions=predictions,
-            classes_to_accept=class_filter,
-        )
-        predictions = attach_parents_coordinates_to_batch_of_sv_detections(
-            images=images,
-            predictions=predictions,
-        )
-        return [
-            {
-                "inference_id": inference_id,
-                "predictions": prediction,
-                "model_id": model_id,
-            }
-            for inference_id, prediction in zip(inference_ids, predictions)
-        ]
-
-
-def _read_or_generate_inference_id(detections) -> str:
-    """Read inference_id from sv.Detections.data, or mint a fresh uuid4 per
-    image when the adapter did not supply one (locked decision
-    [ITERATE 6.B]: per-image scope)."""
-    if len(detections) > 0:
-        existing = detections.data.get(INFERENCE_ID_KEY)
-        if existing is not None and len(existing) > 0 and existing[0] is not None:
-            return str(existing[0])
-    return str(uuid.uuid4())
+        # Remote path: the model is not loaded locally, so the global
+        # class_names list isn't available. Per-detection class strings
+        # are preserved in `bboxes_metadata` by the response converter.
+        results: BlockResult = []
+        for image, prediction in zip(images, predictions):
+            inference_id = attach_prediction_metadata(
+                prediction,
+                image=image,
+                model_id=model_id,
+                prediction_type="object-detection",
+                class_names=None,
+            )
+            results.append(
+                {
+                    "inference_id": inference_id,
+                    "predictions": prediction,
+                    "model_id": model_id,
+                }
+            )
+        return results
