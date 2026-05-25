@@ -16,7 +16,7 @@ dedicated helper lands with the classification tensor block.
 """
 
 import uuid
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from inference_models.models.base.classification import (
     ClassificationPrediction,
