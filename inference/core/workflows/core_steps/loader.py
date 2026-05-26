@@ -506,9 +506,14 @@ else:
     from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1_tensor import (
         AbsoluteStaticCropBlockV1,
     )
-from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import (
-    BoundingRectBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import (
+        BoundingRectBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.bounding_rect.v1_tensor import (
+        BoundingRectBlockV1,
+    )
 from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
     ByteTrackerBlockV1,
 )
