@@ -1,13 +1,8 @@
-import logging
 import uuid
 from typing import Any, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 from pydantic import ConfigDict, Field
-from shapely.geometry import Polygon
-from shapely.ops import unary_union
-from shapely.strtree import STRtree
-from skimage import draw, measure
 from supervision import Detections
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
@@ -389,13 +384,16 @@ def merge_crop_predictions(
                     j
                 ]  # Shape: (num_keypoints, 2)
 
-                # Transform coordinates
-                transformed_keypoints = []
-                for kp in keypoints_xy:
-                    transformed_kp = [kp[0] + x_min, kp[1] + y_min]
-                    transformed_keypoints.append(transformed_kp)
-
-                keypoint_data["keypoints_xy"] = transformed_keypoints
+                # Vectorised offset — avoids a per-keypoint Python loop.
+                # copy=True prevents mutating the source array; reshape handles
+                # edge cases where keypoints_xy arrives as a flat/empty array.
+                kp_array = np.array(keypoints_xy, dtype=np.float64, copy=True)
+                if kp_array.size == 0:
+                    keypoint_data["keypoints_xy"] = []
+                else:
+                    kp_array = kp_array.reshape(-1, 2)
+                    kp_array = kp_array + np.array([x_min, y_min], dtype=np.float64)
+                    keypoint_data["keypoints_xy"] = kp_array.tolist()
 
                 # Copy other keypoint data
                 if "keypoints_class_name" in child_pred.data:
@@ -435,6 +433,17 @@ def merge_crop_predictions(
                     mask, x_min, y_min, parent_image_shape
                 )
 
+                # Also store the transformed bbox for cheap pre-filtering
+                raw_bbox = child_pred.xyxy[j]
+                transformed_bbox = np.array(
+                    [
+                        raw_bbox[0] + x_min,
+                        raw_bbox[1] + y_min,
+                        raw_bbox[2] + x_min,
+                        raw_bbox[3] + y_min,
+                    ]
+                )
+
                 # Store prediction with transformed mask
                 if class_id not in class_predictions:
                     class_predictions[class_id] = []
@@ -444,7 +453,7 @@ def merge_crop_predictions(
                         "mask": transformed_mask,
                         "confidence": confidence,
                         "class_id": class_id,
-                        "bbox": None,  # Will compute from mask
+                        "bbox": transformed_bbox,
                         "keypoint_data": keypoint_data,
                         "detection_data": detection_data,  # Store per-detection metadata
                     }
@@ -801,80 +810,93 @@ def _merge_overlapping_masks(
     if not predictions:
         return []
 
-    # Convert masks to polygons for merging
-    polygons_with_data = []
-    for pred in predictions:
-        mask = pred["mask"]
-        polygons = _mask_to_polygons(mask)
+    n = len(predictions)
+    masks = [p["mask"] for p in predictions]
 
-        for poly in polygons:
-            if poly.is_valid and not poly.is_empty:
-                polygons_with_data.append(
-                    {
-                        "polygon": poly,
-                        "confidence": pred["confidence"],
-                        "class_id": pred["class_id"],
-                        "detection_data": pred.get(
-                            "detection_data", {}
-                        ),  # Preserve metadata
-                    }
-                )
+    # Pre-compute bbox arrays for cheap spatial pre-filtering.
+    # Bboxes are stored alongside masks when predictions are collected.
+    bboxes_present = all(p.get("bbox") is not None for p in predictions)
+    if bboxes_present:
+        bboxes = np.array([p["bbox"] for p in predictions], dtype=np.float64)
+        bx1, by1, bx2, by2 = bboxes[:, 0], bboxes[:, 1], bboxes[:, 2], bboxes[:, 3]
 
-    if not polygons_with_data:
-        return []
+    parent = list(range(n))
 
-    # Find connected components (groups of overlapping polygons)
-    groups = _find_overlapping_groups(polygons_with_data, overlap_threshold)
+    def find(x: int) -> int:
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:
+            next_x = parent[x]
+            parent[x] = root
+            x = next_x
+        return root
 
-    # Merge each group
+    def union(x: int, y: int) -> None:
+        px, py = find(x), find(y)
+        if px != py:
+            parent[px] = py
+
+    # Precompute per-mask pixel counts so IoU union can be derived arithmetically
+    # (area_i + area_j - intersection) instead of materialising a full OR array.
+    mask_areas = [int(np.count_nonzero(m)) for m in masks]
+
+    for i in range(n):
+        mask_i = masks[i]
+        for j in range(i + 1, n):
+            # Cheap bbox pre-filter: skip pixel-level AND if bboxes don't overlap
+            if bboxes_present:
+                if (
+                    bx2[i] <= bx1[j]
+                    or bx2[j] <= bx1[i]
+                    or by2[i] <= by1[j]
+                    or by2[j] <= by1[i]
+                ):
+                    continue
+
+            mask_j = masks[j]
+            intersection_count = int(np.count_nonzero(mask_i & mask_j))
+            if overlap_threshold <= 0.0:
+                if intersection_count > 0:
+                    union(i, j)
+            else:
+                # Compute union via arithmetic to avoid allocating a temporary OR array
+                union_count = mask_areas[i] + mask_areas[j] - intersection_count
+                iou = intersection_count / union_count if union_count > 0 else 0.0
+                if iou >= overlap_threshold:
+                    union(i, j)
+
+    groups_dict: dict = {}
+    for i in range(n):
+        root = find(i)
+        if root not in groups_dict:
+            groups_dict[root] = []
+        groups_dict[root].append(i)
+
     merged_results = []
-    for group in groups:
-        merged_poly = unary_union([item["polygon"] for item in group])
-
-        # Calculate merged confidence
-        confidences = [item["confidence"] for item in group]
+    for group_indices in groups_dict.values():
+        group = [predictions[idx] for idx in group_indices]
+        confidences = [p["confidence"] for p in group]
         if confidence_strategy == "max":
             merged_confidence = max(confidences)
         elif confidence_strategy == "mean":
-            merged_confidence = np.mean(confidences)
-        elif confidence_strategy == "min":
+            merged_confidence = float(np.mean(confidences))
+        else:  # min
             merged_confidence = min(confidences)
-        else:
-            merged_confidence = max(confidences)
 
-        class_id = group[0]["class_id"]
+        merged_mask = masks[group_indices[0]].copy()
+        for idx in group_indices[1:]:
+            merged_mask |= masks[idx]
 
-        # Get image shape from first mask
-        image_shape = predictions[0]["mask"].shape
-
-        # Handle MultiPolygon results
-        if merged_poly.geom_type == "MultiPolygon":
-            for poly in merged_poly.geoms:
-                mask = _polygon_to_mask(poly, image_shape)
-                if mask.any():
-                    merged_results.append(
-                        {
-                            "mask": mask,
-                            "confidence": merged_confidence,
-                            "class_id": class_id,
-                            "detection_data": group[0].get(
-                                "detection_data", {}
-                            ),  # Preserve first detection's metadata
-                        }
-                    )
-        else:
-            mask = _polygon_to_mask(merged_poly, image_shape)
-            if mask.any():
-                merged_results.append(
-                    {
-                        "mask": mask,
-                        "confidence": merged_confidence,
-                        "class_id": class_id,
-                        "detection_data": group[0].get(
-                            "detection_data", {}
-                        ),  # Preserve first detection's metadata
-                    }
-                )
+        if merged_mask.any():
+            merged_results.append(
+                {
+                    "mask": merged_mask,
+                    "confidence": merged_confidence,
+                    "class_id": group[0]["class_id"],
+                    "detection_data": group[0].get("detection_data", {}),
+                }
+            )
 
     return merged_results
 
@@ -916,13 +938,15 @@ def _merge_overlapping_bboxes(
         class_id = group[0]["class_id"]
 
         # Merge bounding boxes - take the union (min/max coordinates)
-        bboxes = [item["bbox"] for item in group]
-        x_mins = [bbox[0] for bbox in bboxes]
-        y_mins = [bbox[1] for bbox in bboxes]
-        x_maxs = [bbox[2] for bbox in bboxes]
-        y_maxs = [bbox[3] for bbox in bboxes]
-
-        merged_bbox = np.array([min(x_mins), min(y_mins), max(x_maxs), max(y_maxs)])
+        bboxes_arr = np.array([item["bbox"] for item in group])
+        merged_bbox = np.array(
+            [
+                bboxes_arr[:, 0].min(),
+                bboxes_arr[:, 1].min(),
+                bboxes_arr[:, 2].max(),
+                bboxes_arr[:, 3].max(),
+            ]
+        )
 
         merged_results.append(
             {
@@ -942,10 +966,17 @@ def _find_overlapping_bbox_groups(
     predictions: List[dict], overlap_threshold: float = 0.0
 ) -> List[List[dict]]:
     """
-    Find groups of overlapping bounding boxes using union-find with spatial indexing.
+    Find groups of overlapping bounding boxes using union-find with vectorised numpy ops.
 
-    Uses STRtree spatial index for efficient candidate finding, avoiding O(n²) all-pairs comparison.
-    This optimization becomes increasingly valuable as the number of detections grows.
+    Performs all intersection/IoU computations as batched numpy operations, avoiding
+    per-pair Python overhead and eliminating the need for Shapely geometry objects.
+
+    This is a vectorised all-pairs broadphase: for each box it computes intersections
+    against all subsequent boxes in one numpy call. This removes per-pair Python
+    overhead and avoids Shapely geometry objects, but worst-case runtime is O(n²) in
+    the number of predictions. For typical rollup workloads (tens of detections per
+    class) this is faster than an STRtree due to lower constant overhead, but for
+    very large detection sets a spatial index would be preferable.
 
     Args:
         predictions: List of dictionaries with 'bbox' key
@@ -958,238 +989,55 @@ def _find_overlapping_bbox_groups(
     if n == 0:
         return []
 
+    bboxes = np.array([p["bbox"] for p in predictions], dtype=np.float64)
+    x1 = bboxes[:, 0]
+    y1 = bboxes[:, 1]
+    x2 = bboxes[:, 2]
+    y2 = bboxes[:, 3]
+    areas = (x2 - x1) * (y2 - y1)
+
     parent = list(range(n))
 
-    def find(x):
-        # Iterative find with path compression to avoid stack overflow
+    def find(x: int) -> int:
         root = x
         while parent[root] != root:
             root = parent[root]
-
-        # Path compression: make all visited nodes point directly to root
         while parent[x] != root:
             next_x = parent[x]
             parent[x] = root
             x = next_x
-
         return root
 
-    def union(x, y):
+    def union(x: int, y: int) -> None:
         px, py = find(x), find(y)
         if px != py:
             parent[px] = py
 
-    def bbox_iou(bbox1, bbox2):
-        """Calculate IoU between two bboxes [x_min, y_min, x_max, y_max]"""
-        x1_min, y1_min, x1_max, y1_max = bbox1
-        x2_min, y2_min, x2_max, y2_max = bbox2
+    for i in range(n - 1):
+        # Vectorised intersection against all j > i in one shot
+        inter_x1 = np.maximum(x1[i], x1[i + 1 :])
+        inter_y1 = np.maximum(y1[i], y1[i + 1 :])
+        inter_x2 = np.minimum(x2[i], x2[i + 1 :])
+        inter_y2 = np.minimum(y2[i], y2[i + 1 :])
+        inter_w = np.maximum(0.0, inter_x2 - inter_x1)
+        inter_h = np.maximum(0.0, inter_y2 - inter_y1)
+        intersection = inter_w * inter_h
 
-        # Calculate intersection
-        x_min = max(x1_min, x2_min)
-        y_min = max(y1_min, y2_min)
-        x_max = min(x1_max, x2_max)
-        y_max = min(y1_max, y2_max)
+        if overlap_threshold <= 0.0:
+            overlapping = np.where(intersection > 0)[0]
+        else:
+            union_areas = areas[i] + areas[i + 1 :] - intersection
+            iou = np.where(union_areas > 0, intersection / union_areas, 0.0)
+            overlapping = np.where(iou >= overlap_threshold)[0]
 
-        if x_max <= x_min or y_max <= y_min:
-            return 0.0
+        for j_offset in overlapping:
+            union(i, i + 1 + int(j_offset))
 
-        intersection = (x_max - x_min) * (y_max - y_min)
-
-        # Calculate union
-        area1 = (x1_max - x1_min) * (y1_max - y1_min)
-        area2 = (x2_max - x2_min) * (y2_max - y2_min)
-        union = area1 + area2 - intersection
-
-        return intersection / union if union > 0 else 0.0
-
-    # Create boxes as Polygons for spatial indexing
-    boxes = []
-    for pred in predictions:
-        x_min, y_min, x_max, y_max = pred["bbox"]
-        # Create box polygon (coordinates: [bottom-left, bottom-right, top-right, top-left])
-        box = Polygon([(x_min, y_min), (x_max, y_min), (x_max, y_max), (x_min, y_max)])
-        boxes.append(box)
-
-    tree = STRtree(boxes)
-
-    # Check candidate pairs identified by spatial index
-    checked_pairs = set()
-    for i in range(n):
-        box1 = boxes[i]
-        # Query for boxes that intersect the bounding box
-        candidates = tree.query(box1, predicate="intersects")
-
-        for j in candidates:
-            if i >= j or (i, j) in checked_pairs or (j, i) in checked_pairs:
-                continue
-            checked_pairs.add((i, j))
-
-            bbox1 = predictions[i]["bbox"]
-            bbox2 = predictions[j]["bbox"]
-
-            iou = bbox_iou(bbox1, bbox2)
-
-            if overlap_threshold <= 0.0:
-                # Merge if they overlap at all
-                if iou > 0:
-                    union(i, j)
-            else:
-                # Merge only if IoU exceeds threshold
-                if iou >= overlap_threshold:
-                    union(i, j)
-
-    # Group by root parent
-    groups_dict = {}
+    groups_dict: dict = {}
     for i in range(n):
         root = find(i)
         if root not in groups_dict:
             groups_dict[root] = []
         groups_dict[root].append(predictions[i])
-
-    return list(groups_dict.values())
-
-
-def _mask_to_polygons(mask: np.ndarray) -> List[Polygon]:
-    """
-    Convert a binary mask to a list of Shapely polygons.
-
-    Args:
-        mask: Boolean mask array (H, W)
-
-    Returns:
-        List of Polygon objects
-    """
-    # Find contours
-    contours = measure.find_contours(mask.astype(np.uint8), 0.5)
-
-    polygons = []
-    for contour in contours:
-        # Convert from (row, col) to (x, y)
-        contour = np.flip(contour, axis=1)
-
-        # Simplify and create polygon
-        if len(contour) >= 3:
-            try:
-                poly = Polygon(contour)
-                if poly.is_valid:
-                    polygons.append(poly)
-            except Exception as e:
-                logging.warning(f"Failed to create polygon from contour: {e}")
-
-    return polygons
-
-
-def _polygon_to_mask(polygon: Polygon, shape: Tuple[int, int]) -> np.ndarray:
-    """
-    Convert a Shapely polygon to a binary mask.
-
-    Args:
-        polygon: Shapely Polygon object
-        shape: (height, width) of output mask
-
-    Returns:
-        Boolean mask array
-    """
-    mask = np.zeros(shape, dtype=bool)
-
-    # Get exterior coordinates
-    coords = np.array(polygon.exterior.coords)
-
-    if len(coords) < 3:
-        return mask
-
-    # Convert from (x, y) to (row, col)
-    rows = coords[:, 1]
-    cols = coords[:, 0]
-
-    # Fill polygon
-    try:
-        rr, cc = draw.polygon(rows, cols, shape)
-        mask[rr, cc] = True
-    except Exception:
-        pass
-
-    return mask
-
-
-def _find_overlapping_groups(
-    polygons_with_data: List[dict], overlap_threshold: float = 0.0
-) -> List[List[dict]]:
-    """
-    Find groups of overlapping/touching polygons using union-find with spatial indexing.
-
-    Uses STRtree spatial index for efficient candidate finding, avoiding O(n²) all-pairs comparison.
-    This optimization becomes increasingly valuable as the number of detections grows.
-
-    Args:
-        polygons_with_data: List of dictionaries with 'polygon' key.
-        overlap_threshold: Minimum overlap ratio (IoU) to consider overlap (0.0 to 1.0)
-
-    Returns:
-        List of groups, where each group is a list of polygon data dicts.
-    """
-    n = len(polygons_with_data)
-    if n == 0:
-        return []
-
-    parent = list(range(n))
-
-    def find(x):
-        # Iterative find with path compression to avoid stack overflow
-        root = x
-        while parent[root] != root:
-            root = parent[root]
-
-        # Path compression: make all visited nodes point directly to root
-        while parent[x] != root:
-            next_x = parent[x]
-            parent[x] = root
-            x = next_x
-
-        return root
-
-    def union(x, y):
-        px, py = find(x), find(y)
-        if px != py:
-            parent[px] = py
-
-    # Use spatial indexing (STRtree) to efficiently find candidate pairs
-    polygons = [item["polygon"] for item in polygons_with_data]
-    tree = STRtree(polygons)
-
-    # Check candidate pairs identified by spatial index
-    checked_pairs = set()
-    for i in range(n):
-        poly1 = polygons[i]
-        # Query for geometries that intersect the bounding box
-        candidates = tree.query(poly1, predicate="intersects")
-
-        for j in candidates:
-            if i >= j or (i, j) in checked_pairs or (j, i) in checked_pairs:
-                continue
-            checked_pairs.add((i, j))
-
-            poly2 = polygons[j]
-
-            # Check if polygons overlap based on threshold
-            if overlap_threshold <= 0.0:
-                # Merge if they touch or overlap at all
-                if poly1.intersects(poly2) or poly1.touches(poly2):
-                    union(i, j)
-            else:
-                # Merge only if overlap ratio exceeds threshold
-                intersection_area = poly1.intersection(poly2).area
-                union_area = poly1.union(poly2).area
-                iou = intersection_area / union_area if union_area > 0 else 0
-                if iou >= overlap_threshold:
-                    union(i, j)
-
-    # Group by root parent
-    groups_dict = {}
-    for i in range(n):
-        root = find(i)
-        if root not in groups_dict:
-            groups_dict[root] = []
-        groups_dict[root].append(polygons_with_data[i])
 
     return list(groups_dict.values())

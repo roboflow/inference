@@ -446,6 +446,7 @@ if modal is not None:
                 source=workflow_id,
                 category="modal",
                 api_key=webrtc_request.api_key,
+                resource_id=workflow_id,
                 resource_details={
                     "plan": webrtc_plan,
                     "billable": True,
@@ -458,11 +459,12 @@ if modal is not None:
                     else 0
                 ),
             )
-            usage_collector.push_usage_payloads()
+
             logger.info("Function completed")
 
             if no_frames_processed:
                 if watchdog.connection_established:
+                    usage_collector.push_usage_payloads()
                     raise Exception(
                         "WebRTC connection was established but no frames were processed. "
                         "This typically indicates an invalid RTSP stream URL or corrupted video file."
@@ -472,6 +474,7 @@ if modal is not None:
                         "WebRTC connection could not be established. "
                         "No frames were processed."
                     )
+            usage_collector.push_usage_payloads()
 
         @modal.exit()
         def stop(self):
