@@ -20,6 +20,9 @@ from inference.core.workflows.core_steps.common.remote_response_converters impor
 from inference.core.workflows.core_steps.common.tensor_prediction_metadata import (
     attach_classification_prediction_metadata,
 )
+from inference.core.workflows.core_steps.common.to_supervision import (
+    build_dual_classification_dicts,
+)
 from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3_tensor import (
     _slice_classification_prediction,
 )
@@ -162,9 +165,10 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
             prediction, images=images, model_id=model_id,
             prediction_type="classification", class_names=class_names,
         )
+        per_image_dicts = build_dual_classification_dicts(prediction, class_names=class_names)
         return [
             {
-                "predictions": _slice_classification_prediction(prediction, i),
+                "predictions": per_image_dicts[i],
                 "inference_id": inference_ids[i],
                 "model_id": model_id,
             }
@@ -204,9 +208,10 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
             prediction, images=images, model_id=model_id,
             prediction_type="classification", class_names=class_names,
         )
+        per_image_dicts = build_dual_classification_dicts(prediction, class_names=class_names)
         return [
             {
-                "predictions": _slice_classification_prediction(prediction, i),
+                "predictions": per_image_dicts[i],
                 "inference_id": inference_ids[i],
                 "model_id": model_id,
             }

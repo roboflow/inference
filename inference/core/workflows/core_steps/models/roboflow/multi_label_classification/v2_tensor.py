@@ -19,6 +19,10 @@ from inference.core.workflows.core_steps.common.remote_response_converters impor
 from inference.core.workflows.core_steps.common.tensor_prediction_metadata import (
     attach_prediction_metadata,
 )
+from inference.core.workflows.core_steps.common.to_supervision import (
+    build_dual_multi_label_dict,
+)
+
 from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -168,7 +172,7 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
                 class_names=class_names,
             )
             results.append({
-                "predictions": prediction,
+                "predictions": build_dual_multi_label_dict(prediction),
                 "inference_id": inference_id,
                 "model_id": model_id,
             })
@@ -211,7 +215,7 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
                 class_names=class_names or None,
             )
             results.append({
-                "predictions": prediction,
+                "predictions": build_dual_multi_label_dict(prediction),
                 "inference_id": inference_id,
                 "model_id": model_id,
             })

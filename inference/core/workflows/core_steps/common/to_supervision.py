@@ -39,10 +39,98 @@ PredictionWithMetadata = Union[
 ]
 
 
+TENSOR_NATIVE_PREDICTION_KEY = "__tensor_native_prediction__"
+
+
 def detections_to_supervision_with_metadata(pred: Detections) -> sv.Detections:
     sv_det = pred.to_supervision()
     _fold_metadata(sv_det, pred.image_metadata, pred.bboxes_metadata)
     return sv_det
+
+
+def build_dual_detections(pred: Detections) -> sv.Detections:
+    """Build a dual-representation prediction for tensor-mode producers.
+
+    Returns an `sv.Detections` (so every existing sv-shaped consumer works
+    unchanged) with the original `inference_models.Detections` stashed in
+    `.data[TENSOR_NATIVE_PREDICTION_KEY]`. Tensor-aware consumers read the
+    native source from there to avoid re-materialisation; everything else
+    just uses the sv interface.
+
+    `image_metadata` is broadcast per-detection and `bboxes_metadata` is
+    folded per-detection into `.data` — identical to the existing
+    `detections_to_supervision_with_metadata` semantics.
+    """
+    sv_det = detections_to_supervision_with_metadata(pred)
+    sv_det.data[TENSOR_NATIVE_PREDICTION_KEY] = pred
+    return sv_det
+
+
+def build_dual_instance_detections(pred: InstanceDetections) -> sv.Detections:
+    """Same as `build_dual_detections` for instance segmentation. RLE masks
+    are rasterised to dense numpy at this boundary so the sv.Detections
+    consumers see `.mask` as a (n, H, W) bool array. Tensor-aware
+    consumers reach `.data[TENSOR_NATIVE_PREDICTION_KEY].mask` to recover
+    the RLE form."""
+    sv_det = instance_detections_to_supervision_with_metadata(pred)
+    sv_det.data[TENSOR_NATIVE_PREDICTION_KEY] = pred
+    return sv_det
+
+
+def build_dual_key_points(pred: KeyPoints) -> sv.KeyPoints:
+    """`sv.KeyPoints` form of the tensor `KeyPoints`. Tensor source
+    stashed in `.data` for tensor-aware consumers."""
+    sv_kp = key_points_to_supervision_with_metadata(pred)
+    sv_kp.data[TENSOR_NATIVE_PREDICTION_KEY] = pred
+    return sv_kp
+
+
+def build_dual_classification_dicts(
+    pred: ClassificationPrediction,
+    *,
+    class_names: Optional[Dict[int, str]] = None,
+) -> List[dict]:
+    """Per-image list of numpy-mode classification dicts. Each dict
+    additionally carries the per-image slice of the tensor source under
+    TENSOR_NATIVE_PREDICTION_KEY."""
+    dicts = classification_prediction_to_dict_per_image(
+        pred, class_names=class_names
+    )
+    # Stash a per-image ClassificationPrediction slice so tensor-aware
+    # downstream blocks can keep operating on the tensor form.
+    class_ids = pred.class_id
+    confidences = pred.confidence
+    for i, entry in enumerate(dicts):
+        sliced = ClassificationPrediction(
+            class_id=class_ids[i : i + 1],
+            confidence=confidences[i : i + 1],
+            images_metadata=[
+                (pred.images_metadata or [{}] * len(dicts))[i]
+            ],
+        )
+        entry[TENSOR_NATIVE_PREDICTION_KEY] = sliced
+    return dicts
+
+
+def build_dual_multi_label_dict(
+    pred: MultiLabelClassificationPrediction,
+    *,
+    class_names: Optional[Dict[int, str]] = None,
+) -> dict:
+    """Numpy-mode multi-label dict with the tensor source stashed in it."""
+    out = multi_label_classification_to_dict(pred, class_names=class_names)
+    out[TENSOR_NATIVE_PREDICTION_KEY] = pred
+    return out
+
+
+def build_dual_semantic_segmentation(
+    pred: SemanticSegmentationResult,
+) -> SemanticSegmentationResult:
+    """SemSeg's numpy-mode output is itself a specialised structure (not
+    sv.Detections) — passthrough the `inference_models` native form.
+    Tensor backing is the value itself; consumers that need the
+    numpy-mode rendering call to_supervision() ad hoc."""
+    return pred
 
 
 def instance_detections_to_supervision_with_metadata(

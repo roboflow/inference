@@ -20,6 +20,10 @@ from inference.core.workflows.core_steps.common.remote_response_converters impor
 from inference.core.workflows.core_steps.common.tensor_prediction_metadata import (
     attach_prediction_metadata,
 )
+from inference.core.workflows.core_steps.common.to_supervision import (
+    build_dual_instance_detections,
+)
+
 from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,

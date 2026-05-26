@@ -20,6 +20,10 @@ from inference.core.workflows.core_steps.common.remote_response_converters impor
 from inference.core.workflows.core_steps.common.tensor_prediction_metadata import (
     attach_prediction_metadata,
 )
+from inference.core.workflows.core_steps.common.to_supervision import (
+    build_dual_instance_detections,
+)
+
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -342,7 +346,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             results.append(
                 {
                     "inference_id": inference_id,
-                    "predictions": prediction,
+                    "predictions": build_dual_instance_detections(prediction),
                     "model_id": model_id,
                 }
             )
@@ -417,7 +421,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             results.append(
                 {
                     "inference_id": inference_id,
-                    "predictions": prediction,
+                    "predictions": build_dual_instance_detections(prediction),
                     "model_id": model_id,
                 }
             )
