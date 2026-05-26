@@ -1,11 +1,14 @@
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
+from torchvision.transforms import functional
 
 from inference_models import Detections, InstanceDetections, InstancesRLEMasks
+from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
+    StaticCropOffset,
 )
 from inference_models.models.common.rle_utils import LazyInstancesRLEMasks
 from inference_models.models.common.roboflow.post_processing import (

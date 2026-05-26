@@ -18,7 +18,9 @@ def torch_mask_to_coco_rle(mask: torch.Tensor) -> dict:
         counts.insert(0, 0)
 
     h, w = mask.shape
-    return mask_utils.frPyObjects({"counts": counts, "size": [h, w]}, h, w)
+    # compress
+    rle = mask_utils.frPyObjects({"counts": counts, "size": [h, w]}, h, w)
+    return rle
 
 
 def numpy_mask_to_coco_rle(mask: np.ndarray) -> dict:

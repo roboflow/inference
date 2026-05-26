@@ -90,9 +90,7 @@ DEFAULT_COLOR_PALETTE = [
 
 # Pinned host buffers for async DtoH on the full-postproc Triton fast path.
 # Keyed by (name, dtype); reused across frames provided the cached buffer is
-# at least as large as the requested shape in every dimension. If a buffer
-# becomes much larger than the current request, replace it to avoid a permanent
-# high-water mark in pinned host memory.
+# at least as large as the requested shape in every dimension.
 PINNED_HOST_BUFFERS: dict = {}
 PINNED_HOST_BUFFER_SHRINK_THRESHOLD = 8
 
