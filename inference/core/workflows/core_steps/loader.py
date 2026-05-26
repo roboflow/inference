@@ -498,9 +498,14 @@ from inference.core.workflows.core_steps.trackers.ocsort.v1 import (
 from inference.core.workflows.core_steps.trackers.sort.v1 import (
     SORTBlockV1 as TrackerSORTBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
-    AbsoluteStaticCropBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
+        AbsoluteStaticCropBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1_tensor import (
+        AbsoluteStaticCropBlockV1,
+    )
 from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import (
     BoundingRectBlockV1,
 )
