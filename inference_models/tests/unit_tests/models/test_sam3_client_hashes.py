@@ -9,12 +9,15 @@ from inference_models.models.sam3.cache import (
     Sam3ImageEmbeddingsCacheNullObject,
     Sam3LowResolutionMasksCacheNullObject,
 )
-from inference_models.models.sam3.sam3_torch import SAM3Torch
 
-pytestmark = pytest.mark.torch_models
+pytestmark = [pytest.mark.torch_models, pytest.mark.gpu_only]
 
 
-def _make_model(allow_client_hashes: bool) -> SAM3Torch:
+def _make_model(allow_client_hashes: bool):
+    # sam3 is GPU-only and absent from CPU/vino builds, so import the model class
+    # inside the helper (these tests are gpu_only and run where sam3 is installed).
+    from inference_models.models.sam3.sam3_torch import SAM3Torch
+
     return SAM3Torch(
         model=MagicMock(),
         transform=MagicMock(),
