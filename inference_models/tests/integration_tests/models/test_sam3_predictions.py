@@ -14,8 +14,6 @@ from inference_models.models.sam3.cache import (
 
 @pytest.fixture(scope="module")
 def sam3_model(sam3_package: str):
-    # sam3 is GPU-only and absent from CPU/vino builds, so import the model class
-    # inside the fixture (same inline-import pattern as the TRT model tests).
     from inference_models.models.sam3.sam3_torch import SAM3Torch
 
     model = SAM3Torch.from_pretrained(
