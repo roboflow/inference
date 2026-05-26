@@ -255,6 +255,14 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolo26.yolo26_instance_segmentation_trt",
         class_name="YOLO26ForInstanceSegmentationTRT",
     ),
+    ("yolo26", SEMANTIC_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_onnx",
+        class_name="YOLO26ForSemanticSegmentationOnnx",
+    ),
+    ("yolo26", SEMANTIC_SEGMENTATION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_torch_script",
+        class_name="YOLO26ForSemanticSegmentationTorchScript",
+    ),
     ("yololite", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_models.models.yololite.yololite_object_detection_onnx",

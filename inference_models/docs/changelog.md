@@ -1,5 +1,9 @@
 # Changelog
 
+## `0.28.7`
+
+- Added YOLO26 semantic segmentation support (ONNX and TorchScript backends).
+
 ## `0.28.6`
 
 - torch.jit.load/script share a process-global which is not thread-safe, introduced lock to prevent race conditions when loading SAM3 and other torchscript models
