@@ -1,7 +1,7 @@
 import base64
 import io
-from math import prod
 from io import BytesIO
+from math import prod
 from time import perf_counter
 from typing import Any, List, Optional, Tuple, Union
 
