@@ -1,3 +1,5 @@
+from inference.core.workflows.execution_engine.entities.types import Kind
+
 TENSOR_NATIVE_EMBEDDING_KIND_DOCS = """
 This kind represents a vector embedding. It is a list of floating point numbers.
 
@@ -553,7 +555,7 @@ TENSOR_NATIVE_CODE_DETECTION_KIND = Kind(
 )
 
 
-TESEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS = """
+TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS = """
 This kind represents a single semantic segmentation prediction as an `inference_models.SemanticSegmentationResult`
 with one detection per predicted class. Each detection carries an RLE-encoded mask
 covering all pixels assigned to that class.
@@ -603,10 +605,10 @@ rle = prediction["rle_mask"]
 binary_mask = mask_utils.decode(rle).astype(bool)  # shape: (H, W)
 ```
 """
-SEMANTIC_SEGMENTATION_PREDICTION_KIND = Kind(
+TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND = Kind(
     name="semantic_segmentation_prediction",
     description="Prediction with per-pixel class label and confidence for semantic segmentation",
-    docs=SEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS,
+    docs=TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS,
     serialised_data_type="dict",
     internal_data_type="inference_models.SemanticSegmentationResult",
 )
