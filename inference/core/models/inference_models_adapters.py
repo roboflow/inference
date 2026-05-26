@@ -1,5 +1,6 @@
 import base64
 import io
+from math import prod
 from io import BytesIO
 from time import perf_counter
 from typing import Any, List, Optional, Tuple, Union
@@ -89,14 +90,44 @@ DEFAULT_COLOR_PALETTE = [
 
 # Pinned host buffers for async DtoH on the full-postproc Triton fast path.
 # Keyed by (name, dtype); reused across frames provided the cached buffer is
-# at least as large as the requested shape in every dimension.
+# at least as large as the requested shape in every dimension. If a buffer
+# becomes much larger than the current request, replace it to avoid a permanent
+# high-water mark in pinned host memory.
 PINNED_HOST_BUFFERS: dict = {}
+PINNED_HOST_BUFFER_SHRINK_THRESHOLD = 8
+
+
+def clear_pinned_buffers(name: Optional[str] = None) -> None:
+    if name is None:
+        PINNED_HOST_BUFFERS.clear()
+        return
+    keys_to_remove = [key for key in PINNED_HOST_BUFFERS if key[0] == name]
+    for key in keys_to_remove:
+        PINNED_HOST_BUFFERS.pop(key, None)
+
+
+def _buffer_can_reuse(buf: torch.Tensor, shape: Tuple[int, ...]) -> bool:
+    return len(buf.shape) == len(shape) and all(
+        buf.shape[i] >= shape[i] for i in range(len(shape))
+    )
+
+
+def _should_shrink_pinned_buffer(buf: torch.Tensor, shape: Tuple[int, ...]) -> bool:
+    requested_numel = prod(shape)
+    if requested_numel == 0:
+        return False
+    return buf.numel() >= requested_numel * PINNED_HOST_BUFFER_SHRINK_THRESHOLD
 
 
 def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
+    shape = tuple(int(dim) for dim in shape)
     key = (name, dtype)
     buf = PINNED_HOST_BUFFERS.get(key)
-    if buf is not None and all(buf.shape[i] >= shape[i] for i in range(len(shape))):
+    if buf is not None and _buffer_can_reuse(buf=buf, shape=shape):
+        if _should_shrink_pinned_buffer(buf=buf, shape=shape):
+            buf = torch.empty(shape, dtype=dtype, pin_memory=True)
+            PINNED_HOST_BUFFERS[key] = buf
+            return buf
         return buf[tuple(slice(0, s) for s in shape)]
     buf = torch.empty(shape, dtype=dtype, pin_memory=True)
     PINNED_HOST_BUFFERS[key] = buf

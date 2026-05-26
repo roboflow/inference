@@ -7,11 +7,6 @@ from pycocotools import mask as mask_utils
 from inference_models.models.base.types import InstancesRLEMasks
 
 
-def counts_to_coco_rle(counts: list, image_size: tuple) -> dict:
-    h, w = image_size
-    return mask_utils.frPyObjects({"counts": counts, "size": [h, w]}, h, w)
-
-
 def torch_mask_to_coco_rle(mask: torch.Tensor) -> dict:
     # Convert to uncompressed run length encoding in GPU
     # coco tools expect fortran order (column-wise)
@@ -22,14 +17,16 @@ def torch_mask_to_coco_rle(mask: torch.Tensor) -> dict:
     if values[0] == 1:
         counts.insert(0, 0)
 
-    return counts_to_coco_rle(counts=counts, image_size=tuple(mask.shape))
+    h, w = mask.shape
+    return mask_utils.frPyObjects({"counts": counts, "size": [h, w]}, h, w)
 
 
 def numpy_mask_to_coco_rle(mask: np.ndarray) -> dict:
     mask_bool = np.asarray(mask, dtype=bool)
     mask_flat = np.ravel(mask_bool, order="F")
     if mask_flat.size == 0:
-        return counts_to_coco_rle(counts=[], image_size=tuple(mask_bool.shape))
+        h, w = mask_bool.shape
+        return mask_utils.frPyObjects({"counts": [], "size": [h, w]}, h, w)
     transitions = np.flatnonzero(mask_flat[1:] != mask_flat[:-1]) + 1
     counts = np.diff(
         np.concatenate(
@@ -42,7 +39,8 @@ def numpy_mask_to_coco_rle(mask: np.ndarray) -> dict:
     ).tolist()
     if mask_flat[0]:
         counts.insert(0, 0)
-    return counts_to_coco_rle(counts=counts, image_size=tuple(mask_bool.shape))
+    h, w = mask_bool.shape
+    return mask_utils.frPyObjects({"counts": counts, "size": [h, w]}, h, w)
 
 
 def unpack_bitpacked_masks_numpy(bitpacked_masks: np.ndarray, width: int) -> np.ndarray:
@@ -153,12 +151,19 @@ class LazyInstancesRLEMasks(InstancesRLEMasks):
             return
         self._ensure_rle_cpu()
         if self._rle_counts_cpu is not None and self._rle_lengths_cpu is not None:
+            h, w = self.image_size
             self._masks = [
-                counts_to_coco_rle(
-                    counts=self._rle_counts_cpu[i, : int(self._rle_lengths_cpu[i])]
-                    .astype(np.int64, copy=False)
-                    .tolist(),
-                    image_size=self.image_size,
+                mask_utils.frPyObjects(
+                    {
+                        "counts": self._rle_counts_cpu[
+                            i, : int(self._rle_lengths_cpu[i])
+                        ]
+                        .astype(np.int64, copy=False)
+                        .tolist(),
+                        "size": [h, w],
+                    },
+                    h,
+                    w,
                 )["counts"]
                 for i in range(self._rle_lengths_cpu.shape[0])
             ]

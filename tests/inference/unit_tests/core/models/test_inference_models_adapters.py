@@ -3,8 +3,12 @@
 import pytest
 import torch
 
+import inference.core.models.inference_models_adapters as adapters
 from inference.core.exceptions import PostProcessingError
 from inference.core.models.inference_models_adapters import (
+    PINNED_HOST_BUFFERS,
+    clear_pinned_buffers,
+    get_pinned_buffer,
     prepare_classification_response,
     prepare_multi_label_classification_response,
 )
@@ -12,6 +16,62 @@ from inference_models import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_pinned_host_buffers() -> None:
+    clear_pinned_buffers()
+    yield
+    clear_pinned_buffers()
+
+
+def _fake_pinned_empty(shape, dtype, pin_memory: bool = False) -> torch.Tensor:
+    assert pin_memory is True
+    return torch.zeros(shape, dtype=dtype)
+
+
+def test_get_pinned_buffer_reuses_cached_storage_for_smaller_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(adapters.torch, "empty", _fake_pinned_empty)
+
+    first = get_pinned_buffer("mask", (16, 4), torch.float32)
+    second = get_pinned_buffer("mask", (8, 4), torch.float32)
+
+    assert first.shape == (16, 4)
+    assert second.shape == (8, 4)
+    assert second.data_ptr() == first.data_ptr()
+    assert tuple(PINNED_HOST_BUFFERS[("mask", torch.float32)].shape) == (16, 4)
+
+
+def test_get_pinned_buffer_shrinks_massively_oversized_cached_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(adapters.torch, "empty", _fake_pinned_empty)
+
+    first = get_pinned_buffer("mask", (64, 4), torch.float32)
+    second = get_pinned_buffer("mask", (4, 4), torch.float32)
+
+    assert first.shape == (64, 4)
+    assert second.shape == (4, 4)
+    assert second.data_ptr() != first.data_ptr()
+    assert tuple(PINNED_HOST_BUFFERS[("mask", torch.float32)].shape) == (4, 4)
+
+
+def test_clear_pinned_buffers_clears_all_or_single_named_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(adapters.torch, "empty", _fake_pinned_empty)
+
+    get_pinned_buffer("mask", (8, 8), torch.float32)
+    get_pinned_buffer("xyxy", (8, 4), torch.int32)
+
+    clear_pinned_buffers(name="mask")
+    assert ("mask", torch.float32) not in PINNED_HOST_BUFFERS
+    assert ("xyxy", torch.int32) in PINNED_HOST_BUFFERS
+
+    clear_pinned_buffers()
+    assert PINNED_HOST_BUFFERS == {}
 
 
 def test_prepare_multi_label_response_uses_class_ids_for_predicted_classes() -> None:
