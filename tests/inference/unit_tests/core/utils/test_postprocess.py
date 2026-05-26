@@ -6,11 +6,13 @@ import pytest
 
 from inference.core.exceptions import PostProcessingError
 from inference.core.utils.postprocess import (
+    bitpacked_masks2poly,
     clip_boxes_coordinates,
     clip_keypoints_coordinates,
     cosine_similarity,
     crop_mask,
     get_static_crop_dimensions,
+    masks2poly,
     post_process_bboxes,
     post_process_keypoints,
     post_process_polygons,
@@ -94,6 +96,31 @@ def test_crop_mask() -> None:
     # then
     assert result.shape == expected_result.shape
     assert np.allclose(result, expected_result)
+
+
+def test_bitpacked_masks2poly_matches_dense_masks2poly() -> None:
+    masks = np.zeros((2, 11, 13), dtype=np.uint8)
+    masks[0, 2:9, 3:10] = 1
+    masks[1, 1:6, 1:5] = 1
+    packed = np.packbits(masks, axis=-1, bitorder="little")
+
+    dense_segments = masks2poly(masks)
+    packed_segments = bitpacked_masks2poly(packed, width=masks.shape[-1])
+
+    assert len(packed_segments) == len(dense_segments)
+    for packed_segment, dense_segment in zip(packed_segments, dense_segments):
+        np.testing.assert_array_equal(packed_segment, dense_segment)
+
+
+def test_bitpacked_masks2poly_preserves_empty_masks() -> None:
+    masks = np.zeros((1, 5, 9), dtype=np.uint8)
+    packed = np.packbits(masks, axis=-1, bitorder="little")
+
+    segments = bitpacked_masks2poly(packed, width=masks.shape[-1])
+
+    assert len(segments) == 1
+    assert segments[0].shape == (0, 2)
+    assert segments[0].dtype == np.float32
 
 
 def test_standardise_static_crop() -> None:
