@@ -1,6 +1,4 @@
 pypdfium2>=4.11.0,<5.0.0
 jupyterlab>=4.3.0,<5.0.0
 PyYAML~=6.0.0
-inference-models~=0.28.1  # keep in sync between requirements.jetson requirements.gpu.txt, requirements.cpu.txt, requirements.vino.txt
-# sam3 omitted on jetson: depends on decord>=0.6.0 which has no aarch64 wheels. SAM3 loads lazily so build/startup unaffected.
-triton<4.0.0  # GPU-only; no longer pulled via inference-models base deps
+inference-models~=0.28.4  # keep in sync between requirements.jetson requirements.gpu.txt, requirements.cpu.txt, requirements.vino.txt
