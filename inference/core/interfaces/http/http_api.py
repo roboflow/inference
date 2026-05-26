@@ -50,7 +50,6 @@ from inference.core.entities.requests.clip import (
 )
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
@@ -97,7 +96,6 @@ from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
-from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     DepthEstimationResponse,
@@ -203,6 +201,7 @@ from inference.core.env import (
 from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
+    FeatureDeprecatedError,
     InputImageLoadError,
     MissingApiKeyError,
     MissingServiceSecretError,
@@ -352,6 +351,7 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
+REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
 
 
 @dataclass(frozen=True)
@@ -487,6 +487,23 @@ def _log_serverless_authorization_denial(
     if workspace_id is not None:
         log_fields["workspace_id"] = workspace_id
     logger.info("Serverless authorization denied", **log_fields)
+
+
+def _log_serverless_request_received(
+    request: Request,
+    request_id: str,
+    execution_id_value: Optional[str],
+) -> None:
+    if not API_LOGGING_ENABLED:
+        return
+    log_fields = {
+        "method": request.method,
+        "path": request.url.path,
+        "request_id": request_id,
+    }
+    if execution_id_value is not None:
+        log_fields["execution_id"] = execution_id_value
+    logger.info(REQUEST_RECEIVED_LOG_MESSAGE, **log_fields)
 
 
 class HttpInterface(BaseInterface):
@@ -687,6 +704,11 @@ class HttpInterface(BaseInterface):
             async def check_authorization_serverless(request: Request, call_next):
                 request_id, execution_id_value = (
                     _prepare_serverless_observability_context(request=request)
+                )
+                _log_serverless_request_received(
+                    request=request,
+                    request_id=request_id,
+                    execution_id_value=execution_id_value,
                 )
                 t1 = time.time()
 
@@ -1327,16 +1349,6 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The SAM2 model ID.
-        """
-
-        load_gaze_model = partial(load_core_model, core_model="gaze")
-        """Loads the GAZE model into the model manager.
-
-        Args:
-        Same as `load_core_model`.
-
-        Returns:
-        The GAZE model ID.
         """
 
         load_doctr_model = partial(load_core_model, core_model="doctr")
@@ -3590,49 +3602,20 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/gaze/gaze_detection",
-                    response_model=List[GazeDetectionInferenceResponse],
-                    summary="Gaze Detection",
-                    description="Run the gaze detection model to detect gaze.",
+                    summary="Gaze Detection (deprecated)",
+                    description=(
+                        "Deprecated. Always returns HTTP 410 Gone. The endpoint stub "
+                        "will be removed end of Q2 2026."
+                    ),
+                    deprecated=True,
                 )
                 @with_route_exceptions
-                @usage_collector("request")
-                def gaze_detection(
-                    inference_request: GazeDetectionInferenceRequest,
-                    request: Request,
-                    api_key: Optional[str] = Query(
-                        None,
-                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-                    ),
-                    countinference: Optional[bool] = None,
-                    service_secret: Optional[str] = None,
-                ):
-                    """
-                    Detect gaze using the gaze detection model.
-
-                    Args:
-                        inference_request (M.GazeDetectionRequest): The request containing the image to be detected.
-                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
-                        request (Request, default Body()): The HTTP request.
-
-                    Returns:
-                        M.GazeDetectionResponse: The response containing all the detected faces and the corresponding gazes.
-                    """
-                    logger.debug(f"Reached /gaze/gaze_detection")
-                    gaze_model_id = load_gaze_model(
-                        inference_request,
-                        api_key=api_key,
-                        countinference=countinference,
-                        service_secret=service_secret,
+                def gaze_detection_deprecated():
+                    raise FeatureDeprecatedError(
+                        feature="/gaze/gaze_detection",
+                        removal_release="end of Q2 2026",
+                        reason="MediaPipe dependency removed from inference; endpoint is a 410 stub.",
                     )
-                    response = self.model_manager.infer_from_request_sync(
-                        gaze_model_id, inference_request
-                    )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(gaze_model_id, actor)
-                    return response
 
             if DEPTH_ESTIMATION_ENABLED:
 
@@ -4177,18 +4160,3 @@ class HttpInterface(BaseInterface):
 
     def run(self):
         uvicorn.run(self.app, host="127.0.0.1", port=8080)
-
-
-def load_gaze_model(
-    inference_request: GazeDetectionInferenceRequest, api_key: Optional[str] = None
-) -> str:
-    """Loads the gaze detection model.
-
-    Args:
-        inference_request (GazeDetectionInferenceRequest): The inference request.
-        api_key (Optional[str], default None): The Roboflow API key.
-
-    Returns:
-        str: The model ID.
-    """
-    return inference_request.model_id

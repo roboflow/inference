@@ -14,7 +14,9 @@ features is captured here.
 The core of Inference is centered around serving computer vision models. It
 implements architectures for tasks like Object Detection, Image Classification,
 Instance Segmentation, Keypoint Detection, Image Embedding, OCR,
-Visual Question Answering, Gaze Detection, and more.
+Visual Question Answering, and more. (Gaze Detection has been deprecated;
+see the [Gaze foundation page](../foundation/gaze.md) for the deprecation
+contract.)
 
 ## Image Processing
 

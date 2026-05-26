@@ -230,7 +230,7 @@ STRETCH_EXPECTED_KP_CONF = [
     0.0,
 ]
 
-CPU_LETTERBOX_BOX_XYXY = [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]]
+CPU_LETTERBOX_BOX_XYXY = [[0, 246, 1732, 1076], [0, 252, 1798, 1076]]
 CPU_LETTERBOX_BOX_CONF = [0.9278, 0.4428]
 
 
@@ -535,7 +535,7 @@ def test_yolo26n_pose_onnx_static_stretch_numpy(
     )
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(),
-        torch.tensor([[21, 259, 1929, 1078]], dtype=torch.int32),
+        torch.tensor([[21, 259, 1920, 1078]], dtype=torch.int32),
         atol=COORD_TOLERANCE,
     )
     assert torch.allclose(
@@ -568,7 +568,7 @@ def test_yolo26n_pose_onnx_static_stretch_batch_numpy(
 
     expected_kp_xy = torch.tensor([STRETCH_EXPECTED_KP_XY], dtype=torch.int32)
     expected_kp_conf = torch.tensor([STRETCH_EXPECTED_KP_CONF])
-    expected_box_xyxy = torch.tensor([[21, 259, 1929, 1078]], dtype=torch.int32)
+    expected_box_xyxy = torch.tensor([[21, 259, 1920, 1078]], dtype=torch.int32)
     expected_box_conf = torch.tensor([0.9263])
 
     for i in range(2):
@@ -617,7 +617,7 @@ def test_yolo26n_pose_onnx_static_stretch_torch(
     )
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(),
-        torch.tensor([[21, 259, 1929, 1078]], dtype=torch.int32),
+        torch.tensor([[21, 259, 1920, 1078]], dtype=torch.int32),
         atol=COORD_TOLERANCE,
     )
     assert torch.allclose(
@@ -658,7 +658,7 @@ def test_yolo26n_pose_onnx_dynamic_stretch_numpy(
     )
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(),
-        torch.tensor([[21, 259, 1929, 1078]], dtype=torch.int32),
+        torch.tensor([[21, 259, 1920, 1078]], dtype=torch.int32),
         atol=COORD_TOLERANCE,
     )
     assert torch.allclose(
@@ -691,7 +691,7 @@ def test_yolo26n_pose_onnx_dynamic_stretch_batch_numpy(
 
     expected_kp_xy = torch.tensor([STRETCH_EXPECTED_KP_XY], dtype=torch.int32)
     expected_kp_conf = torch.tensor([STRETCH_EXPECTED_KP_CONF])
-    expected_box_xyxy = torch.tensor([[21, 259, 1929, 1078]], dtype=torch.int32)
+    expected_box_xyxy = torch.tensor([[21, 259, 1920, 1078]], dtype=torch.int32)
     expected_box_conf = torch.tensor([0.9263])
 
     for i in range(2):
@@ -740,7 +740,7 @@ def test_yolo26n_pose_onnx_dynamic_stretch_torch(
     )
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(),
-        torch.tensor([[21, 259, 1929, 1078]], dtype=torch.int32),
+        torch.tensor([[21, 259, 1920, 1078]], dtype=torch.int32),
         atol=COORD_TOLERANCE,
     )
     assert torch.allclose(

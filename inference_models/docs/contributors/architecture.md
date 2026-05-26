@@ -49,10 +49,10 @@ This guide provides a deep dive into the `inference-models` architecture for con
 │  │ PyTorch      │  │ ONNX         │  │ TensorRT     │      │
 │  │ Models       │  │ Models       │  │ Models       │      │
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
-│  ┌──────────────┐  ┌──────────────┐                        │
-│  │ Hugging Face │  │ MediaPipe    │                        │
-│  │ Models       │  │ Models       │                        │
-│  └──────────────┘  └──────────────┘                        │
+│  ┌──────────────┐                                          │
+│  │ Hugging Face │                                          │
+│  │ Models       │                                          │
+│  └──────────────┘                                          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -181,9 +181,7 @@ def select_best_backend(
 
 4. Hugging Face
 
-5. MediaPipe
-
-6. others
+5. others
 
 ### 5. Model Base Classes
 
