@@ -1,7 +1,8 @@
+import inspect
 import time
 from contextlib import contextmanager
 from threading import Lock
-from typing import Dict, Generator, List, Optional, Tuple, Union
+from typing import Callable, Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
@@ -48,6 +49,22 @@ from inference.core.telemetry import (
     set_span_attribute,
     start_span,
 )
+
+
+# torch.jit.load/script mutate a process-global, non-thread-safe TorchScript registry.
+# Every model load acquires this so concurrent loads (preload / parallel requests) cannot
+# corrupt it. Passed only to loaders that accept `torchscript_state_global_lock`.
+_TORCHSCRIPT_STATE_GLOBAL_LOCK = Lock()
+
+
+def _accepts_kwarg(fn: Callable, name: str) -> bool:
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    if name in params:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
 class ModelManager:
@@ -134,11 +151,19 @@ class ModelManager:
                         service_secret=service_secret,
                     )
 
+                    extra_init_kwargs = {}
+                    if _accepts_kwarg(
+                        model_class.__init__, "torchscript_state_global_lock"
+                    ):
+                        extra_init_kwargs["torchscript_state_global_lock"] = (
+                            _TORCHSCRIPT_STATE_GLOBAL_LOCK
+                        )
                     model = model_class(
                         model_id=model_id,
                         api_key=api_key,
                         countinference=countinference,
                         service_secret=service_secret,
+                        **extra_init_kwargs,
                     )
                     vram_after = _get_cuda_memory_allocated()
                     if vram_before is not None and vram_after is not None:
