@@ -1,7 +1,7 @@
 import hashlib
 import json
 from copy import copy, deepcopy
-from threading import RLock
+from threading import Lock, RLock
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
@@ -26,6 +26,7 @@ from sam3.train.transforms.basic_for_api import (
 from inference_models.configuration import DEFAULT_DEVICE, SAM3_IMAGE_SIZE
 from inference_models.errors import CorruptedModelPackageError, ModelInputError
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.common.torch import torchscript_global_lock
 from inference_models.models.sam3.cache import (
     Sam3ImageEmbeddingsCache,
     Sam3ImageEmbeddingsCacheNullObject,
@@ -77,6 +78,7 @@ class SAM3Torch:
         compile_model: bool = False,
         enable_inst_interactivity: bool = True,
         sam3_allow_client_generated_hash_ids: bool = False,
+        torchscript_state_global_lock: Optional[Lock] = None,
         **kwargs,
     ) -> "SAM3Torch":
         if sam3_image_embeddings_cache is None:
@@ -112,14 +114,18 @@ class SAM3Torch:
             pass
 
         device_str = "cuda" if device.type == "cuda" else "cpu"
-        sam3_model = build_sam3_image_model(
-            bpe_path=model_package_content["bpe_simple_vocab_16e6.txt.gz"],
-            checkpoint_path=model_package_content["weights.pt"],
-            device=device_str,
-            load_from_HF=False,
-            compile=compile_model,
-            enable_inst_interactivity=enable_inst_interactivity,
-        )
+        # build_sam3_image_model runs torch.jit.script on torchvision transforms
+        # (SAM2Transforms: Resize + Normalize), mutating the process-global TorchScript
+        # registry; serialize against concurrent loads/scripts.
+        with torchscript_global_lock(torchscript_state_global_lock):
+            sam3_model = build_sam3_image_model(
+                bpe_path=model_package_content["bpe_simple_vocab_16e6.txt.gz"],
+                checkpoint_path=model_package_content["weights.pt"],
+                device=device_str,
+                load_from_HF=False,
+                compile=compile_model,
+                enable_inst_interactivity=enable_inst_interactivity,
+            )
         # sam3==0.1.3 Sam3TrackerPredictor.__init__ enters a CUDA bf16
         # torch.autocast context and never exits it, leaking bf16 globally
         # for the rest of the process and breaking unrelated models in the
