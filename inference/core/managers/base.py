@@ -1,8 +1,7 @@
-import inspect
 import time
 from contextlib import contextmanager
 from threading import Lock
-from typing import Callable, Dict, Generator, List, Optional, Tuple, Union
+from typing import Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
@@ -51,22 +50,6 @@ from inference.core.telemetry import (
 )
 
 
-# torch.jit.load/script mutate a process-global, non-thread-safe TorchScript registry.
-# Every model load acquires this so concurrent loads (preload / parallel requests) cannot
-# corrupt it. Passed only to loaders that accept `torchscript_state_global_lock`.
-_TORCHSCRIPT_STATE_GLOBAL_LOCK = Lock()
-
-
-def _accepts_kwarg(fn: Callable, name: str) -> bool:
-    try:
-        params = inspect.signature(fn).parameters
-    except (TypeError, ValueError):
-        return False
-    if name in params:
-        return True
-    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
-
-
 class ModelManager:
     """Model managers keep track of a dictionary of Model objects and is responsible for passing requests to the right model using the infer method."""
 
@@ -78,6 +61,9 @@ class ModelManager:
         self.pingback = None
         self._state_lock = Lock()
         self._models_state_locks: Dict[str, Lock] = {}
+        # torch.jit.load/script mutate a process-global, non-thread-safe TorchScript
+        # registry; loaders acquire this so concurrent loads cannot corrupt it.
+        self.torchscript_state_global_lock = Lock()
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -152,11 +138,9 @@ class ModelManager:
                     )
 
                     extra_init_kwargs = {}
-                    if _accepts_kwarg(
-                        model_class.__init__, "torchscript_state_global_lock"
-                    ):
+                    if USE_INFERENCE_MODELS:
                         extra_init_kwargs["torchscript_state_global_lock"] = (
-                            _TORCHSCRIPT_STATE_GLOBAL_LOCK
+                            self.torchscript_state_global_lock
                         )
                     model = model_class(
                         model_id=model_id,
