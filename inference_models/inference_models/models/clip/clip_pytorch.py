@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import Callable, List, Optional, Union
 
 import clip
@@ -11,6 +12,7 @@ from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.base.embeddings import TextImageEmbeddingModel
 from inference_models.models.clip.preprocessing import create_clip_preprocessor
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.common.torch import torchscript_global_lock
 
 
 class ClipTorch(TextImageEmbeddingModel):
@@ -21,6 +23,7 @@ class ClipTorch(TextImageEmbeddingModel):
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         max_batch_size: int = 32,
+        torchscript_state_global_lock: Optional[Lock] = None,
         **kwargs,
     ) -> "ClipTorch":
         model_package_content = get_model_package_contents(
@@ -28,7 +31,11 @@ class ClipTorch(TextImageEmbeddingModel):
             elements=["model.pt"],
         )
         model_weights_file = model_package_content["model.pt"]
-        model = build_clip_model(model_weights_file=model_weights_file, device=device)
+        model = build_clip_model(
+            model_weights_file=model_weights_file,
+            device=device,
+            torchscript_state_global_lock=torchscript_state_global_lock,
+        )
         model.eval()
         return cls(
             model=model,
@@ -88,11 +95,16 @@ class ClipTorch(TextImageEmbeddingModel):
         return torch.cat(results, dim=0)
 
 
-def build_clip_model(model_weights_file: str, device: torch.device) -> CLIP:
+def build_clip_model(
+    model_weights_file: str,
+    device: torch.device,
+    torchscript_state_global_lock: Optional[Lock] = None,
+) -> CLIP:
     try:
         # The model file is a JIT archive, so we load it as such
         # and then build a new model from its state dict.
-        jit_model = torch.jit.load(model_weights_file, map_location="cpu").eval()
+        with torchscript_global_lock(torchscript_state_global_lock):
+            jit_model = torch.jit.load(model_weights_file, map_location="cpu").eval()
         state_dict = jit_model.state_dict()
         model = build_model(state_dict).to(device)
         if device.type == "cpu":
