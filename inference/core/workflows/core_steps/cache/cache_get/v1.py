@@ -129,16 +129,18 @@ class BlockManifest(WorkflowBlockManifest):
                     "Cache blocks only support LOCAL workflow step execution; "
                     "non-local execution raises NotImplementedError."
                 ),
+                applies_to_step_execution_modes=["remote"],
             ),
             Runtime.DEDICATED_DEPLOYMENT: RuntimeRestriction(
                 severity=Severity.SOFT,
                 note=(
                     "Cache values are stored in process memory per "
-                    "video_identifier. On multi-replica HTTP deployments "
-                    "successive requests may be served by different worker "
-                    "processes, so cached values can reset or split across "
-                    "workers."
+                    "video_identifier. With remote step execution on "
+                    "multi-replica HTTP deployments, successive requests may "
+                    "be served by different worker processes, so cached "
+                    "values can reset or split across workers."
                 ),
+                applies_to_step_execution_modes=["remote"],
             ),
         }
 

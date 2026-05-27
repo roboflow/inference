@@ -150,6 +150,7 @@ class BlockManifest(WorkflowBlockManifest):
                     "/llm_v1 and /infer/cog_vlm endpoints are not registered, "
                     "so run_remotely() returns 404."
                 ),
+                applies_to_step_execution_modes=["remote"],
             )
         return restrictions
 

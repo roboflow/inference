@@ -127,6 +127,7 @@ class BlockManifest(WorkflowBlockManifest):
                     "the Qwen 2.5 VL endpoint is not registered, so "
                     "run_remotely() returns 404."
                 ),
+                applies_to_step_execution_modes=["remote"],
             )
         return restrictions
 

@@ -139,11 +139,13 @@ class TraceManifest(ColorableVisualizationManifest):
             severity=Severity.SOFT,
             note=(
                 "Trajectory history is stored inside a cached TraceAnnotator "
-                "in process memory. On stateless or multi-replica HTTP "
-                "runtimes successive frames may be served by different worker "
-                "processes, so traces reset or split across workers. Use an "
+                "in process memory. With remote step execution on stateless "
+                "or multi-replica HTTP runtimes, successive frames may be "
+                "served by different worker processes, so traces reset or "
+                "split across workers. Use local step execution in an "
                 "InferencePipeline for stable cross-frame visualizations."
             ),
+            applies_to_step_execution_modes=["remote"],
         )
         return {
             Runtime.HOSTED_SERVERLESS: restriction,

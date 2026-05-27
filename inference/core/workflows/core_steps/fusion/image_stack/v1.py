@@ -165,11 +165,13 @@ class BlockManifest(WorkflowBlockManifest):
             severity=Severity.SOFT,
             note=(
                 "Frame stack is stored in process memory per video_identifier. "
-                "On stateless or multi-replica HTTP runtimes successive frames "
-                "may be served by different worker processes, so the stack "
-                "resets or contains only a partial frame history. Use an "
+                "With remote step execution on stateless or multi-replica "
+                "HTTP runtimes, successive frames may be served by different "
+                "worker processes, so the stack resets or contains only a "
+                "partial frame history. Use local step execution in an "
                 "InferencePipeline for stable cross-frame results."
             ),
+            applies_to_step_execution_modes=["remote"],
         )
         return {
             Runtime.HOSTED_SERVERLESS: restriction,

@@ -224,13 +224,15 @@ class BlockManifest(WorkflowBlockManifest):
             severity=Severity.SOFT,
             note=(
                 "Append-log mode buffers entries in process memory before "
-                "uploading the accumulated object to S3. On stateless or "
-                "multi-replica HTTP runtimes successive requests may be "
-                "served by different worker processes, so append-log objects "
-                "can reset or split across workers. Use separate_files mode "
-                "or an InferencePipeline when each entry must be captured in "
-                "a single ordered log."
+                "uploading the accumulated object to S3. With remote step "
+                "execution on stateless or multi-replica HTTP runtimes, "
+                "successive requests may be served by different worker "
+                "processes, so append-log objects can reset or split across "
+                "workers. Use separate_files mode, or local step execution in "
+                "an InferencePipeline when each entry must be captured in a "
+                "single ordered log."
             ),
+            applies_to_step_execution_modes=["remote"],
         )
         return {
             Runtime.HOSTED_SERVERLESS: restriction,

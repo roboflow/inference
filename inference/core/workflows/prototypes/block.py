@@ -68,13 +68,23 @@ class RuntimeRestriction:
     that surfaces in this runtime. It should describe what happens (e.g.
     "track_ids reset between requests", "raises RuntimeError", "writes to
     ephemeral /tmp"), not abstract preconditions.
+
+    ``applies_to_step_execution_modes`` narrows the restriction to specific
+    workflow step execution modes. When unset, the restriction applies to all
+    step execution modes for the runtime.
     """
 
     severity: Severity
     note: str
+    applies_to_step_execution_modes: Optional[List[str]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"severity": self.severity.value, "note": self.note}
+        result: Dict[str, Any] = {"severity": self.severity.value, "note": self.note}
+        if self.applies_to_step_execution_modes is not None:
+            result["applies_to_step_execution_modes"] = (
+                self.applies_to_step_execution_modes
+            )
+        return result
 
 
 # ----------------------------------------------------------------------------
@@ -91,23 +101,27 @@ STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
     severity=Severity.SOFT,
     note=(
         "Block keeps per-video state in process memory (keyed by "
-        "video_metadata.video_identifier). On stateless or multi-replica "
-        "HTTP runtimes successive requests are served by different worker "
-        "processes, so the state resets between calls and the output is "
-        "meaningless for tracking / counting / aggregation. Use an "
+        "video_metadata.video_identifier). With remote step execution on "
+        "stateless or multi-replica HTTP runtimes, successive requests may "
+        "be served by different worker processes, so the state resets "
+        "between calls and the output is meaningless for tracking / "
+        "counting / aggregation. Use local step execution in an "
         "InferencePipeline for stable cross-frame results."
     ),
+    applies_to_step_execution_modes=["remote"],
 )
 
 
 COOLDOWN_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
     severity=Severity.SOFT,
     note=(
-        "Cooldown / rate-limit timer is stored in process memory. On "
-        "stateless or multi-replica HTTP runtimes each request gets a "
-        "fresh worker, so cooldown does not throttle. Cooldown only "
-        "behaves as documented inside an InferencePipeline."
+        "Cooldown / rate-limit timer is stored in process memory. With "
+        "remote step execution on stateless or multi-replica HTTP runtimes "
+        "each request gets a fresh worker, so cooldown does not throttle. "
+        "Cooldown only behaves as documented with local step execution inside "
+        "an InferencePipeline."
     ),
+    applies_to_step_execution_modes=["remote"],
 )
 
 

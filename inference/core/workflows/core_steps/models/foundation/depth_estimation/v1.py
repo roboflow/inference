@@ -134,6 +134,7 @@ class BlockManifest(WorkflowBlockManifest):
                     "Serverless: the depth-estimation endpoint is not "
                     "registered, so run_remotely() returns 404."
                 ),
+                applies_to_step_execution_modes=["remote"],
             )
         return restrictions
 

@@ -126,18 +126,18 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        if LMM_ENABLED:
-            return {}
-        return {
-            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
+        restrictions = {}
+        if not LMM_ENABLED:
+            restrictions[Runtime.HOSTED_SERVERLESS] = RuntimeRestriction(
                 severity=Severity.HARD,
                 note=(
                     "LMM_ENABLED=False on Roboflow Hosted Serverless: the "
                     "/llm_v1 endpoint is not registered, so run_remotely() "
                     "returns 404."
                 ),
-            ),
-        }
+                applies_to_step_execution_modes=["remote"],
+            )
+        return restrictions
 
 
 class LMMForClassificationBlockV1(WorkflowBlock):

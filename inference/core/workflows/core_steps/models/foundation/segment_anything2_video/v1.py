@@ -60,6 +60,7 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
     RuntimeRestriction,
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -193,24 +194,8 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
         return {
-            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
-                severity=Severity.HARD,
-                note=(
-                    "SAM2 Video Tracker only supports LOCAL workflow step "
-                    "execution. Remote HTTP execution would ship each frame "
-                    "to a separate process and break the per-video SAM2 "
-                    "session that holds temporal memory."
-                ),
-            ),
-            Runtime.DEDICATED_DEPLOYMENT: RuntimeRestriction(
-                severity=Severity.HARD,
-                note=(
-                    "SAM2 Video Tracker only supports LOCAL workflow step "
-                    "execution. Remote HTTP execution would ship each frame "
-                    "to a separate process and break the per-video SAM2 "
-                    "session that holds temporal memory."
-                ),
-            ),
+            Runtime.HOSTED_SERVERLESS: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            Runtime.DEDICATED_DEPLOYMENT: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
             Runtime.SELF_HOSTED_CPU: RuntimeRestriction(
                 severity=Severity.HARD,
                 note="Requires a GPU; the streaming SAM2 video model needs CUDA.",
@@ -236,15 +221,6 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
-        if step_execution_mode is not StepExecutionMode.LOCAL:
-            raise NotImplementedError(
-                "SAM2 Video Tracker only supports LOCAL workflow step "
-                "execution.  Remote execution would ship each frame to a "
-                "separate process and break the per-video SAM2 session "
-                "that holds the temporal memory.  Set "
-                "WORKFLOWS_STEP_EXECUTION_MODE=local (or run on a "
-                "dedicated deployment) to use this block."
-            )
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode

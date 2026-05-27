@@ -228,12 +228,14 @@ class BlockManifest(WorkflowBlockManifest):
             severity=Severity.SOFT,
             note=(
                 "Aggregation buffers are stored in process memory while the "
-                "reporting interval is tracked in cache. On stateless or "
-                "multi-replica HTTP runtimes predictions may be collected by "
-                "different worker processes, so reports can under-collect or "
-                "flush partial aggregation windows. Use an InferencePipeline "
+                "reporting interval is tracked in cache. With remote step "
+                "execution on stateless or multi-replica HTTP runtimes, "
+                "predictions may be collected by different worker processes, "
+                "so reports can under-collect or flush partial aggregation "
+                "windows. Use local step execution in an InferencePipeline "
                 "for stable video aggregation."
             ),
+            applies_to_step_execution_modes=["remote"],
         )
         return {
             Runtime.HOSTED_SERVERLESS: restriction,

@@ -155,12 +155,14 @@ class HeatmapManifest(PredictionsVisualizationManifest):
             severity=Severity.SOFT,
             note=(
                 "Heatmap accumulation and stationary-object filtering keep "
-                "per-video tracking state in process memory. On stateless or "
-                "multi-replica HTTP runtimes successive frames may be served "
-                "by different worker processes, so heat history resets or "
-                "splits across workers. Use an InferencePipeline for stable "
+                "per-video tracking state in process memory. With remote step "
+                "execution on stateless or multi-replica HTTP runtimes, "
+                "successive frames may be served by different worker "
+                "processes, so heat history resets or splits across workers. "
+                "Use local step execution in an InferencePipeline for stable "
                 "cross-frame visualizations."
             ),
+            applies_to_step_execution_modes=["remote"],
         )
         return {
             Runtime.HOSTED_SERVERLESS: restriction,
