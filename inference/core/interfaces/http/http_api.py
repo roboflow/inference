@@ -577,7 +577,11 @@ class HttpInterface(BaseInterface):
 
         @app.middleware("http")
         async def set_request_path_context(request: Request, call_next):
-            token = current_request_path.set(request.url.path)
+            # CVE-2026-48710: prefer the raw ASGI scope path over
+            # request.url.path. This ContextVar feeds downstream registry
+            # metadata (_model_request_paths in ModelManagerBase), so a
+            # Host-poisoned path would surface in model-info responses.
+            token = current_request_path.set(request.scope["path"])
             try:
                 return await call_next(request)
             finally:
@@ -792,7 +796,10 @@ class HttpInterface(BaseInterface):
                         "serverless.authorization.check",
                         attributes={
                             "http.method": request.method,
-                            "http.target": request.url.path,
+                            # CVE-2026-48710: log the real ASGI path. The span
+                            # records the auth decision, so it must not be
+                            # forgeable via Host header.
+                            "http.target": scope_path,
                         },
                     ) as auth_span:
                         req_params = request.query_params
