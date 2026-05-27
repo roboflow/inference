@@ -1,0 +1,71 @@
+---
+description: Use uv for Python package and project management
+alwaysApply: true
+---
+
+# Package management with uv
+
+Use [uv](https://docs.astral.sh/uv/) for dependency and environment work. Do not use bare `pip install`, `poetry`, or `conda install` to add or change dependencies in uv-managed projects.
+
+## Scope
+
+| Area | Tooling |
+|------|---------|
+| `inference_models/` (has `uv.lock`) | **uv only** — run commands from this directory |
+| Legacy root `inference` package (`requirements/`, `setup.py`) | Requirements files until a dedicated migration; do not add a root `uv.lock` without that migration |
+
+For the legacy package, uv is still encouraged for environments and installs:
+
+```bash
+uv venv --python 3.10
+uv pip install -r requirements/_requirements.txt ...
+uv pip install -e .
+```
+
+Use `uv pip` (with `--python .venv` when needed) instead of invoking `pip` directly.
+
+## Commands (`inference_models/`)
+
+| Task | Command |
+|------|---------|
+| Install / refresh env (local dev, Docker) | `uv sync --extra <name> ...` |
+| Install (CI / custom target env) | `uv pip install -e .[extra] --python .venv` |
+| Add dependency | `uv add <package>` |
+| Remove dependency | `uv remove <package>` |
+| Upgrade one package in lockfile | `uv lock --upgrade-package <package>` |
+| Run tool or script in project env | `uv run <command>` |
+| Build wheel/sdist | `uv build` |
+| Publish to PyPI (new workflows) | `uv publish` |
+
+**Dev vs CI:** prefer `uv sync` for local development and Docker (`--locked` when reproducing CI). Keep existing CI workflows on `uv pip install` unless you are deliberately changing that workflow.
+
+**Publishing:** use `uv build` and `uv publish` for any new release workflows; leave existing publish workflows unchanged.
+
+Backend extras are mutually exclusive — pass only the extras you need:
+
+```bash
+uv sync --extra test --extra torch-cpu --extra onnx-cpu
+```
+
+See `inference_models/docs/contributors/dev-environment.md` for full setup examples.
+
+## Standalone scripts
+
+For single-file scripts with inline dependencies, use uv's script support:
+
+```bash
+uv add --script path/to/script.py <package>
+uv run path/to/script.py
+```
+
+## Lockfile and `pyproject.toml`
+
+- Commit `uv.lock` whenever `inference_models` dependencies change.
+- Edit dependencies via `uv add` / `uv remove` / `uv lock`, not by hand-editing `uv.lock`.
+- Respect `[tool.uv]` settings in `pyproject.toml` (indexes, sources, `conflicts`, dependency metadata).
+
+## Do not
+
+- Add `requirements.txt` under `inference_models/` for project deps.
+- Run bare `pip install <pkg>` to change `inference_models` dependencies.
+- Suggest `conda create` / `pip install -e .` for `inference_models` contributor setup.
