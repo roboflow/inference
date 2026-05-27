@@ -179,8 +179,6 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
             prompts = Sam2PromptSet()
         args = prompts.to_sam2_inputs()
         args = _pad_points(args)
-        if not any(args.values()):
-            args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
         if args["point_coords"] is not None:
             args["point_coords"] = np.array(args["point_coords"])
         if args["point_labels"] is not None:
