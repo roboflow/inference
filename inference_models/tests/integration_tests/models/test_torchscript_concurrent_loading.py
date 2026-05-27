@@ -25,6 +25,7 @@ from torch import nn
 from torchvision.transforms import Normalize, Resize
 
 from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.models.common.torch import torchscript_load_lock
 from inference_models.models.yolov8.yolov8_object_detection_torch_script import (
     YOLOv8ForObjectDetectionTorchScript,
 )
@@ -60,12 +61,13 @@ def test_concurrent_torchscript_work_does_not_corrupt_global_registry(
         for _ in range(ROUNDS):
             barrier.wait(timeout=120)
             try:
-                torch.jit.script(
-                    nn.Sequential(
-                        Resize((RESOLUTION, RESOLUTION)),
-                        Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+                with torchscript_load_lock():
+                    torch.jit.script(
+                        nn.Sequential(
+                            Resize((RESOLUTION, RESOLUTION)),
+                            Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+                        )
                     )
-                )
             except Exception as error:
                 errors.append(("script", repr(error)))
                 raise

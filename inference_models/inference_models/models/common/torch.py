@@ -1,6 +1,29 @@
+import threading
+from contextlib import contextmanager
 from typing import Generator, Tuple
 
 import torch
+
+# TorchScript deserialization/compilation mutates a process-global type registry and
+# compilation unit that is NOT thread-safe. Loading two TorchScript-backed models
+# concurrently (e.g. preloading several PINNED_MODELS on a ThreadPoolExecutor) can
+# corrupt it, surfacing non-deterministically as `KeyError: '__torch__...'` or
+# `Enum<...___torch_mangle_N.InterpolationMode>` type mismatches. Serialize every
+# TorchScript load behind this single process-wide lock.
+_TORCHSCRIPT_LOAD_LOCK = threading.Lock()
+
+
+@contextmanager
+def torchscript_load_lock() -> Generator[None, None, None]:
+    """Serialize TorchScript model loading across threads.
+
+    Wrap any call that triggers TorchScript deserialization/compilation
+    (`torch.jit.load`, or model builders that script submodules) so concurrent loads
+    cannot corrupt TorchScript's global type registry. Guards one-time model
+    construction only; it does not affect inference concurrency.
+    """
+    with _TORCHSCRIPT_LOAD_LOCK:
+        yield
 
 
 def generate_batch_chunks(
