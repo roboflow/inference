@@ -21,6 +21,8 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
     RuntimeRestriction,
+    RuntimeInputMode,
+    RuntimeStepExecutionMode,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     Severity,
     WorkflowBlockManifest,
@@ -150,8 +152,8 @@ class TraceManifest(ColorableVisualizationManifest):
                 Runtime.HOSTED_SERVERLESS,
                 Runtime.DEDICATED_DEPLOYMENT,
             ],
-            applies_to_step_execution_modes=["remote"],
-            applies_to_input_modes=["video"],
+            applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
+            applies_to_input_modes=[RuntimeInputMode.VIDEO],
         )
         return [restriction, STILL_IMAGE_INPUT_SOFT_RESTRICTION]
 

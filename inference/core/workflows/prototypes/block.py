@@ -60,6 +60,20 @@ class Runtime(str, Enum):
     INFERENCE_PIPELINE = "inference_pipeline"
 
 
+class RuntimeStepExecutionMode(str, Enum):
+    """Workflow step execution modes that a restriction can apply to."""
+
+    LOCAL = "local"
+    REMOTE = "remote"
+
+
+class RuntimeInputMode(str, Enum):
+    """Workflow input modes that a restriction can apply to."""
+
+    IMAGE = "image"
+    VIDEO = "video"
+
+
 @dataclass(frozen=True)
 class RuntimeRestriction:
     """A single caveat for a workflow block.
@@ -84,8 +98,8 @@ class RuntimeRestriction:
     severity: Severity
     note: str
     applies_to_runtimes: Optional[List[Runtime]] = None
-    applies_to_step_execution_modes: Optional[List[str]] = None
-    applies_to_input_modes: Optional[List[str]] = None
+    applies_to_step_execution_modes: Optional[List[RuntimeStepExecutionMode]] = None
+    applies_to_input_modes: Optional[List[RuntimeInputMode]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         result: Dict[str, Any] = {"severity": self.severity.value, "note": self.note}
@@ -94,11 +108,13 @@ class RuntimeRestriction:
                 runtime.value for runtime in self.applies_to_runtimes
             ]
         if self.applies_to_step_execution_modes is not None:
-            result["applies_to_step_execution_modes"] = (
-                self.applies_to_step_execution_modes
-            )
+            result["applies_to_step_execution_modes"] = [
+                mode.value for mode in self.applies_to_step_execution_modes
+            ]
         if self.applies_to_input_modes is not None:
-            result["applies_to_input_modes"] = self.applies_to_input_modes
+            result["applies_to_input_modes"] = [
+                mode.value for mode in self.applies_to_input_modes
+            ]
         return result
 
 
@@ -124,8 +140,8 @@ STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
         "InferencePipeline for stable cross-frame results."
     ),
     applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-    applies_to_step_execution_modes=["remote"],
-    applies_to_input_modes=["video"],
+    applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
+    applies_to_input_modes=[RuntimeInputMode.VIDEO],
 )
 
 
@@ -139,7 +155,7 @@ COOLDOWN_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
         "an InferencePipeline."
     ),
     applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-    applies_to_step_execution_modes=["remote"],
+    applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
 )
 
 
@@ -151,7 +167,7 @@ STILL_IMAGE_INPUT_SOFT_RESTRICTION = RuntimeRestriction(
         "to track, compare, aggregate, or visualize, so the block provides "
         "little or no benefit."
     ),
-    applies_to_input_modes=["image"],
+    applies_to_input_modes=[RuntimeInputMode.IMAGE],
 )
 
 

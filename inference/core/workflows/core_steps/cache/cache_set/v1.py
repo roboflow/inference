@@ -20,6 +20,8 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
     RuntimeRestriction,
+    RuntimeInputMode,
+    RuntimeStepExecutionMode,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -140,7 +142,7 @@ class BlockManifest(WorkflowBlockManifest):
                     "non-local execution raises NotImplementedError."
                 ),
                 applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
-                applies_to_step_execution_modes=["remote"],
+                applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
             ),
             RuntimeRestriction(
                 severity=Severity.SOFT,
@@ -152,8 +154,8 @@ class BlockManifest(WorkflowBlockManifest):
                     "values can reset or split across workers."
                 ),
                 applies_to_runtimes=[Runtime.DEDICATED_DEPLOYMENT],
-                applies_to_step_execution_modes=["remote"],
-                applies_to_input_modes=["video"],
+                applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
+                applies_to_input_modes=[RuntimeInputMode.VIDEO],
             ),
         ]
 

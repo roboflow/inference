@@ -19,6 +19,7 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
     RuntimeRestriction,
+    RuntimeStepExecutionMode,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -236,7 +237,7 @@ class BlockManifest(WorkflowBlockManifest):
                 Runtime.HOSTED_SERVERLESS,
                 Runtime.DEDICATED_DEPLOYMENT,
             ],
-            applies_to_step_execution_modes=["remote"],
+            applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
         )
         return [restriction]
 
