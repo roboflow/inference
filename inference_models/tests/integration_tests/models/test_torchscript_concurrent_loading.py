@@ -1,4 +1,4 @@
-"""Reproduction test: concurrent TorchScript work corrupts the global registry.
+"""Regression test: concurrent TorchScript work corrupts the global registry.
 
 `torch.jit.script` (run by SAM3 at build time on torchvision transforms) and
 `torch.jit.load` (run by the YOLO/CLIP TorchScript loaders) mutate the SAME process-global,
@@ -10,10 +10,10 @@ non-deterministically as:
     RuntimeError: ... Enum<...___torch_mangle_0.InterpolationMode> ...
     RuntimeError: Can't redefine method: forward on class: ...Resize...
 
-This test reproduces it: threads loading a TorchScript model via the real loader run
-alongside threads scripting `nn.Sequential(Resize, Normalize)` (mirroring SAM3's build),
-released together through a barrier on every round. Without serializing TorchScript work
-behind a shared lock the test FAILS with one of the errors above.
+Threads loading a TorchScript model via the real loader run alongside threads scripting
+`nn.Sequential(Resize, Normalize)` (mirroring SAM3's build), released together through a
+barrier on every round. Both serialize on one shared `torchscript_state_global_lock`, so
+the test passes; with `lock=None` it reproduces the corruption above.
 """
 
 import threading
@@ -25,7 +25,7 @@ from torch import nn
 from torchvision.transforms import Normalize, Resize
 
 from inference_models.configuration import DEFAULT_DEVICE
-from inference_models.models.common.torch import torchscript_load_lock
+from inference_models.models.common.torch import torchscript_global_lock
 from inference_models.models.yolov8.yolov8_object_detection_torch_script import (
     YOLOv8ForObjectDetectionTorchScript,
 )
@@ -42,6 +42,7 @@ def test_concurrent_torchscript_work_does_not_corrupt_global_registry(
     coin_counting_yolov8n_torch_script_static_bs_letterbox_package: str,
 ) -> None:
     # given
+    lock = threading.Lock()
     barrier = threading.Barrier(LOAD_WORKERS + SCRIPT_WORKERS)
     errors = []
 
@@ -52,6 +53,7 @@ def test_concurrent_torchscript_work_does_not_corrupt_global_registry(
                 YOLOv8ForObjectDetectionTorchScript.from_pretrained(
                     model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_package,
                     device=DEFAULT_DEVICE,
+                    torchscript_state_global_lock=lock,
                 )
             except Exception as error:
                 errors.append(("load", repr(error)))
@@ -61,7 +63,7 @@ def test_concurrent_torchscript_work_does_not_corrupt_global_registry(
         for _ in range(ROUNDS):
             barrier.wait(timeout=120)
             try:
-                with torchscript_load_lock():
+                with torchscript_global_lock(lock):
                     torch.jit.script(
                         nn.Sequential(
                             Resize((RESOLUTION, RESOLUTION)),
@@ -77,7 +79,7 @@ def test_concurrent_torchscript_work_does_not_corrupt_global_registry(
         futures = [executor.submit(_load_worker) for _ in range(LOAD_WORKERS)]
         futures += [executor.submit(_script_worker) for _ in range(SCRIPT_WORKERS)]
         for future in futures:
-            future.result(timeout=60)
+            future.result(timeout=30)
 
     # then
     assert not errors
