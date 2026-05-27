@@ -241,7 +241,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
-    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
         no_lan_or_remote = RuntimeRestriction(
             severity=Severity.HARD,
             note=(
@@ -250,11 +250,12 @@ class BlockManifest(WorkflowBlockManifest):
                 "Hosted Serverless and Roboflow Dedicated Deployments cannot "
                 "reach customer LANs and run in remote step-execution mode."
             ),
+            applies_to_runtimes=[
+                Runtime.HOSTED_SERVERLESS,
+                Runtime.DEDICATED_DEPLOYMENT,
+            ],
         )
-        return {
-            Runtime.HOSTED_SERVERLESS: no_lan_or_remote,
-            Runtime.DEDICATED_DEPLOYMENT: no_lan_or_remote,
-        }
+        return [no_lan_or_remote]
 
 
 # primarily used for rate limiting

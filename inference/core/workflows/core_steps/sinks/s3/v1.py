@@ -219,7 +219,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
-    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
         restriction = RuntimeRestriction(
             severity=Severity.SOFT,
             note=(
@@ -232,12 +232,13 @@ class BlockManifest(WorkflowBlockManifest):
                 "an InferencePipeline when each entry must be captured in a "
                 "single ordered log."
             ),
+            applies_to_runtimes=[
+                Runtime.HOSTED_SERVERLESS,
+                Runtime.DEDICATED_DEPLOYMENT,
+            ],
             applies_to_step_execution_modes=["remote"],
         )
-        return {
-            Runtime.HOSTED_SERVERLESS: restriction,
-            Runtime.DEDICATED_DEPLOYMENT: restriction,
-        }
+        return [restriction]
 
 
 class S3SinkBlockV1(WorkflowBlock):

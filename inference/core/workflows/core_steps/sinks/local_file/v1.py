@@ -170,32 +170,39 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
-    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        restrictions = {
-            Runtime.DEDICATED_DEPLOYMENT: RuntimeRestriction(
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restrictions = [
+            RuntimeRestriction(
                 severity=Severity.SOFT,
                 note=(
                     "Files are persisted on the deployment's volume but are "
                     "not retrievable through the Roboflow API; treat as "
                     "internal-only logs."
                 ),
+                applies_to_runtimes=[Runtime.DEDICATED_DEPLOYMENT],
             ),
-        }
+        ]
         if not ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE:
-            restrictions[Runtime.HOSTED_SERVERLESS] = RuntimeRestriction(
-                severity=Severity.HARD,
-                note=(
-                    "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"
-                    "ACCESSING_LOCAL_STORAGE is False."
-                ),
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.HARD,
+                    note=(
+                        "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"
+                        "ACCESSING_LOCAL_STORAGE is False."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                )
             )
         else:
-            restrictions[Runtime.HOSTED_SERVERLESS] = RuntimeRestriction(
-                severity=Severity.SOFT,
-                note=(
-                    "Container disk is ephemeral, so files are lost when "
-                    "the worker scales down."
-                ),
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.SOFT,
+                    note=(
+                        "Container disk is ephemeral, so files are lost when "
+                        "the worker scales down."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                )
             )
         return restrictions
 

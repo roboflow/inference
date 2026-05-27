@@ -111,16 +111,17 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
-    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        return {
-            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            RuntimeRestriction(
                 severity=Severity.HARD,
                 note=(
                     "Seg Preview runs through a remote GPU inference proxy "
                     "and is not available on Roboflow Hosted Serverless."
                 ),
+                applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
             ),
-        }
+        ]
 
     @classmethod
     def get_air_gapped_availability(cls) -> AirGappedAvailability:

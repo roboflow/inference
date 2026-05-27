@@ -118,11 +118,8 @@ class RateLimiterManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
-    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        return {
-            Runtime.HOSTED_SERVERLESS: COOLDOWN_HTTP_SOFT_RESTRICTION,
-            Runtime.DEDICATED_DEPLOYMENT: COOLDOWN_HTTP_SOFT_RESTRICTION,
-        }
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [COOLDOWN_HTTP_SOFT_RESTRICTION]
 
 
 class RateLimiterBlockV1(WorkflowBlock):

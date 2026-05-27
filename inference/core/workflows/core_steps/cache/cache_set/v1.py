@@ -131,17 +131,18 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
-    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        return {
-            Runtime.HOSTED_SERVERLESS: RuntimeRestriction(
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            RuntimeRestriction(
                 severity=Severity.HARD,
                 note=(
                     "Cache blocks only support LOCAL workflow step execution; "
                     "non-local execution raises NotImplementedError."
                 ),
+                applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
                 applies_to_step_execution_modes=["remote"],
             ),
-            Runtime.DEDICATED_DEPLOYMENT: RuntimeRestriction(
+            RuntimeRestriction(
                 severity=Severity.SOFT,
                 note=(
                     "Cache values are stored in process memory per "
@@ -150,9 +151,11 @@ class BlockManifest(WorkflowBlockManifest):
                     "be served by different worker processes, so cached "
                     "values can reset or split across workers."
                 ),
+                applies_to_runtimes=[Runtime.DEDICATED_DEPLOYMENT],
                 applies_to_step_execution_modes=["remote"],
+                applies_to_input_modes=["video"],
             ),
-        }
+        ]
 
 
 class CacheSetBlockV1(WorkflowBlock):

@@ -12,6 +12,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     BlockResult,
     Runtime,
@@ -147,11 +148,11 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
-    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        return {
-            Runtime.HOSTED_SERVERLESS: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-            Runtime.DEDICATED_DEPLOYMENT: STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
-        }
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+        ]
 
 
 class IdentifyOutliersBlockV1(WorkflowBlock):

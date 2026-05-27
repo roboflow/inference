@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Type, Union
 
@@ -50,7 +50,7 @@ class Severity(str, Enum):
 class Runtime(str, Enum):
     """Canonical runtimes a workflow block can be executed in.
 
-    Runtimes not listed in ``get_runtime_restrictions()`` are considered OK.
+    Runtimes not covered by ``get_restrictions()`` are considered OK.
     """
 
     HOSTED_SERVERLESS = "hosted_serverless"
@@ -62,38 +62,53 @@ class Runtime(str, Enum):
 
 @dataclass(frozen=True)
 class RuntimeRestriction:
-    """A single per-runtime caveat for a workflow block.
+    """A single caveat for a workflow block.
 
-    ``note`` is a one-line, human-readable explanation of the failure mode
-    that surfaces in this runtime. It should describe what happens (e.g.
-    "track_ids reset between requests", "raises RuntimeError", "writes to
-    ephemeral /tmp"), not abstract preconditions.
+    ``note`` is a one-line, human-readable explanation of the failure mode or
+    degraded behavior. It should describe what happens (e.g. "track_ids reset
+    between requests", "raises RuntimeError", "writes to ephemeral /tmp"),
+    not abstract preconditions.
+
+    ``applies_to_runtimes`` narrows the restriction to specific workflow
+    runtimes. When unset, the restriction applies to all runtimes.
 
     ``applies_to_step_execution_modes`` narrows the restriction to specific
     workflow step execution modes. When unset, the restriction applies to all
-    step execution modes for the runtime.
+    step execution modes.
+
+    ``applies_to_input_modes`` narrows the restriction to specific workflow
+    input modes, such as video workflows that depend on cross-frame state.
+    When unset, the restriction applies to all input modes.
     """
 
     severity: Severity
     note: str
+    applies_to_runtimes: Optional[List[Runtime]] = None
     applies_to_step_execution_modes: Optional[List[str]] = None
+    applies_to_input_modes: Optional[List[str]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         result: Dict[str, Any] = {"severity": self.severity.value, "note": self.note}
+        if self.applies_to_runtimes is not None:
+            result["applies_to_runtimes"] = [
+                runtime.value for runtime in self.applies_to_runtimes
+            ]
         if self.applies_to_step_execution_modes is not None:
             result["applies_to_step_execution_modes"] = (
                 self.applies_to_step_execution_modes
             )
+        if self.applies_to_input_modes is not None:
+            result["applies_to_input_modes"] = self.applies_to_input_modes
         return result
 
 
 # ----------------------------------------------------------------------------
-# Common runtime-restriction presets.
+# Common block-restriction presets.
 #
-# Many blocks share the same per-runtime failure mode (e.g. all stateful
-# video blocks degrade the same way on stateless HTTP runtimes). Reusing
-# these presets keeps the per-block overrides tight and the wording
-# consistent across the codebase.
+# Many blocks share the same failure mode (e.g. all stateful video blocks
+# degrade the same way on stateless HTTP runtimes). Reusing these presets
+# keeps the per-block overrides tight and the wording consistent across the
+# codebase.
 # ----------------------------------------------------------------------------
 
 
@@ -108,7 +123,9 @@ STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
         "counting / aggregation. Use local step execution in an "
         "InferencePipeline for stable cross-frame results."
     ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
     applies_to_step_execution_modes=["remote"],
+    applies_to_input_modes=["video"],
 )
 
 
@@ -121,7 +138,20 @@ COOLDOWN_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
         "Cooldown only behaves as documented with local step execution inside "
         "an InferencePipeline."
     ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
     applies_to_step_execution_modes=["remote"],
+)
+
+
+STILL_IMAGE_INPUT_SOFT_RESTRICTION = RuntimeRestriction(
+    severity=Severity.SOFT,
+    note=(
+        "Block depends on temporal context from video or repeated-frame "
+        "workflows. With a still image/photo, there is no meaningful history "
+        "to track, compare, aggregate, or visualize, so the block provides "
+        "little or no benefit."
+    ),
+    applies_to_input_modes=["image"],
 )
 
 
@@ -180,17 +210,15 @@ class WorkflowBlockManifest(BaseModel, ABC):
         return AirGappedAvailability(available=True)
 
     @classmethod
-    def get_runtime_restrictions(cls) -> Dict[Runtime, RuntimeRestriction]:
-        """Per-runtime caveats for this block.
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Caveats for this block.
 
-        Return a mapping ``{Runtime: RuntimeRestriction}`` describing where the
-        block degrades (``Severity.SOFT``) or fails outright
-        (``Severity.HARD``). Runtimes not present in the dict are assumed
-        to work normally.
-
-        The default (no overrides) means the block works in every runtime.
+        Return restrictions describing where the block degrades
+        (``Severity.SOFT``) or fails outright (``Severity.HARD``). Each
+        restriction can scope itself to runtimes, step execution modes, and/or
+        input modes.
         """
-        return {}
+        return []
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
