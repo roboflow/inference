@@ -8,28 +8,22 @@ surfacing non-deterministically as:
     KeyError: '__torch__.torch.nn.functional.interpolate'
     RuntimeError: ... Enum<...___torch_mangle_0.InterpolationMode> ...
 
-The loaders now serialize TorchScript loads behind a shared lock
-(`inference_models.models.common.torch.torchscript_load_lock`). This test loads several
-different TorchScript packages (object detection + instance segmentation + key points)
-at once, releasing every thread into `torch.jit.load` simultaneously via a barrier, and
-asserts every load succeeds.
+This test hammers `torch.jit.load` directly from several threads, releasing them through
+a barrier immediately before the load on every round so the unsafe deserialization
+windows overlap, repeated over many rounds to make the race fire deterministically.
 """
 
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
-from inference_models.models.yolov8.yolov8_instance_segmentation_torch_script import (
-    YOLOv8ForInstanceSegmentationTorchScript,
-)
-from inference_models.models.yolov8.yolov8_key_points_detection_torch_script import (
-    YOLOv8ForKeyPointsDetectionTorchScript,
-)
-from inference_models.models.yolov8.yolov8_object_detection_torch_script import (
-    YOLOv8ForObjectDetectionTorchScript,
-)
+
+ROUNDS = 50
+WORKERS = 8
 
 
 @pytest.mark.slow
@@ -40,40 +34,35 @@ def test_concurrent_torchscript_loading_does_not_corrupt_global_registry(
     yolov8n_pose_torchscript_static_static_crop_letterbox_package: str,
 ) -> None:
     # given
-    load_specs = [
-        (
-            YOLOv8ForObjectDetectionTorchScript,
+    weights_paths = [
+        os.path.join(pkg, "weights.torchscript")
+        for pkg in (
             coin_counting_yolov8n_torch_script_static_bs_letterbox_package,
-        ),
-        (
-            YOLOv8ForInstanceSegmentationTorchScript,
             asl_yolov8n_torchscript_seg_static_bs_stretch,
-        ),
-        (
-            YOLOv8ForKeyPointsDetectionTorchScript,
             yolov8n_pose_torchscript_static_static_crop_letterbox_package,
-        ),
-    ] * 2
-    barrier = threading.Barrier(len(load_specs))
-
-    def _load(loader_cls, package_path):
-        barrier.wait(timeout=60)
-        return loader_cls.from_pretrained(
-            model_name_or_path=package_path,
-            device=DEFAULT_DEVICE,
         )
+    ]
+    for path in weights_paths:
+        assert os.path.exists(path), path
+
+    barrier = threading.Barrier(WORKERS)
+    errors = []
+
+    def _load(worker_idx: int) -> None:
+        path = weights_paths[worker_idx % len(weights_paths)]
+        for _ in range(ROUNDS):
+            barrier.wait(timeout=120)
+            try:
+                torch.jit.load(path, map_location=DEFAULT_DEVICE).eval()
+            except Exception as error:
+                errors.append(error)
+                raise
 
     # when
-    with ThreadPoolExecutor(max_workers=len(load_specs)) as executor:
-        futures = [
-            executor.submit(_load, loader_cls, package_path)
-            for loader_cls, package_path in load_specs
-        ]
-        models = [future.result(timeout=300) for future in futures]
+    with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+        futures = [executor.submit(_load, i) for i in range(WORKERS)]
+        for future in futures:
+            future.result(timeout=600)
 
     # then
-    assert len(models) == len(load_specs)
-    assert all(
-        isinstance(model, expected_cls)
-        for model, (expected_cls, _) in zip(models, load_specs)
-    )
+    assert not errors
