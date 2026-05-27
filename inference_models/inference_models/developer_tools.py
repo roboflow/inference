@@ -15,6 +15,10 @@ along with library. Utilities depending on optional dependencies are exposed as 
 
 from typing import Any, Dict, Union
 
+from inference_models.models.auto_loaders.core import (
+    MaterializedModelPackage,
+    materialize_model_package,
+)
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.runtime_introspection.core import (
     RuntimeXRayResult,
@@ -92,6 +96,8 @@ OPTIONAL_IMPORTS: Dict[str, Union[LazyFunction, LazyClass]] = {
 
 __all__ = [
     "get_model_package_contents",
+    "MaterializedModelPackage",
+    "materialize_model_package",
     "x_ray_runtime_environment",
     "RuntimeXRayResult",
     "download_files_to_directory",

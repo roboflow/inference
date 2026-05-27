@@ -3,6 +3,7 @@ import importlib
 import importlib.util
 import os.path
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
@@ -107,6 +108,23 @@ DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS = [
     "owlv2_class_embeddings_cache",
     "owlv2_images_embeddings_cache",
 ]
+
+
+@dataclass(frozen=True)
+class MaterializedModelPackage:
+    model_id: str
+    model_architecture: ModelArchitecture
+    task_type: Optional[TaskType]
+    model_package_id: str
+    backend: BackendType
+    package_dir: str
+    resolved_files: Set[str]
+    model_package: ModelPackageMetadata
+    requested_model_id: Optional[str] = None
+    model_variant: Optional[str] = None
+    model_dependencies: Optional[List[ModelDependency]] = None
+    model_features: Optional[dict] = None
+    recommended_parameters: Optional[RecommendedParameters] = None
 
 
 class AutoModel:
@@ -1108,6 +1126,97 @@ def all_files_exist(files: List[str]) -> bool:
     return all(os.path.exists(f) for f in files)
 
 
+def materialize_model_package(
+    model_id: str,
+    weights_provider: str = "roboflow",
+    api_key: Optional[str] = None,
+    model_package_id: Optional[str] = None,
+    backend: Optional[Union[str, BackendType, List[Union[str, BackendType]]]] = None,
+    batch_size: Optional[Union[int, Tuple[int, int]]] = None,
+    quantization: Optional[
+        Union[str, Quantization, List[Union[str, Quantization]]]
+    ] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    device: Union[torch.device, str] = DEFAULT_DEVICE,
+    verbose: bool = False,
+    model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
+    allow_untrusted_packages: bool = False,
+    trt_engine_host_code_allowed: bool = True,
+    verify_hash_while_download: bool = True,
+    download_files_without_hash: bool = False,
+    nms_fusion_preferences: Optional[Union[bool, dict]] = None,
+    model_dependencies_directories: Optional[Dict[str, str]] = None,
+    weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+    weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+    on_file_created: Optional[Callable[[str], None]] = None,
+    on_file_renamed: Optional[Callable[[str, str], None]] = None,
+    on_symlink_created: Optional[Callable[[str, str], None]] = None,
+    on_symlink_deleted: Optional[Callable[[str], None]] = None,
+) -> MaterializedModelPackage:
+    """Download a selected model package into the inference-models cache.
+
+    This is the package-materialization portion of AutoModel loading, exposed for
+    runtimes such as vLLM that need the local Hugging Face-style files but should
+    not instantiate the native inference-models adapter.
+    """
+    if isinstance(device, str):
+        try:
+            device = torch.device(device)
+        except RuntimeError as error:
+            raise InvalidParameterError(
+                message="Could not parse `device` parameter value - make sure that it is a valid string "
+                f"representation of torch device. Valid values: 'cpu', 'cuda' or 'cuda:0'. If you see this error "
+                "while using Roboflow infrastructure - contact us to get help. Otherwise - verify your setup.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#invalidparametererror",
+            ) from error
+    model_metadata = get_model_from_provider(
+        provider=weights_provider,
+        model_id=model_id,
+        api_key=api_key,
+        weights_provider_extra_query_params=weights_provider_extra_query_params,
+        weights_provider_extra_headers=weights_provider_extra_headers,
+    )
+    matching_model_packages = negotiate_model_packages(
+        model_architecture=model_metadata.model_architecture,
+        task_type=model_metadata.task_type,
+        model_packages=model_metadata.model_packages,
+        requested_model_package_id=model_package_id,
+        requested_backends=backend,
+        requested_batch_size=batch_size,
+        requested_quantization=quantization,
+        device=device,
+        onnx_execution_providers=onnx_execution_providers,
+        allow_untrusted_packages=allow_untrusted_packages,
+        trt_engine_host_code_allowed=trt_engine_host_code_allowed,
+        nms_fusion_preferences=nms_fusion_preferences,
+        verbose=verbose,
+    )
+    if not matching_model_packages:
+        raise NoModelPackagesAvailableError(
+            message=f"Cannot materialize model {model_id} - no matching model package candidates for given model "
+            f"running in this environment.",
+            help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
+        )
+    return materialize_selected_model_package(
+        model_id=model_metadata.model_id,
+        requested_model_id=model_id,
+        model_architecture=model_metadata.model_architecture,
+        model_variant=model_metadata.model_variant,
+        task_type=model_metadata.task_type,
+        model_package=matching_model_packages[0],
+        model_dependencies=model_metadata.model_dependencies,
+        model_dependencies_directories=model_dependencies_directories,
+        recommended_parameters=model_metadata.recommended_parameters,
+        model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+        verify_hash_while_download=verify_hash_while_download,
+        download_files_without_hash=download_files_without_hash,
+        on_file_created=on_file_created,
+        on_file_renamed=on_file_renamed,
+        on_symlink_created=on_symlink_created,
+        on_symlink_deleted=on_symlink_deleted,
+    )
+
+
 def attempt_loading_matching_model_packages(
     model_id: str,
     model_architecture: ModelArchitecture,
@@ -1232,17 +1341,15 @@ def attempt_loading_matching_model_packages(
     )
 
 
-def initialize_model(
+def materialize_selected_model_package(
     model_id: str,
     model_architecture: ModelArchitecture,
     task_type: Optional[TaskType],
     model_package: ModelPackageMetadata,
-    model_init_kwargs: dict,
-    auto_resolution_cache: AutoResolutionCache,
-    auto_negotiation_hash: str,
-    model_dependencies: Optional[List[ModelDependency]],
-    model_dependencies_instances: Dict[str, AnyModel],
-    model_dependencies_directories: Dict[str, str],
+    requested_model_id: Optional[str] = None,
+    model_variant: Optional[str] = None,
+    model_dependencies: Optional[List[ModelDependency]] = None,
+    model_dependencies_directories: Optional[Dict[str, str]] = None,
     recommended_parameters: Optional[RecommendedParameters] = None,
     model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     verify_hash_while_download: bool = True,
@@ -1251,17 +1358,7 @@ def initialize_model(
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
     on_symlink_created: Optional[Callable[[str, str], None]] = None,
     on_symlink_deleted: Optional[Callable[[str], None]] = None,
-    use_auto_resolution_cache: bool = True,
-) -> Tuple[AnyModel, str]:
-    model_features = None
-    if model_package.model_features:
-        model_features = set(model_package.model_features.keys())
-    model_class = resolve_model_class(
-        model_architecture=model_architecture,
-        task_type=task_type,
-        backend=model_package.backend,
-        model_features=model_features,
-    )
+) -> MaterializedModelPackage:
     for artefact in model_package.package_artefacts:
         if artefact.file_handle == MODEL_CONFIG_FILE_NAME:
             raise CorruptedModelPackageError(
@@ -1324,6 +1421,7 @@ def initialize_model(
     resolved_files.update(model_specific_files_mapping.values())
     resolved_files.update(symlinks_mapping.values())
     resolved_files.add(config_path)
+    model_dependencies_directories = model_dependencies_directories or {}
     dependencies_resolved_files = handle_dependencies_directories_creation(
         model_package_cache_dir=model_package_cache_dir,
         model_dependencies_directories=model_dependencies_directories,
@@ -1332,14 +1430,80 @@ def initialize_model(
         on_symlink_deleted=on_symlink_deleted,
     )
     resolved_files.update(dependencies_resolved_files)
-    model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
     resolved_recommended_parameters = resolve_recommended_parameters(
         package_level=model_package.recommended_parameters,
         model_level=recommended_parameters,
     )
+    return MaterializedModelPackage(
+        model_id=model_id,
+        requested_model_id=requested_model_id,
+        model_architecture=model_architecture,
+        model_variant=model_variant,
+        task_type=task_type,
+        model_package_id=model_package.package_id,
+        backend=model_package.backend,
+        package_dir=model_package_cache_dir,
+        resolved_files=resolved_files,
+        model_package=model_package,
+        model_dependencies=model_dependencies,
+        model_features=model_package.model_features,
+        recommended_parameters=resolved_recommended_parameters,
+    )
+
+
+def initialize_model(
+    model_id: str,
+    model_architecture: ModelArchitecture,
+    task_type: Optional[TaskType],
+    model_package: ModelPackageMetadata,
+    model_init_kwargs: dict,
+    auto_resolution_cache: AutoResolutionCache,
+    auto_negotiation_hash: str,
+    model_dependencies: Optional[List[ModelDependency]],
+    model_dependencies_instances: Dict[str, AnyModel],
+    model_dependencies_directories: Dict[str, str],
+    recommended_parameters: Optional[RecommendedParameters] = None,
+    model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
+    verify_hash_while_download: bool = True,
+    download_files_without_hash: bool = False,
+    on_file_created: Optional[Callable[[str], None]] = None,
+    on_file_renamed: Optional[Callable[[str, str], None]] = None,
+    on_symlink_created: Optional[Callable[[str, str], None]] = None,
+    on_symlink_deleted: Optional[Callable[[str], None]] = None,
+    use_auto_resolution_cache: bool = True,
+) -> Tuple[AnyModel, str]:
+    model_features = None
+    if model_package.model_features:
+        model_features = set(model_package.model_features.keys())
+    model_class = resolve_model_class(
+        model_architecture=model_architecture,
+        task_type=task_type,
+        backend=model_package.backend,
+        model_features=model_features,
+    )
+    materialized_package = materialize_selected_model_package(
+        model_id=model_id,
+        model_architecture=model_architecture,
+        task_type=task_type,
+        model_package=model_package,
+        model_dependencies=model_dependencies,
+        model_dependencies_directories=model_dependencies_directories,
+        recommended_parameters=recommended_parameters,
+        model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+        verify_hash_while_download=verify_hash_while_download,
+        download_files_without_hash=download_files_without_hash,
+        on_file_created=on_file_created,
+        on_file_renamed=on_file_renamed,
+        on_symlink_created=on_symlink_created,
+        on_symlink_deleted=on_symlink_deleted,
+    )
+    model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
+    resolved_recommended_parameters = materialized_package.recommended_parameters
     if resolved_recommended_parameters is not None:
         model_init_kwargs["recommended_parameters"] = resolved_recommended_parameters
-    model = model_class.from_pretrained(model_package_cache_dir, **model_init_kwargs)
+    model = model_class.from_pretrained(
+        materialized_package.package_dir, **model_init_kwargs
+    )
     dump_auto_resolution_cache(
         use_auto_resolution_cache=use_auto_resolution_cache,
         auto_resolution_cache=auto_resolution_cache,
@@ -1349,12 +1513,12 @@ def initialize_model(
         model_architecture=model_architecture,
         task_type=task_type,
         backend_type=model_package.backend,
-        resolved_files=resolved_files,
+        resolved_files=materialized_package.resolved_files,
         model_dependencies=model_dependencies,
         model_features=model_package.model_features,
         recommended_parameters=resolved_recommended_parameters,
     )
-    return model, model_package_cache_dir
+    return model, materialized_package.package_dir
 
 
 def create_symlinks_to_shared_blobs(

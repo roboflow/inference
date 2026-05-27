@@ -24,6 +24,8 @@ from inference_models.models.auto_loaders.core import (
     dump_model_config_for_offline_use,
     generate_model_package_cache_path,
     load_class_from_path,
+    materialize_model_package,
+    materialize_selected_model_package,
     parse_model_config,
     resolve_recommended_parameters,
 )
@@ -31,7 +33,13 @@ from inference_models.models.auto_loaders.entities import (
     BackendType,
     InferenceModelConfig,
 )
-from inference_models.weights_providers.entities import RecommendedParameters
+from inference_models.weights_providers.entities import (
+    FileDownloadSpecs,
+    ModelMetadata,
+    ModelPackageMetadata,
+    Quantization,
+    RecommendedParameters,
+)
 
 
 def test_load_class_from_path_when_valid_python_module_provided(
@@ -197,6 +205,172 @@ def test_generate_model_package_cache_path_when_package_id_is_not_sanitized() ->
         _ = generate_model_package_cache_path(
             model_id="my-model", package_id="/my-package"
         )
+
+
+def test_materialize_selected_model_package_downloads_files_without_instantiating(
+    empty_local_dir: str,
+) -> None:
+    # given
+    package_params = RecommendedParameters(confidence=0.8)
+    model_params = RecommendedParameters(confidence=0.4)
+    model_package = ModelPackageMetadata(
+        package_id="pkgHF",
+        backend=BackendType.HF,
+        quantization=Quantization.UNKNOWN,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url="https://example.com/base-config",
+                file_handle="base/config.json",
+                md5_hash="hashbaseconfig",
+            ),
+            FileDownloadSpecs(
+                download_url="https://example.com/adapter-config",
+                file_handle="adapter_config.json",
+                md5_hash="hashadapterconfig",
+            ),
+            FileDownloadSpecs(
+                download_url="https://example.com/tokenizer",
+                file_handle="tokenizer_config.json",
+            ),
+        ],
+        trusted_source=True,
+        recommended_parameters=package_params,
+    )
+    on_file_created = MagicMock()
+    on_file_renamed = MagicMock()
+    on_symlink_created = MagicMock()
+    on_symlink_deleted = MagicMock()
+
+    # when
+    with mock.patch.object(core, "INFERENCE_HOME", empty_local_dir), mock.patch.object(
+        core,
+        "download_files_to_directory",
+        side_effect=_fake_download_files_to_directory,
+    ), mock.patch.object(core, "resolve_model_class") as resolve_model_class_mock:
+        result = materialize_selected_model_package(
+            model_id="vlm-ocr/11",
+            model_architecture="qwen3_5",
+            model_variant="2b-peft",
+            task_type="vlm",
+            model_package=model_package,
+            model_dependencies=None,
+            model_dependencies_directories={},
+            recommended_parameters=model_params,
+            model_download_file_lock_acquire_timeout=10,
+            on_file_created=on_file_created,
+            on_file_renamed=on_file_renamed,
+            on_symlink_created=on_symlink_created,
+            on_symlink_deleted=on_symlink_deleted,
+        )
+
+    # then
+    expected_package_dir = result.package_dir
+    expected_config_path = os.path.join(expected_package_dir, "model_config.json")
+    expected_base_link = os.path.join(expected_package_dir, "base", "config.json")
+    expected_adapter_link = os.path.join(expected_package_dir, "adapter_config.json")
+    expected_tokenizer_path = os.path.join(
+        expected_package_dir, "tokenizer_config.json"
+    )
+    expected_shared_base_path = os.path.join(
+        empty_local_dir, "shared-blobs", "hashbaseconfig"
+    )
+    expected_shared_adapter_path = os.path.join(
+        empty_local_dir, "shared-blobs", "hashadapterconfig"
+    )
+
+    assert result.model_id == "vlm-ocr/11"
+    assert result.model_architecture == "qwen3_5"
+    assert result.model_variant == "2b-peft"
+    assert result.task_type == "vlm"
+    assert result.model_package_id == "pkgHF"
+    assert result.backend == BackendType.HF
+    assert result.package_dir == expected_package_dir
+    assert result.model_package is model_package
+    assert result.recommended_parameters is package_params
+    assert expected_base_link in result.resolved_files
+    assert expected_adapter_link in result.resolved_files
+    assert expected_tokenizer_path in result.resolved_files
+    assert expected_shared_base_path in result.resolved_files
+    assert expected_shared_adapter_path in result.resolved_files
+    assert expected_config_path in result.resolved_files
+    assert os.path.islink(expected_base_link)
+    assert os.path.islink(expected_adapter_link)
+    assert not os.path.islink(expected_tokenizer_path)
+    assert _read_file(expected_base_link) == "base/config.json"
+    assert _read_file(expected_adapter_link) == "adapter_config.json"
+    assert _read_file(expected_tokenizer_path) == "tokenizer_config.json"
+    resolve_model_class_mock.assert_not_called()
+
+
+def test_materialize_model_package_resolves_metadata_and_selects_package(
+    empty_local_dir: str,
+) -> None:
+    # given
+    qwen_package = ModelPackageMetadata(
+        package_id="qwenHF",
+        backend=BackendType.HF,
+        quantization=Quantization.UNKNOWN,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url="https://example.com/adapter",
+                file_handle="adapter_config.json",
+                md5_hash="hashadapterconfig",
+            )
+        ],
+        trusted_source=True,
+    )
+    metadata = ModelMetadata(
+        model_id="vlm-ocr/11",
+        model_architecture="qwen3_5",
+        model_variant="2b-peft",
+        task_type="vlm",
+        model_packages=[qwen_package],
+    )
+
+    # when
+    with mock.patch.object(core, "INFERENCE_HOME", empty_local_dir), mock.patch.object(
+        core,
+        "get_model_from_provider",
+        return_value=metadata,
+    ) as get_model_from_provider_mock, mock.patch.object(
+        core,
+        "negotiate_model_packages",
+        return_value=[qwen_package],
+    ) as negotiate_model_packages_mock, mock.patch.object(
+        core,
+        "download_files_to_directory",
+        side_effect=_fake_download_files_to_directory,
+    ):
+        result = materialize_model_package(
+            model_id="vlm-ocr/11",
+            weights_provider="test-provider",
+            api_key="test-key",
+            backend=BackendType.HF,
+            quantization=Quantization.UNKNOWN,
+            device="cpu",
+            verify_hash_while_download=True,
+        )
+
+    # then
+    assert result.model_id == "vlm-ocr/11"
+    assert result.requested_model_id == "vlm-ocr/11"
+    assert result.model_architecture == "qwen3_5"
+    assert result.model_variant == "2b-peft"
+    assert result.backend == BackendType.HF
+    get_model_from_provider_mock.assert_called_once_with(
+        provider="test-provider",
+        model_id="vlm-ocr/11",
+        api_key="test-key",
+        weights_provider_extra_query_params=None,
+        weights_provider_extra_headers=None,
+    )
+    negotiate_model_packages_mock.assert_called_once()
+    _, negotiate_kwargs = negotiate_model_packages_mock.call_args
+    assert negotiate_kwargs["model_architecture"] == "qwen3_5"
+    assert negotiate_kwargs["task_type"] == "vlm"
+    assert negotiate_kwargs["model_packages"] == [qwen_package]
+    assert negotiate_kwargs["requested_backends"] == BackendType.HF
+    assert negotiate_kwargs["requested_quantization"] == Quantization.UNKNOWN
 
 
 def test_dump_auto_resolution_cache_when_cache_disabled() -> None:
@@ -523,6 +697,21 @@ def test_create_symlinks_to_shared_blobs_when_hooks_not_provided(
     assert _read_file(result["my_file_b.txt"]) == "b"
     assert _read_file(result["existing.txt"]) == "existing"
     assert _read_file(result["initially_broken.txt"]) == "b"
+
+
+def _fake_download_files_to_directory(
+    target_dir: str,
+    files_specs: list,
+    name_after: str = None,
+    **kwargs,
+) -> dict:
+    result = {}
+    for file_handle, _download_url, md5_hash in files_specs:
+        filename = md5_hash if name_after == "md5_hash" else file_handle
+        file_path = os.path.join(target_dir, filename)
+        _create_file(path=file_path, content=file_handle)
+        result[file_handle] = file_path
+    return result
 
 
 def _create_file(path: str, content: str) -> None:

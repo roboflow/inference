@@ -214,6 +214,20 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
 
 LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
+VLLM_MODE = os.getenv("VLLM_MODE", "disabled").lower()
+
+VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
+
+VLLM_API_KEY = os.getenv("VLLM_API_KEY")
+
+VLLM_REQUEST_TIMEOUT = float(os.getenv("VLLM_REQUEST_TIMEOUT", "120"))
+
+VLLM_NATIVE_FALLBACK_ENABLED = str2bool(
+    os.getenv("VLLM_NATIVE_FALLBACK_ENABLED", False)
+)
+
+LMM_QWEN_BACKEND = os.getenv("LMM_QWEN_BACKEND", "native").lower()
+
 QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
 QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
