@@ -713,9 +713,13 @@ class HttpInterface(BaseInterface):
                 t1 = time.time()
 
                 # exclusions
+                # CVE-2026-48710: use the raw ASGI scope path so a malicious
+                # Host header (e.g. `Host: x?/docs`) cannot poison request.url.path
+                # and slip an authenticated route into the allowlist.
+                scope_path = request.scope["path"]
                 skip_check = (
                     request.method not in ["GET", "POST"]
-                    or request.url.path
+                    or scope_path
                     in [
                         "/",
                         "/docs",
@@ -726,12 +730,12 @@ class HttpInterface(BaseInterface):
                         "/openapi.json",  # needed for /docs and /redoc
                         "/model/registry",  # dont auth this route, usually not used on serverlerless, but queue based serverless uses it internally (not accessible from outside)
                     ]
-                    or request.url.path.startswith("/static/")
-                    or request.url.path.startswith("/_next/")
+                    or scope_path.startswith("/static/")
+                    or scope_path.startswith("/_next/")
                 )
 
                 # for these routes we only want to auth if dynamic python modules are provided
-                if request.url.path in [
+                if scope_path in [
                     "/workflows/blocks/describe",
                     "/workflows/definition/schema",
                 ]:
@@ -975,9 +979,13 @@ class HttpInterface(BaseInterface):
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
                 # exclusions
+                # CVE-2026-48710: use the raw ASGI scope path so a malicious
+                # Host header (e.g. `Host: x?/docs`) cannot poison request.url.path
+                # and slip an authenticated route into the allowlist.
+                scope_path = request.scope["path"]
                 skip_check = (
                     request.method not in ["GET", "POST"]
-                    or request.url.path
+                    or scope_path
                     in [
                         "/",
                         "/docs",
@@ -988,8 +996,8 @@ class HttpInterface(BaseInterface):
                         "/metrics",
                         "/openapi.json",  # needed for /docs and /redoc
                     ]
-                    or request.url.path.startswith("/static/")
-                    or request.url.path.startswith("/_next/")
+                    or scope_path.startswith("/static/")
+                    or scope_path.startswith("/_next/")
                 )
                 if skip_check:
                     return await call_next(request)
