@@ -5,7 +5,8 @@ asyncua~=1.1.5
 cachetools<6.0.0
 cython~=3.0.0
 python-dotenv~=1.2.2
-fastapi>=0.100,<0.116  # be careful with upper pin - fastapi might remove support for on_event
+fastapi>=0.133.0,<0.140  # 0.133+ dropped the starlette<1.0 cap; be careful with upper pin - fastapi might remove support for on_event
+starlette>=1.0.1  # CVE-2026-48710 (BadHost) — Host-header path-injection fix
 numpy>=2.0.0,<2.4.0
 opencv-python>=4.8.1.78,<=4.10.0.84
 opencv-contrib-python>=4.8.1.78,<=4.10.0.84  # Note: opencv-python considers this as a bad practice, but since our dependencies rely on both we pin both here

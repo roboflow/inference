@@ -73,6 +73,37 @@ def _build_serverless_interface(
     return interface, model_manager, usage_check_mock, workspace_lookup_mock
 
 
+def _build_dedicated_deployment_interface(
+    monkeypatch,
+    workspace_lookup_result="dedicated-workspace",
+    dedicated_workspace_url="dedicated-workspace",
+):
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(
+        http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", dedicated_workspace_url
+    )
+    workspace_lookup_mock = AsyncMock(return_value=workspace_lookup_result)
+    monkeypatch.setattr(
+        http_api,
+        "get_roboflow_workspace_async",
+        workspace_lookup_mock,
+    )
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyResponse()
+    interface = http_api.HttpInterface(model_manager=model_manager)
+    return interface, model_manager, workspace_lookup_mock
+
+
 def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
@@ -466,3 +497,83 @@ def test_serverless_auth_middleware_keeps_non_billable_and_billable_cache_entrie
     assert usage_check_mock.await_count == 1
     assert workspace_lookup_mock.await_count == 1
     assert model_manager.infer_from_request_sync.call_count == 1
+
+
+def test_serverless_auth_middleware_rejects_host_header_path_injection(
+    monkeypatch,
+) -> None:
+    # CVE-2026-48710 (BadHost): vulnerable Starlette derived request.url.path
+    # from the Host header. A Host value containing `/`, `?`, or `#` could make
+    # request.url.path appear to be an allowlisted route (e.g. "/docs") while
+    # ASGI routed the request to an authenticated handler. Guard against both
+    # the dependency regressing and the middleware drifting back to
+    # request.url.path by asserting auth is still enforced when malicious Host
+    # headers are sent at a protected endpoint.
+    interface, model_manager, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    injection_hosts = [
+        "testserver/docs?",
+        "testserver?/docs",
+        "testserver/healthz?",
+        "testserver/_next/x",
+        "testserver/static/x",
+        "testserver#/docs",
+    ]
+
+    with TestClient(interface.app) as client:
+        for host in injection_hosts:
+            response = client.post(
+                "/infer/lmm/florence-2-base",
+                headers={"Host": host},
+                json=_make_inference_request(),
+            )
+            assert response.status_code == 401, (
+                f"Host-injection bypass for header {host!r}: expected 401, "
+                f"got {response.status_code}"
+            )
+
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
+def test_dedicated_deployment_auth_middleware_rejects_host_header_path_injection(
+    monkeypatch,
+) -> None:
+    # CVE-2026-48710 (BadHost) — sibling coverage for the dedicated-deployment
+    # auth middleware (check_authorization). Same shape as the serverless test
+    # so a future refactor that drops scope_path in one middleware but not the
+    # other still trips a regression.
+    interface, model_manager, workspace_lookup_mock = (
+        _build_dedicated_deployment_interface(monkeypatch=monkeypatch)
+    )
+
+    injection_hosts = [
+        "testserver/docs?",
+        "testserver?/docs",
+        "testserver/healthz?",
+        "testserver/redoc?",
+        "testserver/_next/x",
+        "testserver/static/x",
+        "testserver#/docs",
+    ]
+
+    with TestClient(interface.app) as client:
+        for host in injection_hosts:
+            response = client.post(
+                "/infer/lmm/florence-2-base",
+                headers={"Host": host},
+                json=_make_inference_request(),
+            )
+            assert response.status_code == 401, (
+                f"Host-injection bypass for header {host!r}: expected 401, "
+                f"got {response.status_code}"
+            )
+
+    model_manager.infer_from_request_sync.assert_not_called()
+    workspace_lookup_mock.assert_not_called()
