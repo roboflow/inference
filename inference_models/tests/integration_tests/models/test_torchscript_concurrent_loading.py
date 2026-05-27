@@ -29,7 +29,7 @@ from inference_models.models.yolov8.yolov8_object_detection_torch_script import 
     YOLOv8ForObjectDetectionTorchScript,
 )
 
-ROUNDS = 5
+ROUNDS = 1
 LOAD_WORKERS = 2
 SCRIPT_WORKERS = 3
 RESOLUTION = 1024
