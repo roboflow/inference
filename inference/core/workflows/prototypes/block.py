@@ -61,14 +61,14 @@ class Runtime(str, Enum):
 
 
 class RuntimeStepExecutionMode(str, Enum):
-    """Workflow step execution modes that a restriction can apply to."""
+    """Workflow step execution modes for a restriction."""
 
     LOCAL = "local"
     REMOTE = "remote"
 
 
 class RuntimeInputMode(str, Enum):
-    """Workflow input modes that a restriction can apply to."""
+    """Workflow input modes for a restriction."""
 
     IMAGE = "image"
     VIDEO = "video"
