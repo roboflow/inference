@@ -306,3 +306,105 @@ async def test_bad_action_for_registered_model_type_returns_400(
     body = resp.json()
     assert body["error_code"] == "INVALID_ACTION"
     assert "supported actions" in body["actionable_follow_up"]
+
+
+# ---------------------------------------------------------------------------
+# /v2/models/interface — proxy first, then registry for unloaded models
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_interface_returns_proxy_data_when_model_loaded(
+    client, app_with_fake_proxy
+):
+    _, proxy = app_with_fake_proxy
+    proxy.interface.return_value = {
+        "model_id": "acme/1",
+        "tasks": {"infer": {"params": {}}},
+    }
+    resp = await client.get(
+        "/v2/models/interface?model_id=acme/1",
+        headers={"authorization": "Bearer k"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["tasks"] == {"infer": {"params": {}}}
+
+
+@pytest.mark.asyncio
+async def test_interface_falls_back_to_registry_when_model_unloaded(
+    client, app_with_fake_proxy
+):
+    _, proxy = app_with_fake_proxy
+    proxy.interface.side_effect = RuntimeError("not loaded")
+    with patch(
+        "inference_server.routers.v2_models.stat_model_while_checking_auth",
+        new=AsyncMock(return_value=("object-detection", "infer")),
+    ):
+        resp = await client.get(
+            "/v2/models/interface?model_id=acme/1",
+            headers={"authorization": "Bearer k"},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["model_type"] == "object-detection"
+    assert "infer" in body["actions"]
+    assert body["actions"]["infer"]["task"] == "object-detection"
+    assert "images" in body["actions"]["infer"]["params"]
+
+
+@pytest.mark.asyncio
+async def test_interface_falls_back_to_registry_lists_all_vlm_actions(
+    client, app_with_fake_proxy
+):
+    _, proxy = app_with_fake_proxy
+    proxy.interface.side_effect = RuntimeError("not loaded")
+    with patch(
+        "inference_server.routers.v2_models.stat_model_while_checking_auth",
+        new=AsyncMock(return_value=("vlm", "prompt")),
+    ):
+        resp = await client.get(
+            "/v2/models/interface?model_id=acme/1",
+            headers={"authorization": "Bearer k"},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["model_type"] == "vlm"
+    assert "prompt" in body["actions"]
+    assert "caption" in body["actions"]
+    assert "detect" in body["actions"]
+
+
+@pytest.mark.asyncio
+async def test_interface_unauthorized_in_registry_path_returns_401(
+    client, app_with_fake_proxy
+):
+    _, proxy = app_with_fake_proxy
+    proxy.interface.side_effect = RuntimeError("not loaded")
+    with patch(
+        "inference_server.routers.v2_models.stat_model_while_checking_auth",
+        new=AsyncMock(side_effect=PermissionError("bad key")),
+    ):
+        resp = await client.get(
+            "/v2/models/interface?model_id=acme/1",
+            headers={"authorization": "Bearer bad"},
+        )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_interface_unloaded_unknown_taskType_returns_404(
+    client, app_with_fake_proxy
+):
+    _, proxy = app_with_fake_proxy
+    proxy.interface.side_effect = RuntimeError("not loaded")
+    with patch(
+        "inference_server.routers.v2_models.stat_model_while_checking_auth",
+        new=AsyncMock(side_effect=LookupError("no such model")),
+    ):
+        resp = await client.get(
+            "/v2/models/interface?model_id=ghost",
+            headers={"authorization": "Bearer k"},
+        )
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "MODEL_NOT_LOADED"

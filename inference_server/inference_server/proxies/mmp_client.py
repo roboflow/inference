@@ -26,7 +26,6 @@ from collections import deque
 from multiprocessing.shared_memory import SharedMemory
 from typing import Any, Optional
 
-import filetype
 import zmq.asyncio
 from fastapi import Request
 
@@ -64,22 +63,12 @@ SLOT_STATUS_ERROR = 5
 _OFF_STATUS = 0
 _OFF_RESULT_SZ = 8
 
-_NPY_MAGIC = b"\x93NUMPY"
-
-
 class _SlotHeaderView:
     __slots__ = ("status", "result_size")
 
     def __init__(self, status: int, result_size: int) -> None:
         self.status = status
         self.result_size = result_size
-
-
-def looks_like_image(data: bytes | memoryview) -> bool:
-    head = bytes(data[:262])
-    if head[:6] == _NPY_MAGIC:
-        return True
-    return filetype.is_image(head)
 
 
 # ---------------------------------------------------------------------------

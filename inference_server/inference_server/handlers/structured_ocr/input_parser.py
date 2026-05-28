@@ -14,7 +14,7 @@ from inference_server.framework.input_parsers import (
     extract_images_and_params,
     fetch_image_from_url,
 )
-from inference_server.proxies.mmp_client import looks_like_image
+from inference_server.framework.input_parsers.image_check import looks_like_image
 
 
 async def parse_structured_ocr_input(
