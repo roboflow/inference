@@ -195,6 +195,10 @@ async def test_param_validation_rejects_wrong_type(fake_handler_entry):
         "type": "float",
         "required": False,
     }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"confidence": "notafloat"},
+    }
     with _stat_returns(("fake-task", "infer")):
         r = await handle_model_inference_request(
             _request(query=b"model_id=m&confidence=notafloat"), _mock_proxy()
@@ -215,6 +219,40 @@ async def test_param_validation_skips_non_coercible_types(fake_handler_entry):
             _request(query=b"model_id=m"), proxy
         )
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_param_validation_accepts_required_str_from_body(fake_handler_entry):
+    fake_handler_entry["interface"].params["prompt"] = {
+        "type": "str",
+        "required": True,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"prompt": "hello"},
+    }
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_param_validation_rejects_required_str_missing_everywhere(
+    fake_handler_entry,
+):
+    fake_handler_entry["interface"].params["prompt"] = {
+        "type": "str",
+        "required": True,
+    }
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 400
+    assert b"MISSING_PARAM" in r.body
+    assert b"prompt" in r.body
 
 
 @pytest.mark.asyncio

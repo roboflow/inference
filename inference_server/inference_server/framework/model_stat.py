@@ -53,6 +53,13 @@ class _TtlLruCache:
         self._data.clear()
 
 
+_DEFAULT_ACTION_BY_TASK_TYPE: dict[str, str] = {
+    "vlm": "prompt",
+    "embedding": "embed_images",
+    "interactive-instance-segmentation": "segment",
+}
+
+
 _cache: _TtlLruCache = _TtlLruCache(_CACHE_MAXSIZE, _CACHE_TTL_S)
 _inflight: dict[tuple[str, str], asyncio.Task] = {}
 
@@ -103,7 +110,8 @@ async def _fetch_and_map(common_params: CommonRequestParams) -> tuple[str, str]:
             f"Roboflow registry returned empty taskType for model_id={common_params.model_id!r}"
         )
 
-    return (task_type, "infer")
+    default_action = _DEFAULT_ACTION_BY_TASK_TYPE.get(task_type, "infer")
+    return (task_type, default_action)
 
 
 def _reset_cache_for_tests() -> None:
