@@ -522,9 +522,18 @@ def test_get_restrictions_returns_empty_and_logs_when_manifest_raises(
         manifest_class=_ExplodingManifest,
     )
 
-    # when
-    with caplog.at_level(logging.WARNING, logger=blocks_loader.logger.name):
-        result = _get_restrictions(block)
+    # The top-level `inference` logger is configured with propagate=False
+    # (see inference/core/logger.py), so records emitted by
+    # `blocks_loader.logger` never reach the root logger that pytest's
+    # caplog handler is attached to. Attach the caplog handler directly to
+    # the module logger so warnings are captured for assertions below.
+    blocks_loader.logger.addHandler(caplog.handler)
+    try:
+        # when
+        with caplog.at_level(logging.WARNING, logger=blocks_loader.logger.name):
+            result = _get_restrictions(block)
+    finally:
+        blocks_loader.logger.removeHandler(caplog.handler)
 
     # then
     assert result == [], (
