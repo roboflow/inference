@@ -117,7 +117,7 @@ class BlockManifest(WorkflowBlockManifest):
                 severity=Severity.HARD,
                 note=(
                     "Seg Preview runs through a remote GPU inference proxy "
-                    "and is not available on Roboflow Hosted Serverless."
+                    "and is not available for local execution."
                 ),
                 applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
             ),
