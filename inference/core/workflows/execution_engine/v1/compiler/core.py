@@ -134,6 +134,7 @@ def compile_workflow_graph(
             dynamic_blocks_definitions=dynamic_blocks_definitions
         )
         return cached_value
+
     raw_workflow_definition: Dict[str, Any] = (
         normalize_inner_workflow_references_in_definition(
             workflow_definition=workflow_definition,
