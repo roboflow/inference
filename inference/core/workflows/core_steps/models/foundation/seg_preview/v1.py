@@ -116,10 +116,17 @@ class BlockManifest(WorkflowBlockManifest):
             RuntimeRestriction(
                 severity=Severity.HARD,
                 note=(
-                    "Seg Preview runs through a remote GPU inference proxy "
-                    "and is not available for local execution."
+                    "Seg Preview calls the Roboflow-internal "
+                    "API_BASE_URL/inferenceproxy/seg-preview endpoint, which is "
+                    "only reachable from Roboflow-hosted runtimes "
+                    "(HOSTED_SERVERLESS, DEDICATED_DEPLOYMENT). Self-hosted "
+                    "deployments cannot run this block."
                 ),
-                applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                applies_to_runtimes=[
+                    Runtime.SELF_HOSTED_CPU,
+                    Runtime.SELF_HOSTED_GPU,
+                    Runtime.INFERENCE_PIPELINE,
+                ],
             ),
         ]
 
