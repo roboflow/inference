@@ -114,7 +114,7 @@ def _coerce_param(raw: str, type_name: str) -> Any:
 
 async def handle_model_inference_request(
     request: Request, proxy: ModelManagerProxy
-) -> Response:
+) -> Response | None:
     common = decode_common_request_params(request)
     if not common.model_id:
         return error_response(400, "MISSING_PARAM", "model_id query param required")
@@ -149,11 +149,7 @@ async def handle_model_inference_request(
                 f"action={action!r} not supported for model_type={model_type!r}",
                 follow_up=f"supported actions: {supported_actions_for(model_type)}",
             )
-        return error_response(
-            501,
-            "NOT_IMPLEMENTED",
-            f"no handler registered for model_type={model_type!r}",
-        )
+        return None
 
     params_spec = description.interface_provider().params
     err = _validate_action_params(params_spec, common.extra)

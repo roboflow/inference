@@ -12,6 +12,7 @@ from starlette.requests import ClientDisconnect
 
 from inference_server.dependencies import get_model_manager
 from inference_server.errors import error_response
+from inference_server.framework.dispatch import handle_model_inference_request
 from inference_server.framework.input_parsers import (
     extract_images_and_params,
     fetch_image_from_url,
@@ -227,6 +228,10 @@ async def v2_infer(
     mm: ModelManagerProxy = Depends(get_model_manager),
 ) -> Response:
     """v2 model inference — structured JSON response with typed predictions."""
+    dispatched = await handle_model_inference_request(request, mm)
+    if dispatched is not None:
+        return dispatched
+
     params = dict(request.query_params)
     model_id = params.pop("model_id", "")
     task = params.pop("task", None)
