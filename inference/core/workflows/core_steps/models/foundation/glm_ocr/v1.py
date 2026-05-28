@@ -230,6 +230,7 @@ class BlockManifest(WorkflowBlockManifest):
                 severity=Severity.HARD,
                 note="Requires a GPU; run_locally() loads a model that needs CUDA.",
                 applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+                applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
             ),
         ]
         if not GLM_OCR_ENABLED:
