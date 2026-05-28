@@ -9,8 +9,11 @@ The `--backend` flag (trt | onnx | torch) is parsed before importing
 `DISABLED_INFERENCE_MODELS_BACKENDS` to every backend except the chosen one,
 so the benchmark numbers correspond unambiguously to a single execution path.
 
-When `RFDETR_TRITON_POSTPROC=true`, the script also wires the local TRT package
-layout used by the RF-DETR Triton post-processing integration path.
+The benchmark always imports the local repository copies of `inference` and
+`inference_models` so `RFDETR_TRITON_POSTPROC=false/true` differs only by the
+post-processing flag, not by package provenance. When a local TRT package is
+present, the script also wires the local package layout used by the RF-DETR
+Triton post-processing integration path.
 
 Defaults: rfdetr-seg-nano @ confidence 0.4 on the native TRT backend.
 """
@@ -94,34 +97,30 @@ os.environ["DISABLED_INFERENCE_MODELS_BACKENDS"] = ",".join(
     sorted(_ALL_BACKENDS - {_BACKEND})
 )
 
-if _RFDETR_TRITON_POSTPROC:
-    for path in (str(_INFERENCE_MODELS_ROOT), str(_REPO_ROOT)):
-        if path not in sys.path:
-            sys.path.insert(0, path)
-    for module_name in list(sys.modules):
-        if module_name == "inference" or module_name.startswith("inference."):
-            del sys.modules[module_name]
-        if module_name == "inference_models" or module_name.startswith(
-            "inference_models."
-        ):
-            del sys.modules[module_name]
+for path in (str(_INFERENCE_MODELS_ROOT), str(_REPO_ROOT)):
+    if path not in sys.path:
+        sys.path.insert(0, path)
+for module_name in list(sys.modules):
+    if module_name == "inference" or module_name.startswith("inference."):
+        del sys.modules[module_name]
+    if module_name == "inference_models" or module_name.startswith(
+        "inference_models."
+    ):
+        del sys.modules[module_name]
 
 from time import perf_counter
 
-if _RFDETR_TRITON_POSTPROC:
-    local_inference_spec = importlib.util.spec_from_file_location(
-        "inference",
-        _REPO_ROOT / "inference" / "__init__.py",
-        submodule_search_locations=[str(_REPO_ROOT / "inference")],
-    )
-    if local_inference_spec is None or local_inference_spec.loader is None:
-        raise RuntimeError("Could not load local inference package")
-    local_inference_module = importlib.util.module_from_spec(local_inference_spec)
-    sys.modules["inference"] = local_inference_module
-    local_inference_spec.loader.exec_module(local_inference_module)
-    InferencePipeline = local_inference_module.InferencePipeline
-else:
-    from inference import InferencePipeline
+local_inference_spec = importlib.util.spec_from_file_location(
+    "inference",
+    _REPO_ROOT / "inference" / "__init__.py",
+    submodule_search_locations=[str(_REPO_ROOT / "inference")],
+)
+if local_inference_spec is None or local_inference_spec.loader is None:
+    raise RuntimeError("Could not load local inference package")
+local_inference_module = importlib.util.module_from_spec(local_inference_spec)
+sys.modules["inference"] = local_inference_module
+local_inference_spec.loader.exec_module(local_inference_module)
+InferencePipeline = local_inference_module.InferencePipeline
 
 
 def _resolve_model_id(model_id: str, backend: str) -> str:
