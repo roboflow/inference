@@ -49,6 +49,27 @@ _P_EMBEDDINGS_POINTS = {
     "embeddings": {"type": "tensor", "required": True},
     "points": {"type": "list", "required": True},
 }
+_P_SAM3_VISUAL_PROMPTS = {
+    "images": {"type": "image", "required": True},
+    "point_coordinates": {"type": "list", "required": False},
+    "point_labels": {"type": "list", "required": False},
+    "boxes": {"type": "list", "required": False},
+    "mask_input": {"type": "list", "required": False},
+    "multi_mask_output": {"type": "bool", "required": False, "default": True},
+    "return_logits": {"type": "bool", "required": False, "default": False},
+    "image_hashes": {"type": "list[str]", "required": False},
+    "use_embeddings_cache": {"type": "bool", "required": False, "default": True},
+}
+_P_SAM3_TEXT_PROMPTS = {
+    "images": {"type": "image", "required": True},
+    "prompts": {"type": "list", "required": True},
+    "output_prob_thresh": {"type": "float", "required": False, "default": 0.5},
+}
+_P_SAM3_EMBED = {
+    "images": {"type": "image", "required": True},
+    "image_hashes": {"type": "list[str]", "required": False},
+    "use_embeddings_cache": {"type": "bool", "required": False, "default": True},
+}
 
 # Common kwargs for object detection models
 _K_OD = {
@@ -540,6 +561,36 @@ _TASK_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "validate_images_required",
             "serialize_text",
             "roboflow-text-v1",
+        ),
+    ],
+    # --- SAM3 ---
+    "SAM3Torch": [
+        (
+            "embed_images",
+            "embed_images",
+            True,
+            _p(_P_SAM3_EMBED),
+            "validate_images_required",
+            "serialize_passthrough",
+            "roboflow-sam3-embeddings-v1",
+        ),
+        (
+            "segment_with_visual_prompts",
+            "segment_with_visual_prompts",
+            False,
+            _p(_P_SAM3_VISUAL_PROMPTS),
+            "validate_images_required",
+            "serialize_passthrough",
+            "roboflow-sam3-segmentation-v1",
+        ),
+        (
+            "segment_with_text_prompts",
+            "segment_with_text_prompts",
+            False,
+            _p(_P_SAM3_TEXT_PROMPTS),
+            "validate_images_required",
+            "serialize_passthrough",
+            "roboflow-sam3-segmentation-v1",
         ),
     ],
     # --- Text-only OCR ---

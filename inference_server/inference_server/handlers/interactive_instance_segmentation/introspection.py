@@ -37,3 +37,35 @@ def get_sam_text_prompt_interface() -> ModelInterfaceDescription:
             "type": "roboflow-text-v1",
         },
     )
+
+
+def get_sam3_visual_prompts_interface() -> ModelInterfaceDescription:
+    return ModelInterfaceDescription(
+        task="interactive-instance-segmentation",
+        params={
+            "images": {"type": "image", "required": True},
+            "point_coordinates": {"type": "list", "required": False},
+            "point_labels": {"type": "list", "required": False},
+            "boxes": {"type": "list", "required": False},
+            "mask_input": {"type": "list", "required": False},
+            "multi_mask_output": {"type": "bool", "required": False, "default": True},
+            "return_logits": {"type": "bool", "required": False, "default": False},
+        },
+        output_schema={
+            "type": "roboflow-sam3-segmentation-v1",
+        },
+    )
+
+
+def get_sam3_text_prompts_interface() -> ModelInterfaceDescription:
+    return ModelInterfaceDescription(
+        task="interactive-instance-segmentation",
+        params={
+            "images": {"type": "image", "required": True},
+            "prompts": {"type": "list", "required": True},
+            "output_prob_thresh": {"type": "float", "required": False, "default": 0.5},
+        },
+        output_schema={
+            "type": "roboflow-sam3-segmentation-v1",
+        },
+    )
