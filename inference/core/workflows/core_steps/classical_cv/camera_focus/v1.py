@@ -143,7 +143,9 @@ def _to_grayscale_uint8_for_brenner(input_image: np.ndarray) -> np.ndarray:
                 f"Unsupported channel count for Brenner measure: {channels}"
             )
     if x.ndim != 2:
-        raise ValueError(f"Brenner measure expects a 2D grayscale image, got shape {x.shape}")
+        raise ValueError(
+            f"Brenner measure expects a 2D grayscale image, got shape {x.shape}"
+        )
     if x.dtype == np.uint8:
         return x
     if np.issubdtype(x.dtype, np.floating):
