@@ -4,6 +4,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field, field_validator
 from supervision.annotators.base import BaseAnnotator
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
 )
@@ -18,15 +19,14 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
     Runtime,
-    RuntimeRestriction,
     RuntimeInputMode,
-    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+    RuntimeRestriction,
     Severity,
     WorkflowBlockManifest,
 )
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 SHORT_DESCRIPTION = "Draw traces based on detections tracking results."
 LONG_DESCRIPTION = """

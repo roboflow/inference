@@ -57,11 +57,11 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
     Runtime,
     RuntimeRestriction,
-    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
-    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,

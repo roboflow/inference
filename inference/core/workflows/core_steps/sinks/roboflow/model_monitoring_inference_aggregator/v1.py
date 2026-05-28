@@ -18,6 +18,7 @@ from inference.core.roboflow_api import (
     send_inference_results_to_model_monitoring,
 )
 from inference.core.version import __version__
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     INFERENCE_ID_KEY,
@@ -35,17 +36,16 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     AirGappedAvailability,
     BlockResult,
     Runtime,
-    RuntimeRestriction,
     RuntimeInputMode,
-    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+    RuntimeRestriction,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 SHORT_DESCRIPTION = "Periodically report an aggregated sample of inference results to Roboflow Model Monitoring."
 

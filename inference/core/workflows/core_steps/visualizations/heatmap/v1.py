@@ -5,6 +5,7 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
     PredictionsVisualizationBlock,
@@ -23,15 +24,14 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
     Runtime,
-    RuntimeRestriction,
     RuntimeInputMode,
-    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+    RuntimeRestriction,
     Severity,
     WorkflowBlockManifest,
 )
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 TYPE: str = "roboflow_core/heatmap_visualization@v1"
 SHORT_DESCRIPTION = "Draw a heatmap based on detections in an image."
