@@ -1,5 +1,23 @@
 # Changelog
 
+## `0.28.6`
+
+- torch.jit.load/script share a process-global which is not thread-safe, introduced lock to prevent race conditions when loading SAM3 and other torchscript models
+- `0.28.5` yanked
+
+## `0.28.4`
+
+- Ported SAM3 to inference_models
+- There were issues with dependencies while introducing SAM3 hence versions `0.28.2` and `0.28.3`
+
+## `0.28.1`
+
+### Fixed
+
+- Detections at image edges are now clipped to the image dimensions.
+
+---
+
 ## `0.28.0`
 
 ### Removed (BREAKING)
