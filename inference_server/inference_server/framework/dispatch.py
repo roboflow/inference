@@ -69,29 +69,30 @@ def decode_common_request_params(request: Request) -> CommonRequestParams:
 
 
 def _validate_action_params(
-    params_spec: dict, query_extra: dict[str, str]
+    params_spec: dict, params: dict
 ) -> Response | None:
     for name, spec in params_spec.items():
         type_name = spec.get("type", "str")
         if type_name not in _COERCIBLE_QUERY_TYPES:
             continue
-        if name not in query_extra:
+        if name not in params:
             if spec.get("required"):
                 return error_response(
                     400,
                     "MISSING_PARAM",
-                    f"required query param missing: {name}",
+                    f"required param missing: {name}",
                 )
             continue
-        raw = query_extra[name]
-        try:
-            _coerce_param(raw, type_name)
-        except ValueError as exc:
-            return error_response(
-                400,
-                "INVALID_PARAM",
-                f"param {name!r}: {exc}",
-            )
+        value = params[name]
+        if isinstance(value, str):
+            try:
+                _coerce_param(value, type_name)
+            except ValueError as exc:
+                return error_response(
+                    400,
+                    "INVALID_PARAM",
+                    f"param {name!r}: {exc}",
+                )
     return None
 
 
@@ -151,11 +152,6 @@ async def handle_model_inference_request(
             )
         return None
 
-    params_spec = description.interface_provider().params
-    err = _validate_action_params(params_spec, common.extra)
-    if err is not None:
-        return err
-
     server_hooks = ServerHooks(request=request, common=common)
 
     try:
@@ -165,6 +161,11 @@ async def handle_model_inference_request(
     except ClientDisconnect:
         logger.debug("[dispatch] client disconnected during body read")
         return Response(status_code=499)
+
+    params_spec = description.interface_provider().params
+    err = _validate_action_params(params_spec, input_data.get("params", {}))
+    if err is not None:
+        return err
 
     status = await proxy.ensure_loaded(
         common.model_id, common.instance, common.api_key, common.device

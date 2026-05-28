@@ -147,6 +147,28 @@ def test_ttl_lru_expires_entries_past_ttl():
     assert cache.get(("a", "")) is None
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "task_type, expected_action",
+    [
+        ("object-detection", "infer"),
+        ("classification", "infer"),
+        ("vlm", "prompt"),
+        ("embedding", "embed_images"),
+        ("interactive-instance-segmentation", "segment"),
+        ("structured-ocr", "infer"),
+    ],
+)
+async def test_default_action_per_task_type(task_type, expected_action):
+    with patch(
+        "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+        return_value=_meta(task_type=task_type),
+    ):
+        cp = CommonRequestParams(model_id="m", api_key="k")
+        result = await stat_model_while_checking_auth(cp)
+        assert result == (task_type, expected_action)
+
+
 def test_ttl_lru_evicts_oldest_when_full():
     cache = _TtlLruCache(maxsize=2, ttl_s=60)
     cache.set(("a", ""), ("t", "infer"))

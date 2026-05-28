@@ -40,3 +40,4 @@ import inference_server.handlers.instance_segmentation.description  # noqa: E402
 import inference_server.handlers.semantic_segmentation.description  # noqa: E402, F401
 import inference_server.handlers.keypoints.description  # noqa: E402, F401
 import inference_server.handlers.depth.description  # noqa: E402, F401
+import inference_server.handlers.vlm.description  # noqa: E402, F401
