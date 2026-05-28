@@ -15,7 +15,6 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
     run_in_parallel,
@@ -46,6 +45,7 @@ from inference.core.workflows.prototypes.block import (
     Runtime,
     RuntimeRestriction,
     Severity,
+    StepExecutionMode,
     WorkflowBlock,
     WorkflowBlockManifest,
 )

@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
     BlockManifest,
     SegmentAnything3_3D_ObjectsBlockV1,
@@ -14,6 +13,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+from inference.core.workflows.prototypes.block import StepExecutionMode
 
 
 @pytest.fixture

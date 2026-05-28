@@ -3,7 +3,6 @@ from typing import Any, List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.cache.memory_cache import WorkflowMemoryCache
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -20,6 +19,7 @@ from inference.core.workflows.prototypes.block import (
     Runtime,
     RuntimeRestriction,
     Severity,
+    StepExecutionMode,
     WorkflowBlock,
     WorkflowBlockManifest,
 )

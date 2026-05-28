@@ -8,7 +8,6 @@ import pytest
 from packaging.version import Version
 from pydantic import BaseModel
 
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     PluginInterfaceError,
     PluginLoadingError,
@@ -36,6 +35,7 @@ from inference.core.workflows.prototypes.block import (
     RuntimeInputMode,
     RuntimeRestriction,
     Severity,
+    StepExecutionMode,
     WorkflowBlock,
     WorkflowBlockManifest,
 )

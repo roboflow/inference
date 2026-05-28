@@ -8,7 +8,6 @@ import supervision as sv
 
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
     OUTPUT_KEY as DYNAMIC_ZONES_OUTPUT_KEY,
 )
@@ -25,6 +24,7 @@ from inference.core.workflows.core_steps.transformations.perspective_correction.
     TYPE as PERSPECTIVE_CORRECTION_TYPE,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.prototypes.block import StepExecutionMode
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 

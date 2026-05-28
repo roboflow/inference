@@ -59,11 +59,11 @@ from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.utils.function import experimental
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.profiling.core import (
     BaseWorkflowsProfiler,
     NullWorkflowsProfiler,
 )
+from inference.core.workflows.prototypes.block import StepExecutionMode
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
 

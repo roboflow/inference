@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     BlockManifest,
     PerceptionEncoderModelBlockV1,
@@ -13,6 +12,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+from inference.core.workflows.prototypes.block import StepExecutionMode
 
 
 @pytest.fixture

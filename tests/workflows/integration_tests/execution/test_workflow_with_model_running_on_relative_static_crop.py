@@ -4,9 +4,9 @@ import supervision as sv
 
 from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.prototypes.block import StepExecutionMode
 
 RELATIVE_STATIC_CROP_WORKFLOW = {
     "version": "1.0",

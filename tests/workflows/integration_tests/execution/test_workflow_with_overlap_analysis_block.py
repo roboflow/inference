@@ -17,8 +17,8 @@ import numpy as np
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.prototypes.block import StepExecutionMode
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
@@ -122,9 +122,9 @@ def test_overlap_analysis_workflow(
     assert len(result) == 1, "Expected one output element for one input image"
     assert set(result[0].keys()) == {"result"}
     overlaps = result[0]["result"]["overlaps"]
-    assert isinstance(overlaps, list), (
-        f"Expected `overlaps` to be a list, got {type(overlaps).__name__}"
-    )
+    assert isinstance(
+        overlaps, list
+    ), f"Expected `overlaps` to be a list, got {type(overlaps).__name__}"
     assert len(overlaps) > 0, (
         "Expected at least one overlapping pair between the high-confidence and "
         "low-confidence detection runs on the crowd image."
@@ -136,9 +136,9 @@ def test_overlap_analysis_workflow(
         assert not missing, f"Record missing required keys: {missing}"
         ratio = record["overlap_ratio"]
         assert isinstance(ratio, float)
-        assert 0.1 <= ratio <= 1.0 + 1e-9, (
-            f"overlap_ratio out of expected range [0.1, 1.0]: {ratio}"
-        )
+        assert (
+            0.1 <= ratio <= 1.0 + 1e-9
+        ), f"overlap_ratio out of expected range [0.1, 1.0]: {ratio}"
         # RoboflowObjectDetectionModel emits detections carrying detection_id,
         # so both id fields must be present.
         assert "reference_detection_id" in record

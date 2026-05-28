@@ -4,7 +4,6 @@ import supervision as sv
 from pydantic import ConfigDict, Field, field_validator
 from supervision.annotators.base import BaseAnnotator
 
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
 )
@@ -25,6 +24,7 @@ from inference.core.workflows.prototypes.block import (
     RuntimeInputMode,
     RuntimeRestriction,
     Severity,
+    StepExecutionMode,
     WorkflowBlockManifest,
 )
 

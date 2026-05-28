@@ -4,13 +4,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.introspection import blocks_loader
 from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 from inference.core.workflows.execution_engine.v1.core import (
     EXECUTION_ENGINE_V1_VERSION,
 )
+from inference.core.workflows.prototypes.block import StepExecutionMode
 
 WORKFLOW_WITH_INCOMPATIBLE_STEP = {
     "version": "1.0",

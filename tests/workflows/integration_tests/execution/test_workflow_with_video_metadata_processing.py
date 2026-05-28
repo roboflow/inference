@@ -7,10 +7,10 @@ import numpy as np
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
 from inference.core.workflows.execution_engine.introspection import blocks_loader
+from inference.core.workflows.prototypes.block import StepExecutionMode
 
 WORKFLOW_PROCESSING_VIDEO_METADATA = {
     "version": "1.1",

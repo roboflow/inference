@@ -8,7 +8,6 @@ import supervision as sv
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import load_image
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     AssumptionError,
     ExecutionGraphStructureError,
@@ -16,6 +15,7 @@ from inference.core.workflows.errors import (
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
+from inference.core.workflows.prototypes.block import StepExecutionMode
 
 TWO_STAGE_WORKFLOW = {
     "version": "1.3.0",

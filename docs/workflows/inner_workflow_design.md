@@ -78,7 +78,7 @@ import os
 
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.prototypes.block import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 

@@ -8,7 +8,6 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import ConfigDict, Field, field_validator
 
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -21,6 +20,7 @@ from inference.core.workflows.prototypes.block import (
     Runtime,
     RuntimeRestriction,
     Severity,
+    StepExecutionMode,
     WorkflowBlock,
     WorkflowBlockManifest,
 )

@@ -6,7 +6,6 @@ import numpy as np
 from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -25,6 +24,7 @@ from inference.core.workflows.prototypes.block import (
     RuntimeInputMode,
     RuntimeRestriction,
     Severity,
+    StepExecutionMode,
     WorkflowBlock,
     WorkflowBlockManifest,
 )

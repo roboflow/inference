@@ -282,7 +282,7 @@ Here you can find example on how to run simple workflow in Python code.
     ```python
     from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
     from inference.core.managers.base import ModelManager
-    from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+    from inference.core.workflows.prototypes.block import StepExecutionMode
     from inference.core.env import MAX_ACTIVE_MODELS
     from inference.core.managers.base import ModelManager
     from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
