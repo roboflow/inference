@@ -248,7 +248,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "Block requires LAN access to a PTZ camera and "
                 "step_execution_mode=local; raises ValueError otherwise. "
                 "Hosted Serverless and Roboflow Dedicated Deployments cannot "
-                "reach customer LANs and run in remote step-execution mode."
+                "reach customer LANs."
             ),
             applies_to_runtimes=[
                 Runtime.HOSTED_SERVERLESS,
