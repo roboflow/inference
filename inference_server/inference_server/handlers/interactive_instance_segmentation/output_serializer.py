@@ -7,6 +7,7 @@ from fastapi import Response
 
 from inference_model_manager.serializers_typed import (
     serialize_embeddings,
+    serialize_passthrough,
     serialize_text,
 )
 
@@ -36,12 +37,28 @@ def _envelope(predictions: list, common: CommonRequestParams) -> Response:
     )
 
 
+def _embeddings_or_passthrough(prediction: Any, proxy: _ModelProxy) -> Any:
+    try:
+        return serialize_embeddings(prediction, proxy)
+    except (AttributeError, TypeError, KeyError):
+        return serialize_passthrough(prediction, proxy)
+
+
 def serialize_sam_embeddings(
     prediction: Any, common: CommonRequestParams
 ) -> Response:
     items = prediction if isinstance(prediction, list) else [prediction]
     proxy = _ModelProxy(class_names=None)
-    typed = [serialize_embeddings(p, proxy) for p in items]
+    typed = [_embeddings_or_passthrough(p, proxy) for p in items]
+    return _envelope(typed, common)
+
+
+def serialize_sam_segmentation(
+    prediction: Any, common: CommonRequestParams
+) -> Response:
+    items = prediction if isinstance(prediction, list) else [prediction]
+    proxy = _ModelProxy(class_names=None)
+    typed = [serialize_passthrough(p, proxy) for p in items]
     return _envelope(typed, common)
 
 
