@@ -89,7 +89,6 @@ async def _fetch_and_map(common_params: CommonRequestParams) -> tuple[str, str]:
             get_one_page_of_model_metadata,
             model_id=common_params.model_id,
             api_key=common_params.api_key or None,
-            page_size=1,
         )
     except UnauthorizedModelAccessError as exc:
         raise PermissionError(str(exc)) from exc
