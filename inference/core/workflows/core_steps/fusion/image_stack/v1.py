@@ -22,12 +22,12 @@ from inference.core.workflows.prototypes.block import (
     Runtime,
     RuntimeRestriction,
     RuntimeInputMode,
-    RuntimeStepExecutionMode,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 MAX_STACK_SIZE = 64
 MAX_RESOLUTION_WIDTH = 1920
@@ -178,7 +178,7 @@ class BlockManifest(WorkflowBlockManifest):
                 Runtime.HOSTED_SERVERLESS,
                 Runtime.DEDICATED_DEPLOYMENT,
             ],
-            applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
+            applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
             applies_to_input_modes=[RuntimeInputMode.VIDEO],
         )
         return [restriction, STILL_IMAGE_INPUT_SOFT_RESTRICTION]

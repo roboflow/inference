@@ -22,11 +22,11 @@ from inference.core.workflows.prototypes.block import (
     Runtime,
     RuntimeRestriction,
     RuntimeInputMode,
-    RuntimeStepExecutionMode,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     Severity,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 SHORT_DESCRIPTION = "Draw traces based on detections tracking results."
 LONG_DESCRIPTION = """
@@ -152,7 +152,7 @@ class TraceManifest(ColorableVisualizationManifest):
                 Runtime.HOSTED_SERVERLESS,
                 Runtime.DEDICATED_DEPLOYMENT,
             ],
-            applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
+            applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
             applies_to_input_modes=[RuntimeInputMode.VIDEO],
         )
         return [restriction, STILL_IMAGE_INPUT_SOFT_RESTRICTION]

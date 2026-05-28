@@ -1,5 +1,5 @@
 import time
-from typing import Dict, Literal, Optional, Type, Union
+from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
@@ -27,11 +27,11 @@ from inference.core.workflows.prototypes.block import (
     Runtime,
     RuntimeRestriction,
     RuntimeInputMode,
-    RuntimeStepExecutionMode,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     Severity,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 TYPE: str = "roboflow_core/heatmap_visualization@v1"
 SHORT_DESCRIPTION = "Draw a heatmap based on detections in an image."
@@ -169,7 +169,7 @@ class HeatmapManifest(PredictionsVisualizationManifest):
                 Runtime.HOSTED_SERVERLESS,
                 Runtime.DEDICATED_DEPLOYMENT,
             ],
-            applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
+            applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
             applies_to_input_modes=[RuntimeInputMode.VIDEO],
         )
         return [restriction, STILL_IMAGE_INPUT_SOFT_RESTRICTION]

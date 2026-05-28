@@ -19,11 +19,11 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
     RuntimeRestriction,
-    RuntimeStepExecutionMode,
     Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 CONTENT_TYPES = {
     "csv": "text/csv",
@@ -237,7 +237,7 @@ class BlockManifest(WorkflowBlockManifest):
                 Runtime.HOSTED_SERVERLESS,
                 Runtime.DEDICATED_DEPLOYMENT,
             ],
-            applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
+            applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
         )
         return [restriction]
 

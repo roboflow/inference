@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import BlockInterfaceError
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.introspection.utils import (
@@ -60,13 +61,6 @@ class Runtime(str, Enum):
     INFERENCE_PIPELINE = "inference_pipeline"
 
 
-class RuntimeStepExecutionMode(str, Enum):
-    """Workflow step execution modes for a restriction."""
-
-    LOCAL = "local"
-    REMOTE = "remote"
-
-
 class RuntimeInputMode(str, Enum):
     """Workflow input modes for a restriction."""
 
@@ -98,7 +92,7 @@ class RuntimeRestriction:
     severity: Severity
     note: str
     applies_to_runtimes: Optional[List[Runtime]] = None
-    applies_to_step_execution_modes: Optional[List[RuntimeStepExecutionMode]] = None
+    applies_to_step_execution_modes: Optional[List[StepExecutionMode]] = None
     applies_to_input_modes: Optional[List[RuntimeInputMode]] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -140,7 +134,7 @@ STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
         "InferencePipeline for stable cross-frame results."
     ),
     applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-    applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
+    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
     applies_to_input_modes=[RuntimeInputMode.VIDEO],
 )
 
@@ -155,7 +149,7 @@ COOLDOWN_HTTP_SOFT_RESTRICTION = RuntimeRestriction(
         "an InferencePipeline."
     ),
     applies_to_runtimes=[Runtime.HOSTED_SERVERLESS, Runtime.DEDICATED_DEPLOYMENT],
-    applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
+    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
 )
 
 
