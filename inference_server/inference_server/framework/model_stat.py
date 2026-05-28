@@ -67,6 +67,12 @@ _inflight: dict[tuple[str, str], asyncio.Task] = {}
 async def stat_model_while_checking_auth(
     common_params: CommonRequestParams,
 ) -> tuple[str, str]:
+    if (
+        common_params.model_id == "passthrough"
+        or common_params.model_id.startswith("passthrough/")
+    ):
+        return ("passthrough", "infer")
+
     key = (common_params.model_id, common_params.api_key)
 
     cached = _cache.get(key)
