@@ -1,9 +1,13 @@
 """Tests for collecting dynamic block definitions from nested inner workflows."""
 
 from typing import Any, Dict
+from unittest import mock
 
 from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
     USE_INNER_WORKFLOW_BLOCK_TYPE,
+)
+from inference.core.workflows.execution_engine.v1.inner_workflow import (
+    dynamic_blocks_collection,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.dynamic_blocks_collection import (
     apply_collected_dynamic_blocks_definitions_to_workflow_root,
@@ -185,3 +189,72 @@ def test_collect_deduplicates_same_block_type_from_repeated_inner_child() -> Non
     )
 
     assert collected == [child_block]
+
+
+@mock.patch.object(dynamic_blocks_collection.logger, "warning")
+def test_collect_logs_warning_for_duplicate_block_type(mock_warning: mock.Mock) -> None:
+    parent_block = _dynamic_block_definition("SharedType")
+    child_block = _dynamic_block_definition("SharedType")
+    child_workflow = {
+        "version": "1.0",
+        "dynamic_blocks_definitions": [child_block],
+        "inputs": [],
+        "steps": [],
+        "outputs": [],
+    }
+    workflow = {
+        "version": "1.0",
+        "dynamic_blocks_definitions": [parent_block],
+        "inputs": [],
+        "steps": [
+            {
+                "type": USE_INNER_WORKFLOW_BLOCK_TYPE,
+                "name": "nested",
+                "workflow_definition": child_workflow,
+                "parameter_bindings": {},
+            },
+        ],
+        "outputs": [],
+    }
+
+    collected = collect_dynamic_blocks_definitions_from_workflow_definition(
+        workflow_definition=workflow,
+    )
+
+    assert collected == [parent_block]
+    mock_warning.assert_called_once()
+    assert mock_warning.call_args.args[1] == "SharedType"
+
+
+def test_collect_passes_through_non_dict_entries_for_downstream_validation() -> None:
+    invalid_entry = "not-a-dynamic-block-definition"
+    workflow = {
+        "version": "1.0",
+        "dynamic_blocks_definitions": [invalid_entry],
+        "inputs": [],
+        "steps": [],
+        "outputs": [],
+    }
+
+    collected = collect_dynamic_blocks_definitions_from_workflow_definition(
+        workflow_definition=workflow,
+    )
+
+    assert collected == [invalid_entry]
+
+
+def test_collect_passes_through_non_list_dynamic_blocks_definitions() -> None:
+    invalid_definitions = {"type": "DynamicBlockDefinition"}
+    workflow = {
+        "version": "1.0",
+        "dynamic_blocks_definitions": invalid_definitions,
+        "inputs": [],
+        "steps": [],
+        "outputs": [],
+    }
+
+    collected = collect_dynamic_blocks_definitions_from_workflow_definition(
+        workflow_definition=workflow,
+    )
+
+    assert collected == [invalid_definitions]
