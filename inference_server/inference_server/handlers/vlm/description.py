@@ -7,11 +7,13 @@ from inference_server.handlers.vlm.input_parser import parse_vlm_input
 from inference_server.handlers.vlm.introspection import (
     get_vlm_detections_image_only_interface,
     get_vlm_detections_prompt_interface,
+    get_vlm_embeddings_image_only_interface,
     get_vlm_text_image_only_interface,
     get_vlm_text_prompt_interface,
 )
 from inference_server.handlers.vlm.output_serializer import (
     serialize_vlm_detections,
+    serialize_vlm_embeddings,
     serialize_vlm_text,
 )
 
@@ -44,6 +46,13 @@ _DETECTIONS_IMAGE_ONLY = ModelHandlerDescription(
     interface_provider=get_vlm_detections_image_only_interface,
 )
 
+_EMBEDDINGS_IMAGE_ONLY = ModelHandlerDescription(
+    input_parser=parse_vlm_input,
+    handler=handle_vlm,
+    output_serializer=serialize_vlm_embeddings,
+    interface_provider=get_vlm_embeddings_image_only_interface,
+)
+
 
 _DESCRIPTION = _TEXT_PROMPT
 
@@ -70,3 +79,6 @@ _register("vlm", "detect", _DETECTIONS_IMAGE_ONLY)
 _register("vlm", "detect_objects", _DETECTIONS_IMAGE_ONLY)
 
 _register("vlm", "point", _DETECTIONS_PROMPT)
+
+_register("vlm", "encode", _EMBEDDINGS_IMAGE_ONLY)
+_register("vlm", "encode_images", _EMBEDDINGS_IMAGE_ONLY)

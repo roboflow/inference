@@ -56,7 +56,7 @@ class _TtlLruCache:
 _DEFAULT_ACTION_BY_TASK_TYPE: dict[str, str] = {
     "vlm": "prompt",
     "embedding": "embed_images",
-    "interactive-instance-segmentation": "segment",
+    "interactive-instance-segmentation": "embed",
 }
 
 
