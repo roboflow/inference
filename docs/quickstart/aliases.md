@@ -1,20 +1,36 @@
-Inference supports running any of the 50,000+ pre-trained public models hosted on [Roboflow Universe](https://universe.roboflow.com), as well as fine-tuned models.
+# Pre-Trained Models
 
-We have defined IDs for common models for ease of use. These models do not require an API key for use unlike other public or private models.
+This page lists the **built-in pre-trained models** that ship with Roboflow Inference - popular open architectures trained on the COCO dataset and exposed under short aliases like `rfdetr-small` or `yolov8n-640`.
 
-Using it in `inference` is as simple as:
+These aliases are convenience shortcuts: no API key is required to use them, and you don't have to know the underlying Roboflow project/version. Pick a model from the tables below and pass its alias as `model_id`.
 
-```python
-from inference import get_model
+Run a pre-trained model alias with either the HTTP client or the native package. See [Run a Model](./run_a_model.md) for package installation.
 
-model = get_model(model_id="rfdetr-small")
+=== "inference-sdk (HTTP client)"
 
-results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
-```
+    ```python
+    from inference_sdk import InferenceHTTPClient
 
-!!! Tip
+    client = InferenceHTTPClient(
+        # api_url="http://localhost:9001",  # for Self-hosted
+        api_url="https://serverless.roboflow.com",
+        api_key="ROBOFLOW_API_KEY",
+    )
+    results = client.infer(
+        "https://media.roboflow.com/inference/people-walking.jpg",
+        model_id="rfdetr-small",
+    )
+    ```
 
-    See the [Use a fine-tuned model](./explore_models.md) guide for an example on how to deploy your own model.
+=== "inference (native)"
+
+    ```python
+    from inference import get_model
+
+    model = get_model(model_id="rfdetr-small")
+
+    results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
+    ```
 
 ## Supported Pre-Trained Models
 

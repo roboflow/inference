@@ -163,7 +163,6 @@ COPY requirements/_requirements.txt \
      requirements/requirements.clip.txt \
      requirements/requirements.transformers.txt \
      requirements/requirements.sam.txt \
-     requirements/requirements.gaze.txt \
      requirements/requirements.groundingdino.txt \
      requirements/requirements.yolo_world.txt \
      requirements/requirements.doctr.txt \
@@ -179,7 +178,6 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     -r requirements.clip.txt \
     -r requirements.transformers.txt \
     -r requirements.sam.txt \
-    -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
     -r requirements.doctr.txt \

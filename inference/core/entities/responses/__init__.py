@@ -1,5 +1,4 @@
 from .clip import *
-from .gaze import *
 from .inference import *
 from .notebooks import *
 from .ocr import *

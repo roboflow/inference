@@ -221,7 +221,7 @@ def test_rewrite_inner_scalar_non_string_unchanged() -> None:
     ) == {"nested": True}
 
 
-def test_rewrite_inner_scalar_pipeline_inputs_then_dotted_then_bare() -> None:
+def test_rewrite_inner_scalar_pipeline_dotted_then_bare_then_inputs() -> None:
     out = _rewrite_inner_scalar(
         "$inputs.msg and $steps.echo.out and $steps.echo",
         step_pairs=[("echo", "inner__echo")],
@@ -229,6 +229,17 @@ def test_rewrite_inner_scalar_pipeline_inputs_then_dotted_then_bare() -> None:
         input_defaults={},
     )
     assert out == "hello and $steps.inner__echo.out and $steps.inner__echo"
+
+
+def test_rewrite_inner_scalar_preserves_parent_step_in_parameter_binding() -> None:
+    """Parent ``$steps.<name>`` in bindings must not be renamed to the inlined child step."""
+    out = _rewrite_inner_scalar(
+        "$inputs.vehicle_image",
+        step_pairs=[("dynamic_crop", "inner__dynamic_crop")],
+        bindings={"vehicle_image": "$steps.dynamic_crop.crops"},
+        input_defaults={},
+    )
+    assert out == "$steps.dynamic_crop.crops"
 
 
 def test_rewrite_inner_scalar_whole_input_non_string_skips_step_rewrite() -> None:
