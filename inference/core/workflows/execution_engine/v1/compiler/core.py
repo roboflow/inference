@@ -49,6 +49,10 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
 from inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge import (
     validate_inner_workflow_composition_from_raw_workflow_definition,
 )
+from inference.core.workflows.execution_engine.v1.inner_workflow.dynamic_blocks_collection import (
+    apply_collected_dynamic_blocks_definitions_to_workflow_root,
+    collect_dynamic_blocks_definitions_from_workflow_definition,
+)
 from inference.core.workflows.execution_engine.v1.inner_workflow.inline import (
     inline_inner_workflow_steps,
 )
@@ -121,8 +125,10 @@ def compile_workflow_graph(
     )
     cached_value = COMPILATION_CACHE.get(key=key)
     if cached_value is not None:
-        dynamic_blocks_definitions = workflow_definition.get(
-            "dynamic_blocks_definitions", []
+        dynamic_blocks_definitions = (
+            collect_dynamic_blocks_definitions_from_workflow_definition(
+                workflow_definition=workflow_definition,
+            )
         )
         ensure_dynamic_blocks_allowed(
             dynamic_blocks_definitions=dynamic_blocks_definitions
@@ -134,6 +140,11 @@ def compile_workflow_graph(
             init_parameters=init_parameters,
         )
     )
+    dynamic_blocks_definitions = (
+        apply_collected_dynamic_blocks_definitions_to_workflow_root(
+            workflow_definition=raw_workflow_definition,
+        )
+    )
     statically_defined_blocks = load_workflow_blocks(
         execution_engine_version=execution_engine_version,
         profiler=profiler,
@@ -142,9 +153,7 @@ def compile_workflow_graph(
     kinds_serializers = load_kinds_serializers(profiler=profiler)
     kinds_deserializers = load_kinds_deserializers(profiler=profiler)
     dynamic_blocks = compile_dynamic_blocks(
-        dynamic_blocks_definitions=raw_workflow_definition.get(
-            "dynamic_blocks_definitions", []
-        ),
+        dynamic_blocks_definitions=dynamic_blocks_definitions,
         profiler=profiler,
         api_key=init_parameters.get("workflows_core.api_key", None),
     )
