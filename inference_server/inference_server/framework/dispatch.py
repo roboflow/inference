@@ -36,6 +36,9 @@ from inference_server.framework.entities import (
     CommonRequestParams,
     ServerHooks,
 )
+from inference_server.framework.model_stat import (
+    stat_model_while_checking_auth,
+)
 from inference_server.framework.registry import (
     DYNAMIC_MODELS_HANDLERS,
     has_handler_for_model_type,
@@ -84,25 +87,6 @@ def decode_common_request_params(request: Request) -> CommonRequestParams:
         device=qp.get("device", ""),
         extra=extra,
     )
-
-
-async def stat_model_while_checking_auth(
-    common_params: CommonRequestParams,
-) -> tuple[str, str]:
-    """Resolve ``(model_type, action_default)`` for ``model_id`` while
-    verifying ``api_key`` access.
-
-    Phase B step 2 implements this with a TTL-LRU cache plus
-    ``inference_models.weights_providers.roboflow.get_one_page_of_model_metadata``
-    fallback. Until then every dispatch path that reaches here fails
-    with 501.
-
-    Raises:
-        PermissionError — 401 (api key rejected).
-        LookupError     — 404 (model id unknown / no access).
-        RuntimeError    — 503 (upstream registry unreachable).
-    """
-    raise NotImplementedError("step 2: cache + Roboflow API fallback")
 
 
 def _validate_action_params(
@@ -175,8 +159,6 @@ async def handle_model_inference_request(
         return error_response(401, "UNAUTHORIZED", str(exc) or "invalid api key")
     except LookupError as exc:
         return error_response(404, "MODEL_NOT_FOUND", str(exc) or "unknown model_id")
-    except NotImplementedError as exc:
-        return error_response(501, "NOT_IMPLEMENTED", str(exc))
     except RuntimeError as exc:
         return error_response(
             503,
