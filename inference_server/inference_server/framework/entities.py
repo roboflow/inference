@@ -25,12 +25,11 @@ class CommonRequestParams:
 
     model_id: str
     api_key: str
-    op: str = "infer"
+    action: str = "infer"
     response_style: str = "compact"
     model_package_id: Optional[str] = None
     instance: str = ""
     device: str = ""
-    task: Optional[str] = None
     extra: dict = field(default_factory=dict)
 
 
