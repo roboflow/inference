@@ -1,5 +1,5 @@
 import base64
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv

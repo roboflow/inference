@@ -28,7 +28,6 @@ from inference.core.workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     BlockResult,
-    Runtime,
     RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,

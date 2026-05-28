@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -23,7 +23,6 @@ from inference.core.workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     BlockResult,
-    Runtime,
     RuntimeRestriction,
     WorkflowBlockManifest,
 )

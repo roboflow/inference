@@ -35,7 +35,6 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
-    Runtime,
     RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,

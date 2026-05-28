@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
@@ -17,7 +17,6 @@ from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
-    Runtime,
     RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,

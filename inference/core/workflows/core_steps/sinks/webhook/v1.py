@@ -33,7 +33,6 @@ from inference.core.workflows.prototypes.block import (
     COOLDOWN_HTTP_SOFT_RESTRICTION,
     AirGappedAvailability,
     BlockResult,
-    Runtime,
     RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,

@@ -1,5 +1,5 @@
 import json
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2
 import numpy as np
@@ -24,7 +24,6 @@ from inference.core.workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     BlockResult,
-    Runtime,
     RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,

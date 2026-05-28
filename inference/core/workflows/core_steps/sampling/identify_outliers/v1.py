@@ -1,4 +1,4 @@
-from typing import Dict, List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
@@ -15,7 +15,6 @@ from inference.core.workflows.prototypes.block import (
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     BlockResult,
-    Runtime,
     RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,

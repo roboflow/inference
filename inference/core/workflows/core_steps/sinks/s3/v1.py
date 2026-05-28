@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 from time import sleep
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, List, Literal, Optional, Type, Union
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError

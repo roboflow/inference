@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from typing import Dict, List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
 import numpy as np
 import requests

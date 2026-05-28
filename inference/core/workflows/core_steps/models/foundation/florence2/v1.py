@@ -1,5 +1,5 @@
 import json
-from typing import Dict, List, Literal, Optional, Type, TypeVar, Union
+from typing import List, Literal, Optional, Type, TypeVar, Union
 
 import numpy as np
 import supervision as sv
