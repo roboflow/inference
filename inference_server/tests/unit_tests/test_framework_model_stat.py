@@ -155,7 +155,7 @@ def test_ttl_lru_expires_entries_past_ttl():
         ("classification", "infer"),
         ("vlm", "prompt"),
         ("embedding", "embed_images"),
-        ("interactive-instance-segmentation", "segment"),
+        ("interactive-instance-segmentation", "embed"),
         ("structured-ocr", "infer"),
     ],
 )

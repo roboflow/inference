@@ -49,4 +49,14 @@ def get_vlm_detections_image_only_interface() -> ModelInterfaceDescription:
     )
 
 
+def get_vlm_embeddings_image_only_interface() -> ModelInterfaceDescription:
+    return ModelInterfaceDescription(
+        task="vlm",
+        params=_p(_P_IMAGES),
+        output_schema={
+            "type": "roboflow-embeddings-compact-v1",
+        },
+    )
+
+
 get_vlm_interface = get_vlm_text_prompt_interface
