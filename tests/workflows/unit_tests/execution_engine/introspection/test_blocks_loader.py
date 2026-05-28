@@ -1,4 +1,6 @@
-from typing import Literal
+import json
+import logging
+from typing import List, Literal, Type
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -6,13 +8,16 @@ import pytest
 from packaging.version import Version
 from pydantic import BaseModel
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     PluginInterfaceError,
     PluginLoadingError,
     WorkflowExecutionEngineVersionError,
 )
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.introspection import blocks_loader
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    _get_restrictions,
     describe_available_blocks,
     get_manifest_type_identifiers,
     is_block_compatible_with_execution_engine,
@@ -22,6 +27,17 @@ from inference.core.workflows.execution_engine.introspection.blocks_loader impor
     load_kinds_deserializers,
     load_kinds_serializers,
     load_workflow_blocks,
+)
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    BlockSpecification,
+)
+from inference.core.workflows.prototypes.block import (
+    Runtime,
+    RuntimeInputMode,
+    RuntimeRestriction,
+    Severity,
+    WorkflowBlock,
+    WorkflowBlockManifest,
 )
 from tests.workflows.unit_tests.execution_engine.introspection import (
     plugin_with_multiple_versions_of_blocks,
@@ -472,3 +488,117 @@ def test_load_kinds_deserializers(
     assert (
         result["3"]("some", "value") == "3"
     ), "Expected hardcoded value from deserializer"
+
+
+class _ExplodingManifest(WorkflowBlockManifest):
+    type: Literal["test_exploding_block"]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        raise RuntimeError("plugin author bug")
+
+
+class _ExplodingBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return _ExplodingManifest
+
+    def run(self, *args, **kwargs):  # pragma: no cover - never executed
+        return None
+
+
+def test_get_restrictions_returns_empty_and_logs_when_manifest_raises(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # given
+    block = BlockSpecification(
+        block_source="test_plugin",
+        identifier="tests.exploding.ExplodingBlock",
+        block_class=_ExplodingBlock,
+        manifest_class=_ExplodingManifest,
+    )
+
+    # when
+    with caplog.at_level(logging.WARNING, logger=blocks_loader.logger.name):
+        result = _get_restrictions(block)
+
+    # then
+    assert result == [], (
+        "Restrictions should be reported as empty when the block's "
+        "get_restrictions() raises, so a single bad block cannot bring "
+        "down the describe-blocks endpoint."
+    )
+    matching_records = [
+        record
+        for record in caplog.records
+        if record.name == blocks_loader.logger.name
+        and "tests.exploding.ExplodingBlock" in record.getMessage()
+        and "test_plugin" in record.getMessage()
+        and "plugin author bug" in record.getMessage()
+    ]
+    assert matching_records, (
+        "Expected a WARNING log line that names the block identifier, "
+        "block source, and the underlying error so operators can locate "
+        "the offending plugin."
+    )
+
+
+@pytest.mark.parametrize(
+    "restriction, expected",
+    [
+        (
+            RuntimeRestriction(severity=Severity.HARD, note="boom"),
+            {"severity": "hard", "note": "boom"},
+        ),
+        (
+            RuntimeRestriction(
+                severity=Severity.SOFT,
+                note="degrades on remote http",
+                applies_to_runtimes=[
+                    Runtime.HOSTED_SERVERLESS,
+                    Runtime.DEDICATED_DEPLOYMENT,
+                ],
+                applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+                applies_to_input_modes=[RuntimeInputMode.VIDEO],
+            ),
+            {
+                "severity": "soft",
+                "note": "degrades on remote http",
+                "applies_to_runtimes": [
+                    "hosted_serverless",
+                    "dedicated_deployment",
+                ],
+                "applies_to_step_execution_modes": ["remote"],
+                "applies_to_input_modes": ["video"],
+            },
+        ),
+        (
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note="local only",
+                applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+            ),
+            {
+                "severity": "hard",
+                "note": "local only",
+                "applies_to_step_execution_modes": ["remote"],
+            },
+        ),
+    ],
+)
+def test_runtime_restriction_to_dict_shape(
+    restriction: RuntimeRestriction, expected: dict
+) -> None:
+    # when
+    payload = restriction.to_dict()
+
+    # then
+    assert payload == expected, (
+        "to_dict() pins the JSON shape served by the describe-blocks "
+        "endpoint; UI consumers depend on these exact keys and values."
+    )
+    json.dumps(payload)
