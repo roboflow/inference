@@ -190,7 +190,10 @@ class BlockManifest(WorkflowBlockManifest):
                         "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"
                         "ACCESSING_LOCAL_STORAGE is False."
                     ),
-                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                    applies_to_runtimes=[
+                        Runtime.HOSTED_SERVERLESS,
+                        Runtime.DEDICATED_DEPLOYMENT,
+                    ],
                 )
             )
         else:
@@ -199,7 +202,9 @@ class BlockManifest(WorkflowBlockManifest):
                     severity=Severity.SOFT,
                     note=(
                         "Container disk is ephemeral, so files are lost when "
-                        "the worker scales down."
+                        "the worker scales down; if there's more than one replica "
+                        "consuming workflow requests the result will be non "
+                        "deterministic.."
                     ),
                     applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
                 )
