@@ -5,36 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Request, Response
-from starlette.requests import ClientDisconnect
 
 from inference_server.dependencies import get_model_manager
 from inference_server.errors import error_response
 from inference_server.framework.dispatch import handle_model_inference_request
-from inference_server.framework.input_parsers import (
-    extract_images_and_params,
-    fetch_image_from_url,
-)
-from inference_server.proxies.base import ClientDisconnected, ModelManagerProxy
-from inference_server.proxies.mmp_client import looks_like_image
-
-from inference_model_manager.serializers_typed import (
-    serialize_classification_compact,
-    serialize_classification_rich,
-    serialize_depth_compact,
-    serialize_detections_compact,
-    serialize_detections_rich,
-    serialize_embeddings,
-    serialize_instance_segmentation_compact,
-    serialize_instance_segmentation_rich,
-    serialize_keypoints_compact,
-    serialize_multilabel_classification_compact,
-    serialize_passthrough,
-    serialize_semantic_segmentation_compact,
-    serialize_text,
-)
+from inference_server.proxies.base import ModelManagerProxy
 
 logger = logging.getLogger(__name__)
 
@@ -53,170 +30,6 @@ def _bearer_token(request: Request) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Typed serialization helper
-# ---------------------------------------------------------------------------
-
-_COMPACT_SERIALIZERS: dict[str, Any] = {
-    "Detections": serialize_detections_compact,
-    "ClassificationPrediction": serialize_classification_compact,
-    "MultiLabelClassificationPrediction": serialize_multilabel_classification_compact,
-    "InstanceSegmentationPrediction": serialize_instance_segmentation_compact,
-    "SemanticSegmentationPrediction": serialize_semantic_segmentation_compact,
-    "KeypointsPrediction": serialize_keypoints_compact,
-    "EmbeddingResult": serialize_embeddings,
-    "DepthEstimationPrediction": serialize_depth_compact,
-}
-
-_RICH_SERIALIZERS: dict[str, Any] = {
-    "Detections": serialize_detections_rich,
-    "ClassificationPrediction": serialize_classification_rich,
-    "MultiLabelClassificationPrediction": serialize_classification_rich,
-    "InstanceSegmentationPrediction": serialize_instance_segmentation_rich,
-}
-
-_class_names_cache: dict[str, list | None] = {}
-
-
-class _ModelProxy:
-    """Lightweight proxy providing class_names for typed serializers."""
-
-    __slots__ = ("class_names",)
-
-    def __init__(self, class_names: list | None):
-        self.class_names = class_names
-
-
-def _typed_serialize(
-    predictions: object, class_names: list | None, style: str = "rich"
-) -> object:
-    proxy = _ModelProxy(class_names)
-    if isinstance(predictions, list) and predictions:
-        cls_name = type(predictions[0]).__name__
-    else:
-        cls_name = type(predictions).__name__
-
-    serializers = _RICH_SERIALIZERS if style == "rich" else _COMPACT_SERIALIZERS
-    serializer = serializers.get(cls_name) or _COMPACT_SERIALIZERS.get(cls_name)
-    if serializer is not None:
-        return serializer(predictions, proxy)
-    if isinstance(predictions, str):
-        return serialize_text(predictions, proxy)
-    return serialize_passthrough(predictions, proxy)
-
-
-# ---------------------------------------------------------------------------
-# Single-image inference via proxy
-# ---------------------------------------------------------------------------
-
-
-async def _infer_one(
-    mm: ModelManagerProxy,
-    image_bytes: bytes,
-    model_id: str,
-    instance: str,
-    task: Optional[str],
-    params: dict,
-    request: Optional[Request],
-) -> tuple[Optional[object], Optional[Response]]:
-    """Run inference on one image via proxy. Returns (prediction, None) or (None, error)."""
-    try:
-        prediction = await mm.infer(
-            model_id=model_id,
-            image=image_bytes,
-            task=task,
-            instance=instance,
-            params=params,
-            request=request,
-        )
-        return prediction, None
-    except ValueError as exc:
-        # MMPClient raises ValueError on payload-too-large
-        return None, error_response(413, "PAYLOAD_TOO_LARGE", str(exc))
-    except asyncio.TimeoutError:
-        return None, error_response(504, "TIMEOUT", "inference timeout")
-    except ClientDisconnected:
-        return None, Response(status_code=499)
-    except RuntimeError as exc:
-        msg = str(exc) or "inference failed"
-        if "no slots" in msg.lower() or "alloc" in msg.lower():
-            return None, error_response(
-                503,
-                "SERVER_BUSY",
-                "no slots available, try again",
-                follow_up="retry in 1s",
-            )
-        return None, error_response(500, "INFERENCE_FAILED", msg)
-
-
-def _build_envelope(
-    predictions_list: list,
-    model_id: str,
-    task: Optional[str],
-    style: str = "rich",
-) -> Response:
-    """Wrap typed predictions in v2 response envelope."""
-    class_names = _class_names_cache.get(model_id)
-    typed = [_typed_serialize(p, class_names, style=style) for p in predictions_list]
-    envelope = {
-        "type": "roboflow-inference-server-response-v1",
-        "model_info": {"model_id": model_id, "task": task},
-        "usage": {},
-        "predictions": typed,
-    }
-    return Response(
-        content=json.dumps(envelope, default=str).encode(),
-        media_type="application/json",
-    )
-
-
-async def _infer_images(
-    mm: ModelManagerProxy,
-    images: list[bytes],
-    model_id: str,
-    instance: str,
-    task: Optional[str],
-    params: dict,
-    style: str = "rich",
-    request: Optional[Request] = None,
-) -> Response:
-    """Infer on one or more images. Returns v2 envelope with N predictions."""
-    if not images:
-        return error_response(400, "EMPTY_BODY", "no image data provided")
-
-    for i, img in enumerate(images):
-        if not looks_like_image(img):
-            return error_response(
-                415,
-                "UNSUPPORTED_FORMAT",
-                f"image[{i}] is not a recognized image format",
-            )
-
-    if len(images) == 1:
-        prediction, err = await _infer_one(
-            mm, images[0], model_id, instance, task, params, request
-        )
-        if err is not None:
-            return err
-        return _build_envelope([prediction], model_id, task, style=style)
-
-    # Batch: fan out concurrently
-    results = await asyncio.gather(
-        *(
-            _infer_one(mm, img, model_id, instance, task, params, request)
-            for img in images
-        )
-    )
-
-    predictions_list = []
-    for prediction, err in results:
-        if err is not None:
-            return err
-        predictions_list.append(prediction)
-
-    return _build_envelope(predictions_list, model_id, task, style=style)
-
-
-# ---------------------------------------------------------------------------
 # POST /v2/models/infer
 # ---------------------------------------------------------------------------
 
@@ -231,64 +44,11 @@ async def v2_infer(
     dispatched = await handle_model_inference_request(request, mm)
     if dispatched is not None:
         return dispatched
-
-    params = dict(request.query_params)
-    model_id = params.pop("model_id", "")
-    task = params.pop("task", None)
-    instance = params.pop("instance", "")
-    device = params.pop("device", "")
-    style = params.pop("style", "rich")
-
-    if not model_id:
-        return error_response(400, "MISSING_PARAM", "model_id query param required")
-    if style not in ("compact", "rich"):
-        return error_response(400, "INVALID_PARAM", "style must be 'compact' or 'rich'")
-
-    if task:
-        params["task"] = task
-
-    # URL-based input: image=<url> in query params (supports batch via repeated param)
-    image_urls = request.query_params.getlist("image")
-    image_urls = [u for u in image_urls if u.startswith(("http://", "https://"))]
-    params.pop("image", None)
-
-    try:
-        if image_urls:
-            fetch_results = await asyncio.gather(
-                *(fetch_image_from_url(u) for u in image_urls)
-            )
-            images = []
-            for img_bytes, err in fetch_results:
-                if err is not None:
-                    return err
-                images.append(img_bytes)
-            extra_params = {}
-        else:
-            images, extra_params, err = await extract_images_and_params(request)
-            if err is not None:
-                return err
-        params.update(extra_params)
-    except ClientDisconnect:
-        logger.debug("[v2_infer] client disconnected during body extraction")
-        return Response(status_code=499)
-
-    # Ensure model loaded
-    status = await mm.ensure_loaded(model_id, instance, api_key, device)
-
-    if status[0] == "load_timeout":
-        return error_response(
-            503,
-            "MODEL_LOADING",
-            "model loading, try again shortly",
-            follow_up="retry after Retry-After seconds",
-            headers={"Retry-After": str(status[1])},
-        )
-    if status[0] == "error":
-        return error_response(500, "LOAD_FAILED", "model load failed")
-
-    return await _infer_images(
-        mm, images, model_id, instance, task, params,
-        style=style, request=request,
+    model_type = request.query_params.get("model_id", "")
+    return error_response(
+        501,
+        "NOT_IMPLEMENTED",
+        f"no handler registered for resolved model_type of model_id={model_type!r}",
     )
 
 
