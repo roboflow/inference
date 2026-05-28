@@ -242,20 +242,27 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
-        no_lan_or_remote = RuntimeRestriction(
+        no_remote_step_execution = RuntimeRestriction(
             severity=Severity.HARD,
             note=(
-                "Block requires LAN access to a PTZ camera and "
-                "step_execution_mode=local; raises ValueError otherwise. "
-                "Hosted Serverless and Roboflow Dedicated Deployments cannot "
-                "reach customer LANs."
+                "Block requires step_execution_mode=local; raises ValueError "
+                "otherwise. ONVIF commands must be issued from the same "
+                "process that drives the workflow."
+            ),
+            applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+        )
+        no_lan_from_hosted = RuntimeRestriction(
+            severity=Severity.HARD,
+            note=(
+                "Block requires LAN access to a PTZ camera. Hosted Serverless "
+                "and Roboflow Dedicated Deployments cannot reach customer LANs."
             ),
             applies_to_runtimes=[
                 Runtime.HOSTED_SERVERLESS,
                 Runtime.DEDICATED_DEPLOYMENT,
             ],
         )
-        return [no_lan_or_remote]
+        return [no_remote_step_execution, no_lan_from_hosted]
 
 
 # primarily used for rate limiting
