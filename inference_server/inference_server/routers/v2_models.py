@@ -11,6 +11,12 @@ from fastapi import APIRouter, Depends, Request, Response
 from inference_server.dependencies import get_model_manager
 from inference_server.errors import error_response
 from inference_server.framework.dispatch import handle_model_inference_request
+from inference_server.framework.entities import CommonRequestParams
+from inference_server.framework.model_stat import stat_model_while_checking_auth
+from inference_server.framework.registry import (
+    DYNAMIC_MODELS_HANDLERS,
+    supported_actions_for,
+)
 from inference_server.proxies.base import ModelManagerProxy
 
 logger = logging.getLogger(__name__)
@@ -60,27 +66,78 @@ async def v2_infer(
 @router.get("/interface")
 async def v2_model_interface(
     request: Request,
+    api_key: str = Depends(_bearer_token),
     mm: ModelManagerProxy = Depends(get_model_manager),
 ) -> Response:
-    """Discover model interface — supported tasks, params, response types."""
+    """Discover model interface — supported actions, params, output schemas.
+
+    Resolution order:
+      1. Ask the proxy for the loaded-model interface. Cheap, in-memory.
+      2. If the model is not loaded, resolve its task_type via the
+         Roboflow registry (TTL-cached) and serve the static handler
+         interface for that task_type — no load required.
+    """
     model_id = request.query_params.get("model_id", "")
     if not model_id:
         return error_response(400, "MISSING_PARAM", "model_id query param required")
 
     try:
         info = await mm.interface(model_id)
-    except RuntimeError as exc:
-        return error_response(
-            404,
-            "MODEL_NOT_LOADED",
-            str(exc),
-            follow_up="load the model first via POST /v2/models/load",
+        return Response(
+            content=json.dumps(info).encode(),
+            media_type="application/json",
         )
+    except RuntimeError:
+        pass
     except Exception:
         return error_response(503, "STATS_UNAVAILABLE", "could not reach model manager")
 
+    common = CommonRequestParams(model_id=model_id, api_key=api_key)
+    registry_response = await _interface_from_registry(common)
+    if registry_response is not None:
+        return registry_response
+
+    return error_response(
+        404,
+        "MODEL_NOT_LOADED",
+        f"model {model_id!r} not loaded and no static interface registered",
+        follow_up="load the model first via POST /v2/models/load",
+    )
+
+
+async def _interface_from_registry(
+    common: CommonRequestParams,
+) -> Response | None:
+    try:
+        model_type, _action_default = await stat_model_while_checking_auth(common)
+    except PermissionError as exc:
+        return error_response(401, "UNAUTHORIZED", str(exc) or "invalid api key")
+    except (LookupError, RuntimeError):
+        return None
+
+    actions = supported_actions_for(model_type)
+    if not actions:
+        return None
+
+    actions_payload: dict[str, dict] = {}
+    for action in actions:
+        desc = DYNAMIC_MODELS_HANDLERS.get((model_type, action))
+        if desc is None:
+            continue
+        interface = desc.interface_provider()
+        actions_payload[action] = {
+            "task": interface.task,
+            "params": interface.params,
+            "output_schema": interface.output_schema,
+        }
+
+    body = {
+        "model_id": common.model_id,
+        "model_type": model_type,
+        "actions": actions_payload,
+    }
     return Response(
-        content=json.dumps(info).encode(),
+        content=json.dumps(body).encode(),
         media_type="application/json",
     )
 
