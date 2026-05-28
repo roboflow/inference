@@ -20,7 +20,6 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     Runtime,
     RuntimeRestriction,
-    RuntimeInputMode,
     RuntimeStepExecutionMode,
     Severity,
     WorkflowBlock,
@@ -139,23 +138,13 @@ class BlockManifest(WorkflowBlockManifest):
                 severity=Severity.HARD,
                 note=(
                     "Cache blocks only support LOCAL workflow step execution; "
-                    "non-local execution raises NotImplementedError."
+                    "remote step execution raises NotImplementedError."
                 ),
-                applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                applies_to_runtimes=[
+                    Runtime.HOSTED_SERVERLESS,
+                    Runtime.DEDICATED_DEPLOYMENT,
+                ],
                 applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
-            ),
-            RuntimeRestriction(
-                severity=Severity.SOFT,
-                note=(
-                    "Cache values are stored in process memory per "
-                    "video_identifier. With remote step execution on "
-                    "multi-replica HTTP deployments, successive requests may "
-                    "be served by different worker processes, so cached "
-                    "values can reset or split across workers."
-                ),
-                applies_to_runtimes=[Runtime.DEDICATED_DEPLOYMENT],
-                applies_to_step_execution_modes=[RuntimeStepExecutionMode.REMOTE],
-                applies_to_input_modes=[RuntimeInputMode.VIDEO],
             ),
         ]
 
