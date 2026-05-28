@@ -17,7 +17,6 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
-    Runtime,
     RuntimeRestriction,
     Severity,
     StepExecutionMode,
@@ -139,10 +138,6 @@ class BlockManifest(WorkflowBlockManifest):
                     "Cache blocks only support LOCAL workflow step execution; "
                     "remote step execution raises NotImplementedError."
                 ),
-                applies_to_runtimes=[
-                    Runtime.HOSTED_SERVERLESS,
-                    Runtime.DEDICATED_DEPLOYMENT,
-                ],
                 applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
             ),
         ]
