@@ -1,27 +1,3 @@
-"""L2 dispatcher — fail-fast pipeline for ``POST /v2/models/infer``.
-
-Each step rejects with 400/401/404/501 before the next does expensive
-work. Order matters: cheap query parse + auth + registry lookup +
-param validation all run before body read, model load, slot alloc, or
-inference itself.
-
-Pipeline:
-
-    1. ``decode_common_request_params``      — cheap query parse
-    2. ``stat_model_while_checking_auth``    — 401/404, returns
-                                               (model_type, action_default)
-    3. resolve effective action              — client ``?action=``
-                                               overrides API default
-    4. registry lookup                       — 400 INVALID_ACTION or
-                                               501 NOT_IMPLEMENTED
-    5. ``_validate_action_params``           — 400 on required-missing /
-                                               wrong-type (no body read yet)
-    6. ``description.input_parser``          — body read; heavy
-    7. ``proxy.ensure_loaded``               — model load; heavy
-    8. ``description.handler`` → proxy.infer — inference; heavy
-    9. ``description.output_serializer``     — typed → ``Response``
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -34,6 +10,7 @@ from starlette.requests import ClientDisconnect
 from inference_server.errors import error_response
 from inference_server.framework.entities import (
     CommonRequestParams,
+    InputParseError,
     ServerHooks,
 )
 from inference_server.framework.model_stat import (
@@ -65,6 +42,8 @@ _RESERVED_QUERY_KEYS: frozenset[str] = frozenset(
     }
 )
 
+_COERCIBLE_QUERY_TYPES: frozenset[str] = frozenset({"str", "int", "float", "bool"})
+
 
 def _bearer_token(request: Request) -> str:
     auth = request.headers.get("authorization", "")
@@ -92,18 +71,10 @@ def decode_common_request_params(request: Request) -> CommonRequestParams:
 def _validate_action_params(
     params_spec: dict, query_extra: dict[str, str]
 ) -> Response | None:
-    """Match ``query_extra`` against the handler's param spec.
-
-    ``params_spec`` shape mirrors ``_TASK_CONFIGS[model_class][i][3]``
-    in ``inference_model_manager.registry_defaults``: ``{name: {
-    "type": "float"|"int"|"str"|"bool", "required": bool,
-    "default": Any, ...}}``.
-
-    Returns ``None`` on success, an error ``Response`` otherwise. No
-    body read, no model load — runs before any heavy step so 400s
-    stay cheap.
-    """
     for name, spec in params_spec.items():
+        type_name = spec.get("type", "str")
+        if type_name not in _COERCIBLE_QUERY_TYPES:
+            continue
         if name not in query_extra:
             if spec.get("required"):
                 return error_response(
@@ -113,7 +84,6 @@ def _validate_action_params(
                 )
             continue
         raw = query_extra[name]
-        type_name = spec.get("type", "str")
         try:
             _coerce_param(raw, type_name)
         except ValueError as exc:
@@ -190,10 +160,12 @@ async def handle_model_inference_request(
     if err is not None:
         return err
 
-    server_hooks = ServerHooks(request=request)
+    server_hooks = ServerHooks(request=request, common=common)
 
     try:
         input_data = await description.input_parser(request, common)
+    except InputParseError as exc:
+        return exc.response
     except ClientDisconnect:
         logger.debug("[dispatch] client disconnected during body read")
         return Response(status_code=499)

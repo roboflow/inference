@@ -1,24 +1,3 @@
-"""Resolve ``(model_type, action_default)`` for a model_id while
-verifying the api_key.
-
-Single source for the dispatcher's step-2 fail-fast check. Hits the
-Roboflow registry API (`get_one_page_of_model_metadata`) once per
-unseen `(model_id, api_key)` and caches the result in a small
-TTL-LRU. Concurrent first-load misses for the same key share one
-inflight future so we never fan out duplicate API calls.
-
-`model_type` is the Roboflow `taskType` string (e.g.
-``"object-detection"``, ``"vlm"``, ``"embedding"``) — handler
-registrations key off the same vocabulary so no extra translation
-layer is needed.
-
-Exceptions map to dispatcher HTTP codes:
-
-    UnauthorizedModelAccessError → PermissionError → 401
-    ModelNotFoundError           → LookupError     → 404
-    RetryError, ModelRetrievalError, OSError → RuntimeError → 503
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -45,13 +24,6 @@ _CACHE_TTL_S = float(os.environ.get("INFERENCE_MODEL_STAT_CACHE_TTL_S", "300"))
 
 
 class _TtlLruCache:
-    """Single-thread (asyncio) TTL-LRU. Not goroutine/thread safe — fine
-    here because FastAPI workers run one OS thread and coroutines never
-    preempt mid-statement. `asyncio.to_thread` calls release the GIL
-    but the mutations themselves happen back on the main thread after
-    `await`.
-    """
-
     def __init__(self, maxsize: int, ttl_s: float):
         self._maxsize = maxsize
         self._ttl = ttl_s
