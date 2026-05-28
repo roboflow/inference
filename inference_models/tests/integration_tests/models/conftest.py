@@ -185,7 +185,6 @@ DEPTH_ANYTHING_V3_BASE_PACKAGE_URL = "https://storage.googleapis.com/roboflow-te
 DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/doctr-dbnet-rn50-crnn-vgg16-v2.zip"
 EASY_OCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/easy-ocr-english.zip"
 TROCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/tr-ocr-small-printed.zip"
-MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/mediapipe-face-detector.zip"
 L2CS_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/l2cs-net.zip"
 OWLv2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/owlv2.zip"
@@ -224,6 +223,9 @@ VIT_SINGLE_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-
 VIT_MULTI_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-label-cls-trt-t4-package.zip"
 
 YOLOV10_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov10-trt-t4-package.zip"
+SAM3_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam3.zip"
+)
 
 
 @pytest.fixture(scope="module")
@@ -1367,14 +1369,6 @@ def tr_ocr_package() -> str:
 
 
 @pytest.fixture(scope="module")
-def mediapipe_face_detector_package() -> str:
-    return download_model_package(
-        model_package_zip_url=MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL,
-        package_name="mediapipe-face-detector",
-    )
-
-
-@pytest.fixture(scope="module")
 def l2cs_package() -> str:
     return download_model_package(
         model_package_zip_url=L2CS_PACKAGE_URL,
@@ -1717,4 +1711,12 @@ def yolov10_object_detection_trt_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLOV10_TRT_PACKAGE_URL,
         package_name="yolov10-object-detection-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def sam3_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SAM3_PACKAGE_URL,
+        package_name="sam3",
     )

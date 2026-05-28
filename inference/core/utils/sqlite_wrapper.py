@@ -1,12 +1,18 @@
 import os
 import sqlite3
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from inference.core.logger import logger
 
 ColName = str
 ColType = str
 ColValue = str
+
+
+def _sqlite_log(row: Dict[ColName, ColValue]) -> str:
+    """Sorted column names for debug logs (values omitted — may be sensitive)."""
+    keys: Iterable[ColName] = row.keys()
+    return ",".join(sorted(keys))
 
 
 class SQLiteWrapper:
@@ -75,8 +81,9 @@ class SQLiteWrapper:
                 )
                 connection.close()
             except Exception as exc:
+                # codeql[py/clear-text-logging-sensitive-data]: Key names only.
                 logger.debug(
-                    "Failed to store '%s' in %s - %s", row, self._tbl_name, exc
+                    f"Failed to store row (columns {_sqlite_log(row)}) in {self._tbl_name} - {exc}"
                 )
                 raise exc
         elif connection and not cursor:
@@ -96,10 +103,9 @@ class SQLiteWrapper:
         with_exclusive: bool = False,
     ):
         if not set(row.keys()).issubset(self._columns.keys()):
+            # codeql[py/clear-text-logging-sensitive-data]: Key names only.
             logger.debug(
-                "Cannot store '%s' in %s, requested column names do not match with table columns",
-                row,
-                self._tbl_name,
+                f"Cannot store row (columns {_sqlite_log(row)}) in {self._tbl_name}, requested column names do not match with table columns"
             )
             raise ValueError("Columns mismatch")
 
@@ -112,8 +118,9 @@ class SQLiteWrapper:
             try:
                 cursor.execute("BEGIN EXCLUSIVE")
             except Exception as exc:
+                # codeql[py/clear-text-logging-sensitive-data]: Key names only.
                 logger.debug(
-                    "Failed to store '%s' in %s - %s", row, self._tbl_name, exc
+                    f"Failed to store row (columns {_sqlite_log(row)}) in {self._tbl_name} - {exc}"
                 )
                 raise exc
 
@@ -127,10 +134,12 @@ class SQLiteWrapper:
             if with_exclusive:
                 connection.commit()
         except Exception as exc:
-            logger.debug("Failed to store '%s' in %s - %s", values, self._tbl_name, exc)
+            # codeql[py/clear-text-logging-sensitive-data]: Key names only.
+            logger.debug(
+                f"Failed to store row (columns {_sqlite_log(values)}) in {self._tbl_name} - {exc}"
+            )
             connection.rollback()
             raise exc
-
         if cursor_needs_closing:
             cursor.close()
 
@@ -358,7 +367,11 @@ class SQLiteWrapper:
     ) -> List[Dict[str, Any]]:
         keys = [r["id"] for r in rows if "id" in r]
         if not keys:
-            logger.debug("No row with 'id' key found in %s", rows)
+            logger.debug(
+                "No row with 'id' key found among %s row(s) in %s",
+                len(rows),
+                self._tbl_name,
+            )
             return []
 
         cursor_needs_closing = False

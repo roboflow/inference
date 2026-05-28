@@ -82,9 +82,7 @@ def test_manifest_parsing_when_invalid_predictions_selector_provided() -> None:
         _ = BlockManifest.model_validate(data)
 
 
-def _make_detections(
-    class_names: list[str], confidences: list[float]
-) -> sv.Detections:
+def _make_detections(class_names: list[str], confidences: list[float]) -> sv.Detections:
     n = len(class_names)
     return sv.Detections(
         xyxy=np.array([[0, 0, 10, 10]] * n, dtype=np.float64),
@@ -152,9 +150,7 @@ def test_filter_boundary_is_inclusive() -> None:
 
 def test_filter_unknown_class_falls_back_to_default_threshold() -> None:
     # given
-    detections = _make_detections(
-        class_names=["dog", "dog"], confidences=[0.25, 0.4]
-    )
+    detections = _make_detections(class_names=["dog", "dog"], confidences=[0.25, 0.4])
 
     # when
     result = filter_detections_by_class_confidence(
@@ -171,9 +167,7 @@ def test_filter_unknown_class_falls_back_to_default_threshold() -> None:
 
 def test_filter_when_all_detections_fail() -> None:
     # given
-    detections = _make_detections(
-        class_names=["person", "car"], confidences=[0.5, 0.1]
-    )
+    detections = _make_detections(class_names=["person", "car"], confidences=[0.5, 0.1])
 
     # when
     result = filter_detections_by_class_confidence(
@@ -203,9 +197,7 @@ def test_filter_when_predictions_are_empty() -> None:
 
 def test_filter_when_class_thresholds_is_empty_uses_default() -> None:
     # given
-    detections = _make_detections(
-        class_names=["person", "car"], confidences=[0.5, 0.2]
-    )
+    detections = _make_detections(class_names=["person", "car"], confidences=[0.5, 0.2])
 
     # when
     result = filter_detections_by_class_confidence(
@@ -223,12 +215,8 @@ def test_block_run_processes_a_batch() -> None:
     # given
     block = PerClassConfidenceFilterBlockV1()
     batch = [
-        _make_detections(
-            class_names=["person", "car"], confidences=[0.99, 0.4]
-        ),
-        _make_detections(
-            class_names=["car"], confidences=[0.55]
-        ),
+        _make_detections(class_names=["person", "car"], confidences=[0.99, 0.4]),
+        _make_detections(class_names=["car"], confidences=[0.55]),
     ]
 
     # when

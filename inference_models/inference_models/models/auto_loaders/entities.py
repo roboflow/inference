@@ -29,7 +29,6 @@ class BackendType(str, Enum):
     TRT = "trt"
     HF = "hugging-face"
     ULTRALYTICS = "ultralytics"
-    MEDIAPIPE = "mediapipe"
     CUSTOM = "custom"
 
 

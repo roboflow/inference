@@ -38,41 +38,26 @@ LONG_DESCRIPTION = """
 Send a prompt to any OpenAI-compatible API endpoint (e.g. local Qwen, vLLM, Ollama,
 LM Studio, or any service that implements the OpenAI chat completions API).
 
-## How This Block Works
+## How this block works
 
-1. You provide a **base URL** (e.g. `http://localhost:8000/v1`) and a **model name**
-2. Write a **prompt template** using `{{ $parameters.param_name }}` placeholders
-3. Supply **prompt_parameters** mapping parameter names to workflow data selectors
-4. Parameters that resolve to images — either `WorkflowImageData` objects or raw JPEG
-   `bytes` (e.g. from the Image Stack block) — are automatically base64-encoded and
-   sent as `image_url` content parts in the OpenAI message
-5. Lists of images are supported: each image in the list becomes a separate content part
-6. Non-image parameters are converted to strings and substituted into the prompt text
-7. Optionally apply **UQL operations** to transform parameter values before insertion
+1. You provide a **Base URL** (e.g. `http://localhost:8000/v1`) and a **Model Name**.
+2. Write an **Instruction** — the text the model receives.
+3. Add rows under **Inputs** to feed step outputs (images, detections, text) into
+   the request. Image inputs are base64-encoded and sent as vision content parts.
+   A list of images becomes one vision part per image.
+4. Non-image inputs are converted to strings. To splice them into the instruction
+   text, reference the input by name with the placeholder syntax shown in the
+   Instruction field's help text.
+5. Optionally apply **UQL operations** to transform input values before insertion.
 
-## Image Handling
+## Image handling
 
-The block detects image values automatically:
+- A `WorkflowImageData` value is JPEG-encoded and sent as an `image_url` part.
+- Raw JPEG `bytes` (e.g. from the Image Stack block) are sent directly.
+- A list of either is fanned out into multiple `image_url` parts.
 
-- **`WorkflowImageData`** — the numpy image is JPEG-encoded then base64-encoded
-- **`bytes`** — assumed to be JPEG blobs already (e.g. from the Image Stack block),
-  base64-encoded directly
-- **`list`** of either type — each element becomes a separate `image_url` content part
-
-Image parameters referenced in the prompt template have their placeholders removed from
-the text (the images are sent as vision content parts, not inline text).
-
-## Example
-
-```
-prompt: "Describe the activity across these frames: {{ $parameters.context }}"
-prompt_parameters:
-  context: "$steps.some_step.output"
-  frames: "$steps.image_stack.frames"
-```
-
-`frames` (list of JPEG bytes) becomes multiple vision content parts.
-`context` (string) gets substituted into the prompt text.
+If an image input is also referenced in the instruction text by name, the
+placeholder is removed from the text — the image only travels as a vision part.
 """
 
 
@@ -103,34 +88,37 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/openai_compatible@v1"]
     base_url: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Base URL of the OpenAI-compatible API (e.g. http://localhost:8000/v1).",
+        title="Base URL",
+        description="URL of the OpenAI-compatible server, including /v1.",
         examples=["http://localhost:8000/v1", "$inputs.base_url"],
     )
     model_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Model name to pass in the API request.",
+        title="Model Name",
+        description="Model identifier sent to the server.",
         examples=["Qwen/Qwen2.5-VL-7B-Instruct", "$inputs.model_name"],
     )
     api_key: Optional[Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str]] = Field(
         default=None,
-        description="API key for the endpoint (if required).",
+        title="API Key",
+        description="API key, if the endpoint requires one.",
         examples=["xxx-xxx", "$inputs.api_key"],
         private=True,
     )
     system_prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
-        description="Optional system prompt to set model behavior.",
+        title="System Prompt",
+        description="Optional system message that sets model behavior.",
         examples=["You are a helpful assistant.", "$inputs.system_prompt"],
         json_schema_extra={
             "multiline": True,
         },
     )
     prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Prompt template with optional {{ $parameters.param_name }} placeholders. "
-        "Non-image parameters are substituted as text. Image parameters are sent as "
-        "vision content parts.",
+        title="Instruction",
+        description="Text sent to the model.",
         examples=[
             "Describe what you see in the image.",
-            "Count the {{ $parameters.object_type }} in the image.",
+            "Count the cars in the image.",
         ],
         json_schema_extra={
             "multiline": True,
@@ -141,11 +129,8 @@ class BlockManifest(WorkflowBlockManifest):
         str,
         Union[Selector(), Selector(), str, int, float, bool],
     ] = Field(
-        description="Dictionary mapping parameter names to workflow data sources. "
-        "Keys are referenced in prompt as {{ $parameters.key }}. "
-        "Values that resolve to images (WorkflowImageData or JPEG bytes) are sent as "
-        "vision content parts. Lists of images are supported. "
-        "All other values are converted to strings and substituted into the prompt text.",
+        title="Inputs",
+        description="Step outputs to include in the request (images or text).",
         examples=[
             {
                 "detections": "$steps.model.predictions",
@@ -158,8 +143,8 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     prompt_parameters_operations: Dict[str, List[AllOperationsType]] = Field(
-        description="Optional UQL operation chains to transform parameter values before "
-        "insertion. Keys must match parameter names in prompt_parameters.",
+        title="Input Transformations",
+        description="Optional UQL operations applied to inputs before use.",
         examples=[
             {
                 "detections": [
@@ -174,14 +159,27 @@ class BlockManifest(WorkflowBlockManifest):
     )
     max_tokens: int = Field(
         default=500,
-        description="Maximum number of tokens the model can generate.",
+        title="Max Tokens",
+        description="Maximum tokens the model may generate.",
         gt=1,
     )
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
-        description="Sampling temperature (0.0-2.0). Higher = more random.",
+        title="Temperature",
+        description="Sampling temperature, 0.0 to 2.0.",
         ge=0.0,
         le=2.0,
+    )
+    extra_body: Optional[Dict[str, Any]] = Field(
+        default=None,
+        title="Advanced API Options",
+        description="Extra JSON forwarded as the OpenAI SDK extra_body argument.",
+        examples=[
+            {
+                "guided_choice": ["A", "B", "C", "D"],
+                "chat_template_kwargs": {"enable_thinking": False},
+            }
+        ],
     )
 
     @classmethod
@@ -238,6 +236,7 @@ class OpenAICompatibleBlockV1(WorkflowBlock):
         prompt_parameters_operations: Dict[str, List[AllOperationsType]],
         max_tokens: int,
         temperature: Optional[float],
+        extra_body: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
         resolved_params = _resolve_parameters(
             prompt_parameters=prompt_parameters,
@@ -259,6 +258,7 @@ class OpenAICompatibleBlockV1(WorkflowBlock):
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                extra_body=extra_body,
             )
             return {"output": output, "error_status": ""}
         except Exception as e:
@@ -395,6 +395,7 @@ def _execute_request(
     messages: List[dict],
     max_tokens: int,
     temperature: Optional[float],
+    extra_body: Optional[Dict[str, Any]],
 ) -> str:
     kwargs: Dict[str, Any] = {
         "model": model_name,
@@ -403,10 +404,18 @@ def _execute_request(
     }
     if temperature is not None:
         kwargs["temperature"] = temperature
+    if extra_body is not None:
+        kwargs["extra_body"] = extra_body
     response = client.chat.completions.create(**kwargs)
     if response.choices is None or len(response.choices) == 0:
         error_detail = getattr(response, "error", {})
         if isinstance(error_detail, dict):
             error_detail = error_detail.get("message", "No response choices returned")
         raise RuntimeError(f"API returned no choices. Details: {error_detail}")
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    if content is None:
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+        raise RuntimeError(
+            f"API returned empty message content (finish_reason={finish_reason})."
+        )
+    return content

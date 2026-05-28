@@ -27,6 +27,7 @@ Qwen3.5 pre-trained models are available and do **not** require a Roboflow API k
 |----------|-------------|
 | `qwen3_5-0.8b` | 0.8B parameter model - compact and efficient |
 | `qwen3_5-2b` | 2B parameter model - better accuracy |
+| `qwen3_5-4b` | 4B parameter model - highest accuracy |
 
 You can also use fine-tuned models from Roboflow by specifying `project/version` as the model ID (requires API key).
 

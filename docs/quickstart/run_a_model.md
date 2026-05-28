@@ -2,7 +2,7 @@
 description: Run a pre-trained, fine-tuned, or Universe model with Roboflow Inference using the Python package or HTTP client.
 ---
 
-Let's run a computer vision model with Inference. There are two ways to do this: the [inference Python package](../using_inference/about.md) which loads and runs models directly in your process, or the [inference-sdk](../inference_helpers/inference_sdk.md) which sends requests to an Inference Server over HTTP.
+Let's run a computer vision model with Inference. There are two ways to do this: the [inference Python package](../using_inference/about.md) which loads and runs models directly in your process, or the [inference-sdk](../inference_helpers/inference_sdk.md) which sends requests to an [Inference Server](/quickstart/docker/) over HTTP.
 
 ## Install
 
@@ -12,7 +12,7 @@ Let's run a computer vision model with Inference. There are two ways to do this:
     pip install inference-sdk
     ```
 
-    This will install lightweight HTTP client that sends requests to Inference Server.
+    This will install [Inference SDK](/inference_helpers/inference_sdk/), a lightweight HTTP client that sends requests to Inference Server; either [Self-Hosted via Docker](/quickstart/docker/), or to [Hosted Serverless API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) (which runs Inference Server under-the-hood). 
 
 === "inference (native)"
 
@@ -32,7 +32,7 @@ Let's run a computer vision model with Inference. There are two ways to do this:
     [Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/) CUDA installation guide if
     your environment lacks required dependencies.
 
-    Starting from `inference 1.2.0`, the new inference engine — called `inference-models` — is used by default.
+    Starting from `inference 1.2.0`, the new inference engine - called `inference-models` - is used by default.
     It brings support for different model backends, like TensorRT. By default, `inference` installs the dependencies
     required to support `torch` and `onnx` models. Additional dependencies can be installed via `inference-models` 
     package extras. For instance, to install TRT dependencies:
@@ -51,7 +51,8 @@ Let's run a computer vision model with Inference. There are two ways to do this:
 
     image = "https://media.roboflow.com/inference/people-walking.jpg"
     client = InferenceHTTPClient(
-        api_url="https://serverless.roboflow.com",  # or "http://localhost:9001" for self-hosted
+        # api_url="http://localhost:9001",  # for Self-hosted
+        api_url="https://serverless.roboflow.com",
         api_key="ROBOFLOW_API_KEY",
     )
     results = client.infer(image, model_id="rfdetr-small")
@@ -106,6 +107,7 @@ pip install supervision
     )
 
     client = InferenceHTTPClient(
+        # api_url="http://localhost:9001",  # for Self-hosted
         api_url="https://serverless.roboflow.com",
         api_key="ROBOFLOW_API_KEY",
     )
