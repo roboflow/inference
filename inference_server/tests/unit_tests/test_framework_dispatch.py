@@ -157,7 +157,7 @@ async def test_registry_unreachable_returns_503():
 
 @pytest.mark.asyncio
 async def test_unregistered_model_type_returns_none_for_router_fallthrough():
-    with _stat_returns(("classification", "infer")):
+    with _stat_returns(("not-a-registered-task", "infer")):
         r = await handle_model_inference_request(
             _request(query=b"model_id=m"), _mock_proxy()
         )
