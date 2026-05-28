@@ -49,12 +49,25 @@ from inference.enterprise.workflows.enterprise_blocks.loader import (
 WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
 WORKFLOWS_CORE_PLUGIN_NAME = "workflows_core"
 
+logger = logging.getLogger(__name__)
 
-def _get_restrictions(manifest_class: Any) -> List[dict]:
-    get_restrictions = getattr(manifest_class, "get_restrictions", None)
+
+def _get_restrictions(block: BlockSpecification) -> List[dict]:
+    get_restrictions = getattr(block.manifest_class, "get_restrictions", None)
     if get_restrictions is None:
         return []
-    return [restriction.to_dict() for restriction in get_restrictions()]
+    try:
+        items = list(get_restrictions())
+        return [item.to_dict() for item in items]
+    except Exception as error:
+        logger.warning(
+            "Block `%s` (from `%s`) returned an invalid get_restrictions() payload; "
+            "treating as no restrictions. Cause: %r",
+            block.identifier,
+            block.block_source,
+            error,
+        )
+        return []
 
 
 def _get_env_configuration_state() -> Tuple[Tuple[str, ...], bool]:
@@ -117,7 +130,7 @@ def describe_available_blocks(
                 manifest_type_identifier=manifest_type_identifiers[0],
                 manifest_type_identifier_aliases=manifest_type_identifiers[1:],
                 execution_engine_compatibility=block.manifest_class.get_execution_engine_compatibility(),
-                restrictions=_get_restrictions(block.manifest_class),
+                restrictions=_get_restrictions(block),
                 input_dimensionality_offsets=block.manifest_class.get_input_dimensionality_offsets(),
                 dimensionality_reference_property=block.manifest_class.get_dimensionality_reference_property(),
                 output_dimensionality_offset=block.manifest_class.get_output_dimensionality_offset(),
@@ -165,7 +178,7 @@ def _cached_describe_available_blocks(
                 manifest_type_identifier=manifest_type_identifiers[0],
                 manifest_type_identifier_aliases=manifest_type_identifiers[1:],
                 execution_engine_compatibility=block.manifest_class.get_execution_engine_compatibility(),
-                restrictions=_get_restrictions(block.manifest_class),
+                restrictions=_get_restrictions(block),
                 input_dimensionality_offsets=block.manifest_class.get_input_dimensionality_offsets(),
                 dimensionality_reference_property=block.manifest_class.get_dimensionality_reference_property(),
                 output_dimensionality_offset=block.manifest_class.get_output_dimensionality_offset(),
