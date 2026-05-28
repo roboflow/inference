@@ -2,13 +2,7 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
-from inference.core.env import (
-    CORE_MODEL_GAZE_ENABLED,
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_TARGET,
-)
+from inference.core.env import CORE_MODEL_GAZE_ENABLED
 from inference.core.exceptions import FeatureDeprecatedError
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
