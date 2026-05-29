@@ -774,6 +774,61 @@ def annotate_image_at_roboflow(
 
 
 @wrap_roboflow_api_errors()
+def update_image_metadata_at_roboflow(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    image_id: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    add_tags: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    payload = {}
+    if metadata is not None:
+        payload["metadata"] = metadata
+    if add_tags is not None:
+        payload["addTags"] = add_tags
+
+    encoded_image_id = urllib.parse.quote(image_id, safe="")
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/images/{encoded_image_id}/metadata",
+            params=[("api_key", api_key)],
+        )
+    )
+    response = requests.post(
+        url=api_url,
+        json=payload,
+        headers=build_roboflow_api_headers(),
+        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
+    )
+    api_key_safe_raise_for_status(response=response)
+    return response.json()
+
+
+@wrap_roboflow_api_errors()
+def batch_update_image_metadata_at_roboflow(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    updates: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/images/metadata",
+            params=[("api_key", api_key)],
+        )
+    )
+    response = requests.post(
+        url=api_url,
+        json={"updates": updates},
+        headers=build_roboflow_api_headers(),
+        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
+    )
+    api_key_safe_raise_for_status(response=response)
+    return response.json()
+
+
+@wrap_roboflow_api_errors()
 def get_roboflow_labeling_batches(
     api_key: str, workspace_id: WorkspaceID, dataset_id: str
 ) -> dict:
