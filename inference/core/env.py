@@ -221,6 +221,13 @@ QWEN_3_ENABLED = str2bool(os.getenv("QWEN_3_ENABLED", True))
 
 QWEN_3_5_ENABLED = str2bool(os.getenv("QWEN_3_5_ENABLED", True))
 
+VLLM_LMM_ENABLED = str2bool(os.getenv("VLLM_LMM_ENABLED", False))
+VLLM_LMM_BASE_URL = os.getenv("VLLM_LMM_BASE_URL", "")
+VLLM_LMM_MODEL_NAME = os.getenv("VLLM_LMM_MODEL_NAME", "vlm-ocr-14")
+VLLM_LMM_API_KEY = os.getenv("VLLM_LMM_API_KEY", "EMPTY")
+VLLM_LMM_TIMEOUT_SECONDS = float(os.getenv("VLLM_LMM_TIMEOUT_SECONDS", "120"))
+VLLM_LMM_TEMPERATURE = float(os.getenv("VLLM_LMM_TEMPERATURE", "0"))
+
 DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))

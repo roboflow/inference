@@ -1,6 +1,7 @@
-from typing import Any, List
+import base64
+from typing import Any, Dict, List, Optional, Tuple
 
-import torch
+from openai import OpenAI
 
 from inference.core.entities.responses import (
     InferenceResponseImage,
@@ -10,13 +11,59 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
+    VLLM_LMM_API_KEY,
+    VLLM_LMM_BASE_URL,
+    VLLM_LMM_ENABLED,
+    VLLM_LMM_MODEL_NAME,
+    VLLM_LMM_TEMPERATURE,
+    VLLM_LMM_TIMEOUT_SECONDS,
 )
 from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
-from inference.core.utils.image_utils import load_image_bgr
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image_bgr
 from inference_models import AutoModel
 from inference_models.models.qwen3_5.qwen3_5_hf import Qwen35HF
+
+NATIVE_SYSTEM_PROMPT_SEPARATOR = "<system_prompt>"
+
+
+def _normalize_vllm_base_url(base_url: str) -> str:
+    normalized_base_url = base_url.rstrip("/")
+    if normalized_base_url.endswith("/v1"):
+        return normalized_base_url
+    return f"{normalized_base_url}/v1"
+
+
+def _split_native_prompt(prompt: Optional[str]) -> Tuple[str, Optional[str]]:
+    if not prompt:
+        return "", None
+    user_prompt, separator, system_prompt = prompt.partition(
+        NATIVE_SYSTEM_PROMPT_SEPARATOR
+    )
+    if not separator:
+        return prompt, None
+    return user_prompt, system_prompt or None
+
+
+def _encode_image_data_url(image: Any) -> str:
+    jpeg_bytes = encode_image_to_jpeg_bytes(image)
+    b64 = base64.b64encode(jpeg_bytes).decode("ascii")
+    return f"data:image/jpeg;base64,{b64}"
+
+
+def _build_vllm_messages(prompt: Optional[str], image_data_url: str) -> List[Dict]:
+    user_prompt, system_prompt = _split_native_prompt(prompt)
+    messages: List[Dict] = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+
+    user_content = []
+    if user_prompt:
+        user_content.append({"type": "text", "text": user_prompt})
+    user_content.append({"type": "image_url", "image_url": {"url": image_data_url}})
+    messages.append({"role": "user", "content": user_content})
+    return messages
 
 
 class InferenceModelsQwen35VLAdapter(Model):
@@ -28,13 +75,29 @@ class InferenceModelsQwen35VLAdapter(Model):
         self.api_key = api_key if api_key else API_KEY
 
         self.task_type = "lmm"
+        self._model: Optional[Qwen35HF] = None
+        self._vllm_client: Optional[OpenAI] = None
+        self._vllm_model_name = VLLM_LMM_MODEL_NAME
+        self._vllm_temperature = VLLM_LMM_TEMPERATURE
+
+        if VLLM_LMM_ENABLED:
+            if not VLLM_LMM_BASE_URL:
+                raise ValueError(
+                    "VLLM_LMM_BASE_URL must be set when VLLM_LMM_ENABLED=True"
+                )
+            self._vllm_client = OpenAI(
+                base_url=_normalize_vllm_base_url(VLLM_LMM_BASE_URL),
+                api_key=VLLM_LMM_API_KEY,
+                timeout=VLLM_LMM_TIMEOUT_SECONDS,
+            )
+            return
 
         extra_weights_provider_headers = get_extra_weights_provider_headers(
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
 
-        self._model: Qwen35HF = AutoModel.from_pretrained(
+        self._model = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=self.api_key,
             allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
@@ -58,23 +121,38 @@ class InferenceModelsQwen35VLAdapter(Model):
         )
         input_shape = PreprocessReturnMetadata({"image_dims": np_image.shape[:2][::-1]})
         mapped_kwargs = self.map_inference_kwargs(kwargs)
+        if self._vllm_client is not None:
+            return (
+                {
+                    "image_data_url": _encode_image_data_url(np_image),
+                    "prompt": prompt,
+                },
+                input_shape,
+            )
         return (
             self._model.pre_process_generation(np_image, prompt, **mapped_kwargs),
             input_shape,
         )
 
-    def predict(self, inputs, **kwargs) -> torch.Tensor:
+    def predict(self, inputs, **kwargs) -> Any:
         mapped_kwargs = self.map_inference_kwargs(kwargs)
+        if self._vllm_client is not None:
+            return self._generate_with_vllm(inputs, **mapped_kwargs)
         return self._model.generate(inputs, **mapped_kwargs)
 
     def postprocess(
         self,
-        predictions: torch.Tensor,
+        predictions: Any,
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
     ) -> List[LMMInferenceResponse]:
         mapped_kwargs = self.map_inference_kwargs(kwargs)
-        result = self._model.post_process_generation(predictions, **mapped_kwargs)[0]
+        if self._vllm_client is not None:
+            result = predictions
+        else:
+            result = self._model.post_process_generation(predictions, **mapped_kwargs)[
+                0
+            ]
         return [
             LMMInferenceResponse(
                 response=result,
@@ -87,3 +165,39 @@ class InferenceModelsQwen35VLAdapter(Model):
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         pass
+
+    def _generate_with_vllm(self, inputs: Dict[str, Any], **kwargs) -> str:
+        messages = _build_vllm_messages(
+            prompt=inputs["prompt"],
+            image_data_url=inputs["image_data_url"],
+        )
+        request_kwargs: Dict[str, Any] = {
+            "model": self._vllm_model_name,
+            "messages": messages,
+            "temperature": self._vllm_temperature,
+        }
+        max_tokens = kwargs.get("max_new_tokens") or kwargs.get("max_tokens")
+        if max_tokens is not None:
+            request_kwargs["max_tokens"] = max_tokens
+        extra_body = _build_vllm_extra_body(kwargs)
+        if extra_body:
+            request_kwargs["extra_body"] = extra_body
+
+        response = self._vllm_client.chat.completions.create(**request_kwargs)
+        content = response.choices[0].message.content
+        if content is None:
+            finish_reason = getattr(response.choices[0], "finish_reason", "unknown")
+            raise RuntimeError(
+                f"vLLM returned empty message content, finish_reason={finish_reason}"
+            )
+        return content
+
+
+def _build_vllm_extra_body(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    if "enable_thinking" not in kwargs:
+        return {}
+    return {
+        "chat_template_kwargs": {
+            "enable_thinking": bool(kwargs["enable_thinking"]),
+        }
+    }
