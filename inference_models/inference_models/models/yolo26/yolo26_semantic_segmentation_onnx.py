@@ -28,6 +28,7 @@ from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     ResizeMode,
     parse_class_names_file,
+    resolve_background_class_id,
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
@@ -98,10 +99,7 @@ class YOLO26ForSemanticSegmentationOnnx(
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
-        try:
-            background_class_id = [c.lower() for c in class_names].index("background")
-        except ValueError:
-            background_class_id = -1
+        background_class_id = resolve_background_class_id(class_names)
         inference_config = parse_inference_config(
             config_path=model_package_content["inference_config.json"],
             allowed_resize_modes={
