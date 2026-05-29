@@ -40,7 +40,7 @@ AUTH_CACHE_MAX_SIZE = get_integer_from_env("AUTH_CACHE_MAX_SIZE", default=10000)
 
 # ── Server / MMP launch (server.main) ─────────────────────────────────────
 NVIDIA_MPS_ENV = "NVIDIA_MPS"  # truthy check against literal "1"
-SERVER_N_SLOTS = get_integer_from_env("INFERENCE_N_SLOTS", default=256)
+SERVER_N_SLOTS = get_integer_from_env("INFERENCE_N_SLOTS", default=32)
 SERVER_INPUT_MB = get_float_from_env("INFERENCE_INPUT_MB", default=25.0)
 SERVER_DECODER = os.environ.get("INFERENCE_DECODER", "imagecodecs")
 SERVER_BATCH_MAX_SIZE = get_integer_from_env("INFERENCE_BATCH_MAX_SIZE", default=0)

@@ -13,7 +13,7 @@ moment.
 from inference_models.utils.environment import get_float_from_env, get_integer_from_env
 
 # ── Model Manager Process CLI defaults (model_manager_process.py) ──────────
-MMP_N_SLOTS_DEFAULT = get_integer_from_env("MMP_N_SLOTS", default=256)
+MMP_N_SLOTS_DEFAULT = get_integer_from_env("MMP_N_SLOTS", default=32)
 MMP_INPUT_MB_DEFAULT = get_float_from_env("MMP_INPUT_MB", default=20.0)
 
 # ── Subprocess backend (backends/subproc.py) ───────────────────────────────

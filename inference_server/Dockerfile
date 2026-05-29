@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates openssl \
+        libgl1 libglib2.0-0 libvips ffmpeg \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+COPY inference_models        /app/inference_models
+COPY inference_model_manager /app/inference_model_manager
+COPY inference_server        /app/inference_server
+
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
+# CWD = inference_models so its [tool.uv] index/sources/dependency-metadata apply.
+WORKDIR /app/inference_models
+RUN uv venv --python 3.12 /opt/venv \
+    && uv pip install \
+        -e ".[torch-cu124,onnx-cu12,trt10]" \
+        -e "../inference_model_manager[cuda]" \
+        -e "../inference_server"
+
+WORKDIR /app/inference_server
+
+EXPOSE 8443
+
+CMD ["/bin/bash", "start_server.sh"]
