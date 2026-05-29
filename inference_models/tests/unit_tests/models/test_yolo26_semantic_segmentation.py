@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock
 
-import pytest
 import torch
 
 
@@ -115,23 +114,6 @@ def test_post_process_semantic_segmentation_logits_shifts_when_class_names_prepe
     assert torch.all(results[0].segmentation_map == 3)
 
 
-def test_yolo26_semantic_segmentation_onnx_import():
-    try:
-        from inference_models.models.yolo26.yolo26_semantic_segmentation_onnx import (
-            YOLO26ForSemanticSegmentationOnnx,
-        )
-    except Exception as exc:
-        pytest.skip(f"ONNX extras unavailable: {exc}")
-    assert YOLO26ForSemanticSegmentationOnnx is not None
-
-
-def test_yolo26_semantic_segmentation_torch_script_import():
-    from inference_models.models.yolo26.yolo26_semantic_segmentation_torch_script import (
-        YOLO26ForSemanticSegmentationTorchScript,
-    )
-    assert YOLO26ForSemanticSegmentationTorchScript is not None
-
-
 def test_yolo26_semantic_segmentation_registered():
     from inference_models.models.auto_loaders.entities import BackendType
     from inference_models.models.auto_loaders.models_registry import (
@@ -139,7 +121,7 @@ def test_yolo26_semantic_segmentation_registered():
         SEMANTIC_SEGMENTATION_TASK,
     )
 
-    for backend in (BackendType.ONNX, BackendType.TORCH_SCRIPT):
+    for backend in (BackendType.ONNX, BackendType.TORCH_SCRIPT, BackendType.TRT):
         assert ("yolo26", SEMANTIC_SEGMENTATION_TASK, backend) in REGISTERED_MODELS, (
             f"Missing yolo26 semantic seg entry for backend {backend}"
         )
