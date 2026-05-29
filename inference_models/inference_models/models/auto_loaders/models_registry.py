@@ -263,6 +263,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_torch_script",
         class_name="YOLO26ForSemanticSegmentationTorchScript",
     ),
+    ("yolo26", SEMANTIC_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_trt",
+        class_name="YOLO26ForSemanticSegmentationTRT",
+    ),
     ("yololite", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_models.models.yololite.yololite_object_detection_onnx",

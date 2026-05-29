@@ -2,7 +2,7 @@
 
 ## `0.28.7`
 
-- Added YOLO26 semantic segmentation support (ONNX and TorchScript backends).
+- Added YOLO26 semantic segmentation support (ONNX, TorchScript, and TensorRT backends).
 
 ## `0.28.6`
 
