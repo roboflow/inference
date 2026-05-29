@@ -18,7 +18,7 @@ Below you can find the changelog for Execution Engine.
 
 **What changed**
 
-* Added capability to recognize dictionaries wiath values being mix of static values and selectors - in previous 
+* Added capability to recognize dictionaries with values being mix of static values and selectors - in previous 
 versions, only dicts mapping keys to selectors were recognized, making some blocks not correctly wired to 
 referred values in runtime. Change is non-breaking, but fixes certain blocks which was broken in the past.
 
