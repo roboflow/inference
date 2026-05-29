@@ -990,6 +990,12 @@ if USE_INFERENCE_MODELS:
                 category=InferenceModelsStackMissing,
             )
 
+    # YOLO26 semantic segmentation is inference_models-only (no legacy implementation),
+    # so we add entries directly rather than swapping existing ones.
+    ROBOFLOW_MODEL_TYPES[("semantic-segmentation", "yolo26")] = (
+        InferenceModelsSemanticSegmentationAdapter
+    )
+
     # YOLOLite is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.
     for variant in [
