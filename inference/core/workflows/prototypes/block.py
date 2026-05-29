@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import BlockInterfaceError
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.introspection.utils import (
@@ -66,6 +65,22 @@ class RuntimeInputMode(str, Enum):
 
     IMAGE = "image"
     VIDEO = "video"
+
+
+class StepExecutionMode(Enum):
+    """How a workflow step is dispatched at runtime.
+
+    LOCAL: the step executes in-process inside the current Python interpreter.
+    REMOTE: the step delegates execution to a remote inference service / HTTP
+    runtime.
+
+    Kept in ``prototypes/block.py`` so the framework layer owns this enum and
+    higher-level packages (``core_steps``, executor, compiler) depend on
+    ``prototypes`` rather than the other way around.
+    """
+
+    LOCAL = "local"
+    REMOTE = "remote"
 
 
 @dataclass(frozen=True)
