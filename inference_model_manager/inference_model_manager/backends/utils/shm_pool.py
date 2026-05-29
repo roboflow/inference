@@ -151,6 +151,11 @@ class SHMPool:
                 b"\x00" * _HEADER_SIZE
             )
 
+        # Pre-fault every page so the full pool is committed to RAM now. An
+        # oversized pool then fails here at startup instead of SIGBUS/OOM under load.
+        for off in range(0, total_bytes, 4096):
+            shm.buf[off] = 0
+
         return cls(shm, n_slots, data_bytes, owner=True)
 
     @classmethod

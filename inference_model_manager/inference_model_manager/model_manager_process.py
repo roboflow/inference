@@ -251,7 +251,7 @@ class ModelManagerProcess:
 
     def __init__(
         self,
-        n_slots: int = 256,
+        n_slots: int = 32,
         input_mb: float = 20.0,
         stale_reap_interval_s: float = 10.0,
         stale_slot_max_age_s: float = 30.0,
