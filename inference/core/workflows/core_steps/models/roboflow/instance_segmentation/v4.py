@@ -34,6 +34,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
@@ -69,7 +70,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Instance Segmentation Model",
-            "version": "v3",
+            "version": "v4",
             "short_description": "Predict the shape, size, and location of objects.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -206,7 +207,10 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name=INFERENCE_ID_KEY, kind=[INFERENCE_ID_KIND]),
             OutputDefinition(
                 name="predictions",
-                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
+                kind=[
+                    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
             ),
             OutputDefinition(name="model_id", kind=[ROBOFLOW_MODEL_ID_KIND]),
         ]
