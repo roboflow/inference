@@ -1,3 +1,4 @@
+import base64
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -85,4 +86,45 @@ def test_qwen35_adapter_delegates_to_vllm(monkeypatch) -> None:
     assert messages[1]["content"][1]["type"] == "image_url"
     assert messages[1]["content"][1]["image_url"]["url"].startswith(
         "data:image/jpeg;base64,"
+    )
+
+
+def test_qwen35_adapter_preserves_base64_request_image_for_vllm(monkeypatch) -> None:
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content="HOME 42"),
+                finish_reason="stop",
+            )
+        ]
+    )
+    image = np.zeros((2, 3, 3), dtype=np.uint8)
+    image_base64 = base64.b64encode(
+        qwen35_module.encode_image_to_jpeg_bytes(image)
+    ).decode("ascii")
+
+    monkeypatch.setattr(qwen35_module, "VLLM_LMM_ENABLED", True)
+    monkeypatch.setattr(qwen35_module, "VLLM_LMM_BASE_URL", "http://vllm:8000")
+    monkeypatch.setattr(qwen35_module, "VLLM_LMM_MODEL_NAME", "vlm-ocr-14")
+    monkeypatch.setattr(qwen35_module, "VLLM_LMM_API_KEY", "EMPTY")
+    monkeypatch.setattr(qwen35_module, "VLLM_LMM_TIMEOUT_SECONDS", 12.0)
+    monkeypatch.setattr(qwen35_module, "VLLM_LMM_TEMPERATURE", 0.0)
+    monkeypatch.setattr(qwen35_module, "OpenAI", MagicMock(return_value=fake_client))
+    monkeypatch.setattr(qwen35_module.AutoModel, "from_pretrained", MagicMock())
+
+    adapter = qwen35_module.InferenceModelsQwen35VLAdapter(
+        model_id="vlm-ocr/14",
+        api_key="rf-api-key",
+    )
+    responses = adapter.infer(
+        image={"type": "base64", "value": image_base64},
+        prompt="OCR<system_prompt>You are Qwen.",
+    )
+
+    assert responses[0].image.width == 3
+    assert responses[0].image.height == 2
+    messages = fake_client.chat.completions.create.call_args.kwargs["messages"]
+    assert messages[1]["content"][1]["image_url"]["url"] == (
+        f"data:image/jpeg;base64,{image_base64}"
     )

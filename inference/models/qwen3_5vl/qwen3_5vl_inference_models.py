@@ -1,8 +1,10 @@
 import base64
+import binascii
 from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
+from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.responses import (
     InferenceResponseImage,
     LMMInferenceResponse,
@@ -28,6 +30,51 @@ from inference_models.models.qwen3_5.qwen3_5_hf import Qwen35HF
 NATIVE_SYSTEM_PROMPT_SEPARATOR = "<system_prompt>"
 
 
+def _extract_base64_image_payload(image: Any) -> Optional[str]:
+    image_type = None
+    image_value = None
+    if isinstance(image, InferenceRequestImage):
+        image_type = image.type
+        image_value = image.value
+    elif isinstance(image, dict):
+        image_type = image.get("type")
+        image_value = image.get("value")
+
+    if image_type is None or image_type.lower() != "base64":
+        return None
+    if isinstance(image_value, bytes):
+        image_value = image_value.decode("ascii")
+    if not isinstance(image_value, str):
+        return None
+    return image_value
+
+
+def _base64_payload_to_data_url(base64_payload: str) -> str:
+    if base64_payload.startswith("data:image/"):
+        return base64_payload
+    media_type = _guess_base64_image_media_type(base64_payload)
+    return f"data:{media_type};base64,{base64_payload}"
+
+
+def _guess_base64_image_media_type(base64_payload: str) -> str:
+    sample = base64_payload[:64]
+    try:
+        header = base64.b64decode(sample, validate=False)
+    except (binascii.Error, ValueError):
+        return "image/jpeg"
+    if header.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if header.startswith(b"GIF87a") or header.startswith(b"GIF89a"):
+        return "image/gif"
+    if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+        return "image/webp"
+    if header.startswith(b"BM"):
+        return "image/bmp"
+    return "image/jpeg"
+
+
 def _normalize_vllm_base_url(base_url: str) -> str:
     normalized_base_url = base_url.rstrip("/")
     if normalized_base_url.endswith("/v1"):
@@ -50,6 +97,13 @@ def _encode_image_data_url(image: Any) -> str:
     jpeg_bytes = encode_image_to_jpeg_bytes(image)
     b64 = base64.b64encode(jpeg_bytes).decode("ascii")
     return f"data:image/jpeg;base64,{b64}"
+
+
+def _image_data_url_from_input(image: Any, loaded_image: Any) -> str:
+    base64_payload = _extract_base64_image_payload(image)
+    if base64_payload is not None:
+        return _base64_payload_to_data_url(base64_payload)
+    return _encode_image_data_url(loaded_image)
 
 
 def _build_vllm_messages(prompt: Optional[str], image_data_url: str) -> List[Dict]:
@@ -124,7 +178,7 @@ class InferenceModelsQwen35VLAdapter(Model):
         if self._vllm_client is not None:
             return (
                 {
-                    "image_data_url": _encode_image_data_url(np_image),
+                    "image_data_url": _image_data_url_from_input(image, np_image),
                     "prompt": prompt,
                 },
                 input_shape,
