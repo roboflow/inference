@@ -2,11 +2,23 @@
 
 Below you can find the changelog for Execution Engine.
 
+## Execution Engine `v1.10.1` | inference `v1.2.12`
+
+**What changed**
+
+* **Dynamic blocks in nested inner workflows** — The compiler now collects
+  `dynamic_blocks_definitions` from the root workflow and every nested
+  `inner_workflow` child (depth-first), deduplicates by `manifest.block_type`
+  (first occurrence wins; a warning is logged when a duplicate is skipped), and
+  hoists the merged list onto the root definition before `compile_dynamic_blocks`
+  and inlining. Child steps that use custom Python block types defined only on
+  the nested workflow spec compile and run correctly after inlining.
+
 ## Execution Engine `v1.10.0` | inference `v1.2.10`
 
 **What changed**
 
-* Added capability to recognize dictionaries with values being mix of static values and selectors - in previous 
+* Added capability to recognize dictionaries wiath values being mix of static values and selectors - in previous 
 versions, only dicts mapping keys to selectors were recognized, making some blocks not correctly wired to 
 referred values in runtime. Change is non-breaking, but fixes certain blocks which was broken in the past.
 
