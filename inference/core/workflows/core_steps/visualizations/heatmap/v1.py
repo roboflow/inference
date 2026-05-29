@@ -5,6 +5,7 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
     PredictionsVisualizationBlock,
@@ -29,7 +30,6 @@ from inference.core.workflows.prototypes.block import (
     RuntimeInputMode,
     RuntimeRestriction,
     Severity,
-    StepExecutionMode,
     WorkflowBlockManifest,
 )
 

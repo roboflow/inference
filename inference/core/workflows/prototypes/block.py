@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import BlockInterfaceError
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.introspection.utils import (
@@ -30,20 +31,6 @@ class AirGappedAvailability:
 
     available: bool = True
     reason: Optional[str] = None
-
-
-class StepExecutionMode(Enum):
-    """Where a workflow step's compute runs.
-
-    ``LOCAL``: the step executes in-process inside the workflow runtime.
-    ``REMOTE``: the step delegates to a remote HTTP inference service.
-
-    Lives in :mod:`inference.core.workflows.prototypes.block` so the
-    foundational block layer does not need to import from ``core_steps``.
-    """
-
-    LOCAL = "local"
-    REMOTE = "remote"
 
 
 class Severity(str, Enum):

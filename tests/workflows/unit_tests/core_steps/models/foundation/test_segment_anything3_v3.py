@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
     BlockManifest,
     SegmentAnything3BlockV3,
@@ -14,7 +15,6 @@ from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
-from inference.core.workflows.prototypes.block import StepExecutionMode
 
 
 def _make_detections(class_names: list[str]) -> sv.Detections:

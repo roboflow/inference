@@ -11,6 +11,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
     remove_unexpected_keys_from_dictionary,
@@ -36,7 +37,6 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
-    StepExecutionMode,
     WorkflowBlock,
     WorkflowBlockManifest,
 )

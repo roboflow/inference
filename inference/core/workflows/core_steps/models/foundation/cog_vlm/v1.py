@@ -6,6 +6,7 @@ from pydantic import ConfigDict, Field
 from inference.core.env import LMM_ENABLED
 from inference.core.exceptions import FeatureDeprecatedError
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -27,7 +28,6 @@ from inference.core.workflows.prototypes.block import (
     Runtime,
     RuntimeRestriction,
     Severity,
-    StepExecutionMode,
     WorkflowBlock,
     WorkflowBlockManifest,
 )

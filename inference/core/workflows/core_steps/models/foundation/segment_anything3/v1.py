@@ -28,6 +28,7 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.utils.url_utils import wrap_url
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
@@ -58,7 +59,6 @@ from inference.core.workflows.prototypes.block import (
     Runtime,
     RuntimeRestriction,
     Severity,
-    StepExecutionMode,
     WorkflowBlock,
     WorkflowBlockManifest,
 )

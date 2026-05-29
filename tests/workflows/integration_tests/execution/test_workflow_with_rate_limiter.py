@@ -4,9 +4,9 @@ import numpy as np
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
-from inference.core.workflows.prototypes.block import StepExecutionMode
 
 WORKFLOW_WITH_RATE_LIMITER = {
     "version": "1.0",

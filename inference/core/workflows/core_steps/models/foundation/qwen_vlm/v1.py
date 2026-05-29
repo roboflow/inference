@@ -35,6 +35,7 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.openrouter import (
     PRIVACY_LEVEL_LITERAL,
     PRIVACY_LEVEL_METADATA,
@@ -66,7 +67,6 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
-    StepExecutionMode,
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceHTTPClient

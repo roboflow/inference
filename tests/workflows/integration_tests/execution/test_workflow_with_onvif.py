@@ -8,6 +8,7 @@ import numpy as np
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.sinks.onvif_movement import v1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import (
     CameraWrapper,
@@ -15,7 +16,6 @@ from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import (
     ONVIFSinkBlockV1,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.core.workflows.prototypes.block import StepExecutionMode
 
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 PORT = 1981  # Port to listen on (non-privileged ports are > 1023)

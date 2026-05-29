@@ -18,6 +18,7 @@ from inference.core.roboflow_api import (
     send_inference_results_to_model_monitoring,
 )
 from inference.core.version import __version__
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     INFERENCE_ID_KEY,
@@ -42,7 +43,6 @@ from inference.core.workflows.prototypes.block import (
     RuntimeInputMode,
     RuntimeRestriction,
     Severity,
-    StepExecutionMode,
     WorkflowBlock,
     WorkflowBlockManifest,
 )

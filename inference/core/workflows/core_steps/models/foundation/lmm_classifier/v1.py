@@ -4,6 +4,7 @@ from pydantic import ConfigDict, Field
 
 from inference.core.env import LMM_ENABLED
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import (
     GPT_4V_MODEL_TYPE,
     LMMConfig,
@@ -38,7 +39,6 @@ from inference.core.workflows.prototypes.block import (
     Runtime,
     RuntimeRestriction,
     Severity,
-    StepExecutionMode,
     WorkflowBlock,
     WorkflowBlockManifest,
 )

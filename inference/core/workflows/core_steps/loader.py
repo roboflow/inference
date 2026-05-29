@@ -130,6 +130,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_video_metadata_kind,
     deserialize_zone_kind,
 )
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
     serialise_rle_sv_detections,
@@ -337,7 +338,6 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
     RoboflowInstanceSegmentationModelBlockV4,
 )
-from inference.core.workflows.prototypes.block import StepExecutionMode
 
 if SAM3_3D_OBJECTS_ENABLED:
     from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (

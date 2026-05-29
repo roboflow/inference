@@ -2,11 +2,11 @@ import numpy as np
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.transformations.camera_calibration.v1 import (
     OUTPUT_CALIBRATED_IMAGE_KEY,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.core.workflows.prototypes.block import StepExecutionMode
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )

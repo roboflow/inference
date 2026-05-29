@@ -4,12 +4,12 @@ import numpy as np
 
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     VideoMetadata,
     WorkflowImageData,
 )
-from inference.core.workflows.prototypes.block import StepExecutionMode
 
 
 def test_cache_on_video() -> None:

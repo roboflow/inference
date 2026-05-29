@@ -20,6 +20,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
     DetectionsStitchBlockV1,
 )
@@ -29,7 +30,6 @@ from inference.core.workflows.errors import (
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
-from inference.core.workflows.prototypes.block import StepExecutionMode
 
 _WORKFLOW_DEFINITIONS_DIR = Path(__file__).resolve().parent / "workflow_definitions"
 

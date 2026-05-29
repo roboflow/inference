@@ -5,11 +5,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from inference.core.exceptions import FeatureDeprecatedError
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.gaze.v1 import (
     BlockManifest,
     GazeBlockV1,
 )
-from inference.core.workflows.prototypes.block import StepExecutionMode
 
 
 def test_gaze_block_manifest_keeps_v1_type_literal() -> None:

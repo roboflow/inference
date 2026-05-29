@@ -294,6 +294,7 @@ from inference.core.telemetry import (
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.utils.url_utils import wrap_url
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     WorkflowBlockError,
     WorkflowError,
@@ -316,7 +317,6 @@ from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser impo
     get_workflow_schema_description,
     parse_workflow_definition,
 )
-from inference.core.workflows.prototypes.block import StepExecutionMode
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 
