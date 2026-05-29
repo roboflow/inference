@@ -391,6 +391,23 @@ def retrieve_selectors_from_simple_property(
             inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
             is_list_element=True,
         )
+    if property_definition.get(TYPE_KEY) == OBJECT_TYPE and isinstance(
+        property_definition.get(ADDITIONAL_PROPERTIES_KEY), dict
+    ):
+        if is_list_element or is_dict_element:
+            # ignoring nested references above first level of depth
+            return None
+        return retrieve_selectors_from_simple_property(
+            property_name=property_name,
+            property_description=property_description,
+            property_definition=property_definition[ADDITIONAL_PROPERTIES_KEY],
+            property_dimensionality_offset=property_dimensionality_offset,
+            is_dimensionality_reference_property=is_dimensionality_reference_property,
+            inputs_accepting_batches=inputs_accepting_batches,
+            inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
+            inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
+            is_dict_element=True,
+        )
     if property_defines_union(property_definition=property_definition):
         return retrieve_selectors_from_union_definition(
             property_name=property_name,
