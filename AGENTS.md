@@ -87,3 +87,31 @@ The repository follows PEP 8 and uses Black (88 characters), isort and flake8.
 - PR descriptions should explain what changed and why, list test commands run,
   and follow the templates in `.github`.
 - Update documentation when applicable.
+
+## Cursor Cloud specific instructions
+
+### Running the inference server locally (without Docker)
+
+Use the `debugrun.py` script at the repo root. It creates the model registry, manager, and HTTP interface directly:
+
+```bash
+cd /agent/repos/inference
+PORT=9001 CORE_MODEL_SAM_ENABLED=False CORE_MODEL_SAM3_ENABLED=False python3 debugrun.py
+```
+
+The server will be available at `http://localhost:9001`. Verify with `curl http://localhost:9001/info`.
+
+Disable SAM/SAM3 models via env vars to avoid missing-dependency warnings unless you specifically need them.
+
+### Testing
+
+- Unit tests: `pytest tests/inference/unit_tests/` (1400+ tests, ~2 min)
+- SDK tests: `pytest tests/inference_sdk/unit_tests/`
+- CLI tests: `pytest tests/inference_cli/unit_tests/`
+- Workflow tests: `pytest tests/workflows/unit_tests/`
+- Lint: `make check_code_quality` (Black + isort + flake8). Note: there are pre-existing flake8 F824 warnings in the repo.
+
+### Gotchas
+
+- The `inference_cli server start` command is designed to manage Docker containers, not for local dev. Use `debugrun.py` instead.
+- The `app` attribute does not exist as a module-level variable in `http_api.py` (it is created inside the `HttpInterface` class). Do not try to start with `uvicorn inference.core.interfaces.http.http_api:app`.
