@@ -1431,6 +1431,28 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#execution-engine-v1101-inference-v1212" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Engine v1.10.1 | inference v1.2.12
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#execution-engine-v1100-inference-v1210" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Engine v1.10.0 | inference v1.2.10
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#execution-engine-v190-inference-v120" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1768,6 +1790,28 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#execution-engine-v1101-inference-v1212" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Engine v1.10.1 | inference v1.2.12
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#execution-engine-v1100-inference-v1210" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Engine v1.10.0 | inference v1.2.10
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#execution-engine-v190-inference-v120" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1916,6 +1960,24 @@
 
 <h1 id="execution-engine-changelog">Execution Engine Changelog<a class="headerlink" href="#execution-engine-changelog" title="Permanent link">&para;</a></h1>
 <p>Below you can find the changelog for Execution Engine.</p>
+<h2 id="execution-engine-v1101-inference-v1212">Execution Engine <code>v1.10.1</code> | inference <code>v1.2.12</code><a class="headerlink" href="#execution-engine-v1101-inference-v1212" title="Permanent link">&para;</a></h2>
+<p><strong>What changed</strong></p>
+<ul>
+<li><strong>Dynamic blocks in nested inner workflows</strong> — The compiler now collects
+  <code>dynamic_blocks_definitions</code> from the root workflow and every nested
+  <code>inner_workflow</code> child (depth-first), deduplicates by <code>manifest.block_type</code>
+  (first occurrence wins; a warning is logged when a duplicate is skipped), and
+  hoists the merged list onto the root definition before <code>compile_dynamic_blocks</code>
+  and inlining. Child steps that use custom Python block types defined only on
+  the nested workflow spec compile and run correctly after inlining.</li>
+</ul>
+<h2 id="execution-engine-v1100-inference-v1210">Execution Engine <code>v1.10.0</code> | inference <code>v1.2.10</code><a class="headerlink" href="#execution-engine-v1100-inference-v1210" title="Permanent link">&para;</a></h2>
+<p><strong>What changed</strong></p>
+<ul>
+<li>Added capability to recognize dictionaries with values being mix of static values and selectors - in previous 
+versions, only dicts mapping keys to selectors were recognized, making some blocks not correctly wired to 
+referred values in runtime. Change is non-breaking, but fixes certain blocks which was broken in the past.</li>
+</ul>
 <h2 id="execution-engine-v190-inference-v120">Execution Engine <code>v1.9.0</code> | inference <code>v1.2.0</code><a class="headerlink" href="#execution-engine-v190-inference-v120" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">New feature: nested workflows via compile-time inlining</p>

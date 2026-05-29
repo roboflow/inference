@@ -1407,6 +1407,11 @@
 <td><code>None</code></td>
 </tr>
 <tr>
+<td><code>API_PROXY_BASE_URL</code></td>
+<td>Base URL used for Roboflow API proxy requests to <code>apiproxy/*</code> endpoints. Set this to a direct heavy API Cloud Run service root to bypass Firebase Hosting timeouts for long-running third-party proxy calls.</td>
+<td><code>API_BASE_URL</code></td>
+</tr>
+<tr>
 <td><code>TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES</code></td>
 <td>Number of times transient errors (connection errors and HTTP transient codes) to RF API will be retried (only applicable to GET endpoints)</td>
 <td><code>3</code></td>

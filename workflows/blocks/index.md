@@ -1130,6 +1130,21 @@ hide:
 
 
 
+            <a href="roboflow_asset_library_attributes">
+              <div class="block">
+                
+                <div class="block_name"> <i class="fal fa-tags" > </i>  Roboflow Asset Library Attributes</div>
+                <div class="block_description">Update attributes and tags for Asset Library images.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
             <a href="webhook_sink">
               <div class="block">
                 

@@ -302,6 +302,8 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ## `core/workflows/core_steps/common`
 
+::: inference.core.workflows.core_steps.common.entities
+
 ::: inference.core.workflows.core_steps.common.openrouter
 
 ::: inference.core.workflows.core_steps.common.utils
@@ -379,6 +381,10 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 ## `core/workflows/core_steps/sinks/email_notification`
 
 ::: inference.core.workflows.core_steps.sinks.email_notification.v2
+
+## `core/workflows/core_steps/sinks/roboflow/asset_library_attributes`
+
+::: inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1
 
 ## `core/workflows/core_steps/sinks/roboflow/dataset_upload`
 
@@ -475,6 +481,8 @@ Workflow execution engine entry points and helpers.
 ::: inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge
 
 ::: inference.core.workflows.execution_engine.v1.inner_workflow.composition
+
+::: inference.core.workflows.execution_engine.v1.inner_workflow.dynamic_blocks_collection
 
 ::: inference.core.workflows.execution_engine.v1.inner_workflow.errors
 
