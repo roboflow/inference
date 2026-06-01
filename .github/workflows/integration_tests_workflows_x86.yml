@@ -26,6 +26,10 @@ on:
           - "true"
           - "false"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   call_is_mergeable:
     uses: ./.github/workflows/check_if_branch_is_mergeable.yml
