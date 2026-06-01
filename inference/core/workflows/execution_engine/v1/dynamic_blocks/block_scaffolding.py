@@ -72,7 +72,13 @@ def assembly_custom_python_block(
         )
     run_function = getattr(code_module, python_code.run_function_name)
 
-    def run(self, *args, **kwargs) -> BlockResult:
+    def run(
+        self,
+        *args,
+        _workflow_execution_id: Optional[str] = None,
+        **kwargs,
+    ) -> BlockResult:
+        self._workflow_execution_id = _workflow_execution_id
         # Check if we're using Modal remote execution
         if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
             # Remote execution via Modal - allowed even if local execution is disabled
@@ -95,6 +101,7 @@ def assembly_custom_python_block(
                 python_code=python_code,
                 inputs=kwargs,
                 workspace_id=workspace_id,
+                workflow_context=self.get_workflow_context(),
             )
         else:
             # Local execution - check if allowed
@@ -136,6 +143,17 @@ def assembly_custom_python_block(
         self._init_results = init_function()
         self._api_key = api_key
 
+    def get_workflow_context(self) -> Dict[str, Any]:
+        context = {
+            "step_name": getattr(self, "_workflow_step_name", None),
+            "step_selector": getattr(self, "_workflow_step_selector", None),
+            "block_type": getattr(self, "_workflow_step_type", block_type_name),
+        }
+        workflow_execution_id = getattr(self, "_workflow_execution_id", None)
+        if workflow_execution_id is not None:
+            context["workflow_execution_id"] = workflow_execution_id
+        return context
+
     @classmethod
     def get_init_parameters(cls) -> List[str]:
         return ["api_key"]
@@ -149,6 +167,7 @@ def assembly_custom_python_block(
         (WorkflowBlock,),
         {
             "__init__": constructor,
+            "get_workflow_context": get_workflow_context,
             "get_init_parameters": get_init_parameters,
             "get_manifest": get_manifest,
             "run": run,

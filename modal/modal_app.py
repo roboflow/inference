@@ -125,6 +125,7 @@ class Executor:
         imports = request.get("imports", [])
         run_function_name = request.get("run_function_name", "")
         inputs_json = request.get("inputs_json", "{}")
+        workflow_context = request.get("workflow_context") or {}
 
         # Get the hash of this code to identify it uniquely
         code_hash = self._get_code_hash(code_str, imports)
@@ -354,7 +355,8 @@ from datetime import datetime
                     if params and params[0] == "self":
 
                         class BlockSelf:
-                            pass
+                            def get_workflow_context(self) -> Dict[str, Any]:
+                                return dict(workflow_context)
 
                         block_self = BlockSelf()
                         result = user_function(block_self, **inputs)
