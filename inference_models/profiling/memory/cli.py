@@ -87,8 +87,17 @@ def _cmd_list(
         rows = list_trt_registry_rows()
     else:
         rows = list_torch_registry_rows()
+        table_title = (
+            "REGISTERED_MODELS — PyTorch memory harness "
+            "(BackendType.TORCH, BackendType.HF)"
+        )
 
-    table = Table(title=f"REGISTERED_MODELS — BackendType.{backend.name}")
+    if backend == BackendType.ONNX:
+        table_title = f"REGISTERED_MODELS — BackendType.{backend.name}"
+    elif backend == BackendType.TRT:
+        table_title = f"REGISTERED_MODELS — BackendType.{backend.name}"
+
+    table = Table(title=table_title)
     table.add_column("architecture")
     table.add_column("task_type")
     table.add_column("backend")
@@ -190,13 +199,17 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     context_settings={"help_option_names": ["-h", "--help"]},
     help=(
         "GPU memory profiling for inference_models registry classes "
-        "(see profiling/memory/docs/description.md)."
+        "(see profiling/memory/docs/description.md). "
+        "Use --backend torch for native Torch and Hugging Face (HF) registry entries."
     ),
 )
 @click.option(
     "--list-torch-models",
     is_flag=True,
-    help="Print Torch backend rows from models_registry and exit.",
+    help=(
+        "Print Torch and Hugging Face (HF) registry rows profiled via the "
+        "PyTorch harness, then exit."
+    ),
 )
 @click.option(
     "--list-onnx-models",

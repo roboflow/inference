@@ -10,6 +10,12 @@ from inference_models.models.auto_loaders.models_registry import (
 )
 from inference_models.utils.imports import LazyClass
 
+# Registry backends profiled via profiling.memory.workers.torch (PyTorch CUDA metrics).
+TORCH_MEMORY_PROFILING_BACKENDS = (
+    BackendType.TORCH,
+    BackendType.HF,
+)
+
 
 @dataclass(frozen=True)
 class RegistryBackendRow:
@@ -64,8 +70,17 @@ def list_backend_registry_rows(
     return rows
 
 
+def iter_torch_memory_profiling_registry_rows() -> Iterator[RegistryBackendRow]:
+    """Yield registry rows for backends measured with the Torch memory harness."""
+    for backend in TORCH_MEMORY_PROFILING_BACKENDS:
+        yield from iter_backend_registry_rows(backend=backend)
+
+
 def list_torch_registry_rows() -> List[RegistryBackendRow]:
-    rows = list_backend_registry_rows(backend=BackendType.TORCH)
+    rows = sorted(
+        iter_torch_memory_profiling_registry_rows(),
+        key=lambda row: (row.architecture, row.task_type or "", row.backend.value),
+    )
 
     return rows
 

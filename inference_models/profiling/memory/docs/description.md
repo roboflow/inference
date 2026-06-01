@@ -119,6 +119,10 @@ Aggregate all runs and store:
 
 #### PyTorch
 
+Registry entries with backend `torch` or `hugging-face` (`HF`) are profiled with the
+same harness: both load via `from_pretrained`, run on CUDA, and report
+`torch.cuda` allocator metrics.
+
 ##### Workflow
 
 For each test case:
