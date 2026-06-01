@@ -216,6 +216,7 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     -r requirements.jetson.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
     "setuptools<=75.5.0" \
+    "transformers>=4.57.3,<5.9.0" \
     packaging \
     && rm -rf ~/.cache/uv /tmp/overrides.txt
 

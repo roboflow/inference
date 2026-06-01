@@ -18,6 +18,8 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -126,6 +128,19 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "Cache blocks only support LOCAL workflow step execution; "
+                    "remote step execution raises NotImplementedError."
+                ),
+                applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+            ),
+        ]
 
 
 class CacheSetBlockV1(WorkflowBlock):

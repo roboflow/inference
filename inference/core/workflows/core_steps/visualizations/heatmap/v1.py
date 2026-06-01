@@ -1,10 +1,11 @@
 import time
-from typing import Dict, Literal, Optional, Type, Union
+from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
     PredictionsVisualizationBlock,
@@ -22,7 +23,15 @@ from inference.core.workflows.execution_engine.entities.types import (
     VIDEO_METADATA_KIND,
     Selector,
 )
-from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference.core.workflows.prototypes.block import (
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+    BlockResult,
+    Runtime,
+    RuntimeInputMode,
+    RuntimeRestriction,
+    Severity,
+    WorkflowBlockManifest,
+)
 
 TYPE: str = "roboflow_core/heatmap_visualization@v1"
 SHORT_DESCRIPTION = "Draw a heatmap based on detections in an image."
@@ -142,6 +151,28 @@ class HeatmapManifest(PredictionsVisualizationManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restriction = RuntimeRestriction(
+            severity=Severity.SOFT,
+            note=(
+                "Heatmap accumulation and stationary-object filtering keep "
+                "per-video tracking state in process memory. With remote step "
+                "execution on stateless or multi-replica HTTP runtimes, "
+                "successive frames may be served by different worker "
+                "processes, so heat history resets or splits across workers. "
+                "Use local step execution in an InferencePipeline for stable "
+                "cross-frame visualizations."
+            ),
+            applies_to_runtimes=[
+                Runtime.HOSTED_SERVERLESS,
+                Runtime.DEDICATED_DEPLOYMENT,
+            ],
+            applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+            applies_to_input_modes=[RuntimeInputMode.VIDEO],
+        )
+        return [restriction, STILL_IMAGE_INPUT_SOFT_RESTRICTION]
 
 
 class HeatmapVisualizationBlockV1(PredictionsVisualizationBlock):
