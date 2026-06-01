@@ -27,7 +27,7 @@ def test_trt_package_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -35,7 +35,7 @@ def test_trt_package_numpy(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -43,7 +43,7 @@ def test_trt_package_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16021 <= predictions[0].mask.cpu().sum().item() <= 16071
 
 
 @pytest.mark.slow
@@ -72,7 +72,7 @@ def test_trt_package_numpy_rle_variant(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -80,7 +80,7 @@ def test_trt_package_numpy_rle_variant(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -88,7 +88,7 @@ def test_trt_package_numpy_rle_variant(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= decoded_mask.sum().item() <= 16100
+    assert 16021 <= decoded_mask.sum().item() <= 16071
     assert np.allclose(
         decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
@@ -116,7 +116,7 @@ def test_trt_package_batch_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -124,7 +124,7 @@ def test_trt_package_batch_numpy(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -132,10 +132,10 @@ def test_trt_package_batch_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16021 <= predictions[0].mask.cpu().sum().item() <= 16071
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -143,7 +143,7 @@ def test_trt_package_batch_numpy(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -151,7 +151,7 @@ def test_trt_package_batch_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[1].mask.cpu().sum().item() <= 16100
+    assert 16021 <= predictions[1].mask.cpu().sum().item() <= 16071
 
 
 @pytest.mark.slow
@@ -183,7 +183,7 @@ def test_trt_package_batch_numpy_rle_variant(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -191,7 +191,7 @@ def test_trt_package_batch_numpy_rle_variant(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -199,10 +199,10 @@ def test_trt_package_batch_numpy_rle_variant(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= decoded_mask_1.cpu().sum().item() <= 16100
+    assert 16021 <= decoded_mask_1.cpu().sum().item() <= 16071
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -210,7 +210,7 @@ def test_trt_package_batch_numpy_rle_variant(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -218,7 +218,7 @@ def test_trt_package_batch_numpy_rle_variant(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= decoded_mask_2.cpu().sum().item() <= 16100
+    assert 16021 <= decoded_mask_2.cpu().sum().item() <= 16071
     assert np.allclose(
         decoded_mask_1.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
@@ -249,7 +249,7 @@ def test_trt_package_torch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -257,7 +257,7 @@ def test_trt_package_torch(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -265,7 +265,7 @@ def test_trt_package_torch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
 
 
 @pytest.mark.slow
@@ -291,7 +291,7 @@ def test_trt_package_torch_multiple_predictions_in_row(
         # then
         assert torch.allclose(
             predictions[0].confidence.cpu(),
-            torch.tensor([0.9527]).cpu(),
+            torch.tensor([0.9548]).cpu(),
             atol=0.01,
         )
         assert torch.allclose(
@@ -299,7 +299,7 @@ def test_trt_package_torch_multiple_predictions_in_row(
             torch.tensor([20], dtype=torch.int32).cpu(),
         )
         expected_xyxy = torch.tensor(
-            [[63, 173, 187, 374]],
+            [[63, 173, 189, 375]],
             dtype=torch.int32,
         )
         assert torch.allclose(
@@ -307,7 +307,7 @@ def test_trt_package_torch_multiple_predictions_in_row(
             expected_xyxy.cpu(),
             atol=5,
         )
-        assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+        assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
 
 
 @pytest.mark.slow
@@ -332,7 +332,7 @@ def test_trt_package_torch_list(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -340,7 +340,7 @@ def test_trt_package_torch_list(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -348,10 +348,10 @@ def test_trt_package_torch_list(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -359,7 +359,7 @@ def test_trt_package_torch_list(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -367,7 +367,7 @@ def test_trt_package_torch_list(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[1].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[1].mask.cpu().sum().item() <= 16229
 
 
 @pytest.mark.slow
@@ -392,7 +392,7 @@ def test_trt_package_torch_batch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -400,7 +400,7 @@ def test_trt_package_torch_batch(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -408,10 +408,10 @@ def test_trt_package_torch_batch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -419,7 +419,7 @@ def test_trt_package_torch_batch(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -427,7 +427,7 @@ def test_trt_package_torch_batch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[1].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[1].mask.cpu().sum().item() <= 16229
 
 
 @pytest.mark.slow

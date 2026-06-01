@@ -246,6 +246,13 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
         "require special decoding on the caller side - currently supported in `opt-in` mode when server is "
         "running with `USE_INFERENCE_MODELS=True` - otherwise it's ignored.",
     )
+    enforce_dense_masks_in_inference_models: Optional[bool] = Field(
+        default=False,
+        examples=[False],
+        description="Flag to enforce dense masks in inference models. Such masks are faster than "
+        "RLE but consume more memory which may be unstable in some cases. This flag cannot be tweaked "
+        "when used on Roboflow serverless platform.",
+    )
 
 
 class SemanticSegmentationInferenceRequest(CVInferenceRequest):
@@ -330,7 +337,7 @@ class LMMInferenceRequest(CVInferenceRequest):
     )
     enable_thinking: bool = Field(
         default=False,
-        description="If true, enables thinking/reasoning mode for models that support it (e.g. Qwen3.5-VL). The model's reasoning will be included in the response.",
+        description="If true, enables thinking/reasoning mode for models that support it (e.g. Qwen3.5). The model's reasoning will be included in the response.",
     )
     max_new_tokens: Optional[int] = Field(
         default=None,

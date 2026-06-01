@@ -61,6 +61,9 @@ class ModelManager:
         self.pingback = None
         self._state_lock = Lock()
         self._models_state_locks: Dict[str, Lock] = {}
+        # torch.jit.load/script mutate a process-global, non-thread-safe TorchScript
+        # registry; loaders acquire this so concurrent loads cannot corrupt it.
+        self.torchscript_state_global_lock = Lock()
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -134,11 +137,17 @@ class ModelManager:
                         service_secret=service_secret,
                     )
 
+                    extra_init_kwargs = {}
+                    if USE_INFERENCE_MODELS:
+                        extra_init_kwargs["torchscript_state_global_lock"] = (
+                            self.torchscript_state_global_lock
+                        )
                     model = model_class(
                         model_id=model_id,
                         api_key=api_key,
                         countinference=countinference,
                         service_secret=service_secret,
+                        **extra_init_kwargs,
                     )
                     vram_after = _get_cuda_memory_allocated()
                     if vram_before is not None and vram_after is not None:
