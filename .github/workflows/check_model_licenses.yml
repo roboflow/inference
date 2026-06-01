@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: "Checkout repository"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       - name: "Validate model directories"
         run: |
@@ -36,6 +36,15 @@ jobs:
           for model_dir in inference/models/*/; do
             # Remove trailing slash and get the basename (e.g., "modelA")
             dir_name=$(basename "${model_dir%/}")
+
+            # Allow opting a directory out of these checks by dropping a
+            # `.license_check_skip` marker file inside it. Intended for
+            # deprecation stubs whose model code (and bundled license files)
+            # have been removed.
+            if [ -f "$model_dir/.license_check_skip" ]; then
+              echo "Skipping directory: inference/models/$dir_name (.license_check_skip present)"
+              continue
+            fi
 
             echo "Checking directory: inference/models/$dir_name"
 

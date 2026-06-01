@@ -1,3 +1,7 @@
+---
+description: HTTP client guide for using Roboflow Inference Server from Python, including local, hosted, async, and batch inference.
+---
+
 # Inference SDK
 
 The `InferenceHTTPClient` enables you to interact with an [Inference Server](../quickstart/docker.md) over HTTP - hosted either by Roboflow or on your own hardware. `inference-sdk` can be installed via pip:
@@ -126,14 +130,14 @@ Methods that support batching / parallelism:
 
 - `infer(...)` and `infer_async(...)`
 - `ocr_image(...)` and `ocr_image_async(...)` (enforcing `max_batch_size=1`)
-- `detect_gazes(...)` and `detect_gazes_async(...)`
+- `detect_gazes(...)` and `detect_gazes_async(...)` — **deprecated**, always raises `inference_sdk.http.errors.FeatureDeprecatedError`
 - `get_clip_image_embeddings(...)` and `get_clip_image_embeddings_async(...)`
 
-The client also supports [core foundation models](inference_sdk/core_models.md) (CLIP, DocTR, Gaze) and [running Workflows](inference_sdk/workflows.md) for multi-step pipelines.
+The client also supports [core foundation models](inference_sdk/core_models.md) (CLIP, DocTR) and [running Workflows](inference_sdk/workflows.md) for multi-step pipelines.
 
 ## Inference against stream
 
-One may want to infer against video or directory of images - and that modes are supported in `inference-client`
+One may want to infer against video or a directory of images, and those modes are supported in `inference-sdk`.
 
 ```python
 from inference_sdk import InferenceHTTPClient
@@ -158,6 +162,6 @@ for file_path, image, prediction in CLIENT.infer_on_stream("local/dir/", model_i
 
 ## What is actually returned as prediction?
 
-`inference_client` returns plain Python dictionaries that are responses from model serving API. Modification
-is done only in context of `visualization` key that keep server-generated prediction visualisation (it
-can be transcoded to the format of choice) and in terms of client-side re-scaling.
+`InferenceHTTPClient` returns plain Python dictionaries that are responses from the model serving API. Modification
+is done only in the context of the `visualization` key, which keeps server-generated prediction visualisation and can
+be transcoded to the format of choice. Client-side rescaling only adjusts the input size.

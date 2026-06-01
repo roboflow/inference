@@ -124,6 +124,10 @@ class BlockDescription(BaseModel):
         description="Execution Engine versions compatible with block.",
         default=None,
     )
+    restrictions: List[dict] = Field(
+        description="Caveats for block execution and usefulness.",
+        default_factory=list,
+    )
     input_dimensionality_offsets: Dict[str, int] = Field(
         description="Dimensionality offsets for input parameters",
     )

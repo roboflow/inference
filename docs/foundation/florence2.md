@@ -1,3 +1,7 @@
+---
+description: Run Microsoft Florence-2 with Roboflow Inference for object detection, image captioning, OCR, phrase grounding, and open-vocabulary detection tasks.
+---
+
 <a href="https://blog.roboflow.com/florence-2/" target="_blank">Florence-2</a> is a multimodal model developed by Microsoft Research.
 
 You can use Florence-2 for:

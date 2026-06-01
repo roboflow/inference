@@ -1,3 +1,7 @@
+---
+description: Use OpenAI CLIP with Roboflow Inference for zero-shot image classification, image-text similarity search, automated labeling, and content moderation.
+---
+
 <a href="https://github.com/openai/CLIP" target="_blank">CLIP</a> is a computer vision model that can measure the similarity between text and images.
 
 CLIP can be used for, among other things:

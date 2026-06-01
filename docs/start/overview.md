@@ -1,3 +1,7 @@
+---
+description: Overview of Roboflow Inference deployment modes, model serving, and quickstart paths for self-hosted and managed setups.
+---
+
 # Inference
 
 Inference is an open-source computer vision deployment hub by [Roboflow](https://roboflow.com).
@@ -15,7 +19,7 @@ Read more about the Inference architecture [here](../../understand/architecture)
 ## Features
 
 - **[Model Serving](../quickstart/run_a_model)** - Object detection, classification, segmentation,
-  keypoint detection, OCR, VQA, gaze detection, and more. Supports
+  keypoint detection, OCR, VQA, and more. Supports
   [pre-trained](../quickstart/aliases), [fine-tuned](https://roboflow.com/train),
   and [foundation](../foundation/about) models.
 - **[Video Streaming](../workflows/video_processing/overview)** - Efficient

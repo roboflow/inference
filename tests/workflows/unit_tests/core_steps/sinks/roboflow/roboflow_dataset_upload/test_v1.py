@@ -613,6 +613,7 @@ def test_generate_batch_name(
 def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
     # given
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
@@ -634,6 +635,7 @@ def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     # given
     api_key = "my_api_key"
     cache = MemoryCache()
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     get_roboflow_workspace_mock.return_value = "workspace_from_api"
@@ -656,6 +658,7 @@ def test_execute_registration_when_quota_limit_exceeded(
 ) -> None:
     # given
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
@@ -709,6 +712,7 @@ def test_execute_registration_when_error_in_registration_happened(
 ) -> None:
     # given
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
@@ -766,6 +770,7 @@ def test_execute_registration_when_registration_should_be_successful(
 ) -> None:
     # given
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
@@ -1201,6 +1206,7 @@ def test_execute_registration_with_custom_image_name(
 ) -> None:
     # given
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
@@ -1253,6 +1259,7 @@ def test_execute_registration_without_image_name_uses_uuid(
 ) -> None:
     # given
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
