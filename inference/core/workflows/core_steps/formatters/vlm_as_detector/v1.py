@@ -4,6 +4,10 @@ import logging
 import re
 from functools import partial
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
+    parse_gemini_object_detection_response,
+)
 from uuid import uuid4
 
 import numpy as np
@@ -290,7 +294,7 @@ class VLMAsDetectorBlockV1(WorkflowBlock):
 
 def string2json(
     raw_json: str,
-) -> Tuple[bool, dict]:
+) -> Tuple[bool, Union[dict, list]]:
     json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(raw_json)
     if len(json_blocks_found) == 0:
         return try_parse_json(raw_json)
@@ -298,75 +302,22 @@ def string2json(
     return try_parse_json(first_block)
 
 
-def try_parse_json(content: str) -> Tuple[bool, dict]:
+def try_parse_json(content: str) -> Tuple[bool, Union[dict, list]]:
     try:
-        return False, json.loads(content)
+        parsed = json.loads(content)
+        if isinstance(parsed, (dict, list)):
+            return False, parsed
+        logging.warning(
+            "Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v1` block. "
+            f"Unexpected JSON root type: {type(parsed).__name__}."
+        )
+        return True, {}
     except Exception as error:
         logging.warning(
             f"Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v1` block. "
             f"Error type: {error.__class__.__name__}. Details: {error}"
         )
         return True, {}
-
-
-def parse_gemini_object_detection_response(
-    image: WorkflowImageData,
-    parsed_data: dict,
-    classes: List[str],
-    inference_id: str,
-) -> sv.Detections:
-    class_name2id = create_classes_index(classes=classes)
-    image_height, image_width = image.numpy_image.shape[:2]
-    if len(parsed_data["detections"]) == 0:
-        return sv.Detections.empty()
-    xyxy, class_id, class_name, confidence = [], [], [], []
-    for detection in parsed_data["detections"]:
-        xyxy.append(
-            [
-                detection["x_min"] * image_width,
-                detection["y_min"] * image_height,
-                detection["x_max"] * image_width,
-                detection["y_max"] * image_height,
-            ]
-        )
-        class_id.append(class_name2id.get(detection["class_name"], -1))
-        class_name.append(detection["class_name"])
-        confidence.append(scale_confidence(detection.get("confidence", 1.0)))
-    xyxy = np.array(xyxy).round(0) if len(xyxy) > 0 else np.empty((0, 4))
-    confidence = np.array(confidence) if len(confidence) > 0 else np.empty(0)
-    class_id = np.array(class_id).astype(int) if len(class_id) > 0 else np.empty(0)
-    class_name = np.array(class_name) if len(class_name) > 0 else np.empty(0)
-    detection_ids = np.array([str(uuid4()) for _ in range(len(xyxy))])
-    dimensions = np.array([[image_height, image_width]] * len(xyxy))
-    inference_ids = np.array([inference_id] * len(xyxy))
-    prediction_type = np.array(["object-detection"] * len(xyxy))
-    data = {
-        CLASS_NAME_DATA_FIELD: class_name,
-        IMAGE_DIMENSIONS_KEY: dimensions,
-        INFERENCE_ID_KEY: inference_ids,
-        DETECTION_ID_KEY: detection_ids,
-        PREDICTION_TYPE_KEY: prediction_type,
-    }
-    detections = sv.Detections(
-        xyxy=xyxy,
-        confidence=confidence,
-        class_id=class_id,
-        mask=None,
-        tracker_id=None,
-        data=data,
-    )
-    return attach_parents_coordinates_to_sv_detections(
-        detections=detections,
-        image=image,
-    )
-
-
-def create_classes_index(classes: List[str]) -> Dict[str, int]:
-    return {class_name: idx for idx, class_name in enumerate(classes)}
-
-
-def scale_confidence(value: float) -> float:
-    return min(max(float(value), 0.0), 1.0)
 
 
 def parse_florence2_object_detection_response(
