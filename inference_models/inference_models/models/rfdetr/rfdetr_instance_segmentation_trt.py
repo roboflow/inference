@@ -61,15 +61,18 @@ try:
     from inference_models.models.rfdetr.triton_preprocess import (
         TRITON_AVAILABLE as _TRITON_AVAILABLE,
         build_resample_tables,
-        triton_preprocess_rfdetr_stretch,
+        resolve_two_pass_launch_config,
+        triton_preprocess_rfdetr_stretch_two_pass_preallocated,
     )
 except ImportError:
     _TRITON_AVAILABLE = False
     build_resample_tables = None
-    triton_preprocess_rfdetr_stretch = None
+    resolve_two_pass_launch_config = None
+    triton_preprocess_rfdetr_stretch_two_pass_preallocated = None
 from inference_models.weights_providers.entities import RecommendedParameters
 
 _FAST_PATH_ENABLED = INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED
+
 
 try:
     import tensorrt as trt
@@ -113,8 +116,11 @@ class _FastPathState:
         "target_w",
         "pinned_host",
         "src_gpu",
-        "out_buffer",
+        "out_buffers",
+        "tmp_buffers",
+        "out_buffer_index",
         "tables",
+        "launch_config",
     )
 
     def __init__(
@@ -125,8 +131,10 @@ class _FastPathState:
         target_w: int,
         pinned_host: torch.Tensor,
         src_gpu: torch.Tensor,
-        out_buffer: torch.Tensor,
+        out_buffers: List[torch.Tensor],
+        tmp_buffers: List[torch.Tensor],
         tables,
+        launch_config,
     ) -> None:
         self.src_h = src_h
         self.src_w = src_w
@@ -134,8 +142,11 @@ class _FastPathState:
         self.target_w = target_w
         self.pinned_host = pinned_host
         self.src_gpu = src_gpu
-        self.out_buffer = out_buffer
+        self.out_buffers = out_buffers
+        self.tmp_buffers = tmp_buffers
+        self.out_buffer_index = 0
         self.tables = tables
+        self.launch_config = launch_config
 
     @classmethod
     def build(
@@ -148,9 +159,14 @@ class _FastPathState:
     ) -> "_FastPathState":
         pinned_host = torch.empty((src_h, src_w, 3), dtype=torch.uint8, pin_memory=True)
         src_gpu = torch.empty((src_h, src_w, 3), dtype=torch.uint8, device=device)
-        out_buffer = torch.empty(
-            (1, 3, target_h, target_w), dtype=torch.float32, device=device
-        )
+        out_buffers = [
+            torch.empty((1, 3, target_h, target_w), dtype=torch.float32, device=device)
+            for _ in range(3)
+        ]
+        tmp_buffers = [
+            torch.empty((3, src_h, target_w), dtype=torch.uint8, device=device)
+            for _ in range(3)
+        ]
         tables = build_resample_tables(
             src_h=src_h,
             src_w=src_w,
@@ -165,19 +181,26 @@ class _FastPathState:
             target_w=target_w,
             pinned_host=pinned_host,
             src_gpu=src_gpu,
-            out_buffer=out_buffer,
+            out_buffers=out_buffers,
+            tmp_buffers=tmp_buffers,
             tables=tables,
+            launch_config=resolve_two_pass_launch_config(),
         )
 
-    def is_stale(
-        self, src_h: int, src_w: int, target_h: int, target_w: int
-    ) -> bool:
+    def is_stale(self, src_h: int, src_w: int, target_h: int, target_w: int) -> bool:
         return (
             self.src_h != src_h
             or self.src_w != src_w
             or self.target_h != target_h
             or self.target_w != target_w
         )
+
+    def next_buffers(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        idx = self.out_buffer_index
+        out = self.out_buffers[idx]
+        tmp = self.tmp_buffers[idx]
+        self.out_buffer_index = (idx + 1) % len(self.out_buffers)
+        return out, tmp
 
 
 class RFDetrForInstanceSegmentationTRT(
@@ -313,6 +336,7 @@ class RFDetrForInstanceSegmentationTRT(
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
+        self._pre_process_cuda_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
         self._fast_path_state: Optional[_FastPathState] = None
@@ -352,6 +376,7 @@ class RFDetrForInstanceSegmentationTRT(
                 pre_processing_overrides=pre_processing_overrides,
             )
         self._pre_process_stream.synchronize()
+        pre_processed_images._pre_processing_meta = pre_processing_meta  # type: ignore[attr-defined]
         return pre_processed_images, pre_processing_meta
 
     def _try_fast_preprocess(
@@ -443,21 +468,26 @@ class RFDetrForInstanceSegmentationTRT(
 
         pinned_np = state.pinned_host.numpy()
         np.copyto(pinned_np, candidate, casting="no")
+        out_buffer, tmp_buffer = state.next_buffers()
 
         with torch.cuda.stream(self._pre_process_stream):
             state.src_gpu.copy_(state.pinned_host, non_blocking=True)
-            triton_preprocess_rfdetr_stretch(
+            triton_preprocess_rfdetr_stretch_two_pass_preallocated(
                 src=state.src_gpu,
+                out=out_buffer,
+                tmp=tmp_buffer,
                 tables=state.tables,
                 target_h=target_h,
                 target_w=target_w,
                 means=means_t,
                 stds=stds_t,
                 swap_rb=swap_rb,
-                out=state.out_buffer,
+                launch_config=state.launch_config,
             )
-            state.out_buffer.record_stream(self._pre_process_stream)
-        self._pre_process_stream.synchronize()
+            self._fast_preproc_event = torch.cuda.Event()
+            self._fast_preproc_event.record(self._pre_process_stream)
+            out_buffer._trt_ready_event = self._fast_preproc_event  # type: ignore[attr-defined]
+            out_buffer.record_stream(self._pre_process_stream)
 
         meta = PreProcessingMetadata(
             pad_left=0,
@@ -473,7 +503,8 @@ class RFDetrForInstanceSegmentationTRT(
                 offset_x=0, offset_y=0, crop_width=orig_w, crop_height=orig_h
             ),
         )
-        return state.out_buffer, [meta]
+        out_buffer._pre_processing_meta = [meta]  # type: ignore[attr-defined]
+        return out_buffer, [meta]
 
     def forward(
         self,
@@ -482,6 +513,10 @@ class RFDetrForInstanceSegmentationTRT(
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
+        preproc_event = getattr(self, "_fast_preproc_event", None)
+        if preproc_event is not None:
+            self._inference_stream.wait_event(preproc_event)
+            self._fast_preproc_event = None
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
                 detections, labels, masks = infer_from_trt_engine(
@@ -549,11 +584,7 @@ class RFDetrForInstanceSegmentationTRT(
 
     @property
     def _pre_process_stream(self) -> torch.cuda.Stream:
-        if not hasattr(self._thread_local_storage, "pre_process_stream"):
-            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.pre_process_stream
+        return self._pre_process_cuda_stream
 
     @property
     def _post_process_stream(self) -> torch.cuda.Stream:
