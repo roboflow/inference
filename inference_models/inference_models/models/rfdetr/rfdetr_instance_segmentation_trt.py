@@ -13,6 +13,7 @@ from inference_models import (
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED,
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
@@ -55,7 +56,6 @@ from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results_to_rle_masks,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
-from inference_models.utils.environment import get_boolean_from_env
 
 try:
     from inference_models.models.rfdetr.triton_preprocess import (
@@ -67,13 +67,9 @@ except ImportError:
     _TRITON_AVAILABLE = False
     build_resample_tables = None
     triton_preprocess_rfdetr_stretch = None
-
-# Kill switch: set INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=false to force
-# the PIL reference path for every call, regardless of other predicates.
-_FAST_PATH_ENABLED = get_boolean_from_env(
-    "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED", default=True
-)
 from inference_models.weights_providers.entities import RecommendedParameters
+
+_FAST_PATH_ENABLED = INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED
 
 try:
     import tensorrt as trt
@@ -392,9 +388,6 @@ class RFDetrForInstanceSegmentationTRT(
             return None
         if ni.normalization is None:
             return None
-        # When dataset_version_resize_dimensions is None, the prod path collapses
-        # non-stretch resize modes to a single PIL stretch as well
-        # (pre_processing.py:_needs_two_step_resize), so we accept all modes here.
         if ni.resize_mode not in (
             ResizeMode.STRETCH_TO,
             ResizeMode.LETTERBOX,
