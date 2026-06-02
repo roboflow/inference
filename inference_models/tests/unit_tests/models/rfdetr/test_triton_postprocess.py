@@ -544,3 +544,43 @@ def test_rfdetr_triton_postproc_matches_classic_rle_path() -> None:
 
     assert actual is not None
     _assert_detections_equal(actual, expected)
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or triton_postprocess.triton is None,
+    reason="CUDA and Triton are required",
+)
+def test_rfdetr_triton_postproc_topk_retry_matches_classic_rle_path() -> None:
+    cpu = torch.device("cpu")
+    cuda = torch.device("cuda")
+    bboxes_cpu, logits_cpu, masks_cpu = _single_detection_inputs(cpu)
+    logits_cpu[0, 0] = 5.0
+    logits_cpu[0, 1] = 4.0
+    scores_cpu = torch.sigmoid(logits_cpu)
+    metadata = _metadata()
+    expected = _post_process_single_instance_segmentation_result_to_rle_masks_classic(
+        image_bboxes=bboxes_cpu,
+        image_logits=scores_cpu,
+        image_masks=masks_cpu,
+        image_meta=metadata,
+        threshold=0.4,
+        num_classes=2,
+        classes_re_mapping=_class_mapping(cpu),
+    )
+    cuda_kwargs = {
+        "image_bboxes": bboxes_cpu.to(cuda),
+        "image_scores": scores_cpu.to(cuda),
+        "image_masks": masks_cpu.to(cuda),
+        "image_meta": metadata,
+        "threshold": 0.4,
+        "classes_re_mapping": _class_mapping(cuda),
+    }
+
+    assert expected.confidence.shape == (2,)
+    assert _unsupported_triton_postprocess_reason(**cuda_kwargs) is None
+    actual = post_process_single_instance_segmentation_result_to_rle_masks_triton(
+        **cuda_kwargs
+    )
+
+    assert actual is not None
+    _assert_detections_equal(actual, expected)
