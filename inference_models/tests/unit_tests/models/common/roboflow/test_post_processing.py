@@ -5,8 +5,10 @@ Tests for post_processing helpers:
   - NMS helpers: per-class `conf_thresh` tensor path
 """
 
+import numpy as np
 import pytest
 import torch
+from pycocotools import mask as mask_utils
 
 from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
 from inference_models.entities import ImageDimensions
@@ -17,6 +19,8 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.post_processing import (
     ConfidenceFilter,
     align_instance_segmentation_results,
+    align_instance_segmentation_results_to_rle_masks,
+    align_instance_segmentation_results_to_rle_masks_batch,
     post_process_nms_fused_model_output,
     rescale_image_detections,
     rescale_key_points_detections,
@@ -38,6 +42,40 @@ def _od_output(box_class_conf):
         out[0, :4, i] = torch.tensor(xywh, dtype=torch.float32)
         out[0, 4 + cls, i] = conf
     return out
+
+
+def _decode_rles(rles, height: int, width: int) -> np.ndarray:
+    if not rles:
+        return np.empty((0, height, width), dtype=bool)
+    decoded = mask_utils.decode(rles)
+    if decoded.ndim == 2:
+        decoded = decoded[:, :, None]
+    return decoded.transpose(2, 0, 1).astype(bool)
+
+
+def _rle_alignment_inputs():
+    bboxes = torch.tensor(
+        [
+            [1.0, 2.0, 9.0, 7.0],
+            [-2.0, -1.0, 5.0, 4.0],
+            [4.0, 1.0, 14.0, 12.0],
+        ],
+        dtype=torch.float32,
+    )
+    masks = torch.full((3, 8, 10), -1.0, dtype=torch.float32)
+    masks[0, 2:6, 3:8] = 2.0
+    masks[1, 1:4, 1:5] = 1.0
+    masks[2, 4:7, 5:9] = 3.0
+    return bboxes, masks
+
+
+def _static_crop(offset_x: int, offset_y: int, width: int, height: int):
+    return StaticCropOffset(
+        offset_x=offset_x,
+        offset_y=offset_y,
+        crop_width=width,
+        crop_height=height,
+    )
 
 
 class TestRunNmsForObjectDetection:
@@ -443,3 +481,127 @@ class TestAlignInstanceSegmentationResultsClipping:
         assert out_bboxes[0, 1].item() == pytest.approx(20.0)
         assert out_bboxes[0, 2].item() == pytest.approx(600.0)
         assert out_bboxes[0, 3].item() == pytest.approx(400.0)
+
+
+class TestAlignInstanceSegmentationResultsToRleMasksBatch:
+
+    @pytest.mark.parametrize(
+        "case",
+        [
+            {
+                "padding": (0, 0, 0, 0),
+                "original_size": ImageDimensions(height=8, width=10),
+                "size_after_pre_processing": ImageDimensions(height=8, width=10),
+                "inference_size": ImageDimensions(height=8, width=10),
+                "static_crop_offset": _static_crop(0, 0, 10, 8),
+                "binarization_threshold": 0.0,
+            },
+            {
+                "padding": (1, 1, 1, 0),
+                "original_size": ImageDimensions(height=8, width=10),
+                "size_after_pre_processing": ImageDimensions(height=8, width=10),
+                "inference_size": ImageDimensions(height=8, width=10),
+                "static_crop_offset": _static_crop(0, 0, 10, 8),
+                "binarization_threshold": 0.0,
+            },
+            {
+                "padding": (-1, 0, -1, 0),
+                "original_size": ImageDimensions(height=8, width=10),
+                "size_after_pre_processing": ImageDimensions(height=8, width=10),
+                "inference_size": ImageDimensions(height=8, width=10),
+                "static_crop_offset": _static_crop(0, 0, 10, 8),
+                "binarization_threshold": 0.0,
+            },
+            {
+                "padding": (0, 0, 0, 0),
+                "original_size": ImageDimensions(height=11, width=13),
+                "size_after_pre_processing": ImageDimensions(height=8, width=10),
+                "inference_size": ImageDimensions(height=8, width=10),
+                "static_crop_offset": _static_crop(2, 1, 10, 8),
+                "binarization_threshold": 0.0,
+            },
+            {
+                "padding": (0, 0, 0, 0),
+                "original_size": ImageDimensions(height=8, width=10),
+                "size_after_pre_processing": ImageDimensions(height=8, width=10),
+                "inference_size": ImageDimensions(height=8, width=10),
+                "static_crop_offset": _static_crop(0, 0, 10, 8),
+                "binarization_threshold": 0.5,
+            },
+        ],
+    )
+    def test_batch_matches_generator_path(self, case: dict) -> None:
+        bboxes, masks = _rle_alignment_inputs()
+        batch_boxes = bboxes.clone()
+        generator_boxes = bboxes.clone()
+
+        actual_boxes, actual_rles = (
+            align_instance_segmentation_results_to_rle_masks_batch(
+                image_bboxes=batch_boxes,
+                masks=masks.clone(),
+                scale_width=1.0,
+                scale_height=1.0,
+                **case,
+            )
+        )
+        expected_pairs = list(
+            align_instance_segmentation_results_to_rle_masks(
+                image_bboxes=generator_boxes,
+                masks=masks.clone(),
+                scale_width=1.0,
+                scale_height=1.0,
+                **case,
+            )
+        )
+        expected_boxes = torch.stack([bbox for bbox, _ in expected_pairs])
+        expected_rles = [rle for _, rle in expected_pairs]
+
+        torch.testing.assert_close(actual_boxes, expected_boxes, rtol=0, atol=0)
+        torch.testing.assert_close(batch_boxes, expected_boxes, rtol=0, atol=0)
+        np.testing.assert_array_equal(
+            _decode_rles(
+                actual_rles,
+                case["original_size"].height,
+                case["original_size"].width,
+            ),
+            _decode_rles(
+                expected_rles,
+                case["original_size"].height,
+                case["original_size"].width,
+            ),
+        )
+
+    def test_empty_batch_matches_generator_path(self) -> None:
+        case = {
+            "padding": (0, 0, 0, 0),
+            "original_size": ImageDimensions(height=8, width=10),
+            "size_after_pre_processing": ImageDimensions(height=8, width=10),
+            "inference_size": ImageDimensions(height=8, width=10),
+            "static_crop_offset": _static_crop(0, 0, 10, 8),
+            "binarization_threshold": 0.0,
+        }
+        bboxes = torch.empty((0, 4), dtype=torch.float32)
+        masks = torch.empty((0, 8, 10), dtype=torch.float32)
+
+        actual_boxes, actual_rles = (
+            align_instance_segmentation_results_to_rle_masks_batch(
+                image_bboxes=bboxes.clone(),
+                masks=masks.clone(),
+                scale_width=1.0,
+                scale_height=1.0,
+                **case,
+            )
+        )
+        expected_pairs = list(
+            align_instance_segmentation_results_to_rle_masks(
+                image_bboxes=bboxes.clone(),
+                masks=masks.clone(),
+                scale_width=1.0,
+                scale_height=1.0,
+                **case,
+            )
+        )
+
+        assert actual_boxes.shape == (0, 4)
+        assert actual_rles == []
+        assert expected_pairs == []

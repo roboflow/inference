@@ -506,6 +506,128 @@ def align_instance_segmentation_results(
     return image_bboxes, masks
 
 
+def align_instance_segmentation_results_to_rle_masks_batch(
+    image_bboxes: torch.Tensor,
+    masks: torch.Tensor,
+    padding: Tuple[int, int, int, int],
+    scale_width: float,
+    scale_height: float,
+    original_size: ImageDimensions,
+    size_after_pre_processing: ImageDimensions,
+    inference_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+    binarization_threshold: float = 0.0,
+) -> Tuple[torch.Tensor, List[dict]]:
+    if image_bboxes.shape[0] == 0:
+        return image_bboxes, []
+
+    pad_left, pad_top, pad_right, pad_bottom = padding
+    offsets = torch.tensor(
+        [pad_left, pad_top, pad_left, pad_top],
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].sub_(offsets)
+    scale = torch.as_tensor(
+        [scale_width, scale_height, scale_width, scale_height],
+        dtype=image_bboxes.dtype,
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].div_(scale)
+    n, mh, mw = masks.shape
+    mask_h_scale = mh / inference_size.height
+    mask_w_scale = mw / inference_size.width
+    mask_pad_top, mask_pad_bottom, mask_pad_left, mask_pad_right = (
+        round(mask_h_scale * pad_top),
+        round(mask_h_scale * pad_bottom),
+        round(mask_w_scale * pad_left),
+        round(mask_w_scale * pad_right),
+    )
+    if (
+        mask_pad_top < 0
+        or mask_pad_bottom < 0
+        or mask_pad_left < 0
+        or mask_pad_right < 0
+    ):
+        masks = torch.nn.functional.pad(
+            masks,
+            (
+                abs(min(mask_pad_left, 0)),
+                abs(min(mask_pad_right, 0)),
+                abs(min(mask_pad_top, 0)),
+                abs(min(mask_pad_bottom, 0)),
+            ),
+            "constant",
+            0,
+        )
+        padded_mask_offset_top = max(mask_pad_top, 0)
+        padded_mask_offset_bottom = max(mask_pad_bottom, 0)
+        padded_mask_offset_left = max(mask_pad_left, 0)
+        padded_mask_offset_right = max(mask_pad_right, 0)
+        masks = masks[
+            :,
+            padded_mask_offset_top : masks.shape[1] - padded_mask_offset_bottom,
+            padded_mask_offset_left : masks.shape[2] - padded_mask_offset_right,
+        ]
+    else:
+        masks = masks[
+            :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
+        ]
+    masks = (
+        torch.nn.functional.interpolate(
+            masks[:, None],
+            size=(
+                size_after_pre_processing.height,
+                size_after_pre_processing.width,
+            ),
+            mode="bilinear",
+            align_corners=False,
+            antialias=True,
+        )
+        .squeeze(1)
+        .gt_(binarization_threshold)
+        .to(dtype=torch.bool)
+    )
+    if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
+        mask_canvas = torch.zeros(
+            (
+                masks.shape[0],
+                original_size.height,
+                original_size.width,
+            ),
+            dtype=torch.bool,
+            device=masks.device,
+        )
+        mask_canvas[
+            :,
+            static_crop_offset.offset_y : static_crop_offset.offset_y + masks.shape[1],
+            static_crop_offset.offset_x : static_crop_offset.offset_x + masks.shape[2],
+        ] = masks
+        static_crop_offsets = torch.as_tensor(
+            [
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+            ],
+            dtype=image_bboxes.dtype,
+            device=image_bboxes.device,
+        )
+        image_bboxes[:, :4].add_(static_crop_offsets)
+        masks = mask_canvas
+    xyxy_max = torch.as_tensor(
+        [
+            original_size.width,
+            original_size.height,
+            original_size.width,
+            original_size.height,
+        ],
+        dtype=image_bboxes.dtype,
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].clamp_(min=torch.zeros_like(xyxy_max), max=xyxy_max)
+    return image_bboxes, [torch_mask_to_coco_rle(mask) for mask in masks]
+
+
 def align_instance_segmentation_results_to_rle_masks(
     image_bboxes: torch.Tensor,
     masks: torch.Tensor,
