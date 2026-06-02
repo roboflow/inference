@@ -613,7 +613,46 @@ if triton is not None:
         METADATA_STRIDE: tl.constexpr,
         FLAG_MULTICLASS: tl.constexpr,
     ):
-        """Select the highest-scoring mapped class for one query."""
+        """Select one query-level detection row from RF-DETR scores.
+
+        Launch grid:
+            ``(num_queries,)``. Program id 0 is also responsible for clearing
+            the two-word ``records`` header before the RLE kernel runs.
+
+        Args:
+            scores: CUDA tensor with shape ``[num_queries, num_classes]`` and
+                dtype float32. Values are sigmoid class probabilities.
+            bboxes: CUDA tensor with shape ``[num_queries, 4]`` and dtype
+                float32. Boxes are normalized ``cx, cy, width, height`` values.
+            class_mapping: CUDA int tensor with at least ``num_classes`` values.
+                ``class_mapping[class_id]`` is the public class id; negative
+                entries mark model classes that should be ignored.
+            metadata: CUDA float32 tensor with shape
+                ``[num_queries, METADATA_STRIDE]``. The kernel writes columns
+                ``0`` active flag, ``1`` mapped class id, ``2`` score, ``3:7``
+                clipped xyxy pixel box, ``8`` unsupported flag, ``9`` source
+                query id, ``10`` flat query-class sort key, and ``11:15`` zeroed
+                ROI/debug fields later filled by the RLE kernel.
+            records: CUDA int32 tensor with shape ``[MAX_TOTAL_RUNS + 1, 3]``.
+                Only ``records[0, 0]`` and ``records[0, 1]`` are touched here:
+                run count and retry/overflow flag.
+            threshold: Confidence threshold applied after the best valid mapped
+                class is selected.
+            num_queries: Number of RF-DETR object queries, matching
+                ``scores.shape[0]`` and ``bboxes.shape[0]``.
+            num_classes: Number of model class columns in ``scores``.
+            class_mapping_size: Number of entries available in
+                ``class_mapping``.
+            output_height: Original image height used to convert normalized box
+                coordinates to pixel coordinates.
+            output_width: Original image width used to convert normalized box
+                coordinates to pixel coordinates.
+            BLOCK_CLASSES: Power-of-two tile width covering ``num_classes``.
+            METADATA_STRIDE: Number of float32 fields per metadata row.
+            FLAG_MULTICLASS: When true, writes ``records[0, 1] = 1`` if more
+                than one mapped class for this query exceeds ``threshold`` so
+                the caller can rerun the top-k query-class path.
+        """
         rank = tl.program_id(0)
         meta_base = rank * METADATA_STRIDE
         if rank == 0:
@@ -727,7 +766,44 @@ if triton is not None:
         MAX_CLASSES_PER_QUERY: tl.constexpr,
         FLAG_OVERFLOW_CLASSES: tl.constexpr,
     ):
-        """Emit up to four passing query-class candidates for one query."""
+        """Emit top passing query-class metadata rows for one RF-DETR query.
+
+        Launch grid:
+            ``(num_queries,)``. Each program scans all class scores for one
+            query and writes up to ``MAX_CLASSES_PER_QUERY`` rows. The current
+            implementation uses a static loop of four iterations, so
+            ``MAX_CLASSES_PER_QUERY`` is expected to be ``4``.
+
+        Args:
+            scores: CUDA float32 tensor with shape
+                ``[num_queries, num_classes]`` containing sigmoid class scores.
+            bboxes: CUDA float32 tensor with shape ``[num_queries, 4]`` in
+                normalized ``cx, cy, width, height`` format.
+            class_mapping: CUDA int tensor with class remap entries. Negative
+                mapped ids are ignored.
+            metadata: CUDA float32 tensor with shape
+                ``[num_queries * MAX_CLASSES_PER_QUERY, METADATA_STRIDE]``.
+                Row ``query_index * MAX_CLASSES_PER_QUERY + class_rank`` holds
+                the ``class_rank``-th highest passing class for that query.
+                Columns have the same layout as
+                ``_select_best_query_metadata_kernel``.
+            records: CUDA int32 tensor with shape ``[MAX_TOTAL_RUNS + 1, 3]``.
+                Program 0 resets ``records[0, 0]`` and ``records[0, 1]`` before
+                the RLE kernel appends runs.
+            threshold: Minimum class score required for a metadata row to be
+                marked active.
+            num_queries: Number of query rows in ``scores`` and ``bboxes``.
+            num_classes: Number of class columns in ``scores``.
+            class_mapping_size: Number of valid entries in ``class_mapping``.
+            output_height: Original image height used for xyxy box conversion.
+            output_width: Original image width used for xyxy box conversion.
+            BLOCK_CLASSES: Power-of-two tile width covering all class columns.
+            METADATA_STRIDE: Number of float32 fields per metadata row.
+            MAX_CLASSES_PER_QUERY: Number of metadata rows reserved per query.
+            FLAG_OVERFLOW_CLASSES: When true, writes ``records[0, 1] = 1`` if
+                more than ``MAX_CLASSES_PER_QUERY`` classes pass threshold; the
+                caller treats that as unsupported for exact top-k parity.
+        """
         query_index = tl.program_id(0)
         if query_index == 0:
             tl.store(records + 0, 0)
@@ -855,7 +931,62 @@ if triton is not None:
         METADATA_STRIDE: tl.constexpr,
         BLOCK_COLS: tl.constexpr,
     ):
-        """Interpolate sparse mask ROIs and emit column-major RLE runs."""
+        """Interpolate active mask ROIs and emit COCO-order RLE run records.
+
+        Launch grid:
+            ``(metadata_rows, ceil(MAX_ROI_WIDTH / BLOCK_COLS))``. Program id 0
+            selects a metadata row / output detection rank. Program id 1 selects
+            the starting column tile. If a mask ROI is wider than
+            ``MAX_ROI_WIDTH``, each program advances by ``MAX_ROI_WIDTH`` in a
+            loop so large ROIs are still covered without launching a fallback.
+
+        Args:
+            masks: CUDA float32 tensor with logical shape
+                ``[num_queries, mask_height, mask_width]``. Strides are passed
+                separately because callers may hand in contiguous or view-backed
+                tensors. Values are mask logits already in the RF-DETR mask
+                space; output pixels are positive when bilinear interpolation is
+                greater than zero.
+            y_idx: CUDA int32 tensor with shape ``[output_height, 2]``. For each
+                output row, stores the two source mask rows used by the
+                reference antialiased bilinear resize.
+            y_weight: CUDA float32 tensor with shape ``[output_height, 2]``.
+                Weights matching ``y_idx``.
+            x_idx: CUDA int32 tensor with shape ``[output_width, 2]``. For each
+                output column, stores the two source mask columns used by the
+                reference resize.
+            x_weight: CUDA float32 tensor with shape ``[output_width, 2]``.
+                Weights matching ``x_idx``.
+            metadata: CUDA float32 tensor with shape
+                ``[metadata_rows, METADATA_STRIDE]``. The kernel reads column
+                ``0`` active flag and column ``9`` source query id. It writes
+                columns ``11:15`` with ``roi_y_start, roi_y_end, roi_x_start,
+                roi_x_end`` for diagnostics.
+            records: CUDA int32 tensor with shape ``[MAX_TOTAL_RUNS + 1, 3]``.
+                ``records[0, 0]`` is atomically incremented for every emitted
+                run and ``records[0, 1]`` is set when capacity is exceeded.
+                Data rows are ``(rank, start, end)`` where ``start`` and ``end``
+                are flat COCO/Fortran-order positions ``x * output_height + y``.
+            num_queries: Number of query masks in ``masks``.
+            mask_height: Height of each low-resolution RF-DETR mask.
+            mask_width: Width of each low-resolution RF-DETR mask.
+            output_height: Original image height for the output RLE mask.
+            output_width: Original image width for the output RLE mask.
+            mask_stride_q: Stride between query masks in ``masks``.
+            mask_stride_h: Row stride for ``masks``.
+            mask_stride_w: Column stride for ``masks``.
+            BLOCK_MASK: Power-of-two tile covering ``mask_height * mask_width``
+                so the kernel can find positive source support in one vector.
+            BLOCK_OUT_H: Power-of-two tile covering all output rows.
+            BLOCK_OUT_W: Power-of-two tile covering all output columns.
+            BLOCK_ROI_H: Number of output rows scanned per inner row tile.
+            MAX_ROI_WIDTH: Column band width handled per program before the
+                large-ROI loop advances to the next band.
+            MAX_TOTAL_RUNS: Maximum number of sparse runs that fit in
+                ``records`` excluding the header row.
+            METADATA_STRIDE: Number of float32 fields per metadata row.
+            BLOCK_COLS: Number of output columns scanned together.
+        """
         rank = tl.program_id(0)
         tile_x = tl.program_id(1)
         local_x_offsets = tile_x * BLOCK_COLS + tl.arange(0, BLOCK_COLS)
