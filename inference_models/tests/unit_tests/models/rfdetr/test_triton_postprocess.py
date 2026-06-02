@@ -241,35 +241,6 @@ def test_rfdetr_triton_postproc_flag_false_bypasses_triton(monkeypatch) -> None:
     assert results[0].confidence.shape == (1,)
 
 
-def test_rfdetr_triton_postproc_flag_false_bypasses_batched_rle_helper(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(rfdetr_common, "_TRITON_POSTPROC_ENABLED", False)
-
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("Batched RLE helper should be disabled")
-
-    monkeypatch.setattr(
-        rfdetr_common,
-        "align_instance_segmentation_results_to_rle_masks_batch",
-        fail_if_called,
-    )
-
-    device = torch.device("cpu")
-    bboxes, logits, masks = _batched_inputs(device)
-    results = post_process_instance_segmentation_results_to_rle_masks(
-        bboxes=bboxes,
-        logits=logits,
-        masks=masks,
-        pre_processing_meta=[_metadata(), _metadata(), _metadata()],
-        threshold=0.4,
-        num_classes=2,
-        classes_re_mapping=_class_mapping(device),
-    )
-
-    assert [result.confidence.shape[0] for result in results] == [2, 0, 1]
-
-
 def test_rfdetr_triton_postproc_flag_true_uses_triton_result(monkeypatch) -> None:
     monkeypatch.setattr(rfdetr_common, "_TRITON_POSTPROC_ENABLED", True)
     sentinel = object()
@@ -295,6 +266,39 @@ def test_rfdetr_triton_postproc_flag_true_uses_triton_result(monkeypatch) -> Non
     )
 
     assert results == [sentinel]
+
+
+def test_rfdetr_triton_postproc_flag_true_uses_triton_per_image_for_batches(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(rfdetr_common, "_TRITON_POSTPROC_ENABLED", True)
+    sentinels = [object(), object(), object()]
+    calls = []
+
+    def return_sentinel(**kwargs):
+        calls.append(kwargs["image_bboxes"].shape)
+        return sentinels[len(calls) - 1]
+
+    monkeypatch.setattr(
+        rfdetr_common,
+        "post_process_single_instance_segmentation_result_to_rle_masks_triton",
+        return_sentinel,
+    )
+
+    device = torch.device("cpu")
+    bboxes, logits, masks = _batched_inputs(device)
+    results = post_process_instance_segmentation_results_to_rle_masks(
+        bboxes=bboxes,
+        logits=logits,
+        masks=masks,
+        pre_processing_meta=[_metadata(), _metadata(), _metadata()],
+        threshold=0.4,
+        num_classes=2,
+        classes_re_mapping=_class_mapping(device),
+    )
+
+    assert results == sentinels
+    assert calls == [torch.Size([3, 4]), torch.Size([3, 4]), torch.Size([3, 4])]
 
 
 def test_rfdetr_triton_postproc_reports_triton_unavailable(monkeypatch) -> None:
