@@ -15,18 +15,16 @@ from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCac
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.core.workflows.execution_engine.profiling.core import (
-    NullWorkflowsProfiler,
-)
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference_cli.lib.logger import CLI_LOGGER
-from inference_cli.lib.utils import get_all_images_in_directory
+from inference_cli.lib.utils import get_all_images_in_directory, read_json
 from inference_cli.lib.workflows.common import (
     WorkflowsImagesProcessingIndex,
     aggregate_batch_processing_results,
     denote_image_processed,
     dump_image_processing_results,
     open_progress_log,
+    replace_file_extension,
     report_failed_files,
 )
 from inference_cli.lib.workflows.entities import (
@@ -110,6 +108,7 @@ def process_image_directory_with_workflow_using_inference_package(
     debug_mode: bool = False,
     max_failures: Optional[int] = None,
     max_concurrent_workflows_steps: int = 4,
+    images_metadata_input_mapping: Optional[Dict[str, str]] = None,
 ) -> ImagesDirectoryProcessingDetails:
     if api_key is None:
         api_key = API_KEY
@@ -139,6 +138,7 @@ def process_image_directory_with_workflow_using_inference_package(
             max_concurrent_workflows_steps=max_concurrent_workflows_steps,
             debug_mode=debug_mode,
             max_failures=max_failures,
+            images_metadata_input_mapping=images_metadata_input_mapping,
         )
     finally:
         log_file.close()
@@ -180,6 +180,7 @@ def _process_images_within_directory(
     max_concurrent_workflows_steps: int,
     debug_mode: bool = False,
     max_failures: Optional[int] = None,
+    images_metadata_input_mapping: Optional[Dict[str, str]] = None,
 ) -> List[Tuple[str, str]]:
     workflow_specification = _get_workflow_specification(
         workflow_specification=workflow_specification,
@@ -228,6 +229,7 @@ def _process_images_within_directory(
             thread_pool_executor=thread_pool_executor,
             max_concurrent_workflows_steps=max_concurrent_workflows_steps,
             debug_mode=debug_mode,
+            images_metadata_input_mapping=images_metadata_input_mapping,
         )
         failures = 0
         succeeded_files = set()
@@ -293,8 +295,42 @@ def _process_single_image_from_directory(
     max_concurrent_workflows_steps: int,
     log_file_lock: Optional[Lock] = None,
     debug_mode: bool = False,
+    images_metadata_input_mapping: Optional[Dict[str, str]] = None,
 ) -> bool:
+    metadata_driven_workflow_parameters = {}
+    if images_metadata_input_mapping:
+        assumed_metadata_file_path = replace_file_extension(
+            image_path, extension=".json"
+        )
+        if not os.path.isfile(assumed_metadata_file_path):
+            error_summary = (
+                f"Cold not find required metadata file for image: {image_path}. "
+                f"Since `images_metadata_input_mapping` was specified, presence of metadata file is enforced."
+            )
+            if debug_mode:
+                CLI_LOGGER.exception(error_summary)
+            on_failure(image_path, error_summary)
+            return False
+        metadata = read_json(path=assumed_metadata_file_path)
+        missing_keys = set(metadata.keys()).difference(
+            images_metadata_input_mapping.values()
+        )
+        if len(missing_keys) > 0:
+            error_summary = (
+                f"Cold not find required metadata keys specified in `images_metadata_input_mapping` for image: "
+                f"{image_path}. Missing keys: {missing_keys}."
+            )
+            if debug_mode:
+                CLI_LOGGER.exception(error_summary)
+            on_failure(image_path, error_summary)
+            return False
+        metadata_driven_workflow_parameters = {
+            key: metadata[value] for key, value in images_metadata_input_mapping.items()
+        }
     try:
+        workflow_parameters = workflow_parameters or {}
+        metadata_driven_workflow_parameters.update(workflow_parameters)
+        workflow_parameters = metadata_driven_workflow_parameters
         result = _run_workflow_for_single_image_with_inference(
             model_manager=model_manager,
             image_path=image_path,
