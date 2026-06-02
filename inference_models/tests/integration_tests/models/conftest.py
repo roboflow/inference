@@ -166,6 +166,9 @@ YOLO26N_SEG_SNAKES_STRETCH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/ro
 YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-static.zip"
 YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-dynamic.zip"
 YOLO26N_SEG_SNAKES_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-torch-script.zip"
+YOLO26N_SEM_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-static.zip"
+YOLO26N_SEM_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-dynamic.zip"
+YOLO26N_SEM_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-torch-script.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-static.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-dynamic.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-torch-script.zip"
@@ -223,6 +226,9 @@ VIT_SINGLE_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-
 VIT_MULTI_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-label-cls-trt-t4-package.zip"
 
 YOLOV10_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov10-trt-t4-package.zip"
+SAM3_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam3.zip"
+)
 
 
 @pytest.fixture(scope="module")
@@ -1504,6 +1510,30 @@ def yolo26n_seg_snakes_letterbox_torch_script_package() -> str:
 
 
 @pytest.fixture(scope="module")
+def yolo26n_sem_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_ONNX_STATIC_URL,
+        package_name="yolo26n-sem-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-sem-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_TORCH_SCRIPT_URL,
+        package_name="yolo26n-sem-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
 def yolo26n_pose_basketball_letterbox_onnx_static_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_STATIC_URL,
@@ -1708,4 +1738,12 @@ def yolov10_object_detection_trt_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLOV10_TRT_PACKAGE_URL,
         package_name="yolov10-object-detection-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def sam3_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SAM3_PACKAGE_URL,
+        package_name="sam3",
     )

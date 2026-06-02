@@ -144,6 +144,9 @@ class WorkflowProcessingJobV1(BaseModel):
     max_parallel_tasks: Optional[int] = Field(
         serialization_alias="maxParallelTasks", default=None
     )
+    max_image_failure_rate: Optional[float] = Field(
+        serialization_alias="maxImageFailureRate", default=None
+    )
     processing_specification: WorkflowsProcessingSpecificationV1 = Field(
         serialization_alias="processingSpecification"
     )

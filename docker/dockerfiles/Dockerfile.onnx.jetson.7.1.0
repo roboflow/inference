@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Jetson 7.1.0 with PyTorch/OpenCV compiled from source for numpy 2.x support
 # Stage 1: Builder - Compile everything from source
 FROM ubuntu:24.04 AS builder
@@ -12,8 +13,14 @@ ENV LANG=en_US.UTF-8
 
 WORKDIR /build
 
-# Add NVIDIA Jetson repositories for r38.4
-RUN apt-get update -y && \
+# Add NVIDIA Jetson repositories for r38.4.
+# Disable docker-clean and keep downloaded .debs; cache mounts on /var/cache/apt
+# and /var/lib/apt persist across Depot builds.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp71-builder-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update -y && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     gnupg \
@@ -24,7 +31,9 @@ RUN apt-get update -y && \
     && apt-get update -y
 
 # Install NVIDIA JetPack components and build dependencies
-RUN apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp71-builder-${TARGETARCH} \
+    apt-get install -y --no-install-recommends \
     cuda-toolkit-13-0 \
     libcudnn9-cuda-13 \
     libcudnn9-dev-cuda-13 \
@@ -67,8 +76,7 @@ RUN apt-get install -y --no-install-recommends \
     libleveldb-dev \
     libsnappy-dev \
     libprotobuf-dev \
-    protobuf-compiler \
-    && rm -rf /var/lib/apt/lists/*
+    protobuf-compiler
 
 # Install CMake
 RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
@@ -98,9 +106,14 @@ ENV CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
-# Compile PyTorch from source with Jetson Thor optimizations
+# Compile PyTorch from source with Jetson Thor optimizations.
+# Clone in its own RUN so the build/ cache mount overlays cleanly (mount would
+# otherwise auto-create the parent and break git clone).
 WORKDIR /build/pytorch
-RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch && \
+RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
+# build/ is cache-mounted (Thor = sm 11.0); cache id includes version + arch.
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm110 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
     cd pytorch && \
     python3 -m pip install --break-system-packages -r requirements.txt && \
     export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
@@ -120,11 +133,14 @@ RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorc
     python3 setup.py bdist_wheel && \
     python3 -m pip install --break-system-packages dist/torch-*.whl
 
-# Compile torchvision from source (with retry for transient GitHub issues)
+# Compile torchvision from source (with retry for transient GitHub issues).
+# Clone in its own RUN so build/ cache mount overlays cleanly.
 WORKDIR /build/torchvision
 RUN for i in 1 2 3; do \
         git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
-    done && \
+    done
+RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-${TORCHVISION_VERSION}-${TARGETARCH}-sm110 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
     cd vision && \
     export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="11.0" && \
     export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
@@ -136,7 +152,9 @@ RUN for i in 1 2 3; do \
 # No prebuilt ARM64 CUDA 13 packages available - must build from source
 # Parallel jobs limited to 8 to prevent OOM during flash attention CUDA kernel compilation
 WORKDIR /build/onnxruntime
-RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git && \
+RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git
+RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/Linux,sharing=locked,id=ort-build-${ONNXRUNTIME_VERSION}-${TARGETARCH}-sm110-cu130 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
     cd onnxruntime && \
     python3 -m pip install --break-system-packages -r requirements-dev.txt && \
     ./build.sh --config Release --update --build --parallel 8 \
@@ -155,10 +173,13 @@ RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/mi
             onnxruntime_BUILD_UNIT_TESTS=OFF && \
     python3 -m pip install --break-system-packages build/Linux/Release/dist/onnxruntime_gpu*.whl
 
-# Install flash-attn package (requires CUDA-enabled PyTorch already installed)
-# Limit MAX_JOBS to 1 to prevent resource starvation that kills the Depot gRPC connection
+# Install flash-attn package (requires CUDA-enabled PyTorch already installed).
+# MAX_JOBS=2: middle ground between the historical MAX_JOBS=4 that starved the
+# Depot BuildKit gRPC connection (#2068) and the safe-but-slow MAX_JOBS=1.
+# flash-attn nvcc instances peak ~3-4 GB each against PyTorch 2.10 headers,
+# so 2 fits comfortably on a 32 GB Depot arm builder while halving the wall time.
 # Using 2.8.3 - removed legacy features (rotary, xentropy, fused_softmax, ft_attention) for faster builds
-RUN export MAX_JOBS=1 && \
+RUN export MAX_JOBS=2 && \
     python3 -m pip install --break-system-packages --no-build-isolation flash-attn==2.8.3
 
 # Copy requirements files (done after compilation to improve cache efficiency)
@@ -195,6 +216,7 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     -r requirements.jetson.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
     "setuptools<=75.5.0" \
+    "transformers>=4.57.3,<5.9.0" \
     packaging \
     && rm -rf ~/.cache/uv /tmp/overrides.txt
 
@@ -234,8 +256,12 @@ ENV LANG=en_US.UTF-8
 
 WORKDIR /app
 
-# Add NVIDIA Jetson repositories for r38.4
-RUN apt-get update -y && \
+# Add NVIDIA Jetson repositories for r38.4 (runtime stage cache id differs from builder).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-runtime-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp71-runtime-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update -y && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     gnupg \
@@ -248,7 +274,9 @@ RUN apt-get update -y && \
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 # Install runtime dependencies including NVIDIA packages
-RUN apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-runtime-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp71-runtime-${TARGETARCH} \
+    apt-get install -y --no-install-recommends \
     cuda-cudart-13-0 \
     cuda-libraries-13-0 \
     libcudnn9-cuda-13 \
@@ -283,8 +311,7 @@ RUN apt-get install -y --no-install-recommends \
     libatlas3-base \
     libgl1 \
     libglib2.0-0 \
-    libatomic1 \
-    && rm -rf /var/lib/apt/lists/*
+    libatomic1
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/

@@ -842,6 +842,23 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[("interactive-instance-segmentation", "sam2")] = (
                     InferenceModelsSAM2Adapter
                 )
+            elif task == "embed" and variant == "sam3":
+                from inference.models.sam3.segment_anything3_inference_models import (
+                    InferenceModelsSAM3Adapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSAM3Adapter
+                ROBOFLOW_MODEL_TYPES[("instance-segmentation", "sam3-large")] = (
+                    InferenceModelsSAM3Adapter
+                )
+            elif task == "interactive-segmentation" and variant == "sam3":
+                from inference.models.sam3.visual_segmentation_inference_models import (
+                    InferenceModelsSAM3InteractiveAdapter,
+                )
+
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsSAM3InteractiveAdapter
+                )
             elif task == "embed" and variant == "clip":
                 from inference.models.clip.clip_inference_models import (
                     InferenceModelsClipAdapter,
@@ -973,6 +990,12 @@ if USE_INFERENCE_MODELS:
                 category=InferenceModelsStackMissing,
             )
 
+    # YOLO26 semantic segmentation is inference_models-only (no legacy implementation),
+    # so we add entries directly rather than swapping existing ones.
+    ROBOFLOW_MODEL_TYPES[("semantic-segmentation", "yolo26")] = (
+        InferenceModelsSemanticSegmentationAdapter
+    )
+
     # YOLOLite is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.
     for variant in [
@@ -1001,6 +1024,7 @@ if USE_INFERENCE_MODELS:
         for variant in [
             "qwen3_5-0.8b",
             "qwen3_5-2b",
+            "qwen3_5-4b",
             "qwen3_5-0.8b-peft",
             "qwen3_5-2b-peft",
         ]:

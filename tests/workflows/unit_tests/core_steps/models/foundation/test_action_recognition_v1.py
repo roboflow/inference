@@ -18,15 +18,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 
 
 def _make_image(
-    width: int = 320,
-    height: int = 240,
     video_id: str = "cam-1",
     frame_number: int = 0,
     fps: int = 30,
 ) -> WorkflowImageData:
     return WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id=video_id),
-        numpy_image=np.random.randint(0, 255, (height, width, 3), dtype=np.uint8),
+        numpy_image=np.random.randint(0, 255, (240, 320, 3), dtype=np.uint8),
         video_metadata=VideoMetadata(
             video_identifier=video_id,
             frame_number=frame_number,
@@ -45,50 +43,58 @@ def test_manifest_defaults() -> None:
         "type": "roboflow_core/action_recognition@v1",
         "name": "ar",
         "image": "$inputs.image",
-        "prompt": "A: stroke. B: no stroke.",
+        "prompt": "A: dunk. B: no dunk.",
     }
     result = BlockManifest.model_validate(raw)
+    assert result.window_seconds == 1.0
+    assert result.stride_seconds is None  # defaults to window/2 at runtime
+    assert result.sample_fps == 5.0
     assert result.choices == ["A", "B"]
-    assert result.timeout_seconds == 0.5
-    assert result.max_frames == 5
-    assert result.base_url == "https://api.together.xyz/v1"
-    assert result.model_name == "Qwen/Qwen3.5-9B"
+    assert result.max_tokens == 500
 
 
-def test_manifest_rejects_zero_max_frames() -> None:
-    raw = {
-        "type": "roboflow_core/action_recognition@v1",
-        "name": "ar",
-        "image": "$inputs.image",
-        "prompt": "x",
-        "max_frames": 0,
-    }
+def test_manifest_rejects_window_too_small() -> None:
     with pytest.raises(ValidationError):
-        BlockManifest.model_validate(raw)
+        BlockManifest.model_validate({
+            "type": "roboflow_core/action_recognition@v1",
+            "name": "ar",
+            "image": "$inputs.image",
+            "prompt": "x",
+            "window_seconds": 0.0,
+        })
+
+
+def test_manifest_rejects_stride_too_small() -> None:
+    with pytest.raises(ValidationError):
+        BlockManifest.model_validate({
+            "type": "roboflow_core/action_recognition@v1",
+            "name": "ar",
+            "image": "$inputs.image",
+            "prompt": "x",
+            "stride_seconds": 0.0,
+        })
+
+
+def test_manifest_rejects_invalid_sample_fps() -> None:
+    with pytest.raises(ValidationError):
+        BlockManifest.model_validate({
+            "type": "roboflow_core/action_recognition@v1",
+            "name": "ar",
+            "image": "$inputs.image",
+            "prompt": "x",
+            "sample_fps": 0.0,
+        })
 
 
 def test_manifest_rejects_empty_choices() -> None:
-    raw = {
-        "type": "roboflow_core/action_recognition@v1",
-        "name": "ar",
-        "image": "$inputs.image",
-        "prompt": "x",
-        "choices": [],
-    }
     with pytest.raises(ValidationError):
-        BlockManifest.model_validate(raw)
-
-
-def test_manifest_rejects_negative_timeout() -> None:
-    raw = {
-        "type": "roboflow_core/action_recognition@v1",
-        "name": "ar",
-        "image": "$inputs.image",
-        "prompt": "x",
-        "timeout_seconds": -0.5,
-    }
-    with pytest.raises(ValidationError):
-        BlockManifest.model_validate(raw)
+        BlockManifest.model_validate({
+            "type": "roboflow_core/action_recognition@v1",
+            "name": "ar",
+            "image": "$inputs.image",
+            "prompt": "x",
+            "choices": [],
+        })
 
 
 # ── _parse_letter ───────────────────────────────────────────────────
@@ -98,19 +104,15 @@ def test_parse_letter_json() -> None:
     assert _parse_letter('{"letter": "A"}', ["A", "B"]) == "A"
 
 
-def test_parse_letter_json_with_whitespace() -> None:
-    assert _parse_letter('{\n  "letter": "B"\n}', ["A", "B"]) == "B"
+def test_parse_letter_bare() -> None:
+    assert _parse_letter("B", ["A", "B"]) == "B"
 
 
-def test_parse_letter_bare_letter_fallback() -> None:
-    assert _parse_letter("A", ["A", "B"]) == "A"
-
-
-def test_parse_letter_rejects_out_of_set() -> None:
+def test_parse_letter_out_of_set() -> None:
     assert _parse_letter('{"letter": "Z"}', ["A", "B"]) is None
 
 
-def test_parse_letter_handles_empty() -> None:
+def test_parse_letter_empty() -> None:
     assert _parse_letter("", ["A", "B"]) is None
     assert _parse_letter(None, ["A", "B"]) is None
 
@@ -118,35 +120,9 @@ def test_parse_letter_handles_empty() -> None:
 # ── Block behavior ───────────────────────────────────────────────────
 
 
-def _run(
-    block,
-    image,
-    *,
-    prompt="A: stroke. B: no stroke.",
-    choices=("A", "B"),
-    timeout_seconds=0.5,
-    max_frames=5,
-    base_url="http://stub/v1",
-    model_name="m",
-    api_key=None,
-    resolution=128,
-):
-    return block.run(
-        image=image,
-        prompt=prompt,
-        choices=list(choices),
-        timeout_seconds=timeout_seconds,
-        max_frames=max_frames,
-        base_url=base_url,
-        model_name=model_name,
-        api_key=api_key,
-        resolution=resolution,
-    )
-
-
-def _stub_openai_response(content_str):
+def _stub_response(content: str):
     msg = MagicMock()
-    msg.content = content_str
+    msg.content = content
     choice = MagicMock()
     choice.message = msg
     resp = MagicMock()
@@ -154,161 +130,205 @@ def _stub_openai_response(content_str):
     return resp
 
 
+def _run(
+    block,
+    image,
+    *,
+    prompt="A: dunk. B: no dunk.",
+    choices=("A", "B"),
+    window_seconds=1.0,
+    stride_seconds=0.5,
+    sample_fps=5.0,
+    base_url="http://stub/v1",
+    model_name="m",
+    api_key=None,
+    resolution=128,
+    max_tokens=500,
+):
+    return block.run(
+        image=image,
+        prompt=prompt,
+        choices=list(choices),
+        window_seconds=window_seconds,
+        stride_seconds=stride_seconds,
+        sample_fps=sample_fps,
+        base_url=base_url,
+        model_name=model_name,
+        api_key=api_key,
+        resolution=resolution,
+        max_tokens=max_tokens,
+    )
+
+
 @patch("inference.core.workflows.core_steps.models.foundation.action_recognition.v1.OpenAI")
-def test_first_call_fires_llm(mock_openai_cls: MagicMock) -> None:
-    """The first frame should always trigger an LLM call."""
-    mock_client = MagicMock()
-    mock_client.chat.completions.create.return_value = _stub_openai_response('{"letter": "A"}')
-    mock_openai_cls.return_value = mock_client
+def test_first_call_fires_immediately(mock_openai_cls: MagicMock) -> None:
+    """Very first frame triggers a fire (no prior fire time)."""
+    client = MagicMock()
+    client.chat.completions.create.return_value = _stub_response('{"letter": "A"}')
+    mock_openai_cls.return_value = client
 
     block = ActionRecognitionBlockV1()
     out = _run(block, _make_image(frame_number=0))
     assert out["letter"] == "A"
-    assert out["error_status"] == ""
-    assert mock_client.chat.completions.create.call_count == 1
+    assert client.chat.completions.create.call_count == 1
 
 
 @patch("inference.core.workflows.core_steps.models.foundation.action_recognition.v1.OpenAI")
-def test_throttled_frame_returns_cached_letter_without_calling_llm(
-    mock_openai_cls: MagicMock,
-) -> None:
-    """Within the cooldown window, no new LLM call. Letter persists."""
-    mock_client = MagicMock()
-    mock_client.chat.completions.create.return_value = _stub_openai_response('{"letter": "A"}')
-    mock_openai_cls.return_value = mock_client
+def test_within_stride_does_not_refire(mock_openai_cls: MagicMock) -> None:
+    """Frames within stride_seconds of the last fire don't trigger new LLM calls."""
+    client = MagicMock()
+    client.chat.completions.create.return_value = _stub_response('{"letter": "A"}')
+    mock_openai_cls.return_value = client
 
     block = ActionRecognitionBlockV1()
-    # Frame 0 fires.
-    _run(block, _make_image(frame_number=0))
-    # Frame 1 (33ms later at 30 fps) should be throttled by default 0.5s cooldown.
-    out = _run(block, _make_image(frame_number=1))
+    # frame 0 at fps 30 → video_time 0
+    _run(block, _make_image(frame_number=0), stride_seconds=0.5)
+    # frame 3 at fps 30 → video_time 0.1, well under 0.5s stride
+    out = _run(block, _make_image(frame_number=3), stride_seconds=0.5)
+    assert client.chat.completions.create.call_count == 1
+    # letter is still cached
     assert out["letter"] == "A"
-    assert mock_client.chat.completions.create.call_count == 1
 
 
 @patch("inference.core.workflows.core_steps.models.foundation.action_recognition.v1.OpenAI")
-def test_fires_again_after_cooldown_elapsed(mock_openai_cls: MagicMock) -> None:
-    """After enough video time has passed, a new call fires."""
-    mock_client = MagicMock()
-    mock_client.chat.completions.create.side_effect = [
-        _stub_openai_response('{"letter": "A"}'),
-        _stub_openai_response('{"letter": "B"}'),
+def test_fires_again_after_stride(mock_openai_cls: MagicMock) -> None:
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [
+        _stub_response('{"letter": "A"}'),
+        _stub_response('{"letter": "B"}'),
     ]
-    mock_openai_cls.return_value = mock_client
+    mock_openai_cls.return_value = client
 
     block = ActionRecognitionBlockV1()
-    # frame_number 0 at fps 30 => video time 0.0
-    _run(block, _make_image(frame_number=0), timeout_seconds=0.1)
-    # frame_number 6 at fps 30 => video time 0.2 — past 0.1s cooldown
-    out = _run(block, _make_image(frame_number=6), timeout_seconds=0.1)
-    assert mock_client.chat.completions.create.call_count == 2
+    _run(block, _make_image(frame_number=0), stride_seconds=0.5)
+    # frame 16 at fps 30 → video_time ≈ 0.533, past 0.5s stride
+    out = _run(block, _make_image(frame_number=16), stride_seconds=0.5)
+    assert client.chat.completions.create.call_count == 2
     assert out["letter"] == "B"
 
 
 @patch("inference.core.workflows.core_steps.models.foundation.action_recognition.v1.OpenAI")
-def test_buffer_capped_at_max_frames(mock_openai_cls: MagicMock) -> None:
-    mock_client = MagicMock()
-    mock_client.chat.completions.create.return_value = _stub_openai_response('{"letter": "A"}')
-    mock_openai_cls.return_value = mock_client
+def test_default_stride_is_half_window(mock_openai_cls: MagicMock) -> None:
+    client = MagicMock()
+    client.chat.completions.create.return_value = _stub_response('{"letter": "A"}')
+    mock_openai_cls.return_value = client
 
     block = ActionRecognitionBlockV1()
-    for i in range(20):
-        _run(block, _make_image(frame_number=i), max_frames=3, timeout_seconds=0.0)
+    # window=1.0, stride=None → effective stride=0.5
+    _run(block, _make_image(frame_number=0), window_seconds=1.0, stride_seconds=None)
+    # frame 10 (video_time 0.333) — under 0.5s, no refire
+    _run(block, _make_image(frame_number=10), window_seconds=1.0, stride_seconds=None)
+    assert client.chat.completions.create.call_count == 1
+    # frame 16 (video_time 0.533) — past 0.5s, refires
+    _run(block, _make_image(frame_number=16), window_seconds=1.0, stride_seconds=None)
+    assert client.chat.completions.create.call_count == 2
 
-    state = block._states["cam-1"]
-    assert len(state.buffer) == 3
+
+@patch("inference.core.workflows.core_steps.models.foundation.action_recognition.v1.OpenAI")
+def test_subsample_fps_caps_buffer_growth(mock_openai_cls: MagicMock) -> None:
+    """At source 30 fps, sample_fps=5, only every 6th frame is encoded."""
+    client = MagicMock()
+    client.chat.completions.create.return_value = _stub_response('{"letter": "A"}')
+    mock_openai_cls.return_value = client
+
+    block = ActionRecognitionBlockV1()
+    state_id = "cam-1"
+    sampled = []
+    prev_t = None
+    for i in range(30):  # 1 second of source frames
+        _run(
+            block,
+            _make_image(video_id=state_id, frame_number=i, fps=30),
+            window_seconds=1.0,
+            stride_seconds=0.5,
+            sample_fps=5.0,
+        )
+        t = block._states[state_id].last_subsample_video_time
+        if t != prev_t:
+            sampled.append(i)
+            prev_t = t
+
+    # 5 samples per second target; with 30 source frames we expect ~5 samples.
+    # Allow some tolerance for the 1/5 = 0.2s interval landing at frame
+    # boundaries (33ms each).
+    assert 4 <= len(sampled) <= 6, sampled
+
+
+@patch("inference.core.workflows.core_steps.models.foundation.action_recognition.v1.OpenAI")
+def test_window_evicts_old_frames(mock_openai_cls: MagicMock) -> None:
+    """Frames older than window_seconds are pruned from the buffer."""
+    client = MagicMock()
+    client.chat.completions.create.return_value = _stub_response('{"letter": "A"}')
+    mock_openai_cls.return_value = client
+
+    block = ActionRecognitionBlockV1()
+    state_id = "cam-1"
+    # Feed 60 frames at fps 30 = 2 seconds of video.
+    # window_seconds=0.5 so buffer should hold ~0.5 × sample_fps = ~3 frames at steady state.
+    for i in range(60):
+        _run(
+            block,
+            _make_image(video_id=state_id, frame_number=i, fps=30),
+            window_seconds=0.5,
+            stride_seconds=0.5,
+            sample_fps=5.0,
+        )
+    buffer_size = len(block._states[state_id].buffer)
+    # ceil(0.5 * 5) = 3; allow ±1 for boundary effects
+    assert 2 <= buffer_size <= 4, buffer_size
 
 
 @patch("inference.core.workflows.core_steps.models.foundation.action_recognition.v1.OpenAI")
 def test_isolated_state_per_video(mock_openai_cls: MagicMock) -> None:
-    mock_client = MagicMock()
-    mock_client.chat.completions.create.return_value = _stub_openai_response('{"letter": "A"}')
-    mock_openai_cls.return_value = mock_client
+    client = MagicMock()
+    client.chat.completions.create.return_value = _stub_response('{"letter": "A"}')
+    mock_openai_cls.return_value = client
 
     block = ActionRecognitionBlockV1()
-    _run(block, _make_image(video_id="cam-A", frame_number=0))
-    _run(block, _make_image(video_id="cam-B", frame_number=0))
-    assert "cam-A" in block._states
-    assert "cam-B" in block._states
-    assert block._states["cam-A"] is not block._states["cam-B"]
+    _run(block, _make_image(video_id="A", frame_number=0))
+    _run(block, _make_image(video_id="B", frame_number=0))
+    assert "A" in block._states and "B" in block._states
+    assert block._states["A"] is not block._states["B"]
 
 
 @patch("inference.core.workflows.core_steps.models.foundation.action_recognition.v1.OpenAI")
-def test_extra_body_includes_response_format_with_correct_enum(
-    mock_openai_cls: MagicMock,
-) -> None:
-    """The forwarded extra_body must contain a json_schema response_format
-    whose enum exactly matches the user-supplied `choices`."""
-    mock_client = MagicMock()
-    mock_client.chat.completions.create.return_value = _stub_openai_response('{"letter": "C"}')
-    mock_openai_cls.return_value = mock_client
+def test_extra_body_carries_enum_and_thinking_off(mock_openai_cls: MagicMock) -> None:
+    client = MagicMock()
+    client.chat.completions.create.return_value = _stub_response('{"letter": "B"}')
+    mock_openai_cls.return_value = client
 
     block = ActionRecognitionBlockV1()
-    _run(block, _make_image(frame_number=0), choices=["A", "B", "C", "D"])
+    _run(block, _make_image(frame_number=0), choices=["A", "B", "C"])
 
-    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
-    extra = call_kwargs["extra_body"]
-    enum_in_schema = (
-        extra["response_format"]["json_schema"]["schema"]["properties"]["letter"][
-            "enum"
-        ]
-    )
-    assert enum_in_schema == ["A", "B", "C", "D"]
+    extra = client.chat.completions.create.call_args.kwargs["extra_body"]
     assert extra["chat_template_kwargs"] == {"enable_thinking": False}
+    enum_set = extra["response_format"]["json_schema"]["schema"]["properties"]["letter"]["enum"]
+    assert enum_set == ["A", "B", "C"]
 
 
 @patch("inference.core.workflows.core_steps.models.foundation.action_recognition.v1.OpenAI")
-def test_thinking_is_always_disabled(mock_openai_cls: MagicMock) -> None:
-    """Thinking-disable is hardcoded — every LLM call should carry it."""
-    mock_client = MagicMock()
-    mock_client.chat.completions.create.return_value = _stub_openai_response('{"letter": "A"}')
-    mock_openai_cls.return_value = mock_client
-
-    block = ActionRecognitionBlockV1()
-    _run(block, _make_image(frame_number=0))
-    extra = mock_client.chat.completions.create.call_args.kwargs["extra_body"]
-    assert extra["chat_template_kwargs"] == {"enable_thinking": False}
-
-
-@patch("inference.core.workflows.core_steps.models.foundation.action_recognition.v1.OpenAI")
-def test_llm_error_returns_last_letter_and_error_status(
-    mock_openai_cls: MagicMock,
-) -> None:
-    """If a fresh fire fails, we still return the most recent good letter and
-    surface the error_status."""
-    mock_client = MagicMock()
-    mock_client.chat.completions.create.side_effect = [
-        _stub_openai_response('{"letter": "A"}'),
+def test_llm_error_returns_last_good_letter(mock_openai_cls: MagicMock) -> None:
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [
+        _stub_response('{"letter": "A"}'),
         RuntimeError("boom"),
     ]
-    mock_openai_cls.return_value = mock_client
+    mock_openai_cls.return_value = client
 
     block = ActionRecognitionBlockV1()
-    _run(block, _make_image(frame_number=0), timeout_seconds=0.0)
-    out = _run(block, _make_image(frame_number=10), timeout_seconds=0.0)
+    _run(block, _make_image(frame_number=0), stride_seconds=0.0)
+    # 16 frames later, force a refire; LLM raises; we should still see the prior 'A'.
+    out = _run(block, _make_image(frame_number=16), stride_seconds=0.0)
     assert out["letter"] == "A"
     assert "boom" in out["error_status"]
 
 
 @patch("inference.core.workflows.core_steps.models.foundation.action_recognition.v1.OpenAI")
-def test_message_carries_one_image_url_per_buffered_frame(
-    mock_openai_cls: MagicMock,
-) -> None:
-    mock_client = MagicMock()
-    mock_client.chat.completions.create.return_value = _stub_openai_response('{"letter": "A"}')
-    mock_openai_cls.return_value = mock_client
+def test_call_has_max_tokens(mock_openai_cls: MagicMock) -> None:
+    client = MagicMock()
+    client.chat.completions.create.return_value = _stub_response('{"letter": "A"}')
+    mock_openai_cls.return_value = client
 
     block = ActionRecognitionBlockV1()
-    # Push 5 frames to fill the buffer with timeout=0 to fire on every call.
-    for i in range(5):
-        _run(block, _make_image(frame_number=i), max_frames=5, timeout_seconds=0.0)
-
-    last_call = mock_client.chat.completions.create.call_args
-    messages = last_call.kwargs["messages"]
-    content = messages[0]["content"]
-    image_parts = [c for c in content if c["type"] == "image_url"]
-    text_parts = [c for c in content if c["type"] == "text"]
-    assert len(image_parts) == 5
-    assert len(text_parts) == 1
-    for ip in image_parts:
-        assert ip["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    _run(block, _make_image(frame_number=0), max_tokens=750)
+    assert client.chat.completions.create.call_args.kwargs["max_tokens"] == 750

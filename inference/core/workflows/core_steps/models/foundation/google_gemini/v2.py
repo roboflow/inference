@@ -43,7 +43,6 @@ MODEL_ALIASES = {
     "gemini-2.5-pro-preview-06-05": "gemini-2.5-pro",
     "gemini-2.5-pro-preview-05-06": "gemini-2.5-pro",
     "gemini-2.5-pro-preview-03-25": "gemini-2.5-pro",
-    "gemini-2.0-flash-exp": "gemini-2.0-flash",
 }
 
 GEMINI_MODELS = [
@@ -70,16 +69,6 @@ GEMINI_MODELS = [
     {
         "id": "gemini-2.5-flash-lite",
         "name": "Gemini 2.5 Flash-Lite",
-        "supports_thinking_level": False,
-    },
-    {
-        "id": "gemini-2.0-flash",
-        "name": "Gemini 2.0 Flash",
-        "supports_thinking_level": False,
-    },
-    {
-        "id": "gemini-2.0-flash-lite",
-        "name": "Gemini 2.0 Flash-Lite",
         "supports_thinking_level": False,
     },
 ]
