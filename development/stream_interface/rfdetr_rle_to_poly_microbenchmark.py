@@ -1,9 +1,9 @@
 """Capture/replay benchmark for RF-DETR RLE-to-polygon conversion.
 
 This targets the CPU path in
-``inference.core.models.inference_models_adapters.rle_masks2poly``:
+``inference.core.utils.rle_to_polygon.rle_masks_to_polygons``:
 
-    COCO RLE counts -> dense mask -> cv2.findContours -> polygon arrays
+    COCO RLE counts -> sparse crop -> cv2.findContours -> polygon arrays
 
 Default usage captures 100 invocations from the 1080p workflow and immediately
 replays them with exact output checks:
@@ -40,7 +40,7 @@ _INFERENCE_MODELS_ROOT = _REPO_ROOT / "inference_models"
 _WORKFLOW_PATH = (
     _REPO_ROOT / "development" / "stream_interface" / "rfdetr_nano_seg_trt_workflow.py"
 )
-_TARGET_FUNCTION = "rle_masks2poly"
+_TARGET_FUNCTION = "rle_masks_to_polygons"
 _SCHEMA_VERSION = 1
 
 
@@ -63,11 +63,17 @@ def _load_workflow_module() -> Any:
 
 
 def _snapshot_masks(masks: Any) -> dict:
-    return {
+    snapshot = {
         "image_size": tuple(masks.image_size),
         "masks": list(masks.masks),
         "mask_count": len(masks.masks),
     }
+    counts = getattr(masks, "_rle_counts_cpu", None)
+    lengths = getattr(masks, "_rle_lengths_cpu", None)
+    if counts is not None and lengths is not None:
+        snapshot["rle_counts_cpu"] = np.array(counts, copy=True)
+        snapshot["rle_lengths_cpu"] = np.array(lengths, copy=True)
+    return snapshot
 
 
 def _snapshot_output(output: List[np.ndarray]) -> List[np.ndarray]:
@@ -118,8 +124,9 @@ class _CaptureState:
 def _install_capture_hook(state: _CaptureState) -> None:
     _ensure_local_import_paths()
     from inference.core.models import inference_models_adapters as adapters
+    from inference.core.utils import rle_to_polygon
 
-    original = getattr(adapters, _TARGET_FUNCTION)
+    original = getattr(rle_to_polygon, _TARGET_FUNCTION)
 
     @functools.wraps(original)
     def wrapper(masks: Any) -> List[np.ndarray]:
@@ -127,6 +134,8 @@ def _install_capture_hook(state: _CaptureState) -> None:
         state.maybe_save(masks=masks, output=result)
         return result
 
+    setattr(rle_to_polygon, _TARGET_FUNCTION, wrapper)
+    # The adapter imports the function directly at module load time.
     setattr(adapters, _TARGET_FUNCTION, wrapper)
 
 
@@ -211,7 +220,7 @@ def _run_capture(args: argparse.Namespace) -> int:
         cases_dir=cases_dir,
         payload={
             "schema_version": _SCHEMA_VERSION,
-            "function": "inference.core.models.inference_models_adapters.rle_masks2poly",
+            "function": "inference.core.utils.rle_to_polygon.rle_masks_to_polygons",
             "case_count": state.count,
             "total_masks": state.total_masks,
             "video_reference": args.video_reference,
@@ -242,15 +251,19 @@ def _load_case(path: Path) -> dict:
     return payload
 
 
-def _materialize_masks(case: dict) -> Any:
+def _materialize_masks(case: dict, use_lazy_counts: bool) -> Any:
     _ensure_local_import_paths()
     from inference_models.models.base.types import InstancesRLEMasks
 
     payload = case["inputs"]["masks"]
-    return InstancesRLEMasks(
+    masks = InstancesRLEMasks(
         image_size=tuple(payload["image_size"]),
         masks=list(payload["masks"]),
     )
+    if use_lazy_counts and "rle_counts_cpu" in payload and "rle_lengths_cpu" in payload:
+        masks._rle_counts_cpu = np.array(payload["rle_counts_cpu"], copy=True)
+        masks._rle_lengths_cpu = np.array(payload["rle_lengths_cpu"], copy=True)
+    return masks
 
 
 def _assert_outputs_equal(
@@ -298,15 +311,17 @@ def _nvtx_range(enabled: bool, message: str):
         yield
 
 
-def _run_one_replay_case(*, case_path: Path, nvtx: bool) -> float:
-    from inference.core.models.inference_models_adapters import rle_masks2poly
+def _run_one_replay_case(
+    *, case_path: Path, nvtx: bool, use_lazy_counts: bool
+) -> float:
+    from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
 
     case = _load_case(case_path)
-    masks = _materialize_masks(case=case)
+    masks = _materialize_masks(case=case, use_lazy_counts=use_lazy_counts)
     label = f"rfdetr.rle_to_poly.case={case['case_index']}" f".masks={len(masks.masks)}"
     start = perf_counter()
     with _nvtx_range(nvtx, label):
-        actual = rle_masks2poly(masks)
+        actual = rle_masks_to_polygons(masks)
     elapsed = perf_counter() - start
     _assert_outputs_equal(
         actual=actual,
@@ -365,17 +380,28 @@ def _run_replay(args: argparse.Namespace) -> dict:
 
     print(
         f"[replay] cases={len(case_paths)} repeats={args.repeats} "
-        f"warmup_repeats={args.warmup_repeats} nvtx={args.nvtx}",
+        f"warmup_repeats={args.warmup_repeats} nvtx={args.nvtx} "
+        f"use_lazy_counts={args.use_lazy_counts}",
         flush=True,
     )
     for _ in range(args.warmup_repeats):
         for case_path in case_paths:
-            _run_one_replay_case(case_path=case_path, nvtx=args.nvtx)
+            _run_one_replay_case(
+                case_path=case_path,
+                nvtx=args.nvtx,
+                use_lazy_counts=args.use_lazy_counts,
+            )
 
     timings = []
     for repeat_index in range(args.repeats):
         for case_path in case_paths:
-            timings.append(_run_one_replay_case(case_path=case_path, nvtx=args.nvtx))
+            timings.append(
+                _run_one_replay_case(
+                    case_path=case_path,
+                    nvtx=args.nvtx,
+                    use_lazy_counts=args.use_lazy_counts,
+                )
+            )
         print(
             f"[replay] completed repeat {repeat_index + 1}/{args.repeats}",
             flush=True,
@@ -417,6 +443,15 @@ def _parse_args() -> argparse.Namespace:
         "--nvtx",
         action="store_true",
         help="Add NVTX ranges around each replayed rle_masks2poly call.",
+    )
+    parser.add_argument(
+        "--use-lazy-counts",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "When captured cases include uncompressed RLE counts, restore them "
+            "onto the replay masks."
+        ),
     )
     args = parser.parse_args()
     if args.capture_count <= 0:
