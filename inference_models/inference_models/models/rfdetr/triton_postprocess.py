@@ -621,6 +621,7 @@ def _instance_detections_from_sparse_records(
     class_id = torch.from_numpy(metadata_host[active_ranks, 1].copy()).int()
 
     rle_masks = []
+    rle_counts = []
     for rank in active_ranks.tolist():
         if records_host is None:
             rank_records = np.empty((0, 3), dtype=np.int32)
@@ -643,12 +644,14 @@ def _instance_detections_from_sparse_records(
             height=height,
             width=width,
         )
+        rle_counts.append(counts)
         rle_masks.append(_rle_from_counts(counts=counts, height=height, width=width))
 
     instances_masks = InstancesRLEMasks.from_coco_rle_masks(
         image_size=(height, width),
         masks=rle_masks,
     )
+    _attach_uncompressed_counts(instances_masks, rle_counts)
     return InstanceDetections(
         xyxy=boxes,
         confidence=confidence,
@@ -720,6 +723,7 @@ def _instance_detections_from_sparse_query_records(
     class_id = torch.from_numpy(class_metadata_host[active_ranks, 1].copy()).int()
 
     rle_masks = []
+    rle_counts = []
     for rank in active_ranks.tolist():
         query_index = int(class_metadata_host[rank, 9])
         if records_host is None:
@@ -742,12 +746,14 @@ def _instance_detections_from_sparse_query_records(
             height=height,
             width=width,
         )
+        rle_counts.append(counts)
         rle_masks.append(_rle_from_counts(counts=counts, height=height, width=width))
 
     instances_masks = InstancesRLEMasks.from_coco_rle_masks(
         image_size=(height, width),
         masks=rle_masks,
     )
+    _attach_uncompressed_counts(instances_masks, rle_counts)
     return InstanceDetections(
         xyxy=boxes,
         confidence=confidence,
@@ -956,6 +962,21 @@ def _rle_from_counts(counts: List[int], height: int, width: int) -> dict:
     return mask_utils.frPyObjects(
         {"counts": counts, "size": [height, width]}, height, width
     )
+
+
+def _attach_uncompressed_counts(
+    masks: InstancesRLEMasks,
+    rle_counts: List[List[int]],
+) -> None:
+    max_length = max((len(counts) for counts in rle_counts), default=0)
+    counts_array = np.zeros((len(rle_counts), max_length), dtype=np.int64)
+    lengths_array = np.empty((len(rle_counts),), dtype=np.int32)
+    for index, counts in enumerate(rle_counts):
+        counts_length = len(counts)
+        lengths_array[index] = counts_length
+        counts_array[index, :counts_length] = counts
+    masks._rle_counts_cpu = counts_array  # type: ignore[attr-defined]
+    masks._rle_lengths_cpu = lengths_array  # type: ignore[attr-defined]
 
 
 if triton is not None:
