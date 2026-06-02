@@ -1,3 +1,25 @@
+"""Sparse Triton RF-DETR instance-segmentation post-processing.
+
+The normal PyTorch path upsamples every selected mask to image resolution and
+then immediately converts that dense boolean tensor to COCO RLE. For 1080p
+frames that dense intermediate is the expensive part. This module keeps the
+same RF-DETR selection semantics, but asks Triton to interpolate only the
+active mask region and emit sparse RLE run records directly.
+
+The CUDA side writes two buffers:
+
+* ``metadata``: one fixed-width row per output detection candidate containing
+  active flag, mapped class id, score, clipped xyxy box, source query id, sort
+  key, and debug ROI bounds.
+* ``records``: a flat list of ``(rank, run_start, run_end)`` triples in COCO's
+  column-major order. ``records[0, 0]`` is the run count and ``records[0, 1]``
+  is an overflow / retry flag.
+
+CPU code then performs only the small ordered assembly step: copy metadata and
+run records back, sort detections by score, convert each candidate's runs into
+compressed COCO RLE counts, and wrap them in ``InstanceDetections``.
+"""
+
 from collections import OrderedDict
 from threading import Lock
 from typing import List, Optional, Tuple, Union
@@ -22,8 +44,15 @@ except ImportError:  # pragma: no cover - depends on optional GPU package
 
 
 _HEADER_SIZE = 16
+# One Triton program scans this many output rows per column tile. Keeping this
+# bounded avoids materializing a full HxW mask while still amortizing per-tile
+# interpolation setup.
 _BLOCK_ROI_H = 512
+# RLE flat positions are stored as int32 and converted exactly through fp32
+# metadata fields. Keep H*W below the fp32 exact-integer range.
 _MAX_EXACT_FLAT_INDEX = 1 << 24
+# The sparse RLE kernel processes columns in bands. The common case has small
+# active mask bounds, but the while loop below can advance through wider ROIs.
 _SPARSE_MAX_ROI_WIDTH = 512
 _SPARSE_BLOCK_COLS = 8
 _SPARSE_MAX_TOTAL_RUNS = 8192
@@ -40,6 +69,14 @@ def _get_interpolation_weights(
     device: torch.device,
     axis: str,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Return sparse two-tap bilinear interpolation tables for one axis.
+
+    The Triton RLE kernel needs to reproduce ``torchvision.functional.resize``
+    with bilinear antialiasing, but it cannot call PyTorch's resize from inside
+    a kernel. We build the interpolation matrix once by resizing an identity
+    basis, keep only the non-zero source index and weight pairs for each output
+    coordinate, and cache those small tables per device/shape/axis.
+    """
     device_key = _interpolation_cache_key(src_size, output_size, device, axis)
     with _INTERPOLATION_WEIGHT_CACHE_LOCK:
         cached = _INTERPOLATION_WEIGHT_CACHE.get(device_key)
@@ -47,6 +84,9 @@ def _get_interpolation_weights(
             _INTERPOLATION_WEIGHT_CACHE.move_to_end(device_key)
             return cached
 
+    # Resize an identity basis so PyTorch gives us exactly the interpolation
+    # coefficients used by the reference path. This keeps the Triton path tied
+    # to PyTorch semantics instead of maintaining a second resize formula.
     if axis == "height":
         basis = torch.eye(src_size, device=device).reshape(src_size, 1, src_size, 1)
         weights = F.interpolate(
@@ -100,6 +140,12 @@ def _interpolation_cache_key(
     device: torch.device,
     axis: str,
 ) -> Tuple[str, int, int, int, int, str]:
+    """Build the LRU key for interpolation tables.
+
+    CUDA tensors may have ``device.index is None`` when they refer to the
+    current device, so the key also includes ``torch.cuda.current_device()`` to
+    avoid reusing tables across devices in multi-GPU processes.
+    """
     return (
         device.type,
         -1 if device.index is None else device.index,
@@ -118,6 +164,17 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     threshold: Union[float, torch.Tensor],
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> Optional[InstanceDetections]:
+    """Run the sparse Triton RF-DETR RLE postprocess path for one image.
+
+    Returns an ``InstanceDetections`` object when the input shape and metadata
+    are supported. Returns ``None`` when the caller should use the reference
+    PyTorch/RLE implementation instead.
+
+    The fast path first emits one candidate per query. If any query has more
+    than one class above threshold, the first pass asks for a retry and the
+    second pass emits up to ``_SPARSE_MAX_CLASSES_PER_QUERY`` query-class
+    candidates per query.
+    """
     unsupported_reason = _unsupported_triton_postprocess_reason(
         image_bboxes=image_bboxes,
         image_scores=image_scores,
@@ -143,6 +200,8 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     output_width = image_meta.original_size.width
     confidence_threshold = float(threshold)
 
+    # Precompute resize tables outside the hot kernel. The tables are tiny
+    # compared with the full-resolution masks and can be reused across frames.
     y_idx, y_weight = _get_interpolation_weights(
         src_size=mask_height,
         output_size=output_height,
@@ -156,6 +215,8 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         axis="width",
     )
 
+    # First pass: keep the common case small by selecting only the best class
+    # for each query and emitting sparse RLE runs for those query masks.
     metadata = torch.empty(
         (num_queries, _HEADER_SIZE),
         dtype=torch.float32,
@@ -227,6 +288,10 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     ):
         return None
 
+    # Retry only when the first pass detected multiple passing classes for a
+    # query. This preserves RF-DETR's flat top-k query-class semantics without
+    # paying the expanded metadata/RLE cost on the usual one-class-per-query
+    # path.
     topk_metadata_rows = num_queries * _SPARSE_MAX_CLASSES_PER_QUERY
     metadata = torch.empty(
         (topk_metadata_rows, _HEADER_SIZE),
@@ -306,6 +371,15 @@ def _instance_detections_from_sparse_records(
     width: int,
     max_detections: Optional[int] = None,
 ) -> Optional[InstanceDetections]:
+    """Convert sparse device records into ``InstanceDetections``.
+
+    ``metadata_host`` is already on CPU because it is small and needed to decide
+    ordering and retry/fallback. ``records`` may still live on CUDA; this helper
+    copies it only after the metadata indicates at least one active candidate.
+
+    ``None`` means the sparse device result is incomplete or overflowed and the
+    caller should retry or fall back to the reference implementation.
+    """
     active_ranks = np.flatnonzero(metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
         return InstanceDetections(
@@ -324,6 +398,9 @@ def _instance_detections_from_sparse_records(
     if int(records_host[0, 1]) != 0 or total_runs < 0 or total_runs > max_total_runs:
         return None
 
+    # Match RF-DETR's descending score order. ``metadata[:, 10]`` is the flat
+    # query-class index and gives a deterministic secondary order for equal
+    # scores without touching the mask records.
     order = np.lexsort(
         (
             -metadata_host[active_ranks, 10],
@@ -347,6 +424,8 @@ def _instance_detections_from_sparse_records(
         if rank_records.size:
             starts_array = rank_records[:, 1].astype(np.int64, copy=False)
             ends_array = rank_records[:, 2].astype(np.int64, copy=False)
+            # Atomic writes from different column tiles are not globally
+            # ordered, so sort runs before converting them into COCO counts.
             order = np.argsort(starts_array, kind="stable")
             starts_array = starts_array[order]
             ends_array = ends_array[order]
@@ -378,6 +457,7 @@ def _should_retry_sparse_topk_metadata(
     records: torch.Tensor,
     max_total_runs: int,
 ) -> bool:
+    """Return whether first-pass sparse metadata needs query-class expansion."""
     active_ranks = np.flatnonzero(metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0 or np.any(metadata_host[active_ranks, 8] > 0.5):
         return False
@@ -396,6 +476,7 @@ def _supports_triton_postprocess_path(
     threshold: Union[float, torch.Tensor],
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> bool:
+    """Return ``True`` when the sparse Triton path can represent this input."""
     return (
         _unsupported_triton_postprocess_reason(
             image_bboxes=image_bboxes,
@@ -417,6 +498,7 @@ def _unsupported_triton_postprocess_reason(
     threshold: Union[float, torch.Tensor],
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> Optional[str]:
+    """Explain why the Triton path should not run, or ``None`` when supported."""
     if triton is None:
         return "triton_unavailable"
     if classes_re_mapping is None:
@@ -477,6 +559,7 @@ def _counts_from_runs(
     height: int,
     width: int,
 ) -> List[int]:
+    """Build uncompressed COCO RLE counts from sorted column-major runs."""
     total = height * width
     lengths = ends - starts
     valid = lengths > 0
@@ -487,6 +570,9 @@ def _counts_from_runs(
 
     if starts.size:
         run_count = starts.size
+        # COCO counts alternate background gaps and foreground lengths. Starts
+        # are absolute flat positions; subtract the prior end in-place to get
+        # each background gap.
         gaps = starts.astype(np.int64, copy=True)
         gaps[1:] -= ends[:-1]
         tail = total - int(ends[-1])
@@ -504,6 +590,7 @@ def _counts_from_runs(
 
 
 def _rle_from_counts(counts: List[int], height: int, width: int) -> dict:
+    """Compress uncompressed COCO RLE counts with pycocotools."""
     return mask_utils.frPyObjects(
         {"counts": counts, "size": [height, width]}, height, width
     )
@@ -528,6 +615,7 @@ if triton is not None:
         METADATA_STRIDE: tl.constexpr,
         FLAG_MULTICLASS: tl.constexpr,
     ):
+        """Select the highest-scoring mapped class for one query."""
         rank = tl.program_id(0)
         meta_base = rank * METADATA_STRIDE
         if rank == 0:
@@ -551,6 +639,9 @@ if triton is not None:
         passing_class_count = tl.sum(tl.where(passing_classes, 1, 0), axis=0)
         if FLAG_MULTICLASS and passing_class_count > 1:
             tl.store(records + 1, 1)
+        # Select over valid mapped classes, not just passing classes. The
+        # threshold is applied after selection so inactive metadata rows still
+        # carry a stable class/score shape.
         selected_score = tl.max(tl.where(valid_classes, class_scores, -1.0), axis=0)
         selected_class = tl.max(
             tl.where(
@@ -569,6 +660,8 @@ if triton is not None:
         query_index = rank
         selected_index = rank * num_classes + selected_class
 
+        # Metadata is float32 because Python copies it back as one compact
+        # array; integer-like fields stay below the exact fp32 integer range.
         tl.store(
             metadata + meta_base + 0,
             tl.where(is_valid_detection, 1.0, 0.0),
@@ -638,6 +731,7 @@ if triton is not None:
         FLAG_WRITE_QUERY_METADATA: tl.constexpr,
         FLAG_OVERFLOW_CLASSES: tl.constexpr,
     ):
+        """Emit up to four passing query-class candidates for one query."""
         query_index = tl.program_id(0)
         if query_index == 0:
             tl.store(records + 0, 0)
@@ -664,6 +758,8 @@ if triton is not None:
 
         work_scores = tl.where(passing_classes, class_scores, -1.0)
         for class_rank in tl.static_range(0, 4):
+            # Repeated max-and-mask avoids sorting all classes and keeps the
+            # register footprint bounded by the configured class block.
             selected_score = tl.max(work_scores, axis=0)
             selected_class = tl.max(
                 tl.where(
@@ -736,6 +832,9 @@ if triton is not None:
             tl.store(metadata + meta_base + 5, x2)
             tl.store(metadata + meta_base + 6, y2)
             if FLAG_WRITE_QUERY_METADATA and class_rank == 0:
+                # The pipeline path wants best-query metadata for the RLE
+                # kernel while retaining expanded class metadata for CPU
+                # finalization.
                 query_meta_base = query_index * METADATA_STRIDE
                 tl.store(
                     query_metadata + query_meta_base + 0,
@@ -793,6 +892,7 @@ if triton is not None:
         METADATA_STRIDE: tl.constexpr,
         BLOCK_COLS: tl.constexpr,
     ):
+        """Interpolate sparse mask ROIs and emit column-major RLE runs."""
         rank = tl.program_id(0)
         tile_x = tl.program_id(1)
         local_x_offsets = tile_x * BLOCK_COLS + tl.arange(0, BLOCK_COLS)
@@ -816,6 +916,9 @@ if triton is not None:
             other=-1.0,
         )
         positive_source = mask_active & (mask_values > 0.0)
+        # Any output pixel depending only on non-positive source pixels cannot
+        # cross the >0 threshold, so derive the minimal candidate ROI from the
+        # positive source support plus a one-pixel interpolation halo.
         source_y_min = tl.min(tl.where(positive_source, source_y, mask_height), axis=0)
         source_y_max = tl.max(tl.where(positive_source, source_y, -1), axis=0)
         source_x_min = tl.min(tl.where(positive_source, source_x, mask_width), axis=0)
@@ -891,6 +994,8 @@ if triton is not None:
         roi_width = roi_x_end - roi_x_start
 
         if tile_x == 0:
+            # ROI bounds are diagnostic/fallback metadata; one tile writes them
+            # to avoid redundant stores from every column group.
             tl.store(metadata + meta_base + 11, roi_y_start.to(tl.float32))
             tl.store(metadata + meta_base + 12, roi_y_end.to(tl.float32))
             tl.store(metadata + meta_base + 13, roi_x_start.to(tl.float32))
@@ -931,6 +1036,8 @@ if triton is not None:
                 other=0.0,
             )
 
+            # Open slots carry a run that began in a prior row tile but has not
+            # ended yet. The slot stores the record index whose end is pending.
             open_slots = tl.full((BLOCK_COLS,), -1, tl.int32)
             y_tile_start = roi_y_start
             while y_tile_start <= roi_y_end:
@@ -983,6 +1090,9 @@ if triton is not None:
                 ) * x_weight0 + (value01 * y_weight0 + value11 * y_weight1) * x_weight1
                 current_positive = active & (current_values > 0.0)
 
+                # Starts/ends are transitions along a COCO column-major scan:
+                # current positive after previous background starts a run;
+                # previous positive followed by current background ends it.
                 previous_y = output_y - 1
                 previous_active = boundary_active & (row_y[:, None] > roi_y_start)
                 previous_y_base = previous_y * 2
@@ -1070,6 +1180,9 @@ if triton is not None:
                     )
                     open_at_start = open_slot >= 0
                     open_at_start_i = tl.where(open_at_start, 1, 0).to(tl.int32)
+                    # Reserve a contiguous span for this column's new starts.
+                    # Atomic ordering between columns is irrelevant because CPU
+                    # sorts records by flat start before building COCO counts.
                     col_base = tl.atomic_add(
                         records + 0,
                         col_start_count,
