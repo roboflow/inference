@@ -1,5 +1,16 @@
 # Changelog
 
+## `0.29.0`
+
+### Added
+
+- Opt-in Triton RF-DETR instance-segmentation RLE post-processing. Set
+  `INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED=True` to generate COCO RLE
+  masks directly from sparse interpolated mask regions on supported CUDA
+  inputs.
+
+---
+
 ## `0.28.7`
 
 - Added YOLO26 semantic segmentation support (ONNX, TorchScript, and TensorRT backends).
@@ -13,6 +24,7 @@
 
 - Ported SAM3 to inference_models
 - There were issues with dependencies while introducing SAM3 hence versions `0.28.2` and `0.28.3`
+---
 
 ## `0.28.1`
 
