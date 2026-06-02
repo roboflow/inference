@@ -102,6 +102,7 @@ class RFDetrForKeyPointsONNX(
                 "class_names.txt",
                 "inference_config.json",
                 "weights.onnx",
+                "keypoints_metadata.json",
             ],
         )
         class_names = parse_class_names_file(
@@ -144,11 +145,10 @@ class RFDetrForKeyPointsONNX(
             input_batch_size = None
         input_name = session.get_inputs()[0].name
 
-        # parsed_key_points_metadata, skeletons = parse_key_points_metadata(
-        #     key_points_metadata_path=model_package_content["keypoints_metadata.json"]
-        # )
-        parsed_key_points_metadata = []
-        skeletons = []
+        parsed_key_points_metadata, skeletons = parse_key_points_metadata(
+            key_points_metadata_path=model_package_content["keypoints_metadata.json"],
+            classes_re_mapping=classes_re_mapping,
+        )
 
         return cls(
             session=session,
@@ -192,6 +192,12 @@ class RFDetrForKeyPointsONNX(
         )
         self._session_thread_lock = threading.Lock()
         self.recommended_parameters = recommended_parameters
+        self._key_points_classes_for_instances = torch.tensor(
+            [len(e) for e in self._parsed_key_points_metadata], device=device
+        )
+        self._key_points_slots_in_prediction = max(
+            len(e) for e in parsed_key_points_metadata
+        )
 
     @property
     def class_names(self) -> List[str]:
@@ -249,13 +255,15 @@ class RFDetrForKeyPointsONNX(
         bboxes, logits, keypoints = model_results
         return post_process_keypoint_detection_results(
             bboxes=bboxes,
-            logits=logits,
-            keypoints=keypoints,
+            out_logits=logits,
+            out_keypoints=keypoints,
             pre_processing_meta=pre_processing_meta,
             threshold=confidence_filter.get_threshold(self.class_names),
             key_points_threshold=key_points_threshold,
             num_classes=len(self.class_names),
             classes_re_mapping=self._classes_re_mapping,
+            key_points_classes_for_instances=self._key_points_classes_for_instances,
+            key_points_slots_in_prediction=self._key_points_slots_in_prediction, 
             device=self._device,
         )
 

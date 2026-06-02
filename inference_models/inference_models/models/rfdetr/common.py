@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple, Union
 import torch
 from torchvision.transforms import functional
 
-from inference_models import Detections, InstanceDetections, InstancesRLEMasks
+from inference_models import Detections, InstanceDetections, InstancesRLEMasks, KeyPoints
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.roboflow.model_packages import (
@@ -355,6 +355,8 @@ def post_process_keypoint_detection_results(
     key_points_threshold: float,
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
+    key_points_classes_for_instances,
+    key_points_slots_in_prediction,
     device: torch.device,
 ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
     # RF-DETR keypoint heads emit one slot per (class, max_keypoint), padded with zeros for
@@ -414,7 +416,6 @@ def post_process_keypoint_detection_results(
     scores = scores * torch.exp(-0.20 * log_mean_trace)
 
     keypoints_final = torch.cat([keypoints_xy, keypoints_conf], dim=-1)  # [B, num_select, K_per_class, 3]
-    keypoints_final = keypoints_final.reshape(B, num_select, K_per_class * 3)  # [B, num_select, 51]
 
     # iterate over batch and collect detections above thresholds
     all_key_points, detections = [], []
@@ -422,10 +423,12 @@ def post_process_keypoint_detection_results(
     if isinstance(threshold, torch.Tensor):
         threshold = threshold.to(device=device, dtype=keypoints_final.dtype)
 
-    for bidx in enumerate(keypoints_final):
+    for bidx in range(len(keypoints_final)):
         predicted_confidence = scores[bidx]
         top_classes = labels[bidx]
         image_bboxes = bboxes[bidx]
+        image_keypoints = keypoints_final[bidx]
+        image_meta = pre_processing_meta[bidx]
 
         if classes_re_mapping is not None:
             remapping_mask = torch.isin(
@@ -434,12 +437,10 @@ def post_process_keypoint_detection_results(
             top_classes = classes_re_mapping.class_mapping[top_classes[remapping_mask]]
             predicted_confidence = predicted_confidence[remapping_mask]
             image_bboxes = image_bboxes[remapping_mask]
+            image_keypoints = image_keypoints[remapping_mask]
         else:
-            # drop DETR no-object rows
-            named = top_classes < num_classes
-            predicted_confidence = predicted_confidence[named]
-            top_classes = top_classes[named]
-            image_bboxes = image_bboxes[named]
+            # similar 'else' block for object detection is not correct
+            raise ValueError("Not implemented")
 
         confidence_mask = predicted_confidence > (
             threshold[top_classes.long()]
@@ -450,16 +451,16 @@ def post_process_keypoint_detection_results(
         predicted_confidence = predicted_confidence[confidence_mask]
         top_classes = top_classes[confidence_mask]
         selected_boxes = image_bboxes[confidence_mask]
+        selected_keypoints = image_keypoints[confidence_mask] 
         predicted_confidence, sorted_indices = torch.sort(
             predicted_confidence, descending=True
         )
         top_classes = top_classes[sorted_indices]
-        selected_boxes = selected_boxes[sorted_indices]
-        cxcy = selected_boxes[:, :2]
-        wh = selected_boxes[:, 2:]
-        xy_min = cxcy - 0.5 * wh
-        xy_max = cxcy + 0.5 * wh
-        selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
+        selected_boxes_xyxy_pct = selected_boxes[sorted_indices]
+        selected_keypoints_xy_pct_conf = selected_keypoints[sorted_indices]
+        selected_keypoints_xy_pct = selected_keypoints_xy_pct_conf[:, :, :2] 
+        selected_keypoints_conf = selected_keypoints_xy_pct_conf[:, :, 2]
+
         denorm_size = (
             image_meta.nonsquare_intermediate_size or image_meta.inference_size
         )
@@ -473,15 +474,74 @@ def post_process_keypoint_detection_results(
             device=device,
         )
         selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_whwh
+        selected_keypoints_xy = selected_keypoints_xy_pct * inference_size_whwh[:2]
+
         selected_boxes_xyxy = rescale_image_detections(
             image_detections=selected_boxes_xyxy,
             image_metadata=image_meta,
         )
-        results.append(
+        detections.append(
             Detections(
                 xyxy=selected_boxes_xyxy.round().int(),
                 confidence=predicted_confidence,
                 class_id=top_classes.int(),
+            )
+        )
+
+        # Similar to rescale_image_detections function, for keypoints. 
+        offsets = torch.as_tensor([image_meta.pad_left, image_meta.pad_top],
+            dtype=selected_keypoints_xy.dtype,
+            device=selected_keypoints_xy.device,
+        )
+        selected_keypoints_xy.sub_(offsets)
+        scale = torch.as_tensor([image_meta.scale_width, image_meta.scale_height],
+            dtype=selected_keypoints_xy.dtype,
+            device=selected_keypoints_xy.device,
+        )
+        selected_keypoints_xy.div_(scale)
+
+        if (
+            image_meta.static_crop_offset.offset_x != 0
+            or image_meta.static_crop_offset.offset_y != 0
+        ):
+            static_crop_offsets = torch.as_tensor(
+                [
+                    image_meta.static_crop_offset.offset_x,
+                    image_meta.static_crop_offset.offset_y,
+                ],
+                dtype=selected_keypoints_xy.dtype,
+                device=selected_keypoints_xy.device,
+            )
+            selected_keypoints_xy.add_(static_crop_offsets)
+
+        xy_max = torch.as_tensor(
+            [image_meta.original_size.width, image_meta.original_size.height],
+            dtype=selected_keypoints_xy.dtype,
+            device=selected_keypoints_xy.device,
+        )
+        selected_keypoints_xy.clamp_(min=torch.zeros_like(xy_max), max=xy_max)
+
+        # this is similar to the end of yolo26 keypoint postprocessing
+        key_points_classes_for_instance_class = (
+            (key_points_classes_for_instances[top_classes])
+            .unsqueeze(1)
+            .to(device=selected_keypoints_xy.device)
+        )
+        invalid_slot_keypoints = (
+            torch.arange(key_points_slots_in_prediction, device=selected_keypoints_xy.device)
+            .unsqueeze(0)
+            .repeat(selected_keypoints_xy.shape[0], 1)
+            >= key_points_classes_for_instance_class
+        )
+        keypoints_below_threshold = selected_keypoints_conf < key_points_threshold
+        mask = invalid_slot_keypoints | keypoints_below_threshold
+        selected_keypoints_xy[mask] = 0.0
+        selected_keypoints_conf[mask] = 0.0
+        all_key_points.append(
+            KeyPoints(
+                xy=selected_keypoints_xy.round().int(), 
+                class_id=top_classes.int(),
+                confidence=selected_keypoints_conf,
             )
         )
 
