@@ -12,7 +12,7 @@ from inference_models.models.rfdetr import common as rfdetr_common
 from inference_models.models.rfdetr import triton_postprocess
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 from inference_models.models.rfdetr.common import (
-    _post_process_single_instance_segmentation_result_to_rle_masks_classic,
+    _post_process_single_instance_segmentation_result_to_rle_masks,
     post_process_instance_segmentation_results_to_rle_masks,
 )
 from inference_models.models.rfdetr.triton_postprocess import (
@@ -135,7 +135,7 @@ def _assert_detections_equal(actual, expected) -> None:
     np.testing.assert_array_equal(actual_mask, expected_mask)
 
 
-def _expected_classic_result(
+def _expected_result(
     bboxes: torch.Tensor,
     logits: torch.Tensor,
     masks: torch.Tensor,
@@ -144,7 +144,7 @@ def _expected_classic_result(
     classes_re_mapping,
     num_classes: int = 2,
 ):
-    return _post_process_single_instance_segmentation_result_to_rle_masks_classic(
+    return _post_process_single_instance_segmentation_result_to_rle_masks(
         image_bboxes=bboxes,
         image_logits=torch.sigmoid(logits),
         image_masks=masks,
@@ -190,7 +190,7 @@ def _batched_inputs(device: torch.device):
     return bboxes, logits, masks
 
 
-def _assert_batched_results_match_classic(
+def _assert_batched_results_match_reference(
     actual,
     bboxes: torch.Tensor,
     logits: torch.Tensor,
@@ -202,7 +202,7 @@ def _assert_batched_results_match_classic(
 ) -> None:
     assert len(actual) == bboxes.shape[0]
     for image_index, actual_detections in enumerate(actual):
-        expected = _expected_classic_result(
+        expected = _expected_result(
             bboxes=bboxes[image_index],
             logits=logits[image_index],
             masks=masks[image_index],
@@ -358,7 +358,7 @@ def test_rfdetr_triton_postproc_unsupported_reason_matrix(
 
 
 @pytest.mark.parametrize("case", ["no_class_mapping", "tensor_threshold", "padding"])
-def test_rfdetr_triton_postproc_unsupported_cases_fallback_to_classic(
+def test_rfdetr_triton_postproc_unsupported_cases_use_reference_path(
     monkeypatch,
     case: str,
 ) -> None:
@@ -391,7 +391,7 @@ def test_rfdetr_triton_postproc_unsupported_cases_fallback_to_classic(
     elif case == "padding":
         metadata = _metadata(padding=(1, 0, 0, 0))
 
-    expected = _expected_classic_result(
+    expected = _expected_result(
         bboxes=bboxes,
         logits=logits,
         masks=masks,
@@ -413,7 +413,7 @@ def test_rfdetr_triton_postproc_unsupported_cases_fallback_to_classic(
     _assert_detections_equal(actual, expected)
 
 
-def test_rfdetr_batched_rle_postprocess_matches_classic_for_mixed_counts_and_metadata(
+def test_rfdetr_batched_rle_postprocess_matches_reference_for_mixed_counts_and_metadata(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(rfdetr_common, "_TRITON_POSTPROC_ENABLED", False)
@@ -437,7 +437,7 @@ def test_rfdetr_batched_rle_postprocess_matches_classic_for_mixed_counts_and_met
         classes_re_mapping=classes_re_mapping,
     )
 
-    _assert_batched_results_match_classic(
+    _assert_batched_results_match_reference(
         actual=actual,
         bboxes=bboxes,
         logits=logits,
@@ -449,7 +449,7 @@ def test_rfdetr_batched_rle_postprocess_matches_classic_for_mixed_counts_and_met
     assert [result.confidence.shape[0] for result in actual] == [2, 0, 1]
 
 
-def test_rfdetr_batched_rle_postprocess_matches_classic_for_tensor_threshold_and_unmapped_classes(
+def test_rfdetr_batched_rle_postprocess_matches_reference_for_tensor_threshold_and_unmapped_classes(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(rfdetr_common, "_TRITON_POSTPROC_ENABLED", False)
@@ -477,7 +477,7 @@ def test_rfdetr_batched_rle_postprocess_matches_classic_for_tensor_threshold_and
         classes_re_mapping=classes_re_mapping,
     )
 
-    _assert_batched_results_match_classic(
+    _assert_batched_results_match_reference(
         actual=actual,
         bboxes=bboxes,
         logits=logits,
@@ -512,13 +512,13 @@ def test_rfdetr_triton_postproc_interpolation_weight_cache_is_bounded() -> None:
     not torch.cuda.is_available() or triton_postprocess.triton is None,
     reason="CUDA and Triton are required",
 )
-def test_rfdetr_triton_postproc_matches_classic_rle_path() -> None:
+def test_rfdetr_triton_postproc_matches_reference_rle_path() -> None:
     cpu = torch.device("cpu")
     cuda = torch.device("cuda")
     bboxes_cpu, logits_cpu, masks_cpu = _single_detection_inputs(cpu)
     scores_cpu = torch.sigmoid(logits_cpu)
     metadata = _metadata()
-    expected = _post_process_single_instance_segmentation_result_to_rle_masks_classic(
+    expected = _post_process_single_instance_segmentation_result_to_rle_masks(
         image_bboxes=bboxes_cpu,
         image_logits=scores_cpu,
         image_masks=masks_cpu,
@@ -550,7 +550,7 @@ def test_rfdetr_triton_postproc_matches_classic_rle_path() -> None:
     not torch.cuda.is_available() or triton_postprocess.triton is None,
     reason="CUDA and Triton are required",
 )
-def test_rfdetr_triton_postproc_topk_retry_matches_classic_rle_path() -> None:
+def test_rfdetr_triton_postproc_topk_retry_matches_reference_rle_path() -> None:
     cpu = torch.device("cpu")
     cuda = torch.device("cuda")
     bboxes_cpu, logits_cpu, masks_cpu = _single_detection_inputs(cpu)
@@ -558,7 +558,7 @@ def test_rfdetr_triton_postproc_topk_retry_matches_classic_rle_path() -> None:
     logits_cpu[0, 1] = 4.0
     scores_cpu = torch.sigmoid(logits_cpu)
     metadata = _metadata()
-    expected = _post_process_single_instance_segmentation_result_to_rle_masks_classic(
+    expected = _post_process_single_instance_segmentation_result_to_rle_masks(
         image_bboxes=bboxes_cpu,
         image_logits=scores_cpu,
         image_masks=masks_cpu,

@@ -224,7 +224,7 @@ def post_process_instance_segmentation_results(
     return results
 
 
-def _post_process_single_instance_segmentation_result_to_rle_masks(
+def _post_process_single_instance_segmentation_result_to_rle_masks_with_triton(
     image_bboxes: torch.Tensor,
     image_logits: torch.Tensor,
     image_masks: torch.Tensor,
@@ -233,17 +233,6 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> InstanceDetections:
-    if not _TRITON_POSTPROC_ENABLED:
-        return _post_process_single_instance_segmentation_result_to_rle_masks_classic(
-            image_bboxes=image_bboxes,
-            image_logits=image_logits,
-            image_masks=image_masks,
-            image_meta=image_meta,
-            threshold=threshold,
-            num_classes=num_classes,
-            classes_re_mapping=classes_re_mapping,
-        )
-
     triton_result = (
         post_process_single_instance_segmentation_result_to_rle_masks_triton(
             image_bboxes=image_bboxes,
@@ -257,7 +246,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
     if triton_result is not None:
         return triton_result
 
-    return _post_process_single_instance_segmentation_result_to_rle_masks_classic(
+    return _post_process_single_instance_segmentation_result_to_rle_masks(
         image_bboxes=image_bboxes,
         image_logits=image_logits,
         image_masks=image_masks,
@@ -268,7 +257,7 @@ def _post_process_single_instance_segmentation_result_to_rle_masks(
     )
 
 
-def _post_process_single_instance_segmentation_result_to_rle_masks_classic(
+def _post_process_single_instance_segmentation_result_to_rle_masks(
     image_bboxes: torch.Tensor,
     image_logits: torch.Tensor,
     image_masks: torch.Tensor,
@@ -367,38 +356,6 @@ def _post_process_single_instance_segmentation_result_to_rle_masks_classic(
     )
 
 
-def _post_process_instance_segmentation_results_to_rle_masks_classic(
-    bboxes: torch.Tensor,
-    logits: torch.Tensor,
-    masks: torch.Tensor,
-    pre_processing_meta: List[PreProcessingMetadata],
-    threshold: Union[float, torch.Tensor],
-    num_classes: int,
-    classes_re_mapping: Optional[ClassesReMapping],
-) -> List[InstanceDetections]:
-    logits_sigmoid = torch.nn.functional.sigmoid(logits)
-    device = bboxes.device
-    if isinstance(threshold, torch.Tensor):
-        threshold = threshold.to(device=device, dtype=logits_sigmoid.dtype)
-    return [
-        _post_process_single_instance_segmentation_result_to_rle_masks_classic(
-            image_bboxes=image_bboxes,
-            image_logits=image_logits,
-            image_masks=image_masks,
-            image_meta=image_meta,
-            threshold=threshold,
-            num_classes=num_classes,
-            classes_re_mapping=classes_re_mapping,
-        )
-        for image_bboxes, image_logits, image_masks, image_meta in zip(
-            bboxes,
-            logits_sigmoid,
-            masks,
-            pre_processing_meta,
-        )
-    ]
-
-
 def post_process_instance_segmentation_results_to_rle_masks(
     bboxes: torch.Tensor,
     logits: torch.Tensor,
@@ -408,23 +365,17 @@ def post_process_instance_segmentation_results_to_rle_masks(
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> List[InstanceDetections]:
-    if not _TRITON_POSTPROC_ENABLED:
-        return _post_process_instance_segmentation_results_to_rle_masks_classic(
-            bboxes=bboxes,
-            logits=logits,
-            masks=masks,
-            pre_processing_meta=pre_processing_meta,
-            threshold=threshold,
-            num_classes=num_classes,
-            classes_re_mapping=classes_re_mapping,
-        )
-
     logits_sigmoid = torch.nn.functional.sigmoid(logits)
     device = bboxes.device
     if isinstance(threshold, torch.Tensor):
         threshold = threshold.to(device=device, dtype=logits_sigmoid.dtype)
+    post_process_single = (
+        _post_process_single_instance_segmentation_result_to_rle_masks_with_triton
+        if _TRITON_POSTPROC_ENABLED
+        else _post_process_single_instance_segmentation_result_to_rle_masks
+    )
     return [
-        _post_process_single_instance_segmentation_result_to_rle_masks(
+        post_process_single(
             image_bboxes=image_bboxes,
             image_logits=image_logits,
             image_masks=image_masks,
