@@ -414,21 +414,59 @@ def _frame_video_time(image: WorkflowImageData) -> Tuple[float, Optional[float]]
 
 
 def _parse_letter(raw: Optional[str], choices: List[str]) -> Optional[str]:
-    """Pull the letter out of '{"letter": "X"}' or accept a bare letter."""
+    """Extract the chosen letter from a model response.
+
+    OpenAI-compatible providers do not all honor the `response_format`
+    json-schema strictly, so the answer arrives in several shapes. We accept
+    all of them rather than only the canonical `{"letter": "X"}`:
+
+      - object with the expected key:   {"letter": "A"}
+      - object with a different key:    {"answer": "A"}, {"choice": "A"}
+      - bare JSON string:               "A"
+      - bare / quoted letter:           A   or   "A"
+      - a short sentence:               "The answer is A."
+
+    Matching is case-insensitive and the canonical choice casing is returned.
+    """
     if not raw:
         return None
-    raw = raw.strip()
+    import json as _json
+    import re as _re
+
+    text = raw.strip()
+    # Map upper-cased choice -> canonical choice so matching is case-insensitive.
+    canonical = {str(c).strip().upper(): c for c in choices}
+
+    def _coerce(value: Any) -> Optional[str]:
+        key = str(value).strip().upper()
+        return canonical.get(key)
+
+    # 1) JSON payloads: a bare string ("A") or an object holding the answer.
     try:
-        import json as _json
-        obj = _json.loads(raw)
-        if isinstance(obj, dict) and "letter" in obj:
-            letter = str(obj["letter"]).strip()
-            if letter in choices:
-                return letter
+        obj = _json.loads(text)
     except Exception:
-        pass
-    if raw and raw[0] in choices:
-        return raw[0]
+        obj = None
+    if isinstance(obj, str):
+        hit = _coerce(obj)
+        if hit is not None:
+            return hit
+    elif isinstance(obj, dict):
+        if "letter" in obj:
+            hit = _coerce(obj["letter"])
+            if hit is not None:
+                return hit
+        for value in obj.values():  # tolerate {"answer": "A"} etc.
+            hit = _coerce(value)
+            if hit is not None:
+                return hit
+
+    # 2) Plain text (incl. a bare letter or a short sentence): match the first
+    #    *standalone* choice token. The word boundaries avoid false hits like
+    #    the "B" inside "Based".
+    pattern = r"\b(" + "|".join(_re.escape(str(c).strip()) for c in choices) + r")\b"
+    match = _re.search(pattern, text, flags=_re.IGNORECASE)
+    if match:
+        return _coerce(match.group(1))
     return None
 
 

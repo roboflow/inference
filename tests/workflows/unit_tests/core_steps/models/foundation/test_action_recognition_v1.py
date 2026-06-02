@@ -117,6 +117,34 @@ def test_parse_letter_empty() -> None:
     assert _parse_letter(None, ["A", "B"]) is None
 
 
+def test_parse_letter_json_string() -> None:
+    # Providers that don't strictly honor the schema return a bare JSON string.
+    assert _parse_letter('"A"', ["A", "B"]) == "A"
+
+
+def test_parse_letter_alternate_key() -> None:
+    # e.g. DeepInfra-proxied Gemini emits {"answer": "A"} instead of "letter".
+    assert _parse_letter('{"answer": "A"}', ["A", "B"]) == "A"
+    assert _parse_letter('{"choice": "B"}', ["A", "B"]) == "B"
+
+
+def test_parse_letter_quoted_bare() -> None:
+    assert _parse_letter('"B"', ["A", "B"]) == "B"
+
+
+def test_parse_letter_in_sentence() -> None:
+    assert _parse_letter("The answer is B.", ["A", "B"]) == "B"
+
+
+def test_parse_letter_case_insensitive() -> None:
+    assert _parse_letter('{"letter": "a"}', ["A", "B"]) == "A"
+
+
+def test_parse_letter_no_false_match_in_word() -> None:
+    # "Based" must not match a standalone "B".
+    assert _parse_letter("Based on nothing useful here", ["A", "B"]) is None
+
+
 # ── Block behavior ───────────────────────────────────────────────────
 
 
