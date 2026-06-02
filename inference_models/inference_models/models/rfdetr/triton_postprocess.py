@@ -1189,6 +1189,13 @@ if triton is not None:
                 the ``class_rank``-th highest passing class for that query.
                 Columns have the same layout as
                 ``_select_best_query_metadata_kernel``.
+            query_metadata: CUDA float32 tensor with shape
+                ``[num_queries, METADATA_STRIDE]`` when
+                ``FLAG_WRITE_QUERY_METADATA`` is true. In deferred pipeline
+                mode, class metadata is expanded but the RLE kernel should still
+                run once per query, so class rank 0 is also written to this
+                query-level buffer. When ``FLAG_WRITE_QUERY_METADATA`` is false,
+                callers pass ``metadata`` here and the argument is unused.
             records: CUDA int32 tensor with shape ``[MAX_TOTAL_RUNS + 1, 3]``.
                 Program 0 resets ``records[0, 0]`` and ``records[0, 1]`` before
                 the RLE kernel appends runs.
@@ -1202,6 +1209,9 @@ if triton is not None:
             BLOCK_CLASSES: Power-of-two tile width covering all class columns.
             METADATA_STRIDE: Number of float32 fields per metadata row.
             MAX_CLASSES_PER_QUERY: Number of metadata rows reserved per query.
+            FLAG_WRITE_QUERY_METADATA: When true, additionally writes the best
+                passing class row for each query into ``query_metadata`` for the
+                deferred pipeline RLE kernel.
             FLAG_OVERFLOW_CLASSES: When true, writes ``records[0, 1] = 1`` if
                 more than ``MAX_CLASSES_PER_QUERY`` classes pass threshold; the
                 caller treats that as unsupported for exact top-k parity.
