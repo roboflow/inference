@@ -89,7 +89,7 @@ def _cmd_list(
         rows = list_torch_registry_rows()
         table_title = (
             "REGISTERED_MODELS — PyTorch memory harness "
-            "(BackendType.TORCH, BackendType.HF)"
+            "(torch, torch-script, hugging-face)"
         )
 
     if backend == BackendType.ONNX:
@@ -200,14 +200,14 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     help=(
         "GPU memory profiling for inference_models registry classes "
         "(see profiling/memory/docs/description.md). "
-        "Use --backend torch for native Torch and Hugging Face (HF) registry entries."
+        "Use --backend torch for torch, torch-script, and Hugging Face registry entries."
     ),
 )
 @click.option(
     "--list-torch-models",
     is_flag=True,
     help=(
-        "Print Torch and Hugging Face (HF) registry rows profiled via the "
+        "Print torch, torch-script, and Hugging Face registry rows for the "
         "PyTorch harness, then exit."
     ),
 )

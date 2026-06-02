@@ -13,6 +13,7 @@ from inference_models.utils.imports import LazyClass
 # Registry backends profiled via profiling.memory.workers.torch (PyTorch CUDA metrics).
 TORCH_MEMORY_PROFILING_BACKENDS = (
     BackendType.TORCH,
+    BackendType.TORCH_SCRIPT,
     BackendType.HF,
 )
 

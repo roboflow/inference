@@ -119,9 +119,13 @@ Aggregate all runs and store:
 
 #### PyTorch
 
-Registry entries with backend `torch` or `hugging-face` (`HF`) are profiled with the
-same harness: both load via `from_pretrained`, run on CUDA, and report
-`torch.cuda` allocator metrics.
+Registry entries with backend `torch`, `torch-script`, or `hugging-face` (`HF`) are
+profiled with the same harness: each loads via `from_pretrained`, runs on CUDA, and
+reports `torch.cuda` allocator metrics. The harness passes ``device`` into
+``from_pretrained`` (required for TorchScript ``map_location``). For Roboflow packages
+that expose ``_inference_config`` (TorchScript YOLO exports), synthetic batch size and
+resolution are aligned with ``static_batch_size`` and ``training_input_size`` when the
+CLI values differ.
 
 ##### Workflow
 

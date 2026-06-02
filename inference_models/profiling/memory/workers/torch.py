@@ -50,6 +50,59 @@ def _invoke_method(
     return result
 
 
+def _prepare_from_pretrained_kwargs(
+    from_pretrained_kwargs: Dict[str, Any],
+    *,
+    device: torch.device,
+) -> Dict[str, Any]:
+    kwargs = dict(from_pretrained_kwargs)
+    kwargs.setdefault("device", device)
+
+    return kwargs
+
+
+def _resolve_roboflow_package_profiling_shape(
+    model: Any,
+    *,
+    batch_size: int,
+    height: int,
+    width: int,
+) -> tuple[int, int, int, List[str]]:
+    """Align synthetic inputs with Roboflow package metadata (TorchScript, ONNX export paths).
+
+    TorchScript weights are exported with a fixed batch size and spatial size in
+    ``inference_config.json``. Profiling at other CLI dimensions still runs (via padding
+    or resize in ``pre_process``) but understates or mislabels the real serving regime.
+    """
+    notes: List[str] = []
+    inference_config = getattr(model, "_inference_config", None)
+    if inference_config is None:
+        return batch_size, height, width, notes
+
+    static_batch_size = inference_config.forward_pass.static_batch_size
+    if static_batch_size is not None and batch_size != static_batch_size:
+        notes.append(
+            "Package defines static_batch_size="
+            f"{static_batch_size}; profiling at that batch size "
+            f"(CLI --batch-size was {batch_size})."
+        )
+        batch_size = static_batch_size
+
+    training_size = inference_config.network_input.training_input_size
+    package_height = training_size.height
+    package_width = training_size.width
+    if (height, width) != (package_height, package_width):
+        notes.append(
+            f"Package training_input_size is {package_height}x{package_width}; "
+            f"profiling synthetic images at that resolution "
+            f"(CLI --height/--width were {height}x{width})."
+        )
+        height = package_height
+        width = package_width
+
+    return batch_size, height, width, notes
+
+
 def _export_torch_profiler_traces(prof: Any, *, trace_dir: Path) -> List[str]:
     trace_path = trace_dir / "torch_profiler_trace.json"
 
@@ -99,7 +152,14 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         module_name=module_name,
         class_name=class_name,
     )
-    model = model_cls.from_pretrained(model_name_or_path, **from_pretrained_kwargs)
+    from_pretrained_kwargs = _prepare_from_pretrained_kwargs(
+        from_pretrained_kwargs,
+        device=device,
+    )
+    model = model_cls.from_pretrained(
+        model_name_or_path,
+        **from_pretrained_kwargs,
+    )
 
     if hasattr(model, "eval"):
         model.eval()
@@ -108,6 +168,15 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     idle_after_load_allocated = int(torch.cuda.memory_allocated(device))
     idle_after_load_reserved = int(torch.cuda.memory_reserved(device))
+
+    batch_size, height, width, package_shape_notes = (
+        _resolve_roboflow_package_profiling_shape(
+            model,
+            batch_size=batch_size,
+            height=height,
+            width=width,
+        )
+    )
 
     images = build_random_rgb_images(
         batch_size,
@@ -181,6 +250,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         "idle snapshot uses torch.cuda.memory_{allocated,reserved} after load",
         "peak counters reset immediately before measured iterations",
         "incremental peaks subtract idle-after-load in the same allocator units",
+        *package_shape_notes,
     ]
     if baseline_free is None:
         notes.append(
