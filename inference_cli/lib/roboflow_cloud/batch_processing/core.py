@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 import typer
 from typing_extensions import Annotated
@@ -112,6 +112,16 @@ def show_job_details(
         raise typer.Exit(code=1)
 
 
+def parse_key_value(values: List[str]) -> Dict[str, str]:
+    result: Dict[str, str] = {}
+    for item in values:
+        if "=" not in item:
+            raise typer.BadParameter(f"'{item}' must be in key=value format")
+        key, value = item.split("=", 1)  # split once, so values may contain '='
+        result[key] = value
+    return result
+
+
 @batch_processing_app.command(help="Trigger batch job to process images with Workflow")
 def process_images_with_workflow(
     batch_id: Annotated[
@@ -156,7 +166,15 @@ def process_images_with_workflow(
         typer.Option(
             "--part-name",
             "-p",
-            help="Name of the batch part " "(relevant for multipart batches",
+            help="Name of the batch part with images (relevant for multipart batches)",
+        ),
+    ] = None,
+    images_metadata_part_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--images-metadata-part-name",
+            "-imp",
+            help="Name of batch part bringing images metadata (relevant for multipart batches)",
         ),
     ] = None,
     machine_type: Annotated[
@@ -243,7 +261,14 @@ def process_images_with_workflow(
     job_name: Annotated[
         Optional[str], typer.Option("--job-name", "-jn", help="Name of your job")
     ] = None,
+    image_metadata_mapping: Annotated[Optional[List[str]], typer.Option(
+        "--metadata-mapping",
+        "-mm",
+        help="Key-value mapping of workflow input to metadata key as workflow_input=metadata_key. Repeatable.",
+    )] = None,
 ) -> None:
+    if image_metadata_mapping is not None:
+        image_metadata_mapping = parse_key_value(image_metadata_mapping)
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     if workers_per_machine is None and machine_size is not None:
@@ -275,6 +300,8 @@ def process_images_with_workflow(
             inference_backend=inference_backend,
             job_name=job_name,
             max_image_failure_rate=max_image_failure_rate,
+            images_metadata_part_name=images_metadata_part_name,
+            image_metadata_mapping=image_metadata_mapping,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:
@@ -331,7 +358,7 @@ def process_videos_with_workflow(
         typer.Option(
             "--part-name",
             "-p",
-            help="Name of the batch part " "(relevant for multipart batches",
+            help="Name of the batch part relevant for multipart batches",
         ),
     ] = None,
     machine_type: Annotated[

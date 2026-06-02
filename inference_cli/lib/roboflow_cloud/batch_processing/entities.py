@@ -99,7 +99,9 @@ class StagingBatchInputV1(BaseModel):
     type: Literal["staging-batch-input-v1"] = Field(default="staging-batch-input-v1")
     batch_id: str = Field(serialization_alias="batchId")
     part_name: Optional[str] = Field(serialization_alias="partName", default=None)
-
+    images_metadata_part: Optional[str] = Field(
+        serialization_alias="imagesMetadataPart", default=None
+    )
 
 class AggregationFormat(str, Enum):
     CSV = "csv"
@@ -129,6 +131,10 @@ class WorkflowsProcessingSpecificationV1(BaseModel):
     )
     max_video_fps: Optional[Union[int, float]] = Field(
         serialization_alias="maxVideoFPS", default=None
+    )
+    images_metadata_inputs_mapping: Optional[Dict[str, str]] = Field(
+        serialization_alias="imagesMetadataInputsMapping",
+        default=None,
     )
 
 

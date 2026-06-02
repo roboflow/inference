@@ -4,7 +4,7 @@ import random
 import string
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Generator, List, Optional, Set, Union
+from typing import Generator, List, Optional, Set, Union, Dict
 
 import backoff
 import requests
@@ -402,6 +402,8 @@ def trigger_job_with_workflows_images_processing(
     inference_backend: Optional[InferenceBackend] = None,
     job_name: Optional[str] = None,
     max_image_failure_rate: Optional[float] = None,
+    images_metadata_part_name: Optional[str] = None,
+    image_metadata_mapping: Optional[Dict[str, str]] = None,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV2(
@@ -411,6 +413,7 @@ def trigger_job_with_workflows_images_processing(
     input_configuration = StagingBatchInputV1(
         batch_id=batch_id,
         part_name=part_name,
+        images_metadata_part=images_metadata_part_name,
     )
     workflow_parameters = None
     if workflow_parameters_path:
@@ -423,6 +426,7 @@ def trigger_job_with_workflows_images_processing(
         persist_images_outputs=save_image_outputs,
         images_outputs_to_be_persisted=image_outputs_to_save,
         aggregation_format=aggregation_format,
+        images_metadata_inputs_mapping=image_metadata_mapping,
     )
     if not job_id:
         job_id = f"job-{_generate_random_string(length=12)}"

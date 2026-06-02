@@ -312,8 +312,8 @@ def _process_single_image_from_directory(
             on_failure(image_path, error_summary)
             return False
         metadata = read_json(path=assumed_metadata_file_path)
-        missing_keys = set(metadata.keys()).difference(
-            images_metadata_input_mapping.values()
+        missing_keys = set(images_metadata_input_mapping.values()).difference(
+            metadata.keys()
         )
         if len(missing_keys) > 0:
             error_summary = (
