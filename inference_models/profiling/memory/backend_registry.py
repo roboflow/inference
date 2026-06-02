@@ -20,6 +20,8 @@ TORCH_MEMORY_PROFILING_BACKENDS = (
 
 @dataclass(frozen=True)
 class RegistryBackendRow:
+    """One row from ``REGISTERED_MODELS`` for CLI listing and profiling."""
+
     architecture: str
     task_type: Optional[str]
     backend: BackendType
@@ -32,7 +34,14 @@ class RegistryBackendRow:
 def iter_backend_registry_rows(
     backend: BackendType,
 ) -> Iterator[RegistryBackendRow]:
-    """Yield every registry entry for the requested backend."""
+    """Yield every registry entry for the requested backend.
+
+    Args:
+        backend: Registry backend filter (for example ``BackendType.ONNX``).
+
+    Yields:
+        One ``RegistryBackendRow`` per matching registry key.
+    """
     for key, entry in REGISTERED_MODELS.items():
         architecture, task_type, entry_backend = key
         if entry_backend != backend:
@@ -63,6 +72,14 @@ def iter_backend_registry_rows(
 def list_backend_registry_rows(
     backend: BackendType,
 ) -> List[RegistryBackendRow]:
+    """Return sorted registry rows for a single backend.
+
+    Args:
+        backend: Registry backend filter.
+
+    Returns:
+        Rows sorted by architecture and task type.
+    """
     rows = sorted(
         iter_backend_registry_rows(backend),
         key=lambda r: (r.architecture, r.task_type or ""),
@@ -72,12 +89,24 @@ def list_backend_registry_rows(
 
 
 def iter_torch_memory_profiling_registry_rows() -> Iterator[RegistryBackendRow]:
-    """Yield registry rows for backends measured with the Torch memory harness."""
+    """Yield registry rows for backends measured with the Torch memory harness.
+
+    Includes ``torch``, ``torch-script``, and ``hugging-face`` entries.
+
+    Yields:
+        One ``RegistryBackendRow`` per matching registry key.
+    """
     for backend in TORCH_MEMORY_PROFILING_BACKENDS:
         yield from iter_backend_registry_rows(backend=backend)
 
 
 def list_torch_registry_rows() -> List[RegistryBackendRow]:
+    """Return sorted rows for the PyTorch CUDA memory harness.
+
+    Returns:
+        Rows for ``TORCH_MEMORY_PROFILING_BACKENDS``, sorted by architecture,
+        task type, and backend value.
+    """
     rows = sorted(
         iter_torch_memory_profiling_registry_rows(),
         key=lambda row: (row.architecture, row.task_type or "", row.backend.value),
@@ -87,12 +116,22 @@ def list_torch_registry_rows() -> List[RegistryBackendRow]:
 
 
 def list_onnx_registry_rows() -> List[RegistryBackendRow]:
+    """Return sorted ONNX backend registry rows.
+
+    Returns:
+        Rows for ``BackendType.ONNX``.
+    """
     rows = list_backend_registry_rows(backend=BackendType.ONNX)
 
     return rows
 
 
 def list_trt_registry_rows() -> List[RegistryBackendRow]:
+    """Return sorted TensorRT backend registry rows.
+
+    Returns:
+        Rows for ``BackendType.TRT``.
+    """
     rows = list_backend_registry_rows(backend=BackendType.TRT)
 
     return rows

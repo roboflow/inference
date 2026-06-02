@@ -260,11 +260,13 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     "--architecture",
     type=str,
     default=None,
+    help="Model architecture label stored in the JSON result.",
 )
 @click.option(
     "--task-type",
     type=str,
     default=None,
+    help="Registry task type label stored in the JSON result.",
 )
 @click.option(
     "--device",
@@ -344,6 +346,7 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     "--from-pretrained-kwargs-json",
     type=str,
     default=None,
+    help="Inline JSON object passed to the model ``from_pretrained`` method.",
 )
 @click.option(
     "--from-pretrained-kwargs-path",
@@ -353,6 +356,7 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
         path_type=str,
     ),
     default=None,
+    help="Path to a JSON file passed to the model ``from_pretrained`` method.",
 )
 @click.option(
     "--quantization",
@@ -449,6 +453,7 @@ def main(
     in_process: bool,
     output_json: Optional[str],
 ) -> None:
+    """Run or list GPU memory profiling for ``inference_models`` registry classes."""
     console = Console()
 
     if list_torch_models:

@@ -7,12 +7,20 @@ from typing import Any, List, Optional
 
 
 class NvmlProcessMemorySampler:
+    """Poll NVML in a background thread to track peak GPU memory for this process."""
+
     def __init__(
         self,
         device_index: int,
         *,
         interval_seconds: float,
     ) -> None:
+        """Initialize the sampler for one CUDA device.
+
+        Args:
+            device_index: CUDA device index passed to NVML.
+            interval_seconds: Sleep interval between background polls.
+        """
         self._device_index = device_index
         self._interval_seconds = interval_seconds
         self._pid = os.getpid()
@@ -35,9 +43,15 @@ class NvmlProcessMemorySampler:
 
     @property
     def source(self) -> str:
+        """Return how the latest reading was obtained (``process``, ``device``, etc.)."""
         return self._source
 
     def snapshot(self) -> Optional[int]:
+        """Read current GPU memory for this process or device.
+
+        Returns:
+            Bytes used, or ``None`` when NVML is unavailable.
+        """
         if not self._available:
             return None
 
@@ -58,6 +72,7 @@ class NvmlProcessMemorySampler:
         return None
 
     def start(self) -> None:
+        """Start background polling and seed the running peak from an initial snapshot."""
         self._peak_bytes = self.snapshot()
         self._stop_event.clear()
         self._thread = threading.Thread(
@@ -67,6 +82,11 @@ class NvmlProcessMemorySampler:
         self._thread.start()
 
     def stop(self) -> Optional[int]:
+        """Stop polling and return the peak bytes observed since ``start``.
+
+        Returns:
+            Peak bytes, or ``None`` if no successful samples were recorded.
+        """
         self._stop_event.set()
 
         if self._thread is not None:

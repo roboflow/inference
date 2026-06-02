@@ -155,6 +155,11 @@ def main(
     api_key: Optional[str],
     target_dir: Path,
 ) -> None:
+    """Download a model package for local memory profiling runs.
+
+    Resolves metadata from the weights provider, selects a matching package for the
+    requested backend and quantization, and writes artifacts under ``target_dir``.
+    """
     metadata = get_model_from_provider(
         model_id=model_id,
         provider=provider,

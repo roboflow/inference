@@ -115,7 +115,17 @@ def _delta_bytes(
 
 
 def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute one ONNX Runtime profiling scenario in a fresh process."""
+    """Execute one ONNX Runtime memory profiling scenario in a fresh process.
+
+    Args:
+        payload: Worker configuration (model path, shape, iterations, device, etc.).
+
+    Returns:
+        JSON-serializable dict from ``OnnxMemoryProfileResult.as_json_dict()``.
+
+    Raises:
+        RuntimeError: If CUDA is unavailable or the device is not CUDA.
+    """
     import onnxruntime
 
     module_name = payload["module_name"]
@@ -188,7 +198,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         width=width,
     )
     infer_kwargs = merge_infer_kwargs(
-        task_type,
+        task_type=task_type,
         user=infer_kwargs_user,
     )
     shape_signature = describe_shape_signature(
@@ -266,7 +276,14 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def worker_main(conn_payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Top-level entry used by multiprocessing; wraps errors for parent reporting."""
+    """Multiprocessing entry point; wraps ``worker_run`` for parent reporting.
+
+    Args:
+        conn_payload: Same dict as ``worker_run``.
+
+    Returns:
+        Dict with ``ok`` bool and either ``result`` or ``error`` traceback text.
+    """
     try:
         result = worker_run(conn_payload)
         response = {"ok": True, "result": result}

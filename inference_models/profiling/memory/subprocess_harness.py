@@ -31,10 +31,22 @@ def run_profile_subprocess(
     """Spawn an isolated worker process and return the JSON-ready result dict.
 
     ``worker_module`` / ``worker_entry`` must resolve to a top-level callable
-    importable under ``spawn`` (no nested closures).
+    importable under ``spawn`` (no nested closures). A separate process reduces
+    allocator cache contamination across scenario sweeps.
 
-    A separate process reduces allocator cache contamination across scenario sweeps,
-    matching the workflow described in ``docs/description.md``.
+    Args:
+        payload: Worker input dict (module, class, paths, shape, iterations).
+        worker_module: Dotted import path of the worker package module.
+        worker_entry: Attribute name of the multiprocessing entry function.
+        harness_label: Label used in error messages from this harness.
+        mp_context: Multiprocessing context name (default ``spawn``).
+
+    Returns:
+        Result dict produced by the worker on success.
+
+    Raises:
+        RuntimeError: If the worker exits non-zero, returns no message, or reports
+            ``ok=False``.
     """
     ctx = mp.get_context(mp_context)
 
@@ -76,6 +88,12 @@ def dump_result_json(
     *,
     path: str | Path,
 ) -> None:
+    """Write a profiling result dict to disk as indented JSON.
+
+    Args:
+        result: Serializable profiling output (typically from a worker).
+        path: Destination file path.
+    """
     output_path = Path(path)
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)

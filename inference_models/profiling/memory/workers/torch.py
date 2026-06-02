@@ -30,7 +30,11 @@ def _optional_nvml_free_bytes(device_index: int) -> Optional[int]:
         return None
 
 
-def _resolve_class(module_name: str, class_name: str) -> type:
+def _resolve_class(
+    *,
+    module_name: str,
+    class_name: str,
+) -> type:
     module = importlib.import_module(module_name)
     model_class = getattr(module, class_name)
 
@@ -115,7 +119,20 @@ def _export_torch_profiler_traces(prof: Any, *, trace_dir: Path) -> List[str]:
 
 
 def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute one profiling scenario. Intended to run in a fresh process (see harness)."""
+    """Execute one PyTorch CUDA memory profiling scenario.
+
+    Intended to run in a fresh process (see ``run_profile_subprocess``). Supports
+    native ``torch``, ``torch-script``, and ``hugging-face`` registry classes.
+
+    Args:
+        payload: Worker configuration (model path, shape, iterations, device, etc.).
+
+    Returns:
+        JSON-serializable dict from ``TorchMemoryProfileResult.as_json_dict()``.
+
+    Raises:
+        RuntimeError: If CUDA is unavailable or the device is not CUDA.
+    """
     module_name = payload["module_name"]
     class_name = payload["class_name"]
     model_name_or_path = payload["model_name_or_path"]
@@ -184,7 +201,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         width=width,
     )
     infer_kwargs = merge_infer_kwargs(
-        task_type,
+        task_type=task_type,
         user=infer_kwargs_user,
     )
     shape_signature = describe_shape_signature(
@@ -298,7 +315,14 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def worker_main(conn_payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Top-level entry used by multiprocessing; wraps errors for parent reporting."""
+    """Multiprocessing entry point; wraps ``worker_run`` for parent reporting.
+
+    Args:
+        conn_payload: Same dict as ``worker_run``.
+
+    Returns:
+        Dict with ``ok`` bool and either ``result`` or ``error`` traceback text.
+    """
     try:
         result = worker_run(conn_payload)
         response = {"ok": True, "result": result}

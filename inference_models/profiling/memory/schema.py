@@ -49,6 +49,11 @@ class BaseMemoryProfileResult(BaseModel):
     extra: Dict[str, Any] = Field(default_factory=dict)
 
     def as_json_dict(self) -> Dict[str, Any]:
+        """Serialize the profile result for JSON output.
+
+        Returns:
+            JSON-compatible dict (Pydantic ``model_dump(mode="json")``).
+        """
         json_dict = self.model_dump(mode="json")
 
         return json_dict
