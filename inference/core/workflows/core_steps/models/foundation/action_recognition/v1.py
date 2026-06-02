@@ -272,7 +272,9 @@ class BlockManifest(WorkflowBlockManifest):
     @field_validator("window_seconds")
     @classmethod
     def _v_window_seconds(cls, value: Any) -> Any:
-        if isinstance(value, (int, float)) and not (0.05 <= float(value) <= MAX_WINDOW_SECONDS):
+        if isinstance(value, (int, float)) and not (
+            0.05 <= float(value) <= MAX_WINDOW_SECONDS
+        ):
             raise ValueError(
                 f"`window_seconds` must be between 0.05 and {MAX_WINDOW_SECONDS}."
             )
@@ -283,7 +285,9 @@ class BlockManifest(WorkflowBlockManifest):
     def _v_stride_seconds(cls, value: Any) -> Any:
         if value is None:
             return value
-        if isinstance(value, (int, float)) and not (0.01 <= float(value) <= MAX_STRIDE_SECONDS):
+        if isinstance(value, (int, float)) and not (
+            0.01 <= float(value) <= MAX_STRIDE_SECONDS
+        ):
             raise ValueError(
                 f"`stride_seconds` must be between 0.01 and {MAX_STRIDE_SECONDS}."
             )
@@ -292,7 +296,9 @@ class BlockManifest(WorkflowBlockManifest):
     @field_validator("sample_fps")
     @classmethod
     def _v_sample_fps(cls, value: Any) -> Any:
-        if isinstance(value, (int, float)) and not (0.1 <= float(value) <= MAX_SAMPLE_FPS):
+        if isinstance(value, (int, float)) and not (
+            0.1 <= float(value) <= MAX_SAMPLE_FPS
+        ):
             raise ValueError(f"`sample_fps` must be between 0.1 and {MAX_SAMPLE_FPS}.")
         return value
 
@@ -318,7 +324,9 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="letter", kind=[STRING_KIND]),
-            OutputDefinition(name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]),
+            OutputDefinition(
+                name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
+            ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
         ]
 
@@ -338,12 +346,28 @@ def _jpegs_to_mp4_bytes(jpegs: List[bytes], fps: float) -> Optional[bytes]:
     if not jpegs or not shutil.which("ffmpeg"):
         return None
     cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-f", "image2pipe", "-vcodec", "mjpeg", "-r", str(float(fps)),
-        "-i", "pipe:0",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        "-movflags", "frag_keyframe+empty_moov",
-        "-f", "mp4", "pipe:1",
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "mjpeg",
+        "-r",
+        str(float(fps)),
+        "-i",
+        "pipe:0",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "frag_keyframe+empty_moov",
+        "-f",
+        "mp4",
+        "pipe:1",
     ]
     try:
         proc = subprocess.run(
@@ -601,12 +625,9 @@ class ActionRecognitionBlockV1(WorkflowBlock):
 
         # 3) Fire LLM if stride has elapsed and buffer has anything to send.
         error_status = ""
-        should_fire = (
-            len(state.buffer) > 0
-            and (
-                state.last_fire_video_time is None
-                or (now_t - state.last_fire_video_time) >= stride_seconds
-            )
+        should_fire = len(state.buffer) > 0 and (
+            state.last_fire_video_time is None
+            or (now_t - state.last_fire_video_time) >= stride_seconds
         )
         if should_fire:
             state.last_fire_video_time = now_t
@@ -663,7 +684,6 @@ class ActionRecognitionBlockV1(WorkflowBlock):
                     "payload_mode=video requested but mp4 encode failed; "
                     "falling back to frames."
                 )
-                
 
         # Serialize the exact payload to disk *before* the API call. After the
         # response we keep it only if letter == "A", else delete.
@@ -688,17 +708,11 @@ class ActionRecognitionBlockV1(WorkflowBlock):
 
         content: List[dict] = []
         if payload_mode == "video" and mp4_bytes is not None:
-            url = (
-                "data:video/mp4;base64,"
-                + base64.b64encode(mp4_bytes).decode("ascii")
-            )
+            url = "data:video/mp4;base64," + base64.b64encode(mp4_bytes).decode("ascii")
             content.append({"type": "video_url", "video_url": {"url": url}})
         else:
             for jpg in jpegs:
-                url = (
-                    "data:image/jpeg;base64,"
-                    + base64.b64encode(jpg).decode("ascii")
-                )
+                url = "data:image/jpeg;base64," + base64.b64encode(jpg).decode("ascii")
                 content.append({"type": "image_url", "image_url": {"url": url}})
         content.append({"type": "text", "text": prompt})
 
