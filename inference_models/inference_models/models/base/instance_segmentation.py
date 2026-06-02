@@ -91,15 +91,16 @@ class _DirectInferenceFuture:
     def submit_gpu_work(self, meta: Any = None) -> None:
         """Enqueue the ``post_process`` GPU work eagerly.
 
-        Under depth>=2 pipelining ``result()`` is intentionally delayed so
-        the source loop can prepare later frames. Without eager submission,
-        the postproc kernels are also delayed until that future is finalized,
+        Under depth>=2 pipelining ``result()`` is intentionally delayed so the
+        source loop can prepare later frames. Without eager submission, the
+        postproc kernels are also delayed until that future is finalized,
         leaving a bubble between the TensorRT produce event and postproc.
 
-        Calling ``submit_gpu_work`` from the adapter's ``postprocess`` step
-        enqueues the postproc stream wait immediately after the corresponding
-        TensorRT graph has been submitted. The host still does not block, and
-        ``result()`` later reuses the enqueued postproc result.
+        Calling ``submit_gpu_work`` from the adapter before it launches the
+        next frame's forward keeps the reused TRT outputs correct while moving
+        this host-side submission work out of the current frame's postprocess
+        call. The host still does not block here, and ``result()`` later
+        reuses the enqueued postproc result.
 
         Idempotent: calling it once is enough; subsequent calls to
         ``result()`` reuse the enqueued postproc result.

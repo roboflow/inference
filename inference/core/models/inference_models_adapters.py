@@ -324,6 +324,9 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         # Per-adapter in-flight futures + metadata. Not thread-safe; the
         # InferencePipeline is single-producer and the adapter is owned by a
         # single worker.
+        self._pending_gpu_submissions: Deque[
+            Tuple[InferenceFuture, PreprocessingMetadata, dict]
+        ] = deque()
         self._pending_futures: Deque[
             Tuple[InferenceFuture, PreprocessingMetadata, dict]
         ] = deque()
@@ -386,10 +389,11 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         )
         mapped_kwargs["defer_postprocess_sync"] = True
         mapped_kwargs["reuse_trt_graph_outputs"] = True
-        # Pipelined path: submit current frame forward and return its future.
-        # `postprocess()` immediately submits this frame's postprocess GPU
-        # work, then returns the oldest response once the configured frame
-        # delay has been reached.
+        # Pipelined path: before launching frame N's forward, enqueue the
+        # oldest frame whose postprocess metadata is already known. That keeps
+        # postprocess off the current frame's postprocess() host path while
+        # still preserving the correctness dependency for reused TRT outputs.
+        self._submit_next_pending_gpu_work()
         trace_frame_id = nsight_current_frame_id()
         with nsight_range(nsight_frame_label(trace_frame_id, "gpu_forward_submit")):
             fut = self._model.forward_async(img_in, None, **mapped_kwargs)
@@ -410,6 +414,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         """
         if self._pipeline_depth <= 1:
             return []
+        self._submit_all_pending_gpu_work()
         self._submit_all_pending_responses()
         responses: List[InstanceSegmentationInferenceResponse] = []
         while self._response_futures:
@@ -440,6 +445,15 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 submit_gpu_work(meta)
             nsight_mark(nsight_frame_label(trace_frame_id, "gpu_postprocess_submitted"))
             fut._adapter_gpu_work_submitted = True  # type: ignore[attr-defined]
+
+    def _submit_next_pending_gpu_work(self) -> None:
+        if not self._pending_gpu_submissions:
+            return None
+        self._submit_future_gpu_work(*self._pending_gpu_submissions.popleft())
+
+    def _submit_all_pending_gpu_work(self) -> None:
+        while self._pending_gpu_submissions:
+            self._submit_future_gpu_work(*self._pending_gpu_submissions.popleft())
 
     def _submit_response_build(
         self,
@@ -480,10 +494,12 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             )
         fut: InferenceFuture = predictions
         mapped_kwargs = getattr(fut, "_adapter_kwargs", {}).get("mapped_kwargs", {})
-        self._submit_future_gpu_work(
-            fut,
-            preprocess_return_metadata,
-            mapped_kwargs,
+        self._pending_gpu_submissions.append(
+            (
+                fut,
+                preprocess_return_metadata,
+                mapped_kwargs,
+            )
         )
         self._pending_futures.append((fut, preprocess_return_metadata, mapped_kwargs))
         self._submit_ready_responses()
