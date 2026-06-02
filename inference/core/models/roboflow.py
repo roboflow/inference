@@ -134,9 +134,6 @@ class RoboflowInferenceModel(Model):
         self.load_weights = load_weights
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
-        # Retained so subclasses' download_weights/download_model_from_roboflow_api
-        # can forward them to the Roboflow API and skip credit verification for
-        # internal service calls.
         self.countinference: Optional[bool] = kwargs.get("countinference")
         self.service_secret: Optional[str] = kwargs.get("service_secret")
         model_id = resolve_roboflow_model_alias(model_id=model_id)
