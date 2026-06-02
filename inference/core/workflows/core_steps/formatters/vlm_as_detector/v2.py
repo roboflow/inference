@@ -4,10 +4,6 @@ import logging
 import re
 from functools import partial
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
-
-from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
-    parse_gemini_object_detection_response,
-)
 from uuid import uuid4
 
 import numpy as np
@@ -19,6 +15,9 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
 )
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
+    parse_gemini_object_detection_response,
+)
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
