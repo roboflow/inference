@@ -8,7 +8,7 @@ This workflow demonstrates how to visualize the predictions of a multi-label cla
 It is compatable with single-label and multi-label classification tasks. It is also 
 compatible with supervision visualization fields like text position, color, scale, etc.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiaUdTYWVMZHhISEo5Sm9YRVhlcDkiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODAwNjY1MDd9.MiOvTvQLxjvQ542_14rYLgqf4y1Cq6OqCcLevJLLYDo?showGraph=true" loading="lazy" title="Roboflow Workflow for multi label classification visualization" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiaUdTYWVMZHhISEo5Sm9YRVhlcDkiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODA0MTcxNzV9.q5oeJxRQdW8xckIRZ8FU_6FNPo2lZm3h2qblg0diN2w?showGraph=true" loading="lazy" title="Roboflow Workflow for multi label classification visualization" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -64,7 +64,7 @@ This workflow demonstrates how to visualize the predictions of a single-label cl
 It is compatable with single-label and multi-label classification tasks. It is also 
 compatible with supervision visualization fields like text position, color, scale, etc.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoicGFlMmE2bExZdEx1MGhYOEZlQVEiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODAwNjY1MDh9.tx7Ip7NLUP8MaEosMzPLg7X3hu2hLKlTlS6sqMtDsnc?showGraph=true" loading="lazy" title="Roboflow Workflow for single label classification visualization" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoicGFlMmE2bExZdEx1MGhYOEZlQVEiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODA0MTcxNzV9.3evBKqV_PZ22Z0EdNUeQORW4nY8P98yD-REvbVY-6II?showGraph=true" loading="lazy" title="Roboflow Workflow for single label classification visualization" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -137,7 +137,7 @@ car instance
 
 - Visualizing final predictions
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiVXlHSk9lMVlxa09tckdodjNSVkIiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODAwNjY1MDl9.tVmoRaNhv8-tStsqH9r_nuVrHMAv08m8NA2MQ8dXudY?showGraph=true" loading="lazy" title="Roboflow Workflow for visualisation blocks" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiVXlHSk9lMVlxa09tckdodjNSVkIiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODA0MTcxNzd9.SMh1eR54lBq-8oeIEtyyldBRPAGiJO5Ht_dn7rW6cIg?showGraph=true" loading="lazy" title="Roboflow Workflow for visualisation blocks" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
