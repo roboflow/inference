@@ -13,6 +13,7 @@ from inference_models.models.common.roboflow.model_packages import (
 )
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
+    align_instance_segmentation_results_to_rle_masks,
     align_instance_segmentation_results_to_rle_masks_batch,
     rescale_image_detections,
 )
@@ -355,19 +356,20 @@ def _post_process_single_instance_segmentation_result_to_rle_masks_classic(
         image_meta.pad_bottom,
     )
     selected_boxes_xyxy = selected_boxes_xyxy_pct * denorm_size_whwh
-    aligned_boxes_tensor, rle_masks = (
-        align_instance_segmentation_results_to_rle_masks_batch(
-            image_bboxes=selected_boxes_xyxy,
-            masks=selected_masks,
-            padding=padding,
-            scale_height=image_meta.scale_height,
-            scale_width=image_meta.scale_width,
-            original_size=image_meta.original_size,
-            size_after_pre_processing=image_meta.size_after_pre_processing,
-            inference_size=denorm_size,
-            static_crop_offset=image_meta.static_crop_offset,
-        )
-    )
+    aligned_boxes, rle_masks = [], []
+    for bbox, mask in align_instance_segmentation_results_to_rle_masks(
+        image_bboxes=selected_boxes_xyxy,
+        masks=selected_masks,
+        padding=padding,
+        scale_height=image_meta.scale_height,
+        scale_width=image_meta.scale_width,
+        original_size=image_meta.original_size,
+        size_after_pre_processing=image_meta.size_after_pre_processing,
+        inference_size=denorm_size,
+        static_crop_offset=image_meta.static_crop_offset,
+    ):
+        aligned_boxes.append(bbox)
+        rle_masks.append(mask)
     instances_masks = InstancesRLEMasks.from_coco_rle_masks(
         image_size=(
             image_meta.original_size.height,
@@ -375,6 +377,12 @@ def _post_process_single_instance_segmentation_result_to_rle_masks_classic(
         ),
         masks=rle_masks,
     )
+    if len(aligned_boxes) > 0:
+        aligned_boxes_tensor = torch.stack(aligned_boxes, dim=0)
+    else:
+        aligned_boxes_tensor = torch.empty(
+            (0, 4), dtype=torch.int32, device=image_bboxes.device
+        )
     return InstanceDetections(
         xyxy=aligned_boxes_tensor.round().int(),
         confidence=confidence,
@@ -383,33 +391,18 @@ def _post_process_single_instance_segmentation_result_to_rle_masks_classic(
     )
 
 
-def post_process_instance_segmentation_results_to_rle_masks(
+def _post_process_instance_segmentation_results_to_rle_masks_batched_dense(
     bboxes: torch.Tensor,
-    logits: torch.Tensor,
+    logits_sigmoid: torch.Tensor,
     masks: torch.Tensor,
     pre_processing_meta: List[PreProcessingMetadata],
     threshold: Union[float, torch.Tensor],
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
 ) -> List[InstanceDetections]:
-    logits_sigmoid = torch.nn.functional.sigmoid(logits)
     batch_size, num_queries, num_logits_classes = logits_sigmoid.shape
     final_results: List[Optional[InstanceDetections]] = [None] * batch_size
     device = bboxes.device
-    if isinstance(threshold, torch.Tensor):
-        threshold = threshold.to(device=device, dtype=logits_sigmoid.dtype)
-    if batch_size == 1:
-        return [
-            _post_process_single_instance_segmentation_result_to_rle_masks(
-                image_bboxes=bboxes[0],
-                image_logits=logits_sigmoid[0],
-                image_masks=masks[0],
-                image_meta=pre_processing_meta[0],
-                threshold=threshold,
-                num_classes=num_classes,
-                classes_re_mapping=classes_re_mapping,
-            )
-        ]
 
     flat_scores = logits_sigmoid.reshape(batch_size, -1)
     confidence, topk_indexes = torch.topk(flat_scores, num_queries, dim=1)
@@ -593,3 +586,84 @@ def post_process_instance_segmentation_results_to_rle_masks(
             )
             offset = next_offset
     return final_results
+
+
+def _post_process_instance_segmentation_results_to_rle_masks_classic(
+    bboxes: torch.Tensor,
+    logits: torch.Tensor,
+    masks: torch.Tensor,
+    pre_processing_meta: List[PreProcessingMetadata],
+    threshold: Union[float, torch.Tensor],
+    num_classes: int,
+    classes_re_mapping: Optional[ClassesReMapping],
+) -> List[InstanceDetections]:
+    logits_sigmoid = torch.nn.functional.sigmoid(logits)
+    device = bboxes.device
+    if isinstance(threshold, torch.Tensor):
+        threshold = threshold.to(device=device, dtype=logits_sigmoid.dtype)
+    return [
+        _post_process_single_instance_segmentation_result_to_rle_masks_classic(
+            image_bboxes=image_bboxes,
+            image_logits=image_logits,
+            image_masks=image_masks,
+            image_meta=image_meta,
+            threshold=threshold,
+            num_classes=num_classes,
+            classes_re_mapping=classes_re_mapping,
+        )
+        for image_bboxes, image_logits, image_masks, image_meta in zip(
+            bboxes,
+            logits_sigmoid,
+            masks,
+            pre_processing_meta,
+        )
+    ]
+
+
+def post_process_instance_segmentation_results_to_rle_masks(
+    bboxes: torch.Tensor,
+    logits: torch.Tensor,
+    masks: torch.Tensor,
+    pre_processing_meta: List[PreProcessingMetadata],
+    threshold: Union[float, torch.Tensor],
+    num_classes: int,
+    classes_re_mapping: Optional[ClassesReMapping],
+) -> List[InstanceDetections]:
+    if not _TRITON_POSTPROC_ENABLED:
+        return _post_process_instance_segmentation_results_to_rle_masks_classic(
+            bboxes=bboxes,
+            logits=logits,
+            masks=masks,
+            pre_processing_meta=pre_processing_meta,
+            threshold=threshold,
+            num_classes=num_classes,
+            classes_re_mapping=classes_re_mapping,
+        )
+
+    logits_sigmoid = torch.nn.functional.sigmoid(logits)
+    batch_size = logits_sigmoid.shape[0]
+    device = bboxes.device
+    if isinstance(threshold, torch.Tensor):
+        threshold = threshold.to(device=device, dtype=logits_sigmoid.dtype)
+    if batch_size == 1:
+        return [
+            _post_process_single_instance_segmentation_result_to_rle_masks(
+                image_bboxes=bboxes[0],
+                image_logits=logits_sigmoid[0],
+                image_masks=masks[0],
+                image_meta=pre_processing_meta[0],
+                threshold=threshold,
+                num_classes=num_classes,
+                classes_re_mapping=classes_re_mapping,
+            )
+        ]
+
+    return _post_process_instance_segmentation_results_to_rle_masks_batched_dense(
+        bboxes=bboxes,
+        logits_sigmoid=logits_sigmoid,
+        masks=masks,
+        pre_processing_meta=pre_processing_meta,
+        threshold=threshold,
+        num_classes=num_classes,
+        classes_re_mapping=classes_re_mapping,
+    )
