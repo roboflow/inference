@@ -54,12 +54,82 @@ def polygon_from_uncompressed_counts(
     height: int,
     width: int,
 ) -> np.ndarray:
+    counts_array = _counts_to_array(counts=counts)
+    polygon = _polygon_from_column_aligned_counts(
+        counts=counts_array,
+        height=height,
+        width=width,
+    )
+    if polygon is not None:
+        return polygon
     columns = _counts_to_column_intervals(
-        counts=counts,
+        counts=counts_array,
         height=height,
         width=width,
     )
     return _polygon_from_column_intervals(columns=columns)
+
+
+def _counts_to_array(counts: Iterable[int]) -> np.ndarray:
+    if isinstance(counts, np.ndarray):
+        return counts.astype(np.int64, copy=False)
+    return np.fromiter((int(count) for count in counts), dtype=np.int64)
+
+
+def _polygon_from_column_aligned_counts(
+    counts: np.ndarray,
+    height: int,
+    width: int,
+) -> Optional[np.ndarray]:
+    if counts.size == 0:
+        return _EMPTY_POLYGON.copy()
+    if np.any(counts < 0):
+        raise ValueError("COCO RLE counts must be non-negative")
+
+    total_size = height * width
+    ends = np.cumsum(counts, dtype=np.int64)
+    if ends[-1] > total_size:
+        raise ValueError("COCO RLE counts exceed the mask size")
+
+    foreground_lengths = counts[1::2]
+    if foreground_lengths.size == 0:
+        return _EMPTY_POLYGON.copy()
+    foreground_ends = ends[1::2]
+    foreground_starts = foreground_ends - foreground_lengths
+    non_empty = foreground_lengths > 0
+    if not np.any(non_empty):
+        return _EMPTY_POLYGON.copy()
+    foreground_starts = foreground_starts[non_empty]
+    foreground_ends = foreground_ends[non_empty]
+
+    columns = foreground_starts // height
+    y_starts = foreground_starts - columns * height
+    last_pixels = foreground_ends - 1
+    end_columns = last_pixels // height
+    if np.any(end_columns != columns):
+        return None
+    y_ends = foreground_ends - columns * height
+
+    x_min = int(columns.min())
+    x_max = int(columns.max())
+    y_min = int(y_starts.min())
+    y_max = int(y_ends.max())
+    crop = np.zeros((y_max - y_min, x_max - x_min + 1), dtype=np.uint8)
+    for x, y0, y1 in zip(columns, y_starts, y_ends):
+        crop[int(y0) - y_min : int(y1) - y_min, int(x) - x_min] = 1
+
+    contours = cv2.findContours(
+        crop,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE,
+        offset=(x_min, y_min),
+    )[0]
+    if not contours:
+        return _EMPTY_POLYGON.copy()
+
+    contour_lengths = np.fromiter((len(c) for c in contours), dtype=np.intp)
+    selected_contour = contours[int(contour_lengths.argmax())]
+    return np.asarray(selected_contour, dtype=np.float32).reshape(-1, 2)
 
 
 def _get_lazy_uncompressed_counts(

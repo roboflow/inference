@@ -330,6 +330,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._pending_futures: Deque[
             Tuple[InferenceFuture, PreprocessingMetadata, dict]
         ] = deque()
+        self._gpu_submit_generation = 0
         self._response_executor: Optional[ThreadPoolExecutor] = None
         self._response_futures: Deque[
             Future[List[InstanceSegmentationInferenceResponse]]
@@ -360,19 +361,20 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
     def preprocess(self, image: Any, **kwargs):
         is_batch = isinstance(image, list)
         images = image if is_batch else [image]
-        np_images: List[np.ndarray] = [
-            load_image_bgr(
-                v,
-                disable_preproc_auto_orient=kwargs.get(
-                    "disable_preproc_auto_orient", False
-                ),
-            )
-            for v in images
-        ]
-        mapped_kwargs = self.map_inference_kwargs(kwargs)
         trace_frame_id = nsight_current_frame_id()
+        with nsight_range(nsight_frame_label(trace_frame_id, "cpu_preprocess.load")):
+            np_images: List[np.ndarray] = [
+                load_image_bgr(
+                    v,
+                    disable_preproc_auto_orient=kwargs.get(
+                        "disable_preproc_auto_orient", False
+                    ),
+                )
+                for v in images
+            ]
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
         nsight_mark(nsight_frame_label(trace_frame_id, "gpu_start"))
-        with nsight_range(nsight_frame_label(trace_frame_id, "gpu_preprocess_submit")):
+        with nsight_range(nsight_frame_label(trace_frame_id, "gpu_preprocess.submit")):
             preprocessed = self._model.pre_process(np_images, **mapped_kwargs)
         nsight_mark(nsight_frame_label(trace_frame_id, "gpu_preprocess_submitted"))
         return preprocessed
@@ -395,13 +397,19 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         # still preserving the correctness dependency for reused TRT outputs.
         self._submit_next_pending_gpu_work()
         trace_frame_id = nsight_current_frame_id()
-        with nsight_range(nsight_frame_label(trace_frame_id, "gpu_forward_submit")):
-            fut = self._model.forward_async(img_in, None, **mapped_kwargs)
+        pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
+        with nsight_range(nsight_frame_label(trace_frame_id, "gpu_forward.submit")):
+            fut = self._model.forward_async(
+                img_in, pre_processing_meta, **mapped_kwargs
+            )
         nsight_mark(nsight_frame_label(trace_frame_id, "gpu_forward_submitted"))
         fut._trace_frame_id = trace_frame_id  # type: ignore[attr-defined]
         fut._adapter_kwargs = {  # type: ignore[attr-defined]
             "mapped_kwargs": mapped_kwargs
         }
+        if pre_processing_meta is not None:
+            self._submit_future_gpu_work(fut, pre_processing_meta, mapped_kwargs)
+        self._submit_ready_responses()
         return fut
 
     def flush(self) -> List[InstanceSegmentationInferenceResponse]:
@@ -440,10 +448,14 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         if callable(submit_gpu_work):
             trace_frame_id = getattr(fut, "_trace_frame_id", nsight_current_frame_id())
             with nsight_range(
-                nsight_frame_label(trace_frame_id, "gpu_postprocess_submit")
+                nsight_frame_label(trace_frame_id, "gpu_postprocess.submit")
             ):
                 submit_gpu_work(meta)
             nsight_mark(nsight_frame_label(trace_frame_id, "gpu_postprocess_submitted"))
+            self._gpu_submit_generation = getattr(self, "_gpu_submit_generation", 0) + 1
+            fut._adapter_gpu_submit_generation = (  # type: ignore[attr-defined]
+                self._gpu_submit_generation
+            )
             fut._adapter_gpu_work_submitted = True  # type: ignore[attr-defined]
 
     def _submit_next_pending_gpu_work(self) -> None:
@@ -465,6 +477,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
         trace_frame_id = getattr(fut, "_trace_frame_id", nsight_current_frame_id())
         fut._trace_frame_id = trace_frame_id  # type: ignore[attr-defined]
+        nsight_mark(nsight_frame_label(trace_frame_id, "cpu_response_released"))
         response_future = self._get_response_executor().submit(
             self._finalize_future,
             fut,
@@ -475,7 +488,17 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._response_futures.append(response_future)
 
     def _submit_ready_responses(self) -> None:
-        while len(self._pending_futures) > self._response_delay:
+        while self._pending_futures:
+            fut, meta, mapped_kwargs = self._pending_futures[0]
+            submit_generation = getattr(fut, "_adapter_gpu_submit_generation", None)
+            if submit_generation is None:
+                self._submit_future_gpu_work(fut, meta, mapped_kwargs)
+                submit_generation = getattr(fut, "_adapter_gpu_submit_generation", None)
+            if submit_generation is None:
+                break
+            gpu_submit_generation = getattr(self, "_gpu_submit_generation", 0)
+            if gpu_submit_generation < submit_generation + self._response_delay:
+                break
             self._submit_response_build(*self._pending_futures.popleft())
 
     def _submit_all_pending_responses(self) -> None:
@@ -502,7 +525,9 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             )
         )
         self._pending_futures.append((fut, preprocess_return_metadata, mapped_kwargs))
-        self._submit_ready_responses()
+        if len(self._pending_futures) > self._response_delay:
+            self._submit_next_pending_gpu_work()
+            self._submit_ready_responses()
 
         if not self._response_futures:
             return self._empty_responses_for_metadata(
@@ -562,15 +587,22 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
         trace_frame_id = getattr(fut, "_trace_frame_id", None)
         nsight_mark(nsight_frame_label(trace_frame_id, "cpu_response_start"))
-        detections_list = fut.result()
-        for det in detections_list:
-            try:
-                det._trace_frame_id = trace_frame_id  # type: ignore[attr-defined]
-            except AttributeError:
-                pass
-        responses = self._build_responses_from_detections(
-            detections_list, preprocess_return_metadata, **mapped_kwargs
-        )
+        with nsight_range(nsight_frame_label(trace_frame_id, "cpu_postprocess.total")):
+            with nsight_range(
+                nsight_frame_label(trace_frame_id, "cpu_postprocess.await_gpu_result")
+            ):
+                detections_list = fut.result()
+            for det in detections_list:
+                try:
+                    det._trace_frame_id = trace_frame_id  # type: ignore[attr-defined]
+                except AttributeError:
+                    pass
+            with nsight_range(
+                nsight_frame_label(trace_frame_id, "cpu_postprocess.build_response")
+            ):
+                responses = self._build_responses_from_detections(
+                    detections_list, preprocess_return_metadata, **mapped_kwargs
+                )
         nsight_mark(nsight_frame_label(trace_frame_id, "cpu_response_complete"))
         return responses
 
@@ -609,7 +641,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             finalize_pending = getattr(det, "_finalize_pending_postproc", None)
             if callable(finalize_pending):
                 with nsight_range(
-                    nsight_frame_label(trace_frame_id, "gpu_finish_wait")
+                    nsight_frame_label(trace_frame_id, "cpu_postprocess.accept_gpu_rle")
                 ):
                     det = finalize_pending()
                 try:

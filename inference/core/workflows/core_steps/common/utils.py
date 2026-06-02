@@ -2,11 +2,24 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
+import cv2
 import numpy as np
 import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD
+from supervision.detection.compact_mask import CompactMask
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
@@ -51,6 +64,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.prototypes.block import BlockResult
+from inference.core.utils.nsight import nsight_range
 
 T = TypeVar("T")
 
@@ -94,6 +108,150 @@ def filter_out_invalid_polygons(predictions: List[dict]) -> List[dict]:
     ]
 
 
+def _get_or_create_detection_id(prediction: dict) -> object:
+    if DETECTION_ID_KEY in prediction:
+        return prediction[DETECTION_ID_KEY]
+    return str(uuid.uuid4())
+
+
+def _mask_crop_to_compact_rle_counts(mask: np.ndarray) -> np.ndarray:
+    flat = np.asarray(mask, dtype=np.bool_).ravel(order="F")
+    if len(flat) == 0:
+        return np.array([0], dtype=np.int32)
+    changes = np.diff(flat.view(np.uint8))
+    boundaries = np.where(changes != 0)[0] + 1
+    positions = np.concatenate(([0], boundaries, [len(flat)]))
+    run_lengths = np.diff(positions).astype(np.int32)
+    if flat[0]:
+        run_lengths = np.concatenate(([np.int32(0)], run_lengths))
+    return run_lengths
+
+
+def _polygon_prediction_to_compact_mask_crop(
+    polygon: np.ndarray,
+    image_width: int,
+    image_height: int,
+) -> Tuple[np.ndarray, Tuple[int, int], Tuple[int, int]]:
+    x_min = int(np.min(polygon[:, 0]))
+    x_max = int(np.max(polygon[:, 0]))
+    y_min = int(np.min(polygon[:, 1]))
+    y_max = int(np.max(polygon[:, 1]))
+
+    if x_max < 0 or y_max < 0 or x_min >= image_width or y_min >= image_height:
+        mask = np.zeros((1, 1), dtype=bool)
+        return (
+            _mask_crop_to_compact_rle_counts(mask),
+            (1, 1),
+            (
+                min(max(x_min, 0), image_width - 1),
+                min(max(y_min, 0), image_height - 1),
+            ),
+        )
+
+    x1 = max(0, x_min)
+    y1 = max(0, y_min)
+    x2 = min(image_width - 1, x_max)
+    y2 = min(image_height - 1, y_max)
+    crop = np.zeros((y2 - y1 + 1, x2 - x1 + 1), dtype=np.uint8)
+    shifted_polygon = polygon - np.array([x1, y1], dtype=np.int32)
+    cv2.fillPoly(crop, [shifted_polygon], color=(1,))
+    return (
+        _mask_crop_to_compact_rle_counts(crop),
+        (crop.shape[0], crop.shape[1]),
+        (x1, y1),
+    )
+
+
+def _try_convert_polygon_predictions_to_sv_detections(
+    prediction: Dict[str, Union[List[Dict[str, Any]], Any]],
+    predictions_key: str,
+    image_key: str,
+) -> Optional[Tuple[sv.Detections, List[Dict[str, Any]]]]:
+    raw_predictions = prediction[predictions_key]
+    required_prediction_keys = {
+        X_KEY,
+        Y_KEY,
+        WIDTH_KEY,
+        HEIGHT_KEY,
+        "confidence",
+        "class_id",
+        "class",
+        "points",
+    }
+    if any(
+        not required_prediction_keys.issubset(p)
+        or p.get("rle") is not None
+        or p.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE) is not None
+        for p in raw_predictions
+    ):
+        return None
+
+    has_tracker = ["tracker_id" in p for p in raw_predictions]
+    if any(has_tracker) and not all(has_tracker):
+        return None
+
+    image_width = int(prediction[image_key][WIDTH_KEY])
+    image_height = int(prediction[image_key][HEIGHT_KEY])
+    valid_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
+    if not valid_predictions:
+        detections = sv.Detections.empty()
+        detections.data = {CLASS_NAME_DATA_FIELD: np.empty(0, dtype=str)}
+        return detections, valid_predictions
+
+    count = len(valid_predictions)
+    xyxy = np.empty((count, 4), dtype=np.float64)
+    confidence = np.empty(count, dtype=np.float64)
+    class_id = np.empty(count, dtype=np.int64)
+    class_name = []
+    tracker_id = np.empty(count, dtype=np.int64) if all(has_tracker) else None
+    rles = []
+    crop_shapes = np.empty((count, 2), dtype=np.int32)
+    offsets = np.empty((count, 2), dtype=np.int32)
+
+    for idx, item in enumerate(valid_predictions):
+        x = float(item[X_KEY])
+        y = float(item[Y_KEY])
+        width = float(item[WIDTH_KEY])
+        height = float(item[HEIGHT_KEY])
+        x_min = x - width / 2
+        y_min = y - height / 2
+        xyxy[idx] = [x_min, y_min, x_min + width, y_min + height]
+        confidence[idx] = float(item["confidence"])
+        class_id[idx] = int(item["class_id"])
+        class_name.append(item["class"])
+        if tracker_id is not None:
+            tracker_id[idx] = int(item["tracker_id"])
+
+        polygon = np.array(
+            [[point[X_KEY], point[Y_KEY]] for point in item["points"]],
+            dtype=np.int32,
+        )
+        rle, crop_shape, offset = _polygon_prediction_to_compact_mask_crop(
+            polygon=polygon,
+            image_width=image_width,
+            image_height=image_height,
+        )
+        rles.append(rle)
+        crop_shapes[idx] = crop_shape
+        offsets[idx] = offset
+
+    masks = CompactMask(
+        rles=rles,
+        crop_shapes=crop_shapes,
+        offsets=offsets,
+        image_shape=(image_height, image_width),
+    )
+    detections = sv.Detections(
+        xyxy=xyxy,
+        confidence=confidence,
+        class_id=class_id,
+        mask=masks,
+        tracker_id=tracker_id,
+        data={CLASS_NAME_DATA_FIELD: np.array(class_name)},
+    )
+    return detections, valid_predictions
+
+
 def attach_prediction_type_info_to_sv_detections_batch(
     predictions: List[sv.Detections],
     prediction_type: str,
@@ -109,34 +267,54 @@ def convert_inference_detections_batch_to_sv_detections(
     predictions_key: str = "predictions",
     image_key: str = "image",
 ) -> List[sv.Detections]:
-    batch_of_detections: List[sv.Detections] = []
-    for p in predictions:
-        width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
-        detections = sv.Detections.from_inference(p)
-        raw_predictions = p[predictions_key]
-        if len(detections) != len(raw_predictions):
-            raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
-        parent_ids = [d.get(PARENT_ID_KEY, "") for d in raw_predictions]
-        detection_ids = [
-            d.get(DETECTION_ID_KEY, str(uuid.uuid4())) for d in raw_predictions
-        ]
-        detections[DETECTION_ID_KEY] = np.array(detection_ids)
-        detections[PARENT_ID_KEY] = np.array(parent_ids)
-        detections[IMAGE_DIMENSIONS_KEY] = np.array([[height, width]] * len(detections))
-        if INFERENCE_ID_KEY in p:
-            detections[INFERENCE_ID_KEY] = np.array(
-                [p[INFERENCE_ID_KEY]] * len(detections)
-            )
-        rle_masks = [
-            d.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE) or d.get("rle")
-            for d in raw_predictions
-        ]
-        if any(m is not None for m in rle_masks):
-            detections.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
-                rle_masks, dtype=object
-            )
-        batch_of_detections.append(detections)
-    return batch_of_detections
+    with nsight_range("workflow.to_sv.convert_inference_batch"):
+        batch_of_detections: List[sv.Detections] = []
+        for p in predictions:
+            width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
+            with nsight_range("workflow.to_sv.convert.from_inference"):
+                with nsight_range("workflow.to_sv.convert.fast_polygon"):
+                    fast_result = _try_convert_polygon_predictions_to_sv_detections(
+                        prediction=p,
+                        predictions_key=predictions_key,
+                        image_key=image_key,
+                    )
+                if fast_result is None:
+                    detections = sv.Detections.from_inference(p)
+                    raw_predictions = p[predictions_key]
+                    if len(detections) != len(raw_predictions):
+                        with nsight_range(
+                            "workflow.to_sv.convert.filter_invalid_polygons"
+                        ):
+                            raw_predictions = filter_out_invalid_polygons(
+                                predictions=raw_predictions
+                            )
+                else:
+                    detections, raw_predictions = fast_result
+            with nsight_range("workflow.to_sv.convert.metadata_arrays"):
+                parent_ids = [d.get(PARENT_ID_KEY, "") for d in raw_predictions]
+                detection_ids = [
+                    _get_or_create_detection_id(d) for d in raw_predictions
+                ]
+                detections[DETECTION_ID_KEY] = np.array(detection_ids)
+                detections[PARENT_ID_KEY] = np.array(parent_ids)
+                detections[IMAGE_DIMENSIONS_KEY] = np.array(
+                    [[height, width]] * len(detections)
+                )
+                if INFERENCE_ID_KEY in p:
+                    detections[INFERENCE_ID_KEY] = np.array(
+                        [p[INFERENCE_ID_KEY]] * len(detections)
+                    )
+            with nsight_range("workflow.to_sv.convert.rle_masks"):
+                rle_masks = [
+                    d.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE) or d.get("rle")
+                    for d in raw_predictions
+                ]
+                if any(m is not None for m in rle_masks):
+                    detections.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
+                        rle_masks, dtype=object
+                    )
+            batch_of_detections.append(detections)
+        return batch_of_detections
 
 
 def add_inference_keypoints_to_sv_detections(
@@ -455,9 +633,7 @@ def post_process_ocr_result(
         prediction["predictions"] = sv.Detections.from_inference(prediction)
         if len(prediction["predictions"]) != len(raw_predictions):
             raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
-        detection_ids = [
-            p.get("detection_id", str(uuid.uuid4())) for p in raw_predictions
-        ]
+        detection_ids = [_get_or_create_detection_id(p) for p in raw_predictions]
         prediction["predictions"]["detection_id"] = detection_ids
         prediction[PREDICTION_TYPE_KEY] = "ocr"
         prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id

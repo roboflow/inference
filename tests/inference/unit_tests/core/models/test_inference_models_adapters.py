@@ -236,11 +236,12 @@ def test_pipeline_returns_previous_frame_response_using_previous_metadata(
 
     assert responses == ["meta-1"]
     assert future_1.submitted_meta == [meta_1]
-    assert future_2.submitted_meta == []
+    assert future_2.submitted_meta == [meta_2]
     assert ops == [
         "forward:f1",
         "submit:f1",
         "forward:f2",
+        "submit:f2",
         "result:f1",
     ]
 
@@ -303,12 +304,13 @@ def test_pipeline_depth_three_submits_oldest_pending_before_forward(
     assert responses == ["meta-1"]
     assert future_1.submitted_meta == [meta_1]
     assert future_2.submitted_meta == [meta_2]
-    assert future_3.submitted_meta == []
+    assert future_3.submitted_meta == [meta_3]
     assert ops == [
         "forward:f1",
         "submit:f1",
         "forward:f2",
         "submit:f2",
         "forward:f3",
+        "submit:f3",
         "result:f1",
     ]
