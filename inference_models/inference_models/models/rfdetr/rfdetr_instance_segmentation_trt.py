@@ -227,6 +227,8 @@ class RFDetrForInstanceSegmentationTRT(
         self._trt_cuda_graph_cache = trt_cuda_graph_cache
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
+        self._pre_process_cuda_stream = torch.cuda.Stream(device=self._device)
+        self._post_process_cuda_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
         self._fast_preprocess_enabled = INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED
@@ -416,7 +418,11 @@ class RFDetrForInstanceSegmentationTRT(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         )
+        produce_event = getattr(model_results[0], "_trt_produce_event", None)
+        graph_state = getattr(model_results[0], "_trt_graph_state", None)
         with torch.cuda.stream(self._post_process_stream):
+            if produce_event is not None:
+                self._post_process_stream.wait_event(produce_event)
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
             bboxes, logits, masks = model_results
@@ -439,8 +445,31 @@ class RFDetrForInstanceSegmentationTRT(
                     threshold=confidence_filter.get_threshold(self.class_names),
                     num_classes=len(self.class_names),
                     classes_re_mapping=self._classes_re_mapping,
+                    defer_postprocess_sync=kwargs.get("defer_postprocess_sync", False),
                 )
-        self._post_process_stream.synchronize()
+            if graph_state is not None:
+                output_consumed_events = [
+                    getattr(result, "_trt_outputs_consumed_event", None)
+                    for result in results
+                ]
+                if output_consumed_events and all(
+                    event is not None for event in output_consumed_events
+                ):
+                    graph_state.consumer_done_event = output_consumed_events[-1]
+                else:
+                    consumer_done = graph_state.consumer_done_event
+                    if consumer_done is None:
+                        consumer_done = torch.cuda.Event()
+                        graph_state.consumer_done_event = consumer_done
+                    consumer_done.record(self._post_process_stream)
+        should_sync = True
+        if kwargs.get("defer_postprocess_sync", False):
+            should_sync = not all(
+                getattr(result, "_postproc_done_event", None) is not None
+                for result in results
+            )
+        if should_sync:
+            self._post_process_stream.synchronize()
         return results
 
     @property
@@ -453,8 +482,4 @@ class RFDetrForInstanceSegmentationTRT(
 
     @property
     def _post_process_stream(self) -> torch.cuda.Stream:
-        if not hasattr(self._thread_local_storage, "post_process_stream"):
-            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.post_process_stream
+        return self._post_process_cuda_stream
