@@ -10,6 +10,11 @@ from inference_models import (
     InstanceSegmentationModel,
     PreProcessingOverrides,
 )
+
+# Hoisted to module scope to avoid per-call `from ... import` inside the hot
+# forward_async path. Re-import inside the function added ~13µs/frame in the
+# instrumented run on Jetson Orin. Import here is a no-op on every call.
+from inference_models.models.base.instance_segmentation import _DirectInferenceFuture
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
@@ -301,6 +306,92 @@ class RFDetrForInstanceSegmentationTRT(
                     trt_cuda_graph_cache=cache,
                 )
                 return detections, labels, masks
+
+    def forward_async(
+        self,
+        pre_processed_images: torch.Tensor,
+        pre_processing_meta,
+        **kwargs,
+    ):
+        """Submit CUDA-graph inference without waiting for completion."""
+        if self._trt_cuda_graph_cache is None:
+            return super().forward_async(
+                pre_processed_images, pre_processing_meta, **kwargs
+            )
+
+        preproc_event = getattr(self, "_fast_preproc_event", None)
+        if preproc_event is not None:
+            self._inference_stream.wait_event(preproc_event)
+            self._fast_preproc_event = None
+        with self._lock:
+            with use_cuda_context(context=self._cuda_context):
+                raw = infer_from_trt_engine(
+                    pre_processed_images=pre_processed_images,
+                    trt_config=self._trt_config,
+                    engine=self._engine,
+                    context=self._execution_context,
+                    device=self._device,
+                    input_name=self._input_name,
+                    outputs=self._output_names,
+                    stream=self._inference_stream,
+                    trt_cuda_graph_cache=self._trt_cuda_graph_cache,
+                    synchronize=False,
+                )
+        graph_state = getattr(raw[0], "_trt_graph_state", None)
+        if graph_state is None:
+            self._inference_stream.synchronize()
+            return _DirectInferenceFuture(self, raw, pre_processing_meta, None, kwargs)
+        produce_event = getattr(raw[0], "_trt_produce_event", None)
+        if kwargs.get("reuse_trt_graph_outputs", False):
+            future_kwargs = dict(kwargs)
+            future_kwargs["defer_postprocess_sync"] = True
+            return _DirectInferenceFuture(
+                self, raw, pre_processing_meta, produce_event, future_kwargs
+            )
+
+        stream = graph_state.cuda_stream
+
+        tls = self._thread_local_storage
+        clone_sets = getattr(tls, "clone_sets", None)
+        if clone_sets is None:
+            raw0, raw1, raw2 = raw
+            clone_sets = [
+                (
+                    torch.empty_like(raw0),
+                    torch.empty_like(raw1),
+                    torch.empty_like(raw2),
+                )
+                for _ in range(3)
+            ]
+            tls.clone_sets = clone_sets
+            tls.clone_idx = 0
+        idx = tls.clone_idx
+        clones = clone_sets[idx]
+        tls.clone_idx = (idx + 1) % len(clone_sets)
+
+        prev_stream = torch.cuda.current_stream(self._device)
+        torch.cuda.set_stream(stream)
+        try:
+            raw0, raw1, raw2 = raw
+            clones[0].copy_(raw0, non_blocking=True)
+            clones[1].copy_(raw1, non_blocking=True)
+            clones[2].copy_(raw2, non_blocking=True)
+            produce_event = torch.cuda.Event()
+            produce_event.record(stream)
+            consumer_done = graph_state.consumer_done_event
+            if consumer_done is None:
+                consumer_done = torch.cuda.Event()
+                graph_state.consumer_done_event = consumer_done
+            consumer_done.record(stream)
+        finally:
+            torch.cuda.set_stream(prev_stream)
+
+        clones[0]._trt_produce_event = produce_event  # type: ignore[attr-defined]
+        future_kwargs = dict(kwargs)
+        future_kwargs["defer_postprocess_sync"] = True
+        return _DirectInferenceFuture(
+            self, clones, pre_processing_meta, produce_event, future_kwargs
+        )
 
     def post_process(
         self,

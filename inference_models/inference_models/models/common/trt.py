@@ -78,6 +78,7 @@ class TRTCudaGraphState:
     input_buffer: torch.Tensor
     output_buffers: List[torch.Tensor]
     execution_context: trt.IExecutionContext
+    consumer_done_event: Optional[torch.cuda.Event] = None
 
 
 class TRTCudaGraphCache:
@@ -435,6 +436,7 @@ def infer_from_trt_engine(
     outputs: List[str],
     stream: Optional[torch.cuda.Stream] = None,
     trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
+    synchronize: bool = True,
 ) -> List[torch.Tensor]:
     """Run inference using a TensorRT engine, optionally with CUDA graph acceleration.
 
@@ -570,8 +572,10 @@ def infer_from_trt_engine(
             input_name=input_name,
             outputs=outputs,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            synchronize=synchronize,
         )
-    stream.synchronize()
+    if synchronize:
+        stream.synchronize()
     return results
 
 
@@ -584,6 +588,7 @@ def _infer_from_trt_engine(
     input_name: str,
     outputs: List[str],
     trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
+    synchronize: bool = True,
 ) -> List[torch.Tensor]:
     if trt_config.static_batch_size is not None:
         min_batch_size = trt_config.static_batch_size
@@ -601,6 +606,7 @@ def _infer_from_trt_engine(
         min_batch_size=min_batch_size,
         max_batch_size=max_batch_size,
         trt_cuda_graph_cache=trt_cuda_graph_cache,
+        synchronize=synchronize,
     )
 
 
@@ -614,6 +620,7 @@ def _infer_from_trt_engine_with_batch_size_boundaries(
     min_batch_size: int,
     max_batch_size: int,
     trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
+    synchronize: bool = True,
 ) -> List[torch.Tensor]:
     if pre_processed_images.shape[0] <= max_batch_size:
         reminder = min_batch_size - pre_processed_images.shape[0]
@@ -637,6 +644,7 @@ def _infer_from_trt_engine_with_batch_size_boundaries(
             input_name=input_name,
             outputs=outputs,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            synchronize=synchronize,
         )
         if reminder > 0:
             results = [r[:-reminder] for r in results]
@@ -667,6 +675,7 @@ def _infer_from_trt_engine_with_batch_size_boundaries(
             input_name=input_name,
             outputs=outputs,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            synchronize=synchronize,
         )
         if reminder > 0:
             results = [r[:-reminder] for r in results]
@@ -683,6 +692,7 @@ def _execute_trt_engine(
     input_name: str,
     outputs: List[str],
     trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
+    synchronize: bool = True,
 ) -> List[torch.Tensor]:
     if trt_cuda_graph_cache is not None:
         input_shape = tuple(pre_processed_images.shape)
@@ -692,12 +702,17 @@ def _execute_trt_engine(
         if cache_key not in trt_cuda_graph_cache:
             LOGGER.debug("Capturing CUDA graph for shape %s", input_shape)
 
+            use_external = getattr(
+                pre_processed_images, "_trt_reuse_as_input_buffer", False
+            )
             results, trt_cuda_graph = _capture_cuda_graph(
                 pre_processed_images=pre_processed_images,
                 engine=engine,
                 device=device,
                 input_name=input_name,
                 outputs=outputs,
+                use_pre_processed_images_as_input_buffer=bool(use_external),
+                clone_outputs=synchronize,
             )
             trt_cuda_graph_cache[cache_key] = trt_cuda_graph
             return results
@@ -789,14 +804,24 @@ def _capture_cuda_graph(
     device: torch.device,
     input_name: str,
     outputs: List[str],
+    use_pre_processed_images_as_input_buffer: bool = False,
+    clone_outputs: bool = True,
 ) -> Tuple[List[torch.Tensor], TRTCudaGraphState]:
     # Each CUDA graph needs its own execution context. Sharing a single context
     # across graphs for different input shapes causes TRT to reallocate internal
     # workspace buffers, invalidating GPU addresses baked into earlier graphs.
     graph_context = engine.create_execution_context()
 
-    input_buffer = torch.empty_like(pre_processed_images, device=device)
-    input_buffer.copy_(pre_processed_images)
+    stream = torch.cuda.Stream(device=device)
+    input_ready = getattr(pre_processed_images, "_trt_ready_event", None)
+    if use_pre_processed_images_as_input_buffer:
+        input_buffer = pre_processed_images
+    else:
+        input_buffer = torch.empty_like(pre_processed_images, device=device)
+        with torch.cuda.stream(stream):
+            if input_ready is not None:
+                stream.wait_event(input_ready)
+            input_buffer.copy_(pre_processed_images)
 
     status = graph_context.set_input_shape(
         input_name, tuple(pre_processed_images.shape)
@@ -825,7 +850,9 @@ def _capture_cuda_graph(
         graph_context.set_tensor_address(output, output_buffer.data_ptr())
         output_buffers.append(output_buffer)
 
-    stream = torch.cuda.Stream(device=device)
+    if use_pre_processed_images_as_input_buffer and input_ready is not None:
+        with torch.cuda.stream(stream):
+            stream.wait_event(input_ready)
     with torch.cuda.stream(stream):
         status = graph_context.execute_async_v3(stream_handle=stream.cuda_stream)
         if not status:
@@ -850,7 +877,12 @@ def _capture_cuda_graph(
     # in order to avoid drift of results - it's better to replay to get the results
     with torch.cuda.stream(stream):
         cuda_graph.replay()
-        results = [buf.clone() for buf in output_buffers]
+        if clone_outputs:
+            results = [buf.clone() for buf in output_buffers]
+        else:
+            results = list(output_buffers)
+        produce_event = torch.cuda.Event()
+        produce_event.record(stream)
     stream.synchronize()
 
     trt_cuda_graph_state = TRTCudaGraphState(
@@ -860,8 +892,23 @@ def _capture_cuda_graph(
         output_buffers=output_buffers,
         execution_context=graph_context,
     )
+    _attach_trt_graph_metadata(
+        results=results,
+        trt_cuda_graph_state=trt_cuda_graph_state,
+        produce_event=produce_event,
+    )
 
     return results, trt_cuda_graph_state
+
+
+def _attach_trt_graph_metadata(
+    results: List[torch.Tensor],
+    trt_cuda_graph_state: TRTCudaGraphState,
+    produce_event: torch.cuda.Event,
+) -> None:
+    for result in results:
+        result._trt_graph_state = trt_cuda_graph_state  # type: ignore[attr-defined]
+        result._trt_produce_event = produce_event  # type: ignore[attr-defined]
 
 
 def _trt_dtype_to_torch(trt_dtype):
