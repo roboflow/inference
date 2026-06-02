@@ -651,6 +651,8 @@ def _instance_detections_from_sparse_records(
         image_size=(height, width),
         masks=rle_masks,
     )
+    # The pipeline RLE-to-polygon path consumes uncompressed counts directly, so
+    # keep them beside the pycocotools-compressed masks instead of decoding later.
     _attach_uncompressed_counts(instances_masks, rle_counts)
     return InstanceDetections(
         xyxy=boxes,
@@ -753,6 +755,8 @@ def _instance_detections_from_sparse_query_records(
         image_size=(height, width),
         masks=rle_masks,
     )
+    # The pipeline RLE-to-polygon path consumes uncompressed counts directly, so
+    # keep them beside the pycocotools-compressed masks instead of decoding later.
     _attach_uncompressed_counts(instances_masks, rle_counts)
     return InstanceDetections(
         xyxy=boxes,
@@ -968,6 +972,13 @@ def _attach_uncompressed_counts(
     masks: InstancesRLEMasks,
     rle_counts: List[List[int]],
 ) -> None:
+    """Attach padded uncompressed COCO counts for downstream polygon conversion.
+
+    ``InstancesRLEMasks`` stores compressed pycocotools RLEs for normal API
+    compatibility. The pipeline branch also converts masks to polygons; keeping
+    the uncompressed counts here avoids an extra compressed-RLE decode on that
+    hot CPU path.
+    """
     max_length = max((len(counts) for counts in rle_counts), default=0)
     counts_array = np.zeros((len(rle_counts), max_length), dtype=np.int64)
     lengths_array = np.empty((len(rle_counts),), dtype=np.int32)
@@ -975,6 +986,8 @@ def _attach_uncompressed_counts(
         counts_length = len(counts)
         lengths_array[index] = counts_length
         counts_array[index, :counts_length] = counts
+    # Private attributes are intentionally used as an optional fast-path cache;
+    # callers without this branch still rely on the standard compressed masks.
     masks._rle_counts_cpu = counts_array  # type: ignore[attr-defined]
     masks._rle_lengths_cpu = lengths_array  # type: ignore[attr-defined]
 
