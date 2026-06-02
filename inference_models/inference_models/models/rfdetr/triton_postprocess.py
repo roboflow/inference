@@ -308,7 +308,6 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         image_bboxes,
         class_mapping,
         metadata,
-        metadata,
         records,
         confidence_threshold,
         num_queries,
@@ -319,7 +318,6 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         BLOCK_CLASSES=triton.next_power_of_2(num_classes),
         METADATA_STRIDE=_HEADER_SIZE,
         MAX_CLASSES_PER_QUERY=_SPARSE_MAX_CLASSES_PER_QUERY,
-        FLAG_WRITE_QUERY_METADATA=False,
         FLAG_OVERFLOW_CLASSES=True,
     )
     _sparse_atomic_rle_from_metadata_kernel[
@@ -717,7 +715,6 @@ if triton is not None:
         bboxes,
         class_mapping,
         metadata,
-        query_metadata,
         records,
         threshold: tl.constexpr,
         num_queries: tl.constexpr,
@@ -728,7 +725,6 @@ if triton is not None:
         BLOCK_CLASSES: tl.constexpr,
         METADATA_STRIDE: tl.constexpr,
         MAX_CLASSES_PER_QUERY: tl.constexpr,
-        FLAG_WRITE_QUERY_METADATA: tl.constexpr,
         FLAG_OVERFLOW_CLASSES: tl.constexpr,
     ):
         """Emit up to four passing query-class candidates for one query."""
@@ -831,39 +827,6 @@ if triton is not None:
             tl.store(metadata + meta_base + 4, y1)
             tl.store(metadata + meta_base + 5, x2)
             tl.store(metadata + meta_base + 6, y2)
-            if FLAG_WRITE_QUERY_METADATA and class_rank == 0:
-                # The pipeline path wants best-query metadata for the RLE
-                # kernel while retaining expanded class metadata for CPU
-                # finalization.
-                query_meta_base = query_index * METADATA_STRIDE
-                tl.store(
-                    query_metadata + query_meta_base + 0,
-                    tl.where(is_valid_detection, 1.0, 0.0),
-                )
-                tl.store(
-                    query_metadata + query_meta_base + 1, mapped_class.to(tl.float32)
-                )
-                tl.store(
-                    query_metadata + query_meta_base + 2,
-                    tl.where(is_valid_detection, selected_score, 0.0),
-                )
-                tl.store(query_metadata + query_meta_base + 3, x1)
-                tl.store(query_metadata + query_meta_base + 4, y1)
-                tl.store(query_metadata + query_meta_base + 5, x2)
-                tl.store(query_metadata + query_meta_base + 6, y2)
-                tl.store(query_metadata + query_meta_base + 7, 0.0)
-                tl.store(query_metadata + query_meta_base + 8, 0.0)
-                tl.store(
-                    query_metadata + query_meta_base + 9, query_index.to(tl.float32)
-                )
-                tl.store(
-                    query_metadata + query_meta_base + 10, selected_index.to(tl.float32)
-                )
-                tl.store(query_metadata + query_meta_base + 11, 0.0)
-                tl.store(query_metadata + query_meta_base + 12, 0.0)
-                tl.store(query_metadata + query_meta_base + 13, 0.0)
-                tl.store(query_metadata + query_meta_base + 14, 0.0)
-                tl.store(query_metadata + query_meta_base + 15, 0.0)
             work_scores = tl.where(class_offsets == selected_class, -1.0, work_scores)
 
     @triton.jit
