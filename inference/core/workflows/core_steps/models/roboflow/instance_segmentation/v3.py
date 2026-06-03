@@ -499,6 +499,9 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             and getattr(model, "_pipeline_depth", 1) > 1
         )
 
+    def can_activate_stream_pipeline(self) -> bool:
+        return self._step_execution_mode is StepExecutionMode.LOCAL
+
     def stream_pipeline_depth(self) -> int:
         if not self.is_stream_pipelined():
             return 0

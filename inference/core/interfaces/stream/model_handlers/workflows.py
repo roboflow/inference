@@ -10,7 +10,6 @@ from inference.core.workflows.execution_engine.entities.base import VideoMetadat
 @dataclass(frozen=True)
 class _StreamPipelineStep:
     step: Any
-    depth: int
 
 
 class WorkflowRunner:
@@ -148,10 +147,10 @@ class PipelinedWorkflowRunner:
                 close_fn()
 
     def _stream_buffer_depth(self) -> int:
-        stream_steps = self._stream_steps
-        if not stream_steps:
-            return 0
-        return max(stream_step.depth for stream_step in stream_steps)
+        return max(
+            (_stream_step_depth(stream_step) for stream_step in self._stream_steps),
+            default=0,
+        )
 
 
 def wrap_workflow_runner_for_stream_pipeline(
@@ -176,15 +175,21 @@ def _stream_pipeline_steps(
     stream_steps = []
     for initialised_step in steps.values():
         step_instance = getattr(initialised_step, "step", None)
-        is_stream_pipelined = getattr(step_instance, "is_stream_pipelined", None)
-        if callable(is_stream_pipelined) and is_stream_pipelined():
-            get_depth = getattr(step_instance, "stream_pipeline_depth", None)
-            if callable(get_depth):
-                depth = int(get_depth())
-            else:
-                depth = 1
-            if depth > 0:
-                stream_steps.append(
-                    _StreamPipelineStep(step=step_instance, depth=depth)
-                )
+        if _is_stream_pipeline_step(step_instance=step_instance):
+            stream_steps.append(_StreamPipelineStep(step=step_instance))
     return stream_steps
+
+
+def _is_stream_pipeline_step(step_instance: Any) -> bool:
+    is_stream_pipelined = getattr(step_instance, "is_stream_pipelined", None)
+    if callable(is_stream_pipelined) and is_stream_pipelined():
+        return True
+    can_activate_pipeline = getattr(step_instance, "can_activate_stream_pipeline", None)
+    return callable(can_activate_pipeline) and can_activate_pipeline()
+
+
+def _stream_step_depth(stream_step: _StreamPipelineStep) -> int:
+    get_depth = getattr(stream_step.step, "stream_pipeline_depth", None)
+    if not callable(get_depth):
+        return 0
+    return max(0, int(get_depth()))
