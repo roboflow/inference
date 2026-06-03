@@ -44,7 +44,7 @@ from inference.core.interfaces.stream.entities import (
     SinkHandler,
 )
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
-    RoboflowModelHandler,
+    default_process_frame,
 )
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.utils import (
@@ -253,7 +253,8 @@ class InferencePipeline:
             tradeoff_factor=tradeoff_factor,
         )
         model = get_model(model_id=model_id, api_key=api_key)
-        on_video_frame = RoboflowModelHandler(
+        on_video_frame = partial(
+            default_process_frame,
             model=model,
             inference_config=inference_config,
         )
