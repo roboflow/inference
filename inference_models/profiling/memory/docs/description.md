@@ -73,6 +73,17 @@ Before any GPU profiling, extract cheap static metadata:
 
 This gives you a prior estimate and helps choose what scenarios to benchmark.
 
+Per-registry-entry input contracts live in ``profiling/memory/registry_input_profiles.json``
+(schema v2): **backend_package_input_profiles** (static vs dynamic batch/H/W from package
+files per ``onnx`` / ``torch-script`` / ``trt`` / ``torch`` / ``hugging-face``),
+**task_inference_profiles** (API method and prompts), and **registry_entries** linking both.
+Regenerate after registry changes with:
+
+```bash
+cd inference_models
+uv run python profiling/memory/scripts/generate_registry_input_profiles.py
+```
+
 ##### Phase 2: Runtime-specific profiling harnesses
 
 Build one harness per runtime, but make them emit the same normalized JSON result.

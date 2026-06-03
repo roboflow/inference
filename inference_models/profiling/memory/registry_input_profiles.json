@@ -1,0 +1,1736 @@
+{
+  "schema_version": "2.0",
+  "description": "Memory-relevant inference inputs for REGISTERED_MODELS. Spatial/batch shapes are resolved from model packages per backend (see backend_package_input_profiles). Task profiles define API methods and non-spatial inputs (prompts, classes, decode limits).",
+  "memory_impact_levels": [
+    "low",
+    "medium",
+    "high",
+    "critical"
+  ],
+  "resolution_modes": {
+    "static": "Single fixed value from package artifacts; use for profiling peaks when the runtime path is fixed-shape.",
+    "dynamic": "Variable at inference time or bounded by min/opt/max; profile at the declared maximum for admission."
+  },
+  "input_kinds": {
+    "image_batch": "RGB/BGR images; H\u00d7W\u00d7batch drives activations.",
+    "single_image": "One video frame.",
+    "text": "Prompt string.",
+    "text_list": "Class names or text batch.",
+    "structured_prompt_list": "SAM3 prompt dicts.",
+    "prompt_geometry": "Points or boxes for SAM.",
+    "session_state": "Video tracker state across frames."
+  },
+  "backend_package_input_profiles": {
+    "onnx": {
+      "description": "Roboflow ONNX packages: preprocessing and batch policy in inference_config.json; exported graph input shape in weights.onnx (should match static export).",
+      "primary_artifacts": [
+        "weights.onnx",
+        "inference_config.json"
+      ],
+      "dimensions": {
+        "batch_size": {
+          "static": {
+            "file": "inference_config.json",
+            "json_path": "forward_pass.static_batch_size"
+          },
+          "dynamic": {
+            "file": "inference_config.json",
+            "json_path": "forward_pass.max_dynamic_batch_size",
+            "profiling_note": "Profile at max_dynamic_batch_size for worst-case ORT allocator peaks."
+          }
+        },
+        "height": {
+          "static": {
+            "file": "inference_config.json",
+            "json_path": "network_input.training_input_size.height",
+            "when": "network_input.dynamic_spatial_size_supported is false"
+          },
+          "dynamic": {
+            "file": "inference_config.json",
+            "json_path": "network_input",
+            "when": "network_input.dynamic_spatial_size_supported is true",
+            "profiling_note": "Sweep upper bound from dynamic_spatial_size_mode or package docs; divisible-padding uses divisor constraints."
+          }
+        },
+        "width": {
+          "static": {
+            "file": "inference_config.json",
+            "json_path": "network_input.training_input_size.width",
+            "when": "network_input.dynamic_spatial_size_supported is false"
+          },
+          "dynamic": {
+            "file": "inference_config.json",
+            "json_path": "network_input",
+            "when": "network_input.dynamic_spatial_size_supported is true"
+          }
+        }
+      }
+    },
+    "torch-script": {
+      "description": "Roboflow TorchScript packages: same inference_config.json as ONNX; graph fixed to forward_pass.static_batch_size and training_input_size at export.",
+      "primary_artifacts": [
+        "weights.torchscript",
+        "inference_config.json",
+        "class_names.txt"
+      ],
+      "dimensions": {
+        "batch_size": {
+          "static": {
+            "file": "inference_config.json",
+            "json_path": "forward_pass.static_batch_size",
+            "profiling_note": "TorchScript export requires static_batch_size."
+          }
+        },
+        "height": {
+          "static": {
+            "file": "inference_config.json",
+            "json_path": "network_input.training_input_size.height"
+          }
+        },
+        "width": {
+          "static": {
+            "file": "inference_config.json",
+            "json_path": "network_input.training_input_size.width"
+          }
+        }
+      }
+    },
+    "trt": {
+      "description": "Roboflow TensorRT packages: spatial preprocessing from inference_config.json; engine batch profile from trt_config.json (static or min/opt/max dynamic). Runtime spatial limits are baked into engine.plan / optimization profile.",
+      "primary_artifacts": [
+        "engine.plan",
+        "inference_config.json",
+        "trt_config.json"
+      ],
+      "dimensions": {
+        "batch_size": {
+          "static": {
+            "file": "trt_config.json",
+            "json_path": "static_batch_size"
+          },
+          "dynamic": {
+            "file": "trt_config.json",
+            "json_paths": [
+              "dynamic_batch_size_min",
+              "dynamic_batch_size_opt",
+              "dynamic_batch_size_max"
+            ],
+            "profiling_note": "Profile at dynamic_batch_size_max for admission; opt is the builder tuning point."
+          }
+        },
+        "height": {
+          "static": {
+            "file": "inference_config.json",
+            "json_path": "network_input.training_input_size.height",
+            "profiling_note": "Preprocess target; must match engine input binding shape when engine is static."
+          },
+          "dynamic": {
+            "file": "engine.plan",
+            "when": "TensorRT optimization profile exposes variable H",
+            "profiling_note": "Read min/opt/max from engine optimization profile via TRT APIs, not from inference_config alone."
+          }
+        },
+        "width": {
+          "static": {
+            "file": "inference_config.json",
+            "json_path": "network_input.training_input_size.width"
+          },
+          "dynamic": {
+            "file": "engine.plan",
+            "when": "TensorRT optimization profile exposes variable W"
+          }
+        }
+      }
+    },
+    "torch": {
+      "description": "Native PyTorch packages: Roboflow exports use inference_config.json when present; library checkpoints (SAM, RF-DETR local) may use package-specific JSON instead.",
+      "primary_artifacts": [
+        "weights.pt or package-specific checkpoint names"
+      ],
+      "config_variants": {
+        "roboflow": {
+          "files": [
+            "inference_config.json"
+          ],
+          "dimensions": {
+            "batch_size": {
+              "static": {
+                "file": "inference_config.json",
+                "json_path": "forward_pass.static_batch_size"
+              },
+              "dynamic": {
+                "file": "inference_config.json",
+                "json_path": "forward_pass.max_dynamic_batch_size"
+              }
+            },
+            "height": {
+              "static": {
+                "file": "inference_config.json",
+                "json_path": "network_input.training_input_size.height",
+                "when": "network_input.dynamic_spatial_size_supported is false"
+              },
+              "dynamic": {
+                "file": "inference_config.json",
+                "json_path": "network_input",
+                "when": "network_input.dynamic_spatial_size_supported is true"
+              }
+            },
+            "width": {
+              "static": {
+                "file": "inference_config.json",
+                "json_path": "network_input.training_input_size.width",
+                "when": "network_input.dynamic_spatial_size_supported is false"
+              },
+              "dynamic": {
+                "file": "inference_config.json",
+                "json_path": "network_input",
+                "when": "network_input.dynamic_spatial_size_supported is true"
+              }
+            }
+          }
+        },
+        "sam": {
+          "files": [
+            "sam_configuration.json",
+            "model.pth"
+          ],
+          "dimensions": {
+            "batch_size": {
+              "static": {
+                "file": "sam_configuration.json",
+                "json_path": "max_batch_size",
+                "fallback": "model constructor max_batch_size default"
+              }
+            },
+            "height": {
+              "static": {
+                "file": "model.pth",
+                "profiling_note": "Derived from SAM image_encoder.img_size after load."
+              }
+            },
+            "width": {
+              "static": {
+                "file": "model.pth",
+                "profiling_note": "Same as height for square SAM encoder input."
+              }
+            }
+          }
+        },
+        "sam3": {
+          "files": [
+            "weights.pt",
+            "sam_configuration.json"
+          ],
+          "dimensions": {
+            "batch_size": {
+              "static": {
+                "file": "constructor",
+                "json_path": "max_batch_size"
+              }
+            },
+            "height": {
+              "static": {
+                "file": "constructor",
+                "json_path": "image_size"
+              }
+            },
+            "width": {
+              "static": {
+                "file": "constructor",
+                "json_path": "image_size"
+              }
+            }
+          }
+        }
+      }
+    },
+    "hugging-face": {
+      "description": "Hugging Face layout packages: shapes and generation limits from transformers config artifacts (not inference_config.json).",
+      "primary_artifacts": [
+        "config.json",
+        "preprocessor_config.json",
+        "processor_config.json",
+        "generation_config.json"
+      ],
+      "dimensions": {
+        "batch_size": {
+          "static": {
+            "file": "preprocessor_config.json",
+            "json_path": "size",
+            "profiling_note": "Often 1 for VLMs; multi-image prompts batch in processor."
+          },
+          "dynamic": {
+            "file": "runtime",
+            "profiling_note": "Batch driven by number of images passed to prompt()."
+          }
+        },
+        "height": {
+          "static": {
+            "file": "preprocessor_config.json",
+            "json_paths": [
+              "size.shortest_edge",
+              "size.height",
+              "crop_size.height"
+            ],
+            "profiling_note": "First matching key wins per model family."
+          },
+          "dynamic": {
+            "file": "preprocessor_config.json",
+            "when": "Model accepts variable resolution in processor"
+          }
+        },
+        "width": {
+          "static": {
+            "file": "preprocessor_config.json",
+            "json_paths": [
+              "size.longest_edge",
+              "size.width",
+              "crop_size.width"
+            ]
+          },
+          "dynamic": {
+            "file": "preprocessor_config.json",
+            "when": "Model accepts variable resolution in processor"
+          }
+        },
+        "prompt_token_length": {
+          "dynamic": {
+            "file": "runtime",
+            "json_path": "tokenizer.encode(prompt)",
+            "profiling_note": "Sweep representative prompt strings for admission."
+          }
+        },
+        "max_new_tokens": {
+          "static": {
+            "file": "generation_config.json",
+            "json_path": "max_new_tokens",
+            "fallback": "model-specific default constant in code"
+          },
+          "dynamic": {
+            "file": "method_kwargs",
+            "json_path": "max_new_tokens",
+            "profiling_note": "KV-cache peak scales with decode length cap."
+          }
+        }
+      }
+    }
+  },
+  "task_inference_profiles": {
+    "vision_infer": {
+      "description": "Standard CV: infer(images, **kwargs).",
+      "profiling_method": "infer",
+      "inputs": [
+        {
+          "name": "images",
+          "kind": "image_batch",
+          "required": true,
+          "memory_impact": "high",
+          "shape_from_backend_package": true
+        }
+      ],
+      "method_kwargs_memory_relevant": [
+        {
+          "name": "image_size",
+          "memory_impact": "medium",
+          "notes": "Runtime resize override when package allows dynamic spatial size."
+        }
+      ]
+    },
+    "vlm_prompt": {
+      "description": "HF VLM: prompt(images, prompt=..., max_new_tokens=...).",
+      "profiling_method": "prompt",
+      "inputs": [
+        {
+          "name": "images",
+          "kind": "image_batch",
+          "required": true,
+          "memory_impact": "high",
+          "shape_from_backend_package": true
+        },
+        {
+          "name": "prompt",
+          "kind": "text",
+          "required": true,
+          "memory_impact": "high",
+          "axes": [
+            {
+              "name": "prompt_token_length",
+              "memory_impact": "high",
+              "resolution": "dynamic",
+              "backend_overrides": {
+                "hugging-face": {
+                  "file": "runtime",
+                  "json_path": "tokenizer.encode(prompt)"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "method_kwargs_memory_relevant": [
+        {
+          "name": "max_new_tokens",
+          "memory_impact": "critical",
+          "resolution": {
+            "static": {
+              "file": "generation_config.json",
+              "json_path": "max_new_tokens"
+            },
+            "dynamic": {
+              "file": "method_kwargs",
+              "json_path": "max_new_tokens"
+            }
+          }
+        },
+        {
+          "name": "num_beams",
+          "memory_impact": "medium"
+        },
+        {
+          "name": "images_to_single_prompt",
+          "memory_impact": "medium"
+        }
+      ]
+    },
+    "vlm_florence2": {
+      "description": "Florence-2 prompt() with task-specific decoder head.",
+      "profiling_method": "prompt",
+      "inputs": [
+        {
+          "name": "images",
+          "kind": "image_batch",
+          "required": true,
+          "memory_impact": "high",
+          "shape_from_backend_package": true
+        },
+        {
+          "name": "prompt",
+          "kind": "text",
+          "required": true,
+          "memory_impact": "high",
+          "axes": [
+            {
+              "name": "prompt_token_length",
+              "memory_impact": "high",
+              "resolution": "dynamic",
+              "backend_overrides": {
+                "hugging-face": {
+                  "file": "runtime",
+                  "json_path": "tokenizer.encode(prompt)"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "method_kwargs_memory_relevant": [
+        {
+          "name": "max_new_tokens",
+          "memory_impact": "critical",
+          "resolution": {
+            "static": {
+              "file": "generation_config.json",
+              "json_path": "max_new_tokens"
+            },
+            "dynamic": {
+              "file": "method_kwargs",
+              "json_path": "max_new_tokens"
+            }
+          }
+        },
+        {
+          "name": "num_beams",
+          "memory_impact": "medium"
+        },
+        {
+          "name": "images_to_single_prompt",
+          "memory_impact": "medium"
+        },
+        {
+          "name": "task",
+          "memory_impact": "medium"
+        }
+      ]
+    },
+    "vlm_moondream2": {
+      "description": "Moondream2: detect / caption / query (not prompt).",
+      "profiling_method": "detect",
+      "alternate_methods": [
+        "caption",
+        "query"
+      ],
+      "inputs": [
+        {
+          "name": "images",
+          "kind": "image_batch",
+          "required": true,
+          "memory_impact": "high",
+          "shape_from_backend_package": true
+        },
+        {
+          "name": "classes",
+          "kind": "text_list",
+          "required": true,
+          "memory_impact": "high",
+          "axes": [
+            {
+              "name": "num_classes",
+              "memory_impact": "high",
+              "resolution": "dynamic",
+              "profiling_note": "Package profiling supplies class list; detect() runs once per class."
+            }
+          ]
+        }
+      ],
+      "method_kwargs_memory_relevant": [
+        {
+          "name": "max_new_tokens",
+          "memory_impact": "critical",
+          "resolution": {
+            "dynamic": {
+              "file": "method_kwargs",
+              "json_path": "settings.max_tokens"
+            }
+          }
+        },
+        {
+          "name": "length",
+          "memory_impact": "medium",
+          "notes": "caption() only."
+        }
+      ]
+    },
+    "embedding": {
+      "description": "embed_images / embed_text.",
+      "profiling_method": "embed_images",
+      "alternate_methods": [
+        "embed_text",
+        "compare_embeddings"
+      ],
+      "inputs": [
+        {
+          "name": "images",
+          "kind": "image_batch",
+          "required": false,
+          "memory_impact": "high",
+          "shape_from_backend_package": true
+        },
+        {
+          "name": "texts",
+          "kind": "text_list",
+          "required": false,
+          "memory_impact": "high",
+          "axes": [
+            {
+              "name": "batch_size",
+              "memory_impact": "high",
+              "resolution": "dynamic"
+            },
+            {
+              "name": "sequence_length",
+              "memory_impact": "high",
+              "resolution": "dynamic",
+              "backend_overrides": {
+                "hugging-face": {
+                  "file": "runtime",
+                  "json_path": "tokenizer.encode(texts)"
+                },
+                "torch": {
+                  "file": "runtime",
+                  "json_path": "tokenizer.encode(texts)"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "open_vocabulary_detection": {
+      "description": "infer(images, classes=...).",
+      "profiling_method": "infer",
+      "inputs": [
+        {
+          "name": "images",
+          "kind": "image_batch",
+          "required": true,
+          "memory_impact": "high",
+          "shape_from_backend_package": true
+        },
+        {
+          "name": "classes",
+          "kind": "text_list",
+          "required": true,
+          "memory_impact": "high",
+          "axes": [
+            {
+              "name": "num_classes",
+              "memory_impact": "high",
+              "resolution": "dynamic",
+              "profiling_note": "Profiling package should include representative class queries."
+            }
+          ]
+        }
+      ],
+      "method_kwargs_memory_relevant": [
+        {
+          "name": "max_detections",
+          "memory_impact": "low"
+        }
+      ]
+    },
+    "interactive_sam": {
+      "description": "embed_images then segment_images with geometry prompts.",
+      "profiling_workflow": [
+        "embed_images",
+        "segment_images"
+      ],
+      "profiling_method": "segment_images",
+      "inputs": [
+        {
+          "name": "images",
+          "kind": "image_batch",
+          "required": true,
+          "memory_impact": "high",
+          "shape_from_backend_package": true
+        },
+        {
+          "name": "point_coordinates",
+          "kind": "prompt_geometry",
+          "required": false,
+          "memory_impact": "medium",
+          "axes": [
+            {
+              "name": "num_points",
+              "memory_impact": "medium",
+              "resolution": "dynamic"
+            }
+          ]
+        },
+        {
+          "name": "boxes",
+          "kind": "prompt_geometry",
+          "required": false,
+          "memory_impact": "medium",
+          "axes": [
+            {
+              "name": "num_boxes",
+              "memory_impact": "medium",
+              "resolution": "dynamic"
+            }
+          ]
+        }
+      ],
+      "method_kwargs_memory_relevant": [
+        {
+          "name": "multi_mask_output",
+          "memory_impact": "medium"
+        }
+      ]
+    },
+    "sam3_text_segmentation": {
+      "description": "segment_with_text_prompts(images, prompts).",
+      "profiling_method": "segment_with_text_prompts",
+      "inputs": [
+        {
+          "name": "images",
+          "kind": "image_batch",
+          "required": true,
+          "memory_impact": "high",
+          "shape_from_backend_package": true
+        },
+        {
+          "name": "prompts",
+          "kind": "structured_prompt_list",
+          "required": true,
+          "memory_impact": "high",
+          "axes": [
+            {
+              "name": "num_text_queries",
+              "memory_impact": "high",
+              "resolution": "dynamic"
+            }
+          ]
+        }
+      ]
+    },
+    "video_tracking": {
+      "description": "HF streaming video: prompt / track with session state.",
+      "profiling_workflow": [
+        "prompt",
+        "track"
+      ],
+      "profiling_method": "prompt",
+      "alternate_methods": [
+        "track"
+      ],
+      "inputs": [
+        {
+          "name": "image",
+          "kind": "single_image",
+          "required": true,
+          "memory_impact": "high",
+          "shape_from_backend_package": true
+        },
+        {
+          "name": "text",
+          "kind": "text",
+          "required": false,
+          "memory_impact": "medium",
+          "axes": [
+            {
+              "name": "prompt_token_length",
+              "memory_impact": "medium",
+              "resolution": "dynamic"
+            }
+          ]
+        },
+        {
+          "name": "state_dict",
+          "kind": "session_state",
+          "required": false,
+          "memory_impact": "critical",
+          "axes": [
+            {
+              "name": "session_frames",
+              "memory_impact": "critical",
+              "resolution": "dynamic",
+              "profiling_note": "Sweep track iterations for worst-case session memory."
+            }
+          ]
+        }
+      ],
+      "method_kwargs_memory_relevant": [
+        {
+          "name": "bboxes",
+          "memory_impact": "medium"
+        },
+        {
+          "name": "clear_old_prompts",
+          "memory_impact": "medium"
+        }
+      ]
+    },
+    "ocr_generative": {
+      "description": "TrOCR infer: internal generate() on pixel batch.",
+      "profiling_method": "infer",
+      "inputs": [
+        {
+          "name": "images",
+          "kind": "image_batch",
+          "required": true,
+          "memory_impact": "high",
+          "shape_from_backend_package": true
+        }
+      ],
+      "method_kwargs_memory_relevant": [
+        {
+          "name": "max_new_tokens",
+          "memory_impact": "critical",
+          "resolution": {
+            "static": {
+              "file": "generation_config.json",
+              "json_path": "max_new_tokens"
+            },
+            "dynamic": {
+              "file": "generate_defaults",
+              "json_path": "model.generate"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "registry_entries": [
+    {
+      "architecture": "clip",
+      "task_type": "embedding",
+      "backend": "onnx",
+      "module_name": "inference_models.models.clip.clip_onnx",
+      "class_name": "ClipOnnx",
+      "task_inference_profile": "embedding",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "clip",
+      "task_type": "embedding",
+      "backend": "torch",
+      "module_name": "inference_models.models.clip.clip_pytorch",
+      "class_name": "ClipTorch",
+      "task_inference_profile": "embedding",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "deep-lab-v3-plus",
+      "task_type": "semantic-segmentation",
+      "backend": "onnx",
+      "module_name": "inference_models.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx",
+      "class_name": "DeepLabV3PlusForSemanticSegmentationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "deep-lab-v3-plus",
+      "task_type": "semantic-segmentation",
+      "backend": "torch",
+      "module_name": "inference_models.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_torch",
+      "class_name": "DeepLabV3PlusForSemanticSegmentationTorch",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "deep-lab-v3-plus",
+      "task_type": "semantic-segmentation",
+      "backend": "trt",
+      "module_name": "inference_models.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_trt",
+      "class_name": "DeepLabV3PlusForSemanticSegmentationTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "depth-anything-v2",
+      "task_type": "depth-estimation",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.depth_anything_v2.depth_anything_v2_hf",
+      "class_name": "DepthAnythingV2HF",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "depth-anything-v3",
+      "task_type": "depth-estimation",
+      "backend": "torch",
+      "module_name": "inference_models.models.depth_anything_v3.depth_anything_v3_torch",
+      "class_name": "DepthAnythingV3Torch",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "dinov3_probe",
+      "task_type": "classification",
+      "backend": "onnx",
+      "module_name": "inference_models.models.dinov3.dinov3_classification_onnx",
+      "class_name": "DinoV3ForClassificationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "dinov3_probe",
+      "task_type": "classification",
+      "backend": "torch",
+      "module_name": "inference_models.models.dinov3.dinov3_classification_torch",
+      "class_name": "DinoV3ForClassificationTorch",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "dinov3_probe",
+      "task_type": "multi-label-classification",
+      "backend": "onnx",
+      "module_name": "inference_models.models.dinov3.dinov3_classification_onnx",
+      "class_name": "DinoV3ForMultiLabelClassificationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "dinov3_probe",
+      "task_type": "multi-label-classification",
+      "backend": "torch",
+      "module_name": "inference_models.models.dinov3.dinov3_classification_torch",
+      "class_name": "DinoV3ForMultiLabelClassificationTorch",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "doctr",
+      "task_type": "structured-ocr",
+      "backend": "torch",
+      "module_name": "inference_models.models.doctr.doctr_torch",
+      "class_name": "DocTR",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow",
+      "required_model_features": [
+        "doctr_vocab_127"
+      ],
+      "supported_model_features": [
+        "doctr_vocab_127"
+      ]
+    },
+    {
+      "architecture": "easy-ocr",
+      "task_type": "structured-ocr",
+      "backend": "torch",
+      "module_name": "inference_models.models.easy_ocr.easy_ocr_torch",
+      "class_name": "EasyOCRTorch",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "florence-2",
+      "task_type": "vlm",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.florence2.florence2_hf",
+      "class_name": "Florence2HF",
+      "task_inference_profile": "vlm_florence2",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "gemma-4",
+      "task_type": "vlm",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.gemma4.gemma4_hf",
+      "class_name": "Gemma4HF",
+      "task_inference_profile": "vlm_prompt",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "glm-ocr",
+      "task_type": "vlm",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.glm_ocr.glm_ocr_hf",
+      "class_name": "GlmOcrHF",
+      "task_inference_profile": "vlm_prompt",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "grounding-dino",
+      "task_type": "open-vocabulary-object-detection",
+      "backend": "torch",
+      "module_name": "inference_models.models.grounding_dino.grounding_dino_torch",
+      "class_name": "GroundingDinoForObjectDetectionTorch",
+      "task_inference_profile": "open_vocabulary_detection",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "l2cs-net",
+      "task_type": "gaze-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.l2cs.l2cs_onnx",
+      "class_name": "L2CSNetOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "moondream2",
+      "task_type": "vlm",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.moondream2.moondream2_hf",
+      "class_name": "MoonDream2HF",
+      "task_inference_profile": "vlm_moondream2",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "owlv2",
+      "task_type": "open-vocabulary-object-detection",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.owlv2.owlv2_hf",
+      "class_name": "OWLv2HF",
+      "task_inference_profile": "open_vocabulary_detection",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "paligemma",
+      "task_type": "vlm",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.paligemma.paligemma_hf",
+      "class_name": "PaliGemmaHF",
+      "task_inference_profile": "vlm_prompt",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "paligemma-2",
+      "task_type": "vlm",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.paligemma.paligemma_hf",
+      "class_name": "PaliGemmaHF",
+      "task_inference_profile": "vlm_prompt",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "perception-encoder",
+      "task_type": "embedding",
+      "backend": "torch",
+      "module_name": "inference_models.models.perception_encoder.perception_encoder_pytorch",
+      "class_name": "PerceptionEncoderTorch",
+      "task_inference_profile": "embedding",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "qwen25vl",
+      "task_type": "vlm",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.qwen25vl.qwen25vl_hf",
+      "class_name": "Qwen25VLHF",
+      "task_inference_profile": "vlm_prompt",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "qwen3_5",
+      "task_type": "vlm",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.qwen3_5.qwen3_5_hf",
+      "class_name": "Qwen35HF",
+      "task_inference_profile": "vlm_prompt",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "qwen3vl",
+      "task_type": "vlm",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.qwen3vl.qwen3vl_hf",
+      "class_name": "Qwen3VLHF",
+      "task_inference_profile": "vlm_prompt",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "resnet",
+      "task_type": "classification",
+      "backend": "onnx",
+      "module_name": "inference_models.models.resnet.resnet_classification_onnx",
+      "class_name": "ResNetForClassificationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "resnet",
+      "task_type": "classification",
+      "backend": "torch",
+      "module_name": "inference_models.models.resnet.resnet_classification_torch",
+      "class_name": "ResNetForClassificationTorch",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "resnet",
+      "task_type": "classification",
+      "backend": "trt",
+      "module_name": "inference_models.models.resnet.resnet_classification_trt",
+      "class_name": "ResNetForClassificationTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "resnet",
+      "task_type": "multi-label-classification",
+      "backend": "onnx",
+      "module_name": "inference_models.models.resnet.resnet_classification_onnx",
+      "class_name": "ResNetForMultiLabelClassificationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "resnet",
+      "task_type": "multi-label-classification",
+      "backend": "torch",
+      "module_name": "inference_models.models.resnet.resnet_classification_torch",
+      "class_name": "ResNetForMultiLabelClassificationTorch",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "resnet",
+      "task_type": "multi-label-classification",
+      "backend": "trt",
+      "module_name": "inference_models.models.resnet.resnet_classification_trt",
+      "class_name": "ResNetForMultiLabelClassificationTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "rfdetr",
+      "task_type": "instance-segmentation",
+      "backend": "onnx",
+      "module_name": "inference_models.models.rfdetr.rfdetr_instance_segmentation_onnx",
+      "class_name": "RFDetrForInstanceSegmentationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx",
+      "supported_model_features": [
+        "dec_layers",
+        "num_queries",
+        "num_select",
+        "num_windows",
+        "patch_size",
+        "resolution"
+      ]
+    },
+    {
+      "architecture": "rfdetr",
+      "task_type": "instance-segmentation",
+      "backend": "torch",
+      "module_name": "inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch",
+      "class_name": "RFDetrForInstanceSegmentationTorch",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "rfdetr",
+      "task_type": "instance-segmentation",
+      "backend": "trt",
+      "module_name": "inference_models.models.rfdetr.rfdetr_instance_segmentation_trt",
+      "class_name": "RFDetrForInstanceSegmentationTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "rfdetr",
+      "task_type": "object-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.rfdetr.rfdetr_object_detection_onnx",
+      "class_name": "RFDetrForObjectDetectionONNX",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx",
+      "supported_model_features": [
+        "dec_layers",
+        "num_queries",
+        "num_select",
+        "num_windows",
+        "patch_size",
+        "resolution"
+      ]
+    },
+    {
+      "architecture": "rfdetr",
+      "task_type": "object-detection",
+      "backend": "torch",
+      "module_name": "inference_models.models.rfdetr.rfdetr_object_detection_pytorch",
+      "class_name": "RFDetrForObjectDetectionTorch",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "rfdetr",
+      "task_type": "object-detection",
+      "backend": "trt",
+      "module_name": "inference_models.models.rfdetr.rfdetr_object_detection_trt",
+      "class_name": "RFDetrForObjectDetectionTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "roboflow-instant",
+      "task_type": "object-detection",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.roboflow_instant.roboflow_instant_hf",
+      "class_name": "RoboflowInstantHF",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "sam",
+      "task_type": "interactive-instance-segmentation",
+      "backend": "torch",
+      "module_name": "inference_models.models.sam.sam_torch",
+      "class_name": "SAMTorch",
+      "task_inference_profile": "interactive_sam",
+      "package_input_backend": "torch",
+      "torch_package_variant": "sam"
+    },
+    {
+      "architecture": "sam2",
+      "task_type": "interactive-instance-segmentation",
+      "backend": "torch",
+      "module_name": "inference_models.models.sam2.sam2_torch",
+      "class_name": "SAM2Torch",
+      "task_inference_profile": "interactive_sam",
+      "package_input_backend": "torch",
+      "torch_package_variant": "sam"
+    },
+    {
+      "architecture": "sam2video",
+      "task_type": "instance-segmentation",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.sam2_video.sam2_video_hf",
+      "class_name": "SAM2Video",
+      "task_inference_profile": "video_tracking",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "sam3",
+      "task_type": "instance-segmentation",
+      "backend": "torch",
+      "module_name": "inference_models.models.sam3.sam3_torch",
+      "class_name": "SAM3Torch",
+      "task_inference_profile": "sam3_text_segmentation",
+      "package_input_backend": "torch",
+      "torch_package_variant": "sam3"
+    },
+    {
+      "architecture": "sam3",
+      "task_type": "interactive-instance-segmentation",
+      "backend": "torch",
+      "module_name": "inference_models.models.sam3.sam3_torch",
+      "class_name": "SAM3Torch",
+      "task_inference_profile": "interactive_sam",
+      "package_input_backend": "torch",
+      "torch_package_variant": "sam3"
+    },
+    {
+      "architecture": "segment-anything-2-rt",
+      "task_type": "instance-segmentation",
+      "backend": "torch",
+      "module_name": "inference_models.models.sam2_rt.sam2_pytorch",
+      "class_name": "SAM2ForStream",
+      "task_inference_profile": "video_tracking",
+      "package_input_backend": "torch",
+      "torch_package_variant": "roboflow"
+    },
+    {
+      "architecture": "smolvlm-v2",
+      "task_type": "vlm",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.smolvlm.smolvlm_hf",
+      "class_name": "SmolVLMHF",
+      "task_inference_profile": "vlm_prompt",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "tr-ocr",
+      "task_type": "text-only-ocr",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.trocr.trocr_hf",
+      "class_name": "TROcrHF",
+      "task_inference_profile": "ocr_generative",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "vit",
+      "task_type": "classification",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.vit.vit_classification_huggingface",
+      "class_name": "VITForClassificationHF",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "vit",
+      "task_type": "classification",
+      "backend": "onnx",
+      "module_name": "inference_models.models.vit.vit_classification_onnx",
+      "class_name": "VITForClassificationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "vit",
+      "task_type": "classification",
+      "backend": "trt",
+      "module_name": "inference_models.models.vit.vit_classification_trt",
+      "class_name": "VITForClassificationTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "vit",
+      "task_type": "multi-label-classification",
+      "backend": "hugging-face",
+      "module_name": "inference_models.models.vit.vit_classification_huggingface",
+      "class_name": "VITForMultiLabelClassificationHF",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "hugging-face"
+    },
+    {
+      "architecture": "vit",
+      "task_type": "multi-label-classification",
+      "backend": "onnx",
+      "module_name": "inference_models.models.vit.vit_classification_onnx",
+      "class_name": "VITForMultiLabelClassificationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "vit",
+      "task_type": "multi-label-classification",
+      "backend": "trt",
+      "module_name": "inference_models.models.vit.vit_classification_trt",
+      "class_name": "VITForMultiLabelClassificationTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolact",
+      "task_type": "instance-segmentation",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolact.yolact_instance_segmentation_onnx",
+      "class_name": "YOLOACTForInstanceSegmentationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "instance-segmentation",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolo26.yolo26_instance_segmentation_onnx",
+      "class_name": "YOLO26ForInstanceSegmentationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "instance-segmentation",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolo26.yolo26_instance_segmentation_torch_script",
+      "class_name": "YOLO26ForInstanceSegmentationTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "instance-segmentation",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolo26.yolo26_instance_segmentation_trt",
+      "class_name": "YOLO26ForInstanceSegmentationTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "keypoint-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolo26.yolo26_key_points_detection_onnx",
+      "class_name": "YOLO26ForKeyPointsDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "keypoint-detection",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolo26.yolo26_key_points_detection_torch_script",
+      "class_name": "YOLO26ForKeyPointsDetectionTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "keypoint-detection",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolo26.yolo26_key_points_detection_trt",
+      "class_name": "YOLO26ForKeyPointsDetectionTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "object-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolo26.yolo26_object_detection_onnx",
+      "class_name": "YOLO26ForObjectDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "object-detection",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolo26.yolo26_object_detection_torch_script",
+      "class_name": "YOLO26ForObjectDetectionTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "object-detection",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolo26.yolo26_object_detection_trt",
+      "class_name": "YOLO26ForObjectDetectionTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "semantic-segmentation",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolo26.yolo26_semantic_segmentation_onnx",
+      "class_name": "YOLO26ForSemanticSegmentationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "semantic-segmentation",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolo26.yolo26_semantic_segmentation_torch_script",
+      "class_name": "YOLO26ForSemanticSegmentationTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script"
+    },
+    {
+      "architecture": "yolo26",
+      "task_type": "semantic-segmentation",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolo26.yolo26_semantic_segmentation_trt",
+      "class_name": "YOLO26ForSemanticSegmentationTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yololite",
+      "task_type": "object-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yololite.yololite_object_detection_onnx",
+      "class_name": "YOLOLiteForObjectDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolonas",
+      "task_type": "object-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolonas.yolonas_object_detection_onnx",
+      "class_name": "YOLONasForObjectDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolonas",
+      "task_type": "object-detection",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolonas.yolonas_object_detection_trt",
+      "class_name": "YOLONasForObjectDetectionTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolov10",
+      "task_type": "object-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov10.yolov10_object_detection_onnx",
+      "class_name": "YOLOv10ForObjectDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolov10",
+      "task_type": "object-detection",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolov10.yolov10_object_detection_trt",
+      "class_name": "YOLOv10ForObjectDetectionTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolov11",
+      "task_type": "classification",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov11.yolov11_onnx",
+      "class_name": "YOLOv11ForClassificationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolov11",
+      "task_type": "instance-segmentation",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov11.yolov11_onnx",
+      "class_name": "YOLOv11ForInstanceSegmentationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov11",
+      "task_type": "instance-segmentation",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolov11.yolov11_torch_script",
+      "class_name": "YOLOv11ForInstanceSegmentationTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov11",
+      "task_type": "instance-segmentation",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolov11.yolov11_trt",
+      "class_name": "YOLOv11ForInstanceSegmentationTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolov11",
+      "task_type": "keypoint-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov11.yolov11_onnx",
+      "class_name": "YOLOv11ForForKeyPointsDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov11",
+      "task_type": "keypoint-detection",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolov11.yolov11_torch_script",
+      "class_name": "YOLOv11ForForKeyPointsDetectionTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov11",
+      "task_type": "keypoint-detection",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolov11.yolov11_trt",
+      "class_name": "YOLOv11ForForKeyPointsDetectionTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolov11",
+      "task_type": "object-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov11.yolov11_onnx",
+      "class_name": "YOLOv11ForObjectDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov11",
+      "task_type": "object-detection",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolov11.yolov11_torch_script",
+      "class_name": "YOLOv11ForObjectDetectionTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov11",
+      "task_type": "object-detection",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolov11.yolov11_trt",
+      "class_name": "YOLOv11ForObjectDetectionTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolov12",
+      "task_type": "object-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov12.yolov12_onnx",
+      "class_name": "YOLOv12ForObjectDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov12",
+      "task_type": "object-detection",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolov12.yolov12_torch_script",
+      "class_name": "YOLOv12ForObjectDetectionTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov12",
+      "task_type": "object-detection",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolov12.yolov12_trt",
+      "class_name": "YOLOv12ForObjectDetectionTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolov5",
+      "task_type": "instance-segmentation",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov5.yolov5_instance_segmentation_onnx",
+      "class_name": "YOLOv5ForInstanceSegmentationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolov5",
+      "task_type": "object-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov5.yolov5_object_detection_onnx",
+      "class_name": "YOLOv5ForObjectDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolov7",
+      "task_type": "instance-segmentation",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov7.yolov7_instance_segmentation_onnx",
+      "class_name": "YOLOv7ForInstanceSegmentationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolov8",
+      "task_type": "classification",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov8.yolov8_classification_onnx",
+      "class_name": "YOLOv8ForClassificationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx"
+    },
+    {
+      "architecture": "yolov8",
+      "task_type": "instance-segmentation",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov8.yolov8_instance_segmentation_onnx",
+      "class_name": "YOLOv8ForInstanceSegmentationOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov8",
+      "task_type": "instance-segmentation",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolov8.yolov8_instance_segmentation_torch_script",
+      "class_name": "YOLOv8ForInstanceSegmentationTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov8",
+      "task_type": "instance-segmentation",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolov8.yolov8_instance_segmentation_trt",
+      "class_name": "YOLOv8ForInstanceSegmentationTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolov8",
+      "task_type": "keypoint-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov8.yolov8_key_points_detection_onnx",
+      "class_name": "YOLOv8ForKeyPointsDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov8",
+      "task_type": "keypoint-detection",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolov8.yolov8_key_points_detection_torch_script",
+      "class_name": "YOLOv8ForKeyPointsDetectionTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov8",
+      "task_type": "keypoint-detection",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolov8.yolov8_key_points_detection_trt",
+      "class_name": "YOLOv8ForKeyPointsDetectionTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolov8",
+      "task_type": "object-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov8.yolov8_object_detection_onnx",
+      "class_name": "YOLOv8ForObjectDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov8",
+      "task_type": "object-detection",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolov8.yolov8_object_detection_torch_script",
+      "class_name": "YOLOv8ForObjectDetectionTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov8",
+      "task_type": "object-detection",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolov8.yolov8_object_detection_trt",
+      "class_name": "YOLOv8ForObjectDetectionTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    },
+    {
+      "architecture": "yolov9",
+      "task_type": "object-detection",
+      "backend": "onnx",
+      "module_name": "inference_models.models.yolov9.yolov9_onnx",
+      "class_name": "YOLOv9ForObjectDetectionOnnx",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "onnx",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov9",
+      "task_type": "object-detection",
+      "backend": "torch-script",
+      "module_name": "inference_models.models.yolov9.yolov9_torch_script",
+      "class_name": "YOLOv9ForObjectDetectionTorchScript",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "torch-script",
+      "supported_model_features": [
+        "nms_fused"
+      ]
+    },
+    {
+      "architecture": "yolov9",
+      "task_type": "object-detection",
+      "backend": "trt",
+      "module_name": "inference_models.models.yolov9.yolov9_trt",
+      "class_name": "YOLOv9ForObjectDetectionTRT",
+      "task_inference_profile": "vision_infer",
+      "package_input_backend": "trt"
+    }
+  ]
+}
