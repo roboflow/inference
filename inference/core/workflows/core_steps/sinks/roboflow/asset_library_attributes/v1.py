@@ -283,17 +283,11 @@ def _normalize_to_per_row(value: Any, n: int) -> List[Any]:
     if isinstance(value, dict):
         if not any(isinstance(v, Batch) for v in value.values()):
             return [value] * n
-        return [
-            {k: _resolve_element(v, i) for k, v in value.items()}
-            for i in range(n)
-        ]
+        return [{k: _resolve_element(v, i) for k, v in value.items()} for i in range(n)]
     if isinstance(value, list):
         if not any(isinstance(v, Batch) for v in value):
             return [value] * n
-        return [
-            [_resolve_element(v, i) for v in value]
-            for i in range(n)
-        ]
+        return [[_resolve_element(v, i) for v in value] for i in range(n)]
     return [value] * n
 
 
