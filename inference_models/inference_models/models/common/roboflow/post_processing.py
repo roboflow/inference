@@ -745,6 +745,11 @@ def post_process_semantic_segmentation_logits(
     softmax over classes → argmax → place into original-image canvas if
     static_crop was applied → apply per-class confidence threshold
     (sub-threshold pixels collapse to background_class_id).
+
+    Single-channel (K==1) outputs are the Ultralytics binary (``nc==1``) head:
+    instead of softmax+argmax, the sigmoid foreground probability is used and the
+    lone foreground class is read from ``class_names`` (``[background, <fg>]``).
+    Sub-threshold pixels collapse to background via the same threshold step.
     """
     confidence_filter = ConfidenceFilter(
         confidence=confidence,
@@ -809,10 +814,25 @@ def post_process_semantic_segmentation_logits(
                 ],
                 interpolation=functional.InterpolationMode.BILINEAR,
             )
-        image_results = torch.nn.functional.softmax(image_results, dim=0)
-        image_confidence, image_class_ids = torch.max(image_results, dim=0)
-        if len(class_names) == image_results.shape[0] + 1:
-            image_class_ids = image_class_ids + 1
+        if image_results.shape[0] == 1:
+            # Binary (Ultralytics nc==1) head emits a single foreground logit;
+            # softmax over one channel is degenerate (≡1.0), so use the sigmoid
+            # foreground probability. class_names is [background, <foreground>];
+            # every pixel is provisionally that foreground class and sub-threshold
+            # pixels collapse to background below.
+            image_confidence = image_results[0].sigmoid()
+            foreground_id = next(
+                (i for i in range(len(class_names)) if i != background_class_id),
+                background_class_id,
+            )
+            image_class_ids = torch.full_like(
+                image_confidence, foreground_id, dtype=torch.long
+            )
+        else:
+            image_results = torch.nn.functional.softmax(image_results, dim=0)
+            image_confidence, image_class_ids = torch.max(image_results, dim=0)
+            if len(class_names) == image_results.shape[0] + 1:
+                image_class_ids = image_class_ids + 1
         if (
             image_metadata.static_crop_offset.offset_x > 0
             or image_metadata.static_crop_offset.offset_y > 0
