@@ -64,7 +64,6 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.prototypes.block import BlockResult
-from inference.core.utils.nsight import nsight_range
 
 T = TypeVar("T")
 
@@ -267,54 +266,44 @@ def convert_inference_detections_batch_to_sv_detections(
     predictions_key: str = "predictions",
     image_key: str = "image",
 ) -> List[sv.Detections]:
-    with nsight_range("workflow.to_sv.convert_inference_batch"):
-        batch_of_detections: List[sv.Detections] = []
-        for p in predictions:
-            width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
-            with nsight_range("workflow.to_sv.convert.from_inference"):
-                with nsight_range("workflow.to_sv.convert.fast_polygon"):
-                    fast_result = _try_convert_polygon_predictions_to_sv_detections(
-                        prediction=p,
-                        predictions_key=predictions_key,
-                        image_key=image_key,
-                    )
-                if fast_result is None:
-                    detections = sv.Detections.from_inference(p)
-                    raw_predictions = p[predictions_key]
-                    if len(detections) != len(raw_predictions):
-                        with nsight_range(
-                            "workflow.to_sv.convert.filter_invalid_polygons"
-                        ):
-                            raw_predictions = filter_out_invalid_polygons(
-                                predictions=raw_predictions
-                            )
-                else:
-                    detections, raw_predictions = fast_result
-            with nsight_range("workflow.to_sv.convert.metadata_arrays"):
-                parent_ids = [d.get(PARENT_ID_KEY, "") for d in raw_predictions]
-                detection_ids = [
-                    _get_or_create_detection_id(d) for d in raw_predictions
-                ]
-                detections[DETECTION_ID_KEY] = np.array(detection_ids)
-                detections[PARENT_ID_KEY] = np.array(parent_ids)
-                detections[IMAGE_DIMENSIONS_KEY] = np.array(
-                    [[height, width]] * len(detections)
+    batch_of_detections: List[sv.Detections] = []
+    for p in predictions:
+        width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
+        fast_result = _try_convert_polygon_predictions_to_sv_detections(
+            prediction=p,
+            predictions_key=predictions_key,
+            image_key=image_key,
+        )
+        if fast_result is None:
+            detections = sv.Detections.from_inference(p)
+            raw_predictions = p[predictions_key]
+            if len(detections) != len(raw_predictions):
+                raw_predictions = filter_out_invalid_polygons(
+                    predictions=raw_predictions
                 )
-                if INFERENCE_ID_KEY in p:
-                    detections[INFERENCE_ID_KEY] = np.array(
-                        [p[INFERENCE_ID_KEY]] * len(detections)
-                    )
-            with nsight_range("workflow.to_sv.convert.rle_masks"):
-                rle_masks = [
-                    d.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE) or d.get("rle")
-                    for d in raw_predictions
-                ]
-                if any(m is not None for m in rle_masks):
-                    detections.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
-                        rle_masks, dtype=object
-                    )
-            batch_of_detections.append(detections)
-        return batch_of_detections
+        else:
+            detections, raw_predictions = fast_result
+
+        parent_ids = [d.get(PARENT_ID_KEY, "") for d in raw_predictions]
+        detection_ids = [_get_or_create_detection_id(d) for d in raw_predictions]
+        detections[DETECTION_ID_KEY] = np.array(detection_ids)
+        detections[PARENT_ID_KEY] = np.array(parent_ids)
+        detections[IMAGE_DIMENSIONS_KEY] = np.array([[height, width]] * len(detections))
+        if INFERENCE_ID_KEY in p:
+            detections[INFERENCE_ID_KEY] = np.array(
+                [p[INFERENCE_ID_KEY]] * len(detections)
+            )
+
+        rle_masks = [
+            d.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE) or d.get("rle")
+            for d in raw_predictions
+        ]
+        if any(m is not None for m in rle_masks):
+            detections.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
+                rle_masks, dtype=object
+            )
+        batch_of_detections.append(detections)
+    return batch_of_detections
 
 
 def add_inference_keypoints_to_sv_detections(

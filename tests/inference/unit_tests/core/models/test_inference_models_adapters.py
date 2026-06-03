@@ -2,14 +2,12 @@
 
 from collections import deque
 from concurrent.futures import Future
-from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
 import torch
 
 from inference.core.exceptions import PostProcessingError
-from inference.core.models import inference_models_adapters as adapters_module
 from inference.core.models.inference_models_adapters import (
     InferenceModelsInstanceSegmentationAdapter,
     prepare_classification_response,
@@ -74,7 +72,6 @@ def _make_meta(tag: str):
 
 
 def _make_pipeline_adapter(
-    monkeypatch: pytest.MonkeyPatch,
     futures: list[_FakePipelineFuture],
     ops: list[str],
     pipeline_depth: int = 2,
@@ -96,12 +93,6 @@ def _make_pipeline_adapter(
         ]
     )
 
-    monkeypatch.setattr(adapters_module, "nsight_current_frame_id", lambda: 0)
-    monkeypatch.setattr(adapters_module, "nsight_frame_label", lambda *_args: "trace")
-    monkeypatch.setattr(adapters_module, "nsight_mark", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(
-        adapters_module, "nsight_range", lambda *_args, **_kwargs: nullcontext()
-    )
     return adapter
 
 
@@ -179,14 +170,11 @@ def test_prepare_classification_response_fails_on_class_count_mismatch() -> None
         )
 
 
-def test_pipeline_submits_previous_future_before_next_forward(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_pipeline_submits_previous_future_before_next_forward() -> None:
     ops: list[str] = []
     future_1 = _FakePipelineFuture(name="f1", ops=ops)
     future_2 = _FakePipelineFuture(name="f2", ops=ops)
     adapter = _make_pipeline_adapter(
-        monkeypatch=monkeypatch,
         futures=[future_1, future_2],
         ops=ops,
         pipeline_depth=2,
@@ -209,14 +197,11 @@ def test_pipeline_submits_previous_future_before_next_forward(
     assert ops == ["forward:f1", "submit:f1", "forward:f2"]
 
 
-def test_pipeline_returns_previous_frame_response_using_previous_metadata(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_pipeline_returns_previous_frame_response_using_previous_metadata() -> None:
     ops: list[str] = []
     future_1 = _FakePipelineFuture(name="f1", ops=ops)
     future_2 = _FakePipelineFuture(name="f2", ops=ops)
     adapter = _make_pipeline_adapter(
-        monkeypatch=monkeypatch,
         futures=[future_1, future_2],
         ops=ops,
         pipeline_depth=2,
@@ -246,13 +231,10 @@ def test_pipeline_returns_previous_frame_response_using_previous_metadata(
     ]
 
 
-def test_pipeline_flush_submits_remaining_gpu_work_before_finalizing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_pipeline_flush_submits_remaining_gpu_work_before_finalizing() -> None:
     ops: list[str] = []
     future_1 = _FakePipelineFuture(name="f1", ops=ops)
     adapter = _make_pipeline_adapter(
-        monkeypatch=monkeypatch,
         futures=[future_1],
         ops=ops,
         pipeline_depth=2,
@@ -269,15 +251,12 @@ def test_pipeline_flush_submits_remaining_gpu_work_before_finalizing(
     assert ops == ["forward:f1", "submit:f1", "result:f1"]
 
 
-def test_pipeline_depth_three_submits_oldest_pending_before_forward(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_pipeline_depth_three_submits_oldest_pending_before_forward() -> None:
     ops: list[str] = []
     future_1 = _FakePipelineFuture(name="f1", ops=ops)
     future_2 = _FakePipelineFuture(name="f2", ops=ops)
     future_3 = _FakePipelineFuture(name="f3", ops=ops)
     adapter = _make_pipeline_adapter(
-        monkeypatch=monkeypatch,
         futures=[future_1, future_2, future_3],
         ops=ops,
         pipeline_depth=3,

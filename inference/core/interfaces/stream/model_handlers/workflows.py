@@ -5,11 +5,6 @@ from inference.core.interfaces.stream.entities import InferenceHandlerResult
 from inference.core.interfaces.stream.model_handlers.workflows_context import (
     workflow_stream_flush_context,
 )
-from inference.core.utils.nsight import (
-    nsight_frame_context,
-    nsight_frame_label,
-    nsight_mark,
-)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
 
@@ -35,11 +30,7 @@ class WorkflowRunner:
     def __call__(
         self, video_frames: List[VideoFrame]
     ) -> Optional[InferenceHandlerResult]:
-        frame_id = _video_frames_trace_id(video_frames=video_frames)
-        with nsight_frame_context(frame_id=frame_id):
-            nsight_mark(nsight_frame_label(frame_id, "cpu_start"))
-            predictions = self._run_workflow(video_frames=video_frames)
-            nsight_mark(nsight_frame_label(frame_id, "gpu_submitted"))
+        predictions = self._run_workflow(video_frames=video_frames)
         stream_buffer_depth = self._stream_buffer_depth()
         if stream_buffer_depth <= 0:
             self._pending_video_frames.clear()
@@ -137,12 +128,3 @@ class WorkflowRunner:
                 else:
                     stream_buffer_depth = max(stream_buffer_depth, 1)
         return stream_buffer_depth
-
-
-def _video_frames_trace_id(video_frames: List[VideoFrame]) -> Optional[str]:
-    if not video_frames:
-        return None
-    frame_ids = [str(video_frame.frame_id) for video_frame in video_frames]
-    if len(frame_ids) == 1:
-        return frame_ids[0]
-    return ",".join(frame_ids)

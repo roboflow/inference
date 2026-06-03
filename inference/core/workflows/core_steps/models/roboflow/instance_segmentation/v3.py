@@ -21,7 +21,6 @@ from inference.core.interfaces.stream.model_handlers.workflows_context import (
     is_workflow_stream_flush_active,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.utils.nsight import nsight_frame_label, nsight_mark, nsight_range
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -413,17 +412,12 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             class_filter,
             model_id,
         )
-        trace_frame_id = getattr(predictions_future, "_trace_frame_id", None)
-        finalized_result_future._trace_frame_id = (  # type: ignore[attr-defined]
-            trace_frame_id
-        )
         return [
             {
                 "inference_id": None,
                 "predictions": self._submit_async_prediction_selector(
                     result_future=finalized_result_future,
                     image_index=image_index,
-                    trace_frame_id=trace_frame_id,
                 ),
                 "model_id": model_id,
             }
@@ -434,15 +428,12 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         self,
         result_future: Future,
         image_index: int,
-        trace_frame_id: Optional[str],
     ) -> Future:
-        prediction_future = self._get_stream_response_executor().submit(
+        return self._get_stream_response_executor().submit(
             self._select_async_prediction_value,
             result_future,
             image_index,
         )
-        prediction_future._trace_frame_id = trace_frame_id  # type: ignore[attr-defined]
-        return prediction_future
 
     def _finalize_async_prediction_value(
         self,
@@ -451,39 +442,23 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         class_filter: Optional[List[str]],
         model_id: str,
     ) -> BlockResult:
-        trace_frame_id = getattr(predictions_future, "_trace_frame_id", None)
-        nsight_mark(nsight_frame_label(trace_frame_id, "workflow_finalize_start"))
-        with nsight_range(
-            nsight_frame_label(trace_frame_id, "workflow_finalize.total")
-        ):
-            with nsight_range(
-                nsight_frame_label(trace_frame_id, "workflow_finalize.await_response")
-            ):
-                predictions = predictions_future.result()
-            if not isinstance(predictions, list):
-                predictions = [predictions]
-            with nsight_range(
-                nsight_frame_label(trace_frame_id, "workflow_finalize.response_to_dict")
-            ):
-                predictions = [
-                    (
-                        _is_response_dc_to_dict(e)
-                        if isinstance(e, InstanceSegmentationInferenceResponseDC)
-                        else e.model_dump(by_alias=True, exclude_none=True)
-                    )
-                    for e in predictions
-                ]
-            with nsight_range(
-                nsight_frame_label(trace_frame_id, "workflow_finalize.to_sv")
-            ):
-                result = self._post_process_result(
-                    images=images,
-                    predictions=predictions,
-                    class_filter=class_filter,
-                    model_id=model_id,
-                )
-        nsight_mark(nsight_frame_label(trace_frame_id, "workflow_finalize_complete"))
-        return result
+        predictions = predictions_future.result()
+        if not isinstance(predictions, list):
+            predictions = [predictions]
+        predictions = [
+            (
+                _is_response_dc_to_dict(e)
+                if isinstance(e, InstanceSegmentationInferenceResponseDC)
+                else e.model_dump(by_alias=True, exclude_none=True)
+            )
+            for e in predictions
+        ]
+        return self._post_process_result(
+            images=images,
+            predictions=predictions,
+            class_filter=class_filter,
+            model_id=model_id,
+        )
 
     def _select_async_prediction_value(
         self,
@@ -579,25 +554,19 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         model_id: str,
     ) -> BlockResult:
         inference_ids = [p.get(INFERENCE_ID_KEY, None) for p in predictions]
-        with nsight_range("workflow.to_sv.convert_inference"):
-            predictions = convert_inference_detections_batch_to_sv_detections(
-                predictions
-            )
-        with nsight_range("workflow.to_sv.attach_prediction_type"):
-            predictions = attach_prediction_type_info_to_sv_detections_batch(
-                predictions=predictions,
-                prediction_type="instance-segmentation",
-            )
-        with nsight_range("workflow.to_sv.class_filter"):
-            predictions = filter_out_unwanted_classes_from_sv_detections_batch(
-                predictions=predictions,
-                classes_to_accept=class_filter,
-            )
-        with nsight_range("workflow.to_sv.attach_parents"):
-            predictions = attach_parents_coordinates_to_batch_of_sv_detections(
-                images=images,
-                predictions=predictions,
-            )
+        predictions = convert_inference_detections_batch_to_sv_detections(predictions)
+        predictions = attach_prediction_type_info_to_sv_detections_batch(
+            predictions=predictions,
+            prediction_type="instance-segmentation",
+        )
+        predictions = filter_out_unwanted_classes_from_sv_detections_batch(
+            predictions=predictions,
+            classes_to_accept=class_filter,
+        )
+        predictions = attach_parents_coordinates_to_batch_of_sv_detections(
+            images=images,
+            predictions=predictions,
+        )
         return [
             {
                 "inference_id": inference_id,
