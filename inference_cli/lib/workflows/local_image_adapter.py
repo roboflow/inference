@@ -109,6 +109,7 @@ def process_image_directory_with_workflow_using_inference_package(
     max_failures: Optional[int] = None,
     max_concurrent_workflows_steps: int = 4,
     images_metadata_input_mapping: Optional[Dict[str, str]] = None,
+    workflows_execution_engine_init_params: Optional[Dict[str, Any]] = None,
 ) -> ImagesDirectoryProcessingDetails:
     if api_key is None:
         api_key = API_KEY
@@ -139,6 +140,7 @@ def process_image_directory_with_workflow_using_inference_package(
             debug_mode=debug_mode,
             max_failures=max_failures,
             images_metadata_input_mapping=images_metadata_input_mapping,
+            workflows_execution_engine_init_params=workflows_execution_engine_init_params,
         )
     finally:
         log_file.close()
@@ -181,6 +183,7 @@ def _process_images_within_directory(
     debug_mode: bool = False,
     max_failures: Optional[int] = None,
     images_metadata_input_mapping: Optional[Dict[str, str]] = None,
+    workflows_execution_engine_init_params: Optional[Dict[str, Any]] = None,
 ) -> List[Tuple[str, str]]:
     workflow_specification = _get_workflow_specification(
         workflow_specification=workflow_specification,
@@ -230,6 +233,7 @@ def _process_images_within_directory(
             max_concurrent_workflows_steps=max_concurrent_workflows_steps,
             debug_mode=debug_mode,
             images_metadata_input_mapping=images_metadata_input_mapping,
+            workflows_execution_engine_init_params=workflows_execution_engine_init_params,
         )
         failures = 0
         succeeded_files = set()
@@ -296,6 +300,7 @@ def _process_single_image_from_directory(
     log_file_lock: Optional[Lock] = None,
     debug_mode: bool = False,
     images_metadata_input_mapping: Optional[Dict[str, str]] = None,
+    workflows_execution_engine_init_params: Optional[Dict[str, Any]] = None,
 ) -> bool:
     metadata_driven_workflow_parameters = {}
     if images_metadata_input_mapping:
@@ -341,6 +346,7 @@ def _process_single_image_from_directory(
             api_key=api_key,
             thread_pool_executor=thread_pool_executor,
             max_concurrent_workflows_steps=max_concurrent_workflows_steps,
+            workflows_execution_engine_init_params=workflows_execution_engine_init_params,
         )
         index_entry = dump_image_processing_results(
             result=result,
@@ -408,12 +414,15 @@ def _run_workflow_for_single_image_with_inference(
     api_key: Optional[str],
     thread_pool_executor: ThreadPoolExecutor,
     max_concurrent_workflows_steps: int,
+    workflows_execution_engine_init_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": api_key,
         "workflows_core.thread_pool_executor": thread_pool_executor,
     }
+    if workflows_execution_engine_init_params:
+        workflow_init_parameters.update(workflows_execution_engine_init_params)
     execution_engine = ExecutionEngine.init(
         workflow_definition=workflow_specification,
         init_parameters=workflow_init_parameters,
