@@ -141,6 +141,9 @@ from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
     RateLimiterBlockV1,
 )
 from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
+from inference.core.workflows.core_steps.formatters.current_time.v1 import (
+    CurrentTimeBlockV1,
+)
 from inference.core.workflows.core_steps.formatters.expression.v1 import (
     ExpressionBlockV1,
 )
@@ -727,6 +730,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DimensionCollapseBlockV1,
         DetectionsListRollUpBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
+        CurrentTimeBlockV1,
         AnthropicClaudeBlockV1,
         AnthropicClaudeBlockV2,
         AnthropicClaudeBlockV3,
