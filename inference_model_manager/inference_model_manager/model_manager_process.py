@@ -122,6 +122,11 @@ def _gpu_used_fraction() -> float:
     return 0.0
 
 
+# Set once NVML is found unavailable (no libnvidia-ml.so.1 / no NVIDIA GPU, e.g.
+# Jetson-Tegra or CPU) so the telemetry loop stops retrying + spamming tracebacks.
+_NVML_DISABLED = False
+
+
 def _collect_gpu_stats(
     pid_to_flavor: Optional[dict] = None,
 ) -> dict:
@@ -140,6 +145,8 @@ def _collect_gpu_stats(
         ``per_model_gpu_mb``      — dict flavor → GPU memory MB (only populated if pid_to_flavor given)
     """
     result: dict = {"gpus": [], "per_model_gpu_mb": {}}
+    if _NVML_DISABLED:
+        return result
     try:
         import pynvml  # nvidia-ml-py
 
@@ -200,8 +207,21 @@ def _collect_gpu_stats(
                 if pid in pid_mem_mb:
                     result["per_model_gpu_mb"][flavor] = round(pid_mem_mb[pid], 1)
 
-    except Exception:
-        logger.error("_collect_gpu_stats: pynvml unavailable or failed", exc_info=True)
+    except Exception as exc:
+        # Permanent absence (no libnvidia-ml.so.1 — Jetson-Tegra / CPU) → disable so
+        # the telemetry loop stops retrying. Transient errors keep logging instead.
+        missing = "LibraryNotFound" in type(exc).__name__ or "libnvidia-ml" in str(exc)
+        if missing:
+            global _NVML_DISABLED
+            _NVML_DISABLED = True
+            logger.warning(
+                "_collect_gpu_stats: NVML unavailable (no libnvidia-ml.so.1 / no NVIDIA "
+                "GPU); GPU telemetry disabled for this process"
+            )
+        else:
+            logger.error(
+                "_collect_gpu_stats: pynvml failed", exc_info=True
+            )
 
     return result
 
