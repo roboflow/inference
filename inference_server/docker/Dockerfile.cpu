@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+
+FROM python:3.12-slim-bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates openssl \
+        libgl1 libglib2.0-0 libvips ffmpeg \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+COPY inference_models        /app/inference_models
+COPY inference_model_manager /app/inference_model_manager
+COPY inference_server        /app/inference_server
+
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
+# CWD = inference_models so its [tool.uv] index/sources apply (torch-cpu index).
+WORKDIR /app/inference_models
+RUN uv venv --python 3.12 /opt/venv \
+    && uv pip install \
+        -e ".[torch-cpu,onnx-cpu]" \
+        -e "../inference_model_manager" \
+        -e "../inference_server"
+
+WORKDIR /app/inference_server
+
+EXPOSE 8443
+
+CMD ["/bin/bash", "start_server.sh"]
