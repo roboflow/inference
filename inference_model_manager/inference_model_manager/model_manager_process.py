@@ -144,6 +144,7 @@ def _collect_gpu_stats(
         ``gpus``                  — list of per-GPU dicts (index, memory, util, temp, power)
         ``per_model_gpu_mb``      — dict flavor → GPU memory MB (only populated if pid_to_flavor given)
     """
+    global _NVML_DISABLED
     result: dict = {"gpus": [], "per_model_gpu_mb": {}}
     if _NVML_DISABLED:
         return result
@@ -212,7 +213,6 @@ def _collect_gpu_stats(
         # the telemetry loop stops retrying. Transient errors keep logging instead.
         missing = "LibraryNotFound" in type(exc).__name__ or "libnvidia-ml" in str(exc)
         if missing:
-            global _NVML_DISABLED
             _NVML_DISABLED = True
             logger.warning(
                 "_collect_gpu_stats: NVML unavailable (no libnvidia-ml.so.1 / no NVIDIA "
