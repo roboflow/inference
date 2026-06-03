@@ -1,8 +1,42 @@
+import os
+
 import numpy as np
 import pytest
 import torch
 
+from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.rle_utils import coco_rle_masks_to_torch_mask
+
+
+def _assert_instance_segmentation_predictions_match(actual, expected) -> None:
+    assert len(actual) == len(expected)
+    for actual_element, expected_element in zip(actual, expected):
+        torch.testing.assert_close(
+            actual_element.xyxy.cpu(),
+            expected_element.xyxy.cpu(),
+            atol=1.0,
+            rtol=0,
+        )
+        torch.testing.assert_close(
+            actual_element.confidence.cpu(),
+            expected_element.confidence.cpu(),
+            atol=1e-4,
+            rtol=0,
+        )
+        torch.testing.assert_close(
+            actual_element.class_id.cpu(),
+            expected_element.class_id.cpu(),
+            atol=0,
+            rtol=0,
+        )
+
+        actual_mask = actual_element.mask.detach().to(torch.bool).cpu()
+        expected_mask = expected_element.mask.detach().to(torch.bool).cpu()
+        assert tuple(actual_mask.shape) == tuple(expected_mask.shape)
+        intersection = torch.logical_and(actual_mask, expected_mask).sum().item()
+        union = torch.logical_or(actual_mask, expected_mask).sum().item()
+        assert union > 0
+        assert intersection / union >= 0.999
 
 
 @pytest.mark.slow
@@ -428,6 +462,63 @@ def test_trt_package_torch_batch(
         atol=5,
     )
     assert 16179 <= predictions[1].mask.cpu().sum().item() <= 16229
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_triton_preprocess_output_matches_reference_preprocess(
+    monkeypatch: pytest.MonkeyPatch,
+    rfdetr_seg_asl_trt_package: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    pytest.importorskip("triton")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is required for Triton preprocessing parity")
+
+    from inference_models.models.rfdetr import rfdetr_instance_segmentation_trt
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_trt import (
+        RFDetrForInstanceSegmentationTRT,
+    )
+
+    model_package = os.getenv(
+        "RFDETR_SEG_TRT_PACKAGE_PATH",
+        rfdetr_seg_asl_trt_package,
+    )
+    try:
+        model = RFDetrForInstanceSegmentationTRT.from_pretrained(
+            model_name_or_path=model_package,
+            engine_host_code_allowed=True,
+        )
+    except CorruptedModelPackageError as error:
+        if "Platform specific tag mismatch" in str(error):
+            pytest.skip("TRT engine package is not compatible with this platform")
+        raise
+
+    monkeypatch.setattr(rfdetr_instance_segmentation_trt, "_FAST_PATH_ENABLED", False)
+    reference_predictions = model(asl_image_numpy)
+
+    original_triton_preprocess = (
+        rfdetr_instance_segmentation_trt.triton_preprocess_rfdetr_stretch_two_pass_preallocated
+    )
+    triton_calls = {"count": 0}
+
+    def counting_triton_preprocess(*args, **kwargs):
+        triton_calls["count"] += 1
+        return original_triton_preprocess(*args, **kwargs)
+
+    monkeypatch.setattr(
+        rfdetr_instance_segmentation_trt,
+        "triton_preprocess_rfdetr_stretch_two_pass_preallocated",
+        counting_triton_preprocess,
+    )
+    monkeypatch.setattr(rfdetr_instance_segmentation_trt, "_FAST_PATH_ENABLED", True)
+    triton_predictions = model(asl_image_numpy)
+
+    assert triton_calls["count"] == 1
+    _assert_instance_segmentation_predictions_match(
+        actual=triton_predictions,
+        expected=reference_predictions,
+    )
 
 
 @pytest.mark.slow
