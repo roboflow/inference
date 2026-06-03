@@ -12,9 +12,12 @@ Replay-only usage:
     python development/stream_interface/rfdetr_preprocess_microbenchmark.py \
         --mode replay --cases-dir temp/rfdetr_preprocess_cases
 
-The TRT RF-DETR model has a Triton fast path that bypasses this function. Capture
-mode forces ``INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=false`` before
-loading the workflow so the reference preprocessing function is exercised.
+The TRT RF-DETR model has a Triton fast path that bypasses this function.
+Capture mode forces ``INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=false``
+before loading the workflow so the reference preprocessing function is
+exercised. Triton replay uses the same ``FastPreprocessRuntime`` helper as the
+TRT adapter rather than duplicating eligibility, buffer, and metadata logic in
+this harness.
 """
 
 import argparse
@@ -32,7 +35,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _INFERENCE_MODELS_ROOT = _REPO_ROOT / "inference_models"
 _WORKFLOW_PATH = (
@@ -41,7 +43,7 @@ _WORKFLOW_PATH = (
 _TARGET_FUNCTION = "pre_process_network_input"
 _SCHEMA_VERSION = 1
 _FORCED_PREPROC_ENV = "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED"
-_TRITON_REPLAY_STATE: Dict[Tuple[str, int, int, int, int], Any] = {}
+_TRITON_REPLAY_RUNTIMES: Dict[str, Any] = {}
 
 
 def _ensure_local_import_paths() -> None:
@@ -341,26 +343,11 @@ def _materialize_inputs(case: dict, device_override: str) -> dict:
     }
 
 
-def _uses_enabled(config: Optional[Any]) -> bool:
-    return bool(config is not None and config.enabled)
-
-
 def _run_triton_fast_preprocess(inputs: dict) -> Tuple[torch.Tensor, List[Any]]:
-    from inference_models.entities import ImageDimensions
-    from inference_models.models.common.roboflow.model_packages import (
-        ColorMode,
-        PreProcessingMetadata,
-        ResizeMode,
-        StaticCropOffset,
+    from inference_models.models.rfdetr import triton_preprocess_runtime
+    from inference_models.models.rfdetr.triton_preprocess_runtime import (
+        FastPreprocessRuntime,
     )
-    from inference_models.models.rfdetr.triton_preprocess import (
-        TRITON_AVAILABLE,
-        build_resample_tables,
-        triton_preprocess_rfdetr_stretch,
-    )
-
-    if not TRITON_AVAILABLE:
-        raise RuntimeError("Triton RF-DETR preprocessing is not available")
 
     target_device = inputs["target_device"]
     if target_device.type != "cuda":
@@ -368,132 +355,35 @@ def _run_triton_fast_preprocess(inputs: dict) -> Tuple[torch.Tensor, List[Any]]:
             f"Triton replay requires CUDA target_device, got {target_device}"
         )
 
-    images = inputs["images"]
-    if isinstance(images, list):
-        if len(images) != 1:
-            raise RuntimeError("Triton replay only supports batch size 1")
-        candidate = images[0]
-    else:
-        candidate = images
-    if (
-        not isinstance(candidate, np.ndarray)
-        or candidate.dtype != np.uint8
-        or candidate.ndim != 3
-        or candidate.shape[2] != 3
-    ):
-        raise RuntimeError(
-            "Triton replay only supports one uint8 HWC ndarray input; "
-            f"got type={type(candidate)} shape={getattr(candidate, 'shape', None)}"
-        )
+    # Capture may have forced the environment flag off in this process. Replay
+    # mode is an explicit request to exercise the Triton path, so force the
+    # runtime gate on while still using the production runtime helper.
+    triton_preprocess_runtime._FAST_PATH_ENABLED = True
 
-    if inputs["image_size_wh"] is not None:
-        raise RuntimeError("Triton replay does not support image_size_wh overrides")
-
-    image_pre_processing = inputs["image_pre_processing"]
-    if (
-        _uses_enabled(image_pre_processing.static_crop)
-        or _uses_enabled(image_pre_processing.contrast)
-        or _uses_enabled(image_pre_processing.grayscale)
-    ):
-        raise RuntimeError(
-            "Triton replay only supports cases without static crop, contrast, "
-            "or grayscale preprocessing"
+    runtime_state = _TRITON_REPLAY_RUNTIMES.get(str(target_device))
+    if runtime_state is None:
+        runtime_state = (
+            FastPreprocessRuntime(device=target_device),
+            torch.cuda.Stream(device=target_device),
         )
+        _TRITON_REPLAY_RUNTIMES[str(target_device)] = runtime_state
+    runtime, stream = runtime_state
 
-    network_input = inputs["network_input"]
-    if network_input.dataset_version_resize_dimensions is not None:
-        raise RuntimeError("Triton replay does not support dataset-version resize")
-    if network_input.input_channels != 3:
-        raise RuntimeError("Triton replay only supports 3 input channels")
-    if network_input.scaling_factor not in (None, 255):
-        raise RuntimeError(
-            "Triton replay only supports scaling_factor in (None, 255)"
-        )
-    if network_input.normalization is None:
-        raise RuntimeError("Triton replay requires network_input.normalization")
-    if network_input.resize_mode not in (
-        ResizeMode.STRETCH_TO,
-        ResizeMode.LETTERBOX,
-        ResizeMode.CENTER_CROP,
-        ResizeMode.LETTERBOX_REFLECT_EDGES,
-    ):
-        raise RuntimeError(
-            f"Triton replay does not support resize_mode={network_input.resize_mode}"
-        )
-
-    caller_mode = (
-        ColorMode(inputs["input_color_format"])
-        if inputs["input_color_format"] is not None
-        else ColorMode.BGR
+    result = runtime.try_preprocess(
+        images=inputs["images"],
+        input_color_format=inputs["input_color_format"],
+        image_size=inputs["image_size_wh"],
+        image_pre_processing=inputs["image_pre_processing"],
+        network_input=inputs["network_input"],
+        stream=stream,
     )
-    swap_rb = caller_mode != network_input.color_mode
-
-    means, stds = network_input.normalization
-    means_t = (float(means[0]), float(means[1]), float(means[2]))
-    stds_t = (float(stds[0]), float(stds[1]), float(stds[2]))
-    target_h = network_input.training_input_size.height
-    target_w = network_input.training_input_size.width
-    orig_h, orig_w = int(candidate.shape[0]), int(candidate.shape[1])
-
-    state_key = (str(target_device), orig_h, orig_w, target_h, target_w)
-    state = _TRITON_REPLAY_STATE.get(state_key)
-    if state is None:
-        pinned_host = torch.empty(
-            (orig_h, orig_w, 3), dtype=torch.uint8, pin_memory=True
+    if result is None:
+        raise RuntimeError(
+            "Captured preprocess case is not supported by FastPreprocessRuntime; "
+            "run replay with --replay-implementation reference to benchmark the "
+            "reference path."
         )
-        src_gpu = torch.empty(
-            (orig_h, orig_w, 3), dtype=torch.uint8, device=target_device
-        )
-        out_buffer = torch.empty(
-            (1, 3, target_h, target_w), dtype=torch.float32, device=target_device
-        )
-        tables = build_resample_tables(
-            src_h=orig_h,
-            src_w=orig_w,
-            target_h=target_h,
-            target_w=target_w,
-            device=target_device,
-        )
-        state = {
-            "pinned_host": pinned_host,
-            "src_gpu": src_gpu,
-            "out_buffer": out_buffer,
-            "tables": tables,
-        }
-        _TRITON_REPLAY_STATE[state_key] = state
-
-    pinned_np = state["pinned_host"].numpy()
-    np.copyto(pinned_np, candidate, casting="no")
-    state["src_gpu"].copy_(state["pinned_host"], non_blocking=True)
-    triton_preprocess_rfdetr_stretch(
-        src=state["src_gpu"],
-        tables=state["tables"],
-        target_h=target_h,
-        target_w=target_w,
-        means=means_t,
-        stds=stds_t,
-        swap_rb=swap_rb,
-        out=state["out_buffer"],
-    )
-
-    meta = PreProcessingMetadata(
-        pad_left=0,
-        pad_top=0,
-        pad_right=0,
-        pad_bottom=0,
-        original_size=ImageDimensions(width=orig_w, height=orig_h),
-        size_after_pre_processing=ImageDimensions(width=orig_w, height=orig_h),
-        inference_size=ImageDimensions(width=target_w, height=target_h),
-        scale_width=target_w / orig_w,
-        scale_height=target_h / orig_h,
-        static_crop_offset=StaticCropOffset(
-            offset_x=0,
-            offset_y=0,
-            crop_width=orig_w,
-            crop_height=orig_h,
-        ),
-    )
-    return state["out_buffer"], [meta]
+    return result.tensor, result.metadata
 
 
 def _synchronize(device: torch.device) -> None:
