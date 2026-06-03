@@ -60,7 +60,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.utils.function import experimental
-from inference.core.utils.nsight import nsight_frame_label, nsight_mark
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.profiling.core import (
     BaseWorkflowsProfiler,
@@ -954,16 +953,12 @@ class InferencePipeline:
                 self._predictions_queue.task_done()
                 break
             predictions, video_frames = inference_results
-            frame_id = _video_frames_trace_id(video_frames=video_frames)
-            nsight_mark(nsight_frame_label(frame_id, "dispatch_accept_result"))
             predictions = _resolve_prediction_futures(predictions)
-            nsight_mark(nsight_frame_label(frame_id, "dispatch_predictions_resolved"))
             if self._on_prediction is not None:
                 self._handle_predictions_dispatching(
                     predictions=predictions,
                     video_frames=video_frames,
                 )
-            nsight_mark(nsight_frame_label(frame_id, "cpu_full_complete"))
             self._predictions_queue.task_done()
 
     def _queue_inference_result(
@@ -1147,12 +1142,3 @@ def _resolve_prediction_futures(value: Any) -> Any:
             key: _resolve_prediction_futures(element) for key, element in value.items()
         }
     return value
-
-
-def _video_frames_trace_id(video_frames: List[VideoFrame]) -> Optional[str]:
-    if not video_frames:
-        return None
-    frame_ids = [str(video_frame.frame_id) for video_frame in video_frames]
-    if len(frame_ids) == 1:
-        return frame_ids[0]
-    return ",".join(frame_ids)

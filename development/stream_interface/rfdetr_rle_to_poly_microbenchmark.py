@@ -15,9 +15,6 @@ Replay-only usage:
 
     python development/stream_interface/rfdetr_rle_to_poly_microbenchmark.py \
         --mode replay --cases-dir temp/rfdetr_rle_to_poly_cases
-
-For Nsight Systems CPU/NVTX tracing, pass ``--nvtx`` during replay and profile
-with ``nsys profile --trace=nvtx,osrt --sample=process-tree``.
 """
 
 import argparse
@@ -25,7 +22,6 @@ import functools
 import importlib.util
 import json
 import os
-from contextlib import contextmanager
 from pathlib import Path
 import pickle
 import sys
@@ -294,34 +290,13 @@ def _assert_outputs_equal(
             )
 
 
-@contextmanager
-def _nvtx_range(enabled: bool, message: str):
-    if not enabled:
-        yield
-        return
-    try:
-        import torch
-
-        torch.cuda.nvtx.range_push(message)
-        try:
-            yield
-        finally:
-            torch.cuda.nvtx.range_pop()
-    except Exception:
-        yield
-
-
-def _run_one_replay_case(
-    *, case_path: Path, nvtx: bool, use_lazy_counts: bool
-) -> float:
+def _run_one_replay_case(*, case_path: Path, use_lazy_counts: bool) -> float:
     from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
 
     case = _load_case(case_path)
     masks = _materialize_masks(case=case, use_lazy_counts=use_lazy_counts)
-    label = f"rfdetr.rle_to_poly.case={case['case_index']}" f".masks={len(masks.masks)}"
     start = perf_counter()
-    with _nvtx_range(nvtx, label):
-        actual = rle_masks_to_polygons(masks)
+    actual = rle_masks_to_polygons(masks)
     elapsed = perf_counter() - start
     _assert_outputs_equal(
         actual=actual,
@@ -380,7 +355,7 @@ def _run_replay(args: argparse.Namespace) -> dict:
 
     print(
         f"[replay] cases={len(case_paths)} repeats={args.repeats} "
-        f"warmup_repeats={args.warmup_repeats} nvtx={args.nvtx} "
+        f"warmup_repeats={args.warmup_repeats} "
         f"use_lazy_counts={args.use_lazy_counts}",
         flush=True,
     )
@@ -388,7 +363,6 @@ def _run_replay(args: argparse.Namespace) -> dict:
         for case_path in case_paths:
             _run_one_replay_case(
                 case_path=case_path,
-                nvtx=args.nvtx,
                 use_lazy_counts=args.use_lazy_counts,
             )
 
@@ -398,7 +372,6 @@ def _run_replay(args: argparse.Namespace) -> dict:
             timings.append(
                 _run_one_replay_case(
                     case_path=case_path,
-                    nvtx=args.nvtx,
                     use_lazy_counts=args.use_lazy_counts,
                 )
             )
@@ -439,11 +412,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--warmup-repeats", type=int, default=0)
     parser.add_argument("--max-cases", type=int, default=None)
-    parser.add_argument(
-        "--nvtx",
-        action="store_true",
-        help="Add NVTX ranges around each replayed rle_masks2poly call.",
-    )
     parser.add_argument(
         "--use-lazy-counts",
         action=argparse.BooleanOptionalAction,

@@ -49,12 +49,6 @@ from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
-from inference.core.utils.nsight import (
-    nsight_current_frame_id,
-    nsight_frame_label,
-    nsight_mark,
-    nsight_range,
-)
 from inference.core.utils.postprocess import bitpacked_masks2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
 from inference.core.utils.visualisation import draw_detection_predictions
@@ -361,23 +355,17 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
     def preprocess(self, image: Any, **kwargs):
         is_batch = isinstance(image, list)
         images = image if is_batch else [image]
-        trace_frame_id = nsight_current_frame_id()
-        with nsight_range(nsight_frame_label(trace_frame_id, "cpu_preprocess.load")):
-            np_images: List[np.ndarray] = [
-                load_image_bgr(
-                    v,
-                    disable_preproc_auto_orient=kwargs.get(
-                        "disable_preproc_auto_orient", False
-                    ),
-                )
-                for v in images
-            ]
+        np_images: List[np.ndarray] = [
+            load_image_bgr(
+                v,
+                disable_preproc_auto_orient=kwargs.get(
+                    "disable_preproc_auto_orient", False
+                ),
+            )
+            for v in images
+        ]
         mapped_kwargs = self.map_inference_kwargs(kwargs)
-        nsight_mark(nsight_frame_label(trace_frame_id, "gpu_start"))
-        with nsight_range(nsight_frame_label(trace_frame_id, "gpu_preprocess.submit")):
-            preprocessed = self._model.pre_process(np_images, **mapped_kwargs)
-        nsight_mark(nsight_frame_label(trace_frame_id, "gpu_preprocess_submitted"))
-        return preprocessed
+        return self._model.pre_process(np_images, **mapped_kwargs)
 
     def predict(self, img_in, **kwargs):
         mapped_kwargs = self.map_inference_kwargs(kwargs)
@@ -396,14 +384,8 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         # postprocess off the current frame's postprocess() host path while
         # still preserving the correctness dependency for reused TRT outputs.
         self._submit_next_pending_gpu_work()
-        trace_frame_id = nsight_current_frame_id()
         pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
-        with nsight_range(nsight_frame_label(trace_frame_id, "gpu_forward.submit")):
-            fut = self._model.forward_async(
-                img_in, pre_processing_meta, **mapped_kwargs
-            )
-        nsight_mark(nsight_frame_label(trace_frame_id, "gpu_forward_submitted"))
-        fut._trace_frame_id = trace_frame_id  # type: ignore[attr-defined]
+        fut = self._model.forward_async(img_in, pre_processing_meta, **mapped_kwargs)
         fut._adapter_kwargs = {  # type: ignore[attr-defined]
             "mapped_kwargs": mapped_kwargs
         }
@@ -446,12 +428,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
         submit_gpu_work = getattr(fut, "submit_gpu_work", None)
         if callable(submit_gpu_work):
-            trace_frame_id = getattr(fut, "_trace_frame_id", nsight_current_frame_id())
-            with nsight_range(
-                nsight_frame_label(trace_frame_id, "gpu_postprocess.submit")
-            ):
-                submit_gpu_work(meta)
-            nsight_mark(nsight_frame_label(trace_frame_id, "gpu_postprocess_submitted"))
+            submit_gpu_work(meta)
             self._gpu_submit_generation = getattr(self, "_gpu_submit_generation", 0) + 1
             fut._adapter_gpu_submit_generation = (  # type: ignore[attr-defined]
                 self._gpu_submit_generation
@@ -475,16 +452,12 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
     ) -> None:
         fut._meta = meta  # type: ignore[attr-defined]
         fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
-        trace_frame_id = getattr(fut, "_trace_frame_id", nsight_current_frame_id())
-        fut._trace_frame_id = trace_frame_id  # type: ignore[attr-defined]
-        nsight_mark(nsight_frame_label(trace_frame_id, "cpu_response_released"))
         response_future = self._get_response_executor().submit(
             self._finalize_future,
             fut,
             meta,
             mapped_kwargs,
         )
-        response_future._trace_frame_id = trace_frame_id  # type: ignore[attr-defined]
         self._response_futures.append(response_future)
 
     def _submit_ready_responses(self) -> None:
@@ -585,26 +558,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         # because _DirectInferenceFuture's post_process is memoised.
         fut._meta = preprocess_return_metadata  # type: ignore[attr-defined]
         fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
-        trace_frame_id = getattr(fut, "_trace_frame_id", None)
-        nsight_mark(nsight_frame_label(trace_frame_id, "cpu_response_start"))
-        with nsight_range(nsight_frame_label(trace_frame_id, "cpu_postprocess.total")):
-            with nsight_range(
-                nsight_frame_label(trace_frame_id, "cpu_postprocess.await_gpu_result")
-            ):
-                detections_list = fut.result()
-            for det in detections_list:
-                try:
-                    det._trace_frame_id = trace_frame_id  # type: ignore[attr-defined]
-                except AttributeError:
-                    pass
-            with nsight_range(
-                nsight_frame_label(trace_frame_id, "cpu_postprocess.build_response")
-            ):
-                responses = self._build_responses_from_detections(
-                    detections_list, preprocess_return_metadata, **mapped_kwargs
-                )
-        nsight_mark(nsight_frame_label(trace_frame_id, "cpu_response_complete"))
-        return responses
+        detections_list = fut.result()
+        return self._build_responses_from_detections(
+            detections_list, preprocess_return_metadata, **mapped_kwargs
+        )
 
     def _postprocess_sync(
         self,
@@ -637,20 +594,9 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
         responses: List[InstanceSegmentationInferenceResponse] = []
         for preproc_metadata, det in zip(preprocess_return_metadata, detections_list):
-            trace_frame_id = getattr(det, "_trace_frame_id", nsight_current_frame_id())
             finalize_pending = getattr(det, "_finalize_pending_postproc", None)
             if callable(finalize_pending):
-                with nsight_range(
-                    nsight_frame_label(trace_frame_id, "cpu_postprocess.accept_gpu_rle")
-                ):
-                    det = finalize_pending()
-                try:
-                    det._trace_frame_id = trace_frame_id  # type: ignore[attr-defined]
-                except Exception:
-                    pass
-                nsight_mark(
-                    nsight_frame_label(trace_frame_id, "cpu_predictions_accepted")
-                )
+                det = finalize_pending()
             H = preproc_metadata.original_size.height
             W = preproc_metadata.original_size.width
 
@@ -672,9 +618,6 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 device = mask_gpu.device if dense_mask_cuda else mask_packed_gpu.device
                 stream = torch.cuda.current_stream(device)
                 done_event.wait(stream)
-                nsight_mark(
-                    nsight_frame_label(trace_frame_id, "gpu_finish_wait_enqueued")
-                )
 
                 if (
                     defer_count_to_adapter
@@ -927,8 +870,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
 
 def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
-    with nsight_range("rfdetr.rle_masks2poly"):
-        return rle_masks_to_polygons(masks=masks)
+    return rle_masks_to_polygons(masks=masks)
 
 
 class InferenceModelsKeyPointsDetectionAdapter(Model):
