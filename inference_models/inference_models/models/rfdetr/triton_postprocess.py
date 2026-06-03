@@ -20,6 +20,7 @@ run records back, sort detections by score, convert each candidate's runs into
 compressed COCO RLE counts, and wrap them in ``InstanceDetections``.
 """
 
+import warnings
 from collections import OrderedDict
 from threading import Lock
 from typing import List, Optional, Tuple, Union
@@ -29,7 +30,6 @@ import torch
 import torch.nn.functional as F
 from pycocotools import mask as mask_utils
 
-from inference_models.logger import LOGGER
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
@@ -184,9 +184,10 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         classes_re_mapping=classes_re_mapping,
     )
     if unsupported_reason is not None:
-        LOGGER.debug(
-            "RF-DETR Triton postprocess path is unsupported: %s",
-            unsupported_reason,
+        warnings.warn(
+            f"RF-DETR Triton postprocess path is unsupported: {unsupported_reason}",
+            RuntimeWarning,
+            stacklevel=2,
         )
         return None
 
