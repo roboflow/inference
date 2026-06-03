@@ -1,6 +1,5 @@
 import base64
 import io
-import os
 from collections import OrderedDict, deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from io import BytesIO
@@ -24,8 +23,8 @@ from inference.core.entities.responses.inference import (
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationInferenceResponseDC,
     InstanceSegmentationPrediction,
-    InstanceSegmentationRLEPrediction,
     InstanceSegmentationPredictionDC,
+    InstanceSegmentationRLEPrediction,
     Keypoint,
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
@@ -68,6 +67,17 @@ from inference_models import (
     ObjectDetectionModel,
     PreProcessingOverrides,
     SemanticSegmentationModel,
+)
+from inference_models.configuration import get_rfdetr_pipeline_depth
+from inference_models.models.base.async_handoff import (
+    adapter_gpu_work_submitted,
+    attach_adapter_mapped_kwargs,
+    attach_async_response_future,
+    get_adapter_gpu_submit_generation,
+    get_adapter_mapped_kwargs,
+    get_deferred_postprocess_done_event,
+    get_deferred_postprocess_finalizer,
+    mark_adapter_gpu_work_submitted,
 )
 from inference_models.models.base.instance_segmentation import InferenceFuture
 from inference_models.models.base.semantic_segmentation import (
@@ -327,7 +337,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         # means two stages in parallel: while the GPU works on the current
         # frame, the CPU prepares/submits the next frame, then harvests the
         # previous response. The response delay is therefore depth - 1 frames.
-        self._pipeline_depth = max(1, int(os.getenv("RFDETR_PIPELINE_DEPTH", "1")))
+        self._pipeline_depth = get_rfdetr_pipeline_depth()
         self._response_delay = max(1, self._pipeline_depth - 1)
         # Per-adapter in-flight futures + metadata. Not thread-safe; the
         # InferencePipeline is single-producer and the adapter is owned by a
@@ -400,9 +410,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_next_pending_gpu_work()
         pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
         fut = self._model.forward_async(img_in, pre_processing_meta, **mapped_kwargs)
-        fut._adapter_kwargs = {  # type: ignore[attr-defined]
-            "mapped_kwargs": mapped_kwargs
-        }
+        attach_adapter_mapped_kwargs(fut, mapped_kwargs)
         if pre_processing_meta is not None:
             self._submit_future_gpu_work(fut, pre_processing_meta, mapped_kwargs)
         self._submit_ready_responses()
@@ -436,7 +444,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         meta: PreprocessingMetadata,
         mapped_kwargs: dict,
     ) -> None:
-        if getattr(fut, "_adapter_gpu_work_submitted", False):
+        if adapter_gpu_work_submitted(fut):
             return None
         fut._meta = meta  # type: ignore[attr-defined]
         fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
@@ -444,10 +452,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         if callable(submit_gpu_work):
             submit_gpu_work(meta)
             self._gpu_submit_generation = getattr(self, "_gpu_submit_generation", 0) + 1
-            fut._adapter_gpu_submit_generation = (  # type: ignore[attr-defined]
-                self._gpu_submit_generation
-            )
-            fut._adapter_gpu_work_submitted = True  # type: ignore[attr-defined]
+            mark_adapter_gpu_work_submitted(fut, self._gpu_submit_generation)
 
     def _submit_next_pending_gpu_work(self) -> None:
         if not self._pending_gpu_submissions:
@@ -477,10 +482,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
     def _submit_ready_responses(self) -> None:
         while self._pending_futures:
             fut, meta, mapped_kwargs = self._pending_futures[0]
-            submit_generation = getattr(fut, "_adapter_gpu_submit_generation", None)
+            submit_generation = get_adapter_gpu_submit_generation(fut)
             if submit_generation is None:
                 self._submit_future_gpu_work(fut, meta, mapped_kwargs)
-                submit_generation = getattr(fut, "_adapter_gpu_submit_generation", None)
+                submit_generation = get_adapter_gpu_submit_generation(fut)
             if submit_generation is None:
                 break
             gpu_submit_generation = getattr(self, "_gpu_submit_generation", 0)
@@ -503,7 +508,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 predictions, preprocess_return_metadata, **kwargs
             )
         fut: InferenceFuture = predictions
-        mapped_kwargs = getattr(fut, "_adapter_kwargs", {}).get("mapped_kwargs", {})
+        mapped_kwargs = get_adapter_mapped_kwargs(fut)
         self._pending_gpu_submissions.append(
             (
                 fut,
@@ -529,7 +534,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 workflow_execution=True,
             )
             if responses:
-                responses[0]._async_response_future = response_future
+                attach_async_response_future(responses[0], response_future)
             return responses
         return response_future.result()
 
@@ -608,7 +613,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
         responses: List[InstanceSegmentationInferenceResponse] = []
         for preproc_metadata, det in zip(preprocess_return_metadata, detections_list):
-            finalize_pending = getattr(det, "_finalize_pending_postproc", None)
+            finalize_pending = get_deferred_postprocess_finalizer(det)
             if callable(finalize_pending):
                 det = finalize_pending()
             H = preproc_metadata.original_size.height
@@ -619,7 +624,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             mask_packed_gpu = getattr(det, "_mask_packed_gpu", None)
             mask_cpu = getattr(det, "_mask_cpu", None)
             defer_count_to_adapter = getattr(det, "_defer_count_to_adapter", False)
-            done_event = getattr(det, "_postproc_done_event", None)
+            done_event = get_deferred_postprocess_done_event(det)
             dense_mask_cuda = isinstance(mask_gpu, torch.Tensor) and mask_gpu.is_cuda
             packed_mask_cuda = (
                 isinstance(mask_packed_gpu, torch.Tensor) and mask_packed_gpu.is_cuda

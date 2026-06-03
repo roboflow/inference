@@ -10,11 +10,6 @@ from inference_models import (
     InstanceSegmentationModel,
     PreProcessingOverrides,
 )
-
-# Hoisted to module scope to avoid per-call `from ... import` inside the hot
-# forward_async path. Re-import inside the function added ~13µs/frame in the
-# instrumented run on Jetson Orin. Import here is a no-op on every call.
-from inference_models.models.base.instance_segmentation import _DirectInferenceFuture
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
@@ -27,6 +22,15 @@ from inference_models.errors import (
     ModelInputError,
     ModelRuntimeError,
 )
+from inference_models.models.base.async_handoff import (
+    get_deferred_postprocess_done_event,
+    get_trt_outputs_consumed_event,
+)
+
+# Hoisted to module scope to avoid per-call `from ... import` inside the hot
+# forward_async path. Re-import inside the function added ~13µs/frame in the
+# instrumented run on Jetson Orin. Import here is a no-op on every call.
+from inference_models.models.base.instance_segmentation import _DirectInferenceFuture
 from inference_models.models.common.cuda import (
     use_cuda_context,
     use_primary_cuda_context,
@@ -449,8 +453,7 @@ class RFDetrForInstanceSegmentationTRT(
                 )
             if graph_state is not None:
                 output_consumed_events = [
-                    getattr(result, "_trt_outputs_consumed_event", None)
-                    for result in results
+                    get_trt_outputs_consumed_event(result) for result in results
                 ]
                 if output_consumed_events and all(
                     event is not None for event in output_consumed_events
@@ -465,7 +468,7 @@ class RFDetrForInstanceSegmentationTRT(
         should_sync = True
         if kwargs.get("defer_postprocess_sync", False):
             should_sync = not all(
-                getattr(result, "_postproc_done_event", None) is not None
+                get_deferred_postprocess_done_event(result) is not None
                 for result in results
             )
         if should_sync:

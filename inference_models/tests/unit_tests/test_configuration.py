@@ -1,0 +1,48 @@
+import pytest
+
+from inference_models.configuration import (
+    DEFAULT_RFDETR_PIPELINE_DEPTH,
+    get_rfdetr_pipeline_depth,
+    parse_rfdetr_pipeline_depth,
+)
+from inference_models.errors import InvalidEnvVariable
+
+
+def test_parse_rfdetr_pipeline_depth_uses_default_when_env_missing() -> None:
+    assert parse_rfdetr_pipeline_depth(None) == DEFAULT_RFDETR_PIPELINE_DEPTH
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("1", 1),
+        ("2", 2),
+        (" 3 ", 3),
+    ],
+)
+def test_parse_rfdetr_pipeline_depth_accepts_positive_integers(
+    value: str,
+    expected: int,
+) -> None:
+    assert parse_rfdetr_pipeline_depth(value) == expected
+
+
+@pytest.mark.parametrize("value", ["invalid", "1.5", "", "0", "-1"])
+def test_parse_rfdetr_pipeline_depth_rejects_invalid_values(value: str) -> None:
+    with pytest.raises(InvalidEnvVariable):
+        parse_rfdetr_pipeline_depth(value)
+
+
+def test_get_rfdetr_pipeline_depth_reads_environment(monkeypatch) -> None:
+    monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "2")
+    assert get_rfdetr_pipeline_depth() == 2
+
+
+@pytest.mark.parametrize("value", ["0", "-4", "invalid"])
+def test_get_rfdetr_pipeline_depth_rejects_invalid_environment(
+    monkeypatch,
+    value: str,
+) -> None:
+    monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", value)
+    with pytest.raises(InvalidEnvVariable):
+        get_rfdetr_pipeline_depth()

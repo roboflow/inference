@@ -55,11 +55,10 @@ class _DirectInferenceFuture:
     Post-process output is memoised so ``result()`` may be called repeatedly.
     """
 
-    # No __slots__: adapters stash per-request context on the future
-    # (e.g. pipeline-depth-2 stashes `_adapter_kwargs` so `postprocess`
-    # can rebuild the decode call for the PREVIOUS frame even when the
-    # submit site passed `meta=None`). The Future is short-lived so the
-    # per-instance dict overhead is negligible.
+    # No __slots__: adapters attach per-request context through
+    # `models.base.async_handoff` so postprocess can rebuild the decode call
+    # for an older frame even when the original submit site had no metadata.
+    # The Future is short-lived, so the per-instance dict overhead is negligible.
 
     def __init__(
         self,

@@ -55,6 +55,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.async_handoff import get_async_response_future
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
@@ -388,7 +389,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         predictions: List[object],
     ) -> Optional[Future]:
         for prediction in predictions:
-            async_response_future = getattr(prediction, "_async_response_future", None)
+            async_response_future = get_async_response_future(prediction)
             if isinstance(async_response_future, Future):
                 return async_response_future
         return None
