@@ -433,6 +433,12 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             responses.extend(self._response_futures.popleft().result())
         return responses
 
+    def shutdown_pipeline(self) -> None:
+        if self._response_executor is None:
+            return None
+        self._response_executor.shutdown(wait=False)
+        self._response_executor = None
+
     def _get_response_executor(self) -> ThreadPoolExecutor:
         if self._response_executor is None:
             self._response_executor = ThreadPoolExecutor(max_workers=1)

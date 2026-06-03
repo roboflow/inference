@@ -38,8 +38,8 @@ from inference.core.interfaces.camera.video_source import (
 )
 from inference.core.interfaces.stream.entities import (
     AnyPrediction,
-    InferenceHandlerResult,
     InferenceHandler,
+    InferenceHandlerResult,
     ModelConfig,
     SinkHandler,
 )
@@ -936,6 +936,7 @@ class InferencePipeline:
             )
             logger.exception(f"Encountered inference error: {error}")
         finally:
+            self._close_inference_handler()
             self._predictions_queue.put(None)
             send_inference_pipeline_status_update(
                 severity=UpdateSeverity.INFO,
@@ -1028,6 +1029,15 @@ class InferencePipeline:
             inference_result=flush_result,
             fallback_video_frames=[],
         )
+
+    def _close_inference_handler(self) -> None:
+        close_fn = getattr(self._on_video_frame, "close", None)
+        if not callable(close_fn):
+            return None
+        try:
+            close_fn()
+        except Exception as error:
+            logger.warning(f"Could not close inference handler. Cause: {error}")
 
     def _handle_predictions_dispatching(
         self,
