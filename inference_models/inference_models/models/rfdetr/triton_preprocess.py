@@ -22,6 +22,19 @@ PIL's scheme (src/libImaging/Resample.c):
 The runtime implementation is the consolidated two-pass path:
 horizontal PIL-antialias resize into a uint8 CHW scratch buffer, followed by
 the vertical pass plus `/255` + ImageNet normalization into fp32 CHW output.
+
+Tensor contracts:
+
+* ``src`` is a CUDA uint8 HWC image with shape ``(raw_h, raw_w, 3)``. The
+  hot TRT path currently passes a full frame with no static crop, but the
+  kernels also accept crop offsets and logical crop dimensions.
+* ``tmp`` is a CUDA uint8 CHW scratch tensor with shape
+  ``(3, src_h, target_w)``. It stores the horizontally resized image after
+  the same fixed-point rounding PIL applies between its separable passes.
+* ``out`` is a CUDA fp32 NCHW tensor with shape ``(1, 3, target_h, target_w)``
+  in network channel order. Each element is ``(uint8 / 255 - mean) / std``.
+* ``ResampleTables`` owns the per-axis int32 fixed-point start/weight tables
+  that PIL would precompute for this source/target shape pair.
 """
 
 from __future__ import annotations
@@ -62,6 +75,13 @@ _PREPROC_HORIZONTAL_BLOCK_W_ENV = (
 
 
 def _read_power_of_two_env(name: str, default: int) -> int:
+    """Read an optional Triton block-size override from the environment.
+
+    The preprocess kernels use power-of-two block sizes so Triton can form
+    static tensor shapes for vectorized loads/stores. This helper keeps those
+    launch-shape constraints local to the kernel wrapper and raises a
+    user-facing ``ModelRuntimeError`` for invalid values.
+    """
     raw = os.getenv(name)
     if raw is None or raw.strip() == "":
         return default
@@ -88,7 +108,20 @@ def _read_power_of_two_env(name: str, default: int) -> int:
 def _bilinear_antialias_weights_1d_int(
     in_size: int, out_size: int
 ) -> Tuple[np.ndarray, np.ndarray, int]:
-    """PIL's precompute_coeffs, int32 fixed-point form."""
+    """Build one axis of PIL-compatible bilinear-antialias tables.
+
+    Args:
+        in_size: Number of pixels along the source axis after static cropping.
+        out_size: Number of pixels along the resized output axis.
+
+    Returns:
+        ``(starts, weights_int, ksize)`` where ``starts`` has shape
+        ``(out_size,)`` and gives the first source sample for each output
+        coordinate, ``weights_int`` has shape ``(out_size, ksize)`` and stores
+        PIL's normalized triangle weights in ``PRECISION_BITS`` fixed-point
+        format, and ``ksize`` is the compile-time convolution width used by the
+        Triton loop for that axis.
+    """
     scale = in_size / out_size
     filterscale = max(1.0, scale)
     support = filterscale
@@ -148,7 +181,33 @@ if TRITON_AVAILABLE:
         BLOCK_H: tl.constexpr,
         BLOCK_W: tl.constexpr,
     ):
-        """Horizontal PIL-antialias pass for all output channels."""
+        """Compute PIL's horizontal resize pass for one tile.
+
+        Args:
+            src_ptr: CUDA uint8 HWC source image, shape ``(raw_h, raw_w, 3)``.
+            tmp_ptr: CUDA uint8 CHW scratch output, shape
+                ``(3, src_h, target_w)``.
+            xmin_ptr: CUDA int32 starts table, shape ``(target_w,)``.
+            wx_ptr: CUDA int32 flattened weights table, shape
+                ``(target_w * KSIZE_X,)``.
+            src_h/src_w: Logical source height/width after crop. These drive
+                bounds checks for the resized region.
+            src_stride_h/src_stride_w: Source strides in elements, used so the
+                kernel does not assume contiguous row pitch beyond HWC layout.
+            crop_offset_y/crop_offset_x: Offset into ``src_ptr`` for static
+                crop support. The TRT fast path passes zero.
+            target_w: Width of the resized network input.
+            CH_R/CH_G/CH_B: Source channel indices to emit into network
+                channel order. For BGR input feeding an RGB model this is
+                ``2, 1, 0``.
+
+        Output:
+            Writes the horizontally resized and PIL-rounded uint8 values into
+            ``tmp_ptr`` in CHW order. The vertical kernel consumes this scratch
+            buffer as its input image.
+        """
+        # Program ids tile over logical source rows and target columns. The
+        # y-axis is still source height because this pass only resizes width.
         pid_y = tl.program_id(0)
         pid_x = tl.program_id(1)
 
@@ -158,6 +217,8 @@ if TRITON_AVAILABLE:
         mask_x = offs_x < target_w
         mask_out = mask_y[:, None] & mask_x[None, :]
 
+        # For each output x, PIL precomputes the first contributing source x
+        # and a fixed-width row of int32 fixed-point triangle weights.
         xmin = tl.load(xmin_ptr + offs_x, mask=mask_x, other=0)
         sy = offs_y + crop_offset_y
 
@@ -169,14 +230,18 @@ if TRITON_AVAILABLE:
             sx_c = tl.maximum(tl.minimum(sx, src_w - 1), 0) + crop_offset_x
             wx = tl.load(wx_ptr + offs_x * KSIZE_X + kx, mask=mask_x, other=0)
             base = sy[:, None] * src_stride_h + sx_c[None, :] * src_stride_w
+            # Load source pixels in the network's channel order so the channel
+            # swap replaces the original PIL image conversion step.
             p_r = tl.load(src_ptr + base + CH_R, mask=mask_out, other=0).to(tl.int32)
             p_g = tl.load(src_ptr + base + CH_G, mask=mask_out, other=0).to(tl.int32)
             p_b = tl.load(src_ptr + base + CH_B, mask=mask_out, other=0).to(tl.int32)
             wx_2d = wx[None, :]
+            # Fixed-point horizontal convolution: sum(src * PIL_weight_int).
             hacc_r += p_r * wx_2d
             hacc_g += p_g * wx_2d
             hacc_b += p_b * wx_2d
 
+        # Match PIL's intermediate uint8 rounding before the vertical pass.
         q_r = (hacc_r + HALF_C) >> PRECISION_BITS_C
         q_g = (hacc_g + HALF_C) >> PRECISION_BITS_C
         q_b = (hacc_b + HALF_C) >> PRECISION_BITS_C
@@ -186,6 +251,8 @@ if TRITON_AVAILABLE:
 
         out_row = offs_y[:, None] * target_w + offs_x[None, :]
         channel_stride = src_h * target_w
+        # CHW scratch keeps the following vertical pass contiguous along x for
+        # one output channel at a time.
         tl.store(tmp_ptr + 0 * channel_stride + out_row, q_r, mask=mask_out)
         tl.store(tmp_ptr + 1 * channel_stride + out_row, q_g, mask=mask_out)
         tl.store(tmp_ptr + 2 * channel_stride + out_row, q_b, mask=mask_out)
@@ -213,7 +280,29 @@ if TRITON_AVAILABLE:
         BLOCK_H: tl.constexpr,
         BLOCK_W: tl.constexpr,
     ):
-        """Vertical PIL-antialias pass from uint8 scratch plus normalization."""
+        """Compute PIL's vertical resize pass and torchvision normalization.
+
+        Args:
+            tmp_ptr: CUDA uint8 CHW horizontal scratch, shape
+                ``(3, src_h, target_w)``.
+            dst_ptr: CUDA fp32 NCHW output, shape
+                ``(1, 3, target_h, target_w)``.
+            ymin_ptr: CUDA int32 starts table, shape ``(target_h,)``.
+            wy_ptr: CUDA int32 flattened weights table, shape
+                ``(target_h * KSIZE_Y,)``.
+            src_h: Logical source height after crop and after the horizontal
+                pass. This is the height of ``tmp_ptr``.
+            dst_stride_c/dst_stride_h: Output strides in elements.
+            target_h/target_w: Resized network input shape.
+            inv_std_255_*: Precomputed ``1 / (255 * std[channel])`` values.
+            offset_*: Precomputed ``-mean[channel] / std[channel]`` values.
+
+        Output:
+            Writes normalized fp32 NCHW data into ``dst_ptr``. This is the
+            tensor consumed directly by TensorRT.
+        """
+        # Program ids tile over output rows, output columns, and the three
+        # output channels. Channel-specific normalization is selected by pid_c.
         pid_y = tl.program_id(0)
         pid_x = tl.program_id(1)
         pid_c = tl.program_id(2)
@@ -224,6 +313,8 @@ if TRITON_AVAILABLE:
         mask_x = offs_x < target_w
         mask_out = mask_y[:, None] & mask_x[None, :]
 
+        # For each output y, load the first source row and PIL fixed-point
+        # weights for the vertical half of the separable resize.
         ymin = tl.load(ymin_ptr + offs_y, mask=mask_y, other=0)
 
         vacc = tl.zeros((BLOCK_H, BLOCK_W), dtype=tl.int32)
@@ -235,11 +326,15 @@ if TRITON_AVAILABLE:
             p = tl.load(
                 tmp_ptr + pid_c * src_h * target_w + base, mask=mask_out, other=0
             ).to(tl.int32)
+            # Fixed-point vertical convolution over the horizontally rounded
+            # scratch buffer, matching PIL's second resample pass.
             vacc += p * wy[:, None]
 
+        # Final PIL uint8 rounding/clamping before torchvision's to_tensor.
         q = (vacc + HALF_C) >> PRECISION_BITS_C
         q = tl.minimum(tl.maximum(q, 0), 255)
 
+        # Fuse TF.to_tensor() (`q / 255`) and TF.normalize().
         inv_std_255 = tl.where(
             pid_c == 0,
             inv_std_255_r,
@@ -257,7 +352,23 @@ if TRITON_AVAILABLE:
 
 
 class ResampleTables:
-    """Cache of per-axis PIL-int32 weight tables for one (src, dst) pair."""
+    """CUDA cache of PIL fixed-point resize tables for one shape pair.
+
+    Attributes:
+        ymin_gpu: int32 tensor with shape ``(target_h,)``. ``ymin_gpu[y]`` is
+            the first source row contributing to output row ``y``.
+        xmin_gpu: int32 tensor with shape ``(target_w,)``. ``xmin_gpu[x]`` is
+            the first source column contributing to output column ``x``.
+        wy_gpu: int32 flattened tensor with shape ``(target_h * ksize_y,)``.
+            Row ``y`` contains the fixed-point vertical weights for output row
+            ``y``.
+        wx_gpu: int32 flattened tensor with shape ``(target_w * ksize_x,)``.
+            Row ``x`` contains the fixed-point horizontal weights for output
+            column ``x``.
+        ksize_y/ksize_x: Static loop bounds for the vertical and horizontal
+            Triton kernels. They are determined by PIL's antialias support
+            radius for the current source/target scale.
+    """
 
     __slots__ = (
         "ymin_gpu",
@@ -286,6 +397,14 @@ class ResampleTables:
 
 
 def resolve_two_pass_launch_config() -> Tuple[int, int, int, int]:
+    """Resolve block sizes for the two-pass Triton implementation.
+
+    Returns:
+        ``(vertical_block_h, vertical_block_w, horizontal_block_h,
+        horizontal_block_w)``. Defaults are tuned for the RF-DETR TRT workload,
+        while environment variables allow microbenchmark sweeps without code
+        changes.
+    """
     return (
         _read_power_of_two_env(_PREPROC_BLOCK_H_ENV, 1),
         _read_power_of_two_env(_PREPROC_BLOCK_W_ENV, 128),
@@ -301,6 +420,18 @@ def build_resample_tables(
     target_w: int,
     device: torch.device,
 ) -> ResampleTables:
+    """Build and upload PIL-compatible resample tables for one resize.
+
+    Args:
+        src_h/src_w: Effective source image dimensions after optional crop.
+        target_h/target_w: Network input dimensions after resize.
+        device: CUDA device where the Triton kernels will run.
+
+    Returns:
+        ``ResampleTables`` with all starts/weights already copied to ``device``.
+        The hot TRT path keeps this object in a shape-keyed cache so table
+        construction is not repeated per frame.
+    """
     ymin, wy, ksize_y = _bilinear_antialias_weights_1d_int(src_h, target_h)
     xmin, wx, ksize_x = _bilinear_antialias_weights_1d_int(src_w, target_w)
     return ResampleTables(
@@ -329,7 +460,34 @@ def triton_preprocess_rfdetr_stretch_two_pass_preallocated(
     crop_h: Optional[int] = None,
     crop_w: Optional[int] = None,
 ) -> torch.Tensor:
-    """Hot two-pass launch path for already validated/preallocated tensors."""
+    """Launch the fast two-pass preprocessor using caller-owned buffers.
+
+    This is the hot path used by the TensorRT adapter. It intentionally assumes
+    the caller already validated shapes, dtypes, device placement, and table
+    compatibility so each frame only pays for the HtoD copy and two Triton
+    kernel launches.
+
+    Args:
+        src: CUDA uint8 HWC source tensor, shape ``(raw_h, raw_w, 3)``.
+        out: CUDA fp32 NCHW output tensor, shape
+            ``(1, 3, target_h, target_w)``.
+        tmp: CUDA uint8 CHW scratch tensor, shape ``(3, src_h, target_w)``.
+        tables: ``ResampleTables`` built for ``(src_h, src_w)`` to
+            ``(target_h, target_w)``.
+        target_h/target_w: Network input dimensions.
+        means/stds: Per-channel normalization constants in output channel
+            order.
+        swap_rb: Whether to swap source red/blue channels while writing
+            network-order output channels.
+        launch_config: Block sizes returned by ``resolve_two_pass_launch_config``.
+        crop_offset_y/crop_offset_x: Optional top-left crop offset in ``src``.
+        crop_h/crop_w: Optional logical source shape after crop. When omitted,
+            the full source tensor shape is used.
+
+    Returns:
+        The same ``out`` tensor after scheduling both kernels on the current
+        CUDA stream.
+    """
     raw_src_h, raw_src_w = int(src.shape[0]), int(src.shape[1])
     src_h = crop_h if crop_h is not None else raw_src_h
     src_w = crop_w if crop_w is not None else raw_src_w
@@ -351,6 +509,8 @@ def triton_preprocess_rfdetr_stretch_two_pass_preallocated(
     offset_b = -means[2] / stds[2]
     block_h, block_w, horizontal_block_h, horizontal_block_w = launch_config
 
+    # First reproduce PIL's horizontal resize into uint8 scratch. This is the
+    # only pass that reads the raw HWC frame.
     horizontal_grid = (
         (src_h + horizontal_block_h - 1) // horizontal_block_h,
         (target_w + horizontal_block_w - 1) // horizontal_block_w,
@@ -376,6 +536,8 @@ def triton_preprocess_rfdetr_stretch_two_pass_preallocated(
         BLOCK_H=horizontal_block_h,
         BLOCK_W=horizontal_block_w,
     )
+    # Then reproduce PIL's vertical resize and fuse the torchvision tensor
+    # conversion and normalization into the final fp32 TensorRT input.
     grid = (
         (target_h + block_h - 1) // block_h,
         (target_w + block_w - 1) // block_w,
@@ -423,9 +585,9 @@ def triton_preprocess_rfdetr_stretch(
     """PIL-exact resize + color swap + normalize using the two-pass kernels.
 
     Args:
-        src: uint8 CUDA tensor, shape (H, W, 3), HWC layout.
+        src: uint8 CUDA tensor, shape ``(raw_h, raw_w, 3)``, HWC layout.
         tables: precomputed int32 resample tables sized against the *cropped*
-            source `(crop_h, crop_w)` → `(target_h, target_w)`.
+            source ``(crop_h, crop_w)`` to ``(target_h, target_w)``.
         target_h, target_w: output spatial dims.
         means, stds: normalization in output channel order (R, G, B for
             network_input.color_mode == 'rgb').
@@ -434,12 +596,13 @@ def triton_preprocess_rfdetr_stretch(
             means no crop.
         crop_h/_w: effective source dims after crop. Defaults to src dims
             when no crop is configured.
-        out: optional preallocated fp32 (1, 3, H, W) CUDA tensor.
-        tmp: optional preallocated uint8 (3, crop_h/raw_h, target_w) CUDA tensor
-            used by the horizontal pass.
+        out: optional preallocated fp32 ``(1, 3, target_h, target_w)`` CUDA
+            tensor.
+        tmp: optional preallocated uint8 ``(3, crop_h/raw_h, target_w)`` CUDA
+            tensor used by the horizontal pass.
 
     Returns:
-        fp32 (1, 3, target_h, target_w) on the same device as `src`.
+        fp32 ``(1, 3, target_h, target_w)`` on the same device as ``src``.
     """
     if not TRITON_AVAILABLE:
         raise MissingDependencyError(

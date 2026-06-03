@@ -1,5 +1,4 @@
 import threading
-import warnings
 from typing import List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -14,7 +13,6 @@ from inference_models import (
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
-    INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED,
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
@@ -28,13 +26,10 @@ from inference_models.models.common.cuda import (
     use_primary_cuda_context,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
-from inference_models.entities import ImageDimensions
 from inference_models.models.common.roboflow.model_packages import (
-    ColorMode,
     InferenceConfig,
     PreProcessingMetadata,
     ResizeMode,
-    StaticCropOffset,
     TRTConfig,
     parse_class_names_file,
     parse_inference_config,
@@ -57,23 +52,10 @@ from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results_to_rle_masks,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
-
-try:
-    from inference_models.models.rfdetr.triton_preprocess import (
-        TRITON_AVAILABLE as _TRITON_AVAILABLE,
-        build_resample_tables,
-        resolve_two_pass_launch_config,
-        triton_preprocess_rfdetr_stretch_two_pass_preallocated,
-    )
-except ImportError:
-    _TRITON_AVAILABLE = False
-    build_resample_tables = None
-    resolve_two_pass_launch_config = None
-    triton_preprocess_rfdetr_stretch_two_pass_preallocated = None
+from inference_models.models.rfdetr.triton_preprocess_runtime import (
+    FastPreprocessRuntime,
+)
 from inference_models.weights_providers.entities import RecommendedParameters
-
-_FAST_PATH_ENABLED = INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED
-
 
 try:
     import tensorrt as trt
@@ -104,104 +86,6 @@ except ImportError as import_error:
         f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
         help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
-
-
-class _FastPathState:
-    """Per-(src_shape, target_shape) cache of GPU buffers + resample tables
-    that the Triton fast path reuses across frames."""
-
-    __slots__ = (
-        "src_h",
-        "src_w",
-        "target_h",
-        "target_w",
-        "pinned_host",
-        "src_gpu",
-        "out_buffers",
-        "tmp_buffers",
-        "out_buffer_index",
-        "tables",
-        "launch_config",
-    )
-
-    def __init__(
-        self,
-        src_h: int,
-        src_w: int,
-        target_h: int,
-        target_w: int,
-        pinned_host: torch.Tensor,
-        src_gpu: torch.Tensor,
-        out_buffers: List[torch.Tensor],
-        tmp_buffers: List[torch.Tensor],
-        tables,
-        launch_config,
-    ) -> None:
-        self.src_h = src_h
-        self.src_w = src_w
-        self.target_h = target_h
-        self.target_w = target_w
-        self.pinned_host = pinned_host
-        self.src_gpu = src_gpu
-        self.out_buffers = out_buffers
-        self.tmp_buffers = tmp_buffers
-        self.out_buffer_index = 0
-        self.tables = tables
-        self.launch_config = launch_config
-
-    @classmethod
-    def build(
-        cls,
-        src_h: int,
-        src_w: int,
-        target_h: int,
-        target_w: int,
-        device: torch.device,
-    ) -> "_FastPathState":
-        pinned_host = torch.empty((src_h, src_w, 3), dtype=torch.uint8, pin_memory=True)
-        src_gpu = torch.empty((src_h, src_w, 3), dtype=torch.uint8, device=device)
-        out_buffers = [
-            torch.empty((1, 3, target_h, target_w), dtype=torch.float32, device=device)
-            for _ in range(3)
-        ]
-        tmp_buffers = [
-            torch.empty((3, src_h, target_w), dtype=torch.uint8, device=device)
-            for _ in range(3)
-        ]
-        tables = build_resample_tables(
-            src_h=src_h,
-            src_w=src_w,
-            target_h=target_h,
-            target_w=target_w,
-            device=device,
-        )
-        return cls(
-            src_h=src_h,
-            src_w=src_w,
-            target_h=target_h,
-            target_w=target_w,
-            pinned_host=pinned_host,
-            src_gpu=src_gpu,
-            out_buffers=out_buffers,
-            tmp_buffers=tmp_buffers,
-            tables=tables,
-            launch_config=resolve_two_pass_launch_config(),
-        )
-
-    def is_stale(self, src_h: int, src_w: int, target_h: int, target_w: int) -> bool:
-        return (
-            self.src_h != src_h
-            or self.src_w != src_w
-            or self.target_h != target_h
-            or self.target_w != target_w
-        )
-
-    def next_buffers(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        idx = self.out_buffer_index
-        out = self.out_buffers[idx]
-        tmp = self.tmp_buffers[idx]
-        self.out_buffer_index = (idx + 1) % len(self.out_buffers)
-        return out, tmp
 
 
 class RFDetrForInstanceSegmentationTRT(
@@ -340,8 +224,7 @@ class RFDetrForInstanceSegmentationTRT(
         self._pre_process_cuda_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
-        self._fast_path_state: Optional[_FastPathState] = None
-        self._fast_preprocess_warned_reasons: Set[str] = set()
+        self._fast_preprocess_runtime = FastPreprocessRuntime(device=self._device)
 
     @property
     def class_names(self) -> List[str]:
@@ -359,14 +242,17 @@ class RFDetrForInstanceSegmentationTRT(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        fast = self._try_fast_preprocess(
+        fast = self._fast_preprocess_runtime.try_preprocess(
             images=images,
             input_color_format=input_color_format,
             image_size=image_size,
-            pre_processing_overrides=pre_processing_overrides,
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
+            stream=self._pre_process_stream,
         )
         if fast is not None:
-            return fast
+            self._fast_preproc_event = fast.ready_event
+            return fast.tensor, fast.metadata
         with torch.cuda.stream(self._pre_process_stream):
             pre_processed_images, pre_processing_meta = pre_process_network_input(
                 images=images,
@@ -380,164 +266,6 @@ class RFDetrForInstanceSegmentationTRT(
         self._pre_process_stream.synchronize()
         pre_processed_images._pre_processing_meta = pre_processing_meta  # type: ignore[attr-defined]
         return pre_processed_images, pre_processing_meta
-
-    def _try_fast_preprocess(
-        self,
-        images,
-        input_color_format,
-        image_size,
-        pre_processing_overrides,
-    ) -> Optional[Tuple[torch.Tensor, List[PreProcessingMetadata]]]:
-        if not _FAST_PATH_ENABLED:
-            return None
-        unsupported_reason = self._unsupported_fast_preprocess_reason(
-            images=images,
-            image_size=image_size,
-        )
-        if unsupported_reason is not None:
-            self._warn_unsupported_fast_preprocess(unsupported_reason)
-            return None
-
-        if isinstance(images, list):
-            candidate = images[0]
-        else:
-            candidate = images
-
-        caller_mode = (
-            ColorMode(input_color_format)
-            if input_color_format is not None
-            else ColorMode.BGR
-        )
-        ni = self._inference_config.network_input
-        swap_rb = caller_mode != ni.color_mode
-
-        means, stds = ni.normalization
-        means_t = (float(means[0]), float(means[1]), float(means[2]))
-        stds_t = (float(stds[0]), float(stds[1]), float(stds[2]))
-        target_h = ni.training_input_size.height
-        target_w = ni.training_input_size.width
-        orig_h, orig_w = int(candidate.shape[0]), int(candidate.shape[1])
-
-        state = self._fast_path_state
-        if state is None or state.is_stale(
-            src_h=orig_h,
-            src_w=orig_w,
-            target_h=target_h,
-            target_w=target_w,
-        ):
-            state = _FastPathState.build(
-                src_h=orig_h,
-                src_w=orig_w,
-                target_h=target_h,
-                target_w=target_w,
-                device=self._device,
-            )
-            self._fast_path_state = state
-
-        pinned_np = state.pinned_host.numpy()
-        np.copyto(pinned_np, candidate, casting="no")
-        out_buffer, tmp_buffer = state.next_buffers()
-
-        with torch.cuda.stream(self._pre_process_stream):
-            state.src_gpu.copy_(state.pinned_host, non_blocking=True)
-            triton_preprocess_rfdetr_stretch_two_pass_preallocated(
-                src=state.src_gpu,
-                out=out_buffer,
-                tmp=tmp_buffer,
-                tables=state.tables,
-                target_h=target_h,
-                target_w=target_w,
-                means=means_t,
-                stds=stds_t,
-                swap_rb=swap_rb,
-                launch_config=state.launch_config,
-            )
-            self._fast_preproc_event = torch.cuda.Event()
-            self._fast_preproc_event.record(self._pre_process_stream)
-            out_buffer._trt_ready_event = self._fast_preproc_event  # type: ignore[attr-defined]
-            out_buffer.record_stream(self._pre_process_stream)
-
-        meta = PreProcessingMetadata(
-            pad_left=0,
-            pad_top=0,
-            pad_right=0,
-            pad_bottom=0,
-            original_size=ImageDimensions(width=orig_w, height=orig_h),
-            size_after_pre_processing=ImageDimensions(width=orig_w, height=orig_h),
-            inference_size=ImageDimensions(width=target_w, height=target_h),
-            scale_width=target_w / orig_w,
-            scale_height=target_h / orig_h,
-            static_crop_offset=StaticCropOffset(
-                offset_x=0, offset_y=0, crop_width=orig_w, crop_height=orig_h
-            ),
-        )
-        out_buffer._pre_processing_meta = [meta]  # type: ignore[attr-defined]
-        return out_buffer, [meta]
-
-    def _unsupported_fast_preprocess_reason(self, images, image_size) -> Optional[str]:
-        """Return why the Triton TRT preproc path cannot handle this request."""
-        if not _TRITON_AVAILABLE:
-            return "triton is not installed"
-        if image_size is not None:
-            return "custom image_size overrides are not supported"
-        # pre_processing_overrides can only *disable* transforms; it has no
-        # "enable" knob. The fast path never applies static_crop / grayscale /
-        # contrast regardless, so the override flags are irrelevant. The gate
-        # only needs to reject model configs that require those transforms.
-        ipp = self._inference_config.image_pre_processing
-        if (
-            (ipp.static_crop is not None and ipp.static_crop.enabled)
-            or (ipp.contrast is not None and ipp.contrast.enabled)
-            or (ipp.grayscale is not None and ipp.grayscale.enabled)
-        ):
-            return "static crop, contrast, and grayscale preprocessing are unsupported"
-
-        ni = self._inference_config.network_input
-        if ni.dataset_version_resize_dimensions is not None:
-            return "dataset-version resize is unsupported"
-        if ni.input_channels != 3:
-            return "only 3-channel inputs are supported"
-        if ni.scaling_factor not in (None, 255):
-            return "only scaling_factor None or 255 is supported"
-        if ni.normalization is None:
-            return "normalization is required"
-        if ni.resize_mode not in (
-            ResizeMode.STRETCH_TO,
-            ResizeMode.LETTERBOX,
-            ResizeMode.CENTER_CROP,
-            ResizeMode.LETTERBOX_REFLECT_EDGES,
-        ):
-            return f"resize mode {ni.resize_mode!r} is unsupported"
-
-        if isinstance(images, list):
-            if len(images) != 1:
-                return "only batch size 1 is supported"
-            candidate = images[0]
-        else:
-            candidate = images
-        if not isinstance(candidate, np.ndarray):
-            return "only numpy ndarray inputs are supported"
-        if (
-            candidate.dtype != np.uint8
-            or candidate.ndim != 3
-            or candidate.shape[2] != 3
-        ):
-            return "input must be uint8 HWC with 3 channels"
-        return None
-
-    def _warn_unsupported_fast_preprocess(self, reason: str) -> None:
-        warned_reasons = getattr(self, "_fast_preprocess_warned_reasons", None)
-        if warned_reasons is None:
-            warned_reasons = set()
-            self._fast_preprocess_warned_reasons = warned_reasons
-        if reason in warned_reasons:
-            return
-        warned_reasons.add(reason)
-        warnings.warn(
-            f"RF-DETR Triton preprocess path is unsupported: {reason}",
-            RuntimeWarning,
-            stacklevel=3,
-        )
 
     def forward(
         self,

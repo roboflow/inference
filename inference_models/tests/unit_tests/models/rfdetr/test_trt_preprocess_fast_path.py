@@ -1,5 +1,4 @@
 import warnings
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -15,14 +14,13 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     TrainingInputSize,
 )
-from inference_models.models.rfdetr import triton_preprocess
-
-pytest.importorskip("tensorrt")
-pytest.importorskip("pycuda.driver")
-
 from inference_models.models.rfdetr import (
-    rfdetr_instance_segmentation_trt,
-)  # noqa: E402
+    triton_preprocess,
+    triton_preprocess_runtime,
+)
+from inference_models.models.rfdetr.triton_preprocess_runtime import (
+    FastPreprocessRuntime,
+)
 
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -44,21 +42,6 @@ def _network_input(
     )
 
 
-def _adapter_for_fast_preprocess(network_input: NetworkInputDefinition):
-    model = object.__new__(
-        rfdetr_instance_segmentation_trt.RFDetrForInstanceSegmentationTRT
-    )
-    model._inference_config = SimpleNamespace(
-        image_pre_processing=ImagePreProcessing(),
-        network_input=network_input,
-    )
-    model._device = torch.device("cuda")
-    model._pre_process_cuda_stream = torch.cuda.Stream(device=model._device)
-    model._fast_path_state = None
-    model._fast_preprocess_warned_reasons = set()
-    return model
-
-
 def _reference_preprocess(image_rgb: np.ndarray, target_h: int, target_w: int):
     resized = TF.resize(
         Image.fromarray(image_rgb),
@@ -77,25 +60,20 @@ def _reference_preprocess(image_rgb: np.ndarray, target_h: int, target_w: int):
 def test_trt_fast_preprocess_warns_once_for_unsupported_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(rfdetr_instance_segmentation_trt, "_FAST_PATH_ENABLED", True)
-    monkeypatch.setattr(rfdetr_instance_segmentation_trt, "_TRITON_AVAILABLE", True)
-    model = object.__new__(
-        rfdetr_instance_segmentation_trt.RFDetrForInstanceSegmentationTRT
-    )
-    model._inference_config = SimpleNamespace(
-        image_pre_processing=ImagePreProcessing(),
-        network_input=_network_input(),
-    )
-    model._fast_preprocess_warned_reasons = set()
+    monkeypatch.setattr(triton_preprocess_runtime, "_FAST_PATH_ENABLED", True)
+    monkeypatch.setattr(triton_preprocess_runtime, "_TRITON_AVAILABLE", True)
+    runtime = FastPreprocessRuntime(device=torch.device("cuda"))
     image = np.zeros((8, 8, 3), dtype=np.uint8)
 
     with pytest.warns(RuntimeWarning, match="only batch size 1 is supported"):
         assert (
-            model._try_fast_preprocess(
+            runtime.try_preprocess(
                 images=[image, image],
                 input_color_format="bgr",
                 image_size=None,
-                pre_processing_overrides=None,
+                image_pre_processing=ImagePreProcessing(),
+                network_input=_network_input(),
+                stream=None,
             )
             is None
         )
@@ -103,11 +81,13 @@ def test_trt_fast_preprocess_warns_once_for_unsupported_batch(
     with warnings.catch_warnings(record=True) as recorded:
         warnings.simplefilter("always")
         assert (
-            model._try_fast_preprocess(
+            runtime.try_preprocess(
                 images=[image, image],
                 input_color_format="bgr",
                 image_size=None,
-                pre_processing_overrides=None,
+                image_pre_processing=ImagePreProcessing(),
+                network_input=_network_input(),
+                stream=None,
             )
             is None
         )
@@ -121,27 +101,30 @@ def test_trt_fast_preprocess_warns_once_for_unsupported_batch(
 def test_trt_fast_preprocess_matches_reference_and_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(rfdetr_instance_segmentation_trt, "_FAST_PATH_ENABLED", True)
-    monkeypatch.setattr(rfdetr_instance_segmentation_trt, "_TRITON_AVAILABLE", True)
+    monkeypatch.setattr(triton_preprocess_runtime, "_FAST_PATH_ENABLED", True)
+    monkeypatch.setattr(triton_preprocess_runtime, "_TRITON_AVAILABLE", True)
     target_h, target_w = 64, 64
-    model = _adapter_for_fast_preprocess(
-        network_input=_network_input(target_h=target_h, target_w=target_w),
-    )
+    runtime = FastPreprocessRuntime(device=torch.device("cuda"))
+    stream = torch.cuda.Stream(device=torch.device("cuda"))
     rng = np.random.default_rng(seed=71)
     image_rgb = rng.integers(0, 256, size=(96, 80, 3), dtype=np.uint8)
     image_bgr = image_rgb[:, :, ::-1].copy()
 
-    actual, metadata = model._try_fast_preprocess(
+    result = runtime.try_preprocess(
         images=image_bgr,
         input_color_format="bgr",
         image_size=None,
-        pre_processing_overrides=None,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(target_h=target_h, target_w=target_w),
+        stream=stream,
     )
-    actual._trt_ready_event.synchronize()  # type: ignore[attr-defined]
+    assert result is not None
+    result.ready_event.synchronize()
 
     expected = _reference_preprocess(image_rgb, target_h=target_h, target_w=target_w)
-    torch.testing.assert_close(actual.cpu(), expected, atol=1e-6, rtol=0)
+    torch.testing.assert_close(result.tensor.cpu(), expected, atol=1e-6, rtol=0)
 
+    metadata = result.metadata
     assert metadata[0].original_size == ImageDimensions(height=96, width=80)
     assert metadata[0].size_after_pre_processing == ImageDimensions(
         height=96,
@@ -151,4 +134,4 @@ def test_trt_fast_preprocess_matches_reference_and_metadata(
         height=target_h,
         width=target_w,
     )
-    assert actual._pre_processing_meta == metadata  # type: ignore[attr-defined]
+    assert result.tensor._pre_processing_meta == metadata  # type: ignore[attr-defined]
