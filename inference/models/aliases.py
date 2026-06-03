@@ -88,6 +88,19 @@ YOLO26_POSE_ALIASES = {
     "yolo26x-pose-640": "coco-pose-detection/16",
 }
 
+YOLO26_SEM_ALIASES = {
+    "yolov26n-sem-1024": "yolo26-pretrains/yolo26n-sem",
+    "yolov26s-sem-1024": "yolo26-pretrains/yolo26s-sem",
+    "yolov26m-sem-1024": "yolo26-pretrains/yolo26m-sem",
+    "yolov26l-sem-1024": "yolo26-pretrains/yolo26l-sem",
+    "yolov26x-sem-1024": "yolo26-pretrains/yolo26x-sem",
+    "yolo26n-sem-1024": "yolo26-pretrains/yolo26n-sem",
+    "yolo26s-sem-1024": "yolo26-pretrains/yolo26s-sem",
+    "yolo26m-sem-1024": "yolo26-pretrains/yolo26m-sem",
+    "yolo26l-sem-1024": "yolo26-pretrains/yolo26l-sem",
+    "yolo26x-sem-1024": "yolo26-pretrains/yolo26x-sem",
+}
+
 YOLOV11_ALIASES = {
     **YOLOV11_ALIASES,
     **{k.replace("yolov11", "yolo11"): v for k, v in YOLOV11_ALIASES.items()},
@@ -172,6 +185,7 @@ REGISTERED_ALIASES = {
     **YOLO26_ALIASES,
     **YOLO26_SEG_ALIASES,
     **YOLO26_POSE_ALIASES,
+    **YOLO26_SEM_ALIASES,
 }
 
 

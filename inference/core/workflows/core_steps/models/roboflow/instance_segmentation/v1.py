@@ -153,6 +153,15 @@ class BlockManifest(WorkflowBlockManifest):
         description="Target dataset for active learning, if enabled.",
         examples=["my_project", "$inputs.al_target_project"],
     )
+    enforce_dense_masks_in_inference_models: Union[
+        bool, Selector(kind=[BOOLEAN_KIND])
+    ] = Field(
+        default=True,
+        description="Boolean flag to enforce dense masks when inference models backend is in use "
+        "(irrelevant in other cases). Dense masks are faster to process, but require more memory. "
+        "Users can't tweak this flag when running on Roboflow serverless platform.",
+        examples=[True, "$inputs.enforce_dense_masks_in_inference_models"],
+    )
 
     @classmethod
     def get_compatible_task_types(cls) -> Optional[List[str]]:
@@ -211,6 +220,7 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
         tradeoff_factor: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
+        enforce_dense_masks_in_inference_models: bool,
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
@@ -226,6 +236,7 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
                 tradeoff_factor=tradeoff_factor,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
+                enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             return self.run_remotely(
@@ -261,6 +272,7 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
         tradeoff_factor: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
+        enforce_dense_masks_in_inference_models: bool,
     ) -> BlockResult:
         inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
         request = InstanceSegmentationInferenceRequest(
@@ -278,6 +290,7 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
             source="workflow-execution",
+            enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
         )
         self._model_manager.add_model(
             model_id=model_id,

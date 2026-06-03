@@ -53,6 +53,7 @@ API_BASE_URL = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+API_PROXY_BASE_URL = os.getenv("API_PROXY_BASE_URL", API_BASE_URL)
 
 # Suffix path to be appended to API_BASE_URL for endpoints that serve model weights.
 # This is only expected to be used in Roboflow internal hosting environments.
