@@ -34,6 +34,9 @@ from inference_models.configuration import (
     INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_PIXELS,
     INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_RUNS,
 )
+from inference_models.models.base.async_handoff import (
+    attach_deferred_postprocess_handoff,
+)
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
@@ -833,11 +836,12 @@ def _deferred_instance_detections_from_sparse_query_records(
             masks=[],
         ),
     )
-    # The stream adapter checks these private attributes to order reuse/finalize
-    # operations without forcing an immediate CUDA sync at this call site.
-    detections._postproc_done_event = done_event  # type: ignore[attr-defined]
-    detections._trt_outputs_consumed_event = outputs_consumed_event  # type: ignore[attr-defined]
-    detections._finalize_pending_postproc = finalize  # type: ignore[attr-defined]
+    attach_deferred_postprocess_handoff(
+        detections=detections,
+        done_event=done_event,
+        trt_outputs_consumed_event=outputs_consumed_event,
+        finalize=finalize,
+    )
     return detections
 
 
