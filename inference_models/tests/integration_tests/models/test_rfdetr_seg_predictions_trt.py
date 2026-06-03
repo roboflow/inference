@@ -475,7 +475,7 @@ def test_trt_triton_preprocess_output_matches_reference_preprocess(
     if not torch.cuda.is_available():
         pytest.skip("CUDA is required for Triton preprocessing parity")
 
-    from inference_models.models.rfdetr import rfdetr_instance_segmentation_trt
+    from inference_models.models.rfdetr import triton_preprocess_runtime
     from inference_models.models.rfdetr.rfdetr_instance_segmentation_trt import (
         RFDetrForInstanceSegmentationTRT,
     )
@@ -494,11 +494,11 @@ def test_trt_triton_preprocess_output_matches_reference_preprocess(
             pytest.skip("TRT engine package is not compatible with this platform")
         raise
 
-    monkeypatch.setattr(rfdetr_instance_segmentation_trt, "_FAST_PATH_ENABLED", False)
+    monkeypatch.setattr(triton_preprocess_runtime, "_FAST_PATH_ENABLED", False)
     reference_predictions = model(asl_image_numpy)
 
     original_triton_preprocess = (
-        rfdetr_instance_segmentation_trt.triton_preprocess_rfdetr_stretch_two_pass_preallocated
+        triton_preprocess_runtime.triton_preprocess_rfdetr_stretch_two_pass_preallocated
     )
     triton_calls = {"count": 0}
 
@@ -507,11 +507,11 @@ def test_trt_triton_preprocess_output_matches_reference_preprocess(
         return original_triton_preprocess(*args, **kwargs)
 
     monkeypatch.setattr(
-        rfdetr_instance_segmentation_trt,
+        triton_preprocess_runtime,
         "triton_preprocess_rfdetr_stretch_two_pass_preallocated",
         counting_triton_preprocess,
     )
-    monkeypatch.setattr(rfdetr_instance_segmentation_trt, "_FAST_PATH_ENABLED", True)
+    monkeypatch.setattr(triton_preprocess_runtime, "_FAST_PATH_ENABLED", True)
     triton_predictions = model(asl_image_numpy)
 
     assert triton_calls["count"] == 1
