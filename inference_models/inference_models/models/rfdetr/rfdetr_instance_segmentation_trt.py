@@ -247,6 +247,10 @@ class RFDetrForInstanceSegmentationTRT(
     def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
         return {"dense", "rle"}
 
+    @property
+    def supports_stream_pipeline(self) -> bool:
+        return self._trt_cuda_graph_cache is not None
+
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],

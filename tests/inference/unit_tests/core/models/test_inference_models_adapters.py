@@ -96,6 +96,30 @@ def _make_pipeline_adapter(
     return adapter
 
 
+def test_pipeline_depth_falls_back_to_one_for_unsupported_models(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference.core.models.inference_models_adapters.get_rfdetr_pipeline_depth",
+        lambda: 2,
+    )
+    adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
+    adapter._model = SimpleNamespace(supports_stream_pipeline=False)
+
+    assert adapter._resolve_pipeline_depth() == 1
+
+
+def test_pipeline_depth_honors_requested_depth_for_supported_models(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "inference.core.models.inference_models_adapters.get_rfdetr_pipeline_depth",
+        lambda: 3,
+    )
+    adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
+    adapter._model = SimpleNamespace(supports_stream_pipeline=True)
+
+    assert adapter._resolve_pipeline_depth() == 3
+
+
 def test_prepare_multi_label_response_uses_class_ids_for_predicted_classes() -> None:
     """The model's `post_process` is the source of truth for which classes
     are "predicted" (it owns the priority chain user → per-class → global
