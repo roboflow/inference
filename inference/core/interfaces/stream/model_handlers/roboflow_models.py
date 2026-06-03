@@ -33,20 +33,3 @@ def default_process_frame(
         )
         for p in predictions
     ]
-
-
-class RoboflowModelHandler:
-    def __init__(
-        self,
-        model: OnnxRoboflowInferenceModel,
-        inference_config: ModelConfig,
-    ):
-        self._model = model
-        self._inference_config = inference_config
-
-    def __call__(self, video_frame: List[VideoFrame]) -> List[dict]:
-        return default_process_frame(
-            video_frame=video_frame,
-            model=self._model,
-            inference_config=self._inference_config,
-        )
