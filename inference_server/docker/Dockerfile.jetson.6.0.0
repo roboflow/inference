@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 #
-# Jetson / JetPack 6.2 (L4T r36.4, Orin). Build platform: linux/arm64.
+# Jetson / JetPack 6.0 (L4T r36.3, Orin). Build platform: linux/arm64.
 # jp6 wheels (torch, onnxruntime-gpu) are cp310 aarch64 → MUST use the
 # system python3.10; do not let uv download a managed 3.12.
 # pycuda has no jp6 wheel → built from sdist against the JetPack CUDA toolkit
 # (that's why the base is l4t-jetpack, not l4t-cuda runtime).
 
-FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0
+FROM nvcr.io/nvidia/l4t-jetpack:r36.3.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
