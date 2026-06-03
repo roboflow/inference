@@ -5,7 +5,11 @@ from types import SimpleNamespace
 import numpy as np
 
 from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.stream.model_handlers.workflows import WorkflowRunner
+from inference.core.interfaces.stream.model_handlers.workflows import (
+    PipelinedWorkflowRunner,
+    WorkflowRunner,
+    wrap_workflow_runner_for_stream_pipeline,
+)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
     RoboflowInstanceSegmentationModelBlockV3,
@@ -167,9 +171,7 @@ def test_workflow_runner_without_stream_buffering_returns_current_frame() -> Non
 
     result = runner([frame])
 
-    assert result is not None
-    assert result.predictions == [{"predictions": "frame-1"}]
-    assert result.video_frames == [frame]
+    assert result == [{"predictions": "frame-1"}]
     assert engine.calls == [
         {
             "frame_number": 1,
@@ -180,14 +182,37 @@ def test_workflow_runner_without_stream_buffering_returns_current_frame() -> Non
     ]
 
 
-def test_workflow_runner_buffers_frames_until_delayed_prediction_arrives() -> None:
-    engine = _FakeExecutionEngine(stream_buffer_depth=1)
+def test_wrap_workflow_runner_leaves_non_pipelined_workflows_unchanged() -> None:
+    engine = _FakeExecutionEngine(stream_buffer_depth=0)
     runner = WorkflowRunner(
         workflows_parameters=None,
         execution_engine=engine,
         image_input_name="image",
         video_metadata_input_name="video_metadata",
     )
+
+    assert (
+        wrap_workflow_runner_for_stream_pipeline(
+            workflow_runner=runner,
+            execution_engine=engine,
+        )
+        is runner
+    )
+
+
+def test_workflow_runner_buffers_frames_until_delayed_prediction_arrives() -> None:
+    engine = _FakeExecutionEngine(stream_buffer_depth=1)
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+    assert isinstance(runner, PipelinedWorkflowRunner)
     frame_1 = _make_frame(1)
     frame_2 = _make_frame(2)
 
