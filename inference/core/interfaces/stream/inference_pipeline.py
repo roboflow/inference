@@ -608,6 +608,7 @@ class InferencePipeline:
         try:
             from inference.core.interfaces.stream.model_handlers.workflows import (
                 WorkflowRunner,
+                wrap_workflow_runner_for_stream_pipeline,
             )
             from inference.core.roboflow_api import get_workflow_specification
             from inference.core.workflows.execution_engine.core import ExecutionEngine
@@ -656,13 +657,17 @@ class InferencePipeline:
                 workflow_id=workflow_id,
                 profiler=profiler,
             )
-            on_video_frame = WorkflowRunner(
+            workflow_runner = WorkflowRunner(
                 workflows_parameters=workflows_parameters,
                 execution_engine=execution_engine,
                 image_input_name=image_input_name,
                 video_metadata_input_name=video_metadata_input_name,
                 serialize_results=serialize_results,
                 _is_preview=_is_preview,
+            )
+            on_video_frame = wrap_workflow_runner_for_stream_pipeline(
+                workflow_runner=workflow_runner,
+                execution_engine=execution_engine,
             )
         except ImportError as error:
             raise CannotInitialiseModelError(
