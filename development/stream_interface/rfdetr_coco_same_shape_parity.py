@@ -1,8 +1,9 @@
 """Compare RF-DETR instance-segmentation outputs on same-shape COCO images.
 
 This harness is used to reproduce the correctness table in the RF-DETR Triton
-postprocess PR. It runs a baseline git ref with all RF-DETR fast paths disabled
-and a candidate ref with only Triton RLE postprocess enabled, then compares
+preprocess PR. It runs a baseline git ref with all RF-DETR fast paths disabled
+and a candidate ref with Triton RLE postprocess and Triton preprocess enabled,
+then compares
 detection counts, classes, boxes, scores, and RLE masks.
 
 Example:
@@ -10,7 +11,7 @@ Example:
     env PARITY_MODEL_PATH=/path/to/rfdetr-seg-nano-orin-trt-package \
       python development/stream_interface/rfdetr_coco_same_shape_parity.py \
         --base-ref main \
-        --candidate-ref opt-python-postproc \
+        --candidate-ref opt-preprocess \
         --height 480 \
         --width 640 \
         --image-count 1000
@@ -47,7 +48,7 @@ BASE_FLAGS_OFF = {
 }
 CANDIDATE_FLAGS_ON = {
     "INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED": "true",
-    "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED": "false",
+    "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED": "true",
     "RFDETR_PIPELINE_DEPTH": "1",
     "ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND": "false",
     "RFDETR_NSIGHT_MARKERS": "false",
