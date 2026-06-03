@@ -10,6 +10,11 @@
   inputs.
 - Added RF-DETR preview keypoint support (ONNX backend).
 - Added support for fine-tuned YOLO26 semantic segmentation models.
+- Opt-in Triton RF-DETR instance-segmentation preprocessing for the TensorRT
+  backend. Set `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=True` to run the
+  supported resize and normalize path on CUDA.
+
+---
 
 ## `0.28.7`
 
