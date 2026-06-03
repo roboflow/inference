@@ -415,6 +415,9 @@ def post_process_keypoint_detection_results(
     log_mean_trace = torch.logsumexp(log_trace + log_w, dim=-1) - torch.logsumexp(log_w, dim=-1)
     scores = scores * torch.exp(-0.20 * log_mean_trace)
 
+    # normalize
+    scores = scores / (1 + scores)
+
     keypoints_final = torch.cat([keypoints_xy, keypoints_conf], dim=-1)  # [B, num_select, K_per_class, 3]
 
     # iterate over batch and collect detections above thresholds
