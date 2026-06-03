@@ -143,6 +143,7 @@ def build_workflow(model_id: str, confidence: float) -> dict:
                 "model_id": model_id,
                 "confidence_mode": "custom",
                 "custom_confidence": confidence,
+                "enforce_dense_masks_in_inference_models": False,
             },
         ],
         "outputs": [
