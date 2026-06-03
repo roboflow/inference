@@ -1,4 +1,5 @@
 import threading
+import warnings
 from typing import List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -340,6 +341,7 @@ class RFDetrForInstanceSegmentationTRT(
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
         self._fast_path_state: Optional[_FastPathState] = None
+        self._fast_preprocess_warned_reasons: Set[str] = set()
 
     @property
     def class_names(self) -> List[str]:
@@ -388,59 +390,25 @@ class RFDetrForInstanceSegmentationTRT(
     ) -> Optional[Tuple[torch.Tensor, List[PreProcessingMetadata]]]:
         if not _FAST_PATH_ENABLED:
             return None
-        if not _TRITON_AVAILABLE:
-            return None
-        if image_size is not None:
-            return None
-        # pre_processing_overrides can only *disable* transforms; it has no
-        # "enable" knob. The fast path never applies static_crop / grayscale /
-        # contrast regardless, so the override flags are irrelevant — we just
-        # gate on whether the image_pre_processing config itself asks for them.
-        ipp = self._inference_config.image_pre_processing
-        if (
-            (ipp.static_crop is not None and ipp.static_crop.enabled)
-            or (ipp.contrast is not None and ipp.contrast.enabled)
-            or (ipp.grayscale is not None and ipp.grayscale.enabled)
-        ):
-            return None
-
-        ni = self._inference_config.network_input
-        if ni.dataset_version_resize_dimensions is not None:
-            return None
-        if ni.input_channels != 3:
-            return None
-        if ni.scaling_factor not in (None, 255):
-            return None
-        if ni.normalization is None:
-            return None
-        if ni.resize_mode not in (
-            ResizeMode.STRETCH_TO,
-            ResizeMode.LETTERBOX,
-            ResizeMode.CENTER_CROP,
-            ResizeMode.LETTERBOX_REFLECT_EDGES,
-        ):
+        unsupported_reason = self._unsupported_fast_preprocess_reason(
+            images=images,
+            image_size=image_size,
+        )
+        if unsupported_reason is not None:
+            self._warn_unsupported_fast_preprocess(unsupported_reason)
             return None
 
         if isinstance(images, list):
-            if len(images) != 1:
-                return None
             candidate = images[0]
         else:
             candidate = images
-        if not isinstance(candidate, np.ndarray):
-            return None
-        if (
-            candidate.dtype != np.uint8
-            or candidate.ndim != 3
-            or candidate.shape[2] != 3
-        ):
-            return None
 
         caller_mode = (
             ColorMode(input_color_format)
             if input_color_format is not None
             else ColorMode.BGR
         )
+        ni = self._inference_config.network_input
         swap_rb = caller_mode != ni.color_mode
 
         means, stds = ni.normalization
@@ -505,6 +473,71 @@ class RFDetrForInstanceSegmentationTRT(
         )
         out_buffer._pre_processing_meta = [meta]  # type: ignore[attr-defined]
         return out_buffer, [meta]
+
+    def _unsupported_fast_preprocess_reason(self, images, image_size) -> Optional[str]:
+        """Return why the Triton TRT preproc path cannot handle this request."""
+        if not _TRITON_AVAILABLE:
+            return "triton is not installed"
+        if image_size is not None:
+            return "custom image_size overrides are not supported"
+        # pre_processing_overrides can only *disable* transforms; it has no
+        # "enable" knob. The fast path never applies static_crop / grayscale /
+        # contrast regardless, so the override flags are irrelevant. The gate
+        # only needs to reject model configs that require those transforms.
+        ipp = self._inference_config.image_pre_processing
+        if (
+            (ipp.static_crop is not None and ipp.static_crop.enabled)
+            or (ipp.contrast is not None and ipp.contrast.enabled)
+            or (ipp.grayscale is not None and ipp.grayscale.enabled)
+        ):
+            return "static crop, contrast, and grayscale preprocessing are unsupported"
+
+        ni = self._inference_config.network_input
+        if ni.dataset_version_resize_dimensions is not None:
+            return "dataset-version resize is unsupported"
+        if ni.input_channels != 3:
+            return "only 3-channel inputs are supported"
+        if ni.scaling_factor not in (None, 255):
+            return "only scaling_factor None or 255 is supported"
+        if ni.normalization is None:
+            return "normalization is required"
+        if ni.resize_mode not in (
+            ResizeMode.STRETCH_TO,
+            ResizeMode.LETTERBOX,
+            ResizeMode.CENTER_CROP,
+            ResizeMode.LETTERBOX_REFLECT_EDGES,
+        ):
+            return f"resize mode {ni.resize_mode!r} is unsupported"
+
+        if isinstance(images, list):
+            if len(images) != 1:
+                return "only batch size 1 is supported"
+            candidate = images[0]
+        else:
+            candidate = images
+        if not isinstance(candidate, np.ndarray):
+            return "only numpy ndarray inputs are supported"
+        if (
+            candidate.dtype != np.uint8
+            or candidate.ndim != 3
+            or candidate.shape[2] != 3
+        ):
+            return "input must be uint8 HWC with 3 channels"
+        return None
+
+    def _warn_unsupported_fast_preprocess(self, reason: str) -> None:
+        warned_reasons = getattr(self, "_fast_preprocess_warned_reasons", None)
+        if warned_reasons is None:
+            warned_reasons = set()
+            self._fast_preprocess_warned_reasons = warned_reasons
+        if reason in warned_reasons:
+            return
+        warned_reasons.add(reason)
+        warnings.warn(
+            f"RF-DETR Triton preprocess path is unsupported: {reason}",
+            RuntimeWarning,
+            stacklevel=3,
+        )
 
     def forward(
         self,
