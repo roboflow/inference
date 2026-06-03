@@ -336,8 +336,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         # (preprocess→forward→postprocess on each frame, in order). depth=2
         # means two stages in parallel: while the GPU works on the current
         # frame, the CPU prepares/submits the next frame, then harvests the
-        # previous response. The response delay is therefore depth - 1 frames.
-        self._pipeline_depth = get_rfdetr_pipeline_depth()
+        # previous response. Only models that explicitly support the deferred
+        # GPU handoff contract can use this; other instance-segmentation
+        # backends keep depth=1 even if RFDETR_PIPELINE_DEPTH is set.
+        self._pipeline_depth = self._resolve_pipeline_depth()
         self._response_delay = max(1, self._pipeline_depth - 1)
         # Per-adapter in-flight futures + metadata. Not thread-safe; the
         # InferencePipeline is single-producer and the adapter is owned by a
@@ -353,6 +355,20 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._response_futures: Deque[
             Future[List[InstanceSegmentationInferenceResponse]]
         ] = deque()
+
+    def _resolve_pipeline_depth(self) -> int:
+        requested_depth = get_rfdetr_pipeline_depth()
+        if requested_depth <= 1 or self._model_supports_stream_pipeline():
+            return requested_depth
+        return 1
+
+    def _model_supports_stream_pipeline(self) -> bool:
+        supports_stream_pipeline = getattr(
+            self._model, "supports_stream_pipeline", False
+        )
+        if callable(supports_stream_pipeline):
+            return bool(supports_stream_pipeline())
+        return bool(supports_stream_pipeline)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"

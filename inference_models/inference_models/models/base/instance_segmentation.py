@@ -37,8 +37,10 @@ class InferenceFuture(Protocol):
 
     The returned object lets a caller start a subsequent ``infer_async`` call
     while the GPU is still executing the previous one. Calling ``result()``
-    blocks on a single GPU event, then runs CPU-side post-processing and
-    returns the decoded detections. ``done()`` is a non-blocking probe.
+    materializes the post-processing result for that request; backends may
+    either block there or return a deferred result whose own consumers perform
+    the final CUDA synchronization. ``done()`` is a non-blocking probe of the
+    forward completion event.
     """
 
     def result(self) -> List["InstanceDetections"]: ...
@@ -51,8 +53,10 @@ class _DirectInferenceFuture:
 
     Holds the raw forward output plus the preprocessing metadata needed by
     ``post_process``. The event is recorded on the stream that produced the
-    raw output; ``result()`` synchronizes on it before running CPU decode.
-    Post-process output is memoised so ``result()`` may be called repeatedly.
+    raw output. ``result()`` runs or returns the model's post-processing result;
+    optimized backends order post-processing with CUDA events and defer host
+    synchronization until CPU-visible tensors are copied. Post-process output is
+    memoised so ``result()`` may be called repeatedly.
     """
 
     # No __slots__: adapters attach per-request context through
@@ -217,6 +221,18 @@ class InstanceSegmentationModel(
     @abstractmethod
     def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
         pass
+
+    @property
+    def supports_stream_pipeline(self) -> bool:
+        """Whether this model can safely use adapter-level stream pipelining.
+
+        The default async future only defers ``post_process`` to ``result()`` and
+        does not guarantee the non-blocking deferred GPU handoff that the stream
+        adapter relies on for depth>1 scheduling. Models that implement that
+        contract, such as RF-DETR TensorRT with CUDA graph output handoff, opt in
+        by overriding this property.
+        """
+        return False
 
     def infer(
         self,
