@@ -68,6 +68,55 @@ class _FakeExecutionEngine:
         return [{"predictions": f"frame-{prediction_frame}"}]
 
 
+class _FakeLateActivatingStep:
+    def __init__(self, active_stream_buffer_depth: int) -> None:
+        self._active_stream_buffer_depth = active_stream_buffer_depth
+        self._stream_buffer_depth = 0
+        self.flush_calls = 0
+
+    def can_activate_stream_pipeline(self) -> bool:
+        return True
+
+    def is_stream_pipelined(self) -> bool:
+        return self._stream_buffer_depth > 0
+
+    def stream_pipeline_depth(self) -> int:
+        return self._stream_buffer_depth
+
+    def activate(self) -> None:
+        self._stream_buffer_depth = self._active_stream_buffer_depth
+
+    def flush_stream_pipeline(self):
+        self.flush_calls += 1
+        return [[{"predictions": "frame-2"}]]
+
+
+class _FakeLateActivatingExecutionEngine:
+    def __init__(self, active_stream_buffer_depth: int) -> None:
+        self.step = _FakeLateActivatingStep(
+            active_stream_buffer_depth=active_stream_buffer_depth
+        )
+        self._engine = SimpleNamespace(
+            _compiled_workflow=SimpleNamespace(
+                steps={"segmentation": SimpleNamespace(step=self.step)}
+            )
+        )
+
+    def run(
+        self,
+        runtime_parameters,
+        fps,
+        serialize_results,
+        _is_preview,
+    ):
+        frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
+        # Real RF-DETR workflow steps only know whether stream pipelining is
+        # active after the first model request has loaded the concrete model.
+        self.step.activate()
+        prediction_frame = frame_number - self.step.stream_pipeline_depth()
+        return [{"predictions": f"frame-{prediction_frame}"}]
+
+
 class _ImmediateExecutor:
     def submit(self, fn, *args, **kwargs) -> Future:
         future = Future()
@@ -245,6 +294,40 @@ def test_workflow_runner_buffers_frames_until_delayed_prediction_arrives() -> No
             "is_preview": False,
         },
     ]
+
+
+def test_workflow_runner_buffers_when_stream_pipeline_activates_after_first_run() -> (
+    None
+):
+    engine = _FakeLateActivatingExecutionEngine(active_stream_buffer_depth=1)
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+    assert isinstance(runner, PipelinedWorkflowRunner)
+    assert engine.step.stream_pipeline_depth() == 0
+    frame_1 = _make_frame(1)
+    frame_2 = _make_frame(2)
+
+    first_result = runner([frame_1])
+    second_result = runner([frame_2])
+    flushed_results = runner.flush()
+
+    assert first_result is None
+    assert second_result is not None
+    assert second_result.predictions == [{"predictions": "frame-1"}]
+    assert second_result.video_frames == [frame_1]
+    assert flushed_results is not None
+    assert len(flushed_results) == 1
+    assert flushed_results[0].predictions == [{"predictions": "frame-2"}]
+    assert flushed_results[0].video_frames == [frame_2]
+    assert engine.step.flush_calls == 1
 
 
 def test_instance_segmentation_stream_flush_drains_model_without_rerunning_workflow() -> (
