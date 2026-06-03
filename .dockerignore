@@ -40,3 +40,9 @@ scratch
 lora-bases
 lora-tars
 tmptmp
+
+# Virtualenvs / build artifacts — nested (bare patterns above match root only)
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.egg-info/
