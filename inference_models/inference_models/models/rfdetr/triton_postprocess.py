@@ -21,7 +21,7 @@ compressed COCO RLE counts, and wrap them in ``InstanceDetections``.
 """
 
 import warnings
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -71,8 +71,10 @@ _MAX_QUERY_CLASS_PRODUCTS = 65536
 _MAX_INTERPOLATION_WEIGHT_CACHE_ENTRIES = 16
 _INTERPOLATION_WEIGHT_CACHE = OrderedDict()
 _INTERPOLATION_WEIGHT_CACHE_LOCK = Lock()
-_PINNED_HOST_POOL = defaultdict(list)
+_MAX_PINNED_HOST_POOL_BUFFERS = 8
+_PINNED_HOST_POOL = OrderedDict()
 _PINNED_HOST_POOL_LOCK = Lock()
+_PINNED_HOST_POOL_SIZE = 0
 
 
 def _get_interpolation_weights(
@@ -185,10 +187,13 @@ def _allocate_source_bounds(
 
 def _acquire_pinned_host_buffer(source: torch.Tensor) -> torch.Tensor:
     """Return a pinned CPU tensor matching ``source`` for async DtoH copies."""
+    global _PINNED_HOST_POOL_SIZE
     key = (tuple(source.shape), source.dtype)
     with _PINNED_HOST_POOL_LOCK:
-        buffers = _PINNED_HOST_POOL[key]
+        buffers = _PINNED_HOST_POOL.get(key)
         if buffers:
+            _PINNED_HOST_POOL.move_to_end(key)
+            _PINNED_HOST_POOL_SIZE -= 1
             return buffers.pop()
     # Pinned memory is required for ``non_blocking=True`` GPU-to-CPU copies to
     # overlap with later GPU work; allocating it per frame is expensive.
@@ -196,10 +201,16 @@ def _acquire_pinned_host_buffer(source: torch.Tensor) -> torch.Tensor:
 
 
 def _release_pinned_host_buffer(buffer: torch.Tensor) -> None:
-    """Return a pinned host buffer to the small shape/dtype reuse pool."""
+    """Return a pinned host buffer to the bounded shape/dtype reuse pool."""
+    global _PINNED_HOST_POOL_SIZE
     key = (tuple(buffer.shape), buffer.dtype)
     with _PINNED_HOST_POOL_LOCK:
-        _PINNED_HOST_POOL[key].append(buffer)
+        if _PINNED_HOST_POOL_SIZE >= _MAX_PINNED_HOST_POOL_BUFFERS:
+            return
+        buffers = _PINNED_HOST_POOL.setdefault(key, [])
+        buffers.append(buffer)
+        _PINNED_HOST_POOL.move_to_end(key)
+        _PINNED_HOST_POOL_SIZE += 1
 def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     image_bboxes: torch.Tensor,
     image_scores: torch.Tensor,

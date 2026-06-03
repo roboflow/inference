@@ -1,9 +1,10 @@
 import base64
 import io
 import os
-from collections import deque
+from collections import OrderedDict, deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from io import BytesIO
+from threading import local
 from time import perf_counter
 from typing import Any, Deque, List, Optional, Tuple, Union
 
@@ -99,19 +100,32 @@ DEFAULT_COLOR_PALETTE = [
     "#FF39C9",
 ]
 
-# Pinned host buffers for async DtoH on the full-postproc Triton fast path.
-# Keyed by (name, dtype); reused across frames provided the cached buffer is
-# at least as large as the requested shape in every dimension.
-PINNED_HOST_BUFFERS: dict = {}
+_PINNED_HOST_BUFFER_CACHE_SIZE = 16
+_PINNED_HOST_BUFFER_CONTEXT = local()
 
 
 def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
+    """Return a thread-local pinned CPU scratch tensor for async DtoH copies.
+
+    Response finalization can run on a worker thread while the inference thread
+    submits later GPU work. Keeping this cache thread-local avoids two workers
+    writing into the same scratch tensor. The small LRU cap prevents retaining a
+    new pinned allocation for every transient shape.
+    """
+    cache = getattr(_PINNED_HOST_BUFFER_CONTEXT, "cache", None)
+    if cache is None:
+        cache = OrderedDict()
+        _PINNED_HOST_BUFFER_CONTEXT.cache = cache
     key = (name, dtype)
-    buf = PINNED_HOST_BUFFERS.get(key)
+    buf = cache.get(key)
     if buf is not None and all(buf.shape[i] >= shape[i] for i in range(len(shape))):
+        cache.move_to_end(key)
         return buf[tuple(slice(0, s) for s in shape)]
     buf = torch.empty(shape, dtype=dtype, pin_memory=True)
-    PINNED_HOST_BUFFERS[key] = buf
+    cache[key] = buf
+    cache.move_to_end(key)
+    while len(cache) > _PINNED_HOST_BUFFER_CACHE_SIZE:
+        cache.popitem(last=False)
     return buf
 
 
