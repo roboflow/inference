@@ -271,18 +271,40 @@ class EffectiveUpdates(NamedTuple):
     results: List[Optional[Dict[str, Any]]]
 
 
+def _resolve_element(v: Any, index: int) -> Any:
+    return v[index] if isinstance(v, Batch) else v
+
+
+def _normalize_to_per_row(value: Any, n: int) -> List[Any]:
+    if isinstance(value, Batch):
+        return list(value)
+    if value is None:
+        return [None] * n
+    if isinstance(value, dict):
+        if not any(isinstance(v, Batch) for v in value.values()):
+            return [value] * n
+        return [
+            {k: _resolve_element(v, i) for k, v in value.items()}
+            for i in range(n)
+        ]
+    if isinstance(value, list):
+        if not any(isinstance(v, Batch) for v in value):
+            return [value] * n
+        return [
+            [_resolve_element(v, i) for v in value]
+            for i in range(n)
+        ]
+    return [value] * n
+
+
 def build_effective_updates(
     source_ids: Batch[str],
     metadata: Optional[Union[Dict[str, Any], Batch[Optional[Dict[str, Any]]]]],
     tags: Optional[Union[List[str], Batch[Optional[List[str]]]]],
 ) -> EffectiveUpdates:
     n = len(source_ids)
-    metadata_values: List[Optional[Dict[str, Any]]] = (
-        list(metadata) if isinstance(metadata, Batch) else [metadata] * n
-    )
-    tag_values: List[Optional[List[str]]] = (
-        list(tags) if isinstance(tags, Batch) else [tags] * n
-    )
+    metadata_values = _normalize_to_per_row(metadata, n)
+    tag_values = _normalize_to_per_row(tags, n)
     results: List[Optional[Dict[str, Any]]] = [None] * n
     updates_by_source_id: Dict[str, Dict[str, Any]] = {}
     result_indices_by_id: Dict[str, List[int]] = {}
@@ -312,6 +334,30 @@ def build_effective_updates(
     )
 
 
+def _extract_response_body(error: Exception) -> str:
+    for exc in (error, getattr(error, "__cause__", None)):
+        response = getattr(exc, "response", None)
+        if response is None:
+            continue
+        try:
+            return str(response.json())
+        except Exception:
+            pass
+        try:
+            return response.text[:500]
+        except Exception:
+            pass
+    return ""
+
+
+def _format_api_error(prefix: str, error: Exception) -> str:
+    body = _extract_response_body(error)
+    detail = f"Error type: {type(error).__name__}. Details: {error}"
+    if body:
+        detail += f". Response body: {body}"
+    return f"{prefix}. {detail}"
+
+
 def call_single_image_endpoint(
     workspace_id: str,
     update: Dict[str, Any],
@@ -326,15 +372,15 @@ def call_single_image_endpoint(
             add_tags=update.get("addTags"),
         )
     except Exception as error:
+        message = _format_api_error(
+            "Error while updating Asset Library attributes", error
+        )
         logging.warning(
             "Could not update Asset Library attributes for image %s: %s",
             update["imageId"],
-            error,
+            message,
         )
-        return {
-            "error_status": True,
-            "message": f"Error while updating Asset Library attributes. Error type: {type(error)}. Details: {error}",
-        }
+        return {"error_status": True, "message": message}
     return {"error_status": False, "message": UPDATE_SUCCESS_MESSAGE}
 
 
@@ -352,13 +398,13 @@ def call_batch_endpoint(
         if not response.get("taskId"):
             raise ValueError("Malformed image metadata batch response: missing taskId")
     except Exception as error:
-        logging.warning(
-            "Could not submit Asset Library attributes batch update: %s", error
+        message = _format_api_error(
+            "Error while submitting Asset Library attributes update", error
         )
-        return {
-            "error_status": True,
-            "message": f"Error while submitting Asset Library attributes update. Error type: {type(error)}. Details: {error}",
-        }
+        logging.warning(
+            "Could not submit Asset Library attributes batch update: %s", message
+        )
+        return {"error_status": True, "message": message}
     logging.info(
         "Submitted Asset Library attributes batch update: updates=%d",
         len(updates),
