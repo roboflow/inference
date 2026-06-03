@@ -1,12 +1,16 @@
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import InferenceHandlerResult
-from inference.core.interfaces.stream.model_handlers.workflows_context import (
-    workflow_stream_flush_context,
-)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
+
+
+@dataclass(frozen=True)
+class _StreamPipelineStep:
+    step: Any
+    depth: int
 
 
 class WorkflowRunner:
@@ -48,23 +52,43 @@ class WorkflowRunner:
         )
 
     def flush(self) -> Optional[List[InferenceHandlerResult]]:
-        if self._stream_buffer_depth() <= 0:
+        stream_steps = self._stream_pipeline_steps()
+        if not stream_steps:
             self._pending_video_frames.clear()
             return None
         if not self._pending_video_frames:
             return None
+        if len(stream_steps) != 1:
+            raise RuntimeError("Stream pipeline flushing supports one pipelined step")
+        flush_fn = getattr(stream_steps[0].step, "flush_stream_pipeline", None)
+        if not callable(flush_fn):
+            raise RuntimeError(
+                "Stream-pipelined workflow step must implement flush_stream_pipeline()"
+            )
+        predictions = flush_fn()
+        if predictions is None:
+            predictions = []
+        if len(predictions) != len(self._pending_video_frames):
+            raise RuntimeError(
+                "Stream pipeline flush returned a different number of prediction "
+                "batches than pending video-frame batches"
+            )
         results = []
-        while self._pending_video_frames:
+        for prediction in predictions:
             emit_video_frames = self._pending_video_frames.pop(0)
-            with workflow_stream_flush_context():
-                predictions = self._run_workflow(video_frames=emit_video_frames)
             results.append(
                 InferenceHandlerResult(
-                    predictions=predictions,
+                    predictions=prediction,
                     video_frames=emit_video_frames,
                 )
             )
         return results
+
+    def close(self) -> None:
+        for stream_step in self._stream_pipeline_steps():
+            close_fn = getattr(stream_step.step, "close_stream_pipeline", None)
+            if callable(close_fn):
+                close_fn()
 
     def _run_workflow(self, video_frames: List[VideoFrame]) -> List[dict]:
         workflows_parameters: Dict[str, Any] = dict(self._workflows_parameters or {})
@@ -114,17 +138,27 @@ class WorkflowRunner:
         return self._stream_buffer_depth() > 0
 
     def _stream_buffer_depth(self) -> int:
+        stream_steps = self._stream_pipeline_steps()
+        if not stream_steps:
+            return 0
+        return max(stream_step.depth for stream_step in stream_steps)
+
+    def _stream_pipeline_steps(self) -> List[_StreamPipelineStep]:
         engine = getattr(self._execution_engine, "_engine", None)
         compiled_workflow = getattr(engine, "_compiled_workflow", None)
         steps = getattr(compiled_workflow, "steps", {})
-        stream_buffer_depth = 0
+        stream_steps = []
         for initialised_step in steps.values():
             step_instance = getattr(initialised_step, "step", None)
             is_stream_pipelined = getattr(step_instance, "is_stream_pipelined", None)
             if callable(is_stream_pipelined) and is_stream_pipelined():
                 get_depth = getattr(step_instance, "stream_pipeline_depth", None)
                 if callable(get_depth):
-                    stream_buffer_depth = max(stream_buffer_depth, int(get_depth()))
+                    depth = int(get_depth())
                 else:
-                    stream_buffer_depth = max(stream_buffer_depth, 1)
-        return stream_buffer_depth
+                    depth = 1
+                if depth > 0:
+                    stream_steps.append(
+                        _StreamPipelineStep(step=step_instance, depth=depth)
+                    )
+        return stream_steps
