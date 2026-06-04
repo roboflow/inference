@@ -76,10 +76,10 @@ class FastPreprocessState:
     size used by the Triton kernels.
 
     Attributes:
-        pinned_host: Pinned CPU HWC uint8 staging tensor. The incoming numpy
+        pinned_hosts: Ring of pinned CPU HWC uint8 staging tensors. The incoming numpy
             image is copied here first so the following host-to-device copy can
             be submitted as ``non_blocking=True`` on the preprocessing stream.
-        src_gpu: CUDA HWC uint8 tensor consumed by the horizontal Triton kernel.
+        src_gpus: Ring of CUDA HWC uint8 tensors consumed by the horizontal Triton kernel.
         out_buffers: Ring of CUDA fp32 ``(1, 3, target_h, target_w)`` outputs.
             The returned tensor can still be owned by TensorRT or response
             finalization while Python prepares the next frame, so the ring avoids
@@ -99,8 +99,8 @@ class FastPreprocessState:
         "src_w",
         "target_h",
         "target_w",
-        "pinned_host",
-        "src_gpu",
+        "pinned_hosts",
+        "src_gpus",
         "out_buffers",
         "tmp_buffers",
         "out_buffer_index",
@@ -114,8 +114,8 @@ class FastPreprocessState:
         src_w: int,
         target_h: int,
         target_w: int,
-        pinned_host: torch.Tensor,
-        src_gpu: torch.Tensor,
+        pinned_hosts: List[torch.Tensor],
+        src_gpus: List[torch.Tensor],
         out_buffers: List[torch.Tensor],
         tmp_buffers: List[torch.Tensor],
         tables: ResampleTables,
@@ -125,8 +125,8 @@ class FastPreprocessState:
         self.src_w = src_w
         self.target_h = target_h
         self.target_w = target_w
-        self.pinned_host = pinned_host
-        self.src_gpu = src_gpu
+        self.pinned_hosts = pinned_hosts
+        self.src_gpus = src_gpus
         self.out_buffers = out_buffers
         self.tmp_buffers = tmp_buffers
         self.out_buffer_index = 0
@@ -143,8 +143,14 @@ class FastPreprocessState:
         device: torch.device,
     ) -> "FastPreprocessState":
         """Allocate shape-specific buffers and build GPU resample tables."""
-        pinned_host = torch.empty((src_h, src_w, 3), dtype=torch.uint8, pin_memory=True)
-        src_gpu = torch.empty((src_h, src_w, 3), dtype=torch.uint8, device=device)
+        pinned_hosts = [
+            torch.empty((src_h, src_w, 3), dtype=torch.uint8, pin_memory=True)
+            for _ in range(_BUFFER_RING_SIZE)
+        ]
+        src_gpus = [
+            torch.empty((src_h, src_w, 3), dtype=torch.uint8, device=device)
+            for _ in range(_BUFFER_RING_SIZE)
+        ]
         out_buffers = [
             torch.empty((1, 3, target_h, target_w), dtype=torch.float32, device=device)
             for _ in range(_BUFFER_RING_SIZE)
@@ -165,8 +171,8 @@ class FastPreprocessState:
             src_w=src_w,
             target_h=target_h,
             target_w=target_w,
-            pinned_host=pinned_host,
-            src_gpu=src_gpu,
+            pinned_hosts=pinned_hosts,
+            src_gpus=src_gpus,
             out_buffers=out_buffers,
             tmp_buffers=tmp_buffers,
             tables=tables,
@@ -182,13 +188,17 @@ class FastPreprocessState:
             or self.target_w != target_w
         )
 
-    def next_buffers(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def next_buffers(
+        self,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Return the next output/scratch pair from the ring."""
         idx = self.out_buffer_index
+        pinned_host = self.pinned_hosts[idx]
+        src_gpu = self.src_gpus[idx]
         out = self.out_buffers[idx]
         tmp = self.tmp_buffers[idx]
         self.out_buffer_index = (idx + 1) % len(self.out_buffers)
-        return out, tmp
+        return pinned_host, src_gpu, out, tmp
 
 
 class FastPreprocessRuntime:
@@ -288,13 +298,19 @@ class FastPreprocessRuntime:
             )
             self._state = state
 
-        np.copyto(state.pinned_host.numpy(), candidate, casting="no")
-        out_buffer, tmp_buffer = state.next_buffers()
+        pinned_host, src_gpu, out_buffer, tmp_buffer = state.next_buffers()
+        preproc_ready_event = getattr(pinned_host, "_preproc_ready_event", None)
+        if preproc_ready_event is not None:
+            preproc_ready_event.synchronize()
+        np.copyto(pinned_host.numpy(), candidate, casting="no")
 
         with torch.cuda.stream(stream):
-            state.src_gpu.copy_(state.pinned_host, non_blocking=True)
+            trt_consumed_event = getattr(out_buffer, "_trt_consumed_event", None)
+            if trt_consumed_event is not None:
+                stream.wait_event(trt_consumed_event)
+            src_gpu.copy_(pinned_host, non_blocking=True)
             triton_preprocess_rfdetr_stretch_two_pass_preallocated(
-                src=state.src_gpu,
+                src=src_gpu,
                 out=out_buffer,
                 tmp=tmp_buffer,
                 tables=state.tables,
@@ -308,6 +324,7 @@ class FastPreprocessRuntime:
             ready_event = torch.cuda.Event()
             ready_event.record(stream)
             out_buffer._trt_ready_event = ready_event  # type: ignore[attr-defined]
+            pinned_host._preproc_ready_event = ready_event  # type: ignore[attr-defined]
             out_buffer.record_stream(stream)
 
         metadata = [

@@ -705,11 +705,48 @@ def _execute_trt_engine(
         else:
             trt_cuda_graph_state = trt_cuda_graph_cache[cache_key]
             stream = trt_cuda_graph_state.cuda_stream
+            consumer_done = trt_cuda_graph_state.consumer_done_event
+            if consumer_done is not None:
+                stream.wait_event(consumer_done)
+            input_ready = getattr(pre_processed_images, "_trt_ready_event", None)
             with torch.cuda.stream(stream):
-                trt_cuda_graph_state.input_buffer.copy_(pre_processed_images)
+                if input_ready is not None:
+                    stream.wait_event(input_ready)
+                if (
+                    trt_cuda_graph_state.input_buffer.data_ptr()
+                    != pre_processed_images.data_ptr()
+                ):
+                    trt_cuda_graph_state.input_buffer.copy_(pre_processed_images)
+                    input_consumed_event = torch.cuda.Event()
+                    input_consumed_event.record(stream)
+                    pre_processed_images._trt_consumed_event = (  # type: ignore[attr-defined]
+                        input_consumed_event
+                    )
                 trt_cuda_graph_state.cuda_graph.replay()
-                results = [buf.clone() for buf in trt_cuda_graph_state.output_buffers]
-            stream.synchronize()
+                if (
+                    trt_cuda_graph_state.input_buffer.data_ptr()
+                    == pre_processed_images.data_ptr()
+                ):
+                    input_consumed_event = torch.cuda.Event()
+                    input_consumed_event.record(stream)
+                    pre_processed_images._trt_consumed_event = (  # type: ignore[attr-defined]
+                        input_consumed_event
+                    )
+                if synchronize:
+                    results = [
+                        buf.clone() for buf in trt_cuda_graph_state.output_buffers
+                    ]
+                else:
+                    results = list(trt_cuda_graph_state.output_buffers)
+                produce_event = torch.cuda.Event()
+                produce_event.record(stream)
+            if synchronize:
+                stream.synchronize()
+            _attach_trt_graph_metadata(
+                results=results,
+                trt_cuda_graph_state=trt_cuda_graph_state,
+                produce_event=produce_event,
+            )
             return results
 
     else:
