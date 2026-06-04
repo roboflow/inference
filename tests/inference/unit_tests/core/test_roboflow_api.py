@@ -1155,6 +1155,37 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     }
 
 
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
+def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_provided(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    expected_response = {
+        "modelId": "rfdetr-nano",
+        "type": "object-detection",
+        "taskType": "object-detection",
+        "modelType": "rfdetr-nano",
+    }
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
+        json=expected_response,
+    )
+
+    # when
+    result = get_model_metadata_from_inference_models_registry(
+        api_key=None,
+        model_id="rfdetr-nano",
+    )
+
+    # then
+    assert "modelid=rfdetr-nano" in requests_mock.last_request.query
+    assert "Authorization" not in requests_mock.last_request.headers
+    assert result == {
+        "modelType": "rfdetr-nano",
+        "taskType": "object-detection",
+    }
+
+
 @mock.patch.object(roboflow_api, "GCP_SERVERLESS", True)
 @mock.patch.object(roboflow_api, "ENFORCE_CREDITS_VERIFICATION", True)
 @mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
