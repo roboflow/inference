@@ -815,11 +815,6 @@ def post_process_semantic_segmentation_logits(
                 interpolation=functional.InterpolationMode.BILINEAR,
             )
         if image_results.shape[0] == 1:
-            # Binary (Ultralytics nc==1) head: a single foreground logit; softmax
-            # over one channel is degenerate (≡1.0), so use the sigmoid foreground
-            # probability. The package is validated at load time
-            # (resolve_background_class_id) to have >= 1 foreground class, so the
-            # lone non-background id always exists.
             image_confidence = image_results[0].sigmoid()
             foreground_id = next(
                 i for i in range(len(class_names)) if i != background_class_id

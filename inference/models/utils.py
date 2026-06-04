@@ -991,13 +991,8 @@ if USE_INFERENCE_MODELS:
             )
 
     # YOLO26 semantic segmentation is inference_models-only (no legacy implementation),
-    # so we add entries directly rather than swapping existing ones. Register the
-    # architecture family ("yolo26", reported by pretrained/public models via
-    # modelArchitecture) plus every trained variant ("yolo26n-sem" ... reported by
-    # fine-tuned versioned models via their ORT modelType). There's no
-    # variant->family normalization in get_model_type, so both must be present
-    # (mirrors the YOLOLite registration below).
-    for _yolo26_sem_variant in [
+    # so we add entries directly rather than swapping existing ones.
+    for variant in [
         "yolo26",
         "yolo26n-sem",
         "yolo26s-sem",
@@ -1005,7 +1000,7 @@ if USE_INFERENCE_MODELS:
         "yolo26l-sem",
         "yolo26x-sem",
     ]:
-        ROBOFLOW_MODEL_TYPES[("semantic-segmentation", _yolo26_sem_variant)] = (
+        ROBOFLOW_MODEL_TYPES[("semantic-segmentation", variant)] = (
             InferenceModelsSemanticSegmentationAdapter
         )
 
