@@ -588,10 +588,8 @@ def get_model_metadata_from_inference_models_registry(
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
 ) -> dict:
-    # Watch out - this function should only be used to substitute get_roboflow_instant_model_data()
-    # and only in terms of getting model type and task type
-    # this is only stub to make sure auth works as it should for models which are not
-    # associated to project via version (for which old auth and metadata retrieval method work).
+    # This endpoint is only used for auth and model/task type lookup. Actual
+    # artifact downloads still go through the inference-models weights provider.
     api_data_cache_key = f"{cache_prefix}:{model_id}"
     api_data = None
     if not MODELS_CACHE_AUTH_ENABLED:
@@ -614,13 +612,13 @@ def get_model_metadata_from_inference_models_registry(
     if ROBOFLOW_INTERNAL_SERVICE_SECRET:
         headers["X-Roboflow-Internal-Service-Secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
     api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/models/v1/external/weights",
+        url=f"{API_BASE_URL}/models/v1/external/stat",
         params=query,
     )
     raw_api_data = _get_from_url(url=api_url, headers=headers)
     api_data = {
-        "modelType": raw_api_data["modelMetadata"]["modelArchitecture"],
-        "taskType": raw_api_data["modelMetadata"]["taskType"],
+        "modelType": raw_api_data["modelType"],
+        "taskType": raw_api_data["taskType"],
     }
     cache.set(
         api_data_cache_key,

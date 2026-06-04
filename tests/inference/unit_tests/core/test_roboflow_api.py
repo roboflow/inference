@@ -1130,13 +1130,13 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 ) -> None:
     # given
     expected_response = {
-        "modelMetadata": {
-            "modelArchitecture": "yolov8",
-            "taskType": "object-detection",
-        }
+        "modelId": "coins_detection/1",
+        "type": "object-detection",
+        "taskType": "object-detection",
+        "modelType": "rfdetr-nano",
     }
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         json=expected_response,
     )
 
@@ -1150,7 +1150,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
     assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
     assert result == {
-        "modelType": "yolov8",
+        "modelType": "rfdetr-nano",
         "taskType": "object-detection",
     }
 
@@ -1163,13 +1163,13 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 ) -> None:
     # given
     expected_response = {
-        "modelMetadata": {
-            "modelArchitecture": "yolov8",
-            "taskType": "object-detection",
-        }
+        "modelId": "coins_detection/1",
+        "type": "object-detection",
+        "taskType": "object-detection",
+        "modelType": "yolov8",
     }
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         json=expected_response,
     )
 
@@ -1204,13 +1204,13 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 ) -> None:
     # given
     expected_response = {
-        "modelMetadata": {
-            "modelArchitecture": "yolov8",
-            "taskType": "object-detection",
-        }
+        "modelId": "coins_detection/1",
+        "type": "object-detection",
+        "taskType": "object-detection",
+        "modelType": "yolov8",
     }
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         json=expected_response,
     )
 

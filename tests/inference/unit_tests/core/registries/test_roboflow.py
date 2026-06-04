@@ -439,6 +439,41 @@ def test_get_model_type_when_roboflow_api_is_called_for_model_from_new_model_reg
 
 
 @mock.patch.object(roboflow, "get_roboflow_model_data")
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+def test_get_model_type_when_versioned_model_from_new_model_registry_is_requested(
+    construct_model_type_cache_path_mock: MagicMock,
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    get_roboflow_model_data_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_model_metadata_from_inference_models_registry_mock.return_value = {
+        "modelType": "rfdetr-nano",
+        "taskType": "object-detection",
+    }
+
+    # when
+    result = get_model_type(
+        model_id="coco/38",
+        api_key="my_api_key",
+    )
+
+    # then
+    assert result == ("object-detection", "rfdetr-nano")
+    get_model_metadata_from_inference_models_registry_mock.assert_called_once_with(
+        api_key="my_api_key",
+        model_id="coco/38",
+        countinference=None,
+        service_secret=None,
+    )
+    get_roboflow_model_data_mock.assert_not_called()
+
+
+@mock.patch.object(roboflow, "get_roboflow_model_data")
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model_type_not_specified(
     construct_model_type_cache_path_mock: MagicMock,
