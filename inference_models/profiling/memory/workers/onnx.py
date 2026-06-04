@@ -11,11 +11,26 @@ import torch
 
 from profiling.memory.input_factory import (
     build_random_rgb_images,
-    describe_shape_signature,
     merge_infer_kwargs,
 )
+from profiling.memory.metadata import (
+    OnnxMetrics,
+    ProfileTier,
+    build_model_metadata_from_context,
+    build_runtime_metadata,
+    collect_environment_metadata,
+    collect_onnx_backend_metadata,
+    finalize_profile_record,
+    resolve_onnx_opset_from_metadata_context,
+)
 from profiling.memory.sampler import NvmlProcessMemorySampler
-from profiling.memory.schema import OnnxMemoryProfileResult, ShapeProfile
+from profiling.memory.package_input_profile import shape_spec_from_model
+from profiling.memory.worker_common import (
+    build_input_metadata,
+    build_profiling_run_metadata,
+    ensure_profiling_image_shapes,
+    parse_requested_shape,
+)
 
 
 def _resolve_class(
@@ -121,7 +136,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         payload: Worker configuration (model path, shape, iterations, device, etc.).
 
     Returns:
-        JSON-serializable dict from ``OnnxMemoryProfileResult.as_json_dict()``.
+        JSON-serializable ``MemoryProfileRecord`` dict.
 
     Raises:
         RuntimeError: If CUDA is unavailable or the device is not CUDA.
@@ -133,15 +148,17 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
     model_name_or_path = payload["model_name_or_path"]
     from_pretrained_kwargs: Dict[str, Any] = payload.get("from_pretrained_kwargs") or {}
     device_str: str = payload["device_str"]
-    batch_size = int(payload["batch_size"])
-    height = int(payload["height"])
-    width = int(payload["width"])
+    metadata_context: Dict[str, Any] = payload.get("metadata_context") or {}
+    profile_tier = ProfileTier(metadata_context.get("profile_tier"))
+    requested_batch, requested_height, requested_width = parse_requested_shape(payload)
+    batch_size = requested_batch
+    height = requested_height
+    width = requested_width
     infer_kwargs_user: Dict[str, Any] = payload.get("infer_kwargs") or {}
     task_type: Optional[str] = payload.get("task_type")
     method_name: str = payload["method_name"]
     warmup_iterations = int(payload["warmup_iterations"])
     measured_iterations = int(payload["measured_iterations"])
-    model_id = payload.get("model_id") or model_name_or_path
     architecture = payload.get("architecture")
     quantization = payload.get("quantization")
     sampling_interval_seconds = float(
@@ -192,6 +209,14 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     idle_after_session_create_bytes = sampler.snapshot()
 
+    batch_size, height, width = ensure_profiling_image_shapes(
+        model,
+        batch_size=batch_size,
+        height=height,
+        width=width,
+    )
+    shape_spec = shape_spec_from_model(model)
+
     images = build_random_rgb_images(
         batch_size,
         height=height,
@@ -201,13 +226,6 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         task_type=task_type,
         user=infer_kwargs_user,
     )
-    shape_signature = describe_shape_signature(
-        batch_size,
-        height=height,
-        width=width,
-        infer_kwargs=infer_kwargs,
-    )
-
     def run_inference_steps(num_steps: int) -> None:
         for _ in range(num_steps):
             _invoke_method(
@@ -239,38 +257,47 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
     if peak_process_gpu_bytes is None:
         notes.append("NVML sampling unavailable; install profiling-memory extra or GPU driver")
 
-    result = OnnxMemoryProfileResult(
-        model_id=model_id,
-        gpu_name=torch.cuda.get_device_name(device),
-        quantization=quantization,
-        shape_profile=ShapeProfile(
-            batch_size=batch_size,
-            height=height,
-            width=width,
-        ),
-        concurrency=1,
-        warmup_iterations=warmup_iterations,
-        measured_iterations=measured_iterations,
-        method_name=method_name,
-        shape_signature=shape_signature,
-        module_name=module_name,
-        class_name=class_name,
-        architecture=architecture,
-        task_type=task_type,
-        notes=notes,
-        extra={
-            "trace_dir": str(trace_dir),
-        },
+    metrics = OnnxMetrics(
         baseline_process_gpu_bytes_nvml=baseline_process_gpu_bytes,
         idle_after_session_create_bytes=idle_after_session_create_bytes,
         peak_process_gpu_bytes=peak_process_gpu_bytes,
         delta_peak_bytes=delta_peak_bytes,
-        execution_providers=execution_providers,
-        onnxruntime_version=onnxruntime.__version__,
-        trace_files=trace_files,
-        nvml_sampling_interval_seconds=sampling_interval_seconds,
     )
-    result_dict = result.as_json_dict()
+    model_metadata = build_model_metadata_from_context(metadata_context)
+    runtime_metadata = build_runtime_metadata(
+        module_name=module_name,
+        class_name=class_name,
+        method_name=method_name,
+    )
+    backend_metadata = collect_onnx_backend_metadata(
+        onnxruntime_version=onnxruntime.__version__,
+        execution_providers=execution_providers,
+        trace_dir=str(trace_dir),
+        opset=resolve_onnx_opset_from_metadata_context(metadata_context),
+    )
+    record = finalize_profile_record(
+        profile_tier=profile_tier,
+        metrics=metrics,
+        model_metadata=model_metadata,
+        runtime_metadata=runtime_metadata,
+        backend_metadata=backend_metadata,
+        input_metadata=build_input_metadata(
+            module_name=module_name,
+            class_name=class_name,
+            architecture=architecture,
+            task_type=task_type,
+            backend=payload.get("backend"),
+            batch_size=batch_size,
+            height=height,
+            width=width,
+            infer_kwargs=infer_kwargs,
+            shape_spec=shape_spec,
+        ),
+        environment_metadata=collect_environment_metadata(device=device),
+        profiling_run=build_profiling_run_metadata(payload, trace_files=trace_files),
+        notes=notes,
+    )
+    result_dict = record.as_json_dict()
 
     return result_dict
 
