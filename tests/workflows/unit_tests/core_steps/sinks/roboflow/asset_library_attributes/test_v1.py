@@ -13,6 +13,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes
     UPDATE_SUCCESS_MESSAGE,
     BlockManifest,
     RoboflowAssetLibraryAttributesBlockV1,
+    _extract_response_body,
+    _format_api_error,
+    _normalize_to_per_row,
     build_effective_updates,
 )
 from inference.core.workflows.execution_engine.entities.base import Batch
@@ -205,6 +208,44 @@ def test_run_batch_endpoint_error_returns_per_image_error(
     assert "preflight error" in result[1]["message"]
 
 
+def test_error_message_includes_response_body_from_http_error(
+    block: RoboflowAssetLibraryAttributesBlockV1, mocked_v1
+) -> None:
+    """When the API returns a 400 with a JSON body, the error message should include it."""
+    fake_response = mock.MagicMock()
+    fake_response.json.return_value = {"error": "tags must be a list of strings"}
+    http_error = Exception("400 Bad Request")
+    http_error.response = fake_response
+    mocked_v1.update_single.side_effect = http_error
+
+    result = block.run(
+        source_id=make_batch(["img-1"]),
+        metadata={"color": "red"},
+    )
+
+    assert result[0]["error_status"] is True
+    assert "tags must be a list of strings" in result[0]["message"]
+
+
+def test_extract_response_body_from_chained_cause() -> None:
+    fake_response = mock.MagicMock()
+    fake_response.json.return_value = {"detail": "invalid field"}
+    inner = Exception("HTTP 400")
+    inner.response = fake_response
+    outer = RuntimeError("wrapped")
+    outer.__cause__ = inner
+
+    body = _extract_response_body(outer)
+    assert "invalid field" in body
+
+
+def test_format_api_error_without_response_body() -> None:
+    msg = _format_api_error("Something failed", ValueError("bad input"))
+    assert "ValueError" in msg
+    assert "bad input" in msg
+    assert "Response body" not in msg
+
+
 def test_run_raises_when_effective_update_count_exceeds_batch_limit(
     block: RoboflowAssetLibraryAttributesBlockV1, mocked_v1
 ) -> None:
@@ -215,6 +256,53 @@ def test_run_raises_when_effective_update_count_exceeds_batch_limit(
             source_id=make_batch([f"img-{i}" for i in range(count)]),
             metadata={"value": "x"},
         )
+
+
+def test_normalize_to_per_row_none() -> None:
+    assert _normalize_to_per_row(None, 3) == [None, None, None]
+
+
+def test_normalize_to_per_row_batch() -> None:
+    assert _normalize_to_per_row(make_batch(["a", "b"]), 2) == ["a", "b"]
+
+
+def test_normalize_to_per_row_plain_scalar_broadcasts() -> None:
+    d = {"color": "red"}
+    result = _normalize_to_per_row(d, 2)
+    assert result == [d, d]
+
+
+def test_normalize_to_per_row_dict_with_batch_values() -> None:
+    result = _normalize_to_per_row(
+        {"color": make_batch(["red", "blue"]), "static": "abc"}, 2
+    )
+    assert result == [
+        {"color": "red", "static": "abc"},
+        {"color": "blue", "static": "abc"},
+    ]
+
+
+def test_normalize_to_per_row_list_with_batch_values() -> None:
+    result = _normalize_to_per_row(
+        ["static-tag", make_batch(["label-a", "label-b"])], 2
+    )
+    assert result == [
+        ["static-tag", "label-a"],
+        ["static-tag", "label-b"],
+    ]
+
+
+def test_build_effective_updates_resolves_batch_values_in_metadata_and_tags() -> None:
+    effective = build_effective_updates(
+        source_ids=make_batch(["img-1", "img-2"]),
+        metadata={"score": make_batch([0.9, 0.3])},
+        tags=[make_batch(["cat", "dog"])],
+    )
+
+    assert effective.updates == [
+        {"imageId": "img-1", "metadata": {"score": 0.9}, "addTags": ["cat"]},
+        {"imageId": "img-2", "metadata": {"score": 0.3}, "addTags": ["dog"]},
+    ]
 
 
 def test_run_uses_injected_offloader_instead_of_calling_api(mocked_v1) -> None:
