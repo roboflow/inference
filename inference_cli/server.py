@@ -107,7 +107,9 @@ def start(
     for v in volumes or []:
         parts = v.split(":")
         if len(parts) < 2:
-            typer.echo(f"Invalid volume format: {v}. Expected /host/path:/container/path[:ro]")
+            typer.echo(
+                f"Invalid volume format: {v}. Expected /host/path:/container/path[:ro]"
+            )
             raise typer.Exit(code=1)
         host_path, container_path = parts[0], parts[1]
         mode = parts[2] if len(parts) == 3 else "rw"

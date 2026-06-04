@@ -47,7 +47,9 @@ def test_prepare_container_environment_when_env_file_defined(
 
 
 @mock.patch.object(container_adapter, "pull_image")
-@mock.patch.object(container_adapter, "find_running_inference_containers", return_value=[])
+@mock.patch.object(
+    container_adapter, "find_running_inference_containers", return_value=[]
+)
 @mock.patch.object(container_adapter, "docker")
 def test_start_inference_container_default_tmp_volume_always_present(
     docker_mock: MagicMock,
@@ -64,7 +66,9 @@ def test_start_inference_container_default_tmp_volume_always_present(
 
 
 @mock.patch.object(container_adapter, "pull_image")
-@mock.patch.object(container_adapter, "find_running_inference_containers", return_value=[])
+@mock.patch.object(
+    container_adapter, "find_running_inference_containers", return_value=[]
+)
 @mock.patch.object(container_adapter, "docker")
 def test_start_inference_container_user_volumes_merged_with_tmp(
     docker_mock: MagicMock,
