@@ -6,7 +6,6 @@ from fastapi import HTTPException
 from packaging.specifiers import SpecifierSet
 
 from inference.core.cache.air_gapped import has_cached_model_variant
-from inference.core.env import ALLOW_HTTP_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExternalBlockPropertyPrimitiveDefinition,
@@ -14,7 +13,10 @@ from inference.core.entities.responses.workflows import (
     UniversalQueryLanguageDescription,
     WorkflowsBlocksDescription,
 )
-from inference.core.env import ENABLE_BUILDER
+from inference.core.env import (
+    ALLOW_HTTP_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    ENABLE_BUILDER,
+)
 from inference.core.workflows.core_steps.common.query_language.introspection.core import (
     prepare_operations_descriptions,
     prepare_operators_descriptions,
@@ -35,6 +37,9 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     DynamicBlockDefinition,
 )
+from inference.core.workflows.execution_engine.v1.inner_workflow.dynamic_blocks_collection import (
+    collect_dynamic_blocks_definitions_from_workflow_definition,
+)
 from inference.core.workflows.execution_engine.v1.introspection.inputs_discovery import (
     describe_workflow_inputs,
 )
@@ -44,9 +49,6 @@ from inference.core.workflows.execution_engine.v1.introspection.outputs_discover
 from inference.core.workflows.execution_engine.v1.introspection.types_discovery import (
     discover_kinds_schemas,
     discover_kinds_typing_hints,
-)
-from inference.core.workflows.execution_engine.v1.inner_workflow.dynamic_blocks_collection import (
-    collect_dynamic_blocks_definitions_from_workflow_definition,
 )
 from inference.core.workflows.prototypes.block import BlockAirGappedInfo
 
