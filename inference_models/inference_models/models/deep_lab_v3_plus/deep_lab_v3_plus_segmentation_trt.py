@@ -32,8 +32,10 @@ from inference_models.models.common.roboflow.model_packages import (
     TRTConfig,
     parse_class_names_file,
     parse_inference_config,
-    resolve_background_class_id,
     parse_trt_config,
+)
+from inference_models.models.common.roboflow.semantic_segmentation import (
+    resolve_background_class_id,
 )
 from inference_models.models.common.roboflow.post_processing import (
     post_process_semantic_segmentation_logits,

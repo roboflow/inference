@@ -28,8 +28,10 @@ from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     ResizeMode,
     parse_class_names_file,
-    resolve_background_class_id,
     parse_inference_config,
+)
+from inference_models.models.common.roboflow.semantic_segmentation import (
+    resolve_background_class_id,
     validate_class_names,
 )
 from inference_models.models.common.roboflow.post_processing import (
