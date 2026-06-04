@@ -219,6 +219,7 @@ from inference.core.interfaces.http.error_handlers import (
     with_route_exceptions_async,
 )
 from inference.core.interfaces.http.handlers.workflows import (
+    ensure_http_dynamic_python_blocks_allowed,
     filter_out_unwanted_workflow_outputs,
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
@@ -1979,6 +1980,9 @@ class HttpInterface(BaseInterface):
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
+                ensure_http_dynamic_python_blocks_allowed(
+                    workflow_definition=workflow_request.specification,
+                )
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
                     profiler = BaseWorkflowsProfiler.init(
@@ -2056,6 +2060,9 @@ class HttpInterface(BaseInterface):
                     api_key = request_payload.api_key or request.query_params.get(
                         "api_key", None
                     )
+                ensure_http_dynamic_python_blocks_allowed(
+                    dynamic_blocks_definitions=dynamic_blocks_definitions,
+                )
                 result = handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=dynamic_blocks_definitions,
                     requested_execution_engine_version=requested_execution_engine_version,
@@ -2120,6 +2127,9 @@ class HttpInterface(BaseInterface):
                     description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                 ),
             ) -> WorkflowValidationStatus:
+                ensure_http_dynamic_python_blocks_allowed(
+                    workflow_definition=specification,
+                )
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
                 workflow_init_parameters = {

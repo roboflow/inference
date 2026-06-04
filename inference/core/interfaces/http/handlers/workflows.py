@@ -2,9 +2,11 @@
 import copy
 from typing import Any, Dict, List, Optional, Set, Union
 
+from fastapi import HTTPException
 from packaging.specifiers import SpecifierSet
 
 from inference.core.cache.air_gapped import has_cached_model_variant
+from inference.core.env import ALLOW_HTTP_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExternalBlockPropertyPrimitiveDefinition,
@@ -43,7 +45,56 @@ from inference.core.workflows.execution_engine.v1.introspection.types_discovery 
     discover_kinds_schemas,
     discover_kinds_typing_hints,
 )
+from inference.core.workflows.execution_engine.v1.inner_workflow.dynamic_blocks_collection import (
+    collect_dynamic_blocks_definitions_from_workflow_definition,
+)
 from inference.core.workflows.prototypes.block import BlockAirGappedInfo
+
+HTTP_DYNAMIC_BLOCKS_DISABLED_DETAIL = (
+    "Dynamic Python workflow blocks are disabled for HTTP requests. "
+    "Set ALLOW_HTTP_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True to enable."
+)
+
+
+def ensure_http_dynamic_python_blocks_allowed(
+    *,
+    workflow_definition: Optional[Dict[str, Any]] = None,
+    dynamic_blocks_definitions: Optional[List[Any]] = None,
+) -> None:
+    """Reject HTTP requests that submit dynamic Python workflow blocks when gated off.
+
+    Args:
+        workflow_definition: Raw workflow JSON from ``/workflows/run`` or
+            ``/workflows/validate``.
+        dynamic_blocks_definitions: Explicit list from ``/workflows/blocks/describe``.
+
+    Raises:
+        HTTPException: With status 403 when dynamic blocks are present and the HTTP
+            gate is disabled.
+    """
+    if ALLOW_HTTP_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
+        return
+
+    if dynamic_blocks_definitions:
+        raise HTTPException(
+            status_code=403,
+            detail=HTTP_DYNAMIC_BLOCKS_DISABLED_DETAIL,
+        )
+
+    if workflow_definition is None:
+        return
+
+    if not isinstance(workflow_definition, dict):
+        return
+
+    collected_definitions = collect_dynamic_blocks_definitions_from_workflow_definition(
+        workflow_definition=workflow_definition,
+    )
+    if collected_definitions:
+        raise HTTPException(
+            status_code=403,
+            detail=HTTP_DYNAMIC_BLOCKS_DISABLED_DETAIL,
+        )
 
 
 def handle_describe_workflows_blocks_request(

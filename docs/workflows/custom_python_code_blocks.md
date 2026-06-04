@@ -17,7 +17,10 @@ When running inference locally on your own hardware, dynamic blocks execute dire
 
     Local execution of dynamic blocks only works in your local deployment of `inference` and requires careful consideration of security implications when running untrusted code.
 
-    If you wish to disable the functionality, `export ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False`
+    Local custom Python execution is disabled by default. Enable it with
+    `export ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`. HTTP endpoints
+    (`/workflows/run`, `/workflows/validate`, `/workflows/blocks/describe`) require
+    an additional opt-in: `export ALLOW_HTTP_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`.
 
 ### Cloud Execution (Roboflow Serverless v2)
 When using Roboflow's cloud infrastructure with Serverless v2 API, dynamic blocks execute in secure, isolated containers. This ensures safe execution of custom code without compromising your infrastructure.
