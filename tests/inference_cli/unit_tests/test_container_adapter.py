@@ -1,5 +1,5 @@
 from unittest import mock
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 from inference_cli.lib import container_adapter
 from inference_cli.lib.container_adapter import (
