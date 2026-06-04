@@ -9,11 +9,14 @@ from inference_sdk.config import (
 from inference_sdk.http.client import _collect_processing_time_from_response
 
 
-def _make_response(processing_time: str = None) -> Response:
+def _make_response(processing_time: str = None, extra_headers: dict = None) -> Response:
     response = Response()
     response.status_code = 200
     if processing_time is not None:
         response.headers[PROCESSING_TIME_HEADER] = processing_time
+    if extra_headers:
+        for key, value in extra_headers.items():
+            response.headers[key] = value
     return response
 
 
@@ -93,3 +96,29 @@ class TestCollectProcessingTimeFromResponse:
         # then
         entries = collector.drain()
         assert entries[0][0] == "unknown"
+
+    def test_collects_model_load_headers(self) -> None:
+        # given
+        collector = RemoteProcessingTimeCollector()
+        token = remote_processing_times.set(collector)
+        response = _make_response(
+            "1.5",
+            extra_headers={
+                "X-Model-Id": "clip/ViT-B-32",
+                "X-Model-Cold-Start": "true",
+                "X-Model-Load-Time": "3.2",
+            },
+        )
+
+        try:
+            # when
+            _collect_processing_time_from_response(response, model_id="clip")
+        finally:
+            remote_processing_times.reset(token)
+
+        # then
+        assert collector.drain() == [("clip", 1.5)]
+        assert collector.snapshot_model_ids() == {"clip/ViT-B-32"}
+        assert collector.snapshot_cold_start_count() == 1
+        assert abs(collector.snapshot_cold_start_total_load_time() - 3.2) < 1e-9
+        assert collector.snapshot_cold_start_entries() == [("clip/ViT-B-32", 3.2)]

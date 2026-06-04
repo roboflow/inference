@@ -20,6 +20,7 @@ import requests
 from cachetools.func import ttl_cache
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
+from yarl import URL
 
 from inference.core import logger
 from inference.core.cache import cache
@@ -35,6 +36,7 @@ from inference.core.entities.types import (
 )
 from inference.core.env import (
     API_BASE_URL,
+    API_PROXY_BASE_URL,
     ENFORCE_CREDITS_VERIFICATION,
     GCP_SERVERLESS,
     INTERNAL_WEIGHTS_URL_SUFFIX,
@@ -104,6 +106,7 @@ NOT_FOUND_ERROR_MESSAGE = (
 
 ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
+API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
 
 
 @dataclass(frozen=True)
@@ -290,10 +293,15 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
 async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
     try:
         headers = build_roboflow_api_headers()
+        full_url = wrap_url(
+            _add_params_to_url(
+                url=f"{API_BASE_URL}/",
+                params=[("api_key", api_key), ("nocache", "true")],
+            )
+        )
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{API_BASE_URL}/",
-                params={"api_key": api_key, "nocache": "true"},
+                URL(full_url, encoded=True),
                 headers=headers,
                 timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             ) as response:
@@ -332,10 +340,15 @@ async def get_serverless_usage_check_async(
 ) -> ServerlessUsageCheckResponse:
     try:
         headers = build_roboflow_api_headers()
+        full_url = wrap_url(
+            _add_params_to_url(
+                url=f"{API_BASE_URL}/serverless/usage-check",
+                params=[("api_key", api_key), ("nocache", "true")],
+            )
+        )
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{API_BASE_URL}/serverless/usage-check",
-                params={"api_key": api_key, "nocache": "true"},
+                URL(full_url, encoded=True),
                 headers=headers,
                 timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             ) as response:
@@ -389,9 +402,11 @@ def add_custom_metadata(
     field_name: str,
     field_value: str,
 ):
-    api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{workspace_id}/inference-stats/metadata",
-        params=[("api_key", api_key), ("nocache", "true")],
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/inference-stats/metadata",
+            params=[("api_key", api_key), ("nocache", "true")],
+        )
     )
     response = requests.post(
         url=api_url,
@@ -761,6 +776,61 @@ def annotate_image_at_roboflow(
 
 
 @wrap_roboflow_api_errors()
+def update_image_metadata_at_roboflow(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    image_id: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    add_tags: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    payload = {}
+    if metadata is not None:
+        payload["metadata"] = metadata
+    if add_tags is not None:
+        payload["addTags"] = add_tags
+
+    encoded_image_id = urllib.parse.quote(image_id, safe="")
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/images/{encoded_image_id}/metadata",
+            params=[("api_key", api_key)],
+        )
+    )
+    response = requests.post(
+        url=api_url,
+        json=payload,
+        headers=build_roboflow_api_headers(),
+        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
+    )
+    api_key_safe_raise_for_status(response=response)
+    return response.json()
+
+
+@wrap_roboflow_api_errors()
+def batch_update_image_metadata_at_roboflow(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    updates: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/images/metadata",
+            params=[("api_key", api_key)],
+        )
+    )
+    response = requests.post(
+        url=api_url,
+        json={"updates": updates},
+        headers=build_roboflow_api_headers(),
+        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
+    )
+    api_key_safe_raise_for_status(response=response)
+    return response.json()
+
+
+@wrap_roboflow_api_errors()
 def get_roboflow_labeling_batches(
     api_key: str, workspace_id: WorkspaceID, dataset_id: str
 ) -> dict:
@@ -1126,7 +1196,9 @@ def _test_range_request(url: str, timeout: int = 10) -> bool:
     """
     try:
         headers = {"Range": "bytes=0-0"}
-        response = requests.get(url, headers=headers, stream=True, timeout=timeout)
+        response = requests.get(
+            wrap_url(url), headers=headers, stream=True, timeout=timeout
+        )
         response.close()
         if response.status_code == 206:
             return True
@@ -1194,15 +1266,27 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     return f"{url}?{parameters_string}"
 
 
+def _api_base_url_for_endpoint(endpoint: str) -> str:
+    endpoint_path = endpoint.strip("/")
+    if any(
+        endpoint_path == prefix or endpoint_path.startswith(f"{prefix}/")
+        for prefix in API_PROXY_ENDPOINT_PREFIXES
+    ):
+        return API_PROXY_BASE_URL
+    return API_BASE_URL
+
+
 @wrap_roboflow_api_errors()
 def send_inference_results_to_model_monitoring(
     api_key: str,
     workspace_id: WorkspaceID,
     inference_data: dict,
 ):
-    api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{workspace_id}/inference-stats",
-        params=[("api_key", api_key)],
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/inference-stats",
+            params=[("api_key", api_key)],
+        )
     )
     response = requests.post(
         url=api_url,
@@ -1283,8 +1367,9 @@ def post_to_roboflow_api(
         if params:
             url_params.extend(params)
 
+        api_base_url = _api_base_url_for_endpoint(endpoint=endpoint).rstrip("/")
         full_url = _add_params_to_url(
-            url=f"{API_BASE_URL}/{endpoint.strip('/')}", params=url_params
+            url=f"{api_base_url}/{endpoint.strip('/')}", params=url_params
         )
         wrapped_url = wrap_url(full_url)
 

@@ -189,6 +189,19 @@ def process_images_with_workflow(
             "--max-parallel-tasks", help="Max number of concurrent processing tasks"
         ),
     ] = None,
+    max_image_failure_rate: Annotated[
+        Optional[float],
+        typer.Option(
+            "--max-image-failure-rate",
+            help=(
+                "Maximum fraction of images per shard that may fail before the shard "
+                "is aborted (0.0-1.0). Default: 10 absolute failures per shard "
+                "(~3.9% on a full 256-image shard, higher effective tolerance on "
+                "partial last shards). No client-side validation is performed; "
+                "out-of-range values are rejected by the server with HTTP 400."
+            ),
+        ),
+    ] = None,
     aggregation_format: Annotated[
         Optional[AggregationFormat],
         typer.Option("--aggregation-format", help="Format of results aggregation"),
@@ -261,6 +274,7 @@ def process_images_with_workflow(
             api_key=api_key,
             inference_backend=inference_backend,
             job_name=job_name,
+            max_image_failure_rate=max_image_failure_rate,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:
@@ -591,6 +605,19 @@ def restart_job(
             "--max-parallel-tasks", help="Max number of concurrent processing tasks"
         ),
     ] = None,
+    max_image_failure_rate: Annotated[
+        Optional[float],
+        typer.Option(
+            "--max-image-failure-rate",
+            help=(
+                "Maximum fraction of images per shard that may fail before the shard "
+                "is aborted (0.0-1.0). Default: 10 absolute failures per shard "
+                "(~3.9% on a full 256-image shard, higher effective tolerance on "
+                "partial last shards). No client-side validation is performed; "
+                "out-of-range values are rejected by the server with HTTP 400."
+            ),
+        ),
+    ] = None,
     debug_mode: Annotated[
         bool,
         typer.Option(
@@ -610,6 +637,7 @@ def restart_job(
             workers_per_machine=workers_per_machine,
             max_runtime_seconds=max_runtime_seconds,
             max_parallel_tasks=max_parallel_tasks,
+            max_image_failure_rate=max_image_failure_rate,
         )
     except KeyboardInterrupt:
         print("Command interrupted.")

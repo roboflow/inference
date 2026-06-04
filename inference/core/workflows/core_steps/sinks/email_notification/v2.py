@@ -36,7 +36,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
+    RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -425,6 +427,10 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [COOLDOWN_HTTP_SOFT_RESTRICTION]
+
 
 class EmailNotificationBlockV2(WorkflowBlock):
 
@@ -744,7 +750,7 @@ def serialize_image_data(value: Any) -> Any:
 
 
 def serialize_image_data_parameters(
-    message_parameters: Dict[str, Any]
+    message_parameters: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
     Convert any WorkflowImageData objects in message_parameters to base64 strings

@@ -17,6 +17,7 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.env import (
     API_BASE_URL,
+    CORE_MODEL_SAM3_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -26,6 +27,7 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import build_roboflow_api_headers
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -57,6 +59,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -214,6 +219,31 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restrictions = [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Requires a GPU; run_locally() loads a model that needs CUDA.",
+                applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+                applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
+            ),
+        ]
+        if not CORE_MODEL_SAM3_ENABLED:
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.HARD,
+                    note=(
+                        "CORE_MODEL_SAM3_ENABLED=False on Roboflow Hosted "
+                        "Serverless: the SAM3 endpoint is not registered, so "
+                        "run_remotely() returns 404."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+                )
+            )
+        return restrictions
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
@@ -536,7 +566,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 headers = build_roboflow_api_headers(explicit_headers=headers)
 
                 response = requests.post(
-                    f"{endpoint}?api_key={api_key}",
+                    wrap_url(f"{endpoint}?api_key={api_key}"),
                     json=payload,
                     headers=headers,
                     timeout=60,

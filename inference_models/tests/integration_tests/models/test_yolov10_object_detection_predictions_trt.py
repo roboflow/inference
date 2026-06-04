@@ -296,3 +296,27 @@ def test_trt_package_torch_multiple_predictions_in_row(
             expected_xyxy.cpu(),
             atol=5,
         )
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_per_class_confidence_filters_detections(
+    yolov10_object_detection_trt_package: str,
+    dog_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.models.yolov10.yolov10_object_detection_trt import (
+        YOLOv10ForObjectDetectionTRT,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv10ForObjectDetectionTRT.from_pretrained(
+        model_name_or_path=yolov10_object_detection_trt_package,
+        engine_host_code_allowed=True,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.5,
+        per_class_confidence={class_names[16]: 1.01},
+    )
+    predictions = model(dog_image_numpy, confidence="best")
+    assert 16 not in predictions[0].class_id.cpu().tolist()

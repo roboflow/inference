@@ -1,3 +1,7 @@
+---
+description: How Roboflow Inference routes requests, parallelizes workloads, and runs as a microservice or video-processing appliance.
+---
+
 # Architecture
 
 Inference is best run in server mode (it also supports a native Python interface;

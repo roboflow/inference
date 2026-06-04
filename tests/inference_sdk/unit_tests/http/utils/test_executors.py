@@ -8,6 +8,7 @@ from aioresponses import aioresponses
 from requests import HTTPError, Response
 from requests_mock import Mocker
 
+from inference_sdk.config import RemoteProcessingTimeCollector, remote_processing_times
 from inference_sdk.http.utils import executors
 from inference_sdk.http.utils.executors import (
     RequestMethod,
@@ -509,6 +510,54 @@ async def test_make_request_async_when_request_is_successful() -> None:
             200,
             {"status": "ok"},
         ), "Expected to return HTTP 200 in second attempt with predefined JSON payload"
+
+
+@pytest.mark.asyncio
+async def test_make_request_async_collects_remote_model_load_metadata() -> None:
+    # given
+    collector = RemoteProcessingTimeCollector()
+    token = remote_processing_times.set(collector)
+    request_data = RequestData(
+        url="https://some.com/infer/object_detection",
+        request_elements=1,
+        headers=None,
+        data=None,
+        parameters=None,
+        payload={"model_id": "payload-model/1"},
+        image_scaling_factors=[None],
+    )
+
+    try:
+        with aioresponses() as m:
+            async with aiohttp.ClientSession() as session:
+                m.post(
+                    "https://some.com/infer/object_detection",
+                    status=200,
+                    payload={"status": "ok"},
+                    headers={
+                        "X-Processing-Time": "0.8",
+                        "X-Model-Id": "remote-model/1",
+                        "X-Model-Cold-Start": "true",
+                        "X-Model-Load-Time": "5.1",
+                    },
+                )
+
+                # when
+                result = await make_request_async(
+                    request_data=request_data,
+                    request_method=RequestMethod.POST,
+                    session=session,
+                )
+    finally:
+        remote_processing_times.reset(token)
+
+    # then
+    assert result == (200, {"status": "ok"})
+    assert collector.drain() == [("payload-model/1", 0.8)]
+    assert collector.snapshot_model_ids() == {"remote-model/1"}
+    assert collector.snapshot_cold_start_count() == 1
+    assert abs(collector.snapshot_cold_start_total_load_time() - 5.1) < 1e-9
+    assert collector.snapshot_cold_start_entries() == [("remote-model/1", 5.1)]
 
 
 @pytest.mark.asyncio

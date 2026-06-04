@@ -53,6 +53,7 @@ API_BASE_URL = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+API_PROXY_BASE_URL = os.getenv("API_PROXY_BASE_URL", API_BASE_URL)
 
 # Suffix path to be appended to API_BASE_URL for endpoints that serve model weights.
 # This is only expected to be used in Roboflow internal hosting environments.
@@ -182,8 +183,21 @@ SAM3_FINE_TUNED_MODELS_ENABLED = str2bool(
     os.getenv("SAM3_FINE_TUNED_MODELS_ENABLED", _sam3_fine_tuned_default)
 )
 
-# Flag to enable GAZE core model, default is True
+# DEPRECATED: Gaze detection has been removed along with the MediaPipe
+# dependency. When True (default), the legacy POST /gaze/gaze_detection
+# route stays registered as a 410-Gone deprecation stub. The stub — and
+# this flag — will be removed end of Q2 2026. Set CORE_MODEL_GAZE_ENABLED=False
+# to disable the stub now.
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
+if CORE_MODEL_GAZE_ENABLED:
+    warnings.warn(
+        "CORE_MODEL_GAZE_ENABLED is True: POST /gaze/gaze_detection is registered "
+        "as a deprecation stub returning HTTP 410 Gone. The stub and this flag "
+        "will be removed end of Q2 2026. Set CORE_MODEL_GAZE_ENABLED=False to "
+        "disable it now.",
+        category=InferenceDeprecationWarning,
+        stacklevel=1,
+    )
 
 # Flag to enable DocTR core model, default is True
 CORE_MODEL_DOCTR_ENABLED = str2bool(os.getenv("CORE_MODEL_DOCTR_ENABLED", True))
@@ -317,6 +331,29 @@ FIX_BATCH_SIZE = str2bool(os.getenv("FIX_BATCH_SIZE", False))
 # Host, default is "0.0.0.0"
 HOST = os.getenv("HOST", "0.0.0.0")
 
+# Enable HTTPS for the inference server. When True, SSL_CERTFILE and SSL_KEYFILE
+# must point to a valid certificate/key pair on disk.
+ENABLE_HTTPS = str2bool(os.getenv("ENABLE_HTTPS", False))
+
+# Default location where customers are expected to mount their PEM cert/key
+# pair when running in a container. Override either path explicitly via
+# SSL_CERTFILE / SSL_KEYFILE if the certs live elsewhere.
+DEFAULT_SSL_CERTFILE = "/etc/inference/certs/server.crt"
+DEFAULT_SSL_KEYFILE = "/etc/inference/certs/server.key"
+
+# Path to the PEM-encoded SSL certificate file used to serve HTTPS.
+SSL_CERTFILE = os.getenv("SSL_CERTFILE", DEFAULT_SSL_CERTFILE)
+
+# Path to the PEM-encoded SSL private key file used to serve HTTPS.
+SSL_KEYFILE = os.getenv("SSL_KEYFILE", DEFAULT_SSL_KEYFILE)
+
+# Optional password used to decrypt the SSL_KEYFILE if it is encrypted.
+SSL_KEYFILE_PASSWORD = os.getenv("SSL_KEYFILE_PASSWORD", None)
+
+# Optional path to a CA certificate bundle used when client certificate
+# verification is required.
+SSL_CA_CERTS = os.getenv("SSL_CA_CERTS", None)
+
 # IoU threshold, default is 0.3
 IOU_THRESHOLD_ENV = "IOU_THRESHOLD"
 DEFAULT_IOU_THRESHOLD = 0.3
@@ -367,8 +404,17 @@ CORRELATION_ID_LOG_KEY = os.getenv("CORRELATION_ID_LOG_KEY", "request_id")
 # Flag to enable legacy route, default is True
 LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
-# License server, default is None
-LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
+# Secure gateway address for air-gapped deployments.
+# Accepts SECURE_GATEWAY (preferred) or LICENSE_SERVER (legacy).
+_legacy_license_server = os.getenv("LICENSE_SERVER")
+SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
+if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
+    warnings.warn(
+        "`LICENSE_SERVER` env variable is deprecated, use `SECURE_GATEWAY` instead. "
+        "`LICENSE_SERVER` will be removed end of Q3 2026.",
+        DeprecationWarning,
+        stacklevel=1,
+    )
 
 # Log level, default is "WARNING"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
@@ -639,6 +685,12 @@ DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", Fa
 WORKFLOWS_STEP_EXECUTION_MODE = os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "local")
 WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
 WORKFLOWS_MAX_CONCURRENT_STEPS = int(os.getenv("WORKFLOWS_MAX_CONCURRENT_STEPS", "8"))
+WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH = int(
+    os.getenv("WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH", "4")
+)
+WORKFLOWS_MAX_INNER_WORKFLOW_COUNT = int(
+    os.getenv("WORKFLOWS_MAX_INNER_WORKFLOW_COUNT", "32")
+)
 WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
     os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE", "1")
 )
@@ -980,7 +1032,6 @@ VALID_INFERENCE_MODELS_BACKENDS = {
     "trt",
     "hugging-face",
     "ultralytics",
-    "mediapipe",
     "custom",
 }
 # env variables to control inference-models auto-loader
@@ -989,6 +1040,15 @@ if DISABLED_INFERENCE_MODELS_BACKENDS is not None:
     DISABLED_INFERENCE_MODELS_BACKENDS = set(
         DISABLED_INFERENCE_MODELS_BACKENDS.split(",")
     )
+    if "mediapipe" in DISABLED_INFERENCE_MODELS_BACKENDS:
+        warnings.warn(
+            "`mediapipe` backend for `inference-models` got deprecated and all remaining left-overs "
+            "will be removed end of Q2 2026. Keeping `mediapipe` in the list of `DISABLED_INFERENCE_MODELS_BACKENDS` "
+            "will trigger runtime exception causing `inference` to crash. Please adjust your configuration.",
+            category=InferenceDeprecationWarning,
+            stacklevel=1,
+        )
+        DISABLED_INFERENCE_MODELS_BACKENDS.discard("mediapipe")
     if any(
         v not in VALID_INFERENCE_MODELS_BACKENDS
         for v in DISABLED_INFERENCE_MODELS_BACKENDS

@@ -33,7 +33,9 @@ from inference.core.exceptions import (
 from inference.core.roboflow_api import (
     ModelEndpointType,
     ServerlessUsageCheckResponse,
+    add_custom_metadata,
     annotate_image_at_roboflow,
+    batch_update_image_metadata_at_roboflow,
     build_roboflow_api_headers,
     delete_cached_workflow_response_if_exists,
     get_from_url,
@@ -48,11 +50,15 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace_async,
     get_serverless_usage_check_async,
     get_workflow_specification,
+    post_to_roboflow_api,
     raise_from_lambda,
     register_image_at_roboflow,
+    send_inference_results_to_model_monitoring,
+    update_image_metadata_at_roboflow,
     wrap_roboflow_api_errors,
     wrap_roboflow_api_errors_async,
 )
+from inference.core.utils import url_utils
 from inference.core.utils.url_utils import wrap_url
 from inference.core.version import __version__
 
@@ -1800,6 +1806,102 @@ def test_annotate_image_at_roboflow_when_successful_response_expected(
     assert result == {"success": True}
 
 
+def test_update_image_metadata_at_roboflow_when_successful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/image_1/metadata"),
+        json={"success": True},
+    )
+
+    # when
+    result = update_image_metadata_at_roboflow(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        image_id="image_1",
+        metadata={"color": "red", "score": 0.8},
+        add_tags=["auto"],
+    )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+    assert requests_mock.last_request.json() == {
+        "metadata": {"color": "red", "score": 0.8},
+        "addTags": ["auto"],
+    }
+    assert result == {"success": True}
+
+
+def test_update_image_metadata_at_roboflow_when_wrong_image_id_used(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/missing/metadata"),
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotNotFoundError):
+        _ = update_image_metadata_at_roboflow(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            image_id="missing",
+            add_tags=["auto"],
+        )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+
+
+def test_batch_update_image_metadata_at_roboflow_when_successful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/metadata"),
+        json={"taskId": "task-123", "url": "/my_workspace/asynctasks/task-123"},
+    )
+    updates = [
+        {"imageId": "image_1", "metadata": {"color": "red"}},
+        {"imageId": "image_2", "addTags": ["auto"]},
+    ]
+
+    # when
+    result = batch_update_image_metadata_at_roboflow(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        updates=updates,
+    )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+    assert requests_mock.last_request.json() == {"updates": updates}
+    assert result == {"taskId": "task-123", "url": "/my_workspace/asynctasks/task-123"}
+
+
+def test_batch_update_image_metadata_at_roboflow_when_preflight_error_occurs(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/metadata"),
+        status_code=400,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        _ = batch_update_image_metadata_at_roboflow(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            updates=[{"imageId": "image_1", "addTags": ["auto"]}],
+        )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+
+
 @mock.patch.object(roboflow_api.requests, "get")
 def test_get_roboflow_labeling_batches_when_connection_error_occurs(
     get_mock: MagicMock,
@@ -2942,6 +3044,72 @@ def test_build_roboflow_api_headers_always_sets_version_header() -> None:
     assert result["custom"] == "value"
 
 
+def test_post_to_roboflow_api_uses_api_base_url_by_default_for_api_proxy(
+    requests_mock: Mocker,
+) -> None:
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/apiproxy/openai?api_key=my_api_key"),
+        json={"status": "ok"},
+    )
+
+    result = post_to_roboflow_api(
+        endpoint="apiproxy/openai",
+        api_key="my_api_key",
+        payload={"prompt": "hello"},
+    )
+
+    assert result == {"status": "ok"}
+    assert requests_mock.last_request.url == wrap_url(
+        f"{API_BASE_URL}/apiproxy/openai?api_key=my_api_key"
+    )
+
+
+@mock.patch.object(
+    roboflow_api,
+    "API_PROXY_BASE_URL",
+    "https://heavy-v2-api-li37nwjfaq-uc.a.run.app/",
+)
+def test_post_to_roboflow_api_uses_api_proxy_base_url_for_api_proxy_endpoint(
+    requests_mock: Mocker,
+) -> None:
+    expected_url = wrap_url(
+        "https://heavy-v2-api-li37nwjfaq-uc.a.run.app/apiproxy/openai"
+        "?api_key=my_api_key&nocache=true"
+    )
+    requests_mock.post(url=expected_url, json={"status": "ok"})
+
+    result = post_to_roboflow_api(
+        endpoint="/apiproxy/openai",
+        api_key="my_api_key",
+        payload={"prompt": "hello"},
+        params=[("nocache", "true")],
+    )
+
+    assert result == {"status": "ok"}
+    assert requests_mock.last_request.url == expected_url
+
+
+@mock.patch.object(
+    roboflow_api,
+    "API_PROXY_BASE_URL",
+    "https://heavy-v2-api-li37nwjfaq-uc.a.run.app",
+)
+def test_post_to_roboflow_api_does_not_use_api_proxy_base_url_for_other_endpoints(
+    requests_mock: Mocker,
+) -> None:
+    expected_url = wrap_url(f"{API_BASE_URL}/some/endpoint?api_key=my_api_key")
+    requests_mock.post(url=expected_url, json={"status": "ok"})
+
+    result = post_to_roboflow_api(
+        endpoint="some/endpoint",
+        api_key="my_api_key",
+        payload={"prompt": "hello"},
+    )
+
+    assert result == {"status": "ok"}
+    assert requests_mock.last_request.url == expected_url
+
+
 @mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
 @mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
 def test_get_from_url_when_no_retires_possible(
@@ -3156,3 +3324,148 @@ def test_get_workflow_specification_raises_timeout_when_no_cache(
             workflow_id="timeout_no_cache_workflow",
             use_cache=False,
         )
+
+
+# --- LICENSE_SERVER / wrap_url proxy tests ---
+# These verify that all API calls route through the license server proxy
+# when LICENSE_SERVER is configured (air-gapped deployment support).
+
+SECURE_GATEWAY_HOST = "gateway.local"
+PROXY_PREFIX = f"http://{SECURE_GATEWAY_HOST}/proxy?url="
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", SECURE_GATEWAY_HOST)
+@pytest.mark.asyncio
+async def test_get_roboflow_workspace_async_routes_through_secure_gateway() -> None:
+    """When LICENSE_SERVER is set, async workspace lookup goes through the proxy."""
+    expected_proxy_url = wrap_url(f"{API_BASE_URL}/?api_key=my_api_key&nocache=true")
+    assert expected_proxy_url.startswith(PROXY_PREFIX)
+
+    with aioresponses() as request_mock:
+        request_mock.get(
+            expected_proxy_url,
+            payload={"workspace": "my_workspace"},
+        )
+
+        result = await get_roboflow_workspace_async(api_key="my_api_key")
+
+        assert result == "my_workspace"
+        # Verify the request went to the proxy URL, not directly to API_BASE_URL
+        called_urls = [str(k[1]) for k in request_mock.requests.keys()]
+        assert any(
+            PROXY_PREFIX in u for u in called_urls
+        ), f"Expected request through proxy ({PROXY_PREFIX}), got: {called_urls}"
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", SECURE_GATEWAY_HOST)
+@pytest.mark.asyncio
+async def test_get_serverless_usage_check_async_routes_through_secure_gateway() -> None:
+    """When LICENSE_SERVER is set, async usage check goes through the proxy."""
+    expected_proxy_url = wrap_url(
+        f"{API_BASE_URL}/serverless/usage-check?api_key=my_api_key&nocache=true"
+    )
+    assert expected_proxy_url.startswith(PROXY_PREFIX)
+
+    with aioresponses() as request_mock:
+        request_mock.get(
+            expected_proxy_url,
+            payload={
+                "workspace": "my-workspace",
+                "workspaceId": "ws-id",
+                "underCap": True,
+            },
+        )
+
+        result = await get_serverless_usage_check_async(api_key="my_api_key")
+
+        assert result.status_code == 200
+        assert result.workspace_id == "my-workspace"
+        called_urls = [str(k[1]) for k in request_mock.requests.keys()]
+        assert any(
+            PROXY_PREFIX in u for u in called_urls
+        ), f"Expected request through proxy ({PROXY_PREFIX}), got: {called_urls}"
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", SECURE_GATEWAY_HOST)
+def test_add_custom_metadata_routes_through_secure_gateway(
+    requests_mock: Mocker,
+) -> None:
+    """When LICENSE_SERVER is set, custom metadata POST goes through the proxy."""
+    expected_proxy_url = wrap_url(
+        f"{API_BASE_URL}/my-workspace/inference-stats/metadata?api_key=my_api_key&nocache=true"
+    )
+    assert expected_proxy_url.startswith(PROXY_PREFIX)
+
+    requests_mock.post(expected_proxy_url, json={"status": "ok"})
+
+    add_custom_metadata(
+        api_key="my_api_key",
+        workspace_id="my-workspace",
+        inference_ids=["inf-1"],
+        field_name="label",
+        field_value="cat",
+    )
+
+    assert requests_mock.called
+    assert requests_mock.last_request.url.startswith(PROXY_PREFIX)
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", SECURE_GATEWAY_HOST)
+def test_send_inference_results_to_model_monitoring_routes_through_secure_gateway(
+    requests_mock: Mocker,
+) -> None:
+    """When LICENSE_SERVER is set, model monitoring POST goes through the proxy."""
+    expected_proxy_url = wrap_url(
+        f"{API_BASE_URL}/my-workspace/inference-stats?api_key=my_api_key"
+    )
+    assert expected_proxy_url.startswith(PROXY_PREFIX)
+
+    requests_mock.post(expected_proxy_url, json={"status": "ok"})
+
+    send_inference_results_to_model_monitoring(
+        api_key="my_api_key",
+        workspace_id="my-workspace",
+        inference_data={"predictions": []},
+    )
+
+    assert requests_mock.called
+    assert requests_mock.last_request.url.startswith(PROXY_PREFIX)
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", None)
+@pytest.mark.asyncio
+async def test_get_roboflow_workspace_async_direct_when_no_secure_gateway() -> None:
+    """Without LICENSE_SERVER, async workspace lookup goes directly to the API."""
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/?api_key=my_api_key&nocache=true",
+            payload={"workspace": "my_workspace"},
+        )
+
+        result = await get_roboflow_workspace_async(api_key="my_api_key")
+
+        assert result == "my_workspace"
+        called_urls = [str(k[1]) for k in request_mock.requests.keys()]
+        assert all("proxy" not in u for u in called_urls)
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", None)
+def test_add_custom_metadata_direct_when_no_secure_gateway(
+    requests_mock: Mocker,
+) -> None:
+    """Without LICENSE_SERVER, custom metadata POST goes directly to the API."""
+    requests_mock.post(
+        f"{API_BASE_URL}/my-workspace/inference-stats/metadata",
+        json={"status": "ok"},
+    )
+
+    add_custom_metadata(
+        api_key="my_api_key",
+        workspace_id="my-workspace",
+        inference_ids=["inf-1"],
+        field_name="label",
+        field_value="cat",
+    )
+
+    assert requests_mock.called
+    assert "proxy" not in requests_mock.last_request.url

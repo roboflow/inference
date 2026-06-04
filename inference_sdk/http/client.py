@@ -1,4 +1,3 @@
-import logging
 from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
@@ -18,12 +17,7 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError, Response
 
-from inference_sdk.config import (
-    EXECUTION_ID_HEADER,
-    PROCESSING_TIME_HEADER,
-    execution_id,
-    remote_processing_times,
-)
+from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -39,6 +33,7 @@ from inference_sdk.http.entities import (
 )
 from inference_sdk.http.errors import (
     APIKeyNotProvided,
+    FeatureDeprecatedError,
     HTTPCallErrorError,
     HTTPClientError,
     InvalidModelIdentifier,
@@ -56,6 +51,8 @@ from inference_sdk.http.utils.aliases import (
 from inference_sdk.http.utils.executors import (
     UNKNOWN_MODEL_ID,
     RequestMethod,
+    collect_remote_processing_metadata_from_headers,
+    collect_remote_processing_metadata_from_response,
     execute_requests_packages,
     execute_requests_packages_async,
     send_post_request,
@@ -70,7 +67,6 @@ from inference_sdk.http.utils.loaders import (
 from inference_sdk.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
     combine_clip_embeddings,
-    combine_gaze_detections,
     decode_workflow_outputs,
     filter_model_descriptions,
     response_contains_jpeg_image,
@@ -112,25 +108,14 @@ if TYPE_CHECKING:
     from inference_sdk.webrtc.client import WebRTCClient
 
 
-logger = logging.getLogger(__name__)
-
-
 def _collect_processing_time_from_response(
     response: requests.Response,
     model_id: str = UNKNOWN_MODEL_ID,
 ) -> None:
-    collector = remote_processing_times.get()
-    if collector is None:
-        return
-    pt = response.headers.get(PROCESSING_TIME_HEADER)
-    if pt is not None:
-        try:
-            collector.add(float(pt), model_id=model_id)
-        except (ValueError, TypeError):
-            logger.warning(
-                "Malformed %s header value; could not parse as float",
-                PROCESSING_TIME_HEADER,
-            )
+    collect_remote_processing_metadata_from_response(
+        response=response,
+        model_id=model_id,
+    )
 
 
 def wrap_errors(function: callable) -> callable:
@@ -764,11 +749,12 @@ class InferenceHTTPClient:
                 task_type=model_description.task_type,
             )
         )
+        query_params = self.__inference_configuration.to_api_v1_query_parameters()
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
             headers=DEFAULT_HEADERS,
-            parameters=None,
+            parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
@@ -812,11 +798,12 @@ class InferenceHTTPClient:
                 task_type=model_description.task_type,
             )
         )
+        query_params = self.__inference_configuration.to_api_v1_query_parameters()
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
             headers=DEFAULT_HEADERS,
-            parameters=None,
+            parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
@@ -1230,53 +1217,43 @@ class InferenceHTTPClient:
         )
         return unwrap_single_element_list(sequence=responses)
 
-    @wrap_errors
     def detect_gazes(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
-        """Detect gazes in input image(s).
+        """Deprecated. Always raises FeatureDeprecatedError.
 
-        Args:
-            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.
-
-        Returns:
-            Union[dict, List[dict]]: Gaze detection results for the input image(s).
+        Gaze detection has been removed from inference along with the
+        MediaPipe dependency. This helper short-circuits client-side and
+        never issues a network call.
 
         Raises:
-            WrongClientModeError: If not in API v1 mode.
-            HTTPCallErrorError: If there is an error in the HTTP call.
-            HTTPClientError: If there is an error with the server connection.
+            FeatureDeprecatedError: Always.
         """
-        self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
-        result = self._post_images(
-            inference_input=inference_input, endpoint="/gaze/gaze_detection"
+        raise FeatureDeprecatedError(
+            feature="InferenceHTTPClient.detect_gazes",
+            reason="MediaPipe dependency removed from inference.",
+            removal_release="end of Q2 2026",
         )
-        return combine_gaze_detections(detections=result)
 
-    @wrap_errors_async
     async def detect_gazes_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
-        """Detect gazes in input image(s) asynchronously.
+        """Deprecated. Always raises FeatureDeprecatedError.
 
-        Args:
-            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.
-
-        Returns:
-            Union[dict, List[dict]]: Gaze detection results for the input image(s).
+        Gaze detection has been removed from inference along with the
+        MediaPipe dependency. This helper short-circuits client-side and
+        never issues a network call.
 
         Raises:
-            WrongClientModeError: If not in API v1 mode.
-            HTTPCallErrorError: If there is an error in the HTTP call.
-            HTTPClientError: If there is an error with the server connection.
+            FeatureDeprecatedError: Always.
         """
-        self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
-        result = await self._post_images_async(
-            inference_input=inference_input, endpoint="/gaze/gaze_detection"
+        raise FeatureDeprecatedError(
+            feature="InferenceHTTPClient.detect_gazes_async",
+            reason="MediaPipe dependency removed from inference.",
+            removal_release="end of Q2 2026",
         )
-        return combine_gaze_detections(detections=result)
 
     @wrap_errors
     def get_clip_image_embeddings(
@@ -1406,6 +1383,10 @@ class InferenceHTTPClient:
                 headers=DEFAULT_HEADERS,
             ) as response:
                 response.raise_for_status()
+                collect_remote_processing_metadata_from_headers(
+                    headers=response.headers,
+                    fallback_model_id=clip_version or "clip",
+                )
                 response_payload = await response.json()
         return unwrap_single_element_list(sequence=response_payload)
 
@@ -1545,6 +1526,10 @@ class InferenceHTTPClient:
                 headers=DEFAULT_HEADERS,
             ) as response:
                 response.raise_for_status()
+                collect_remote_processing_metadata_from_headers(
+                    headers=response.headers,
+                    fallback_model_id=clip_version or "clip",
+                )
                 return await response.json()
 
     @wrap_errors
