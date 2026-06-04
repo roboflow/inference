@@ -3,6 +3,8 @@ YOLO26-sem backends (kept out of the generic `model_packages` module)."""
 
 from typing import List
 
+import torch
+
 from inference_models.errors import CorruptedModelPackageError
 
 
@@ -32,3 +34,16 @@ def validate_class_names(class_names: List[str]) -> None:
 def resolve_background_class_id(class_names: List[str]) -> int:
     """Index of the `background` class; assumes a `validate_class_names`-checked package."""
     return [c.lower() for c in class_names].index("background")
+
+
+def insert_background_class(
+    class_ids: torch.Tensor, *, background_class_id: int, num_classes: int
+) -> torch.Tensor:
+    """Map foreground-channel indices (``0..K-1``) to full class ids, skipping the
+    background slot. ``num_classes`` is the full class count (``K + 1``)."""
+    foreground_ids = torch.tensor(
+        [i for i in range(num_classes) if i != background_class_id],
+        device=class_ids.device,
+        dtype=class_ids.dtype,
+    )
+    return foreground_ids[class_ids]

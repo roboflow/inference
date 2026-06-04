@@ -15,6 +15,9 @@ from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
 )
+from inference_models.models.common.roboflow.semantic_segmentation import (
+    insert_background_class,
+)
 from inference_models.weights_providers.entities import RecommendedParameters
 
 
@@ -816,22 +819,20 @@ def post_process_semantic_segmentation_logits(
             )
         if image_results.shape[0] == 1:
             image_confidence = image_results[0].sigmoid()
-            foreground_id = next(
-                i for i in range(len(class_names)) if i != background_class_id
-            )
-            image_class_ids = torch.full_like(
-                image_confidence, foreground_id, dtype=torch.long
+            image_class_ids = insert_background_class(
+                torch.zeros_like(image_confidence, dtype=torch.long),
+                background_class_id=background_class_id,
+                num_classes=len(class_names),
             )
         else:
             image_results = torch.nn.functional.softmax(image_results, dim=0)
             image_confidence, image_class_ids = torch.max(image_results, dim=0)
             if len(class_names) == image_results.shape[0] + 1:
-                foreground_ids = torch.tensor(
-                    [i for i in range(len(class_names)) if i != background_class_id],
-                    device=image_class_ids.device,
-                    dtype=image_class_ids.dtype,
+                image_class_ids = insert_background_class(
+                    image_class_ids,
+                    background_class_id=background_class_id,
+                    num_classes=len(class_names),
                 )
-                image_class_ids = foreground_ids[image_class_ids]
         if (
             image_metadata.static_crop_offset.offset_x > 0
             or image_metadata.static_crop_offset.offset_y > 0
