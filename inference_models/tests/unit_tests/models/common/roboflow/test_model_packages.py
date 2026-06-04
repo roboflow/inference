@@ -21,6 +21,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_key_points_metadata,
     parse_trt_config,
     resolve_background_class_id,
+    validate_class_names,
 )
 
 
@@ -287,21 +288,24 @@ def test_resolve_background_class_id_is_case_insensitive() -> None:
     assert result == 1
 
 
-def test_resolve_background_class_id_when_background_absent() -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = resolve_background_class_id(["road", "sidewalk", "building"])
-
-
-def test_resolve_background_class_id_with_minimal_binary_class_list() -> None:
+def test_validate_class_names_with_minimal_binary_class_list() -> None:
     # background + a single foreground class is the minimal valid package
-    assert resolve_background_class_id(["background", "object"]) == 0
+    validate_class_names(["background", "object"])  # does not raise
 
 
-def test_resolve_background_class_id_when_no_foreground_class() -> None:
+def test_validate_class_names_with_multiclass() -> None:
+    validate_class_names(["background", "road", "sidewalk"])  # does not raise
+
+
+def test_validate_class_names_when_background_absent() -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        validate_class_names(["road", "sidewalk", "building"])
+
+
+def test_validate_class_names_when_no_foreground_class() -> None:
     # background present but no foreground class -> invalid semantic-seg package
     with pytest.raises(CorruptedModelPackageError):
-        _ = resolve_background_class_id(["background"])
+        validate_class_names(["background"])
 
 
 def test_parse_inference_config_when_path_does_not_exists() -> None:

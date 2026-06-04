@@ -28,31 +28,29 @@ def parse_class_names_file(class_names_path: str) -> List[str]:
         ) from error
 
 
-def resolve_background_class_id(class_names: List[str]) -> int:
-    """Return the index of the `background` class for a semantic-segmentation
-    package.
+def validate_class_names(class_names: List[str]) -> None:
+    """Validate the class names of a semantic-segmentation model package.
 
-    Roboflow semantic segmentation maps every pixel to a class id, with one
-    class reserved for background (sub-threshold / unlabeled pixels). A valid,
-    in-range background id is required - a negative sentinel would alias a real
-    class via negative indexing in downstream consumers (`class_names[-1]`,
-    palette LUTs, the 0=background platform convention), silently corrupting
-    the segmentation map. Packages must therefore declare a `background` class.
+    A valid package declares a `background` class plus at least one foreground
+    class, so `class_names` has >= 2 entries. `background` is required so that
+    sub-threshold / unlabeled pixels map to a valid class id (a negative
+    sentinel would alias a real class via negative indexing in downstream
+    consumers — `class_names[-1]`, palette LUTs, the 0=background platform
+    convention). At least one foreground class is required so consumers (e.g.
+    the binary `nc==1` post-process) can assume a foreground class id exists.
 
-    A valid semantic-segmentation package also has at least one foreground class
-    (so `class_names` has >= 2 entries: background plus the segmented class(es)).
-    This is validated here so downstream consumers can assume the precondition.
+    Raises `CorruptedModelPackageError` if either condition is unmet. Call this
+    once at model load; downstream helpers (`resolve_background_class_id`, the
+    post-process) then assume the precondition holds.
     """
-    try:
-        background_class_id = [c.lower() for c in class_names].index("background")
-    except ValueError as error:
+    if "background" not in [c.lower() for c in class_names]:
         raise CorruptedModelPackageError(
             message="Semantic segmentation model package does not define a `background` class in "
             "`class_names.txt`. A background class is required so that sub-threshold pixels map to a "
             "valid class id. If you created the model package manually, prepend `background` to the class "
             "names. If the weights are hosted on the Roboflow platform - contact support.",
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-        ) from error
+        )
     if len(class_names) < 2:
         raise CorruptedModelPackageError(
             message="Semantic segmentation model package must define `background` plus at least one "
@@ -61,7 +59,15 @@ def resolve_background_class_id(class_names: List[str]) -> int:
             "If the weights are hosted on the Roboflow platform - contact support.",
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
-    return background_class_id
+
+
+def resolve_background_class_id(class_names: List[str]) -> int:
+    """Return the index of the `background` class.
+
+    Assumes the package has already been validated via `validate_class_names`
+    (so `background` is present); call that at model load time.
+    """
+    return [c.lower() for c in class_names].index("background")
 
 
 PADDING_VALUES_MAPPING = {
