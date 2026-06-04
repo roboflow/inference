@@ -5,7 +5,6 @@ asyncua~=1.1.5
 cachetools<6.0.0
 cython~=3.0.0
 python-dotenv~=1.0.0
-backports.zoneinfo>=0.2.1; python_version < "3.9"
 tzdata>=2024.1
 fastapi>=0.100,<0.116  # be careful with upper pin - fastapi might remove support for on_event
 numpy>=2.0.0,<2.4.0

@@ -1,10 +1,6 @@
 from datetime import datetime
 from typing import Dict, List, Literal, Optional, Type, Union
-
-try:
-    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-except ImportError:
-    from backports.zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import ConfigDict, Field
 
