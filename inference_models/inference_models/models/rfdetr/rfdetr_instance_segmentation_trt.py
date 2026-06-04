@@ -13,7 +13,7 @@ from inference_models import (
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
-    get_rfdetr_pipeline_depth,
+    INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED,
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
@@ -224,9 +224,8 @@ class RFDetrForInstanceSegmentationTRT(
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
-        self._stream_pipeline_enabled = get_rfdetr_pipeline_depth() > 1
-        if self._stream_pipeline_enabled:
-            self._pre_process_cuda_stream = torch.cuda.Stream(device=self._device)
+        self._fast_preprocess_enabled = INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED
+        if self._fast_preprocess_enabled:
             self._fast_preprocess_runtime = FastPreprocessRuntime(device=self._device)
 
     @property
@@ -246,7 +245,7 @@ class RFDetrForInstanceSegmentationTRT(
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         fast = None
-        if self._stream_pipeline_enabled:
+        if self._fast_preprocess_enabled:
             fast = self._fast_preprocess_runtime.try_preprocess(
                 images=images,
                 input_color_format=input_color_format,
@@ -269,7 +268,7 @@ class RFDetrForInstanceSegmentationTRT(
                 pre_processing_overrides=pre_processing_overrides,
             )
         self._pre_process_stream.synchronize()
-        if self._stream_pipeline_enabled:
+        if self._fast_preprocess_enabled:
             setattr(
                 pre_processed_images,
                 "_pre_processing_meta",
@@ -355,8 +354,6 @@ class RFDetrForInstanceSegmentationTRT(
 
     @property
     def _pre_process_stream(self) -> torch.cuda.Stream:
-        if self._stream_pipeline_enabled:
-            return self._pre_process_cuda_stream
         if not hasattr(self._thread_local_storage, "pre_process_stream"):
             self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
                 device=self._device
