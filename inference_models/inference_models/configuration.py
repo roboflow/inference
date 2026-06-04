@@ -1,8 +1,10 @@
 import os
 import warnings
+from typing import Optional
 
 import torch
 
+from inference_models.errors import InvalidEnvVariable
 from inference_models.utils.environment import (
     get_boolean_from_env,
     get_comma_separated_list_of_integers_from_env,
@@ -311,6 +313,42 @@ INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED = get_boolean_from_env(
     variable_name="INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED",
     default=DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED,
 )
+RFDETR_PIPELINE_DEPTH_ENV_NAME = "RFDETR_PIPELINE_DEPTH"
+DEFAULT_RFDETR_PIPELINE_DEPTH = 1
+MIN_RFDETR_PIPELINE_DEPTH = 1
+
+
+def parse_rfdetr_pipeline_depth(value: Optional[str]) -> int:
+    """Parse and validate the RF-DETR streaming pipeline depth."""
+    if value is None:
+        return DEFAULT_RFDETR_PIPELINE_DEPTH
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise InvalidEnvVariable(
+            message=(
+                f"Expected environment variable `{RFDETR_PIPELINE_DEPTH_ENV_NAME}` "
+                f"to be an integer but got '{value}'"
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    if parsed < MIN_RFDETR_PIPELINE_DEPTH:
+        raise InvalidEnvVariable(
+            message=(
+                f"Expected environment variable `{RFDETR_PIPELINE_DEPTH_ENV_NAME}` "
+                f"to be >= {MIN_RFDETR_PIPELINE_DEPTH} but got '{value}'"
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return parsed
+
+
+def get_rfdetr_pipeline_depth() -> int:
+    """Read and validate ``RFDETR_PIPELINE_DEPTH`` from the environment."""
+    return parse_rfdetr_pipeline_depth(os.getenv(RFDETR_PIPELINE_DEPTH_ENV_NAME))
+
+
+RFDETR_PIPELINE_DEPTH = get_rfdetr_pipeline_depth()
 INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE = get_float_from_env(
     variable_name="INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE",
     default=0.99,
