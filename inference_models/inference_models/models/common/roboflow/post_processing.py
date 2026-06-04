@@ -826,10 +826,7 @@ def post_process_semantic_segmentation_logits(
             image_results = torch.nn.functional.softmax(image_results, dim=0)
             image_confidence, image_class_ids = torch.max(image_results, dim=0)
             if len(class_names) == image_results.shape[0] + 1:
-                # Model emits K foreground channels; class_names has K+1 entries
-                # (background + foreground). Map channel j -> the j-th
-                # non-background class id. (A blanket +1 only holds when
-                # background is at index 0; background_class_id is data-driven.)
+                # +1 would only be correct when background is class 0
                 foreground_ids = torch.tensor(
                     [i for i in range(len(class_names)) if i != background_class_id],
                     device=image_class_ids.device,

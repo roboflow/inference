@@ -1,10 +1,5 @@
-"""Semantic-segmentation helpers for Roboflow model packages.
-
-These live apart from the generic `model_packages` parsing/config helpers
-because they encode the semantic-segmentation *class-name contract* — a
-`background` class plus at least one foreground class — shared by the
-DeepLabV3+ and YOLO26-sem backends.
-"""
+"""Semantic-segmentation class-name helpers shared by the DeepLabV3+ and
+YOLO26-sem backends (kept out of the generic `model_packages` module)."""
 
 from typing import List
 
@@ -12,19 +7,9 @@ from inference_models.errors import CorruptedModelPackageError
 
 
 def validate_class_names(class_names: List[str]) -> None:
-    """Validate the class names of a semantic-segmentation model package.
+    """Require a `background` class plus >= 1 foreground class, raising otherwise.
 
-    A valid package declares a `background` class plus at least one foreground
-    class, so `class_names` has >= 2 entries. `background` is required so that
-    sub-threshold / unlabeled pixels map to a valid class id (a negative
-    sentinel would alias a real class via negative indexing in downstream
-    consumers — `class_names[-1]`, palette LUTs, the 0=background platform
-    convention). At least one foreground class is required so consumers (e.g.
-    the binary `nc==1` post-process) can assume a foreground class id exists.
-
-    Raises `CorruptedModelPackageError` if either condition is unmet. Call this
-    once at model load; downstream helpers (`resolve_background_class_id`, the
-    post-process) then assume the precondition holds.
+    Call once at model load so downstream helpers can assume the precondition.
     """
     if "background" not in [c.lower() for c in class_names]:
         raise CorruptedModelPackageError(
@@ -45,9 +30,5 @@ def validate_class_names(class_names: List[str]) -> None:
 
 
 def resolve_background_class_id(class_names: List[str]) -> int:
-    """Return the index of the `background` class.
-
-    Assumes the package has already been validated via `validate_class_names`
-    (so `background` is present); call that at model load time.
-    """
+    """Index of the `background` class; assumes a `validate_class_names`-checked package."""
     return [c.lower() for c in class_names].index("background")

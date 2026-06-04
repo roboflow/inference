@@ -16,7 +16,6 @@ def test_resolve_background_class_id_is_case_insensitive() -> None:
 
 
 def test_validate_class_names_with_minimal_binary_class_list() -> None:
-    # background + a single foreground class is the minimal valid package
     validate_class_names(["background", "object"])  # does not raise
 
 
@@ -30,6 +29,5 @@ def test_validate_class_names_when_background_absent() -> None:
 
 
 def test_validate_class_names_when_no_foreground_class() -> None:
-    # background present but no foreground class -> invalid semantic-seg package
     with pytest.raises(CorruptedModelPackageError):
         validate_class_names(["background"])
