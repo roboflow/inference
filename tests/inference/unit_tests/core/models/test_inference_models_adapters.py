@@ -7,6 +7,10 @@ from types import SimpleNamespace
 import pytest
 import torch
 
+from inference.core.entities.responses.inference import (
+    InstanceSegmentationInferenceResponse,
+    InstanceSegmentationInferenceResponseDC,
+)
 from inference.core.exceptions import PostProcessingError
 from inference.core.models.inference_models_adapters import (
     InferenceModelsInstanceSegmentationAdapter,
@@ -15,6 +19,7 @@ from inference.core.models.inference_models_adapters import (
 )
 from inference_models import (
     ClassificationPrediction,
+    InstanceDetections,
     MultiLabelClassificationPrediction,
 )
 
@@ -118,6 +123,52 @@ def test_pipeline_depth_honors_requested_depth_for_supported_models(
     adapter._model = SimpleNamespace(supports_stream_pipeline=True)
 
     assert adapter._resolve_pipeline_depth() == 3
+
+
+def test_workflow_response_fast_dataclass_path_is_disabled_at_depth_one() -> None:
+    adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
+    adapter._pipeline_depth = 1
+    adapter.class_names = ["car"]
+    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=4, height=4))]
+    detections = [
+        InstanceDetections(
+            xyxy=torch.tensor([[1, 1, 3, 3]], dtype=torch.int32),
+            confidence=torch.tensor([0.9], dtype=torch.float32),
+            class_id=torch.tensor([0], dtype=torch.int32),
+            mask=torch.zeros((1, 4, 4), dtype=torch.uint8),
+        )
+    ]
+
+    responses = adapter._build_responses_from_detections(
+        detections,
+        metadata,
+        source="workflow-execution",
+    )
+
+    assert isinstance(responses[0], InstanceSegmentationInferenceResponse)
+
+
+def test_workflow_response_fast_dataclass_path_is_enabled_above_depth_one() -> None:
+    adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
+    adapter._pipeline_depth = 2
+    adapter.class_names = ["car"]
+    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=4, height=4))]
+    detections = [
+        InstanceDetections(
+            xyxy=torch.tensor([[1, 1, 3, 3]], dtype=torch.int32),
+            confidence=torch.tensor([0.9], dtype=torch.float32),
+            class_id=torch.tensor([0], dtype=torch.int32),
+            mask=torch.zeros((1, 4, 4), dtype=torch.uint8),
+        )
+    ]
+
+    responses = adapter._build_responses_from_detections(
+        detections,
+        metadata,
+        source="workflow-execution",
+    )
+
+    assert isinstance(responses[0], InstanceSegmentationInferenceResponseDC)
 
 
 def test_prepare_multi_label_response_uses_class_ids_for_predicted_classes() -> None:
