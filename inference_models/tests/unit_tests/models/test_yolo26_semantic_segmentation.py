@@ -180,6 +180,33 @@ def test_post_process_semantic_segmentation_logits_binary_sub_threshold_to_backg
     assert torch.all(results[0].confidence == 0.0)
 
 
+def test_post_process_semantic_segmentation_logits_maps_channels_when_background_not_first():
+    """K foreground channels with background NOT at index 0: channel j maps to
+    the j-th non-background class id, not a blanket +1."""
+    from inference_models.models.common.roboflow.post_processing import (
+        post_process_semantic_segmentation_logits,
+    )
+
+    # class_names: a=0, background=1, b=2, c=3 -> foreground ids [0, 2, 3]
+    h, w, num_channels = 6, 6, 3
+    logits = torch.zeros(1, num_channels, h, w)
+    logits[0, 0] = 5.0  # channel 0 dominant -> first foreground class -> "a" (id 0)
+
+    results = post_process_semantic_segmentation_logits(
+        model_results=logits,
+        pre_processing_meta=_binary_meta(h, w),
+        class_names=["a", "background", "b", "c"],
+        background_class_id=1,
+        device=torch.device("cpu"),
+        confidence=0.0,
+        recommended_parameters=None,
+        default_confidence=0.0,
+    )
+
+    # channel 0 -> class id 0 ("a"); a blanket +1 would wrongly yield 1 (background)
+    assert torch.all(results[0].segmentation_map == 0)
+
+
 def test_yolo26_semantic_segmentation_registered():
     from inference_models.models.auto_loaders.entities import BackendType
     from inference_models.models.auto_loaders.models_registry import (
