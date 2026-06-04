@@ -826,7 +826,6 @@ def post_process_semantic_segmentation_logits(
             image_results = torch.nn.functional.softmax(image_results, dim=0)
             image_confidence, image_class_ids = torch.max(image_results, dim=0)
             if len(class_names) == image_results.shape[0] + 1:
-                # +1 would only be correct when background is class 0
                 foreground_ids = torch.tensor(
                     [i for i in range(len(class_names)) if i != background_class_id],
                     device=image_class_ids.device,
