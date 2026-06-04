@@ -293,6 +293,17 @@ def test_resolve_background_class_id_when_background_absent() -> None:
         _ = resolve_background_class_id(["road", "sidewalk", "building"])
 
 
+def test_resolve_background_class_id_with_minimal_binary_class_list() -> None:
+    # background + a single foreground class is the minimal valid package
+    assert resolve_background_class_id(["background", "object"]) == 0
+
+
+def test_resolve_background_class_id_when_no_foreground_class() -> None:
+    # background present but no foreground class -> invalid semantic-seg package
+    with pytest.raises(CorruptedModelPackageError):
+        _ = resolve_background_class_id(["background"])
+
+
 def test_parse_inference_config_when_path_does_not_exists() -> None:
     # when
     with pytest.raises(CorruptedModelPackageError):

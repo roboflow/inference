@@ -38,9 +38,13 @@ def resolve_background_class_id(class_names: List[str]) -> int:
     class via negative indexing in downstream consumers (`class_names[-1]`,
     palette LUTs, the 0=background platform convention), silently corrupting
     the segmentation map. Packages must therefore declare a `background` class.
+
+    A valid semantic-segmentation package also has at least one foreground class
+    (so `class_names` has >= 2 entries: background plus the segmented class(es)).
+    This is validated here so downstream consumers can assume the precondition.
     """
     try:
-        return [c.lower() for c in class_names].index("background")
+        background_class_id = [c.lower() for c in class_names].index("background")
     except ValueError as error:
         raise CorruptedModelPackageError(
             message="Semantic segmentation model package does not define a `background` class in "
@@ -49,6 +53,15 @@ def resolve_background_class_id(class_names: List[str]) -> int:
             "names. If the weights are hosted on the Roboflow platform - contact support.",
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
+    if len(class_names) < 2:
+        raise CorruptedModelPackageError(
+            message="Semantic segmentation model package must define `background` plus at least one "
+            f"foreground class, but `class_names.txt` only contains {class_names}. If you created the "
+            "model package manually, ensure it lists `background` followed by the foreground class(es). "
+            "If the weights are hosted on the Roboflow platform - contact support.",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+        )
+    return background_class_id
 
 
 PADDING_VALUES_MAPPING = {
