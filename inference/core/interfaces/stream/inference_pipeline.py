@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 from enum import Enum
@@ -921,12 +922,29 @@ class InferencePipeline:
                 self._watchdog.on_model_inference_started(
                     frames=video_frames,
                 )
-                inference_result = self._on_video_frame(video_frames)
-                self._queue_inference_result(
-                    inference_result=inference_result,
-                    fallback_video_frames=video_frames,
+                predictions = self._on_video_frame(video_frames)
+                if _rfdetr_stream_pipeline_enabled():
+                    self._queue_inference_result(
+                        inference_result=predictions,
+                        fallback_video_frames=video_frames,
+                    )
+                    continue
+                self._watchdog.on_model_prediction_ready(
+                    frames=video_frames,
                 )
-            self._drain_inference_handler()
+                self._predictions_queue.put((predictions, video_frames))
+                send_inference_pipeline_status_update(
+                    severity=UpdateSeverity.DEBUG,
+                    event_type=INFERENCE_COMPLETED_EVENT,
+                    payload={
+                        "frames_ids": [f.frame_id for f in video_frames],
+                        "frames_timestamps": [f.frame_timestamp for f in video_frames],
+                        "sources_id": [f.source_id for f in video_frames],
+                    },
+                    status_update_handlers=self._status_update_handlers,
+                )
+            if _rfdetr_stream_pipeline_enabled():
+                self._drain_inference_handler()
 
         except Exception as error:
             payload = {
@@ -942,7 +960,8 @@ class InferencePipeline:
             )
             logger.exception(f"Encountered inference error: {error}")
         finally:
-            self._close_inference_handler()
+            if _rfdetr_stream_pipeline_enabled():
+                self._close_inference_handler()
             self._predictions_queue.put(None)
             send_inference_pipeline_status_update(
                 severity=UpdateSeverity.INFO,
@@ -960,7 +979,8 @@ class InferencePipeline:
                 self._predictions_queue.task_done()
                 break
             predictions, video_frames = inference_results
-            predictions = _resolve_prediction_futures(predictions)
+            if _rfdetr_stream_pipeline_enabled():
+                predictions = _resolve_prediction_futures(predictions)
             if self._on_prediction is not None:
                 self._handle_predictions_dispatching(
                     predictions=predictions,
@@ -1158,3 +1178,10 @@ def _resolve_prediction_futures(value: Any) -> Any:
             key: _resolve_prediction_futures(element) for key, element in value.items()
         }
     return value
+
+
+def _rfdetr_stream_pipeline_enabled() -> bool:
+    try:
+        return int(os.getenv("RFDETR_PIPELINE_DEPTH", "1").strip()) > 1
+    except ValueError:
+        return False

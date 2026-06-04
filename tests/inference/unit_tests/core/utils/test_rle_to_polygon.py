@@ -182,13 +182,49 @@ def test_rle_masks_to_polygons_matches_legacy_dense_path_for_lazy_uncompressed_c
         _assert_polygons_exactly_equal(actual=actual, expected=expected)
 
 
-def test_adapter_rle_masks2poly_matches_legacy_dense_path() -> None:
-    from inference.core.models.inference_models_adapters import rle_masks2poly
+def test_adapter_rle_masks2poly_matches_legacy_dense_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from inference.core.models import inference_models_adapters
+
+    monkeypatch.setattr(
+        inference_models_adapters,
+        "INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED",
+        False,
+    )
 
     for mask in _deterministic_masks():
         instances = _to_instances([mask])
 
-        actual = rle_masks2poly(masks=instances)
+        actual = inference_models_adapters.rle_masks2poly(masks=instances)
         expected = _legacy_rle_masks2poly(masks=instances)
 
         _assert_polygons_exactly_equal(actual=actual, expected=expected)
+
+
+def test_adapter_rle_masks2poly_uses_sparse_path_only_with_triton_postproc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from inference.core.models import inference_models_adapters
+
+    instances = _to_instances([np.zeros((8, 8), dtype=np.uint8)])
+    sentinel = [np.array([[1.0, 2.0]], dtype=np.float32)]
+    calls = []
+
+    def fake_sparse_converter(masks):
+        calls.append(masks)
+        return sentinel
+
+    monkeypatch.setattr(
+        inference_models_adapters,
+        "INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        inference_models_adapters,
+        "rle_masks_to_polygons",
+        fake_sparse_converter,
+    )
+
+    assert inference_models_adapters.rle_masks2poly(masks=instances) is sentinel
+    assert calls == [instances]

@@ -10,6 +10,7 @@ from typing import Any, Deque, List, Optional, Tuple, Union
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
+from pycocotools import mask as mask_utils
 
 from inference.core.entities.requests import (
     ClassificationInferenceRequest,
@@ -49,7 +50,7 @@ from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
-from inference.core.utils.postprocess import bitpacked_masks2poly, masks2poly
+from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
 from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
@@ -68,7 +69,10 @@ from inference_models import (
     PreProcessingOverrides,
     SemanticSegmentationModel,
 )
-from inference_models.configuration import get_rfdetr_pipeline_depth
+from inference_models.configuration import (
+    INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED,
+    get_rfdetr_pipeline_depth,
+)
 from inference_models.models.base.async_handoff import (
     adapter_gpu_work_submitted,
     attach_adapter_mapped_kwargs,
@@ -631,7 +635,11 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         # dataclasses avoid pydantic validation + `model_dump` overhead per
         # frame. Keep the pydantic path for RLE responses and for non-workflow
         # callers that rely on the response model type.
-        use_dc = kwargs.get("source") == "workflow-execution" and not return_in_rle
+        use_dc = (
+            kwargs.get("source") == "workflow-execution"
+            and not return_in_rle
+            and getattr(self, "_pipeline_depth", 1) > 1
+        )
 
         responses: List[InstanceSegmentationInferenceResponse] = []
         for preproc_metadata, det in zip(preprocess_return_metadata, detections_list):
@@ -911,7 +919,19 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
 
 def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
-    return rle_masks_to_polygons(masks=masks)
+    if INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED:
+        return rle_masks_to_polygons(masks=masks)
+
+    segments = []
+    h, w = masks.image_size
+    for counts in masks.masks:
+        rle_dict = {"size": [h, w], "counts": counts}
+        decoded_rle = np.ascontiguousarray(mask_utils.decode(rle_dict))
+        if not np.any(decoded_rle):
+            segments.append(np.zeros((0, 2), dtype=np.float32))
+            continue
+        segments.append(mask2poly(decoded_rle))
+    return segments
 
 
 class InferenceModelsKeyPointsDetectionAdapter(Model):

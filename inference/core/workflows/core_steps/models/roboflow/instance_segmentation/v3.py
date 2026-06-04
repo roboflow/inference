@@ -54,6 +54,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.configuration import get_rfdetr_pipeline_depth
 from inference_models.models.base.async_handoff import get_async_response_future
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -500,7 +501,10 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         )
 
     def can_activate_stream_pipeline(self) -> bool:
-        return self._step_execution_mode is StepExecutionMode.LOCAL
+        return (
+            self._step_execution_mode is StepExecutionMode.LOCAL
+            and get_rfdetr_pipeline_depth() > 1
+        )
 
     def stream_pipeline_depth(self) -> int:
         if not self.is_stream_pipelined():

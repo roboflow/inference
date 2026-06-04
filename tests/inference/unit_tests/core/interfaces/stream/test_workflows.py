@@ -330,6 +330,28 @@ def test_workflow_runner_buffers_when_stream_pipeline_activates_after_first_run(
     assert engine.step.flush_calls == 1
 
 
+def test_instance_segmentation_stream_pipeline_activation_requires_depth_above_one(
+    monkeypatch,
+) -> None:
+    block = RoboflowInstanceSegmentationModelBlockV3(
+        model_manager=_FakeModelManager(inference_results=[]),
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    monkeypatch.setattr(
+        "inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3.get_rfdetr_pipeline_depth",
+        lambda: 1,
+    )
+    assert block.can_activate_stream_pipeline() is False
+
+    monkeypatch.setattr(
+        "inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3.get_rfdetr_pipeline_depth",
+        lambda: 2,
+    )
+    assert block.can_activate_stream_pipeline() is True
+
+
 def test_instance_segmentation_stream_flush_drains_model_without_rerunning_workflow() -> (
     None
 ):
