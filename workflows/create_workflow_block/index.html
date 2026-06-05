@@ -758,6 +758,8 @@
       
         
       
+        
+      
     
     
     
@@ -1562,6 +1564,67 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#runtime-restrictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime restrictions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Runtime restrictions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#severity-soft-vs-hard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Severity: soft vs. hard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scoping-a-restriction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scoping a restriction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shared-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared presets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2295,6 +2358,67 @@
     <span class="md-ellipsis">
       
         get_compatible_task_types()
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runtime-restrictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime restrictions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Runtime restrictions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#severity-soft-vs-hard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Severity: soft vs. hard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scoping-a-restriction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scoping a restriction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shared-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared presets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
       
     </span>
   </a>
@@ -5866,6 +5990,115 @@ to match cached user models to compatible blocks.</p>
 <p>The default returns <code>None</code> — appropriate for blocks that are not
 parameterised by a Roboflow model (foundation models, logic blocks, sinks,
 etc.).</p>
+<h3 id="runtime-restrictions">Runtime restrictions<a class="headerlink" href="#runtime-restrictions" title="Permanent link">&para;</a></h3>
+<p>Some blocks behave differently — or fail outright — depending on the runtime
+they are deployed in (hosted serverless, dedicated deployment, self-hosted,
+inference pipeline), the step execution mode (local vs. remote), and the
+input mode (image vs. video). Override <code>get_restrictions()</code> on
+<code>WorkflowBlockManifest</code> to declare those caveats once, in the block, so the
+execution engine, the schema endpoint, and the auto-generated block gallery
+can all surface them consistently.</p>
+<p>The default returns <code>[]</code>, so existing blocks need <strong>no changes</strong>.</p>
+<h4 id="severity-soft-vs-hard">Severity: <code>soft</code> vs. <code>hard</code><a class="headerlink" href="#severity-soft-vs-hard" title="Permanent link">&para;</a></h4>
+<p>Each restriction carries a <code>Severity</code>:</p>
+<ul>
+<li><strong><code>Severity.SOFT</code></strong> — the block runs to completion and returns the right
+  output shape, but the values are degraded or meaningless (e.g. tracker IDs
+  reset across requests, cooldown does not throttle, file is written to
+  ephemeral disk). The workflow still runs; the result is just not what the
+  user expects.</li>
+<li><strong><code>Severity.HARD</code></strong> — the block does not run / raises / cannot produce a
+  usable output in this runtime. The engine should refuse to compile or
+  fail-fast.</li>
+</ul>
+<h4 id="scoping-a-restriction">Scoping a restriction<a class="headerlink" href="#scoping-a-restriction" title="Permanent link">&para;</a></h4>
+<p>A <code>RuntimeRestriction</code> can scope itself along any combination of three axes.
+When an axis is left as <code>None</code>, the restriction applies to every value of
+that axis.</p>
+<ul>
+<li><code>applies_to_runtimes</code>: <code>Runtime.HOSTED_SERVERLESS</code>,
+  <code>Runtime.DEDICATED_DEPLOYMENT</code>, <code>Runtime.SELF_HOSTED_CPU</code>,
+  <code>Runtime.SELF_HOSTED_GPU</code>, <code>Runtime.INFERENCE_PIPELINE</code>.</li>
+<li><code>applies_to_step_execution_modes</code>: <code>StepExecutionMode.LOCAL</code>,
+  <code>StepExecutionMode.REMOTE</code>.</li>
+<li><code>applies_to_input_modes</code>: <code>RuntimeInputMode.IMAGE</code>,
+  <code>RuntimeInputMode.VIDEO</code>.</li>
+</ul>
+<p>The <code>note</code> field is a one-line, human-readable explanation of the failure
+mode or degraded behavior — describe what happens (e.g. "track_ids reset
+between requests", "writes to ephemeral /tmp"), not abstract preconditions.</p>
+<h4 id="shared-presets">Shared presets<a class="headerlink" href="#shared-presets" title="Permanent link">&para;</a></h4>
+<p>Most caveats fall into a handful of common patterns, so reusable presets are
+exported alongside the dataclasses to keep wording consistent across the
+codebase. Reach for these first:</p>
+<ul>
+<li><code>STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION</code> — for video-tracking / counting /
+  aggregation blocks whose per-video state lives in process memory and
+  resets between stateless HTTP requests.</li>
+<li><code>COOLDOWN_HTTP_SOFT_RESTRICTION</code> — for blocks whose cooldown / rate-limit
+  timer is held in process memory and therefore does not throttle on
+  multi-replica HTTP runtimes.</li>
+<li><code>STILL_IMAGE_INPUT_SOFT_RESTRICTION</code> — for blocks that depend on temporal
+  context (video or repeated frames) and provide little or no benefit on
+  still images.</li>
+</ul>
+<h4 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h4>
+<p>A line-counter block that maintains per-video state and is also meaningless
+on a still image declares both restrictions:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.workflows.prototypes.block</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION</span><span class="p">,</span>
+    <span class="n">STILL_IMAGE_INPUT_SOFT_RESTRICTION</span><span class="p">,</span>
+    <span class="n">RuntimeRestriction</span><span class="p">,</span>
+    <span class="n">WorkflowBlockManifest</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockManifest</span><span class="p">(</span><span class="n">WorkflowBlockManifest</span><span class="p">):</span>
+    <span class="c1"># ...</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_restrictions</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">RuntimeRestriction</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION</span><span class="p">,</span>
+            <span class="n">STILL_IMAGE_INPUT_SOFT_RESTRICTION</span><span class="p">,</span>
+        <span class="p">]</span>
+</code></pre></div>
+<p>A custom restriction (e.g. a <code>Severity.HARD</code> block that requires GPU
+hardware that is not present on the hosted serverless runtime) is declared
+inline:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.workflows.prototypes.block</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">Runtime</span><span class="p">,</span>
+    <span class="n">RuntimeRestriction</span><span class="p">,</span>
+    <span class="n">Severity</span><span class="p">,</span>
+    <span class="n">WorkflowBlockManifest</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockManifest</span><span class="p">(</span><span class="n">WorkflowBlockManifest</span><span class="p">):</span>
+    <span class="c1"># ...</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_restrictions</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">RuntimeRestriction</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">RuntimeRestriction</span><span class="p">(</span>
+                <span class="n">severity</span><span class="o">=</span><span class="n">Severity</span><span class="o">.</span><span class="n">HARD</span><span class="p">,</span>
+                <span class="n">note</span><span class="o">=</span><span class="s2">&quot;Block requires a CUDA GPU; raises on CPU-only workers.&quot;</span><span class="p">,</span>
+                <span class="n">applies_to_runtimes</span><span class="o">=</span><span class="p">[</span>
+                    <span class="n">Runtime</span><span class="o">.</span><span class="n">HOSTED_SERVERLESS</span><span class="p">,</span>
+                    <span class="n">Runtime</span><span class="o">.</span><span class="n">SELF_HOSTED_CPU</span><span class="p">,</span>
+                <span class="p">],</span>
+            <span class="p">),</span>
+        <span class="p">]</span>
+</code></pre></div>
+<p>Restrictions declared this way are surfaced in three places:</p>
+<ol>
+<li>The <code>describe_interface</code> HTTP payload (via <code>RuntimeRestriction.to_dict()</code>),
+   so workflow clients and builders can warn users before a workflow is run.</li>
+<li>The auto-generated block gallery page for the block, under a "Runtime
+   compatibility" section right after <strong>Properties</strong>.</li>
+<li>The execution engine, which can choose to fail-fast on <code>Severity.HARD</code>
+   restrictions for the current runtime.</li>
+</ol>
 
 
 

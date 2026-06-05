@@ -1481,6 +1481,11 @@
 <td>Optional path to a CA bundle used when client certificate verification (mTLS) is required.</td>
 <td>Not set</td>
 </tr>
+<tr>
+<td><code>WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT</code></td>
+<td>List of whitelisted workspace urls (separator <code>,</code>) which are meant to be allowed to execute requests against local server. When enabled - each request (apart from docs, landing page and health / liveness / metrics) will be authorised with Roboflow API key</td>
+<td>Not set</td>
+</tr>
 </tbody>
 </table>
 

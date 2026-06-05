@@ -876,6 +876,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#volume-mounts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Volume Mounts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#development-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1333,6 +1344,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#volume-mounts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Volume Mounts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#development-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1429,6 +1451,14 @@ you haven't installed Docker yet, you can get it from <a href="https://www.docke
 <p>Parameter <code>--env-file</code> (or <code>-e</code>) is the optional path for .env file that will be loaded into your Inference server
 in case that values of internal parameters needs to be adjusted. Any value passed explicitly as command parameter
 is considered as more important and will shadow the value defined in <code>.env</code> file under the same target variable name.</p>
+<h3 id="volume-mounts">Volume Mounts<a class="headerlink" href="#volume-mounts" title="Permanent link">&para;</a></h3>
+<p>Use the <code>--volume</code> (or <code>-v</code>) flag to mount a host directory into the container. This is useful for persisting files written by workflows (e.g. via the <code>local_file_sink</code> block) to your local machine.</p>
+<div class="highlight"><pre><span></span><code>inference<span class="w"> </span>server<span class="w"> </span>start<span class="w"> </span>--volume<span class="w"> </span>/host/path:/container/path
+</code></pre></div>
+<p>You can mount multiple volumes by repeating the flag:</p>
+<div class="highlight"><pre><span></span><code>inference<span class="w"> </span>server<span class="w"> </span>start<span class="w"> </span>--volume<span class="w"> </span>/host/data:/data<span class="w"> </span>--volume<span class="w"> </span>/host/models:/models:ro
+</code></pre></div>
+<p>The optional <code>:ro</code> suffix mounts the volume as read-only. If omitted, the volume is mounted read-write.</p>
 <h3 id="development-mode">Development Mode<a class="headerlink" href="#development-mode" title="Permanent link">&para;</a></h3>
 <p>Use the <code>--dev</code> flag to start the Inference Server in development mode. Development mode enables the Inference Server's built in notebook environment for easy testing and development.</p>
 <h3 id="tunnel">Tunnel<a class="headerlink" href="#tunnel" title="Permanent link">&para;</a></h3>

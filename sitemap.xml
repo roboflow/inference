@@ -61,6 +61,9 @@
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;install&#x2f;other&#x2f;</loc>
     </url>
     <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;install&#x2f;security&#x2f;</loc>
+    </url>
+    <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;guides&#x2f;hello-world&#x2f;</loc>
     </url>
     <url>
@@ -490,6 +493,9 @@
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;local_file_sink&#x2f;</loc>
     </url>
     <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;microsoft_sql_server_sink&#x2f;</loc>
+    </url>
+    <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;data_aggregator&#x2f;</loc>
     </url>
     <url>
@@ -694,6 +700,9 @@
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;image_slicer&#x2f;</loc>
     </url>
     <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;current_time&#x2f;</loc>
+    </url>
+    <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;detections_stitch&#x2f;</loc>
     </url>
     <url>
@@ -704,6 +713,21 @@
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;environment_secrets_store&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;event_writer&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;mqtt_writer&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;opcua_writer_sink&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;plc_ethernet_ip&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;plc_modbus_tcp&#x2f;</loc>
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;definitions&#x2f;</loc>

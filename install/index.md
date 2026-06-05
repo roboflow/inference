@@ -82,6 +82,13 @@ Browse the navigation on the left for detailed install guides:
 - :simple-nvidia: [Jetson](jetson.md)
 - :fontawesome-brands-raspberry-pi: [Raspberry Pi](raspberry-pi.md)
 
+## Securing your server
+
+A self-hosted server does not enforce authentication, encryption, or network
+restrictions by default — securing it is your responsibility. Before exposing
+it beyond local development traffic, review
+[Securing a Self-Hosted Server](security.md).
+
 ## Using Your New Server
 
 Once you have [Inference server](../quickstart/docker.md) running,

@@ -340,6 +340,10 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3
 
+## `core/workflows/core_steps/models/foundation/glm_ocr`
+
+::: inference.core.workflows.core_steps.models.foundation.glm_ocr.v1
+
 ## `core/workflows/core_steps/models/foundation/google_gemini`
 
 ::: inference.core.workflows.core_steps.models.foundation.google_gemini.v3
