@@ -500,9 +500,17 @@ def _escape_jinja2_dollar_expression(match: re.Match) -> str:
 
 def get_source_link_for_block_class(block_class: Type[WorkflowBlock]) -> str:
     try:
-        filename = inspect.getfile(block_class).split("inference/core/workflows/")[1]
-        return f"https://github.com/roboflow/inference/blob/main/inference/core/workflows/{filename}"
-    except Exception as e:
+        filepath = inspect.getfile(block_class)
+        # Resolve the path relative to the `inference` package root so that both
+        # core blocks (inference/core/workflows/...) and enterprise blocks
+        # (inference/enterprise/workflows/...) produce valid links.
+        marker = f"{os.sep}inference{os.sep}"
+        idx = filepath.rfind(marker)
+        if idx == -1:
+            return None
+        relative_path = filepath[idx + 1 :].replace(os.sep, "/")
+        return f"https://github.com/roboflow/inference/blob/main/{relative_path}"
+    except Exception:
         return None
 
 
