@@ -85,6 +85,7 @@ nav:
           - CLIP: models/clip.md
           - Perception Encoder: models/perception-encoder.md
       - Semantic Segmentation:
+          - YOLO26: models/yolo26-semantic-segmentation.md
           - DeepLabV3+: models/deeplabv3plus.md
       - Open-Vocabulary Object Detection:
           - Grounding DINO: models/grounding-dino.md
