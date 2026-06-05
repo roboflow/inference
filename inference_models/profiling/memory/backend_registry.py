@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator, List, Optional, Set
+from typing import Any, Dict, Iterator, List, Optional, Set
 
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.models.auto_loaders.models_registry import (
@@ -135,3 +135,88 @@ def list_trt_registry_rows() -> List[RegistryBackendRow]:
     rows = list_backend_registry_rows(backend=BackendType.TRT)
 
     return rows
+
+
+HARNESS_BACKEND_VALUES = (
+    BackendType.TORCH.value,
+    BackendType.ONNX.value,
+    BackendType.TRT.value,
+)
+
+
+def list_registry_rows_for_harness(harness_backend: str) -> List[RegistryBackendRow]:
+    """Return registry rows eligible for a profiling harness backend.
+
+    ``torch`` includes ``torch``, ``torch-script``, and ``hugging-face`` rows.
+    """
+    if harness_backend == BackendType.TORCH.value:
+        return list_torch_registry_rows()
+    if harness_backend == BackendType.ONNX.value:
+        return list_onnx_registry_rows()
+    if harness_backend == BackendType.TRT.value:
+        return list_trt_registry_rows()
+
+    raise ValueError(
+        f"Unsupported harness backend {harness_backend!r}; "
+        f"expected one of: {', '.join(HARNESS_BACKEND_VALUES)}"
+    )
+
+
+def registry_features_from_row(row: RegistryBackendRow) -> Dict[str, Any]:
+    """Build ``registry_features`` metadata from a resolved registry row."""
+    registry_features: Dict[str, Any] = {}
+    if row.required_model_features:
+        registry_features["required_model_features"] = sorted(
+            row.required_model_features
+        )
+    if row.supported_model_features:
+        registry_features["supported_model_features"] = sorted(
+            row.supported_model_features
+        )
+
+    return registry_features
+
+
+def resolve_registry_row(
+    *,
+    architecture: str,
+    task_type: str,
+    harness_backend: str,
+) -> RegistryBackendRow:
+    """Resolve ``module_name`` / ``class_name`` from ``REGISTERED_MODELS``.
+
+    Args:
+        architecture: Registry architecture key (e.g. ``yolov8``).
+        task_type: Registry task type (e.g. ``object-detection``).
+        harness_backend: CLI profiling backend (``torch``, ``onnx``, or ``trt``).
+
+    Raises:
+        ValueError: When no row matches or multiple rows match.
+    """
+    rows = list_registry_rows_for_harness(harness_backend)
+    matches = [
+        row
+        for row in rows
+        if row.architecture == architecture and row.task_type == task_type
+    ]
+
+    if len(matches) == 1:
+        return matches[0]
+
+    if not matches:
+        raise ValueError(
+            f"No REGISTERED_MODELS entry for architecture={architecture!r}, "
+            f"task_type={task_type!r}, harness backend={harness_backend!r}. "
+            "Use --list-torch-models, --list-onnx-models, or --list-trt-models."
+        )
+
+    candidates = ", ".join(
+        f"{match.module_name}.{match.class_name} "
+        f"(registry backend {match.backend.value})"
+        for match in matches
+    )
+    raise ValueError(
+        f"Multiple REGISTERED_MODELS entries for architecture={architecture!r}, "
+        f"task_type={task_type!r}, harness backend={harness_backend!r}: "
+        f"{candidates}"
+    )

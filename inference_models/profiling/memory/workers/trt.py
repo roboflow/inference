@@ -1,20 +1,35 @@
 from __future__ import annotations
 
 import importlib
-import json
 import traceback
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 import torch
 
 from profiling.memory.input_factory import (
     build_random_rgb_images,
-    describe_shape_signature,
     merge_infer_kwargs,
 )
+from profiling.memory.metadata import (
+    TensorRTBackendMetadata,
+    TensorRTMetrics,
+    build_model_metadata_from_context,
+    build_runtime_metadata,
+    collect_environment_metadata,
+    finalize_profile_record,
+)
+from profiling.memory.package_resolve import (
+    extract_trt_package_features,
+    extract_trt_package_runtime_metadata,
+)
 from profiling.memory.sampler import NvmlProcessMemorySampler
-from profiling.memory.schema import ShapeProfile, TensorRTMemoryProfileResult
+from profiling.memory.package_input_profile import shape_spec_from_model
+from profiling.memory.worker_config import MemoryProfilingWorkerPayload
+from profiling.memory.worker_common import (
+    build_input_metadata,
+    build_profiling_run_metadata,
+    ensure_profiling_image_shapes,
+)
 
 
 def _resolve_class(
@@ -54,41 +69,6 @@ def _delta_bytes(
     return delta
 
 
-def _read_model_package_metadata(
-    model_name_or_path: str,
-) -> tuple[Optional[int], Optional[Dict[str, Any]], Optional[int]]:
-    package_dir = Path(model_name_or_path)
-    if not package_dir.is_dir():
-        return None, None, None
-
-    engine_path = package_dir / "engine.plan"
-    engine_size_bytes = (
-        int(engine_path.stat().st_size) if engine_path.is_file() else None
-    )
-
-    optimization_profile: Optional[Dict[str, Any]] = None
-    trt_config_path = package_dir / "trt_config.json"
-    if trt_config_path.is_file():
-        with trt_config_path.open(encoding="utf-8") as config_file:
-            loaded_config = json.load(config_file)
-
-        if isinstance(loaded_config, dict):
-            optimization_profile = loaded_config
-
-    max_workspace_setting: Optional[int] = None
-    build_config_path = package_dir / "build_config.json"
-    if build_config_path.is_file():
-        with build_config_path.open(encoding="utf-8") as build_config_file:
-            loaded_build_config = json.load(build_config_file)
-
-        if isinstance(loaded_build_config, dict):
-            workspace_gb = loaded_build_config.get("workspace_size_gb")
-            if workspace_gb is not None:
-                max_workspace_setting = int(workspace_gb) * (1024**3)
-
-    return engine_size_bytes, optimization_profile, max_workspace_setting
-
-
 def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Execute one TensorRT runtime memory profiling scenario in a fresh process.
 
@@ -96,42 +76,23 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         payload: Worker configuration (model path, shape, iterations, device, etc.).
 
     Returns:
-        JSON-serializable dict from ``TensorRTMemoryProfileResult.as_json_dict()``.
+        JSON-serializable dict from ``MemoryProfileRecord.as_json_dict()`` with TensorRT specific metrics and metadata.
 
     Raises:
         RuntimeError: If CUDA is unavailable or the device is not CUDA.
     """
     import tensorrt
 
-    module_name = payload["module_name"]
-    class_name = payload["class_name"]
-    model_name_or_path = payload["model_name_or_path"]
-    from_pretrained_kwargs: Dict[str, Any] = payload.get("from_pretrained_kwargs") or {}
-    device_str: str = payload["device_str"]
-    batch_size = int(payload["batch_size"])
-    height = int(payload["height"])
-    width = int(payload["width"])
-    infer_kwargs_user: Dict[str, Any] = payload.get("infer_kwargs") or {}
-    task_type: Optional[str] = payload.get("task_type")
-    method_name: str = payload["method_name"]
-    warmup_iterations = int(payload["warmup_iterations"])
-    measured_iterations = int(payload["measured_iterations"])
-    model_id = payload.get("model_id") or model_name_or_path
-    architecture = payload.get("architecture")
-    quantization = payload.get("quantization")
-    sampling_interval_seconds = float(
-        payload.get("trt_nvml_sampling_interval_seconds")
-        or payload.get("onnx_nvml_sampling_interval_seconds")
-        or 0.01
-    )
-    num_contexts_profiled = int(payload.get("num_execution_contexts") or 1)
+    config = MemoryProfilingWorkerPayload.from_payload(payload)
+    batch_size, height, width = config.profiling_shape
+    from_pretrained_kwargs = dict(config.from_pretrained_kwargs)
 
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for this TensorRT memory profiler harness.")
 
-    device = torch.device(device_str)
+    device = torch.device(config.device_str)
     if device.type != "cuda":
-        raise RuntimeError(f"Expected a CUDA device, got {device_str!r}.")
+        raise RuntimeError(f"Expected a CUDA device, got {config.device_str!r}.")
 
     torch.cuda.set_device(device)
     torch.cuda.empty_cache()
@@ -139,22 +100,22 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
     device_index = device.index if device.index is not None else 0
     sampler = NvmlProcessMemorySampler(
         device_index,
-        interval_seconds=sampling_interval_seconds,
+        interval_seconds=config.trt_nvml_sampling_interval,
     )
     baseline_process_gpu_bytes = sampler.snapshot()
 
     engine_size_bytes, optimization_profile, max_workspace_setting = (
-        _read_model_package_metadata(model_name_or_path)
+        extract_trt_package_runtime_metadata(config.package_path)
     )
 
     from_pretrained_kwargs.setdefault("device", device)
 
     model_cls = _resolve_class(
-        module_name=module_name,
-        class_name=class_name,
+        module_name=config.module_name,
+        class_name=config.class_name,
     )
     model = model_cls.from_pretrained(
-        model_name_or_path,
+        str(config.package_path),
         **from_pretrained_kwargs,
     )
 
@@ -165,36 +126,37 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     idle_after_deserialize_bytes = sampler.snapshot()
 
+    batch_size, height, width = ensure_profiling_image_shapes(
+        model,
+        batch_size=batch_size,
+        height=height,
+        width=width,
+    )
+    shape_spec = shape_spec_from_model(model)
+
     images = build_random_rgb_images(
         batch_size,
         height=height,
         width=width,
     )
     infer_kwargs = merge_infer_kwargs(
-        task_type=task_type,
-        user=infer_kwargs_user,
+        task_type=config.task_type,
+        user=config.infer_kwargs,
     )
-    shape_signature = describe_shape_signature(
-        batch_size,
-        height=height,
-        width=width,
-        infer_kwargs=infer_kwargs,
-    )
-
     def run_inference_steps(num_steps: int) -> None:
         for _ in range(num_steps):
             _invoke_method(
                 model,
-                method_name=method_name,
+                method_name=config.method_name,
                 images=images,
                 infer_kwargs=infer_kwargs,
             )
 
-    run_inference_steps(warmup_iterations)
+    run_inference_steps(config.warmup_iterations)
     torch.cuda.synchronize(device)
 
     sampler.start()
-    run_inference_steps(measured_iterations)
+    run_inference_steps(config.measured_iterations)
     torch.cuda.synchronize(device)
     peak_request_bytes = sampler.stop()
 
@@ -203,49 +165,73 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         start_value=idle_after_deserialize_bytes,
     )
 
+    package_dir = config.package_path
+    trt_config_features = (
+        extract_trt_package_features(package_dir) if package_dir.is_dir() else {}
+    )
+
     notes = [
         "TensorRT runtime profile (engine deserialize + context via from_pretrained)",
         f"NVML sampling source: {sampler.source}",
     ]
     if peak_request_bytes is None:
         notes.append("NVML sampling unavailable; install profiling-memory extra or GPU driver")
-    if num_contexts_profiled != 1:
+    if config.num_execution_contexts != 1:
         notes.append(
             "num_execution_contexts > 1 requested; registry from_pretrained currently "
             "creates one execution context per model instance"
         )
 
-    result = TensorRTMemoryProfileResult(
-        model_id=model_id,
-        gpu_name=torch.cuda.get_device_name(device),
-        quantization=quantization,
-        shape_profile=ShapeProfile(
-            batch_size=batch_size,
-            height=height,
-            width=width,
-        ),
-        concurrency=num_contexts_profiled,
-        warmup_iterations=warmup_iterations,
-        measured_iterations=measured_iterations,
-        method_name=method_name,
-        shape_signature=shape_signature,
-        module_name=module_name,
-        class_name=class_name,
-        architecture=architecture,
-        task_type=task_type,
-        notes=notes,
+    metrics = TensorRTMetrics(
         baseline_process_gpu_bytes_nvml=baseline_process_gpu_bytes,
         idle_after_deserialize_bytes=idle_after_deserialize_bytes,
         peak_request_bytes=peak_request_bytes,
         delta_peak_bytes=delta_peak_bytes,
+    )
+    model_metadata = build_model_metadata_from_context(
+        config.metadata_context,
+        package_dir=package_dir if package_dir.is_dir() else None,
+    )
+    runtime_metadata = build_runtime_metadata(
+        module_name=config.module_name,
+        class_name=config.class_name,
+        method_name=config.method_name,
+    )
+    backend_metadata = TensorRTBackendMetadata(
+        tensorrt_version=tensorrt.__version__,
         engine_size_bytes=engine_size_bytes,
         optimization_profile=optimization_profile,
         max_workspace_setting=max_workspace_setting,
-        num_contexts_profiled=num_contexts_profiled,
-        tensorrt_version=tensorrt.__version__,
-        nvml_sampling_interval_seconds=sampling_interval_seconds,
+        num_contexts_profiled=config.num_execution_contexts,
+        trt_config=trt_config_features,
     )
-    result_dict = result.as_json_dict()
+    record = finalize_profile_record(
+        profile_tier=config.resolved_profile_tier,
+        metrics=metrics,
+        model_metadata=model_metadata,
+        runtime_metadata=runtime_metadata,
+        backend_metadata=backend_metadata,
+        input_metadata=build_input_metadata(
+            module_name=config.module_name,
+            class_name=config.class_name,
+            architecture=config.architecture,
+            task_type=config.task_type,
+            backend=config.backend,
+            batch_size=batch_size,
+            height=height,
+            width=width,
+            infer_kwargs=infer_kwargs,
+            shape_spec=shape_spec,
+        ),
+        environment_metadata=collect_environment_metadata(device=device),
+        profiling_run=build_profiling_run_metadata(
+            config,
+            trace_files=[],
+            nvml_sampling_interval_seconds=config.trt_nvml_sampling_interval,
+        ),
+        notes=notes,
+    )
+    result_dict = record.as_json_dict()
 
     return result_dict
 

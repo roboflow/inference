@@ -18,6 +18,7 @@ from profiling.memory.package_resolve import (
     extract_package_features,
     extract_trt_package_features,
 )
+from profiling.memory.package_input_profile import PackageProfilingShapeSpec
 from profiling.memory.registry_profiles import resolve_registry_input_context
 
 
@@ -50,18 +51,34 @@ PROFILE_TIER_DESCRIPTIONS = "\n".join(
 )
 
 
+def profile_tier_field_description() -> str:
+    return PROFILE_TIER_DESCRIPTIONS
+
+
+def coerce_profile_tier(value: Any) -> ProfileTier:
+    if isinstance(value, ProfileTier):
+        return value
+    if value is None:
+        raise ValueError(
+            "profile_tier is required; "
+            f"expected one of: {', '.join(tier.value for tier in ProfileTier)}"
+        )
+    try:
+        return ProfileTier(str(value))
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid profile_tier {value!r}; "
+            f"expected one of: {', '.join(tier.value for tier in ProfileTier)}"
+        ) from exc
+
+
 class InputAxisValue(BaseModel):
     """One resolved input axis used during profiling."""
 
     value: Optional[Union[int, float, str, bool]] = Field(
         default=None,
-        description="Effective axis value used during the measured profiling iterations.",
+        description="Axis value used during the measured profiling iterations.",
         examples=[1, 640, "Describe this image."],
-    )
-    requested: Optional[Union[int, float, str, bool]] = Field(
-        default=None,
-        description="CLI- or caller-requested value before package/registry alignment.",
-        examples=[4, 1280],
     )
     resolution: Optional[Literal["static", "dynamic"]] = Field(
         default=None,
@@ -106,11 +123,10 @@ class DeclaredInputSpec(BaseModel):
             {
                 "batch": {
                     "value": 1,
-                    "requested": 4,
                     "resolution": "static",
                     "source": "inference_config.json#forward_pass.static_batch_size",
                 },
-                "height": {"value": 640, "requested": 640, "resolution": "static"},
+                "height": {"value": 640, "resolution": "static"},
             }
         ],
     )
@@ -142,9 +158,9 @@ class InputMetadata(BaseModel):
         examples=[
             {
                 "images": {
-                    "batch": {"value": 1, "requested": 1, "resolution": "static"},
-                    "height": {"value": 640, "requested": 640, "resolution": "static"},
-                    "width": {"value": 640, "requested": 640, "resolution": "static"},
+                    "batch": {"value": 1, "resolution": "static"},
+                    "height": {"value": 640, "resolution": "static"},
+                    "width": {"value": 640, "resolution": "static"},
                     "channels": {
                         "value": 3,
                         "resolution": "static",
@@ -687,12 +703,9 @@ def collect_environment_metadata(
 
 def build_image_input_metadata(
     *,
-    requested_batch: int,
-    requested_height: int,
-    requested_width: int,
-    effective_batch: int,
-    effective_height: int,
-    effective_width: int,
+    batch_size: int,
+    height: int,
+    width: int,
     batch_source: Optional[str] = None,
     spatial_source: Optional[str] = None,
     batch_resolution: Optional[Literal["static", "dynamic"]] = None,
@@ -700,20 +713,17 @@ def build_image_input_metadata(
 ) -> Dict[str, InputAxisValue]:
     image_axes = {
         "batch": InputAxisValue(
-            value=effective_batch,
-            requested=requested_batch,
+            value=batch_size,
             resolution=batch_resolution,
             source=batch_source,
         ),
         "height": InputAxisValue(
-            value=effective_height,
-            requested=requested_height,
+            value=height,
             resolution=spatial_resolution,
             source=spatial_source,
         ),
         "width": InputAxisValue(
-            value=effective_width,
-            requested=requested_width,
+            value=width,
             resolution=spatial_resolution,
             source=spatial_source,
         ),
@@ -781,7 +791,6 @@ def _build_declared_inputs_from_profile(
         if value is not None:
             axes[kwarg_name] = InputAxisValue(
                 value=value,
-                requested=value,
                 resolution="static",
                 source="infer_kwargs",
             )
@@ -811,14 +820,12 @@ def build_input_metadata_with_registry(
     architecture: Optional[str],
     task_type: Optional[str],
     backend: Optional[str],
-    requested_batch: int,
-    requested_height: int,
-    requested_width: int,
-    effective_batch: int,
-    effective_height: int,
-    effective_width: int,
+    batch_size: int,
+    height: int,
+    width: int,
     infer_kwargs: Dict[str, Any],
     profiled_input_name: str = "images",
+    shape_spec: Optional[PackageProfilingShapeSpec] = None,
 ) -> InputMetadata:
     """Build input metadata including registry-declared VLM/SAM/vision contracts."""
     registry_context = resolve_registry_input_context(
@@ -836,31 +843,25 @@ def build_input_metadata_with_registry(
         else None
     )
 
-    batch_resolution = "static" if requested_batch == effective_batch else None
-    spatial_resolution = (
-        "static"
-        if requested_height == effective_height and requested_width == effective_width
-        else None
-    )
-    batch_source = (
-        "inference_config.json#forward_pass.static_batch_size"
-        if batch_resolution == "static" and requested_batch != effective_batch
-        else None
-    )
-    spatial_source = (
-        "inference_config.json#network_input.training_input_size"
-        if spatial_resolution == "static"
-        and (requested_height != effective_height or requested_width != effective_width)
-        else None
-    )
+    batch_resolution: Optional[Literal["static", "dynamic"]] = None
+    spatial_resolution: Optional[Literal["static", "dynamic"]] = None
+    batch_source: Optional[str] = None
+    spatial_source: Optional[str] = None
+
+    if shape_spec is not None:
+        if shape_spec.batch.resolution in ("static", "dynamic"):
+            batch_resolution = shape_spec.batch.resolution
+            batch_source = shape_spec.batch.source
+        if shape_spec.height.resolution == shape_spec.width.resolution and (
+            shape_spec.height.resolution in ("static", "dynamic")
+        ):
+            spatial_resolution = shape_spec.height.resolution
+            spatial_source = shape_spec.height.source
 
     profiled_axes = build_image_input_metadata(
-        requested_batch=requested_batch,
-        requested_height=requested_height,
-        requested_width=requested_width,
-        effective_batch=effective_batch,
-        effective_height=effective_height,
-        effective_width=effective_width,
+        batch_size=batch_size,
+        height=height,
+        width=width,
         batch_source=batch_source,
         spatial_source=spatial_source,
         batch_resolution=batch_resolution,

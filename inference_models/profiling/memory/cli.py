@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,6 +15,18 @@ from profiling.memory.backend_registry import (
     list_onnx_registry_rows,
     list_torch_registry_rows,
     list_trt_registry_rows,
+    registry_features_from_row,
+    resolve_registry_row,
+)
+from profiling.memory.metadata import ProfileTier, profile_tier_field_description
+from profiling.memory.package_input_profile import (
+    InputProfileMismatchError,
+    validate_profiling_image_shapes_for_package_dir,
+)
+from profiling.memory.package_resolve import (
+    extract_onnx_opset_from_package_dir,
+    onnx_opset_from_package,
+    resolve_package_directory,
 )
 from profiling.memory.subprocess_harness import dump_result_json, run_profile_subprocess
 from profiling.memory.workers.onnx import worker_run as onnx_worker_run
@@ -129,40 +142,149 @@ def _format_bytes_as_gb(value: Optional[int]) -> str:
     return formatted_value
 
 
+def _resolve_model_path(
+    *,
+    model_path: Optional[str],
+    model_id: Optional[str],
+    architecture: Optional[str],
+    task_type: Optional[str],
+    backend: str,
+    quantization: str,
+    package_id: Optional[str],
+    packages_target_dir: Path,
+    fetch_package: bool,
+    provider: str,
+    api_key: Optional[str],
+) -> tuple[str, Optional[str], Optional[str], Optional[str], Optional[int]]:
+    if model_path:
+        return model_path, model_id, package_id, None, None
+
+    if not model_id:
+        raise click.UsageError("Provide --model-path or --model-id.")
+
+    if not architecture or not task_type:
+        raise click.UsageError(
+            "--model-id requires --architecture and --task-type."
+        )
+
+    backend_type = BackendType(backend)
+    quantization_type = Quantization(quantization)
+    package_dir, package, model_variant = resolve_package_directory(
+        model_id=model_id,
+        model_architecture=architecture,
+        task_type=task_type,
+        backend=backend_type,
+        quantization=quantization_type,
+        package_id=package_id,
+        target_dir=packages_target_dir,
+        provider=provider,
+        api_key=api_key,
+        fetch_if_missing=fetch_package,
+    )
+    resolved_package_id = package.package_id
+    resolved_path = str(package_dir)
+    resolved_onnx_opset = onnx_opset_from_package(package)
+
+    return resolved_path, model_id, resolved_package_id, model_variant, resolved_onnx_opset
+
+
+def _build_metadata_context(
+    *,
+    profile_tier: str,
+    model_id: Optional[str],
+    package_id: Optional[str],
+    package_path: str,
+    backend: str,
+    architecture: Optional[str],
+    task_type: Optional[str],
+    quantization: str,
+    model_variant: Optional[str],
+    registry_features: Dict[str, Any],
+    onnx_opset: Optional[int] = None,
+) -> Dict[str, Any]:
+    metadata_context = {
+        "profile_tier": profile_tier,
+        "model_id": model_id,
+        "package_id": package_id,
+        "package_path": package_path,
+        "backend": backend,
+        "architecture": architecture,
+        "task_type": task_type,
+        "model_variant": model_variant,
+        "quantization": quantization,
+        "registry_features": registry_features,
+    }
+    if onnx_opset is not None:
+        metadata_context["onnx_opset"] = onnx_opset
+
+    return metadata_context
+
+
 def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> None:
-    backend = str(result.get("backend"))
+    model_meta = result.get("model_metadata") or {}
+    registered = model_meta.get("registered_model") or {}
+    package = model_meta.get("package") or {}
+    runtime_meta = result.get("runtime_metadata") or {}
+    backend_meta = result.get("backend_metadata") or {}
+    input_meta = result.get("input_metadata") or {}
+    env_meta = result.get("environment_metadata") or {}
+    profiling_run = result.get("profiling_run") or {}
+    metrics = result.get("metrics") or {}
+
+    backend = str(package.get("backend") or "unknown")
     summary = Table(title=f"{backend} Memory Profile")
     summary.add_column("Field")
     summary.add_column("Value")
 
-    shape_profile = result.get("shape_profile") or {}
-    shape_text = (
-        f"batch={shape_profile.get('batch_size')}, "
-        f"height={shape_profile.get('height')}, "
-        f"width={shape_profile.get('width')}"
+    summary.add_row("Profile ID", str(result.get("profile_id")))
+    summary.add_row("Profile tier", str(result.get("profile_tier")))
+    summary.add_row("Model ID", str(registered.get("model_id")))
+    summary.add_row("Model variant", str(registered.get("model_variant")))
+    summary.add_row("Package ID", str(package.get("package_id")))
+    summary.add_row("Package path", str(package.get("package_path")))
+    summary.add_row("Backend", backend)
+    summary.add_row("Architecture", str(registered.get("architecture")))
+    summary.add_row("Task", str(registered.get("task_type")))
+    summary.add_row("Quantization", str(package.get("quantization")))
+    summary.add_row("Method", str(runtime_meta.get("method")))
+    summary.add_row("GPU", str(env_meta.get("gpu")))
+
+    profile_name = input_meta.get("task_inference_profile")
+    if profile_name:
+        summary.add_row("Task input profile", str(profile_name))
+
+    exercised_inputs = input_meta.get("inputs") or {}
+    image_inputs = (
+        exercised_inputs.get("images")
+        or exercised_inputs.get("image")
+        or next(iter(exercised_inputs.values()), {})
     )
-    summary.add_row("Model", str(result.get("model_id")))
-    summary.add_row("Backend", str(result.get("backend")))
-    summary.add_row("GPU", str(result.get("gpu_name")))
-    summary.add_row("Quantization", str(result.get("quantization")))
-    summary.add_row("Shape", shape_text)
-    summary.add_row("Method", str(result.get("method_name")))
-    trace_files = ", ".join(result.get("trace_files") or [])
+    batch_axis = image_inputs.get("batch") or {}
+    height_axis = image_inputs.get("height") or {}
+    width_axis = image_inputs.get("width") or {}
+    shape_text = (
+        f"batch={batch_axis.get('value')}, "
+        f"{height_axis.get('value')}x{width_axis.get('value')}"
+    )
+    summary.add_row("Profiled shape", shape_text)
+
+    trace_files = ", ".join(profiling_run.get("trace_files") or [])
     if trace_files:
         summary.add_row("Trace files", trace_files)
 
     if backend == BackendType.ONNX.value:
-        execution_providers = ", ".join(result.get("execution_providers") or [])
-        summary.add_row("ONNX Runtime", str(result.get("onnxruntime_version")))
+        execution_providers = ", ".join(backend_meta.get("execution_providers") or [])
+        summary.add_row("ONNX Runtime", str(backend_meta.get("onnxruntime_version")))
+        summary.add_row("ONNX opset", str(backend_meta.get("opset")))
         summary.add_row("Execution providers", execution_providers)
 
     if backend == BackendType.TRT.value:
-        summary.add_row("TensorRT", str(result.get("tensorrt_version")))
+        summary.add_row("TensorRT", str(backend_meta.get("tensorrt_version")))
         summary.add_row(
             "Contexts profiled",
-            str(result.get("num_contexts_profiled")),
+            str(backend_meta.get("num_contexts_profiled")),
         )
-        optimization_profile = result.get("optimization_profile")
+        optimization_profile = backend_meta.get("optimization_profile")
         if optimization_profile:
             summary.add_row(
                 "Optimization profile",
@@ -181,7 +303,7 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
         memory_fields = TORCH_MEMORY_FIELDS
 
     for label, key in memory_fields:
-        value = result.get(key)
+        value = metrics.get(key)
         bytes_text = "n/a" if value is None else str(value)
         gb_text = _format_bytes_as_gb(value=value)
 
@@ -233,40 +355,87 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     help="Profiling backend harness to run.",
 )
 @click.option(
-    "--module-name",
+    "--model-id",
     type=str,
-    help="Model module (e.g. inference_models....).",
+    default=None,
+    help=(
+        "Registered model id; resolves package dir under --packages-target-dir "
+        "(use with --architecture, --task-type, --quantization)."
+    ),
 )
 @click.option(
-    "--class-name",
+    "--package-id",
     type=str,
-    help="Model class name.",
+    default=None,
+    help="Exact package version when using --model-id.",
+)
+@click.option(
+    "--packages-target-dir",
+    type=click.Path(
+        file_okay=False,
+        path_type=Path,
+    ),
+    default=Path("/tmp/inference_model_packages"),
+    show_default=True,
+    help="Root directory for downloaded model packages.",
+)
+@click.option(
+    "--fetch-package/--no-fetch-package",
+    default=True,
+    show_default=True,
+    help="Download package from Roboflow when missing locally.",
+)
+@click.option(
+    "--provider",
+    type=str,
+    default="roboflow",
+    show_default=True,
+    help="Package provider when fetching (see fetch_model_package).",
 )
 @click.option(
     "--model-path",
     type=str,
     help=(
         "Path passed to from_pretrained "
-        "(local package dir or hub id as supported by the model)."
+        "(local package dir or hub id). Optional if --model-id is set."
     ),
 )
 @click.option(
-    "--model-id",
+    "--profile-tier",
+    type=click.Choice(
+        [tier.value for tier in ProfileTier],
+        case_sensitive=False,
+    ),
+    default=ProfileTier.CUSTOMER.value,
+    show_default=True,
+    help=profile_tier_field_description(),
+)
+@click.option(
+    "--model-variant",
     type=str,
     default=None,
-    help="Label stored in the JSON result (defaults to --model-path).",
+    help=(
+        "Registered model variant (e.g. yolov8-n). "
+        "Filled automatically when resolving via --model-id."
+    ),
 )
 @click.option(
     "--architecture",
     type=str,
     default=None,
-    help="Model architecture label stored in the JSON result.",
+    help=(
+        "Registry architecture (e.g. yolov8). Required for profiling; "
+        "resolves the model class with --task-type and --backend."
+    ),
 )
 @click.option(
     "--task-type",
     type=str,
     default=None,
-    help="Registry task type label stored in the JSON result.",
+    help=(
+        "Registry task type (e.g. object-detection). Required for profiling; "
+        "resolves the model class with --architecture and --backend."
+    ),
 )
 @click.option(
     "--device",
@@ -427,10 +596,14 @@ def main(
     list_onnx_models: bool,
     list_trt_models: bool,
     backend: Optional[str],
-    module_name: Optional[str],
-    class_name: Optional[str],
-    model_path: Optional[str],
     model_id: Optional[str],
+    package_id: Optional[str],
+    packages_target_dir: Path,
+    fetch_package: bool,
+    provider: str,
+    model_path: Optional[str],
+    profile_tier: str,
+    model_variant: Optional[str],
     architecture: Optional[str],
     task_type: Optional[str],
     device: str,
@@ -478,12 +651,14 @@ def main(
         return
 
     missing = []
-    if not module_name:
-        missing.append("--module-name")
-    if not class_name:
-        missing.append("--class-name")
-    if not model_path:
-        missing.append("--model-path")
+    if not backend:
+        missing.append("--backend")
+    if not architecture:
+        missing.append("--architecture")
+    if not task_type:
+        missing.append("--task-type")
+    if not model_path and not model_id:
+        missing.append("--model-path or --model-id")
     if not quantization:
         missing.append("--quantization")
     if missing:
@@ -493,6 +668,19 @@ def main(
             + ". Use --list-torch-models, --list-onnx-models, --list-trt-models, or --help."
         )
 
+    try:
+        registry_row = resolve_registry_row(
+            architecture=architecture,
+            task_type=task_type,
+            harness_backend=backend,
+        )
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+
+    module_name = registry_row.module_name
+    class_name = registry_row.class_name
+    registry_features = registry_features_from_row(registry_row)
+
     infer_extra = _load_json_dict(
         raw=infer_kwargs_json,
         path=infer_kwargs_path,
@@ -500,6 +688,61 @@ def main(
     fp_extra = _load_json_dict(
         raw=from_pretrained_kwargs_json,
         path=from_pretrained_kwargs_path,
+    )
+
+    api_key = os.environ.get("ROBOFLOW_API_KEY")
+    try:
+        (
+            resolved_path,
+            resolved_model_id,
+            resolved_package_id,
+            fetched_model_variant,
+            fetched_onnx_opset,
+        ) = _resolve_model_path(
+            model_path=model_path,
+            model_id=model_id,
+            architecture=architecture,
+            task_type=task_type,
+            backend=backend,
+            quantization=quantization or "fp32",
+            package_id=package_id,
+            packages_target_dir=packages_target_dir,
+            fetch_package=fetch_package,
+            provider=provider,
+            api_key=api_key,
+        )
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+
+    package_dir = Path(resolved_path)
+    if package_dir.is_dir():
+        try:
+            validate_profiling_image_shapes_for_package_dir(
+                package_dir,
+                batch_size=batch_size,
+                height=height,
+                width=width,
+            )
+        except InputProfileMismatchError as error:
+            raise click.ClickException(str(error)) from error
+
+    effective_model_variant = model_variant or fetched_model_variant
+    effective_onnx_opset = fetched_onnx_opset
+    if effective_onnx_opset is None and backend == BackendType.ONNX.value:
+        effective_onnx_opset = extract_onnx_opset_from_package_dir(Path(resolved_path))
+
+    metadata_context = _build_metadata_context(
+        profile_tier=profile_tier,
+        model_id=resolved_model_id,
+        package_id=resolved_package_id,
+        package_path=resolved_path,
+        backend=backend,
+        architecture=architecture,
+        task_type=task_type,
+        quantization=quantization or "fp32",
+        model_variant=effective_model_variant,
+        registry_features=registry_features,
+        onnx_opset=effective_onnx_opset,
     )
 
     if onnx_execution_providers is not None:
@@ -515,7 +758,7 @@ def main(
     payload: Dict[str, Any] = {
         "module_name": module_name,
         "class_name": class_name,
-        "model_name_or_path": model_path,
+        "package_path": resolved_path,
         "from_pretrained_kwargs": fp_extra,
         "device_str": device,
         "batch_size": batch_size,
@@ -526,7 +769,6 @@ def main(
         "method_name": method,
         "warmup_iterations": warmup_iterations,
         "measured_iterations": measured_iterations,
-        "model_id": model_id or model_path,
         "architecture": architecture,
         "backend": backend,
         "quantization": quantization,
@@ -534,6 +776,9 @@ def main(
         "onnx_nvml_sampling_interval_seconds": onnx_nvml_sampling_interval_seconds,
         "trt_nvml_sampling_interval_seconds": trt_nvml_sampling_interval_seconds,
         "num_execution_contexts": num_execution_contexts,
+        "metadata_context": metadata_context,
+        "profile_tier": profile_tier,
+        "in_process": in_process,
     }
 
     if backend == BackendType.ONNX.value:

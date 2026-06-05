@@ -15,7 +15,6 @@ from profiling.memory.input_factory import (
 )
 from profiling.memory.metadata import (
     OnnxMetrics,
-    ProfileTier,
     build_model_metadata_from_context,
     build_runtime_metadata,
     collect_environment_metadata,
@@ -25,11 +24,11 @@ from profiling.memory.metadata import (
 )
 from profiling.memory.sampler import NvmlProcessMemorySampler
 from profiling.memory.package_input_profile import shape_spec_from_model
+from profiling.memory.worker_config import MemoryProfilingWorkerPayload
 from profiling.memory.worker_common import (
     build_input_metadata,
     build_profiling_run_metadata,
     ensure_profiling_image_shapes,
-    parse_requested_shape,
 )
 
 
@@ -143,34 +142,16 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     import onnxruntime
 
-    module_name = payload["module_name"]
-    class_name = payload["class_name"]
-    model_name_or_path = payload["model_name_or_path"]
-    from_pretrained_kwargs: Dict[str, Any] = payload.get("from_pretrained_kwargs") or {}
-    device_str: str = payload["device_str"]
-    metadata_context: Dict[str, Any] = payload.get("metadata_context") or {}
-    profile_tier = ProfileTier(metadata_context.get("profile_tier"))
-    requested_batch, requested_height, requested_width = parse_requested_shape(payload)
-    batch_size = requested_batch
-    height = requested_height
-    width = requested_width
-    infer_kwargs_user: Dict[str, Any] = payload.get("infer_kwargs") or {}
-    task_type: Optional[str] = payload.get("task_type")
-    method_name: str = payload["method_name"]
-    warmup_iterations = int(payload["warmup_iterations"])
-    measured_iterations = int(payload["measured_iterations"])
-    architecture = payload.get("architecture")
-    quantization = payload.get("quantization")
-    sampling_interval_seconds = float(
-        payload.get("onnx_nvml_sampling_interval_seconds") or 0.01
-    )
+    config = MemoryProfilingWorkerPayload.from_payload(payload)
+    batch_size, height, width = config.profiling_shape
+    from_pretrained_kwargs = dict(config.from_pretrained_kwargs)
 
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for this ONNX memory profiler harness.")
 
-    device = torch.device(device_str)
+    device = torch.device(config.device_str)
     if device.type != "cuda":
-        raise RuntimeError(f"Expected a CUDA device, got {device_str!r}.")
+        raise RuntimeError(f"Expected a CUDA device, got {config.device_str!r}.")
 
     torch.cuda.set_device(device)
     torch.cuda.empty_cache()
@@ -178,7 +159,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
     device_index = device.index if device.index is not None else 0
     sampler = NvmlProcessMemorySampler(
         device_index,
-        interval_seconds=sampling_interval_seconds,
+        interval_seconds=config.onnx_nvml_sampling_interval,
     )
     baseline_process_gpu_bytes = sampler.snapshot()
 
@@ -197,11 +178,11 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         sessions=sessions,
     ):
         model_cls = _resolve_class(
-            module_name=module_name,
-            class_name=class_name,
+            module_name=config.module_name,
+            class_name=config.class_name,
         )
         model = model_cls.from_pretrained(
-            model_name_or_path,
+            str(config.package_path),
             **from_pretrained_kwargs,
         )
 
@@ -223,23 +204,23 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         width=width,
     )
     infer_kwargs = merge_infer_kwargs(
-        task_type=task_type,
-        user=infer_kwargs_user,
+        task_type=config.task_type,
+        user=config.infer_kwargs,
     )
     def run_inference_steps(num_steps: int) -> None:
         for _ in range(num_steps):
             _invoke_method(
                 model,
-                method_name=method_name,
+                method_name=config.method_name,
                 images=images,
                 infer_kwargs=infer_kwargs,
             )
 
-    run_inference_steps(warmup_iterations)
+    run_inference_steps(config.warmup_iterations)
     torch.cuda.synchronize(device)
 
     sampler.start()
-    run_inference_steps(measured_iterations)
+    run_inference_steps(config.measured_iterations)
     torch.cuda.synchronize(device)
     peak_process_gpu_bytes = sampler.stop()
 
@@ -263,30 +244,30 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         peak_process_gpu_bytes=peak_process_gpu_bytes,
         delta_peak_bytes=delta_peak_bytes,
     )
-    model_metadata = build_model_metadata_from_context(metadata_context)
+    model_metadata = build_model_metadata_from_context(config.metadata_context)
     runtime_metadata = build_runtime_metadata(
-        module_name=module_name,
-        class_name=class_name,
-        method_name=method_name,
+        module_name=config.module_name,
+        class_name=config.class_name,
+        method_name=config.method_name,
     )
     backend_metadata = collect_onnx_backend_metadata(
         onnxruntime_version=onnxruntime.__version__,
         execution_providers=execution_providers,
         trace_dir=str(trace_dir),
-        opset=resolve_onnx_opset_from_metadata_context(metadata_context),
+        opset=resolve_onnx_opset_from_metadata_context(config.metadata_context),
     )
     record = finalize_profile_record(
-        profile_tier=profile_tier,
+        profile_tier=config.resolved_profile_tier,
         metrics=metrics,
         model_metadata=model_metadata,
         runtime_metadata=runtime_metadata,
         backend_metadata=backend_metadata,
         input_metadata=build_input_metadata(
-            module_name=module_name,
-            class_name=class_name,
-            architecture=architecture,
-            task_type=task_type,
-            backend=payload.get("backend"),
+            module_name=config.module_name,
+            class_name=config.class_name,
+            architecture=config.architecture,
+            task_type=config.task_type,
+            backend=config.backend,
             batch_size=batch_size,
             height=height,
             width=width,
@@ -294,7 +275,11 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
             shape_spec=shape_spec,
         ),
         environment_metadata=collect_environment_metadata(device=device),
-        profiling_run=build_profiling_run_metadata(payload, trace_files=trace_files),
+        profiling_run=build_profiling_run_metadata(
+            config,
+            trace_files=trace_files,
+            nvml_sampling_interval_seconds=config.onnx_nvml_sampling_interval,
+        ),
         notes=notes,
     )
     result_dict = record.as_json_dict()

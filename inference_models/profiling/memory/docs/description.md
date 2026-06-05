@@ -84,6 +84,10 @@ cd inference_models
 uv run python profiling/memory/scripts/generate_registry_input_profiles.py
 ```
 
+For how those profiles connect to harness inputs today, package fetch, and
+``--profile-tier`` semantics, see
+[`input_profiles_and_package_tiers.md`](input_profiles_and_package_tiers.md).
+
 ##### Phase 2: Runtime-specific profiling harnesses
 
 Build one harness per runtime, but make them emit the same normalized JSON result.
@@ -100,28 +104,56 @@ Aggregate all runs and store:
 
 ## Normalized results schema
 
+Profiling emits a ``MemoryProfileRecord`` (schema version ``1.0``): normalized
+**metrics** plus structured **model_metadata**, **runtime_metadata**,
+**backend_metadata**, **input_metadata**, **environment_metadata**, and
+**profiling_run**. Package identity comes from ``--model-id`` / ``--package-id`` (download via CLI or
+``profiling/scripts/fetch_model_package.py``) or from an existing local ``--model-path``.
+``package_id`` is the unique registry identifier (API ``packageId``).
+
 ```json
 {
-  "model_id": "llama3-8b-fp16",
-  "runtime": "tensorrt",
-  "gpu": "NVIDIA L40S",
-  "precision": "fp16",
-  "artifact_hash": "sha256:...",
-  "shape_profile": {
-    "batch_size": 4,
-    "seq_len": 2048,
-    "max_new_tokens": 512
+  "schema_version": "1.1",
+  "profile_id": "…",
+  "profile_tier": "customer",
+  "metrics": {
+    "idle_after_load_allocated_bytes": 0,
+    "peak_allocated_bytes": 0
   },
-  "concurrency": 1,
-  "idle_after_load_bytes": 9432219648,
-  "peak_incremental_bytes": 2785017856,
-  "peak_total_process_bytes": 12217237504,
-  "safety_margin_bytes": 1610612736,
-  "recommended_admission_bytes": 13827850240,
-  "notes": [
-    "includes KV-cache growth to max_new_tokens",
-    "measured with one execution context"
-  ],
+  "model_metadata": {
+    "registered_model": {
+      "model_id": "workspace/model",
+      "architecture": "yolov8",
+      "task_type": "object-detection",
+      "model_variant": "yolov8-n",
+      "registry_features": {}
+    },
+    "package": {
+      "package_id": "abc123",
+      "package_path": "/tmp/inference_model_packages/…",
+      "backend": "onnx",
+      "quantization": "fp32",
+      "package_features": { "static_batch_size": 1 }
+    }
+  },
+  "runtime_metadata": {
+    "module_name": "inference_models.models.yolov8…",
+    "class_name": "Yolov8ObjectDetectionOnnx",
+    "method": "infer",
+    "inference_models_version": "0.0.0"
+  },
+  "input_metadata": {
+    "task_inference_profile": "vision_infer",
+    "inputs": {
+      "images": {
+        "batch": { "value": 1, "resolution": "static" }
+      }
+    },
+    "declared_inputs": [],
+    "infer_defaults": {}
+  },
+  "environment_metadata": { "gpu": "NVIDIA L40S" },
+  "profiling_run": { "warmup_iterations": 2, "measured_iterations": 5 },
   "timestamp": "2026-04-23T08:00:00Z"
 }
 ```
@@ -167,7 +199,6 @@ The separate process matters because PyTorch’s allocator caches memory, and th
 - `peak_allocated_bytes`
 - `peak_reserved_bytes`
 - `delta_peak_reserved_bytes = peak_reserved - idle_after_load`
-- `shape_signature`
 - `warmup_iterations`
 - `measured_iterations`
 

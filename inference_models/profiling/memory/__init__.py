@@ -1,13 +1,7 @@
 """GPU memory profiling harnesses aligned with ``docs/description.md``."""
 
-from profiling.memory.schema import (
-    OnnxMemoryProfileResult,
-    TensorRTMemoryProfileResult,
-    TorchMemoryProfileResult,
-)
+from profiling.memory.schema import MemoryProfileRecord
 
 __all__ = [
-    "OnnxMemoryProfileResult",
-    "TensorRTMemoryProfileResult",
-    "TorchMemoryProfileResult",
+    "MemoryProfileRecord",
 ]

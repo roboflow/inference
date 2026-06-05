@@ -79,28 +79,3 @@ def merge_infer_kwargs(
         merged.update(user)
 
     return merged
-
-
-def describe_shape_signature(
-    batch_size: int,
-    *,
-    height: int,
-    width: int,
-    infer_kwargs: Dict[str, Any],
-) -> str:
-    """Build a stable text fingerprint for the synthetic input regime.
-
-    Args:
-        batch_size: Batch dimension used for profiling.
-        height: Image height in pixels.
-        width: Image width in pixels.
-        infer_kwargs: Effective kwargs passed to ``infer``.
-
-    Returns:
-        Human-readable signature stored in profiling JSON results.
-    """
-    keys = sorted(infer_kwargs.keys())
-    kw_repr = ",".join(f"{k}={infer_kwargs[k]!r}" for k in keys)
-    shape_signature = f"b{batch_size}x{height}x{width};{kw_repr}"
-
-    return shape_signature
