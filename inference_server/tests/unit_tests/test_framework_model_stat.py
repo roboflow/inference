@@ -14,8 +14,8 @@ from inference_models.errors import (
 )
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.model_stat import (
-    _TtlLruCache,
     _reset_cache_for_tests,
+    _TtlLruCache,
     stat_model_while_checking_auth,
 )
 

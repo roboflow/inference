@@ -43,9 +43,7 @@ class MMWrapper:
 
     async def shutdown(self) -> None:
         """Shut down the underlying ModelManager."""
-        await asyncio.get_running_loop().run_in_executor(
-            None, self.manager.shutdown
-        )
+        await asyncio.get_running_loop().run_in_executor(None, self.manager.shutdown)
 
     # ------------------------------------------------------------------
     # ModelManagerProxy interface

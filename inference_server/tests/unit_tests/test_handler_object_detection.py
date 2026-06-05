@@ -13,9 +13,7 @@ from inference_server.framework.entities import (
     ServerHooks,
 )
 from inference_server.handlers.object_detection.description import _DESCRIPTION
-from inference_server.handlers.object_detection.handler import (
-    handle_object_detection,
-)
+from inference_server.handlers.object_detection.handler import handle_object_detection
 from inference_server.handlers.object_detection.input_parser import (
     parse_object_detection_input,
 )
@@ -25,7 +23,6 @@ from inference_server.handlers.object_detection.introspection import (
 from inference_server.handlers.object_detection.output_serializer import (
     serialize_object_detection,
 )
-
 
 _JPEG = bytes(
     [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46]
@@ -77,9 +74,7 @@ def test_description_registers_under_object_detection_infer():
 
 @pytest.mark.asyncio
 async def test_input_parser_reads_raw_body_and_packs_extra_params():
-    req = _request(
-        headers=[(b"content-type", b"application/octet-stream")], body=_JPEG
-    )
+    req = _request(headers=[(b"content-type", b"application/octet-stream")], body=_JPEG)
     common = CommonRequestParams(model_id="m", api_key="", extra={"confidence": "0.5"})
     out = await parse_object_detection_input(req, common)
     assert out["images"] == [_JPEG]
@@ -115,9 +110,7 @@ async def test_input_parser_propagates_url_fetch_error():
 
 @pytest.mark.asyncio
 async def test_input_parser_returns_499_on_client_disconnect():
-    req = _request(
-        headers=[(b"content-type", b"application/octet-stream")], body=_JPEG
-    )
+    req = _request(headers=[(b"content-type", b"application/octet-stream")], body=_JPEG)
     common = CommonRequestParams(model_id="m", api_key="")
     with patch(
         "inference_server.handlers.object_detection.input_parser.extract_images_and_params",
@@ -223,12 +216,15 @@ def test_serializer_wraps_single_prediction_in_envelope():
 
 def test_serializer_picks_rich_serializer_for_rich_style():
     common = CommonRequestParams(model_id="m", api_key="", response_style="rich")
-    with patch(
-        "inference_server.handlers.object_detection.output_serializer.serialize_detections_rich",
-        return_value={"detections": []},
-    ) as rich, patch(
-        "inference_server.handlers.object_detection.output_serializer.serialize_detections_compact"
-    ) as compact:
+    with (
+        patch(
+            "inference_server.handlers.object_detection.output_serializer.serialize_detections_rich",
+            return_value={"detections": []},
+        ) as rich,
+        patch(
+            "inference_server.handlers.object_detection.output_serializer.serialize_detections_compact"
+        ) as compact,
+    ):
         serialize_object_detection(MagicMock(), common)
     rich.assert_called_once()
     compact.assert_not_called()

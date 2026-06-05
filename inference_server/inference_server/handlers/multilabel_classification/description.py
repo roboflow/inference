@@ -15,7 +15,6 @@ from inference_server.handlers.multilabel_classification.output_serializer impor
     serialize_multilabel_classification,
 )
 
-
 _DESCRIPTION = ModelHandlerDescription(
     input_parser=parse_multilabel_classification_input,
     handler=handle_multilabel_classification,

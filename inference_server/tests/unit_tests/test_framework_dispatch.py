@@ -19,7 +19,6 @@ from inference_server.framework.entities import (
 from inference_server.framework.registry import _HANDLERS
 from inference_server.proxies.base import ClientDisconnected
 
-
 _JPEG = bytes(
     [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46]
     + [0x00] * 12
@@ -95,7 +94,9 @@ def fake_handler_entry():
 
 
 def test_decode_extracts_model_id_action_style_and_extra():
-    req = _request(query=b"model_id=acme/1&action=embed_text&response_style=rich&confidence=0.5")
+    req = _request(
+        query=b"model_id=acme/1&action=embed_text&response_style=rich&confidence=0.5"
+    )
     common = decode_common_request_params(req)
     assert common.model_id == "acme/1"
     assert common.action == "embed_text"
@@ -215,9 +216,7 @@ async def test_param_validation_skips_non_coercible_types(fake_handler_entry):
     }
     proxy = _mock_proxy()
     with _stat_returns(("fake-task", "infer")):
-        r = await handle_model_inference_request(
-            _request(query=b"model_id=m"), proxy
-        )
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
     assert r.status_code == 200
 
 
@@ -262,9 +261,7 @@ async def test_input_parser_error_short_circuits(fake_handler_entry):
     )
     proxy = _mock_proxy()
     with _stat_returns(("fake-task", "infer")):
-        r = await handle_model_inference_request(
-            _request(query=b"model_id=m"), proxy
-        )
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
     assert r.status_code == 415
     proxy.ensure_loaded.assert_not_awaited()
 
@@ -274,9 +271,7 @@ async def test_ensure_loaded_load_timeout_returns_503(fake_handler_entry):
     proxy = _mock_proxy()
     proxy.ensure_loaded = AsyncMock(return_value=("load_timeout", 7))
     with _stat_returns(("fake-task", "infer")):
-        r = await handle_model_inference_request(
-            _request(query=b"model_id=m"), proxy
-        )
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
     assert r.status_code == 503
     assert r.headers["Retry-After"] == "7"
 
@@ -286,9 +281,7 @@ async def test_ensure_loaded_error_returns_500(fake_handler_entry):
     proxy = _mock_proxy()
     proxy.ensure_loaded = AsyncMock(return_value=("error", "x"))
     with _stat_returns(("fake-task", "infer")):
-        r = await handle_model_inference_request(
-            _request(query=b"model_id=m"), proxy
-        )
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
     assert r.status_code == 500
 
 
@@ -337,9 +330,7 @@ async def test_handler_client_disconnected_returns_499(fake_handler_entry):
 async def test_happy_path_invokes_full_pipeline(fake_handler_entry):
     proxy = _mock_proxy()
     with _stat_returns(("fake-task", "infer")):
-        r = await handle_model_inference_request(
-            _request(query=b"model_id=m"), proxy
-        )
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
     assert r.status_code == 200
     fake_handler_entry["parser"].assert_awaited_once()
     proxy.ensure_loaded.assert_awaited_once()

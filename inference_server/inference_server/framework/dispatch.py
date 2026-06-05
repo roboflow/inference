@@ -13,18 +13,13 @@ from inference_server.framework.entities import (
     InputParseError,
     ServerHooks,
 )
-from inference_server.framework.model_stat import (
-    stat_model_while_checking_auth,
-)
+from inference_server.framework.model_stat import stat_model_while_checking_auth
 from inference_server.framework.registry import (
     DYNAMIC_MODELS_HANDLERS,
     has_handler_for_model_type,
     supported_actions_for,
 )
-from inference_server.proxies.base import (
-    ClientDisconnected,
-    ModelManagerProxy,
-)
+from inference_server.proxies.base import ClientDisconnected, ModelManagerProxy
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +63,7 @@ def decode_common_request_params(request: Request) -> CommonRequestParams:
     )
 
 
-def _validate_action_params(
-    params_spec: dict, params: dict
-) -> Response | None:
+def _validate_action_params(params_spec: dict, params: dict) -> Response | None:
     for name, spec in params_spec.items():
         type_name = spec.get("type", "str")
         if type_name not in _COERCIBLE_QUERY_TYPES:
@@ -182,9 +175,7 @@ async def handle_model_inference_request(
         return error_response(500, "LOAD_FAILED", "model load failed")
 
     try:
-        prediction = await description.handler(
-            action, input_data, proxy, server_hooks
-        )
+        prediction = await description.handler(action, input_data, proxy, server_hooks)
     except ValueError as exc:
         return error_response(413, "PAYLOAD_TOO_LARGE", str(exc))
     except asyncio.TimeoutError:

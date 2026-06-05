@@ -22,7 +22,6 @@ from inference_server.proxies.mm_wrapper import MMWrapper
 from inference_server.proxies.mmp_client import MMPClient
 from inference_server.routers import infer, v2_models, v2_server
 
-
 # ---------------------------------------------------------------------------
 # Lifespan — initialize per-process ZMQ + SHM
 # ---------------------------------------------------------------------------

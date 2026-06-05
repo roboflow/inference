@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import filetype
 
-
 _NPY_MAGIC = b"\x93NUMPY"
 
 

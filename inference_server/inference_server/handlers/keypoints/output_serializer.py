@@ -5,10 +5,7 @@ from typing import Any, Optional
 
 from fastapi import Response
 
-from inference_model_manager.serializers_typed import (
-    serialize_keypoints_compact,
-)
-
+from inference_model_manager.serializers_typed import serialize_keypoints_compact
 from inference_server.framework.entities import CommonRequestParams
 
 
@@ -24,9 +21,7 @@ def _serialize_one(prediction: Any, style: str) -> Any:
     return serialize_keypoints_compact(prediction, proxy)
 
 
-def serialize_keypoints(
-    prediction: Any, common: CommonRequestParams
-) -> Response:
+def serialize_keypoints(prediction: Any, common: CommonRequestParams) -> Response:
     items = prediction if isinstance(prediction, list) else [prediction]
     style = common.response_style
     typed = [_serialize_one(p, style) for p in items]
