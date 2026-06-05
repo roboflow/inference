@@ -23,7 +23,10 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     parse_class_names_file,
     parse_inference_config,
+)
+from inference_models.models.common.roboflow.semantic_segmentation import (
     resolve_background_class_id,
+    validate_class_names,
 )
 from inference_models.models.common.roboflow.post_processing import (
     post_process_semantic_segmentation_logits,
@@ -57,6 +60,7 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
+        validate_class_names(class_names)
         background_class_id = resolve_background_class_id(class_names)
         inference_config = parse_inference_config(
             config_path=model_package_content["inference_config.json"],

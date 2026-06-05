@@ -68,7 +68,9 @@ def _invoke_run_remotely(module, block_cls, remote_target: str):
     return client_cls, client
 
 
-def assert_hosted_selects_v0(family: str, version: str, class_name: str, hosted_url_attr: str):
+def assert_hosted_selects_v0(
+    family: str, version: str, class_name: str, hosted_url_attr: str
+):
     module, block_cls = _load_block(family, version, class_name)
     client_cls, client = _invoke_run_remotely(module, block_cls, "hosted")
     assert client_cls.call_args.kwargs["api_url"] == getattr(module, hosted_url_attr)
