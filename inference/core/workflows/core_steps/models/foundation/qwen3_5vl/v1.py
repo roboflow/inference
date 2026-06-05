@@ -75,10 +75,10 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/qwen3_5vl@v1"]
 
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    prompt: Optional[str] = Field(
+    prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Optional text prompt to provide additional context to Qwen3.5-VL. Otherwise it will just be a default one, which may affect the desired model behavior.",
-        examples=["What is in this image?"],
+        examples=["What is in this image?", "$inputs.prompt"],
     )
     model_version: Union[
         Literal["qwen3_5-0.8b", "qwen3_5-2b"],
@@ -90,10 +90,10 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["qwen3_5-0.8b", "qwen3_5-2b"],
     )
 
-    system_prompt: Optional[str] = Field(
+    system_prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Optional system prompt to provide additional context to Qwen3.5-VL.",
-        examples=["You are a helpful assistant."],
+        examples=["You are a helpful assistant.", "$inputs.system_prompt"],
     )
 
     enable_thinking: bool = Field(

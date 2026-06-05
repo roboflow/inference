@@ -66,6 +66,7 @@ The `inference-models` library supports a wide range of computer vision models a
 
 | Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [YOLO26 Sem](yolo26-semantic-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
 | [DeepLabV3+](deeplabv3plus.md) | `torch`, `onnx`, `trt` | MIT | N/A | ❌ | ✅ |
 
 ### OCR & Document Parsing
