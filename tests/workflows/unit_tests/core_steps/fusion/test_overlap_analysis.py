@@ -34,7 +34,6 @@ from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
     OverlapAnalysisBlockV1,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -56,7 +55,9 @@ def _detections_from_xyxy(
         data["detection_id"] = np.array(detection_ids)
     return sv.Detections(
         xyxy=np.asarray(xyxy, dtype=float),
-        confidence=np.asarray(confidences, dtype=float) if confidences is not None else None,
+        confidence=(
+            np.asarray(confidences, dtype=float) if confidences is not None else None
+        ),
         class_id=np.zeros(n, dtype=int),
         mask=masks,
         data=data,
@@ -145,7 +146,9 @@ def test_run_with_bbox_only_inputs_full_containment() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     assert len(result["overlaps"]) == 1
@@ -170,7 +173,9 @@ def test_run_with_bbox_only_inputs_partial_overlap() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     assert len(result["overlaps"]) == 1
@@ -184,7 +189,9 @@ def test_run_below_threshold_returns_empty() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     assert result == {"overlaps": []}
@@ -198,7 +205,9 @@ def test_run_at_threshold_boundary_just_above_passes() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     assert len(result["overlaps"]) == 1
@@ -212,7 +221,9 @@ def test_run_at_threshold_boundary_just_below_is_dropped() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     assert result == {"overlaps": []}
@@ -225,7 +236,9 @@ def test_run_with_disjoint_detections_returns_empty() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     assert result == {"overlaps": []}
@@ -267,7 +280,9 @@ def test_run_with_mask_inputs_uses_mask_path() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.01)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.01
+    )
 
     # then
     assert len(result["overlaps"]) == 1
@@ -307,7 +322,9 @@ def test_run_with_invalid_polygon_falls_back_to_bbox() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     # Fallback to bbox polygon → reference is a full 100x100 box → fully
@@ -338,7 +355,9 @@ def test_run_propagates_detection_ids_when_present_on_both_sides() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     record = result["overlaps"][0]
@@ -362,7 +381,9 @@ def test_run_propagates_only_present_detection_ids() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     record = result["overlaps"][0]
@@ -386,7 +407,9 @@ def test_run_with_empty_reference_returns_empty() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     assert result == {"overlaps": []}
@@ -403,7 +426,9 @@ def test_run_with_empty_candidate_returns_empty() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     assert result == {"overlaps": []}
@@ -417,20 +442,24 @@ def test_run_with_empty_candidate_returns_empty() -> None:
 def test_run_n_to_m_pairs_emits_only_pairs_above_threshold() -> None:
     # given: 2 reference x 3 candidate; only some pairs overlap above 0.1.
     ref = _detections_from_xyxy(
-        np.array([
-            [0, 0, 100, 100],     # ref 0
-            [200, 200, 300, 300], # ref 1 (disjoint from all candidates)
-        ]),
+        np.array(
+            [
+                [0, 0, 100, 100],  # ref 0
+                [200, 200, 300, 300],  # ref 1 (disjoint from all candidates)
+            ]
+        ),
         class_names=["R0", "R1"],
         confidences=[1.0, 1.0],
         detection_ids=["r0", "r1"],
     )
     cand = _detections_from_xyxy(
-        np.array([
-            [50, 0, 150, 100],    # cand 0 - 50% overlap with ref 0
-            [80, 0, 180, 100],    # cand 1 - 20% overlap with ref 0
-            [400, 400, 500, 500], # cand 2 - no overlap with anything
-        ]),
+        np.array(
+            [
+                [50, 0, 150, 100],  # cand 0 - 50% overlap with ref 0
+                [80, 0, 180, 100],  # cand 1 - 20% overlap with ref 0
+                [400, 400, 500, 500],  # cand 2 - no overlap with anything
+            ]
+        ),
         class_names=["C0", "C1", "C2"],
         confidences=[1.0, 1.0, 1.0],
         detection_ids=["c0", "c1", "c2"],
@@ -438,11 +467,15 @@ def test_run_n_to_m_pairs_emits_only_pairs_above_threshold() -> None:
     block = OverlapAnalysisBlockV1()
 
     # when
-    result = block.run(reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1)
+    result = block.run(
+        reference_predictions=ref, candidate_predictions=cand, min_overlap=0.1
+    )
 
     # then
     overlaps = result["overlaps"]
-    pairs = {(o["reference_detection_id"], o["candidate_detection_id"]) for o in overlaps}
+    pairs = {
+        (o["reference_detection_id"], o["candidate_detection_id"]) for o in overlaps
+    }
     assert pairs == {("r0", "c0"), ("r0", "c1")}
     ratios = {
         (o["reference_detection_id"], o["candidate_detection_id"]): o["overlap_ratio"]
@@ -469,19 +502,25 @@ def _legacy_overlap_records(reference, candidate, *, threshold=0.10) -> list:
     refs = []
     for i in range(len(reference.xyxy)):
         poly, b_box = get_shapely_poly(reference, i)
-        refs.append({
-            "poly": poly, "bbox": b_box,
-            "conf": float(reference.confidence[i]),
-            "class": reference.data.get("class_name", [])[i],
-        })
+        refs.append(
+            {
+                "poly": poly,
+                "bbox": b_box,
+                "conf": float(reference.confidence[i]),
+                "class": reference.data.get("class_name", [])[i],
+            }
+        )
     cands = []
     for j in range(len(candidate.xyxy)):
         poly, b_box = get_shapely_poly(candidate, j)
-        cands.append({
-            "poly": poly, "bbox": b_box,
-            "conf": float(candidate.confidence[j]),
-            "class": candidate.data.get("class_name", [])[j],
-        })
+        cands.append(
+            {
+                "poly": poly,
+                "bbox": b_box,
+                "conf": float(candidate.confidence[j]),
+                "class": candidate.data.get("class_name", [])[j],
+            }
+        )
 
     out = []
     for b in refs:
@@ -491,34 +530,40 @@ def _legacy_overlap_records(reference, candidate, *, threshold=0.10) -> list:
             intersection_area = b["poly"].intersection(a["poly"]).area
             percent_overlap = intersection_area / b["poly"].area
             if percent_overlap >= threshold:
-                out.append({
-                    "reference_class": b["class"],
-                    "reference_confidence": b["conf"],
-                    "candidate_class": a["class"],
-                    "candidate_confidence": a["conf"],
-                    "overlap_ratio": percent_overlap,
-                })
+                out.append(
+                    {
+                        "reference_class": b["class"],
+                        "reference_confidence": b["conf"],
+                        "candidate_class": a["class"],
+                        "candidate_confidence": a["conf"],
+                        "overlap_ratio": percent_overlap,
+                    }
+                )
     return out
 
 
 def test_parity_against_original_code_on_bbox_only_inputs() -> None:
     # given: 3 x 4 grid with mixed overlaps
     ref = _detections_from_xyxy(
-        np.array([
-            [0, 0, 100, 100],
-            [200, 200, 300, 300],
-            [50, 50, 150, 150],
-        ]),
+        np.array(
+            [
+                [0, 0, 100, 100],
+                [200, 200, 300, 300],
+                [50, 50, 150, 150],
+            ]
+        ),
         class_names=["alpha", "beta", "gamma"],
         confidences=[0.9, 0.8, 0.7],
     )
     cand = _detections_from_xyxy(
-        np.array([
-            [50, 0, 150, 100],     # overlaps ref 0
-            [80, 0, 180, 100],     # overlaps ref 0
-            [400, 400, 500, 500],  # disjoint
-            [100, 100, 200, 200],  # overlaps ref 2
-        ]),
+        np.array(
+            [
+                [50, 0, 150, 100],  # overlaps ref 0
+                [80, 0, 180, 100],  # overlaps ref 0
+                [400, 400, 500, 500],  # disjoint
+                [100, 100, 200, 200],  # overlaps ref 2
+            ]
+        ),
         class_names=["x", "y", "z", "w"],
         confidences=[0.6, 0.5, 0.4, 0.3],
     )
@@ -538,4 +583,6 @@ def test_parity_against_original_code_on_bbox_only_inputs() -> None:
             round(r["overlap_ratio"], 9),
         )
 
-    assert sorted(map(_record_key, new_records)) == sorted(map(_record_key, legacy_records))
+    assert sorted(map(_record_key, new_records)) == sorted(
+        map(_record_key, legacy_records)
+    )

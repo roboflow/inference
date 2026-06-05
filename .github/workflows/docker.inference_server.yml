@@ -1,0 +1,118 @@
+name: Build inference_server images
+
+# Manual only. When you click "Run workflow", pick your branch as the ref —
+# it builds that ref's code (never main on its own). Tick the targets you want;
+# tick none = build all. (workflow_dispatch only appears in the UI once this
+# file is on the default branch — a one-time merge; it still never auto-runs.)
+permissions:
+  contents: read
+on:
+  workflow_dispatch:
+    inputs:
+      gpu:
+        type: boolean
+        description: "Build GPU (cu124, amd64)"
+        default: false
+      cpu:
+        type: boolean
+        description: "Build CPU (amd64)"
+        default: false
+      jetson_5_1_1:
+        type: boolean
+        description: "Build Jetson JP5.1.1 (arm64)"
+        default: false
+      jetson_6_0_0:
+        type: boolean
+        description: "Build Jetson JP6.0 (arm64)"
+        default: false
+      jetson_6_2_0:
+        type: boolean
+        description: "Build Jetson JP6.2 (arm64)"
+        default: false
+      tag_suffix:
+        type: string
+        description: "Postfix appended to image tag, e.g. -test → :gpu-0.1.0-test"
+        default: ""
+      push:
+        type: boolean
+        description: "Push images after build (otherwise build-only)"
+        default: false
+
+env:
+  IMAGE: roboflow/inference-server-experimental
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Read inference_server version
+        id: ver
+        run: |
+          v=$(python -c "import tomllib; print(tomllib.load(open('inference_server/pyproject.toml','rb'))['project']['version'])")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "inference_server version: $v"
+      - name: Compute build matrix (none selected = all)
+        id: set
+        env:
+          GPU: ${{ inputs.gpu }}
+          CPU: ${{ inputs.cpu }}
+          J511: ${{ inputs.jetson_5_1_1 }}
+          J600: ${{ inputs.jetson_6_0_0 }}
+          J620: ${{ inputs.jetson_6_2_0 }}
+        run: |
+          set -euo pipefail
+          all_json=$(cat <<EOF
+          [
+            {"name":"gpu","dockerfile":"inference_server/docker/Dockerfile.gpu","platform":"linux/amd64","depot_project":"grl7ffzxd7","sel":"$GPU"},
+            {"name":"cpu","dockerfile":"inference_server/docker/Dockerfile.cpu","platform":"linux/amd64","depot_project":"grl7ffzxd7","sel":"$CPU"},
+            {"name":"jetson-5.1.1","dockerfile":"inference_server/docker/Dockerfile.jetson.5.1.1","platform":"linux/arm64","depot_project":"2rp7mfjw7q","sel":"$J511"},
+            {"name":"jetson-6.0.0","dockerfile":"inference_server/docker/Dockerfile.jetson.6.0.0","platform":"linux/arm64","depot_project":"2rp7mfjw7q","sel":"$J600"},
+            {"name":"jetson-6.2.0","dockerfile":"inference_server/docker/Dockerfile.jetson.6.2.0","platform":"linux/arm64","depot_project":"2rp7mfjw7q","sel":"$J620"}
+          ]
+          EOF
+          )
+          selected=$(echo "$all_json" | jq -c '[.[] | select(.sel=="true")]')
+          if [ "$(echo "$selected" | jq 'length')" -eq 0 ]; then
+            selected="$all_json"
+          fi
+          matrix=$(echo "$selected" | jq -c '{include: [.[] | {name, dockerfile, platform, depot_project}]}')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "$matrix" | jq .
+
+  build:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    name: build-${{ matrix.name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+      # jp5.1.1 base (roboflow/l4t-ml) is private on Docker Hub.
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build (and optionally push)
+        uses: depot/build-push-action@v1
+        with:
+          project: ${{ matrix.depot_project }}
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          pull: true
+          push: ${{ inputs.push }}
+          tags: ${{ env.IMAGE }}:${{ matrix.name }}-${{ needs.setup.outputs.version }}${{ inputs.tag_suffix }}
