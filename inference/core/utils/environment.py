@@ -52,13 +52,18 @@ def str2bool(value: Any) -> bool:
         )
 
 
-def safe_split_value(value: Optional[str], delimiter: str = ",") -> Optional[List[str]]:
+def safe_split_value(
+    value: Optional[str],
+    delimiter: str = ",",
+    strip: bool = False,
+) -> Optional[List[str]]:
     """
     Splits a separated environment variable into a list.
 
     Args:
         value (str): The environment variable value to be split.
         delimiter(str): Delimiter to be used
+        strip (bool): Strip leading and trailing whitespace
 
     Returns:
         list or None: The split values as a list, or None if the input is None.
@@ -66,4 +71,7 @@ def safe_split_value(value: Optional[str], delimiter: str = ",") -> Optional[Lis
     if value is None:
         return None
     else:
-        return value.split(delimiter)
+        result = value.split(delimiter)
+        if strip:
+            result = [element.strip() for element in result]
+        return result

@@ -196,7 +196,8 @@ from inference.core.env import (
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING,
-    WORKFLOWS_STEP_EXECUTION_MODE, WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT,
+    WORKFLOWS_STEP_EXECUTION_MODE,
+    WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -981,7 +982,10 @@ class HttpInterface(BaseInterface):
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
 
-        if DEDICATED_DEPLOYMENT_WORKSPACE_URL or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT:
+        if (
+            DEDICATED_DEPLOYMENT_WORKSPACE_URL
+            or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        ):
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -1055,7 +1059,9 @@ class HttpInterface(BaseInterface):
                         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
                             allowed_workspaces.add(DEDICATED_DEPLOYMENT_WORKSPACE_URL)
                         if WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT:
-                            allowed_workspaces.update(WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT)
+                            allowed_workspaces.update(
+                                WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+                            )
                         if workspace_id not in allowed_workspaces:
                             return _unauthorized_response("Unauthorized api_key")
 

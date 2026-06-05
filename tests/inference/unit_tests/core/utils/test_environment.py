@@ -72,3 +72,11 @@ def test_safe_split_value_when_non_splittable_value_given() -> None:
 
     # then
     assert result == ["a,b,c,d"]
+
+
+def test_safe_split_value_when_splittable_value_given_and_strip_requested() -> None:
+    # when
+    result = safe_split_value(value="a, b ,c, d", delimiter=",", strip=True)
+
+    # then
+    assert result == ["a", "b", "c", "d"]
