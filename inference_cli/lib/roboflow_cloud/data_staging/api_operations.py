@@ -1647,21 +1647,19 @@ def pull_batch_element_to_directory(
         override_existing=override_existing,
     ):
         return None
-    parsed_url = urlparse(file_metadata.download_url)
-    file_name = os.path.basename(parsed_url.path)
-    is_archive = file_name.endswith(".tar.gz") or file_name.endswith(".tar")
+    is_archive = file_metadata.file_name.endswith(".tar.gz") or file_metadata.file_name.endswith(".tar")
     if not is_archive:
         result_path = pull_file_to_directory(
             url=file_metadata.download_url,
             target_directory=target_directory,
-            file_name=file_name,
+            file_name=file_metadata.file_name,
         )
         export_log.denote_export(file_metadata=file_metadata, local_path=result_path)
         return None
     with tempfile.TemporaryDirectory() as tmp_dir:
         download_and_unpack_archive(
             url=file_metadata.download_url,
-            file_name=file_name,
+            file_name=file_metadata.file_name,
             pull_dir=tmp_dir,
             target_dir=target_directory,
         )

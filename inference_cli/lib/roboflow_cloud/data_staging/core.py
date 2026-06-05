@@ -191,7 +191,7 @@ def create_batch_of_images(
         Optional[str],
         typer.Option(
             "--ingest-id",
-            "-i",
+            "-in-id",
             help="Identifier assigned for references ingest (if value not provided - system will auto-assign) - "
             "only relevant when `notifications-url` specified",
         ),
