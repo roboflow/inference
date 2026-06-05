@@ -668,9 +668,9 @@ def test_local_whitelist_alone_rejects_non_matching_workspace(
             client, method, path, api_key="key-for-other-ws"
         )
 
-    assert response.status_code == 401, (
-        f"{method} {path}: expected 401, got {response.status_code}"
-    )
+    assert (
+        response.status_code == 401
+    ), f"{method} {path}: expected 401, got {response.status_code}"
     assert response.json() == {"status": 401, "message": "Unauthorized api_key"}
 
 
@@ -732,9 +732,9 @@ def test_workspace_outside_both_allowlists_is_rejected(
     with TestClient(interface.app) as client:
         response = _send_secured_request(client, method, path, api_key="key-for-other")
 
-    assert response.status_code == 401, (
-        f"{method} {path}: expected 401, got {response.status_code}"
-    )
+    assert (
+        response.status_code == 401
+    ), f"{method} {path}: expected 401, got {response.status_code}"
 
 
 def test_local_whitelist_with_multiple_entries_accepts_each_member(monkeypatch) -> None:
@@ -768,9 +768,9 @@ def test_local_whitelist_with_multiple_entries_accepts_each_member(monkeypatch) 
                 params={"api_key": api_key},
                 json=_make_inference_request(),
             )
-            assert response.status_code == 200, (
-                f"{api_key} should map to a whitelisted workspace"
-            )
+            assert (
+                response.status_code == 200
+            ), f"{api_key} should map to a whitelisted workspace"
 
 
 @pytest.mark.parametrize("method,path", _SECURED_GATE_TARGETS)
@@ -786,9 +786,9 @@ def test_local_whitelist_middleware_rejects_request_without_api_key(
     with TestClient(interface.app) as client:
         response = _send_secured_request(client, method, path)
 
-    assert response.status_code == 401, (
-        f"{method} {path}: expected 401, got {response.status_code}"
-    )
+    assert (
+        response.status_code == 401
+    ), f"{method} {path}: expected 401, got {response.status_code}"
     assert response.json() == {"status": 401, "message": "Unauthorized api_key"}
     workspace_lookup_mock.assert_not_awaited()
 
@@ -807,12 +807,14 @@ def test_local_whitelist_middleware_returns_401_when_roboflow_api_rejects_key(
     with TestClient(interface.app) as client:
         response = _send_secured_request(client, method, path, api_key="revoked-key")
 
-    assert response.status_code == 401, (
-        f"{method} {path}: expected 401, got {response.status_code}"
-    )
+    assert (
+        response.status_code == 401
+    ), f"{method} {path}: expected 401, got {response.status_code}"
 
 
-def test_local_whitelist_middleware_caches_successful_workspace_lookup(monkeypatch) -> None:
+def test_local_whitelist_middleware_caches_successful_workspace_lookup(
+    monkeypatch,
+) -> None:
     interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
         monkeypatch=monkeypatch,
         workspace_lookup_result="local-allowed-ws",
@@ -858,9 +860,7 @@ def test_local_whitelist_middleware_skips_check_for_exempt_paths(
     with TestClient(interface.app) as client:
         response = client.get(exempt_path)
 
-    assert response.status_code == 200, (
-        f"{exempt_path} must bypass the auth middleware"
-    )
+    assert response.status_code == 200, f"{exempt_path} must bypass the auth middleware"
     workspace_lookup_mock.assert_not_awaited()
 
 
@@ -908,4 +908,3 @@ def test_empty_local_whitelist_alone_does_not_enable_middleware(monkeypatch) -> 
 
     assert response.status_code == 200
     workspace_lookup_mock.assert_not_awaited()
-
