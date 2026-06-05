@@ -25,7 +25,7 @@ WORKFLOW_WITH_DELTA_FILTER = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "model",
             "images": "$inputs.image",
             "model_id": "$inputs.model_id",

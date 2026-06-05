@@ -25,7 +25,7 @@ installation guide for an example of how to run the server outside of a containe
 Roboflow has
 [SDKs for running object detection natively](https://docs.roboflow.com/deploy/supported-deployment-devices)
 on other deployment targets like
-[Tensorflow.js in a web browser](https://docs.roboflow.com/deploy/sdks/web-browser),
+[TensorFlow.js in a web browser](https://docs.roboflow.com/deploy/sdks/web-browser),
 [Native Swift on iOS](https://docs.roboflow.com/deploy/sdks/ios-sdk) via CoreML, and
 [Snap Lens Studio](https://docs.roboflow.com/deploy/sdks/lens-studio).
 

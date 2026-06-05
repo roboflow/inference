@@ -11,7 +11,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
@@ -32,6 +32,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_trt_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     rescale_image_detections,
 )
 from inference_models.models.common.roboflow.pre_processing import (
@@ -44,6 +45,7 @@ from inference_models.models.common.trt import (
     infer_from_trt_engine,
     load_trt_model,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import tensorrt as trt
@@ -84,6 +86,7 @@ class YOLOv10ForObjectDetectionTRT(
         engine_host_code_allowed: bool = False,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv10ForObjectDetectionTRT":
         if device.type != "cuda":
@@ -160,6 +163,7 @@ class YOLOv10ForObjectDetectionTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -174,6 +178,7 @@ class YOLOv10ForObjectDetectionTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        recommended_parameters: Optional["RecommendedParameters"] = None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -188,6 +193,7 @@ class YOLOv10ForObjectDetectionTRT(
         self._session_thread_lock = Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -237,15 +243,29 @@ class YOLOv10ForObjectDetectionTRT(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         max_detections: int = INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
+        )
+        threshold = confidence_filter.get_threshold(self.class_names)
+        if isinstance(threshold, torch.Tensor):
+            threshold = threshold.to(
+                dtype=model_results.dtype, device=model_results.device
+            )
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
             results = []
             for image_result, metadata in zip(model_results, pre_processing_meta):
-                mask = image_result[:, 4] > confidence
+                mask = image_result[:, 4] > (
+                    threshold[image_result[:, 5].long()]
+                    if isinstance(threshold, torch.Tensor)
+                    else threshold
+                )
                 filtered = image_result[mask][:max_detections]
                 rescaled = rescale_image_detections(
                     image_detections=filtered,

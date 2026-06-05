@@ -250,15 +250,6 @@ Default: `0.5`
 export INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_IOU_THRESHOLD="0.4"
 ```
 
-#### MediaPipe Face Detector
-
-**`INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE`**
-Default: `0.25`
-
-```bash
-export INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE="0.3"
-```
-
 #### Moondream2
 
 **`INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS`**
@@ -319,6 +310,59 @@ Default: `true`
 
 ```bash
 export INFERENCE_MODELS_PALIGEMMA_DEFAULT_SKIP_SPECIAL_TOKENS="false"
+```
+
+#### Gemma 4 {#gemma-4}
+
+These variables set the defaults used by the Gemma 4 Hugging Face implementation (`Gemma4HF`; see [Gemma 4](../models/gemma4.md)) for `prompt()`, `pre_process_generation()`, and `generate()` (including sampling kwargs when `do_sample` is true).
+
+**`INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS`**
+Default: `512`
+
+```bash
+export INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS="1024"
+```
+
+**`INFERENCE_MODELS_GEMMA4_DEFAULT_DO_SAMPLE`**
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_DO_SAMPLE`
+
+```bash
+export INFERENCE_MODELS_GEMMA4_DEFAULT_DO_SAMPLE="true"
+```
+
+**`INFERENCE_MODELS_GEMMA4_DEFAULT_ENABLE_THINKING`**
+Default: `false` (passed to the processor chat template as `enable_thinking`)
+
+```bash
+export INFERENCE_MODELS_GEMMA4_DEFAULT_ENABLE_THINKING="true"
+```
+
+**`INFERENCE_MODELS_GEMMA4_DEFAULT_SKIP_SPECIAL_TOKENS`**
+Default: `true`
+
+```bash
+export INFERENCE_MODELS_GEMMA4_DEFAULT_SKIP_SPECIAL_TOKENS="false"
+```
+
+**`INFERENCE_MODELS_GEMMA4_DEFAULT_TEMPERATURE`**
+Default: `1.0` (used when `do_sample` is true)
+
+```bash
+export INFERENCE_MODELS_GEMMA4_DEFAULT_TEMPERATURE="0.8"
+```
+
+**`INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_P`**
+Default: `0.95`
+
+```bash
+export INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_P="0.9"
+```
+
+**`INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K`**
+Default: `64`
+
+```bash
+export INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K="32"
 ```
 
 #### Qwen2.5-VL

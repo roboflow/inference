@@ -399,3 +399,27 @@ def test_multi_class_hf_package_batch_torch_list(
         predictions.class_id.cpu(),
         torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_multi_label_hf_per_class_confidence_blocks_specific_class(
+    flowers_multi_label_vit_hf_package: str,
+    flowers_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_multi_label_hf_package_numpy` above) returns
+    class_ids=[2] (class 2 at conf 0.968). Setting a 0.99 per-class threshold
+    on class 2 leaves no classes above threshold."""
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = VITForMultiLabelClassificationHF.from_pretrained(
+        model_name_or_path=flowers_multi_label_vit_hf_package,
+        device=DEFAULT_DEVICE,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.5,
+        per_class_confidence={class_names[2]: 0.99},
+    )
+    predictions = model(flowers_image_numpy, confidence="best")
+    assert predictions[0].class_ids.numel() == 0

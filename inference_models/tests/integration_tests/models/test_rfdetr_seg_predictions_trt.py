@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 import torch
 
+from inference_models.models.common.rle_utils import coco_rle_masks_to_torch_mask
+
 
 @pytest.mark.slow
 @pytest.mark.trt_extras
@@ -25,7 +27,7 @@ def test_trt_package_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -33,7 +35,7 @@ def test_trt_package_numpy(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -41,7 +43,55 @@ def test_trt_package_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16021 <= predictions[0].mask.cpu().sum().item() <= 16071
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_package_numpy_rle_variant(
+    rfdetr_seg_asl_trt_package: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_trt import (
+        RFDetrForInstanceSegmentationTRT,
+    )
+
+    model = RFDetrForInstanceSegmentationTRT.from_pretrained(
+        model_name_or_path=rfdetr_seg_asl_trt_package,
+        engine_host_code_allowed=True,
+    )
+
+    # when
+    predictions = model(asl_image_numpy, mask_format="rle")
+    predictions_ref = model(asl_image_numpy)
+    decoded_mask = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[0].mask, device=torch.device("cpu")
+    )
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9491]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 172, 188, 374]],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
+        atol=5,
+    )
+    assert 16021 <= decoded_mask.sum().item() <= 16071
+    assert np.allclose(
+        decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
+    )
 
 
 @pytest.mark.slow
@@ -66,7 +116,7 @@ def test_trt_package_batch_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -74,7 +124,7 @@ def test_trt_package_batch_numpy(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -82,10 +132,10 @@ def test_trt_package_batch_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16021 <= predictions[0].mask.cpu().sum().item() <= 16071
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -93,7 +143,7 @@ def test_trt_package_batch_numpy(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -101,7 +151,80 @@ def test_trt_package_batch_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[1].mask.cpu().sum().item() <= 16100
+    assert 16021 <= predictions[1].mask.cpu().sum().item() <= 16071
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_package_batch_numpy_rle_variant(
+    rfdetr_seg_asl_trt_package: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_trt import (
+        RFDetrForInstanceSegmentationTRT,
+    )
+
+    model = RFDetrForInstanceSegmentationTRT.from_pretrained(
+        model_name_or_path=rfdetr_seg_asl_trt_package,
+        engine_host_code_allowed=True,
+    )
+
+    # when
+    predictions = model([asl_image_numpy, asl_image_numpy], mask_format="rle")
+    predictions_ref = model([asl_image_numpy, asl_image_numpy])
+    decoded_mask_1 = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[0].mask, device=torch.device("cpu")
+    )
+    decoded_mask_2 = coco_rle_masks_to_torch_mask(
+        instances_masks=predictions[1].mask, device=torch.device("cpu")
+    )
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9491]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 172, 188, 374]],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
+        atol=5,
+    )
+    assert 16021 <= decoded_mask_1.cpu().sum().item() <= 16071
+    assert torch.allclose(
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9491]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 172, 188, 374]],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
+        atol=5,
+    )
+    assert 16021 <= decoded_mask_2.cpu().sum().item() <= 16071
+    assert np.allclose(
+        decoded_mask_1.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
+    )
+    assert np.allclose(
+        decoded_mask_2.cpu().numpy(), predictions_ref[1].mask.cpu().numpy()
+    )
 
 
 @pytest.mark.slow
@@ -126,7 +249,7 @@ def test_trt_package_torch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -134,7 +257,7 @@ def test_trt_package_torch(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -142,7 +265,7 @@ def test_trt_package_torch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
 
 
 @pytest.mark.slow
@@ -168,7 +291,7 @@ def test_trt_package_torch_multiple_predictions_in_row(
         # then
         assert torch.allclose(
             predictions[0].confidence.cpu(),
-            torch.tensor([0.9527]).cpu(),
+            torch.tensor([0.9548]).cpu(),
             atol=0.01,
         )
         assert torch.allclose(
@@ -176,7 +299,7 @@ def test_trt_package_torch_multiple_predictions_in_row(
             torch.tensor([20], dtype=torch.int32).cpu(),
         )
         expected_xyxy = torch.tensor(
-            [[63, 173, 187, 374]],
+            [[63, 173, 189, 375]],
             dtype=torch.int32,
         )
         assert torch.allclose(
@@ -184,7 +307,7 @@ def test_trt_package_torch_multiple_predictions_in_row(
             expected_xyxy.cpu(),
             atol=5,
         )
-        assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+        assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
 
 
 @pytest.mark.slow
@@ -209,7 +332,7 @@ def test_trt_package_torch_list(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -217,7 +340,7 @@ def test_trt_package_torch_list(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -225,10 +348,10 @@ def test_trt_package_torch_list(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -236,7 +359,7 @@ def test_trt_package_torch_list(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -244,7 +367,7 @@ def test_trt_package_torch_list(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[1].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[1].mask.cpu().sum().item() <= 16229
 
 
 @pytest.mark.slow
@@ -269,7 +392,7 @@ def test_trt_package_torch_batch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -277,7 +400,7 @@ def test_trt_package_torch_batch(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -285,10 +408,10 @@ def test_trt_package_torch_batch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -296,7 +419,7 @@ def test_trt_package_torch_batch(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -304,7 +427,7 @@ def test_trt_package_torch_batch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[1].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[1].mask.cpu().sum().item() <= 16229
 
 
 @pytest.mark.slow
@@ -355,3 +478,27 @@ def test_trt_cudagraph_output_matches_non_cudagraph_output(
                 outputs[1][execution_branch_idx][result_idx],
                 atol=1e-6,
             )
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_per_class_confidence_filters_detections(
+    rfdetr_seg_asl_trt_package: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_trt import (
+        RFDetrForInstanceSegmentationTRT,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = RFDetrForInstanceSegmentationTRT.from_pretrained(
+        model_name_or_path=rfdetr_seg_asl_trt_package,
+        engine_host_code_allowed=True,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.3,
+        per_class_confidence={class_names[20]: 1.01},
+    )
+    predictions = model(asl_image_numpy, confidence="best")
+    assert predictions[0].class_id.numel() == 0

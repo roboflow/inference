@@ -41,6 +41,7 @@ COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_CENTER_CROP_URL = "https://storage.go
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-crop-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-bs-nonsquare-letterbox.zip"
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-bs-nonsquare-letterbox.zip"
+RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-kp-preview-onnx-glue-sticks.zip"
 
 OG_RFDETR_WEIGHTS_URL = "https://storage.googleapis.com/rfdetr/rf-detr-base-coco.pth"
 
@@ -166,6 +167,9 @@ YOLO26N_SEG_SNAKES_STRETCH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/ro
 YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-static.zip"
 YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-dynamic.zip"
 YOLO26N_SEG_SNAKES_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-torch-script.zip"
+YOLO26N_SEM_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-static.zip"
+YOLO26N_SEM_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-dynamic.zip"
+YOLO26N_SEM_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-torch-script.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-static.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-dynamic.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-torch-script.zip"
@@ -185,7 +189,6 @@ DEPTH_ANYTHING_V3_BASE_PACKAGE_URL = "https://storage.googleapis.com/roboflow-te
 DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/doctr-dbnet-rn50-crnn-vgg16-v2.zip"
 EASY_OCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/easy-ocr-english.zip"
 TROCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/tr-ocr-small-printed.zip"
-MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/mediapipe-face-detector.zip"
 L2CS_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/l2cs-net.zip"
 OWLv2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/owlv2.zip"
@@ -196,6 +199,10 @@ SAM_PACKAGE_URL = (
 )
 SAM2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam2.zip"
+)
+SAM2_VIDEO_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/"
+    "sam2video-small.zip"
 )
 
 RFDETR_NANO_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-t4-trt.zip"
@@ -220,6 +227,9 @@ VIT_SINGLE_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-
 VIT_MULTI_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-label-cls-trt-t4-package.zip"
 
 YOLOV10_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov10-trt-t4-package.zip"
+SAM3_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam3.zip"
+)
 
 
 @pytest.fixture(scope="module")
@@ -416,6 +426,14 @@ def coin_counting_rfdetr_nano_torch_cs_stretch_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL,
         package_name="coin-counting-rfdetr-nano-torch-cs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_kp_preview_onnx_glue_sticks_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL,
+        package_name="rfdetr-kp-preview-onnx-glue-sticks",
     )
 
 
@@ -1363,14 +1381,6 @@ def tr_ocr_package() -> str:
 
 
 @pytest.fixture(scope="module")
-def mediapipe_face_detector_package() -> str:
-    return download_model_package(
-        model_package_zip_url=MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL,
-        package_name="mediapipe-face-detector",
-    )
-
-
-@pytest.fixture(scope="module")
 def l2cs_package() -> str:
     return download_model_package(
         model_package_zip_url=L2CS_PACKAGE_URL,
@@ -1443,6 +1453,24 @@ def sam2_package() -> str:
 
 
 @pytest.fixture(scope="module")
+def sam2_video_package() -> str:
+    """Streaming SAM2 via HuggingFace ``Sam2VideoModel``.
+
+    Expected contents of the zip (standard HF transformers export):
+
+    - ``config.json``
+    - ``preprocessor_config.json``
+    - ``model.safetensors`` (or sharded ``model-00001-of-NNNNN.safetensors``
+      + ``model.safetensors.index.json``)
+    - any additional processor files the published checkpoint ships.
+    """
+    return download_model_package(
+        model_package_zip_url=SAM2_VIDEO_PACKAGE_URL,
+        package_name="sam2video",
+    )
+
+
+@pytest.fixture(scope="module")
 def yolo26n_seg_snakes_stretch_onnx_static_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_SEG_SNAKES_STRETCH_ONNX_STATIC_URL,
@@ -1487,6 +1515,30 @@ def yolo26n_seg_snakes_letterbox_torch_script_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_SEG_SNAKES_LETTERBOX_TORCH_SCRIPT_URL,
         package_name="yolo26n-seg-snakes-letterbox-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_ONNX_STATIC_URL,
+        package_name="yolo26n-sem-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-sem-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_TORCH_SCRIPT_URL,
+        package_name="yolo26n-sem-torch-script",
     )
 
 
@@ -1695,4 +1747,12 @@ def yolov10_object_detection_trt_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLOV10_TRT_PACKAGE_URL,
         package_name="yolov10-object-detection-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def sam3_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SAM3_PACKAGE_URL,
+        package_name="sam3",
     )

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Tuple
 
 import torch
 import torch.nn.functional as F
@@ -16,12 +16,23 @@ def box_cxcywh_to_xyxy(x):
     return torch.stack(b, dim=-1)
 
 
+def select_topk_predictions(
+    logits_sigmoid: torch.Tensor,
+    bboxes_cxcywh: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Topk-flat across (Q, C) sigmoid scores; cap = Q (= rf-detr-internal's
+    `num_select == num_queries`). Returns (scores, classes, bboxes, query_idx)."""
+    num_queries, num_classes = logits_sigmoid.shape
+    flat_scores = logits_sigmoid.reshape(-1)
+    scores, topk_indexes = torch.topk(flat_scores, num_queries)
+    query_indices = topk_indexes // num_classes
+    top_classes = topk_indexes % num_classes
+    gathered_bboxes = bboxes_cxcywh[query_indices]
+    return scores, top_classes, gathered_bboxes, query_indices
+
+
 class PostProcess(nn.Module):
     """This module converts the model's output into the format expected by the coco api"""
-
-    def __init__(self, num_select=300) -> None:
-        super().__init__()
-        self.num_select = num_select
 
     @torch.no_grad()
     def forward(self, outputs, target_sizes):
@@ -39,45 +50,29 @@ class PostProcess(nn.Module):
         assert target_sizes.shape[1] == 2
 
         prob = out_logits.sigmoid()
-        topk_values, topk_indexes = torch.topk(
-            prob.view(out_logits.shape[0], -1), self.num_select, dim=1
-        )
-        scores = topk_values
-        topk_boxes = topk_indexes // out_logits.shape[2]
-        labels = topk_indexes % out_logits.shape[2]
-        boxes = box_cxcywh_to_xyxy(out_bbox)
-        boxes = torch.gather(boxes, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4))
-
-        # and from relative [0, 1] to absolute [0, height] coordinates
-        img_h, img_w = target_sizes.unbind(1)
-        scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
-        boxes = boxes * scale_fct[:, None, :]
-
         results = []
-        if out_masks is not None:
-            for i in range(out_masks.shape[0]):
-                res_i = {"scores": scores[i], "labels": labels[i], "boxes": boxes[i]}
-                k_idx = topk_boxes[i]
-                masks_i = torch.gather(
-                    out_masks[i],
-                    0,
-                    k_idx.unsqueeze(-1)
-                    .unsqueeze(-1)
-                    .repeat(1, out_masks.shape[-2], out_masks.shape[-1]),
-                )  # [K, Hm, Wm]
+        for i in range(prob.shape[0]):
+            scores, labels, gathered_bboxes_cxcywh, query_indices = (
+                select_topk_predictions(
+                    logits_sigmoid=prob[i],
+                    bboxes_cxcywh=out_bbox[i],
+                )
+            )
+            boxes_xyxy = box_cxcywh_to_xyxy(gathered_bboxes_cxcywh)
+            img_h, img_w = target_sizes[i].unbind(0)
+            scale_fct = torch.stack([img_w, img_h, img_w, img_h])
+            boxes_xyxy = boxes_xyxy * scale_fct
+            res_i = {"scores": scores, "labels": labels, "boxes": boxes_xyxy}
+            if out_masks is not None:
+                masks_i = out_masks[i][query_indices]  # [K, Hm, Wm]
                 h, w = target_sizes[i].tolist()
                 masks_i = F.interpolate(
                     masks_i.unsqueeze(1),
                     size=(int(h), int(w)),
                     mode="bilinear",
                     align_corners=False,
-                )  # [K,1,H,W]
+                )  # [K, 1, H, W]
                 res_i["masks"] = masks_i > 0.0
-                results.append(res_i)
-        else:
-            results = [
-                {"scores": s, "labels": l, "boxes": b}
-                for s, l, b in zip(scores, labels, boxes)
-            ]
+            results.append(res_i)
 
         return results

@@ -107,6 +107,36 @@ def test_run_method_for_claude_and_gemini_output() -> None:
     assert "root_parent_id" in result["predictions"].data
 
 
+def test_run_method_for_gemini_native_box_2d_output() -> None:
+    # given
+    block = VLMAsDetectorBlockV1()
+    image = WorkflowImageData(
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+    )
+    vlm_output = """
+[
+  {"box_2d": [29, 17, 163, 54], "label": "dog"},
+  {"box_2d": [58, 82, 163, 109], "label": "dog"}
+]
+    """
+
+    # when
+    result = block.run(
+        image=image,
+        vlm_output=vlm_output,
+        classes=["cat", "dog"],
+        model_type="google-gemini",
+        task_type="object-detection",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert isinstance(result["predictions"], sv.Detections)
+    assert result["predictions"].data["class_name"].tolist() == ["dog", "dog"]
+    assert np.allclose(result["predictions"].class_id, np.array([1, 1]))
+
+
 def test_run_method_for_invalid_claude_and_gemini_output() -> None:
     # given
     block = VLMAsDetectorBlockV1()

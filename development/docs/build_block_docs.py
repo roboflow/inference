@@ -31,9 +31,11 @@ from inference.core.workflows.prototypes.block import WorkflowBlock
 template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 jinja_env = Environment(loader=FileSystemLoader(template_dir))
 
+
 def render_template(template_name, **kwargs):
     template = jinja_env.get_template(template_name)
     return template.render(**kwargs)
+
 
 DOCS_ROOT_DIR = os.path.abspath(
     os.path.join(
@@ -46,10 +48,14 @@ DOCS_ROOT_DIR = os.path.abspath(
 
 BLOCKS_DIR = os.path.join(DOCS_ROOT_DIR, "workflows", "blocks")
 
-BLOCK_DOCUMENTATION_FILE = os.path.join(DOCS_ROOT_DIR, "workflows", "blocks", "index.md")
+BLOCK_DOCUMENTATION_FILE = os.path.join(
+    DOCS_ROOT_DIR, "workflows", "blocks", "index.md"
+)
 
 KINDS_DIR = os.path.join(DOCS_ROOT_DIR, "workflows", "kinds")
-KINDS_DOCUMENTATION_TEMPLATE = os.path.join(DOCS_ROOT_DIR, "workflows", "kinds_template.md")
+KINDS_DOCUMENTATION_TEMPLATE = os.path.join(
+    DOCS_ROOT_DIR, "workflows", "kinds_template.md"
+)
 KINDS_DOCUMENTATION_FILE = os.path.join(DOCS_ROOT_DIR, "workflows", "kinds", "index.md")
 
 BLOCK_DOCUMENTATION_DIRECTORY = os.path.join(DOCS_ROOT_DIR, "workflows", "blocks")
@@ -81,7 +87,7 @@ as step in your workflow.
 
 The **Refs** column marks possibility to parametrise the property with dynamic values available 
 in `workflow` runtime. See *Bindings* for more info.
-
+{block_runtime_compatibility}
 ### Available Connections {{ data-search-exclude }}
 
 ??? tip "Compatible Blocks"
@@ -123,8 +129,8 @@ article > a.md-content__button.md-icon:first-child {{
 """
 
 
-
-BLOCK_VERSION_TEMPLATE_SINGLE_VERSION = """
+BLOCK_VERSION_TEMPLATE_SINGLE_VERSION = (
+    """
 
 ??? "Class: `{short_block_class_name}`"
 
@@ -132,10 +138,13 @@ BLOCK_VERSION_TEMPLATE_SINGLE_VERSION = """
     <a target="_blank" href="{block_source_link}">{block_class_name}</a>
     
 
-""" + BLOCK_VERSION_TEMPLATE
+"""
+    + BLOCK_VERSION_TEMPLATE
+)
 
 
-BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS = """
+BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS = (
+    """
 
 ## {version}
 
@@ -149,7 +158,9 @@ BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS = """
 
     
 
-""" + BLOCK_VERSION_TEMPLATE
+"""
+    + BLOCK_VERSION_TEMPLATE
+)
 
 BLOCK_CARD_TEMPLATE = '<p class="card block-card" data-url="{data_url}" data-name="{data_name}" data-desc="{data_desc}" data-labels="{data_labels}" data-author="{data_authors}"></p>\n'
 
@@ -202,60 +213,22 @@ INLINE_UQL_PARAMETER_PATTERN = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
 # This catches patterns like {{ $parameters.xxx }} in LONG_DESCRIPTION strings,
 # Field descriptions, and other generated content that would cause mkdocs-macros
 # Jinja2 parse errors ("unexpected char '$'").
-JINJA2_DOLLAR_EXPRESSION_PATTERN = re.compile(r"(\{\{(?:(?!\}\}).)*?\$(?:(?!\}\}).)*?\}\})")
+JINJA2_DOLLAR_EXPRESSION_PATTERN = re.compile(
+    r"(\{\{(?:(?!\}\}).)*?\$(?:(?!\}\}).)*?\}\})"
+)
 
 BLOCK_SECTIONS = [
-        {
-            "title": "Models",
-            "id": "model",
-            "colorScheme": "purboflow"
-        },
-        {
-            "title": "Visualizations",
-            "id": "visualization",
-            "colorScheme": "blue"
-        },
-        {
-            "title": "Logic and Branching",
-            "id": "flow_control",
-            "colorScheme": "yellow"
-        },
-        {
-            "title": "Data Storage",
-            "id": "data_storage",
-            "colorScheme": "pink"
-        },
-        {
-            "title": "Notifications",
-            "id": "notifications",
-            "colorScheme": "salmon"
-        },
-        {
-            "title": "Transformations",
-            "id": "transformation",
-            "colorScheme": "green"
-        },
-        {
-            "title": "Classical Computer Vision",
-            "id": "classical_cv",
-            "colorScheme": "cyan"
-        },
-        {
-            "title": "Video",
-            "id": "video",
-            "colorScheme": "indigo"
-        },
-        {
-            "title": "Advanced",
-            "id": "advanced",
-            "colorScheme": "orange"
-        },
-        {
-            "title": "Industrial",
-            "id": "industrial",
-            "colorScheme": "gray"
-        }
-    ]
+    {"title": "Models", "id": "model", "colorScheme": "purboflow"},
+    {"title": "Visualizations", "id": "visualization", "colorScheme": "blue"},
+    {"title": "Logic and Branching", "id": "flow_control", "colorScheme": "yellow"},
+    {"title": "Data Storage", "id": "data_storage", "colorScheme": "pink"},
+    {"title": "Notifications", "id": "notifications", "colorScheme": "salmon"},
+    {"title": "Transformations", "id": "transformation", "colorScheme": "green"},
+    {"title": "Classical Computer Vision", "id": "classical_cv", "colorScheme": "cyan"},
+    {"title": "Video", "id": "video", "colorScheme": "indigo"},
+    {"title": "Advanced", "id": "advanced", "colorScheme": "orange"},
+    {"title": "Industrial", "id": "industrial", "colorScheme": "gray"},
+]
 
 
 def main() -> None:
@@ -269,7 +242,7 @@ def write_blocks_docs(blocks_description):
     # create blocks directory if it doesn't exist
     os.makedirs(BLOCK_DOCUMENTATION_DIRECTORY, exist_ok=True)
 
-    # get block assgined to families    
+    # get block assgined to families
     block_families = get_block_families(blocks_description)
 
     # write blocks index file
@@ -280,7 +253,7 @@ def write_blocks_docs(blocks_description):
 
     # write individual block pages
     write_individual_block_pages(block_families, blocks_description)
-    
+
 
 def write_individual_block_pages(block_families, blocks_description):
     block_type2manifest_type_identifier = {
@@ -289,35 +262,45 @@ def write_individual_block_pages(block_families, blocks_description):
     }
     blocks_connections = discover_blocks_connections(
         blocks_description=blocks_description
-    )   
+    )
 
     for family_name, family_members in block_families.items():
-        
+
         documentation_file_name = slugify_block_name(family_name) + ".md"
         documentation_file_path = os.path.join(
             BLOCK_DOCUMENTATION_DIRECTORY, documentation_file_name
         )
-        
+
         versions_content = []
         for block in family_members:
             block_class_name = block.fully_qualified_block_class_name
             block_source_link = get_source_link_for_block_class(block.block_class)
             example_definition = generate_example_step_definition(block=block)
             parsed_manifest = parse_block_manifest(manifest_type=block.manifest_class)
-            long_description = block.block_schema.get("long_description", "Description not available")
+            long_description = block.block_schema.get(
+                "long_description", "Description not available"
+            )
 
-
-            template = BLOCK_VERSION_TEMPLATE_SINGLE_VERSION if len(family_members) == 1 else BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS
+            template = (
+                BLOCK_VERSION_TEMPLATE_SINGLE_VERSION
+                if len(family_members) == 1
+                else BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS
+            )
 
             version_content = template.format(
                 family_name=family_name,
                 version=block.block_schema.get("version", "undefined"),
                 block_source_link=block_source_link,
                 block_class_name=block_class_name,
-                short_block_class_name = block.fully_qualified_block_class_name.split(".")[-1],
+                short_block_class_name=block.fully_qualified_block_class_name.split(
+                    "."
+                )[-1],
                 type_identifier=block.manifest_type_identifier,
                 description=long_description,
                 block_inputs=format_block_inputs(parsed_manifest),
+                block_runtime_compatibility=format_runtime_compatibility(
+                    manifest_class=block.manifest_class,
+                ),
                 block_input_bindings=format_input_bindings(parsed_manifest),
                 block_output_bindings=format_block_outputs(block.outputs_manifest),
                 input_connections=format_block_connections(
@@ -332,7 +315,9 @@ def write_individual_block_pages(block_families, blocks_description):
                     ],
                     block_type2manifest_type_identifier=block_type2manifest_type_identifier,
                 ),
-                example=_dump_step_example_definition(example_definition=example_definition),
+                example=_dump_step_example_definition(
+                    example_definition=example_definition
+                ),
             )
             versions_content.append(version_content)
         all_versions_combined = combined_content_from_versions(versions_content)
@@ -342,7 +327,10 @@ def write_individual_block_pages(block_families, blocks_description):
         if all_deprecated:
             # Use custom deprecation message if provided, otherwise use default
             custom_message = family_members[0].block_schema.get("deprecation_message")
-            message = custom_message or "This block is deprecated and may be removed in a future release."
+            message = (
+                custom_message
+                or "This block is deprecated and may be removed in a future release."
+            )
             deprecation_warning = f'!!! warning "Deprecated"\n\n{" " * 4}{message}\n\n'
         else:
             deprecation_warning = ""
@@ -356,8 +344,6 @@ def write_individual_block_pages(block_families, blocks_description):
             documentation_file.write(family_document_content)
 
 
-
-
 def get_block_families_by_section(block_families):
     # Group families by block_type
     blocks_by_section = defaultdict(list)
@@ -365,15 +351,14 @@ def get_block_families_by_section(block_families):
         if not members:
             section = "custom"
         else:
-            block_name =  members[0].block_schema.get("name", "Missing Name")
+            block_name = members[0].block_schema.get("name", "Missing Name")
             ui_manifest = members[0].block_schema.get("ui_manifest", {})
-            section =  ui_manifest.get("section", "custom")
+            section = ui_manifest.get("section", "custom")
             if not section:
                 section = "custom"
         blocks_by_section[section].append(family_name)
 
     return blocks_by_section
-
 
 
 def write_blocks_summary_md(block_families):
@@ -387,16 +372,25 @@ def write_blocks_summary_md(block_families):
 
     # For each block type, create a top-level bullet, then sub-bullets for families
     for block_section in BLOCK_SECTIONS:
-        section_title = block_section['title']
-        section_id = block_section['id']
-        
+        section_title = block_section["title"]
+        section_id = block_section["id"]
+
+        if not block_families_by_section[section_id]:
+            continue
+
         lines.append(f"* {section_title}")
-        for family_name in sorted(block_families_by_section[section_id], key=lambda x: block_families[x][0].block_schema.get("ui_manifest", {}).get("blockPriority", 99)):
+        for family_name in sorted(
+            block_families_by_section[section_id],
+            key=lambda x: block_families[x][0]
+            .block_schema.get("ui_manifest", {})
+            .get("blockPriority", 99),
+        ):
             # Suppose you had a function slugify_block_name:
             slug = slugify_block_name(family_name)
             # Link to foo.md (or bar.md, etc.)
             all_deprecated = all(
-                b.block_schema.get("deprecated", False) for b in block_families[family_name]
+                b.block_schema.get("deprecated", False)
+                for b in block_families[family_name]
             )
             label = f"{family_name} (Deprecated)" if all_deprecated else family_name
             lines.append(f"{' ' * 4}* [{label}]({slug}.md)")
@@ -412,43 +406,52 @@ def write_blocks_index_file(block_families):
     blocks_by_section = {}
 
     for block_section in BLOCK_SECTIONS:
-        section_title = block_section['title']
-        section_id = block_section['id']
+        section_title = block_section["title"]
+        section_id = block_section["id"]
 
         blocks_by_section[section_id] = []
-        
-        
-        for family_name in sorted(block_families_by_section[section_id], key=lambda x: block_families[x][0].block_schema.get("ui_manifest", {}).get("blockPriority", 99)):
+
+        for family_name in sorted(
+            block_families_by_section[section_id],
+            key=lambda x: block_families[x][0]
+            .block_schema.get("ui_manifest", {})
+            .get("blockPriority", 99),
+        ):
             block_schema = block_families[family_name][0].block_schema
             # Hide deprecated blocks from the gallery index
             all_deprecated = all(
-                b.block_schema.get("deprecated", False) for b in block_families[family_name]
+                b.block_schema.get("deprecated", False)
+                for b in block_families[family_name]
             )
             if all_deprecated:
                 continue
             block_data = {
                 "name": family_name,
                 "url": slugify_block_name(family_name),
-                "description": block_schema.get("short_description", "Description not available"),
+                "description": block_schema.get(
+                    "short_description", "Description not available"
+                ),
                 "license": block_schema.get("license", "").upper(),
-                "icon": block_schema.get("ui_manifest", {}).get("icon", "far fa-sparkles"),
+                "icon": block_schema.get("ui_manifest", {}).get(
+                    "icon", "far fa-sparkles"
+                ),
             }
             blocks_by_section[section_id].append(block_data)
 
-        
-    
-
-    output = render_template("blocks_index.md", blocks_by_section=blocks_by_section, block_sections=BLOCK_SECTIONS)
-
+    output = render_template(
+        "blocks_index.md",
+        blocks_by_section=blocks_by_section,
+        block_sections=BLOCK_SECTIONS,
+    )
 
     with open(BLOCK_DOCUMENTATION_FILE, "w", encoding="utf-8") as f:
         f.write(output)
 
 
 def get_block_families(blocks_description):
-    '''
+    """
     Get block families and sort them by version.
-    '''
+    """
     block_families = defaultdict(list)
     for block in blocks_description.blocks:
         block_families[block.human_friendly_block_name].append(block)
@@ -464,9 +467,14 @@ def get_block_families(blocks_description):
 def combined_content_from_versions(versions_content: List[str]) -> str:
     return "\n\n".join(versions_content)
 
+
 def _dump_step_example_definition(example_definition: dict) -> str:
-    definition_stringified = "\n\t".join(json.dumps(example_definition, indent=4).split("\n"))
-    return INLINE_UQL_PARAMETER_PATTERN.sub(_escape_uql_brackets, definition_stringified)
+    definition_stringified = "\n\t".join(
+        json.dumps(example_definition, indent=4).split("\n")
+    )
+    return INLINE_UQL_PARAMETER_PATTERN.sub(
+        _escape_uql_brackets, definition_stringified
+    )
 
 
 def _escape_uql_brackets(match: re.Match) -> str:
@@ -479,7 +487,9 @@ def _escape_jinja2_expressions(content: str) -> str:
     (Jinja2) does not attempt to evaluate them. Already-escaped expressions
     like ``{{ '{{' }}`` are left untouched because they do not contain ``$``.
     """
-    return JINJA2_DOLLAR_EXPRESSION_PATTERN.sub(_escape_jinja2_dollar_expression, content)
+    return JINJA2_DOLLAR_EXPRESSION_PATTERN.sub(
+        _escape_jinja2_dollar_expression, content
+    )
 
 
 def _escape_jinja2_dollar_expression(match: re.Match) -> str:
@@ -490,10 +500,19 @@ def _escape_jinja2_dollar_expression(match: re.Match) -> str:
 
 def get_source_link_for_block_class(block_class: Type[WorkflowBlock]) -> str:
     try:
-        filename = inspect.getfile(block_class).split("inference/core/workflows/")[1]
-        return f"https://github.com/roboflow/inference/blob/main/inference/core/workflows/{filename}"
-    except Exception as e:
+        filepath = inspect.getfile(block_class)
+        # Resolve the path relative to the `inference` package root so that both
+        # core blocks (inference/core/workflows/...) and enterprise blocks
+        # (inference/enterprise/workflows/...) produce valid links.
+        marker = f"{os.sep}inference{os.sep}"
+        idx = filepath.rfind(marker)
+        if idx == -1:
+            return None
+        relative_path = filepath[idx + 1 :].replace(os.sep, "/")
+        return f"https://github.com/roboflow/inference/blob/main/{relative_path}"
+    except Exception:
         return None
+
 
 def get_auto_generation_markers(
     documentation_lines: List[str],
@@ -553,6 +572,106 @@ def format_block_inputs(parsed_manifest: BlockManifestMetadata) -> str:
             f"{input_description.property_description}. | {'✅' if ref_appear else '❌'} |"
         )
     return "\n".join(USER_CONFIGURATION_HEADER + rows)
+
+
+RUNTIME_COMPATIBILITY_HEADING_ICON = (
+    ':material-shield-half-full:{ style="color: #5e6c75" }'
+)
+SEVERITY_ICONS = {
+    "hard": ':material-shield-alert:{ style="color: #d32f2f" }',
+    "soft": ':material-alert-circle-outline:{ style="color: #f57c00" }',
+}
+AIR_GAP_ICON = ':material-cloud-off-outline:{ style="color: #546e7a" }'
+
+
+def format_runtime_compatibility(manifest_class: Type) -> str:
+    """Render air-gapped status and runtime restrictions for a block.
+
+    Returns an empty string when the block has no notable caveats (the default
+    for most blocks), so the section is omitted from the rendered page rather
+    than adding boilerplate to every page.
+    """
+    sections: List[str] = []
+
+    air_gapped_block = _format_air_gapped_block(manifest_class=manifest_class)
+    if air_gapped_block:
+        sections.append(air_gapped_block)
+
+    restrictions_block = _format_restrictions_block(manifest_class=manifest_class)
+    if restrictions_block:
+        sections.append(restrictions_block)
+
+    if not sections:
+        return ""
+
+    body = "\n\n".join(sections)
+    heading = f"### {RUNTIME_COMPATIBILITY_HEADING_ICON} Runtime compatibility"
+    return f"\n{heading}\n\n{body}\n"
+
+
+def _format_air_gapped_block(manifest_class: Type) -> str:
+    get_air_gapped = getattr(manifest_class, "get_air_gapped_availability", None)
+    if not callable(get_air_gapped):
+        return ""
+    try:
+        air_gapped = get_air_gapped()
+    except Exception:
+        return ""
+    if air_gapped is None or getattr(air_gapped, "available", True):
+        return ""
+    reason = getattr(air_gapped, "reason", None)
+    reason_label = f"`{reason}`" if reason else "`air_gapped_unavailable`"
+    return (
+        f"{AIR_GAP_ICON} {reason_label} — air-gapped / offline deployments\n"
+        f":   This block depends on a service that is not reachable from "
+        f"fully offline / air-gapped deployments."
+    )
+
+
+def _format_restrictions_block(manifest_class: Type) -> str:
+    get_restrictions = getattr(manifest_class, "get_restrictions", None)
+    if not callable(get_restrictions):
+        return ""
+    try:
+        restrictions = list(get_restrictions() or [])
+    except Exception:
+        return ""
+    if not restrictions:
+        return ""
+
+    items: List[str] = []
+    for restriction in restrictions:
+        severity = _severity_value(restriction) or "soft"
+        scope = _format_restriction_scope(restriction)
+        note = (getattr(restriction, "note", "") or "").strip().replace("\n", " ")
+        scope_clause = f" — {scope}" if scope else " — all runtimes"
+        icon = SEVERITY_ICONS.get(severity, "")
+        icon_prefix = f"{icon} " if icon else ""
+        items.append(f"{icon_prefix}`{severity}`{scope_clause}\n:   {note}")
+    return "\n\n".join(items)
+
+
+def _severity_value(restriction) -> str:
+    severity = getattr(restriction, "severity", None)
+    return getattr(severity, "value", str(severity) if severity is not None else "")
+
+
+def _format_restriction_scope(restriction) -> str:
+    scope_parts: List[str] = []
+    runtimes = getattr(restriction, "applies_to_runtimes", None)
+    if runtimes:
+        scope_parts.append(
+            "runtime " + ", ".join(f"`{item.value}`" for item in runtimes)
+        )
+    modes = getattr(restriction, "applies_to_step_execution_modes", None)
+    if modes:
+        scope_parts.append(
+            "execution " + ", ".join(f"`{item.value}`" for item in modes)
+        )
+    inputs = getattr(restriction, "applies_to_input_modes", None)
+    if inputs:
+        scope_parts.append("input " + ", ".join(f"`{item.value}`" for item in inputs))
+    return "; ".join(scope_parts)
 
 
 def format_input_bindings(parsed_manifest: BlockManifestMetadata) -> str:
@@ -641,12 +760,14 @@ def generate_example_step_definition(block: BlockDescription) -> dict:
         result[property_name] = example
     return result
 
+
 def to_title_case(s: str) -> str:
     """
     Convert e.g. 'object_detection' -> 'Object Detection'
     """
-    words = re.split(r'[_\s]+', s.lower())
+    words = re.split(r"[_\s]+", s.lower())
     return " ".join(w.capitalize() for w in words if w)
+
 
 def write_kinds_summary_md(kinds):
     """
@@ -656,7 +777,7 @@ def write_kinds_summary_md(kinds):
 
     for line in sorted(kinds):
         # replace everything including and after the :
-        line = re.sub(r':.*$', '', line)
+        line = re.sub(r":.*$", "", line)
 
         # replace back ticks
         line = line.replace("`", "")
@@ -671,13 +792,12 @@ def write_kinds_summary_md(kinds):
         f.write("".join(lines) + "\n")
 
 
-
 def write_kinds_docs(blocks_description):
     os.makedirs(KINDS_DOCUMENTATION_DIRECTORY, exist_ok=True)
 
     generated_kinds_index_lines = []
     for declared_kind in blocks_description.declared_kinds:
-        
+
         description = (
             declared_kind.description
             if declared_kind.description is not None
@@ -697,9 +817,7 @@ def write_kinds_docs(blocks_description):
             serialised_data_type=declared_kind.serialised_data_type,
             internal_data_type=declared_kind.internal_data_type,
         )
-        relative_link = (
-            f"../kinds/{slugify_kind_name(kind_name=declared_kind.name)}.md"
-        )
+        relative_link = f"../kinds/{slugify_kind_name(kind_name=declared_kind.name)}.md"
         generated_kinds_index_lines.append(
             f"* [`{declared_kind.name}`]({relative_link}): {description}\n"
         )
@@ -707,7 +825,7 @@ def write_kinds_docs(blocks_description):
         kind_page = _escape_jinja2_expressions(kind_page)
         with open(kind_file_path, "w") as documentation_file:
             documentation_file.write(kind_page)
-    
+
     generated_kinds_index_lines = sorted(generated_kinds_index_lines)
     write_kinds_summary_md(generated_kinds_index_lines)
 
@@ -734,6 +852,7 @@ def write_kinds_docs(blocks_description):
 
 def write_blocks_gallery():
     pass
+
 
 if __name__ == "__main__":
     main()

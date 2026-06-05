@@ -2367,3 +2367,27 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
         expected_xyxy.cpu(),
         atol=2,
     )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torchscript_per_class_confidence_blocks_specific_class(
+    coin_counting_yolov8n_torch_script_static_bs_letterbox_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_torchscript_package_with_static_batch_size_and_letterbox_batch_numpy`
+    above) returns 10 detections: one class 4, nine class 1. Setting a 1.01
+    per-class threshold on class 1 leaves only the class 4 detection."""
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_package,
+        device=DEFAULT_DEVICE,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[1]: 1.01},
+    )
+    predictions = model(coins_counting_image_numpy, confidence="best")
+    assert 1 not in predictions[0].class_id.cpu().tolist()

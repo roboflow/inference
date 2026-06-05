@@ -363,8 +363,12 @@ from datetime import datetime
 
                 json_result = serialize_for_modal_remote_execution(result)
 
-                # Return the serialized result with success flag
-                return {"success": True, "result": json_result}
+                return {
+                    "success": True,
+                    "result": json_result,
+                    "stdout": stdout_buf.getvalue() or None,
+                    "stderr": stderr_buf.getvalue() or None,
+                }
             except Exception as e:
                 # On error, capture stdout/stderr and return error details
                 result = {

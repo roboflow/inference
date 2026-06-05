@@ -3,19 +3,9 @@ from typing import Dict, List, Optional, Union
 from inference_models.errors import ModelPipelineNotFound
 from inference_models.utils.imports import LazyClass
 
-REGISTERED_PIPELINES: Dict[str, LazyClass] = {
-    "face-and-gaze-detection": LazyClass(
-        module_name="inference_models.model_pipelines.face_and_gaze_detection.mediapipe_l2cs",
-        class_name="FaceAndGazeDetectionMPAndL2CS",
-    )
-}
+REGISTERED_PIPELINES: Dict[str, LazyClass] = {}
 
-DEFAULT_PIPELINES_PARAMETERS: Dict[str, List[Union[str, dict]]] = {
-    "face-and-gaze-detection": [
-        "mediapipe/face-detector",
-        "l2cs-net/rn50",
-    ]
-}
+DEFAULT_PIPELINES_PARAMETERS: Dict[str, List[Union[str, dict]]] = {}
 
 
 def resolve_pipeline_class(pipline_id: str) -> type:

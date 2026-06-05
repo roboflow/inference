@@ -18,8 +18,11 @@ import aiohttp
 import backoff
 import requests
 from cachetools.func import ttl_cache
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
+from yarl import URL
 
 from inference.core import logger
 from inference.core.cache import cache
@@ -35,6 +38,7 @@ from inference.core.entities.types import (
 )
 from inference.core.env import (
     API_BASE_URL,
+    API_PROXY_BASE_URL,
     ENFORCE_CREDITS_VERIFICATION,
     GCP_SERVERLESS,
     INTERNAL_WEIGHTS_URL_SUFFIX,
@@ -57,6 +61,7 @@ from inference.core.env import (
     WORKFLOWS_DEFINITION_CACHE_EXPIRY,
 )
 from inference.core.exceptions import (
+    CacheUnavailableError,
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
     MissingDefaultModelError,
@@ -85,6 +90,11 @@ from inference.core.version import __version__
 
 LOCAL_API_KEY = "local"
 
+_EPHEMERAL_CACHE_UNAVAILABLE_EXCEPTIONS = (
+    RedisConnectionError,
+    RedisTimeoutError,
+)
+
 ENFORCE_CREDITS_VERIFICATION_HEADER = "x-enforce-credits-verification"
 ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER = "x-enforce-internal-artefacts-urls"
 
@@ -104,6 +114,7 @@ NOT_FOUND_ERROR_MESSAGE = (
 
 ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
+API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
 
 
 @dataclass(frozen=True)
@@ -290,10 +301,15 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
 async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
     try:
         headers = build_roboflow_api_headers()
+        full_url = wrap_url(
+            _add_params_to_url(
+                url=f"{API_BASE_URL}/",
+                params=[("api_key", api_key), ("nocache", "true")],
+            )
+        )
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{API_BASE_URL}/",
-                params={"api_key": api_key, "nocache": "true"},
+                URL(full_url, encoded=True),
                 headers=headers,
                 timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             ) as response:
@@ -332,10 +348,15 @@ async def get_serverless_usage_check_async(
 ) -> ServerlessUsageCheckResponse:
     try:
         headers = build_roboflow_api_headers()
+        full_url = wrap_url(
+            _add_params_to_url(
+                url=f"{API_BASE_URL}/serverless/usage-check",
+                params=[("api_key", api_key), ("nocache", "true")],
+            )
+        )
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{API_BASE_URL}/serverless/usage-check",
-                params={"api_key": api_key, "nocache": "true"},
+                URL(full_url, encoded=True),
                 headers=headers,
                 timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             ) as response:
@@ -389,9 +410,11 @@ def add_custom_metadata(
     field_name: str,
     field_value: str,
 ):
-    api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{workspace_id}/inference-stats/metadata",
-        params=[("api_key", api_key), ("nocache", "true")],
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/inference-stats/metadata",
+            params=[("api_key", api_key), ("nocache", "true")],
+        )
     )
     response = requests.post(
         url=api_url,
@@ -761,6 +784,61 @@ def annotate_image_at_roboflow(
 
 
 @wrap_roboflow_api_errors()
+def update_image_metadata_at_roboflow(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    image_id: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    add_tags: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    payload = {}
+    if metadata is not None:
+        payload["metadata"] = metadata
+    if add_tags is not None:
+        payload["addTags"] = add_tags
+
+    encoded_image_id = urllib.parse.quote(image_id, safe="")
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/images/{encoded_image_id}/metadata",
+            params=[("api_key", api_key)],
+        )
+    )
+    response = requests.post(
+        url=api_url,
+        json=payload,
+        headers=build_roboflow_api_headers(),
+        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
+    )
+    api_key_safe_raise_for_status(response=response)
+    return response.json()
+
+
+@wrap_roboflow_api_errors()
+def batch_update_image_metadata_at_roboflow(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    updates: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/images/metadata",
+            params=[("api_key", api_key)],
+        )
+    )
+    response = requests.post(
+        url=api_url,
+        json={"updates": updates},
+        headers=build_roboflow_api_headers(),
+        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
+    )
+    api_key_safe_raise_for_status(response=response)
+    return response.json()
+
+
+@wrap_roboflow_api_errors()
 def get_roboflow_labeling_batches(
     api_key: str, workspace_id: WorkspaceID, dataset_id: str
 ) -> dict:
@@ -889,9 +967,31 @@ def get_workflow_specification(
     ephemeral_cache: Optional[BaseCache] = None,
     workflow_version_id: Optional[str] = None,
 ) -> dict:
+    """Fetch a workflow specification from cache or the Roboflow API.
+
+    When ephemeral cache (Redis/Dragonfly) is enabled but unreachable, falls back
+    to the Roboflow API instead of failing the request.
+
+    Args:
+        api_key: Roboflow API key, or None for unauthenticated fetches.
+        workspace_id: Workspace slug, or ``local`` for filesystem-backed workflows.
+        workflow_id: Workflow identifier within the workspace.
+        use_cache: If True, read and write the ephemeral workflow-definition cache.
+        ephemeral_cache: Cache backend; defaults to the process-global cache.
+        workflow_version_id: Optional pinned workflow version.
+
+    Returns:
+        Parsed workflow specification dict.
+
+    Raises:
+        MalformedWorkflowResponseError: API response lacks a valid specification.
+        RoboflowAPIRequestError: API request failed and no file-cache fallback applies.
+        FileNotFoundError: Local workspace workflow file is missing.
+        ValueError: Invalid local workflow id.
+    """
     ephemeral_cache = ephemeral_cache or cache
     if use_cache:
-        cached_entry = _retrieve_workflow_specification_from_ephemeral_cache(
+        cached_entry = _try_retrieve_workflow_specification_from_ephemeral_cache(
             api_key=api_key,
             workspace_id=workspace_id,
             workflow_id=workflow_id,
@@ -963,7 +1063,7 @@ def get_workflow_specification(
         if isinstance(specification, dict):
             specification["id"] = response["workflow"].get("id")
         if use_cache:
-            _cache_workflow_specification_in_ephemeral_cache(
+            _try_cache_workflow_specification_in_ephemeral_cache(
                 api_key=api_key,
                 workspace_id=workspace_id,
                 workflow_id=workflow_id,
@@ -971,6 +1071,7 @@ def get_workflow_specification(
                 specification=specification,
                 ephemeral_cache=ephemeral_cache,
             )
+
         return specification
     except KeyError as error:
         raise MalformedWorkflowResponseError(
@@ -980,6 +1081,57 @@ def get_workflow_specification(
         raise MalformedWorkflowResponseError(
             "Could not decode workflow specification in Roboflow API response"
         ) from error
+
+
+def _try_retrieve_workflow_specification_from_ephemeral_cache(
+    api_key: Optional[str],
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    ephemeral_cache: BaseCache,
+    workflow_version_id: Optional[str] = None,
+) -> Optional[dict]:
+    """Return a cached specification, or None when the cache is down or misses."""
+    try:
+        cached_entry = _retrieve_workflow_specification_from_ephemeral_cache(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
+            ephemeral_cache=ephemeral_cache,
+        )
+    except CacheUnavailableError as error:
+        logger.warning(
+            "Ephemeral workflow specification cache unavailable, fetching from Roboflow API: %s",
+            error,
+        )
+        return None
+
+    return cached_entry
+
+
+def _try_cache_workflow_specification_in_ephemeral_cache(
+    api_key: Optional[str],
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    specification: dict,
+    ephemeral_cache: BaseCache,
+    workflow_version_id: Optional[str] = None,
+) -> None:
+    """Best-effort write of a specification to ephemeral cache."""
+    try:
+        _cache_workflow_specification_in_ephemeral_cache(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
+            specification=specification,
+            ephemeral_cache=ephemeral_cache,
+        )
+    except CacheUnavailableError as error:
+        logger.warning(
+            "Failed to cache workflow specification in ephemeral cache: %s",
+            error,
+        )
 
 
 def _retrieve_workflow_specification_from_ephemeral_cache(
@@ -995,7 +1147,12 @@ def _retrieve_workflow_specification_from_ephemeral_cache(
         workflow_id=workflow_id,
         workflow_version_id=workflow_version_id,
     )
-    return ephemeral_cache.get(key=cache_key)
+    try:
+        cached_entry = ephemeral_cache.get(key=cache_key)
+    except _EPHEMERAL_CACHE_UNAVAILABLE_EXCEPTIONS as error:
+        _raise_cache_unavailable_error(operation="read", error=error)
+
+    return cached_entry
 
 
 def _cache_workflow_specification_in_ephemeral_cache(
@@ -1012,11 +1169,23 @@ def _cache_workflow_specification_in_ephemeral_cache(
         workflow_id=workflow_id,
         workflow_version_id=workflow_version_id,
     )
-    ephemeral_cache.set(
-        key=cache_key,
-        value=specification,
-        expire=WORKFLOWS_DEFINITION_CACHE_EXPIRY,
-    )
+    try:
+        ephemeral_cache.set(
+            key=cache_key,
+            value=specification,
+            expire=WORKFLOWS_DEFINITION_CACHE_EXPIRY,
+        )
+    except _EPHEMERAL_CACHE_UNAVAILABLE_EXCEPTIONS as error:
+        _raise_cache_unavailable_error(operation="write", error=error)
+
+
+def _raise_cache_unavailable_error(operation: str, error: Exception) -> None:
+    if operation == "read":
+        message = "Could not read workflow specification from ephemeral cache"
+    else:
+        message = "Could not write workflow specification to ephemeral cache"
+
+    raise CacheUnavailableError(message) from error
 
 
 def _prepare_workflow_response_cache_key(
@@ -1126,7 +1295,9 @@ def _test_range_request(url: str, timeout: int = 10) -> bool:
     """
     try:
         headers = {"Range": "bytes=0-0"}
-        response = requests.get(url, headers=headers, stream=True, timeout=timeout)
+        response = requests.get(
+            wrap_url(url), headers=headers, stream=True, timeout=timeout
+        )
         response.close()
         if response.status_code == 206:
             return True
@@ -1194,15 +1365,27 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     return f"{url}?{parameters_string}"
 
 
+def _api_base_url_for_endpoint(endpoint: str) -> str:
+    endpoint_path = endpoint.strip("/")
+    if any(
+        endpoint_path == prefix or endpoint_path.startswith(f"{prefix}/")
+        for prefix in API_PROXY_ENDPOINT_PREFIXES
+    ):
+        return API_PROXY_BASE_URL
+    return API_BASE_URL
+
+
 @wrap_roboflow_api_errors()
 def send_inference_results_to_model_monitoring(
     api_key: str,
     workspace_id: WorkspaceID,
     inference_data: dict,
 ):
-    api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{workspace_id}/inference-stats",
-        params=[("api_key", api_key)],
+    api_url = wrap_url(
+        _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/inference-stats",
+            params=[("api_key", api_key)],
+        )
     )
     response = requests.post(
         url=api_url,
@@ -1283,8 +1466,9 @@ def post_to_roboflow_api(
         if params:
             url_params.extend(params)
 
+        api_base_url = _api_base_url_for_endpoint(endpoint=endpoint).rstrip("/")
         full_url = _add_params_to_url(
-            url=f"{API_BASE_URL}/{endpoint.strip('/')}", params=url_params
+            url=f"{api_base_url}/{endpoint.strip('/')}", params=url_params
         )
         wrapped_url = wrap_url(full_url)
 

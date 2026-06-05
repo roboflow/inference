@@ -18,6 +18,7 @@ from inference.core.roboflow_api import (
     send_inference_results_to_model_monitoring,
 )
 from inference.core.version import __version__
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     INFERENCE_ID_KEY,
@@ -35,8 +36,13 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     AirGappedAvailability,
     BlockResult,
+    Runtime,
+    RuntimeInputMode,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -219,6 +225,28 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restriction = RuntimeRestriction(
+            severity=Severity.SOFT,
+            note=(
+                "Aggregation buffers are stored in process memory while the "
+                "reporting interval is tracked in cache. With remote step "
+                "execution on stateless or multi-replica HTTP runtimes, "
+                "predictions may be collected by different worker processes, "
+                "so reports can under-collect or flush partial aggregation "
+                "windows. Use local step execution in an InferencePipeline "
+                "for stable video aggregation."
+            ),
+            applies_to_runtimes=[
+                Runtime.HOSTED_SERVERLESS,
+                Runtime.DEDICATED_DEPLOYMENT,
+            ],
+            applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+            applies_to_input_modes=[RuntimeInputMode.VIDEO],
+        )
+        return [restriction, STILL_IMAGE_INPUT_SOFT_RESTRICTION]
+
 
 class ParsedPrediction(BaseModel):
     model_config = ConfigDict(
@@ -352,6 +380,7 @@ def get_workspace_name(
     api_key: str,
     cache: BaseCache,
 ) -> str:
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cached_workspace_name = cache.get(cache_key)

@@ -1,11 +1,15 @@
+---
+description: Compare Roboflow's managed Inference options, including serverless and dedicated deployments, with self-hosted and BYOC alternatives.
+---
+
 # Managed Compute
 
 By far the easiest way to get started is with Roboflow's managed services. You can
-jump straight to building without having to setup any infrastructure. It's often
-the front-door to using Inference even for those who know they will eventually want
-to self host.
+jump straight to building without having to set up any infrastructure. It's often
+the front door to using Inference even for those who know they will eventually want
+to self-host.
 
-There are two cloud hosted offerings with different targeted use-cases, capabilities,
+There are two cloud-hosted offerings with different targeted use-cases, capabilities,
 and pricing models.
 
 ### Serverless Hosted API
@@ -31,7 +35,7 @@ higher priority task & are limited to 3-hour sessions) or production mode (guara
 capacity and no session time limit).
 
 On a Dedicated Deployment, you can stream video, run custom Python code, access
-heavy foundation models like SAM 2, Florence-2, and Paligemma (including your fine-tunes
+heavy foundation models like SAM 2, Florence-2, and PaliGemma (including your fine-tunes
 of those models), and install additional dependencies. They are much higher performance
 machines than the instances backing the Serverless Hosted API.
 

@@ -1,6 +1,7 @@
 import hashlib
 import math
 import os
+import time
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from threading import Lock
 from typing import Callable, Dict, List, Literal, Optional, Set, Tuple, Union
@@ -18,10 +19,14 @@ from rich.progress import (
     TimeRemainingColumn,
     TransferSpeedColumn,
 )
+from urllib3.exceptions import ProtocolError
 
 from inference_models.configuration import (
     API_CALLS_MAX_TRIES,
     API_CALLS_TIMEOUT,
+    CHUNK_DOWNLOAD_CONNECT_TIMEOUT,
+    CHUNK_DOWNLOAD_MAX_ATTEMPTS,
+    CHUNK_DOWNLOAD_READ_TIMEOUT,
     DISABLE_INTERACTIVE_PROGRESS_BARS,
     FILE_LOCK_ACQUIRE_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
@@ -29,6 +34,7 @@ from inference_models.configuration import (
 from inference_models.errors import (
     FileHashSumMissmatch,
     InvalidParameterError,
+    RangeRequestNotSupportedError,
     RetryError,
     UntrustedFileError,
 )
@@ -47,6 +53,27 @@ MD5Hash = Optional[str]
 MIN_SIZE_FOR_THREADED_DOWNLOAD = 32 * 1024 * 1024  # 32MB
 MIN_THREAD_CHUNK_SIZE = 16 * 1024 * 1024  # 16MB
 DEFAULT_STREAM_DOWNLOAD_CHUNK = 1 * 1024 * 1024  # 1MB
+
+_CONNECTIVITY_ERRORS = (
+    ChunkedEncodingError,
+    ProtocolError,
+    ConnectionError,
+    Timeout,
+    requests.exceptions.ConnectionError,
+)
+
+
+class PartialDownloadError(Exception):
+    """Raised when the remote end closes mid-body after some bytes were written."""
+
+    __slots__ = ("bytes_written",)
+
+    def __init__(self, bytes_written: int) -> None:
+        self.bytes_written = bytes_written
+
+
+def _chunk_download_backoff_sleep(attempt_index: int) -> None:
+    time.sleep(2 ** min(attempt_index, 5))
 
 
 class HashNullObject:
@@ -523,8 +550,11 @@ def threaded_download_file(
                 start=start,
                 end=end,
                 target_path=target_path,
-                timeout=request_timeout,
+                connect_timeout=CHUNK_DOWNLOAD_CONNECT_TIMEOUT,
+                read_timeout=request_timeout,  # TODO: this needs to be updated further upstream to allow for providing read and connect timeouts
                 response_codes_to_retry=response_codes_to_retry,
+                max_chunk_fetch_passes=CHUNK_DOWNLOAD_MAX_ATTEMPTS,
+                max_consecutive_retryable_http=API_CALLS_MAX_TRIES,
                 on_chunk_downloaded=on_chunk_downloaded,
             )
             futures.append(future)
@@ -588,59 +618,148 @@ def generate_chunks_boundaries(
     return ranges
 
 
-@backoff.on_exception(
-    backoff.constant,
-    exception=RetryError,
-    max_tries=API_CALLS_MAX_TRIES,
-    interval=10,
-)
 def download_chunk(
     url: str,
     start: int,
     end: int,
     target_path: str,
-    timeout: int,
     response_codes_to_retry: Set[int],
+    connect_timeout: int = CHUNK_DOWNLOAD_CONNECT_TIMEOUT,
+    read_timeout: int = CHUNK_DOWNLOAD_READ_TIMEOUT,
+    max_chunk_fetch_passes: int = CHUNK_DOWNLOAD_MAX_ATTEMPTS,
+    max_consecutive_retryable_http: int = API_CALLS_MAX_TRIES,
     file_chunk: int = DEFAULT_STREAM_DOWNLOAD_CHUNK,
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
 ) -> None:
-    headers = {"Range": f"bytes={start}-{end}"}
-    try:
-        with requests.get(
-            url, headers=headers, stream=True, timeout=timeout
-        ) as response:
-            if response.status_code in response_codes_to_retry:
-                raise RetryError(
-                    message=f"File hosting returned {response.status_code}",
-                    help_url="hhttps://inference-models.roboflow.com/errors/file-download/#retryerror",
-                )
-            response.raise_for_status()
-            if response.status_code != 206:
-                raise RetryError(
-                    message=f"Server does not support range requests (returned {response.status_code} instead of 206)",
-                    help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
-                )
-            _handle_stream_download(
-                response=response,
-                target_path=target_path,
-                file_chunk=file_chunk,
-                on_chunk_downloaded=on_chunk_downloaded,
-                file_open_mode="r+b",
-                offset=start,
+    """Download the inclusive byte range ``[start, end]`` into ``target_path``.
+
+    The file must already exist and span at least ``end + 1`` bytes (typically
+    pre-allocated by :func:`threaded_download_file`). Uses ``GET`` with
+    ``Range: bytes=…`` and expects ``206 Partial Content`` for each request.
+
+    Retries on retryable HTTP statuses (from ``response_codes_to_retry``), partial
+    reads, and connectivity errors, up to ``max_chunk_fetch_passes`` loop iterations.
+    Consecutive retryable HTTP responses without advancing the range offset are
+    limited to ``max_consecutive_retryable_http``; that counter resets whenever
+    bytes are written for the current sub-range.
+
+    Args:
+        url: Resource URL.
+        start: First byte index (inclusive).
+        end: Last byte index (inclusive).
+        target_path: Path to the pre-allocated file.
+        response_codes_to_retry: HTTP status codes that trigger sleep-and-retry.
+        connect_timeout: Connect phase timeout (seconds) for each ``GET``.
+        read_timeout: Read idle timeout (seconds) for each ``GET``.
+        max_chunk_fetch_passes: Maximum outer-loop iterations for this chunk.
+        max_consecutive_retryable_http: Cap on consecutive retryable HTTP responses
+            without advancing the downloaded byte offset (counter resets on progress).
+        file_chunk: ``iter_content`` read size for streaming the response body.
+        on_chunk_downloaded: Optional callback with bytes written per read.
+    """
+    current_start = start
+    retryable_http_since_last_range_advance = 0
+
+    for attempt in range(max_chunk_fetch_passes):
+        if current_start > end:
+            return None
+
+        headers = {"Range": f"bytes={current_start}-{end}"}
+        try:
+            with requests.get(
+                url,
+                headers=headers,
+                stream=True,
+                timeout=(connect_timeout, read_timeout),
+            ) as response:
+                if response.status_code in response_codes_to_retry:
+                    retryable_http_since_last_range_advance += 1
+                    if (
+                        retryable_http_since_last_range_advance
+                        >= max_consecutive_retryable_http
+                    ):
+                        raise RetryError(
+                            message=(
+                                f"File hosting returned retryable HTTP status "
+                                f"{response.status_code} {max_consecutive_retryable_http} "
+                                f"consecutive time(s) for bytes={current_start}-{end} "
+                                f"without advancing the downloaded byte offset."
+                            ),
+                            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+                        )
+                    LOGGER.warning(
+                        f"Download chunk got status {response.status_code} for "
+                        f"bytes={current_start}-{end}, retrying…"
+                    )
+                    _chunk_download_backoff_sleep(attempt)
+                    continue
+
+                response.raise_for_status()
+
+                if response.status_code != 206:
+                    raise RangeRequestNotSupportedError(
+                        message=(
+                            "Server does not support range requests "
+                            f"(returned {response.status_code} instead of 206)"
+                        ),
+                        help_url="https://inference-models.roboflow.com/errors/file-download/#rangerequestnotsupportederror",
+                    )
+
+                segment_len = end - current_start + 1
+                try:
+                    written = _handle_range_request_download(
+                        response=response,
+                        target_path=target_path,
+                        file_chunk=file_chunk,
+                        offset=current_start,
+                        on_chunk_downloaded=on_chunk_downloaded,
+                    )
+                except PartialDownloadError as error:
+                    current_start += error.bytes_written
+                    retryable_http_since_last_range_advance = 0
+                    LOGGER.warning(
+                        f"Download chunk interrupted after {error.bytes_written} bytes "
+                        f"(bytes={current_start - error.bytes_written}-{end}), resuming…"
+                    )
+                    _chunk_download_backoff_sleep(attempt)
+                    continue
+
+                # Sanity check: the server should have returned the correct content length
+                # Doesn't run in the unlikely scenario the content-length header is missing or malformed
+                content_length = response.headers.get("Content-Length")
+                if (
+                    content_length
+                    and content_length.isdigit()
+                    and written < int(content_length)
+                ):
+                    current_start += written
+                    retryable_http_since_last_range_advance = 0
+                    _chunk_download_backoff_sleep(attempt)
+                    continue
+
+                # Sanity check: the server should have returned the length we asked for
+                if written < segment_len:
+                    current_start += written
+                    retryable_http_since_last_range_advance = 0
+                    _chunk_download_backoff_sleep(attempt)
+                    continue
+
+                return None
+
+        except _CONNECTIVITY_ERRORS as error:
+            LOGGER.warning(
+                f"Download chunk failed ({type(error).__name__}: {error}), retrying…"
             )
-    except (
-        ConnectionError,
-        Timeout,
-        requests.exceptions.ConnectionError,
-        ChunkedEncodingError,
-    ) as error:
-        LOGGER.warning(
-            f"Download chunk failed ({type(error).__name__}: {error}), retrying in 10s..."
-        )
-        raise RetryError(
-            message=f"Connectivity error",
-            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
-        ) from error
+            _chunk_download_backoff_sleep(attempt)
+            continue
+
+    raise RetryError(
+        message=(
+            f"Connectivity error. Exhausted {max_chunk_fetch_passes} fetch pass(es) "
+            f"for bytes={start}-{end}."
+        ),
+        help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+    )
 
 
 @backoff.on_exception(
@@ -712,18 +831,49 @@ def _handle_stream_download(
     file_chunk: int,
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
     file_open_mode: str = "wb",
-    offset: Optional[int] = None,
     content_storage: Optional[Union[hashlib.md5, HashNullObject]] = None,
     on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
     with open(target_path, file_open_mode) as file:
         if on_file_created:
             on_file_created(target_path)
-        if offset:
-            file.seek(offset)
         for chunk in response.iter_content(file_chunk):
+            if not chunk:
+                continue
             file.write(chunk)
             if content_storage is not None:
                 content_storage.update(chunk)
             if on_chunk_downloaded:
                 on_chunk_downloaded(len(chunk))
+
+
+def _handle_range_request_download(
+    response: Response,
+    target_path: str,
+    file_chunk: int,
+    offset: int,
+    on_chunk_downloaded: Optional[Callable[[int], None]] = None,
+) -> int:
+    bytes_written = 0
+
+    try:
+        with open(target_path, "r+b") as file:
+            file.seek(offset)
+
+            for chunk in response.iter_content(file_chunk):
+                if not chunk:
+                    continue
+
+                file.write(chunk)
+
+                if on_chunk_downloaded:
+                    on_chunk_downloaded(len(chunk))
+
+                bytes_written += len(chunk)
+
+    except _CONNECTIVITY_ERRORS as error:
+        if bytes_written > 0:
+            raise PartialDownloadError(bytes_written) from error
+        raise
+
+    return bytes_written

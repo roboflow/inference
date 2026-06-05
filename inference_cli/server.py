@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from typing_extensions import Annotated
@@ -10,10 +10,8 @@ from inference_cli.lib.container_adapter import (
 )
 from inference_cli.lib.tunnel_adapter import start_tunnel, stop_tunnel_container
 
-server_app = typer.Typer(
-    help="""Commands for running the inference server locally. \n 
-    Supported devices targets are x86 CPU, ARM64 CPU, and NVIDIA GPU."""
-)
+server_app = typer.Typer(help="""Commands for running the inference server locally. \n 
+    Supported devices targets are x86 CPU, ARM64 CPU, and NVIDIA GPU.""")
 
 
 @server_app.command()
@@ -89,6 +87,14 @@ def start(
             help="Flag controlling if metrics are enabled (default is True)",
         ),
     ] = True,
+    volumes: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--volume",
+            "-v",
+            help="Volume mount in the format /host/path:/container/path[:ro]. Can be specified multiple times.",
+        ),
+    ] = None,
 ) -> None:
 
     try:
@@ -96,6 +102,18 @@ def start(
     except Exception as docker_error:
         typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
+
+    parsed_volumes = {}
+    for v in volumes or []:
+        parts = v.split(":")
+        if len(parts) < 2:
+            typer.echo(
+                f"Invalid volume format: {v}. Expected /host/path:/container/path[:ro]"
+            )
+            raise typer.Exit(code=1)
+        host_path, container_path = parts[0], parts[1]
+        mode = parts[2] if len(parts) == 3 else "rw"
+        parsed_volumes[host_path] = {"bind": container_path, "mode": mode}
 
     try:
         start_inference_container(
@@ -107,6 +125,7 @@ def start(
             api_key=api_key,
             use_local_images=use_local_images,
             metrics_enabled=metrics_enabled,
+            volumes=parsed_volumes or None,
         )
     except Exception as container_error:
         typer.echo(container_error)

@@ -691,3 +691,33 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_list(
         predictions[1].class_ids.cpu(),
         torch.tensor([8], dtype=torch.int64).cpu(),
     )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_multi_label_onnx_per_class_confidence_blocks_specific_class(
+    dinov3_multi_label_onnx_static_package: str,
+    chess_set_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_multi_label_onnx_static_package_numpy` above) returns
+    class_ids=[0..11] (12 classes). Setting a 0.99 per-class threshold on class 0
+    leaves class_ids=[1..11]."""
+    from inference_models.models.dinov3.dinov3_classification_onnx import (
+        DinoV3ForMultiLabelClassificationOnnx,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = DinoV3ForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=dinov3_multi_label_onnx_static_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.5,
+        per_class_confidence={class_names[0]: 0.99},
+    )
+    predictions = model(chess_set_image_numpy, confidence="best")
+    assert torch.equal(
+        predictions[0].class_ids.cpu(),
+        torch.tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64),
+    )

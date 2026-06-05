@@ -9,7 +9,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     MissingDependencyError,
@@ -29,9 +29,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
-from inference_models.models.common.roboflow.post_processing import (
-    rescale_image_detections,
-)
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.common.trt import (
     TRTCudaGraphCache,
     establish_trt_cuda_graph_cache,
@@ -43,7 +41,9 @@ from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
+from inference_models.models.rfdetr.common import post_process_object_detection_results
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import tensorrt as trt
@@ -89,6 +89,7 @@ class RFDetrForObjectDetectionTRT(
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache] = None,
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTRT":
         if device.type != "cuda":
@@ -179,6 +180,7 @@ class RFDetrForObjectDetectionTRT(
             cuda_context=cuda_context,
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -194,6 +196,7 @@ class RFDetrForObjectDetectionTRT(
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
+        recommended_parameters=None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -209,6 +212,7 @@ class RFDetrForObjectDetectionTRT(
         self._lock = threading.Lock()
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -259,65 +263,27 @@ class RFDetrForObjectDetectionTRT(
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        )
         with torch.cuda.stream(self._post_process_stream):
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
             bboxes, logits = model_results
-            logits_sigmoid = torch.nn.functional.sigmoid(logits)
-            results = []
-            for image_bboxes, image_logits, image_meta in zip(
-                bboxes, logits_sigmoid, pre_processing_meta
-            ):
-                predicted_confidence, top_classes = image_logits.max(dim=1)
-                confidence_mask = predicted_confidence > confidence
-                predicted_confidence = predicted_confidence[confidence_mask]
-                top_classes = top_classes[confidence_mask]
-                selected_boxes = image_bboxes[confidence_mask]
-                predicted_confidence, sorted_indices = torch.sort(
-                    predicted_confidence, descending=True
-                )
-                top_classes = top_classes[sorted_indices]
-                selected_boxes = selected_boxes[sorted_indices]
-                if self._classes_re_mapping is not None:
-                    remapping_mask = torch.isin(
-                        top_classes, self._classes_re_mapping.remaining_class_ids
-                    )
-                    top_classes = self._classes_re_mapping.class_mapping[
-                        top_classes[remapping_mask]
-                    ]
-                    selected_boxes = selected_boxes[remapping_mask]
-                    predicted_confidence = predicted_confidence[remapping_mask]
-                cxcy = selected_boxes[:, :2]
-                wh = selected_boxes[:, 2:]
-                xy_min = cxcy - 0.5 * wh
-                xy_max = cxcy + 0.5 * wh
-                selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
-                denorm_size = (
-                    image_meta.nonsquare_intermediate_size or image_meta.inference_size
-                )
-                inference_size_whwh = torch.tensor(
-                    [
-                        denorm_size.width,
-                        denorm_size.height,
-                        denorm_size.width,
-                        denorm_size.height,
-                    ],
-                    device=self._device,
-                )
-                selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_whwh
-                selected_boxes_xyxy = rescale_image_detections(
-                    image_detections=selected_boxes_xyxy,
-                    image_metadata=image_meta,
-                )
-                detections = Detections(
-                    xyxy=selected_boxes_xyxy.round().int(),
-                    confidence=predicted_confidence,
-                    class_id=top_classes.int(),
-                )
-                results.append(detections)
+            results = post_process_object_detection_results(
+                bboxes=bboxes,
+                logits=logits,
+                pre_processing_meta=pre_processing_meta,
+                threshold=confidence_filter.get_threshold(self.class_names),
+                num_classes=len(self.class_names),
+                classes_re_mapping=self._classes_re_mapping,
+                device=self._device,
+            )
         self._post_process_stream.synchronize()
         return results
 

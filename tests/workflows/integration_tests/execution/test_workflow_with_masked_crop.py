@@ -25,11 +25,12 @@ MASKED_CROP_LEGACY_WORKFLOW = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_instance_segmentation_model@v1",
+            "type": "roboflow_core/roboflow_instance_segmentation_model@v3",
             "name": "segmentation",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/dynamic_crop@v1",
@@ -86,7 +87,7 @@ def test_legacy_workflow_with_masked_crop(
     }, "Expected all declared outputs to be delivered"
     assert len(result[0]["crops"]) == 2, "Expected 2 crops for two dogs detected"
     crop_image = result[0]["crops"][0].numpy_image
-    (x_min, y_min, x_max, y_max) = (
+    x_min, y_min, x_max, y_max = (
         result[0]["predictions"].xyxy[0].round().astype(dtype=int)
     )
     crop_mask = result[0]["predictions"].mask[0][y_min:y_max, x_min:x_max]
@@ -116,11 +117,12 @@ MASKED_CROP_WORKFLOW = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_instance_segmentation_model@v2",
+            "type": "roboflow_core/roboflow_instance_segmentation_model@v3",
             "name": "segmentation",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/dynamic_crop@v1",
@@ -187,7 +189,7 @@ def test_workflow_with_masked_crop(
     }, "Expected all declared outputs to be delivered"
     assert len(result[0]["crops"]) == 2, "Expected 2 crops for two dogs detected"
     crop_image = result[0]["crops"][0].numpy_image
-    (x_min, y_min, x_max, y_max) = (
+    x_min, y_min, x_max, y_max = (
         result[0]["predictions"].xyxy[0].round().astype(dtype=int)
     )
     crop_mask = result[0]["predictions"].mask[0][y_min:y_max, x_min:x_max]
