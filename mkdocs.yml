@@ -58,6 +58,7 @@ nav:
               - Azure: install/cloud/azure.md
               - GCP: install/cloud/gcp.md
           - Other Devices: install/other.md
+          - Securing Your Server: install/security.md
       # - Inputs:
       #     - inputs/index.md
       #     - Images: inputs/images.md
