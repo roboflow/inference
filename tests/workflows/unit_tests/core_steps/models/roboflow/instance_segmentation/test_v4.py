@@ -47,7 +47,9 @@ def test_instance_segmentation_model_v4_validation_when_required_field_is_not_gi
         _ = BlockManifest.model_validate(data)
 
 
-def test_instance_segmentation_model_v4_predictions_output_advertises_rle_kind_first() -> None:
+def test_instance_segmentation_model_v4_predictions_output_advertises_rle_kind_first() -> (
+    None
+):
     outputs = {o.name: o for o in BlockManifest.describe_outputs()}
 
     predictions_kinds = outputs["predictions"].kind

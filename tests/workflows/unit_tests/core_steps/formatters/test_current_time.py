@@ -6,9 +6,9 @@ from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.formatters.current_time.v1 import (
     ALLOWED_TIMEZONES,
+    TIMEZONE_METADATA,
     BlockManifest,
     CurrentTimeBlockV1,
-    TIMEZONE_METADATA,
 )
 
 
