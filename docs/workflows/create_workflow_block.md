@@ -2252,3 +2252,126 @@ class BlockManifest(WorkflowBlockManifest):
 The default returns `None` — appropriate for blocks that are not
 parameterised by a Roboflow model (foundation models, logic blocks, sinks,
 etc.).
+
+### Runtime restrictions
+
+Some blocks behave differently — or fail outright — depending on the runtime
+they are deployed in (hosted serverless, dedicated deployment, self-hosted,
+inference pipeline), the step execution mode (local vs. remote), and the
+input mode (image vs. video). Override `get_restrictions()` on
+`WorkflowBlockManifest` to declare those caveats once, in the block, so the
+execution engine, the schema endpoint, and the auto-generated block gallery
+can all surface them consistently.
+
+The default returns `[]`, so existing blocks need **no changes**.
+
+#### Severity: `soft` vs. `hard`
+
+Each restriction carries a `Severity`:
+
+* **`Severity.SOFT`** — the block runs to completion and returns the right
+  output shape, but the values are degraded or meaningless (e.g. tracker IDs
+  reset across requests, cooldown does not throttle, file is written to
+  ephemeral disk). The workflow still runs; the result is just not what the
+  user expects.
+* **`Severity.HARD`** — the block does not run / raises / cannot produce a
+  usable output in this runtime. The engine should refuse to compile or
+  fail-fast.
+
+#### Scoping a restriction
+
+A `RuntimeRestriction` can scope itself along any combination of three axes.
+When an axis is left as `None`, the restriction applies to every value of
+that axis.
+
+* `applies_to_runtimes`: `Runtime.HOSTED_SERVERLESS`,
+  `Runtime.DEDICATED_DEPLOYMENT`, `Runtime.SELF_HOSTED_CPU`,
+  `Runtime.SELF_HOSTED_GPU`, `Runtime.INFERENCE_PIPELINE`.
+* `applies_to_step_execution_modes`: `StepExecutionMode.LOCAL`,
+  `StepExecutionMode.REMOTE`.
+* `applies_to_input_modes`: `RuntimeInputMode.IMAGE`,
+  `RuntimeInputMode.VIDEO`.
+
+The `note` field is a one-line, human-readable explanation of the failure
+mode or degraded behavior — describe what happens (e.g. "track_ids reset
+between requests", "writes to ephemeral /tmp"), not abstract preconditions.
+
+#### Shared presets
+
+Most caveats fall into a handful of common patterns, so reusable presets are
+exported alongside the dataclasses to keep wording consistent across the
+codebase. Reach for these first:
+
+* `STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION` — for video-tracking / counting /
+  aggregation blocks whose per-video state lives in process memory and
+  resets between stateless HTTP requests.
+* `COOLDOWN_HTTP_SOFT_RESTRICTION` — for blocks whose cooldown / rate-limit
+  timer is held in process memory and therefore does not throttle on
+  multi-replica HTTP runtimes.
+* `STILL_IMAGE_INPUT_SOFT_RESTRICTION` — for blocks that depend on temporal
+  context (video or repeated frames) and provide little or no benefit on
+  still images.
+
+#### Example
+
+A line-counter block that maintains per-video state and is also meaningless
+on a still image declares both restrictions:
+
+```python
+from typing import List
+
+from inference.core.workflows.prototypes.block import (
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+    RuntimeRestriction,
+    WorkflowBlockManifest,
+)
+
+class BlockManifest(WorkflowBlockManifest):
+    # ...
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+        ]
+```
+
+A custom restriction (e.g. a `Severity.HARD` block that requires GPU
+hardware that is not present on the hosted serverless runtime) is declared
+inline:
+
+```python
+from inference.core.workflows.prototypes.block import (
+    Runtime,
+    RuntimeRestriction,
+    Severity,
+    WorkflowBlockManifest,
+)
+
+class BlockManifest(WorkflowBlockManifest):
+    # ...
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Block requires a CUDA GPU; raises on CPU-only workers.",
+                applies_to_runtimes=[
+                    Runtime.HOSTED_SERVERLESS,
+                    Runtime.SELF_HOSTED_CPU,
+                ],
+            ),
+        ]
+```
+
+Restrictions declared this way are surfaced in three places:
+
+1. The `describe_interface` HTTP payload (via `RuntimeRestriction.to_dict()`),
+   so workflow clients and builders can warn users before a workflow is run.
+2. The auto-generated block gallery page for the block, under a "Runtime
+   compatibility" section right after **Properties**.
+3. The execution engine, which can choose to fail-fast on `Severity.HARD`
+   restrictions for the current runtime.

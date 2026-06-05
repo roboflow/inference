@@ -18,6 +18,8 @@ import aiohttp
 import backoff
 import requests
 from cachetools.func import ttl_cache
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
 from yarl import URL
@@ -59,6 +61,7 @@ from inference.core.env import (
     WORKFLOWS_DEFINITION_CACHE_EXPIRY,
 )
 from inference.core.exceptions import (
+    CacheUnavailableError,
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
     MissingDefaultModelError,
@@ -86,6 +89,11 @@ from inference.core.utils.url_utils import wrap_url
 from inference.core.version import __version__
 
 LOCAL_API_KEY = "local"
+
+_EPHEMERAL_CACHE_UNAVAILABLE_EXCEPTIONS = (
+    RedisConnectionError,
+    RedisTimeoutError,
+)
 
 ENFORCE_CREDITS_VERIFICATION_HEADER = "x-enforce-credits-verification"
 ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER = "x-enforce-internal-artefacts-urls"
@@ -959,9 +967,31 @@ def get_workflow_specification(
     ephemeral_cache: Optional[BaseCache] = None,
     workflow_version_id: Optional[str] = None,
 ) -> dict:
+    """Fetch a workflow specification from cache or the Roboflow API.
+
+    When ephemeral cache (Redis/Dragonfly) is enabled but unreachable, falls back
+    to the Roboflow API instead of failing the request.
+
+    Args:
+        api_key: Roboflow API key, or None for unauthenticated fetches.
+        workspace_id: Workspace slug, or ``local`` for filesystem-backed workflows.
+        workflow_id: Workflow identifier within the workspace.
+        use_cache: If True, read and write the ephemeral workflow-definition cache.
+        ephemeral_cache: Cache backend; defaults to the process-global cache.
+        workflow_version_id: Optional pinned workflow version.
+
+    Returns:
+        Parsed workflow specification dict.
+
+    Raises:
+        MalformedWorkflowResponseError: API response lacks a valid specification.
+        RoboflowAPIRequestError: API request failed and no file-cache fallback applies.
+        FileNotFoundError: Local workspace workflow file is missing.
+        ValueError: Invalid local workflow id.
+    """
     ephemeral_cache = ephemeral_cache or cache
     if use_cache:
-        cached_entry = _retrieve_workflow_specification_from_ephemeral_cache(
+        cached_entry = _try_retrieve_workflow_specification_from_ephemeral_cache(
             api_key=api_key,
             workspace_id=workspace_id,
             workflow_id=workflow_id,
@@ -1033,7 +1063,7 @@ def get_workflow_specification(
         if isinstance(specification, dict):
             specification["id"] = response["workflow"].get("id")
         if use_cache:
-            _cache_workflow_specification_in_ephemeral_cache(
+            _try_cache_workflow_specification_in_ephemeral_cache(
                 api_key=api_key,
                 workspace_id=workspace_id,
                 workflow_id=workflow_id,
@@ -1041,6 +1071,7 @@ def get_workflow_specification(
                 specification=specification,
                 ephemeral_cache=ephemeral_cache,
             )
+
         return specification
     except KeyError as error:
         raise MalformedWorkflowResponseError(
@@ -1050,6 +1081,57 @@ def get_workflow_specification(
         raise MalformedWorkflowResponseError(
             "Could not decode workflow specification in Roboflow API response"
         ) from error
+
+
+def _try_retrieve_workflow_specification_from_ephemeral_cache(
+    api_key: Optional[str],
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    ephemeral_cache: BaseCache,
+    workflow_version_id: Optional[str] = None,
+) -> Optional[dict]:
+    """Return a cached specification, or None when the cache is down or misses."""
+    try:
+        cached_entry = _retrieve_workflow_specification_from_ephemeral_cache(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
+            ephemeral_cache=ephemeral_cache,
+        )
+    except CacheUnavailableError as error:
+        logger.warning(
+            "Ephemeral workflow specification cache unavailable, fetching from Roboflow API: %s",
+            error,
+        )
+        return None
+
+    return cached_entry
+
+
+def _try_cache_workflow_specification_in_ephemeral_cache(
+    api_key: Optional[str],
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    specification: dict,
+    ephemeral_cache: BaseCache,
+    workflow_version_id: Optional[str] = None,
+) -> None:
+    """Best-effort write of a specification to ephemeral cache."""
+    try:
+        _cache_workflow_specification_in_ephemeral_cache(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
+            specification=specification,
+            ephemeral_cache=ephemeral_cache,
+        )
+    except CacheUnavailableError as error:
+        logger.warning(
+            "Failed to cache workflow specification in ephemeral cache: %s",
+            error,
+        )
 
 
 def _retrieve_workflow_specification_from_ephemeral_cache(
@@ -1065,7 +1147,12 @@ def _retrieve_workflow_specification_from_ephemeral_cache(
         workflow_id=workflow_id,
         workflow_version_id=workflow_version_id,
     )
-    return ephemeral_cache.get(key=cache_key)
+    try:
+        cached_entry = ephemeral_cache.get(key=cache_key)
+    except _EPHEMERAL_CACHE_UNAVAILABLE_EXCEPTIONS as error:
+        _raise_cache_unavailable_error(operation="read", error=error)
+
+    return cached_entry
 
 
 def _cache_workflow_specification_in_ephemeral_cache(
@@ -1082,11 +1169,23 @@ def _cache_workflow_specification_in_ephemeral_cache(
         workflow_id=workflow_id,
         workflow_version_id=workflow_version_id,
     )
-    ephemeral_cache.set(
-        key=cache_key,
-        value=specification,
-        expire=WORKFLOWS_DEFINITION_CACHE_EXPIRY,
-    )
+    try:
+        ephemeral_cache.set(
+            key=cache_key,
+            value=specification,
+            expire=WORKFLOWS_DEFINITION_CACHE_EXPIRY,
+        )
+    except _EPHEMERAL_CACHE_UNAVAILABLE_EXCEPTIONS as error:
+        _raise_cache_unavailable_error(operation="write", error=error)
+
+
+def _raise_cache_unavailable_error(operation: str, error: Exception) -> None:
+    if operation == "read":
+        message = "Could not read workflow specification from ephemeral cache"
+    else:
+        message = "Could not write workflow specification to ephemeral cache"
+
+    raise CacheUnavailableError(message) from error
 
 
 def _prepare_workflow_response_cache_key(

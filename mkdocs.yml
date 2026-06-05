@@ -58,6 +58,7 @@ nav:
               - Azure: install/cloud/azure.md
               - GCP: install/cloud/gcp.md
           - Other Devices: install/other.md
+          - Securing Your Server: install/security.md
       # - Inputs:
       #     - inputs/index.md
       #     - Images: inputs/images.md
@@ -253,6 +254,7 @@ markdown_extensions:
   - meta
   - admonition
   - attr_list
+  - def_list
   - md_in_html
   - pymdownx.details
   - pymdownx.emoji:
