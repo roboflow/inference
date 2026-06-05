@@ -1,5 +1,9 @@
 # Changelog
 
+## `0.29.0`
+
+- Added RF-DETR preview keypoint support (ONNX backend).
+
 ## `0.28.7`
 
 - Added YOLO26 semantic segmentation support (ONNX, TorchScript, and TensorRT backends).

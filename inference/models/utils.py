@@ -996,6 +996,12 @@ if USE_INFERENCE_MODELS:
         InferenceModelsSemanticSegmentationAdapter
     )
 
+    # RFDETR keypoint detection is inference_models-only (no legacy implementation),
+    # so we add entries directly rather than swapping existing ones.
+    ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-preview")] = (
+        InferenceModelsKeyPointsDetectionAdapter
+    )
+
     # YOLOLite is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.
     for variant in [

@@ -212,6 +212,7 @@ def start_inference_container(
     env_file_path: Optional[str] = None,
     development: bool = False,
     use_local_images: bool = False,
+    volumes: Optional[Dict[str, dict]] = None,
 ) -> None:
     containers = find_running_inference_containers()
     if len(containers) > 0:
@@ -279,7 +280,7 @@ def start_inference_container(
             else None
         ),
         read_only=not is_jetson,
-        volumes={"/tmp": {"bind": "/tmp", "mode": "rw"}},
+        volumes={"/tmp": {"bind": "/tmp", "mode": "rw"}, **(volumes or {})},
         network_mode="bridge",
         ipc_mode="private" if not is_jetson else None,
         **docker_run_kwargs,
