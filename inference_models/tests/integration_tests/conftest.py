@@ -72,6 +72,10 @@ BASKETBALL_IMAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/test-images/basketball.jpg"
 )
 BASKETBALL_IMAGE_PATH = os.path.join(ASSETS_DIR, "basketball.jpg")
+GLUE_STICKS_IMAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/test-images/glue-sticks.jpg"
+)
+GLUE_STICKS_IMAGE_PATH = os.path.join(ASSETS_DIR, "glue-sticks.jpg")
 
 
 def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 180) -> None:
@@ -282,6 +286,24 @@ def people_walking_image_torch() -> torch.Tensor:
         file_path=PEOPLE_WALKING_IMAGE_PATH, url=PEOPLE_WALKING_IMAGE_URL
     )
     return torchvision.io.read_image(PEOPLE_WALKING_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def glue_sticks_image_numpy() -> np.ndarray:
+    _download_if_not_exists(
+        file_path=GLUE_STICKS_IMAGE_PATH, url=GLUE_STICKS_IMAGE_URL
+    )
+    image = cv2.imread(GLUE_STICKS_IMAGE_PATH)
+    assert image is not None, "Could not load test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def glue_sticks_image_torch() -> torch.Tensor:
+    _download_if_not_exists(
+        file_path=GLUE_STICKS_IMAGE_PATH, url=GLUE_STICKS_IMAGE_URL
+    )
+    return torchvision.io.read_image(GLUE_STICKS_IMAGE_PATH)
 
 
 @pytest.fixture(scope="function")
