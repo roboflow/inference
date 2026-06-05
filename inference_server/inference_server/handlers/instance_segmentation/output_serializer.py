@@ -9,7 +9,6 @@ from inference_model_manager.serializers_typed import (
     serialize_instance_segmentation_compact,
     serialize_instance_segmentation_rich,
 )
-
 from inference_server.framework.entities import CommonRequestParams
 
 

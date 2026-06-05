@@ -63,6 +63,7 @@ SLOT_STATUS_ERROR = 5
 _OFF_STATUS = 0
 _OFF_RESULT_SZ = 8
 
+
 class _SlotHeaderView:
     __slots__ = ("status", "result_size")
 
@@ -76,9 +77,19 @@ class _SlotHeaderView:
 # ---------------------------------------------------------------------------
 
 _CSV_FIELDS = [
-    "timestamp", "worker_pid", "endpoint", "payload_bytes", "status",
-    "body_extract_ms", "ensure_loaded_ms", "zmq_alloc_ms", "shm_write_ms",
-    "zmq_submit_ms", "zmq_result_wait_ms", "result_read_ms", "serialize_ms",
+    "timestamp",
+    "worker_pid",
+    "endpoint",
+    "payload_bytes",
+    "status",
+    "body_extract_ms",
+    "ensure_loaded_ms",
+    "zmq_alloc_ms",
+    "shm_write_ms",
+    "zmq_submit_ms",
+    "zmq_result_wait_ms",
+    "result_read_ms",
+    "serialize_ms",
     "total_ms",
 ]
 
@@ -104,8 +115,7 @@ class _PipelineCSV:
         if not self.enabled or self._thread is not None:
             return
         write_header = (
-            not os.path.exists(self.csv_path)
-            or os.path.getsize(self.csv_path) == 0
+            not os.path.exists(self.csv_path) or os.path.getsize(self.csv_path) == 0
         )
         if write_header:
             with open(self.csv_path, "w", newline="") as f:
@@ -116,7 +126,8 @@ class _PipelineCSV:
         self._thread.start()
         logger.info(
             "Pipeline CSV writer started: %s (flush every %.1fs)",
-            self.csv_path, self.flush_interval_s,
+            self.csv_path,
+            self.flush_interval_s,
         )
 
     def _loop(self) -> None:
@@ -128,9 +139,7 @@ class _PipelineCSV:
             if not batch:
                 continue
             with open(self.csv_path, "a", newline="") as f:
-                w = csv.DictWriter(
-                    f, fieldnames=_CSV_FIELDS, extrasaction="ignore"
-                )
+                w = csv.DictWriter(f, fieldnames=_CSV_FIELDS, extrasaction="ignore")
                 for rec in batch:
                     w.writerow(rec)
 
@@ -178,9 +187,7 @@ class MMPClient:
             )
         )
         self.slot_total = HEADER_SIZE + self.shm_data_size
-        self.load_wait_s = (
-            load_wait_s if load_wait_s is not None else cfg.LOAD_WAIT_S
-        )
+        self.load_wait_s = load_wait_s if load_wait_s is not None else cfg.LOAD_WAIT_S
         self.infer_timeout_s = (
             infer_timeout_s if infer_timeout_s is not None else cfg.INFER_TIMEOUT_S
         )
@@ -195,12 +202,12 @@ class MMPClient:
         self._recv_task: Optional[asyncio.Task] = None
 
         self.pipeline = _PipelineCSV(
-            pipeline_csv_path
-            if pipeline_csv_path is not None
-            else cfg.PIPELINE_CSV,
-            pipeline_flush_interval_s
-            if pipeline_flush_interval_s is not None
-            else cfg.PIPELINE_FLUSH_INTERVAL_S,
+            pipeline_csv_path if pipeline_csv_path is not None else cfg.PIPELINE_CSV,
+            (
+                pipeline_flush_interval_s
+                if pipeline_flush_interval_s is not None
+                else cfg.PIPELINE_FLUSH_INTERVAL_S
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -218,9 +225,7 @@ class MMPClient:
         self._sock.connect(self.mmp_addr)
 
         self._shm = SharedMemory(name=self.shm_name, create=False)
-        self._recv_task = asyncio.create_task(
-            self._recv_loop(), name="zmq-recv"
-        )
+        self._recv_task = asyncio.create_task(self._recv_loop(), name="zmq-recv")
         self.pipeline.start()
 
     async def shutdown(self) -> None:
@@ -256,8 +261,10 @@ class MMPClient:
         payload = (
             struct.pack(">QIH", req_id, wait_ms, len(mid_bytes))
             + mid_bytes
-            + struct.pack(">H", len(key_bytes)) + key_bytes
-            + struct.pack(">H", len(dev_bytes)) + dev_bytes
+            + struct.pack(">H", len(key_bytes))
+            + key_bytes
+            + struct.pack(">H", len(dev_bytes))
+            + dev_bytes
         )
         fut = self._make_future(req_id)
         await self._sock.send_multipart([T_ENSURE_LOADED, payload])
@@ -271,8 +278,10 @@ class MMPClient:
         mid_bytes = model_id.encode()
         key_bytes = api_key.encode()
         payload = (
-            struct.pack(">H", len(mid_bytes)) + mid_bytes
-            + struct.pack(">H", len(key_bytes)) + key_bytes
+            struct.pack(">H", len(mid_bytes))
+            + mid_bytes
+            + struct.pack(">H", len(key_bytes))
+            + key_bytes
         )
         return await self._lifecycle_req(T_LOAD, payload)
 
@@ -304,8 +313,12 @@ class MMPClient:
         try:
             self._write_input(slot_id, image, 0)
             result = await self._submit_and_wait(
-                slot_id, model_id, instance, len(image),
-                effective_params, request=request,
+                slot_id,
+                model_id,
+                instance,
+                len(image),
+                effective_params,
+                request=request,
             )
 
             if result[0] == "error":
@@ -318,9 +331,9 @@ class MMPClient:
             if hdr is not None and hdr.status == SLOT_STATUS_ERROR:
                 err_msg = "inference failed"
                 if hdr.result_size > 0:
-                    err_msg = self._read_result(
-                        result_slot_id, hdr.result_size
-                    ).decode("utf-8", errors="replace")
+                    err_msg = self._read_result(result_slot_id, hdr.result_size).decode(
+                        "utf-8", errors="replace"
+                    )
                 raise RuntimeError(err_msg)
 
             raw = self._read_result(result_slot_id, result_sz)
@@ -389,9 +402,7 @@ class MMPClient:
             else:
                 logger.warning("_dispatch: unknown msg type %r", msg_type)
         except (struct.error, IndexError):
-            logger.warning(
-                "_dispatch: malformed msg type=%r", msg_type, exc_info=True
-            )
+            logger.warning("_dispatch: malformed msg type=%r", msg_type, exc_info=True)
 
     def _resolve(self, req_id: int, value: tuple) -> None:
         fut = self._pending.pop(req_id, None)
@@ -432,9 +443,7 @@ class MMPClient:
     ) -> tuple:
         req_id = _new_req_id()
         mid = _routing_key(model_id, instance).encode()
-        header = (
-            struct.pack(">QIIH", req_id, slot_id, input_sz, len(mid)) + mid
-        )
+        header = struct.pack(">QIIH", req_id, slot_id, input_sz, len(mid)) + mid
         params_json = json.dumps(params).encode() if params else b"{}"
         fut = self._make_future(req_id)
         await self._sock.send_multipart([T_SUBMIT, header, params_json])
@@ -474,19 +483,15 @@ class MMPClient:
     def _free_slot(self, slot_id: int) -> None:
         async def _send() -> None:
             try:
-                await self._sock.send_multipart(
-                    [T_FREE, struct.pack(">I", slot_id)]
-                )
+                await self._sock.send_multipart([T_FREE, struct.pack(">I", slot_id)])
             except Exception:
-                logger.warning(
-                    "free_slot: failed for slot %d", slot_id, exc_info=True
-                )
+                logger.warning("free_slot: failed for slot %d", slot_id, exc_info=True)
 
         task = asyncio.create_task(_send())
         task.add_done_callback(
-            lambda t: t.result()
-            if not t.cancelled() and t.exception() is None
-            else None
+            lambda t: (
+                t.result() if not t.cancelled() and t.exception() is None else None
+            )
         )
 
     def _write_input(
@@ -504,13 +509,10 @@ class MMPClient:
     def _read_result(self, slot_id: int, result_sz: int) -> bytes:
         if result_sz > self.shm_data_size or result_sz < 0:
             raise ValueError(
-                f"result_sz {result_sz} out of bounds "
-                f"(max {self.shm_data_size})"
+                f"result_sz {result_sz} out of bounds " f"(max {self.shm_data_size})"
             )
-        if (
-            slot_id < 0
-            or slot_id * self.slot_total + HEADER_SIZE + result_sz
-            > len(self._shm.buf)
+        if slot_id < 0 or slot_id * self.slot_total + HEADER_SIZE + result_sz > len(
+            self._shm.buf
         ):
             raise ValueError(f"slot_id {slot_id} out of bounds")
         base = slot_id * self.slot_total + HEADER_SIZE
@@ -521,9 +523,7 @@ class MMPClient:
         if off + HEADER_SIZE > len(self._shm.buf):
             return None
         status = self._shm.buf[off + _OFF_STATUS]
-        result_size = struct.unpack_from(
-            "<I", self._shm.buf, off + _OFF_RESULT_SZ
-        )[0]
+        result_size = struct.unpack_from("<I", self._shm.buf, off + _OFF_RESULT_SZ)[0]
         return _SlotHeaderView(status, result_size)
 
     async def _lifecycle_req(

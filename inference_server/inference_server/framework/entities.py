@@ -42,8 +42,6 @@ class ModelInterfaceDescription:
 @dataclass(frozen=True)
 class ModelHandlerDescription:
     input_parser: Callable[[Request, CommonRequestParams], Awaitable[dict]]
-    handler: Callable[
-        [str, dict, ModelManagerProxy, ServerHooks], Awaitable[Any]
-    ]
+    handler: Callable[[str, dict, ModelManagerProxy, ServerHooks], Awaitable[Any]]
     output_serializer: Callable[[Any, CommonRequestParams], Response]
     interface_provider: Callable[[], ModelInterfaceDescription]

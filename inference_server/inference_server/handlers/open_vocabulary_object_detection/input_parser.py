@@ -7,10 +7,7 @@ from fastapi import Request, Response
 from starlette.requests import ClientDisconnect
 
 from inference_server.errors import error_response
-from inference_server.framework.entities import (
-    CommonRequestParams,
-    InputParseError,
-)
+from inference_server.framework.entities import CommonRequestParams, InputParseError
 from inference_server.framework.input_parsers import (
     extract_images_and_params,
     fetch_image_from_url,
@@ -39,9 +36,7 @@ async def parse_open_vocabulary_object_detection_input(
 
     extra_params: dict = {}
     if image_urls:
-        results = await asyncio.gather(
-            *(fetch_image_from_url(u) for u in image_urls)
-        )
+        results = await asyncio.gather(*(fetch_image_from_url(u) for u in image_urls))
         images: list[bytes] = []
         for img_bytes, err in results:
             if err is not None:
@@ -77,9 +72,7 @@ async def parse_open_vocabulary_object_detection_input(
     )
     if not classes:
         raise InputParseError(
-            error_response(
-                400, "MISSING_PARAM", "required param missing: classes"
-            )
+            error_response(400, "MISSING_PARAM", "required param missing: classes")
         )
 
     merged = dict(common.extra)

@@ -6,7 +6,6 @@ from typing import Any, Optional
 from fastapi import Response
 
 from inference_model_manager.serializers_typed import serialize_depth_compact
-
 from inference_server.framework.entities import CommonRequestParams
 
 

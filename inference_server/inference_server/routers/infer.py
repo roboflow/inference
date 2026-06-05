@@ -15,8 +15,8 @@ from fastapi import APIRouter, Depends, Request, Response
 from starlette.requests import ClientDisconnect
 
 from inference_server.dependencies import get_model_manager
-from inference_server.proxies.base import ClientDisconnected, ModelManagerProxy
 from inference_server.framework.input_parsers.image_check import looks_like_image
+from inference_server.proxies.base import ClientDisconnected, ModelManagerProxy
 from inference_server.serializers import serialize_json
 
 logger = logging.getLogger(__name__)

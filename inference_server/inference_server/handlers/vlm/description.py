@@ -17,7 +17,6 @@ from inference_server.handlers.vlm.output_serializer import (
     serialize_vlm_text,
 )
 
-
 _TEXT_PROMPT = ModelHandlerDescription(
     input_parser=parse_vlm_input,
     handler=handle_vlm,

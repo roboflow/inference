@@ -13,7 +13,6 @@ from inference_server.handlers.text_only_ocr.output_serializer import (
     serialize_text_only_ocr,
 )
 
-
 _DESCRIPTION = ModelHandlerDescription(
     input_parser=parse_text_only_ocr_input,
     handler=handle_text_only_ocr,

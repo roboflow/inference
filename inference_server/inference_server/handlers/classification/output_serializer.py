@@ -9,7 +9,6 @@ from inference_model_manager.serializers_typed import (
     serialize_classification_compact,
     serialize_classification_rich,
 )
-
 from inference_server.framework.entities import CommonRequestParams
 
 
@@ -30,9 +29,7 @@ def _serialize_one(prediction: Any, style: str) -> Any:
     return serializer(prediction, proxy)
 
 
-def serialize_classification(
-    prediction: Any, common: CommonRequestParams
-) -> Response:
+def serialize_classification(prediction: Any, common: CommonRequestParams) -> Response:
     items = prediction if isinstance(prediction, list) else [prediction]
     style = common.response_style
     typed = [_serialize_one(p, style) for p in items]
