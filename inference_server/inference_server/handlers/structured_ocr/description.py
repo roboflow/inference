@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from inference_server.framework.entities import ModelHandlerDescription
 from inference_server.framework.registry import _register
-from inference_server.handlers.structured_ocr.handler import (
-    handle_structured_ocr,
-)
+from inference_server.handlers.structured_ocr.handler import handle_structured_ocr
 from inference_server.handlers.structured_ocr.input_parser import (
     parse_structured_ocr_input,
 )
@@ -14,7 +12,6 @@ from inference_server.handlers.structured_ocr.introspection import (
 from inference_server.handlers.structured_ocr.output_serializer import (
     serialize_structured_ocr,
 )
-
 
 _DESCRIPTION = ModelHandlerDescription(
     input_parser=parse_structured_ocr_input,

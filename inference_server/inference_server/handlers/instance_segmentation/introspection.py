@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from inference_model_manager.registry_defaults import _K_ISEG, _P_IMAGES, _p
-
 from inference_server.framework.entities import ModelInterfaceDescription
 
 

@@ -15,7 +15,6 @@ from inference_server.handlers.open_vocabulary_object_detection.output_serialize
     serialize_open_vocabulary_object_detection,
 )
 
-
 _DESCRIPTION = ModelHandlerDescription(
     input_parser=parse_open_vocabulary_object_detection_input,
     handler=handle_open_vocabulary_object_detection,

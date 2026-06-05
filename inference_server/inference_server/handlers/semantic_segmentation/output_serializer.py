@@ -8,7 +8,6 @@ from fastapi import Response
 from inference_model_manager.serializers_typed import (
     serialize_semantic_segmentation_compact,
 )
-
 from inference_server.framework.entities import CommonRequestParams
 
 

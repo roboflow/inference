@@ -9,7 +9,6 @@ from inference_model_manager.serializers_typed import (
     serialize_detections_compact,
     serialize_detections_rich,
 )
-
 from inference_server.framework.entities import CommonRequestParams
 
 

@@ -629,9 +629,7 @@ class TestEnsureLoadedTimeout:
             fs.load_waiters.append((b"client-id", 42, deadline))
             mmp._models["m"] = fs
             # _load_model is never invoked — simulates a hanging load
-            asyncio.create_task(
-                mmp._expire_waiter("m", b"client-id", 42, deadline)
-            )
+            asyncio.create_task(mmp._expire_waiter("m", b"client-id", 42, deadline))
             await asyncio.sleep(0.15)
 
         asyncio.run(_run())

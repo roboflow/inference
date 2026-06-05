@@ -15,7 +15,6 @@ from inference_server.handlers.instance_segmentation.output_serializer import (
     serialize_instance_segmentation,
 )
 
-
 _DESCRIPTION = ModelHandlerDescription(
     input_parser=parse_instance_segmentation_input,
     handler=handle_instance_segmentation,

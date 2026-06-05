@@ -10,7 +10,6 @@ from inference_model_manager.serializers_typed import (
     serialize_passthrough,
     serialize_text,
 )
-
 from inference_server.framework.entities import CommonRequestParams
 
 
@@ -44,9 +43,7 @@ def _embeddings_or_passthrough(prediction: Any, proxy: _ModelProxy) -> Any:
         return serialize_passthrough(prediction, proxy)
 
 
-def serialize_sam_embeddings(
-    prediction: Any, common: CommonRequestParams
-) -> Response:
+def serialize_sam_embeddings(prediction: Any, common: CommonRequestParams) -> Response:
     items = prediction if isinstance(prediction, list) else [prediction]
     proxy = _ModelProxy(class_names=None)
     typed = [_embeddings_or_passthrough(p, proxy) for p in items]
@@ -62,9 +59,7 @@ def serialize_sam_segmentation(
     return _envelope(typed, common)
 
 
-def serialize_sam_text(
-    prediction: Any, common: CommonRequestParams
-) -> Response:
+def serialize_sam_text(prediction: Any, common: CommonRequestParams) -> Response:
     items = prediction if isinstance(prediction, list) else [prediction]
     proxy = _ModelProxy(class_names=None)
     typed = [serialize_text(p, proxy) for p in items]

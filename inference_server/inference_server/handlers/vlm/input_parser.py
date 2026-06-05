@@ -6,10 +6,7 @@ from fastapi import Request, Response
 from starlette.requests import ClientDisconnect
 
 from inference_server.errors import error_response
-from inference_server.framework.entities import (
-    CommonRequestParams,
-    InputParseError,
-)
+from inference_server.framework.entities import CommonRequestParams, InputParseError
 from inference_server.framework.input_parsers import (
     extract_images_and_params,
     fetch_image_from_url,
@@ -17,9 +14,7 @@ from inference_server.framework.input_parsers import (
 from inference_server.framework.input_parsers.image_check import looks_like_image
 
 
-async def parse_vlm_input(
-    request: Request, common: CommonRequestParams
-) -> dict:
+async def parse_vlm_input(request: Request, common: CommonRequestParams) -> dict:
     image_urls = [
         u
         for u in request.query_params.getlist("image")
@@ -28,9 +23,7 @@ async def parse_vlm_input(
 
     extra_params: dict = {}
     if image_urls:
-        results = await asyncio.gather(
-            *(fetch_image_from_url(u) for u in image_urls)
-        )
+        results = await asyncio.gather(*(fetch_image_from_url(u) for u in image_urls))
         images: list[bytes] = []
         for img_bytes, err in results:
             if err is not None:

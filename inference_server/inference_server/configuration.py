@@ -75,8 +75,8 @@ INFERENCE_PRELOAD_MODELS_ENV = "INFERENCE_PRELOAD_MODELS"
 # Constants only — env is read at the entry boundary (app.py lifespan,
 # server.main) so callable code stays testable without env manipulation.
 INFERENCE_DEPLOYMENT_MODE_ENV = "INFERENCE_DEPLOYMENT_MODE"
-MODE_BUNDLED = "bundled"      # MMWrapper over an in-process ModelManager
-MODE_MMP = "mmp"              # MMPClient over ZMQ+SHM to ModelManagerProcess
+MODE_BUNDLED = "bundled"  # MMWrapper over an in-process ModelManager
+MODE_MMP = "mmp"  # MMPClient over ZMQ+SHM to ModelManagerProcess
 INFERENCE_DEPLOYMENT_MODE_DEFAULT = MODE_BUNDLED
 
 # ── API key fallback (server._preload_models) ─────────────────────────────

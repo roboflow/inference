@@ -15,7 +15,6 @@ from inference_server.handlers.semantic_segmentation.output_serializer import (
     serialize_semantic_segmentation,
 )
 
-
 _DESCRIPTION = ModelHandlerDescription(
     input_parser=parse_semantic_segmentation_input,
     handler=handle_semantic_segmentation,

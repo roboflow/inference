@@ -21,7 +21,6 @@ from inference_server.handlers.interactive_instance_segmentation.output_serializ
     serialize_sam_text,
 )
 
-
 _EMBEDDINGS_IMAGE_ONLY = ModelHandlerDescription(
     input_parser=parse_interactive_instance_segmentation_input,
     handler=handle_interactive_instance_segmentation,

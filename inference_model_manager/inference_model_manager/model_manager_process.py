@@ -219,9 +219,7 @@ def _collect_gpu_stats(
                 "GPU); GPU telemetry disabled for this process"
             )
         else:
-            logger.error(
-                "_collect_gpu_stats: pynvml failed", exc_info=True
-            )
+            logger.error("_collect_gpu_stats: pynvml failed", exc_info=True)
 
     return result
 

@@ -9,7 +9,6 @@ from inference_model_manager.serializers_typed import (
     serialize_classification_rich,
     serialize_multilabel_classification_compact,
 )
-
 from inference_server.framework.entities import CommonRequestParams
 
 

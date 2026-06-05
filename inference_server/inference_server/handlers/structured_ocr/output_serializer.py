@@ -6,7 +6,6 @@ from typing import Any, Optional
 from fastapi import Response
 
 from inference_model_manager.serializers_typed import serialize_text
-
 from inference_server.framework.entities import CommonRequestParams
 
 
@@ -22,9 +21,7 @@ def _serialize_one(prediction: Any) -> Any:
     return serialize_text(prediction, proxy)
 
 
-def serialize_structured_ocr(
-    prediction: Any, common: CommonRequestParams
-) -> Response:
+def serialize_structured_ocr(prediction: Any, common: CommonRequestParams) -> Response:
     items = prediction if isinstance(prediction, list) else [prediction]
     typed = [_serialize_one(p) for p in items]
     envelope = {

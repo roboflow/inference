@@ -7,7 +7,6 @@ from inference_server.handlers.depth.input_parser import parse_depth_input
 from inference_server.handlers.depth.introspection import get_depth_interface
 from inference_server.handlers.depth.output_serializer import serialize_depth
 
-
 _DESCRIPTION = ModelHandlerDescription(
     input_parser=parse_depth_input,
     handler=handle_depth,

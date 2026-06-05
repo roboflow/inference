@@ -11,7 +11,6 @@ from inference_model_manager.serializers_typed import (
     serialize_embeddings,
     serialize_text,
 )
-
 from inference_server.framework.entities import CommonRequestParams
 
 
@@ -30,9 +29,7 @@ def _serialize_text_one(prediction: Any) -> Any:
 def _serialize_detections_one(prediction: Any, style: str) -> Any:
     proxy = _ModelProxy(class_names=None)
     serializer = (
-        serialize_detections_rich
-        if style == "rich"
-        else serialize_detections_compact
+        serialize_detections_rich if style == "rich" else serialize_detections_compact
     )
     return serializer(prediction, proxy)
 
@@ -56,18 +53,14 @@ def serialize_vlm_text(prediction: Any, common: CommonRequestParams) -> Response
     return _envelope(typed, common)
 
 
-def serialize_vlm_detections(
-    prediction: Any, common: CommonRequestParams
-) -> Response:
+def serialize_vlm_detections(prediction: Any, common: CommonRequestParams) -> Response:
     items = prediction if isinstance(prediction, list) else [prediction]
     style = common.response_style
     typed = [_serialize_detections_one(p, style) for p in items]
     return _envelope(typed, common)
 
 
-def serialize_vlm_embeddings(
-    prediction: Any, common: CommonRequestParams
-) -> Response:
+def serialize_vlm_embeddings(prediction: Any, common: CommonRequestParams) -> Response:
     items = prediction if isinstance(prediction, list) else [prediction]
     proxy = _ModelProxy(class_names=None)
     typed = [serialize_embeddings(p, proxy) for p in items]

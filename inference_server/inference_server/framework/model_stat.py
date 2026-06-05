@@ -12,12 +12,8 @@ from inference_models.errors import (
     RetryError,
     UnauthorizedModelAccessError,
 )
-from inference_models.weights_providers.roboflow import (
-    get_one_page_of_model_metadata,
-)
-
+from inference_models.weights_providers.roboflow import get_one_page_of_model_metadata
 from inference_server.framework.entities import CommonRequestParams
-
 
 _CACHE_MAXSIZE = int(os.environ.get("INFERENCE_MODEL_STAT_CACHE_SIZE", "1024"))
 _CACHE_TTL_S = float(os.environ.get("INFERENCE_MODEL_STAT_CACHE_TTL_S", "300"))
@@ -67,9 +63,8 @@ _inflight: dict[tuple[str, str], asyncio.Task] = {}
 async def stat_model_while_checking_auth(
     common_params: CommonRequestParams,
 ) -> tuple[str, str]:
-    if (
-        common_params.model_id == "passthrough"
-        or common_params.model_id.startswith("passthrough/")
+    if common_params.model_id == "passthrough" or common_params.model_id.startswith(
+        "passthrough/"
     ):
         return ("passthrough", "infer")
 

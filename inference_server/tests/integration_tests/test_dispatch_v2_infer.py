@@ -9,7 +9,6 @@ import pytest
 import pytest_asyncio
 from fastapi import Request
 
-
 _JPEG = bytes(
     [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46]
     + [0x00] * 12
@@ -66,20 +65,21 @@ def _patch_stat(task_type: str, default_action: str = "infer"):
 
 
 @pytest.mark.asyncio
-async def test_object_detection_dispatch_returns_envelope(
-    client, app_with_fake_proxy
-):
+async def test_object_detection_dispatch_returns_envelope(client, app_with_fake_proxy):
     _, proxy = app_with_fake_proxy
 
     class _FakeDetections:
         pass
 
     proxy.infer.return_value = _FakeDetections()
-    with patch(
-        "inference_server.handlers.object_detection.output_serializer."
-        "serialize_detections_compact",
-        return_value={"detections": [{"cls": 0, "conf": 0.9}]},
-    ), _patch_stat("object-detection"):
+    with (
+        patch(
+            "inference_server.handlers.object_detection.output_serializer."
+            "serialize_detections_compact",
+            return_value={"detections": [{"cls": 0, "conf": 0.9}]},
+        ),
+        _patch_stat("object-detection"),
+    ):
         resp = await client.post(
             "/v2/models/infer?model_id=acme/1",
             content=_JPEG,
@@ -102,16 +102,17 @@ async def test_object_detection_dispatch_returns_envelope(
 
 
 @pytest.mark.asyncio
-async def test_classification_dispatch_returns_envelope(
-    client, app_with_fake_proxy
-):
+async def test_classification_dispatch_returns_envelope(client, app_with_fake_proxy):
     _, proxy = app_with_fake_proxy
     proxy.infer.return_value = object()
-    with patch(
-        "inference_server.handlers.classification.output_serializer."
-        "serialize_classification_compact",
-        return_value={"top": "cat", "confidence": 0.9},
-    ), _patch_stat("classification"):
+    with (
+        patch(
+            "inference_server.handlers.classification.output_serializer."
+            "serialize_classification_compact",
+            return_value={"top": "cat", "confidence": 0.9},
+        ),
+        _patch_stat("classification"),
+    ):
         resp = await client.post(
             "/v2/models/infer?model_id=acme/1",
             content=_JPEG,
@@ -128,10 +129,13 @@ async def test_vlm_prompt_dispatch_threads_prompt_into_params(
 ):
     _, proxy = app_with_fake_proxy
     proxy.infer.return_value = "a cat sitting on a mat"
-    with patch(
-        "inference_server.handlers.vlm.output_serializer.serialize_text",
-        return_value={"text": "a cat sitting on a mat"},
-    ), _patch_stat("vlm", default_action="prompt"):
+    with (
+        patch(
+            "inference_server.handlers.vlm.output_serializer.serialize_text",
+            return_value={"text": "a cat sitting on a mat"},
+        ),
+        _patch_stat("vlm", default_action="prompt"),
+    ):
         resp = await client.post(
             "/v2/models/infer?model_id=acme/1&prompt=describe%20this",
             content=_JPEG,
@@ -174,11 +178,14 @@ async def test_open_vocab_od_collects_classes_from_query_list(
 ):
     _, proxy = app_with_fake_proxy
     proxy.infer.return_value = object()
-    with patch(
-        "inference_server.handlers.open_vocabulary_object_detection."
-        "output_serializer.serialize_detections_compact",
-        return_value={"detections": []},
-    ), _patch_stat("open-vocabulary-object-detection"):
+    with (
+        patch(
+            "inference_server.handlers.open_vocabulary_object_detection."
+            "output_serializer.serialize_detections_compact",
+            return_value={"detections": []},
+        ),
+        _patch_stat("open-vocabulary-object-detection"),
+    ):
         resp = await client.post(
             "/v2/models/infer?model_id=acme/1&classes=cat&classes=dog",
             content=_JPEG,
@@ -190,9 +197,7 @@ async def test_open_vocab_od_collects_classes_from_query_list(
 
 
 @pytest.mark.asyncio
-async def test_open_vocab_od_missing_classes_returns_400(
-    client, app_with_fake_proxy
-):
+async def test_open_vocab_od_missing_classes_returns_400(client, app_with_fake_proxy):
     _, proxy = app_with_fake_proxy
     with _patch_stat("open-vocabulary-object-detection"):
         resp = await client.post(
@@ -211,9 +216,7 @@ async def test_open_vocab_od_missing_classes_returns_400(
 
 
 @pytest.mark.asyncio
-async def test_unregistered_model_type_returns_501(
-    client, app_with_fake_proxy
-):
+async def test_unregistered_model_type_returns_501(client, app_with_fake_proxy):
     _, proxy = app_with_fake_proxy
     with _patch_stat("not-a-registered-task"):
         resp = await client.post(
