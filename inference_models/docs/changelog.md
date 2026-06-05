@@ -3,6 +3,7 @@
 ## `0.29.0`
 
 - Added RF-DETR preview keypoint support (ONNX backend).
+- Added support for fine-tuned YOLO26 semantic segmentation models.
 
 ## `0.28.7`
 
