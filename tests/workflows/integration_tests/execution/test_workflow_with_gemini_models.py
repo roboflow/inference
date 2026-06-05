@@ -953,12 +953,11 @@ def test_workflow_with_different_gemini_versions(
 ) -> None:
     # Test all available model versions
     model_versions = [
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-exp",
+        "gemini-3.1-pro-preview",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
         "gemini-2.5-pro-preview-05-06",
-        "gemini-2.0-flash-lite",
     ]
 
     # given

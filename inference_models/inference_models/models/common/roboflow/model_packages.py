@@ -28,29 +28,6 @@ def parse_class_names_file(class_names_path: str) -> List[str]:
         ) from error
 
 
-def resolve_background_class_id(class_names: List[str]) -> int:
-    """Return the index of the `background` class for a semantic-segmentation
-    package.
-
-    Roboflow semantic segmentation maps every pixel to a class id, with one
-    class reserved for background (sub-threshold / unlabeled pixels). A valid,
-    in-range background id is required - a negative sentinel would alias a real
-    class via negative indexing in downstream consumers (`class_names[-1]`,
-    palette LUTs, the 0=background platform convention), silently corrupting
-    the segmentation map. Packages must therefore declare a `background` class.
-    """
-    try:
-        return [c.lower() for c in class_names].index("background")
-    except ValueError as error:
-        raise CorruptedModelPackageError(
-            message="Semantic segmentation model package does not define a `background` class in "
-            "`class_names.txt`. A background class is required so that sub-threshold pixels map to a "
-            "valid class id. If you created the model package manually, prepend `background` to the class "
-            "names. If the weights are hosted on the Roboflow platform - contact support.",
-            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-        ) from error
-
-
 PADDING_VALUES_MAPPING = {
     "black edges": 0,
     "grey edges": 127,
@@ -86,6 +63,7 @@ PreProcessingMetadata = namedtuple(
 
 def parse_key_points_metadata(
     key_points_metadata_path: str,
+    classes_re_mapping=None,
 ) -> Tuple[List[List[str]], List[List[Tuple[int, int]]]]:
     try:
         parsed_config = read_json(path=key_points_metadata_path)
@@ -93,24 +71,39 @@ def parse_key_points_metadata(
             raise ValueError(
                 "config should contain list of key points descriptions for each instance"
             )
-        class_names: List[Optional[List[str]]] = [None] * len(parsed_config)
-        skeletons: List[Optional[List[Tuple[int, int]]]] = [None] * len(parsed_config)
+        if classes_re_mapping is not None:
+            class_names = [None] * len(classes_re_mapping.remaining_class_ids)
+            skeletons = [None] * len(classes_re_mapping.remaining_class_ids)
+        else:
+            class_names: List[Optional[List[str]]] = [None] * len(parsed_config)
+            skeletons: List[Optional[List[Tuple[int, int]]]] = [None] * len(parsed_config)
+
         for instance_key_point_description in parsed_config:
             if "object_class_id" not in instance_key_point_description:
                 raise ValueError(
                     "instance key point description lack 'object_class_id' key"
                 )
             object_class_id: int = instance_key_point_description["object_class_id"]
+
+            if classes_re_mapping is not None:
+                object_class_id = int(classes_re_mapping.class_mapping[object_class_id])
+
+                if object_class_id == -1:
+                    continue
+
             if not 0 <= object_class_id < len(class_names):
                 raise ValueError("`object_class_id` field point invalid class")
+
             if "keypoints" not in instance_key_point_description:
                 raise ValueError(
                     f"`keypoints` field not available in config for class with id {object_class_id}"
                 )
+
             class_names[object_class_id] = _retrieve_key_points_names(
                 key_points=instance_key_point_description["keypoints"],
             )
             key_points_count = len(class_names[object_class_id])
+
             if "edges" not in instance_key_point_description:
                 raise ValueError(
                     f"`edges` field not available in config for class with id {object_class_id}"
