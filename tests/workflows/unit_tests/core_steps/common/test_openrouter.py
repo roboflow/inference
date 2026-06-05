@@ -7,15 +7,12 @@ import pytest
 
 from inference.core.workflows.core_steps.common.openrouter import (
     OpenRouterWorkflowBlockBase,
-    build_provider_routing,
-    build_prompts_from_images,
-    validate_task_type_required_fields,
-)
-from inference.core.workflows.core_steps.common.openrouter import (
     _execute_direct_openrouter_request,
     _execute_proxied_openrouter_request,
+    build_prompts_from_images,
+    build_provider_routing,
+    validate_task_type_required_fields,
 )
-
 
 # ---------------------------------------------------------------------------
 # build_provider_routing
@@ -164,9 +161,7 @@ def test_execute_openrouter_batch_routes_to_direct_for_user_key(
 
 @patch("inference.core.workflows.core_steps.common.openrouter.post_to_roboflow_api")
 def test_proxied_request_sends_expected_payload_to_roboflow(mock_post):
-    mock_post.return_value = {
-        "choices": [{"message": {"content": "hello world"}}]
-    }
+    mock_post.return_value = {"choices": [{"message": {"content": "hello world"}}]}
 
     out = _execute_proxied_openrouter_request(
         roboflow_api_key="ws-key-xyz",

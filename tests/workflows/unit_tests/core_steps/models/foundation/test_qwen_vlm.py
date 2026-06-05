@@ -8,10 +8,10 @@ from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
-    BlockManifest,
     DEFAULT_NATIVE_MODEL_VERSION,
     FINE_TUNED_NATIVE_LABEL,
     MODEL_VARIANTS,
+    BlockManifest,
     QwenVlmBlockV1,
     _build_native_prompt,
     _coerce_native_response,
@@ -21,7 +21,9 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 
 def _stub_image() -> WorkflowImageData:
     return WorkflowImageData(
-        parent_metadata=MagicMock(parent_id="root", workflow_root_ancestor_metadata=None),
+        parent_metadata=MagicMock(
+            parent_id="root", workflow_root_ancestor_metadata=None
+        ),
         numpy_image=np.zeros((10, 10, 3), dtype=np.uint8),
     )
 
@@ -310,16 +312,15 @@ def test_run_local_native_with_enable_thinking_splits_response():
             enable_thinking=True,
         )
     )
-    assert result == [
-        {"output": "42", "classes": None, "thinking": "reasoning..."}
-    ]
+    assert result == [{"output": "42", "classes": None, "thinking": "reasoning..."}]
     request = model_manager.infer_from_request_sync.call_args.kwargs["request"]
     assert request.enable_thinking is True
 
 
 def test_run_local_native_enable_thinking_silently_ignored_on_unsupported_model():
     """`enable_thinking=True` on a non-3.5 variant must NOT propagate to the
-    LMM request — the field is a no-op there, gated by NATIVE_THINKING_MODEL_VERSIONS."""
+    LMM request — the field is a no-op there, gated by NATIVE_THINKING_MODEL_VERSIONS.
+    """
     model_manager = MagicMock()
     fake_prediction = MagicMock()
     fake_prediction.response = "ok"
@@ -362,9 +363,7 @@ def test_run_dispatches_to_remote_native_when_step_mode_remote(mock_client_cls):
             temperature=0.0,
         )
     )
-    assert result == [
-        {"output": "remote answer", "classes": None, "thinking": ""}
-    ]
+    assert result == [{"output": "remote answer", "classes": None, "thinking": ""}]
     assert fake_client.infer_lmm.called
     call_kwargs = fake_client.infer_lmm.call_args.kwargs
     assert call_kwargs["model_id"] == "qwen3_5-0.8b"
@@ -391,9 +390,7 @@ def test_run_dispatches_to_local_native_with_fine_tuned_model_id():
             fine_tuned_model_id="your-workspace/3",
         )
     )
-    assert result == [
-        {"output": "finetune answer", "classes": None, "thinking": ""}
-    ]
+    assert result == [{"output": "finetune answer", "classes": None, "thinking": ""}]
     model_manager.add_model.assert_called_once_with(
         model_id="your-workspace/3", api_key="ws-key"
     )

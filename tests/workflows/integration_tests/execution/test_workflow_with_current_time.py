@@ -23,7 +23,11 @@ WORKFLOW_WITH_CURRENT_TIME = {
     ],
     "outputs": [
         {"type": "JsonField", "name": "timestamp", "selector": "$steps.now.timestamp"},
-        {"type": "JsonField", "name": "iso_string", "selector": "$steps.now.iso_string"},
+        {
+            "type": "JsonField",
+            "name": "iso_string",
+            "selector": "$steps.now.iso_string",
+        },
         {"type": "JsonField", "name": "date", "selector": "$steps.now.date"},
         {"type": "JsonField", "name": "time", "selector": "$steps.now.time"},
     ],
@@ -42,9 +46,7 @@ def test_current_time_workflow(model_manager: ModelManager) -> None:
     )
 
     # when
-    result = execution_engine.run(
-        runtime_parameters={"timezone": "America/New_York"}
-    )
+    result = execution_engine.run(runtime_parameters={"timezone": "America/New_York"})
 
     # then
     assert len(result) == 1, "Single image/parameter batch expected"

@@ -3,11 +3,11 @@
 from typing import Any, Dict
 from unittest import mock
 
-from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
-    USE_INNER_WORKFLOW_BLOCK_TYPE,
-)
 from inference.core.workflows.execution_engine.v1.inner_workflow import (
     dynamic_blocks_collection,
+)
+from inference.core.workflows.execution_engine.v1.inner_workflow.constants import (
+    USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
 from inference.core.workflows.execution_engine.v1.inner_workflow.dynamic_blocks_collection import (
     apply_collected_dynamic_blocks_definitions_to_workflow_root,
