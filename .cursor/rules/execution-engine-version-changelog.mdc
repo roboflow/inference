@@ -1,0 +1,62 @@
+---
+description: Bump Execution Engine version and changelog when workflow compile/run logic changes
+globs: inference/core/workflows/execution_engine/**/*.py
+alwaysApply: false
+---
+
+# Execution Engine version and changelog
+
+When you change **behavior** of workflow **compilation** or **execution** under
+`inference/core/workflows/execution_engine/`, update the Execution Engine release
+metadata in the **same PR** (unless the user explicitly says to skip versioning).
+
+## When this applies
+
+- Compiler pipeline, parsing, graph construction, inlining, dynamic blocks assembly
+- Runtime execution, input assembly/validation, step scheduling, error handling
+- Execution Engine v1 APIs that affect compile or run outcomes
+
+## When this does NOT apply
+
+- Comments, types-only refactors, or formatting with **no** behavior change
+- Workflow **block** implementations in `core_steps/` (unless they require an EE change)
+- Documentation or tests that only mirror existing behavior
+
+## Required updates
+
+1. **Version constant** — bump `EXECUTION_ENGINE_V1_VERSION` in
+   `inference/core/workflows/execution_engine/v1/core.py`.
+
+2. **Changelog** — add a new section at the top of
+   `docs/workflows/execution_engine_changelog.md`:
+   - Heading: `## Execution Engine \`vX.Y.Z\` | inference \`vA.B.C\``
+   - Use current `inference/core/version.py` → `__version__` for the inference version
+   - Short **What changed** bullets (user-facing behavior, not file lists)
+
+3. **Version tests** — update any hardcoded EE version assertions, especially:
+   - `tests/inference/integration_tests/test_workflow_endpoints.py`
+     (`test_get_versions_of_execution_engine`)
+   - `tests/inference/hosted_platform_tests/test_workflows.py`
+
+   Search: `execution_engine/versions`, `EXECUTION_ENGINE_V1_VERSION`, and
+   `["1.` in workflow tests.
+
+## Patch vs minor
+
+| Change | Bump |
+|--------|------|
+| Bug fix, non-breaking compile/run correction | **Patch** (e.g. `1.10.0` → `1.10.1`) |
+| New compile/run capability or intentional behavior change | **Minor** (e.g. `1.10.0` → `1.11.0`) |
+| Breaking workflow contract | **Major** (rare; coordinate with maintainers) |
+
+When unsure, prefer **patch** for fixes and **minor** for new capabilities.
+
+## Example changelog entry
+
+```markdown
+## Execution Engine `v1.10.1` | inference `v1.2.12`
+
+**What changed**
+
+* **Short title** — One or two sentences on compile/run impact for workflow authors.
+```

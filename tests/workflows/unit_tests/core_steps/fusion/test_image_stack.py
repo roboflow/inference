@@ -6,11 +6,11 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import (
-    BlockManifest,
-    ImageStackBlockV1,
     MAX_RESOLUTION_HEIGHT,
     MAX_RESOLUTION_WIDTH,
     MAX_STACK_SIZE,
+    BlockManifest,
+    ImageStackBlockV1,
     _compress_frame,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -134,9 +134,7 @@ def test_compress_frame_downsamples_wide_image() -> None:
     img = np.zeros((1080, 3840, 3), dtype=np.uint8)
     result = _compress_frame(img, max_width=1920, max_height=1080)
     # decode and check dimensions
-    decoded = cv2.imdecode(
-        np.frombuffer(result, dtype=np.uint8), cv2.IMREAD_COLOR
-    )
+    decoded = cv2.imdecode(np.frombuffer(result, dtype=np.uint8), cv2.IMREAD_COLOR)
     assert decoded.shape[1] <= 1920
     assert decoded.shape[0] <= 1080
 
@@ -144,9 +142,7 @@ def test_compress_frame_downsamples_wide_image() -> None:
 def test_compress_frame_downsamples_tall_image() -> None:
     img = np.zeros((2160, 1000, 3), dtype=np.uint8)
     result = _compress_frame(img, max_width=1920, max_height=1080)
-    decoded = cv2.imdecode(
-        np.frombuffer(result, dtype=np.uint8), cv2.IMREAD_COLOR
-    )
+    decoded = cv2.imdecode(np.frombuffer(result, dtype=np.uint8), cv2.IMREAD_COLOR)
     assert decoded.shape[0] <= 1080
     assert decoded.shape[1] <= 1920
 
@@ -154,9 +150,7 @@ def test_compress_frame_downsamples_tall_image() -> None:
 def test_compress_frame_preserves_small_image_dimensions() -> None:
     img = np.zeros((100, 200, 3), dtype=np.uint8)
     result = _compress_frame(img, max_width=1920, max_height=1080)
-    decoded = cv2.imdecode(
-        np.frombuffer(result, dtype=np.uint8), cv2.IMREAD_COLOR
-    )
+    decoded = cv2.imdecode(np.frombuffer(result, dtype=np.uint8), cv2.IMREAD_COLOR)
     assert decoded.shape[:2] == (100, 200)
 
 
@@ -439,8 +433,6 @@ def test_custom_resolution_limits_applied() -> None:
         clear=False,
     )
     jpeg_bytes = result["frames"][0]
-    decoded = cv2.imdecode(
-        np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR
-    )
+    decoded = cv2.imdecode(np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
     assert decoded.shape[1] <= 400
     assert decoded.shape[0] <= 300

@@ -8,6 +8,7 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import ConfigDict, Field, field_validator
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -17,6 +18,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -214,6 +218,28 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restriction = RuntimeRestriction(
+            severity=Severity.SOFT,
+            note=(
+                "Append-log mode buffers entries in process memory before "
+                "uploading the accumulated object to S3. With remote step "
+                "execution on stateless or multi-replica HTTP runtimes, "
+                "successive requests may be served by different worker "
+                "processes, so append-log objects can reset or split across "
+                "workers. Use separate_files mode, or local step execution in "
+                "an InferencePipeline when each entry must be captured in a "
+                "single ordered log."
+            ),
+            applies_to_runtimes=[
+                Runtime.HOSTED_SERVERLESS,
+                Runtime.DEDICATED_DEPLOYMENT,
+            ],
+            applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+        )
+        return [restriction]
 
 
 class S3SinkBlockV1(WorkflowBlock):

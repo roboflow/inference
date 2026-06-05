@@ -415,6 +415,7 @@ def main():
                         data_output=None,
                     ).model_dump()
                 )
+                # codeql[py/clear-text-logging-sensitive-data]: Workflow output names.
                 logger.info("Setting stream output via data channel: %s", output_name)
             peer_connection.data_channel.send(message)
 
@@ -439,6 +440,7 @@ def main():
                         data_output=output_name,
                     ).model_dump()
                 )
+                # codeql[py/clear-text-logging-sensitive-data]: Workflow output names.
                 logger.info("Setting data output via data channel: %s", output_name)
             peer_connection.data_channel.send(message)
     webcam_frames_grabber.stop()

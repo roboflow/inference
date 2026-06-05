@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Jetson 6.2.0 with PyTorch/OpenCV compiled from source for numpy 2.x support
 # Stage 1: Builder - Compile everything from source
 FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS builder
@@ -6,14 +7,37 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
 ARG PYTORCH_VERSION=2.6.0
 ARG TORCHVISION_VERSION=0.21.0
-ARG OPENCV_VERSION=4.10.0
+ARG OPENCV_VERSION=4.13.0
+# Per-Jetson-platform OpenCV build parameters. To replicate this from-source
+# OpenCV section in another Jetson dockerfile (jp51, jp71), copy the OpenCV
+# block below verbatim and update these four ARGs to match the target base.
+# Cross-reference the values already used by the same dockerfile's PyTorch /
+# torchvision / onnxruntime build steps so all components target the same SoC:
+#   OPENCV_CUDA_ARCH:           jp51 (Orin on L4T r35): 8.7
+#                               jp62 (Orin on L4T r36): 8.7
+#                               jp71 (Thor on L4T r38): 11.0
+#   OPENCV_PYTHON_INSTALL_PATH: dist-packages dir of the base's Python
+#                               (jp51: python3.12, jp62: python3.10, jp71: python3.12)
+#   OPENCV_PYTHON_INCLUDE_DIR:  matches the base's Python C headers
+#   OPENCV_PYTHON_VERSION:      cmake's PYTHON_VERSION flag (major+minor, no dot)
+ARG OPENCV_CUDA_ARCH=8.7
+ARG OPENCV_PYTHON_INSTALL_PATH=/usr/local/lib/python3.10/dist-packages
+ARG OPENCV_PYTHON_INCLUDE_DIR=/usr/include/python3.10
+ARG OPENCV_PYTHON_VERSION=310
 ARG ONNXRUNTIME_VERSION=1.20.0
 ENV LANG=en_US.UTF-8
 
 WORKDIR /build
 
-# Install comprehensive build dependencies
-RUN apt-get update -y && \
+# Install comprehensive build dependencies.
+# Cache mounts on apt dirs keep .debs + lists across Depot builds. We disable
+# docker-clean and tell apt to keep downloads; the rm of /var/lib/apt/lists/*
+# is dropped because that path is the cache mount itself.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-builder-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update -y && \
     apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -40,6 +64,10 @@ RUN apt-get update -y && \
     libavformat-dev \
     libswscale-dev \
     libv4l-dev \
+    libavutil-dev \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    unzip \
     libatlas-base-dev \
     liblapack-dev \
     gfortran \
@@ -51,8 +79,7 @@ RUN apt-get update -y && \
     libleveldb-dev \
     libsnappy-dev \
     libprotobuf-dev \
-    protobuf-compiler \
-    && rm -rf /var/lib/apt/lists/*
+    protobuf-compiler
 
 # Install CMake
 RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
@@ -77,9 +104,18 @@ RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar
     ninja && ninja install && ldconfig && \
     cd ../.. && rm -rf gdal-3.11.5*
 
-# Compile PyTorch from source with Jetson optimizations
+# Compile PyTorch from source with Jetson optimizations.
+# Clone is in its own RUN so the build/ cache mount in the next RUN can overlay
+# cleanly on top of the cloned source. Combining them fails because the cache
+# mount auto-creates /build/pytorch/pytorch/ before git clone runs, and git
+# refuses to clone into a non-empty target.
 WORKDIR /build/pytorch
-RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch && \
+RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
+# build/ is cache-mounted so a stage rerun reuses CMake/ninja state and object
+# files. Cache id scoped to (version, arch, SM) so a version or target bump
+# starts from a clean cache instead of contaminating the previous one.
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
     cd pytorch && \
     python3 -m pip install -r requirements.txt && \
     export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
@@ -99,11 +135,14 @@ RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorc
     python3 setup.py bdist_wheel && \
     python3 -m pip install dist/torch-*.whl
 
-# Compile torchvision from source (with retry for transient GitHub issues)
+# Compile torchvision from source (with retry for transient GitHub issues).
+# Clone in its own RUN so build/ cache mount overlays cleanly.
 WORKDIR /build/torchvision
 RUN for i in 1 2 3; do \
         git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
-    done && \
+    done
+RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-${TORCHVISION_VERSION}-${TARGETARCH}-sm87 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
     cd vision && \
     export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="8.7" && \
     export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
@@ -116,17 +155,29 @@ ENV CUDA_HOME=/usr/local/cuda \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 # Install Tensorrt
-RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*'
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-builder-${TARGETARCH} \
+    apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*'
 WORKDIR /build/tensorrt-10.x
-RUN wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.7.0/local_repo/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb && \
-    dpkg -i nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-builder-${TARGETARCH} \
+    --mount=type=cache,target=/build/tensorrt-10.x/_dl,sharing=locked,id=trt-deb-10.7.0-${TARGETARCH} \
+    if [ ! -f _dl/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb ]; then \
+        mkdir -p _dl && \
+        wget -O _dl/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb \
+            https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.7.0/local_repo/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb; \
+    fi && \
+    dpkg -i _dl/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb && \
     cp /var/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6/nv-tensorrt-local-tegra-C50F04B9-keyring.gpg /usr/share/keyrings/ && \
     apt-get update && \
     apt-get install -y tensorrt
 
-# Build onnxruntime-gpu from source with TensorRT support
+# Build onnxruntime-gpu from source with TensorRT support.
+# Clone in its own RUN so the build/cuda12 cache mount overlays cleanly.
 WORKDIR /build/onnxruntime
-RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git && \
+RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git
+RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/cuda12,sharing=locked,id=ort-build-${ONNXRUNTIME_VERSION}-${TARGETARCH}-sm87-cu126 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
     cd onnxruntime && \
     sed -i 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c09388b2e288312d8eba/g' cmake/deps.txt && \
     sed -i '/PATCH_COMMAND.*nsync_1.26.0.patch/s|$| \&\& sed -i "s/cmake_minimum_required.*/cmake_minimum_required(VERSION 3.5)/" CMakeLists.txt|' cmake/external/onnxruntime_external_deps.cmake && \
@@ -166,7 +217,6 @@ COPY requirements/_requirements.txt \
      requirements/requirements.clip.txt \
      requirements/requirements.transformers.txt \
      requirements/requirements.sam.txt \
-     requirements/requirements.gaze.txt \
      requirements/requirements.groundingdino.txt \
      requirements/requirements.yolo_world.txt \
      requirements/requirements.doctr.txt \
@@ -182,7 +232,6 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     -r requirements.clip.txt \
     -r requirements.transformers.txt \
     -r requirements.sam.txt \
-    -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
     -r requirements.doctr.txt \
@@ -191,6 +240,7 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     -r requirements.jetson.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
     "setuptools<=75.5.0" \
+    "transformers>=4.57.3,<5.9.0" \
     packaging \
     && rm -rf ~/.cache/uv
 
@@ -210,6 +260,73 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
         "setuptools<=75.5.0"
+
+# Compile OpenCV from source with GStreamer / FFmpeg / CUDA support.
+# The pip opencv-python wheel ships without GStreamer, which blocks
+# cv2.VideoCapture from dispatching to NVIDIA's nv* GStreamer elements
+# (nvv4l2decoder, nvvidconv, nvjpegenc/dec). Built LAST in the builder so
+# nothing reinstalls the wheel-version cv2 over our from-source one.
+WORKDIR /build/opencv
+RUN wget -q https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSION}.zip -O opencv.zip && \
+    wget -q https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VERSION}.zip -O opencv_contrib.zip && \
+    unzip -q opencv.zip && unzip -q opencv_contrib.zip && \
+    rm opencv.zip opencv_contrib.zip && \
+    python3 -m pip uninstall -y opencv-python opencv-contrib-python opencv-python-headless || true && \
+    mkdir -p /build/opencv/opencv-${OPENCV_VERSION}/release
+WORKDIR /build/opencv/opencv-${OPENCV_VERSION}/release
+# release/ is cache-mounted, so the rebuild forced by `COPY . .` invalidation
+# above completes as a fast ninja no-op (CMakeCache + objects survive) instead
+# of a 30-60 min recompile. Cache id includes OPENCV_VERSION and CUDA_ARCH so
+# version/SoC bumps start clean.
+RUN --mount=type=cache,target=/build/opencv/opencv-${OPENCV_VERSION}/release,sharing=locked,id=opencv-build-${OPENCV_VERSION}-${TARGETARCH}-sm${OPENCV_CUDA_ARCH} \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
+    cmake -GNinja \
+        -D CMAKE_BUILD_TYPE=RELEASE \
+        -D CMAKE_INSTALL_PREFIX=/usr/local \
+        -D WITH_CUDA=ON \
+        -D WITH_CUDNN=ON \
+        -D CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH}" \
+        -D CUDA_ARCH_PTX="" \
+        -D OPENCV_GENERATE_PKGCONFIG=ON \
+        -D OPENCV_EXTRA_MODULES_PATH=/build/opencv/opencv_contrib-${OPENCV_VERSION}/modules \
+        -D WITH_FFMPEG=ON \
+        -D WITH_GSTREAMER=ON \
+        -D WITH_LIBV4L=ON \
+        -D BUILD_opencv_python3=ON \
+        -D BUILD_TESTS=OFF \
+        -D BUILD_PERF_TESTS=OFF \
+        -D BUILD_EXAMPLES=OFF \
+        -D BUILD_DOCS=OFF \
+        -D PYTHON3_EXECUTABLE=/usr/bin/python3 \
+        -D PYTHON3_INCLUDE_DIR=${OPENCV_PYTHON_INCLUDE_DIR} \
+        -D PYTHON_VERSION=${OPENCV_PYTHON_VERSION} \
+        -D OPENCV_PYTHON3_INSTALL_PATH=${OPENCV_PYTHON_INSTALL_PATH} \
+        -D BUILD_SHARED_LIBS=OFF \
+        -D WITH_OPENCLAMDFFT=OFF \
+        -D WITH_OPENCLAMDBLAS=OFF \
+        -D WITH_VA_INTEL=OFF \
+        .. && \
+    ninja && \
+    ninja install && \
+    ldconfig && \
+    # Rescue install-tree config files before pip install clobbers them.
+    # `ninja install` writes ${OPENCV_PYTHON_INSTALL_PATH}/cv2/config*.py with
+    # install paths (correct). The `pip install` below installs a wheel built
+    # from the BUILD-TREE python_loader directory, whose config files reference
+    # /build/... paths that don't survive into the runtime stage. Save the
+    # install-tree versions now, restore them after pip install registers
+    # opencv with pip's metadata. Without this, cv2 import in the runtime image
+    # fails with "recursion is detected during loading of cv2 binary extensions".
+    mkdir -p /tmp/cv2-install-tree && \
+    cp ${OPENCV_PYTHON_INSTALL_PATH}/cv2/config*.py /tmp/cv2-install-tree/ && \
+    python3 -m pip wheel /build/opencv/opencv-${OPENCV_VERSION}/release/python_loader --wheel-dir /build/out/wheels && \
+    python3 -m pip install --break-system-packages /build/out/wheels/opencv-*.whl && \
+    cp /tmp/cv2-install-tree/config*.py ${OPENCV_PYTHON_INSTALL_PATH}/cv2/ && \
+    rm -rf /tmp/cv2-install-tree && \
+    # Sanity check: simulate the runtime stage by removing /build/ from sys.path.
+    # If config files still leak build-tree paths, the loader bootstrap fails here
+    # with a recursion error rather than at runtime on the device.
+    env -u PYTHONPATH python3 -c "import sys; sys.path = [p for p in sys.path if '/build' not in p]; import cv2; info = cv2.getBuildInformation(); assert 'YES' in info.split('GStreamer:')[1].split(chr(10))[0], 'GStreamer not enabled'; assert 'YES' in info.split('FFMPEG:')[1].split(chr(10))[0], 'FFMPEG not enabled'; print('cv2 ' + cv2.__version__ + ' OK from install path; GStreamer + FFmpeg + CUDA enabled')"
 
 # Remove test directories, development tools, and unnecessary packages to reduce image size
 # This happens AFTER all package installations to ensure everything gets cleaned
@@ -232,8 +349,12 @@ WORKDIR /app
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
-# Install runtime dependencies
-RUN apt-get update -y && \
+# Install runtime dependencies (cache id is runtime-specific, distinct from builder).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-runtime-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-runtime-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update -y && \
     apt-get install -y --no-install-recommends \
     file \
     libopenblas0 \
@@ -260,8 +381,15 @@ RUN apt-get update -y && \
     libavformat58 \
     libswscale5 \
     ffmpeg \
-    libatlas3-base \
-    && rm -rf /var/lib/apt/lists/*
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-tools \
+    python3-gi \
+    gir1.2-gstreamer-1.0 \
+    gir1.2-gst-plugins-base-1.0 \
+    libatlas3-base
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
@@ -282,7 +410,15 @@ COPY --from=builder /usr/local/cuda/targets/aarch64-linux/lib/libnvToolsExt*.so.
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvinfer*.so.*.*.* /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so.*.*.* /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvparsers*.so.*.*.* /usr/local/cuda/lib64/
-COPY --from=builder /usr/lib/aarch64-linux-gnu/tegra/libnvdla_compiler.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/nvidia/libnvdla_compiler.so* /usr/local/cuda/lib64/
+
+# NOTE: NVIDIA's gstreamer plugins (nvv4l2decoder, nvvidconv, nvjpegenc/dec) and
+# their tegra runtime deps (libnvbufsurface, libnvjpeg, libnvargus, ...) are NOT
+# baked into the image -- they are tied to the host's JetPack BSP and are injected
+# at container start by `nvidia-container-runtime` via the CSVs under
+# /etc/nvidia-container-runtime/host-files-for-container.d/. The host system must
+# be configured to mount them; without that, cv2 here can dispatch a GStreamer
+# pipeline but `nvv4l2decoder` / `nvvidconv` / `nvjpegenc` won't resolve.
 
 # Create symlinks for cuDNN and TensorRT (saves ~2GB by not duplicating files)
 RUN cd /usr/local/cuda/lib64 && \
@@ -295,6 +431,11 @@ RUN cd /usr/local/cuda/lib64 && \
 
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 RUN ldconfig
+
+# GStreamer plugin discovery: point at the standard arch dir (where libgstnv*.so live).
+# Clear stale plugin registry so it's rebuilt on first use against the copied plugins.
+ENV GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
+RUN rm -rf /root/.cache/gstreamer-1.0 /home/*/.cache/gstreamer-1.0 2>/dev/null || true
 
 # Copy Python packages
 COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
@@ -313,6 +454,8 @@ COPY inference inference
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 RUN python -m pip uninstall -y boto3 botocore && python -m pip install "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
 
@@ -343,4 +486,4 @@ LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (PyT
 
 EXPOSE 9001
 
-ENTRYPOINT ["/bin/sh", "-c", "python3 -m uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT"]
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

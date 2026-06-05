@@ -43,7 +43,6 @@ GEMINI_MODEL_ALIASES = {
     "gemini-2.5-pro-preview-06-05": "gemini-2.5-pro",
     "gemini-2.5-pro-preview-05-06": "gemini-2.5-pro",
     "gemini-2.5-pro-preview-03-25": "gemini-2.5-pro",
-    "gemini-2.0-flash-exp": "gemini-2.0-flash",
 }
 
 SUPPORTED_TASK_TYPES_LIST = [
@@ -186,13 +185,9 @@ class BlockManifest(WorkflowBlockManifest):
             "gemini-2.5-pro",
             "gemini-2.5-flash",
             "gemini-2.5-flash-lite",
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-1.5-pro",
-            "gemini-1.5-flash",
         ],
     ] = Field(
-        default="gemini-2.0-flash",
+        default="gemini-2.5-flash",
         description="Model to be used",
         examples=["gemini-2.5-pro", "$inputs.gemini_model"],
     )

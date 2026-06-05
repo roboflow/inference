@@ -252,6 +252,7 @@ def get_workspace_name(
     api_key: str,
     cache: BaseCache,
 ) -> str:
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cached_workspace_name = cache.get(cache_key)

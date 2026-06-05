@@ -32,11 +32,11 @@ class TrainingImage(BaseModel):
 
 
 class OwlV2InferenceRequest(BaseRequest):
-    """Request for gaze detection inference.
+    """Request for OwlV2 inference.
 
     Attributes:
         api_key (Optional[str]): Roboflow API Key.
-        owlv2_version_id (Optional[str]): The version ID of Gaze to be used for this request.
+        owlv2_version_id (Optional[str]): The version ID of OwlV2 to be used for this request.
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) for inference.
         training_data (List[TrainingImage]): Training data to ground the model on
         confidence (float): Confidence threshold to filter predictions by
