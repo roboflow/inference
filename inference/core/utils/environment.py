@@ -73,5 +73,5 @@ def safe_split_value(
     else:
         result = value.split(delimiter)
         if strip:
-            result = [element.strip() for element in result]
+            result = [element.strip() for element in result if len(element.strip())]
         return result

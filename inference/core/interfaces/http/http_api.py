@@ -3,6 +3,7 @@ import concurrent
 import logging
 import os
 import re
+import warnings
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
@@ -139,6 +140,7 @@ from inference.core.entities.responses.workflows import (
     WorkflowValidationStatus,
 )
 from inference.core.env import (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ALLOW_ORIGINS,
     API_BASE_URL,
     API_LOGGING_ENABLED,
@@ -195,7 +197,6 @@ from inference.core.env import (
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING,
     WORKFLOWS_STEP_EXECUTION_MODE,
     WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT,
 )
@@ -295,6 +296,7 @@ from inference.core.telemetry import (
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.utils.url_utils import wrap_url
+from inference.core.warnings import InferenceDeprecationWarning
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     WorkflowBlockError,
@@ -353,6 +355,16 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
+
+
+if ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
+    warnings.warn(
+        "Your `inference` configuration specifies `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`. "
+        "Currently, Workflows Custom Python blocks are allowed by default - but this is going to change 19.06.2026. "
+        "If your workload relies on that setting, please make adjustment to your configuration before the inference "
+        "release following mentioned date. Otherwise - you may ignore this warning.",
+        category=InferenceDeprecationWarning,
+    )
 
 
 @dataclass(frozen=True)

@@ -47,12 +47,12 @@ authentication and TLS in place.
 By default a self-hosted server does **not** require an API key to make requests — as a result,
 beyond the auth that happens at the Roboflow API level when fetching data from the platform, there is
 no additional security on the server itself. To turn on authentication, set
-`WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT` to a comma-separated list of the Roboflow workspace URLs
+`WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT` to a comma-separated list of the Roboflow workspace slug
 allowed to use the server:
 
 ```bash
 docker run --rm -p 9001:9001 \
-  -e WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT=your-workspace-url,another-workspace-url \
+  -e WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT=your-workspace-url-slug,another-workspace-url-slug \
   roboflow/roboflow-inference-server-cpu:latest
 ```
 

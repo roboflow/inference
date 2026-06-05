@@ -700,14 +700,6 @@ WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
     os.getenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", True)
 )
-if ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
-    warnings.warn(
-        "Your `inference` configuration specifies `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`. "
-        "Currently, Workflows Custom Python blocks are allowed by default - but this is going to change 19.06.2026. "
-        "If your workload rely on that setting, please make adjustment to your configuration before the inference "
-        "release following mentioned date. Otherwise - you may ignore this warning.",
-        category=InferenceDeprecationWarning,
-    )
 
 # Modal configuration for Custom Python Blocks
 WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
