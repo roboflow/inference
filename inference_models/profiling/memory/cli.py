@@ -542,6 +542,11 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     ),
 )
 @click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Resolve package, shapes, and inputs; print worker payload JSON and exit.",
+)
+@click.option(
     "--in-process",
     is_flag=True,
     help="Run in the current process (debug only; breaks isolation between scenarios).",
@@ -583,6 +588,7 @@ def main(
     onnx_nvml_sampling_interval_seconds: float,
     trt_nvml_sampling_interval_seconds: float,
     num_execution_contexts: int,
+    dry_run: bool,
     in_process: bool,
     output_json: Optional[str],
 ) -> None:
@@ -749,6 +755,10 @@ def main(
         "profile_tier": profile_tier,
         "in_process": in_process,
     }
+
+    if dry_run:
+        console.print(json.dumps(payload, indent=2))
+        return
 
     if backend == BackendType.ONNX.value:
         if in_process:
