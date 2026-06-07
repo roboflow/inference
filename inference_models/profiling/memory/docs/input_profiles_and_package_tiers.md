@@ -74,9 +74,9 @@ uv run python profiling/memory/scripts/inspect_package_input_profile.py \
   --package-path /tmp/inference_model_packages/…/… \
   --architecture yolov8 --task-type object-detection --backend onnx
 
-# Optional: verify CLI shape flags before profiling
+# Shows resolved_profiling_shapes for the package
 uv run python profiling/memory/scripts/inspect_package_input_profile.py \
-  --package-path … --batch-size 1 --height 640 --width 640
+  --package-path …
 ```
 
 Programmatic API: ``describe_package_input_profile``, ``shape_spec_from_package_dir``,
@@ -91,7 +91,7 @@ Lookup at runtime: [`registry_profiles.py`](../registry_profiles.py) (`resolve_r
 
 ```mermaid
 flowchart LR
-  CLI["CLI flags\nbatch / H / W / method / infer-kwargs"]
+  CLI["CLI flags\nmethod / infer-kwargs"]
   PKG["Loaded package\ninference_config.json on model"]
   REG["registry_input_profiles.json\n(metadata + declared contract)"]
   FACTORY["input_factory\nrandom RGB images"]
@@ -109,27 +109,25 @@ flowchart LR
 
 ### What the harness actually runs
 
-1. **CLI shape knobs** — `--batch-size`, `--height`, `--width` must match static package constraints (validated before profiling).
+1. **Automatic shape resolution** — The profiling CLI always resolves batch / H / W from package artifacts via [`resolve_profiling_image_shapes`](../package_input_profile.py): static values from `inference_config.json` / `trt_config.json`, or worst-case bounds for dynamic batch (`max_dynamic_batch_size`, `dynamic_batch_size_max`) and dynamic spatial reference sizes (`training_input_size`). Unconstrained packages fall back to harness defaults (1×640×640).
 
-2. **Strict shape validation** — Before profiling (CLI) and again in workers after load, [`package_input_profile.py`](../package_input_profile.py) checks that `--batch-size`, `--height`, and `--width` match **static** package constraints from `inference_config.json` / `trt_config.json`. A mismatch raises `InputProfileMismatchError` (no silent override). Dynamic spatial packages allow arbitrary H×W; dynamic batch documents a worst-case value but does not auto-apply it.
+2. **Worker shape check** — After model load, workers re-validate the resolved shapes against static package constraints (`InputProfileMismatchError` if the payload disagrees).
 
 3. **Synthetic tensors** — [`build_random_rgb_images`](../input_factory.py) builds deterministic `uint8` HWC images for the **effective** batch and size.
 
-4. **Method and kwargs** — `--method` defaults to `infer`; [`merge_infer_kwargs`](../input_factory.py) adds small task defaults (e.g. open-vocabulary detection `classes`). Extra kwargs come from `--infer-kwargs-json` / `--infer-kwargs-path`.
+4. **Method and kwargs** — The CLI resolves `profiling_method` via [`resolve_profiling_method`](../profiling_inputs.py) (override with `--method`) and builds the worker payload `infer_kwargs` via [`build_profiling_infer_kwargs`](../profiling_inputs.py) (registry defaults merged with `--infer-kwargs-json`). Workers pass `config.infer_kwargs` to the model method unchanged.
 
-5. **Registry in metadata only (mostly)** — [`build_input_metadata_with_registry`](../metadata.py) attaches:
+5. **Registry metadata** — [`build_input_metadata_with_registry`](../metadata.py) attaches:
    - `task_inference_profile`, `profiling_method`
-   - `inputs.images` with `value` / `resolution` / `source`
-   - `declared_inputs` for every input declared in the task profile (VLM prompts, SAM geometry, etc.), marking non-image inputs as *not exercised* unless you pass them via `infer_kwargs`
+   - `inputs` for every exercised input (`images` plus non-image inputs present in `infer_kwargs`)
+   - `declared_inputs` for the full task contract; non-image inputs are marked `profiled: true` when supplied via `--infer-kwargs-json` / `--infer-kwargs-path` (including method kwargs such as `max_new_tokens`)
 
-So for standard vision models, the **connection is implemented** for `images`: CLI → optional package override → synthetic arrays → measured loop. The JSON registry documents the full contract; VLMs and multi-step models still **profile like vision** unless you extend kwargs and (future) workflow steps.
+So for standard vision models, the **connection is implemented** for `images`: package-resolved shapes → synthetic arrays → measured loop. VLMs and open-vocabulary models receive registry-driven defaults (prompt text, classes, `max_new_tokens`, etc.) without manual CLI kwargs; override via `--infer-kwargs-json` when needed. After model load, metadata records `prompt_token_length` when the loaded model exposes a tokenizer.
 
 ### What is not wired yet (planned)
 
-- **Automatic shape resolution from `registry_input_profiles.json`** — e.g. choosing `max_dynamic_batch_size` or dynamic spatial upper bounds without hand-picking CLI flags.
 - **`profiling_workflow`** — multi-step profiles (SAM embed → segment) still default to a single `method_name`; workflow arrays in metadata are preparatory.
-- **Non-`images` inputs from task profiles** — prompts, `max_new_tokens`, and geometry must be supplied manually via `--infer-kwargs-json` to affect memory; metadata will show them as profiled when present.
-- **Package fetch backend vs harness backend** — the CLI harness uses `--backend torch|onnx|trt`, while Roboflow packages are keyed by registry backends (`torch-script`, `hugging-face`, …). Class resolution uses the harness mapping in `backend_registry.py`; **package download** still filters `ModelPackageMetadata` with the harness `BackendType` literal. For TorchScript-only rows, prefer `--model-path` to a local package or ensure the registry package exists for the backend you pass until selection uses `package_input_backend` from the resolved registry row.
+- **Package fetch backend vs harness backend** — the CLI harness uses `--backend torch|onnx|trt`, while Roboflow packages are keyed by registry backends (`torch-script`, `hugging-face`, …). Class resolution uses the harness mapping in `backend_registry.py`; **package download** still filters `ModelPackageMetadata` with the harness `BackendType` literal. Ensure the registry package exists for the harness backend you pass until selection uses `package_input_backend` from the resolved registry row.
 
 ---
 
@@ -138,8 +136,8 @@ So for standard vision models, the **connection is implemented** for `images`: C
 | Stage | Source | Result |
 |-------|--------|--------|
 | Registry row | `architecture=yolov8`, `task_type=object-detection`, harness `torch` | Class `YOLOv8ForObjectDetectionTorchScript`, profile `vision_infer`, package backend `torch-script` |
-| Requested shape | CLI must match package static constraints | Inspect first: `uv run python profiling/memory/scripts/inspect_package_input_profile.py --package-path …` |
-| Profiled shape | Must match package static constraints | `input_metadata.inputs.images` records `value`, `resolution`, `source` |
+| Resolved shape | Package artifacts via `resolve_profiling_image_shapes` | Inspect: `uv run python profiling/memory/scripts/inspect_package_input_profile.py --package-path …` |
+| Profiled shape | Same resolved values sent to workers | `input_metadata.inputs.images` records `value`, `resolution`, `source` |
 | Tensor data | `input_factory` | Random RGB at profiled shape |
 | Record | `input_metadata.inputs.images` | `value`, `resolution: static`, `source` from package artifacts when constrained |
 
@@ -168,12 +166,12 @@ Packages are resolved in [`package_resolve.py`](../package_resolve.py) via `reso
    - optional `--package-id`
    - `--quantization` (required on the profiling CLI)
 4. **Local layout** — `{packages_target_dir}/{model_id}/{package_id}/`
-5. **Download** — if `--fetch-package` (default on) or the directory is missing, artifacts are downloaded with hash verification.
+5. **Download** — artifacts download when the local directory is missing; pass `--force-download` to re-fetch and overwrite an existing cache.
 
 Entry points:
 
-- **Profiling CLI** — `--model-id` triggers the flow above; `--model-path` skips fetch and uses an existing directory or hub id.
-- **Standalone helper** — `profiling/scripts/fetch_model_package.py` always calls `fetch_if_missing=True`.
+- **Profiling CLI** — `--model-id` triggers provider metadata lookup and resolves the local package under `--packages-target-dir`; reuses cached artifacts unless missing or `--force-download`.
+- **Standalone helper** — `profiling/scripts/fetch_model_package.py` always passes `force_download=True`.
 
 Environment: `ROBOFLOW_API_KEY` when using the Roboflow provider.
 
@@ -199,7 +197,8 @@ Future work may wire tier to:
 |------|------|
 | `registry_input_profiles.json` | Machine-readable contracts (shapes + API + registry links) |
 | `registry_profiles.py` | Load JSON; resolve entry + task profile for metadata |
-| `input_factory.py` | Synthetic images + infer kwargs merge |
+| `input_factory.py` | Synthetic images |
+| `profiling_inputs.py` | Registry task-profile method + infer kwargs defaults |
 | `worker_common.py` | Package shape alignment; shared metadata builders |
 | `package_resolve.py` | Download/select Roboflow packages |
 | `package_input_profile.py` | Shape spec resolution, validation, `describe_package_input_profile` |

@@ -95,7 +95,7 @@ def main(
             target_dir=target_dir,
             provider=provider,
             api_key=api_key,
-            fetch_if_missing=True,
+            force_download=True,
         )
     except ValueError as error:
         raise click.ClickException(str(error)) from error

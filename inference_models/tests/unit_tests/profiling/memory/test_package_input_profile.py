@@ -7,6 +7,8 @@ import pytest
 
 from profiling.memory.package_input_profile import (
     InputProfileMismatchError,
+    resolve_profiling_image_shapes,
+    resolve_profiling_image_shapes_for_package_dir,
     shape_spec_from_package_dir,
     validate_profiling_image_shapes,
     validate_profiling_image_shapes_for_package_dir,
@@ -66,6 +68,39 @@ def test_validate_rejects_mismatched_batch(tmp_path: Path) -> None:
         )
 
     assert "batch" in str(error.value)
+
+
+def test_resolve_uses_static_package_values_when_omitted(tmp_path: Path) -> None:
+    package_dir = tmp_path / "pkg"
+    package_dir.mkdir()
+    _write_inference_config(package_dir)
+
+    batch, height, width = resolve_profiling_image_shapes_for_package_dir(package_dir)
+
+    assert (batch, height, width) == (2, 640, 640)
+
+
+def test_resolve_uses_max_dynamic_batch_when_omitted(tmp_path: Path) -> None:
+    package_dir = tmp_path / "pkg"
+    package_dir.mkdir()
+    config = {
+        "network_input": {
+            "training_input_size": {"height": 640, "width": 640},
+            "dynamic_spatial_size_supported": False,
+            "color_mode": "rgb",
+            "resize_mode": "stretch",
+            "input_channels": 3,
+        },
+        "forward_pass": {"max_dynamic_batch_size": 8},
+    }
+    (package_dir / "inference_config.json").write_text(
+        json.dumps(config),
+        encoding="utf-8",
+    )
+
+    batch, height, width = resolve_profiling_image_shapes_for_package_dir(package_dir)
+
+    assert (batch, height, width) == (8, 640, 640)
 
 
 def test_dynamic_spatial_does_not_force_resolution(tmp_path: Path) -> None:

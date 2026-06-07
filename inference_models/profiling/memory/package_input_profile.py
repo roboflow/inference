@@ -19,9 +19,13 @@ from profiling.memory.registry_profiles import resolve_registry_input_context
 
 AxisResolution = Literal["static", "dynamic", "unconstrained"]
 
+DEFAULT_PROFILING_BATCH_SIZE = 1
+DEFAULT_PROFILING_HEIGHT = 640
+DEFAULT_PROFILING_WIDTH = 640
+
 
 class InputProfileMismatchError(ValueError):
-    """Raised when CLI-requested profiling shapes disagree with the package contract."""
+    """Raised when requested profiling shapes disagree with the package contract."""
 
     def __init__(self, mismatches: List[str]) -> None:
         self.mismatches = list(mismatches)
@@ -30,8 +34,7 @@ class InputProfileMismatchError(ValueError):
             "Profiling input shape mismatch: "
             f"{detail}. "
             "Use `uv run python profiling/memory/scripts/inspect_package_input_profile.py` "
-            "to see required values for this package, or pass matching "
-            "--batch-size, --height, and --width."
+            "to inspect resolved shapes for this package."
         )
 
 
@@ -212,6 +215,57 @@ def shape_spec_from_model(model: Any) -> Optional[PackageProfilingShapeSpec]:
     return shape_spec_from_inference_config(inference_config)
 
 
+def _resolve_profiling_axis(
+    *,
+    axis: ProfilingAxisSpec,
+    default_value: int,
+) -> int:
+    if axis.required_value is not None:
+        return int(axis.required_value)
+
+    return default_value
+
+
+def resolve_profiling_image_shapes(
+    *,
+    spec: Optional[PackageProfilingShapeSpec],
+    default_batch_size: int = DEFAULT_PROFILING_BATCH_SIZE,
+    default_height: int = DEFAULT_PROFILING_HEIGHT,
+    default_width: int = DEFAULT_PROFILING_WIDTH,
+) -> Tuple[int, int, int]:
+    """Resolve profiling shapes from package constraints.
+
+    Uses the package ``required_value`` for static and dynamic axes (worst-case
+    admission bound). Unconstrained axes fall back to harness defaults (1×640×640).
+    """
+    if spec is None:
+        return default_batch_size, default_height, default_width
+
+    resolved_batch = _resolve_profiling_axis(
+        axis=spec.batch,
+        default_value=default_batch_size,
+    )
+    resolved_height = _resolve_profiling_axis(
+        axis=spec.height,
+        default_value=default_height,
+    )
+    resolved_width = _resolve_profiling_axis(
+        axis=spec.width,
+        default_value=default_width,
+    )
+
+    return resolved_batch, resolved_height, resolved_width
+
+
+def resolve_profiling_image_shapes_for_package_dir(
+    package_dir: Path,
+) -> Tuple[int, int, int]:
+    """Resolve profiling shapes from on-disk package artifacts."""
+    spec = shape_spec_from_package_dir(package_dir)
+
+    return resolve_profiling_image_shapes(spec=spec)
+
+
 def _collect_shape_mismatches(
     *,
     batch_size: int,
@@ -320,38 +374,38 @@ def validate_profiling_image_shapes_for_model(
     )
 
 
-def recommended_profiling_cli_flags(spec: Optional[PackageProfilingShapeSpec]) -> Dict[str, Any]:
-    """Suggest ``--batch-size`` / ``--height`` / ``--width`` for static packages."""
+def resolved_profiling_shapes_report(
+    spec: Optional[PackageProfilingShapeSpec],
+) -> Dict[str, Any]:
+    """Return resolved profiling shapes and notes for a package shape spec."""
     if spec is None:
         return {
-            "batch_size": None,
-            "height": None,
-            "width": None,
+            "batch_size": DEFAULT_PROFILING_BATCH_SIZE,
+            "height": DEFAULT_PROFILING_HEIGHT,
+            "width": DEFAULT_PROFILING_WIDTH,
             "notes": ["No package shape constraints found in artifacts."],
         }
 
     notes: List[str] = []
-    batch_size = (
-        spec.batch.required_value if spec.batch.resolution == "static" else None
+    resolved_batch, resolved_height, resolved_width = resolve_profiling_image_shapes(
+        spec=spec,
     )
-    height = (
-        spec.height.required_value if spec.height.resolution == "static" else None
-    )
-    width = spec.width.required_value if spec.width.resolution == "static" else None
 
     if spec.batch.resolution == "dynamic":
         notes.append(
-            f"Use --batch-size {spec.batch.required_value} for worst-case dynamic batch."
+            f"Dynamic batch; profiling resolves to {resolved_batch} "
+            f"({spec.batch.source})."
         )
     if spec.height.resolution == "dynamic" or spec.width.resolution == "dynamic":
         notes.append(
-            "Spatial axes are dynamic; choose worst-case height/width explicitly."
+            f"Dynamic spatial size; profiling resolves to "
+            f"{resolved_height}x{resolved_width} from package artifacts."
         )
 
     return {
-        "batch_size": batch_size,
-        "height": height,
-        "width": width,
+        "batch_size": resolved_batch,
+        "height": resolved_height,
+        "width": resolved_width,
         "notes": notes,
     }
 
@@ -364,9 +418,6 @@ def describe_package_input_profile(
     harness_backend: Optional[str] = None,
     module_name: Optional[str] = None,
     class_name: Optional[str] = None,
-    batch_size: Optional[int] = None,
-    height: Optional[int] = None,
-    width: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Return registry input profile context and package shape constraints."""
     package_path = Path(package_dir)
@@ -387,7 +438,7 @@ def describe_package_input_profile(
         "package_features": package_features,
         "trt_package_features": trt_features,
         "profiling_shape_spec": shape_spec.to_dict() if shape_spec else None,
-        "recommended_cli": recommended_profiling_cli_flags(shape_spec),
+        "resolved_profiling_shapes": resolved_profiling_shapes_report(shape_spec),
         "registry_input_context": {
             key: value
             for key, value in registry_context.items()
@@ -398,18 +449,5 @@ def describe_package_input_profile(
     task_profile_spec = registry_context.get("task_profile_spec")
     if isinstance(task_profile_spec, dict):
         report["task_inference_profile_spec"] = task_profile_spec
-
-    if batch_size is not None and height is not None and width is not None:
-        try:
-            validate_profiling_image_shapes(
-                batch_size=batch_size,
-                height=height,
-                width=width,
-                spec=shape_spec,
-            )
-            report["profiling_shapes_valid"] = True
-        except InputProfileMismatchError as error:
-            report["profiling_shapes_valid"] = False
-            report["profiling_shape_mismatches"] = error.mismatches
 
     return report

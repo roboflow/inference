@@ -47,6 +47,7 @@ def build_input_metadata(
     width: int,
     infer_kwargs: Dict[str, Any],
     shape_spec: Optional[PackageProfilingShapeSpec] = None,
+    runtime_axis_values: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> InputMetadata:
     input_metadata = build_input_metadata_with_registry(
         module_name=module_name,
@@ -59,6 +60,7 @@ def build_input_metadata(
         width=width,
         infer_kwargs=infer_kwargs,
         shape_spec=shape_spec,
+        runtime_axis_values=runtime_axis_values,
     )
 
     return input_metadata

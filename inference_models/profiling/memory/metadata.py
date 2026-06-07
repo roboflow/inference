@@ -737,12 +737,73 @@ def build_image_input_metadata(
     return image_axes
 
 
+def _derive_axis_value_from_infer_input(axis_name: str, value: Any) -> Optional[Any]:
+    if axis_name == "num_classes" and isinstance(value, list):
+        return len(value)
+    if axis_name in {"num_points", "num_boxes"} and hasattr(value, "__len__"):
+        try:
+            return len(value)
+        except TypeError:
+            return None
+    if axis_name == "prompt_token_length":
+        return None
+
+    return value
+
+
+def _axes_from_infer_input_value(
+    input_spec: Dict[str, Any],
+    value: Any,
+    *,
+    runtime_axes: Optional[Dict[str, Any]] = None,
+) -> Dict[str, InputAxisValue]:
+    axes: Dict[str, InputAxisValue] = {}
+    axis_specs: List[Dict[str, Any]] = input_spec.get("axes") or []
+    runtime_axes = runtime_axes or {}
+
+    for axis_spec in axis_specs:
+        if not isinstance(axis_spec, dict):
+            continue
+
+        axis_name = str(axis_spec.get("name") or "")
+        if not axis_name:
+            continue
+
+        if axis_name in runtime_axes:
+            derived = runtime_axes[axis_name]
+            source = "runtime_tokenizer"
+        else:
+            derived = _derive_axis_value_from_infer_input(axis_name, value)
+            source = "infer_kwargs"
+
+        if derived is None:
+            continue
+
+        resolution = axis_spec.get("resolution")
+        axes[axis_name] = InputAxisValue(
+            value=derived,
+            resolution=resolution if resolution in ("static", "dynamic") else "static",
+            source=source,
+        )
+
+    if not axes:
+        input_name = str(input_spec.get("name") or "value")
+        axes[input_name] = InputAxisValue(
+            value=value,
+            resolution="static",
+            source="infer_kwargs",
+        )
+
+    return axes
+
+
 def _build_declared_inputs_from_profile(
     task_profile_spec: Optional[Dict[str, Any]],
     *,
     profiled_input_name: str,
     profiled_axes: Dict[str, InputAxisValue],
     infer_kwargs: Dict[str, Any],
+    runtime_axis_values: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> List[DeclaredInputSpec]:
     if not task_profile_spec:
         return []
@@ -761,11 +822,30 @@ def _build_declared_inputs_from_profile(
         if not name:
             continue
 
-        is_profiled = name == profiled_input_name
-        axes = profiled_axes if is_profiled else {}
-        notes = None
-        if not is_profiled:
-            notes = "Declared by registry profile; not exercised in this harness run."
+        if name == profiled_input_name:
+            is_profiled = True
+            axes = profiled_axes
+            notes = None
+        else:
+            value = infer_kwargs.get(name)
+            is_profiled = value is not None
+            axes = (
+                _axes_from_infer_input_value(
+                    input_spec,
+                    value,
+                    runtime_axes=(runtime_axis_values or {}).get(name),
+                )
+                if is_profiled
+                else {}
+            )
+            notes = (
+                None
+                if is_profiled
+                else (
+                    "Declared by registry profile; harness defaults apply when "
+                    "required, or set via --infer-kwargs-json to override."
+                )
+            )
 
         declared.append(
             DeclaredInputSpec(
@@ -826,6 +906,7 @@ def build_input_metadata_with_registry(
     infer_kwargs: Dict[str, Any],
     profiled_input_name: str = "images",
     shape_spec: Optional[PackageProfilingShapeSpec] = None,
+    runtime_axis_values: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> InputMetadata:
     """Build input metadata including registry-declared VLM/SAM/vision contracts."""
     registry_context = resolve_registry_input_context(
@@ -873,14 +954,22 @@ def build_input_metadata_with_registry(
         profiled_input_name=profiled_input_name,
         profiled_axes=profiled_axes,
         infer_kwargs=infer_kwargs,
+        runtime_axis_values=runtime_axis_values,
     )
+
+    profiled_inputs: Dict[str, Dict[str, InputAxisValue]] = {
+        profiled_input_name: profiled_axes,
+    }
+    for declared_input in declared_inputs:
+        if declared_input.profiled and declared_input.name != profiled_input_name:
+            profiled_inputs[declared_input.name] = declared_input.axes
 
     input_metadata = InputMetadata(
         task_inference_profile=(
             str(task_inference_profile) if task_inference_profile else None
         ),
         profiling_method=str(profiling_method) if profiling_method else None,
-        inputs={profiled_input_name: profiled_axes},
+        inputs=profiled_inputs,
         declared_inputs=declared_inputs,
         infer_defaults=dict(infer_kwargs),
     )

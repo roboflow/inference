@@ -107,8 +107,8 @@ Aggregate all runs and store:
 Profiling emits a ``MemoryProfileRecord`` (schema version ``1.0``): normalized
 **metrics** plus structured **model_metadata**, **runtime_metadata**,
 **backend_metadata**, **input_metadata**, **environment_metadata**, and
-**profiling_run**. Package identity comes from ``--model-id`` / ``--package-id`` (download via CLI or
-``profiling/scripts/fetch_model_package.py``) or from an existing local ``--model-path``.
+**profiling_run**. Package identity comes from ``--model-id`` / ``--package-id`` (resolved via CLI or
+``profiling/scripts/fetch_model_package.py`` under ``--packages-target-dir``).
 ``package_id`` is the unique registry identifier (API ``packageId``).
 
 ```json

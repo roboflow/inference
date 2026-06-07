@@ -89,22 +89,6 @@ from profiling.memory.package_resolve import resolve_package_directory
     "--api-key",
     envvar="ROBOFLOW_API_KEY",
 )
-@click.option(
-    "--batch-size",
-    type=int,
-    default=None,
-    help="Optional: check whether these CLI values would pass profiling validation.",
-)
-@click.option(
-    "--height",
-    type=int,
-    default=None,
-)
-@click.option(
-    "--width",
-    type=int,
-    default=None,
-)
 def main(
     package_path: Optional[Path],
     model_id: Optional[str],
@@ -116,9 +100,6 @@ def main(
     packages_target_dir: Path,
     provider: str,
     api_key: Optional[str],
-    batch_size: Optional[int],
-    height: Optional[int],
-    width: Optional[int],
 ) -> None:
     """Emit JSON describing package input constraints and registry task profile."""
     if bool(package_path) == bool(model_id):
@@ -164,7 +145,7 @@ def main(
                 target_dir=packages_target_dir,
                 provider=provider,
                 api_key=api_key,
-                fetch_if_missing=False,
+                force_download=False,
             )
         except ValueError as error:
             raise click.ClickException(str(error)) from error
@@ -173,18 +154,6 @@ def main(
 
     assert package_path is not None
 
-    shape_args = {}
-    if batch_size is not None or height is not None or width is not None:
-        if batch_size is None or height is None or width is None:
-            raise click.UsageError(
-                "Pass all of --batch-size, --height, and --width to validate a request."
-            )
-        shape_args = {
-            "batch_size": batch_size,
-            "height": height,
-            "width": width,
-        }
-
     report = describe_package_input_profile(
         package_path,
         architecture=architecture,
@@ -192,7 +161,6 @@ def main(
         harness_backend=harness_backend,
         module_name=module_name,
         class_name=class_name,
-        **shape_args,
     )
 
     click.echo(json.dumps(report, indent=2, sort_keys=True))

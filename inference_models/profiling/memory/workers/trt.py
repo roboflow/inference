@@ -6,10 +6,9 @@ from typing import Any, Callable, Dict, Optional
 
 import torch
 
-from profiling.memory.input_factory import (
-    build_random_rgb_images,
-    merge_infer_kwargs,
-)
+from profiling.memory.input_factory import build_random_rgb_images
+from profiling.memory.profiling_inputs import compute_runtime_axis_values
+from profiling.memory.registry_profiles import resolve_registry_input_context
 from profiling.memory.metadata import (
     TensorRTBackendMetadata,
     TensorRTMetrics,
@@ -139,9 +138,21 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
         height=height,
         width=width,
     )
-    infer_kwargs = merge_infer_kwargs(
+    infer_kwargs = dict(config.infer_kwargs)
+    registry_context = resolve_registry_input_context(
+        module_name=config.module_name,
+        class_name=config.class_name,
+        architecture=config.architecture,
         task_type=config.task_type,
-        user=config.infer_kwargs,
+        backend=config.backend,
+    )
+    task_profile_spec = registry_context.get("task_profile_spec")
+    runtime_axis_values = compute_runtime_axis_values(
+        model,
+        infer_kwargs,
+        task_profile_spec=(
+            task_profile_spec if isinstance(task_profile_spec, dict) else None
+        ),
     )
     def run_inference_steps(num_steps: int) -> None:
         for _ in range(num_steps):
@@ -222,6 +233,7 @@ def worker_run(payload: Dict[str, Any]) -> Dict[str, Any]:
             width=width,
             infer_kwargs=infer_kwargs,
             shape_spec=shape_spec,
+            runtime_axis_values=runtime_axis_values,
         ),
         environment_metadata=collect_environment_metadata(device=device),
         profiling_run=build_profiling_run_metadata(

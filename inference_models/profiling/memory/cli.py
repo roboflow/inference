@@ -20,8 +20,11 @@ from profiling.memory.backend_registry import (
 )
 from profiling.memory.metadata import ProfileTier, profile_tier_field_description
 from profiling.memory.package_input_profile import (
-    InputProfileMismatchError,
-    validate_profiling_image_shapes_for_package_dir,
+    resolve_profiling_image_shapes_for_package_dir,
+)
+from profiling.memory.profiling_inputs import (
+    build_profiling_infer_kwargs,
+    resolve_profiling_method,
 )
 from profiling.memory.package_resolve import (
     extract_onnx_opset_from_package_dir,
@@ -142,31 +145,19 @@ def _format_bytes_as_gb(value: Optional[int]) -> str:
     return formatted_value
 
 
-def _resolve_model_path(
+def _resolve_profiling_package(
     *,
-    model_path: Optional[str],
-    model_id: Optional[str],
-    architecture: Optional[str],
-    task_type: Optional[str],
+    model_id: str,
+    architecture: str,
+    task_type: str,
     backend: str,
     quantization: str,
     package_id: Optional[str],
     packages_target_dir: Path,
-    fetch_package: bool,
+    force_download: bool,
     provider: str,
     api_key: Optional[str],
-) -> tuple[str, Optional[str], Optional[str], Optional[str], Optional[int]]:
-    if model_path:
-        return model_path, model_id, package_id, None, None
-
-    if not model_id:
-        raise click.UsageError("Provide --model-path or --model-id.")
-
-    if not architecture or not task_type:
-        raise click.UsageError(
-            "--model-id requires --architecture and --task-type."
-        )
-
+) -> tuple[Path, str, str, Optional[str], Optional[int]]:
     backend_type = BackendType(backend)
     quantization_type = Quantization(quantization)
     package_dir, package, model_variant = resolve_package_directory(
@@ -179,13 +170,17 @@ def _resolve_model_path(
         target_dir=packages_target_dir,
         provider=provider,
         api_key=api_key,
-        fetch_if_missing=fetch_package,
+        force_download=force_download,
     )
-    resolved_package_id = package.package_id
-    resolved_path = str(package_dir)
     resolved_onnx_opset = onnx_opset_from_package(package)
 
-    return resolved_path, model_id, resolved_package_id, model_variant, resolved_onnx_opset
+    return (
+        package_dir,
+        model_id,
+        package.package_id,
+        model_variant,
+        resolved_onnx_opset,
+    )
 
 
 def _build_metadata_context(
@@ -359,8 +354,9 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     type=str,
     default=None,
     help=(
-        "Registered model id; resolves package dir under --packages-target-dir "
-        "(use with --architecture, --task-type, --quantization)."
+        "Registered model id (required for profiling). Resolves package metadata "
+        "from the provider and uses {packages-target-dir}/{model_id}/{package_id}/ "
+        "locally; reuses cached artifacts unless missing or --force-download."
     ),
 )
 @click.option(
@@ -380,10 +376,11 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     help="Root directory for downloaded model packages.",
 )
 @click.option(
-    "--fetch-package/--no-fetch-package",
-    default=True,
-    show_default=True,
-    help="Download package from Roboflow when missing locally.",
+    "--force-download",
+    is_flag=True,
+    help=(
+        "Re-download package artifacts even when the local directory already exists."
+    ),
 )
 @click.option(
     "--provider",
@@ -391,14 +388,6 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     default="roboflow",
     show_default=True,
     help="Package provider when fetching (see fetch_model_package).",
-)
-@click.option(
-    "--model-path",
-    type=str,
-    help=(
-        "Path passed to from_pretrained "
-        "(local package dir or hub id). Optional if --model-id is set."
-    ),
 )
 @click.option(
     "--profile-tier",
@@ -444,30 +433,6 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     show_default=True,
 )
 @click.option(
-    "--batch-size",
-    type=click.IntRange(
-        min=1,
-    ),
-    default=1,
-    show_default=True,
-)
-@click.option(
-    "--height",
-    type=click.IntRange(
-        min=1,
-    ),
-    default=640,
-    show_default=True,
-)
-@click.option(
-    "--width",
-    type=click.IntRange(
-        min=1,
-    ),
-    default=640,
-    show_default=True,
-)
-@click.option(
     "--warmup",
     "warmup_iterations",
     type=click.IntRange(
@@ -488,11 +453,10 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
 @click.option(
     "--method",
     type=str,
-    default="infer",
-    show_default=True,
+    default=None,
     help=(
-        "Method to call with synthetic images "
-        "(e.g. infer, embed_images, segment_images)."
+        "Method to call with synthetic images. Defaults to the registry task "
+        "profile profiling_method (e.g. infer, prompt, detect)."
     ),
 )
 @click.option(
@@ -599,20 +563,16 @@ def main(
     model_id: Optional[str],
     package_id: Optional[str],
     packages_target_dir: Path,
-    fetch_package: bool,
+    force_download: bool,
     provider: str,
-    model_path: Optional[str],
     profile_tier: str,
     model_variant: Optional[str],
     architecture: Optional[str],
     task_type: Optional[str],
     device: str,
-    batch_size: int,
-    height: int,
-    width: int,
     warmup_iterations: int,
     measured_iterations: int,
-    method: str,
+    method: Optional[str],
     infer_kwargs_json: Optional[str],
     infer_kwargs_path: Optional[str],
     from_pretrained_kwargs_json: Optional[str],
@@ -657,8 +617,8 @@ def main(
         missing.append("--architecture")
     if not task_type:
         missing.append("--task-type")
-    if not model_path and not model_id:
-        missing.append("--model-path or --model-id")
+    if not model_id:
+        missing.append("--model-id")
     if not quantization:
         missing.append("--quantization")
     if missing:
@@ -693,13 +653,12 @@ def main(
     api_key = os.environ.get("ROBOFLOW_API_KEY")
     try:
         (
-            resolved_path,
+            package_dir,
             resolved_model_id,
             resolved_package_id,
             fetched_model_variant,
             fetched_onnx_opset,
-        ) = _resolve_model_path(
-            model_path=model_path,
+        ) = _resolve_profiling_package(
             model_id=model_id,
             architecture=architecture,
             task_type=task_type,
@@ -707,29 +666,39 @@ def main(
             quantization=quantization or "fp32",
             package_id=package_id,
             packages_target_dir=packages_target_dir,
-            fetch_package=fetch_package,
+            force_download=force_download,
             provider=provider,
             api_key=api_key,
         )
     except ValueError as error:
         raise click.ClickException(str(error)) from error
 
-    package_dir = Path(resolved_path)
-    if package_dir.is_dir():
-        try:
-            validate_profiling_image_shapes_for_package_dir(
-                package_dir,
-                batch_size=batch_size,
-                height=height,
-                width=width,
-            )
-        except InputProfileMismatchError as error:
-            raise click.ClickException(str(error)) from error
+    batch_size, height, width = resolve_profiling_image_shapes_for_package_dir(
+        package_dir,
+    )
+    effective_method = resolve_profiling_method(
+        module_name=module_name,
+        class_name=class_name,
+        architecture=architecture,
+        task_type=task_type,
+        backend=backend,
+        user_method=method,
+    )
+    effective_infer_kwargs = build_profiling_infer_kwargs(
+        package_dir=package_dir,
+        module_name=module_name,
+        class_name=class_name,
+        architecture=architecture,
+        task_type=task_type,
+        backend=backend,
+        user=infer_extra,
+    )
 
+    resolved_path = str(package_dir)
     effective_model_variant = model_variant or fetched_model_variant
     effective_onnx_opset = fetched_onnx_opset
     if effective_onnx_opset is None and backend == BackendType.ONNX.value:
-        effective_onnx_opset = extract_onnx_opset_from_package_dir(Path(resolved_path))
+        effective_onnx_opset = extract_onnx_opset_from_package_dir(package_dir)
 
     metadata_context = _build_metadata_context(
         profile_tier=profile_tier,
@@ -764,9 +733,9 @@ def main(
         "batch_size": batch_size,
         "height": height,
         "width": width,
-        "infer_kwargs": infer_extra,
+        "infer_kwargs": effective_infer_kwargs,
         "task_type": task_type,
-        "method_name": method,
+        "method_name": effective_method,
         "warmup_iterations": warmup_iterations,
         "measured_iterations": measured_iterations,
         "architecture": architecture,

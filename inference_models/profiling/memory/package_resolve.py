@@ -98,9 +98,12 @@ def resolve_package_directory(
     target_dir: Path,
     provider: str = "roboflow",
     api_key: Optional[str] = None,
-    fetch_if_missing: bool = False,
+    force_download: bool = False,
 ) -> tuple[Path, ModelPackageMetadata, Optional[str]]:
     """Return local package directory, package metadata, and model variant.
+
+    Downloads package artifacts when the local directory is missing, or when
+    ``force_download`` is True (re-download and overwrite an existing directory).
 
     ``package.package_id`` is the unique Roboflow registry identifier (API field ``packageId``).
     """
@@ -133,7 +136,7 @@ def resolve_package_directory(
         package_id=package.package_id,
     )
 
-    if fetch_if_missing or not package_dir.is_dir():
+    if force_download or not package_dir.is_dir():
         package_dir.mkdir(parents=True, exist_ok=True)
         download_files_to_directory(
             target_dir=str(package_dir),

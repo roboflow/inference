@@ -28,8 +28,8 @@ class MemoryProfilingWorkerPayload(BaseModel):
     package_path: Path = Field(
         description=(
             "Local model package directory passed to registry from_pretrained. "
-            "Profiling CLI with --model-id resolves via resolve_package_directory "
-            "before the worker starts; --model-path supplies this directly."
+            "Profiling CLI resolves via resolve_package_directory before the "
+            "worker starts."
         ),
     )
     device_str: str = Field(
