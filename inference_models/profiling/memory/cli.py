@@ -29,7 +29,10 @@ from profiling.memory.profiling_inputs import (
 from profiling.memory.package_resolve import (
     extract_onnx_opset_from_package_dir,
     onnx_opset_from_package,
-    resolve_package_directory,
+)
+from profiling.memory.package_selection import (
+    resolve_profiling_package_directory,
+    resolve_profiling_package_selection,
 )
 from profiling.memory.subprocess_harness import dump_result_json, run_profile_subprocess
 from profiling.memory.workers.onnx import worker_run as onnx_worker_run
@@ -143,44 +146,6 @@ def _format_bytes_as_gb(value: Optional[int]) -> str:
     formatted_value = f"{gb_value:.3f}"
 
     return formatted_value
-
-
-def _resolve_profiling_package(
-    *,
-    model_id: str,
-    architecture: str,
-    task_type: str,
-    backend: str,
-    quantization: str,
-    package_id: Optional[str],
-    packages_target_dir: Path,
-    force_download: bool,
-    provider: str,
-    api_key: Optional[str],
-) -> tuple[Path, str, str, Optional[str], Optional[int]]:
-    backend_type = BackendType(backend)
-    quantization_type = Quantization(quantization)
-    package_dir, package, model_variant = resolve_package_directory(
-        model_id=model_id,
-        model_architecture=architecture,
-        task_type=task_type,
-        backend=backend_type,
-        quantization=quantization_type,
-        package_id=package_id,
-        target_dir=packages_target_dir,
-        provider=provider,
-        api_key=api_key,
-        force_download=force_download,
-    )
-    resolved_onnx_opset = onnx_opset_from_package(package)
-
-    return (
-        package_dir,
-        model_id,
-        package.package_id,
-        model_variant,
-        resolved_onnx_opset,
-    )
 
 
 def _build_metadata_context(
@@ -347,23 +312,25 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
             BackendType.TRT.value,
         ],
     ),
-    help="Profiling backend harness to run.",
+    help=(
+        "Profiling harness backend. Required for paths 2 and 3; resolved from the "
+        "package in path 1."
+    ),
 )
 @click.option(
     "--model-id",
     type=str,
     default=None,
-    help=(
-        "Registered model id (required for profiling). Resolves package metadata "
-        "from the provider and uses {packages-target-dir}/{model_id}/{package_id}/ "
-        "locally; reuses cached artifacts unless missing or --force-download."
-    ),
+    help="Registered model id (required for all profiling package selection paths).",
 )
 @click.option(
     "--package-id",
     type=str,
     default=None,
-    help="Exact package version when using --model-id.",
+    help=(
+        "Path 1 only: exact package id with --model-id. Do not combine with "
+        "--backend, --quantization, --architecture, or --task-type."
+    ),
 )
 @click.option(
     "--packages-target-dir",
@@ -404,8 +371,8 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     type=str,
     default=None,
     help=(
-        "Registered model variant (e.g. yolov8-n). "
-        "Filled automatically when resolving via --model-id."
+        "Path 3 only (optional): validate against model metadata. "
+        "Resolved automatically in paths 1 and 2."
     ),
 )
 @click.option(
@@ -413,8 +380,8 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     type=str,
     default=None,
     help=(
-        "Registry architecture (e.g. yolov8). Required for profiling; "
-        "resolves the model class with --task-type and --backend."
+        "Path 3 only: registry architecture (e.g. yolov8). "
+        "Resolved from model metadata in paths 1 and 2."
     ),
 )
 @click.option(
@@ -422,8 +389,8 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     type=str,
     default=None,
     help=(
-        "Registry task type (e.g. object-detection). Required for profiling; "
-        "resolves the model class with --architecture and --backend."
+        "Path 3 only: registry task type (e.g. object-detection). "
+        "Resolved from model metadata in paths 1 and 2."
     ),
 )
 @click.option(
@@ -496,9 +463,10 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     type=click.Choice(
         [quantization.value for quantization in Quantization],
     ),
-    default="fp32",
-    show_default=True,
-    help="Package quantization.",
+    default=None,
+    help=(
+        "Required for paths 2 and 3. Resolved from the selected package in path 1."
+    ),
 )
 @click.option(
     "--torch-profiler-memory",
@@ -616,23 +584,50 @@ def main(
         )
         return
 
-    missing = []
-    if not backend:
-        missing.append("--backend")
-    if not architecture:
-        missing.append("--architecture")
-    if not task_type:
-        missing.append("--task-type")
     if not model_id:
-        missing.append("--model-id")
-    if not quantization:
-        missing.append("--quantization")
-    if missing:
         raise click.UsageError(
-            "Missing required arguments: "
-            + ", ".join(missing)
-            + ". Use --list-torch-models, --list-onnx-models, --list-trt-models, or --help."
+            "Missing --model-id. Use --list-torch-models, --list-onnx-models, "
+            "--list-trt-models, or --help."
         )
+
+    infer_extra = _load_json_dict(
+        raw=infer_kwargs_json,
+        path=infer_kwargs_path,
+    )
+    fp_extra = _load_json_dict(
+        raw=from_pretrained_kwargs_json,
+        path=from_pretrained_kwargs_path,
+    )
+
+    api_key = os.environ.get("ROBOFLOW_API_KEY")
+    try:
+        selection = resolve_profiling_package_selection(
+            model_id=model_id,
+            package_id=package_id,
+            backend=backend,
+            architecture=architecture,
+            task_type=task_type,
+            model_variant=model_variant,
+            quantization=quantization,
+            provider=provider,
+            api_key=api_key,
+        )
+        package_dir = resolve_profiling_package_directory(
+            selection,
+            packages_target_dir=packages_target_dir,
+            force_download=force_download,
+        )
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+
+    architecture = selection.architecture
+    task_type = selection.task_type
+    backend = selection.harness_backend
+    quantization = selection.quantization
+    resolved_model_id = selection.model_id
+    resolved_package_id = selection.package.package_id
+    effective_model_variant = selection.model_variant
+    fetched_onnx_opset = onnx_opset_from_package(selection.package)
 
     try:
         registry_row = resolve_registry_row(
@@ -646,38 +641,6 @@ def main(
     module_name = registry_row.module_name
     class_name = registry_row.class_name
     registry_features = registry_features_from_row(registry_row)
-
-    infer_extra = _load_json_dict(
-        raw=infer_kwargs_json,
-        path=infer_kwargs_path,
-    )
-    fp_extra = _load_json_dict(
-        raw=from_pretrained_kwargs_json,
-        path=from_pretrained_kwargs_path,
-    )
-
-    api_key = os.environ.get("ROBOFLOW_API_KEY")
-    try:
-        (
-            package_dir,
-            resolved_model_id,
-            resolved_package_id,
-            fetched_model_variant,
-            fetched_onnx_opset,
-        ) = _resolve_profiling_package(
-            model_id=model_id,
-            architecture=architecture,
-            task_type=task_type,
-            backend=backend,
-            quantization=quantization or "fp32",
-            package_id=package_id,
-            packages_target_dir=packages_target_dir,
-            force_download=force_download,
-            provider=provider,
-            api_key=api_key,
-        )
-    except ValueError as error:
-        raise click.ClickException(str(error)) from error
 
     batch_size, height, width = resolve_profiling_image_shapes_for_package_dir(
         package_dir,
@@ -701,7 +664,6 @@ def main(
     )
 
     resolved_path = str(package_dir)
-    effective_model_variant = model_variant or fetched_model_variant
     effective_onnx_opset = fetched_onnx_opset
     if effective_onnx_opset is None and backend == BackendType.ONNX.value:
         effective_onnx_opset = extract_onnx_opset_from_package_dir(package_dir)
@@ -714,7 +676,7 @@ def main(
         backend=backend,
         architecture=architecture,
         task_type=task_type,
-        quantization=quantization or "fp32",
+        quantization=quantization,
         model_variant=effective_model_variant,
         registry_features=registry_features,
         onnx_opset=effective_onnx_opset,

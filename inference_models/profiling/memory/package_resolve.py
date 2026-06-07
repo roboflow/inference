@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from inference_models import BackendType, Quantization
 from inference_models.developer_tools import (
@@ -13,6 +13,12 @@ from inference_models.developer_tools import (
     get_model_from_provider,
 )
 from inference_models.utils.file_system import read_json
+
+TORCH_HARNESS_PACKAGE_BACKENDS = (
+    BackendType.TORCH,
+    BackendType.TORCH_SCRIPT,
+    BackendType.HF,
+)
 
 def make_package_dir(
     target_dir: Path,
@@ -30,6 +36,134 @@ def make_package_dir(
     return package_dir
 
 
+def package_backends_for_harness(harness_backend: str) -> Sequence[BackendType]:
+    """Return registry package backends that map to a profiling harness backend."""
+    if harness_backend == BackendType.TORCH.value:
+        return TORCH_HARNESS_PACKAGE_BACKENDS
+    if harness_backend == BackendType.ONNX.value:
+        return (BackendType.ONNX,)
+    if harness_backend == BackendType.TRT.value:
+        return (BackendType.TRT,)
+
+    raise ValueError(
+        f"Unsupported harness backend {harness_backend!r}; "
+        f"expected one of: {BackendType.TORCH.value}, {BackendType.ONNX.value}, "
+        f"{BackendType.TRT.value}"
+    )
+
+
+def harness_backend_for_package_backend(package_backend: BackendType) -> str:
+    """Map a registry package backend to the profiling harness backend."""
+    if package_backend in TORCH_HARNESS_PACKAGE_BACKENDS:
+        return BackendType.TORCH.value
+    if package_backend == BackendType.ONNX:
+        return BackendType.ONNX.value
+    if package_backend == BackendType.TRT:
+        return BackendType.TRT.value
+
+    raise ValueError(
+        f"Package backend {package_backend.value!r} is not supported by the "
+        "profiling harness."
+    )
+
+
+def format_package_choices(packages: Sequence[ModelPackageMetadata]) -> str:
+    return ", ".join(
+        f"{package.package_id}:{package.backend.value}:"
+        f"{package.quantization.value if package.quantization else 'unknown'}"
+        for package in packages
+    )
+
+
+def fetch_model_metadata(
+    *,
+    model_id: str,
+    provider: str = "roboflow",
+    api_key: Optional[str] = None,
+) -> ModelMetadata:
+    return get_model_from_provider(
+        model_id=model_id,
+        provider=provider,
+        api_key=api_key,
+    )
+
+
+def filter_packages(
+    metadata: ModelMetadata,
+    *,
+    package_id: Optional[str] = None,
+    package_backends: Optional[Sequence[BackendType]] = None,
+    quantization: Optional[Quantization] = None,
+) -> List[ModelPackageMetadata]:
+    candidates: List[ModelPackageMetadata] = []
+
+    for package in metadata.model_packages:
+        if package_id is not None and package.package_id != package_id:
+            continue
+        if (
+            package_backends is not None
+            and package.backend not in package_backends
+        ):
+            continue
+        if quantization is not None and package.quantization != quantization:
+            continue
+
+        candidates.append(package)
+
+    return candidates
+
+
+def require_single_package(
+    candidates: Sequence[ModelPackageMetadata],
+    *,
+    context: str,
+    available: Sequence[ModelPackageMetadata],
+) -> ModelPackageMetadata:
+    if len(candidates) == 1:
+        return candidates[0]
+
+    if not candidates:
+        raise ValueError(
+            f"No package found for {context}. "
+            f"Available packages: {format_package_choices(available)}"
+        )
+
+    raise ValueError(
+        f"Multiple packages match {context}: "
+        f"{format_package_choices(candidates)}. "
+        "Provide a more specific selection (for example --package-id or path 3 "
+        "with --architecture and --task-type)."
+    )
+
+
+def download_package_directory(
+    *,
+    model_id: str,
+    package: ModelPackageMetadata,
+    target_dir: Path,
+    force_download: bool = False,
+) -> Path:
+    package_dir = make_package_dir(
+        target_dir,
+        model_id=model_id,
+        package_id=package.package_id,
+    )
+
+    if force_download or not package_dir.is_dir():
+        package_dir.mkdir(parents=True, exist_ok=True)
+        download_files_to_directory(
+            target_dir=str(package_dir),
+            files_specs=[
+                (artifact.file_handle, artifact.download_url, artifact.md5_hash)
+                for artifact in package.package_artefacts
+            ],
+            verify_hash_while_download=True,
+            download_files_without_hash=False,
+        )
+
+    return package_dir
+
+
 def select_package(
     metadata: ModelMetadata,
     *,
@@ -37,29 +171,31 @@ def select_package(
     package_id: Optional[str],
     quantization: Optional[Quantization],
 ) -> ModelPackageMetadata:
-    candidates = [
-        package
-        for package in metadata.model_packages
-        if package.backend == backend
-        and (package_id is None or package.package_id == package_id)
-        and (quantization is None or package.quantization == quantization)
-    ]
+    harness_backend = harness_backend_for_package_backend(backend)
+    package_backends = package_backends_for_harness(harness_backend)
+    if backend not in package_backends:
+        package_backends = (backend,)
 
-    if not candidates:
-        available = ", ".join(
-            f"{package.package_id}:{package.backend.value}:{package.quantization.value}"
-            for package in metadata.model_packages
-        )
-        raise ValueError(
-            f"No package found for backend={backend.value!r}"
+    candidates = filter_packages(
+        metadata,
+        package_id=package_id,
+        package_backends=package_backends,
+        quantization=quantization,
+    )
+
+    return require_single_package(
+        candidates,
+        context=(
+            f"backend={backend.value!r}"
             + (f" and package_id={package_id!r}" if package_id else "")
-            + (f" and quantization={quantization.value!r}" if quantization else "")
-            + f". Available packages: {available}"
-        )
-
-    selected_package = candidates[0]
-
-    return selected_package
+            + (
+                f" and quantization={quantization.value!r}"
+                if quantization
+                else ""
+            )
+        ),
+        available=metadata.model_packages,
+    )
 
 
 def onnx_opset_from_package(package: ModelPackageMetadata) -> Optional[int]:
@@ -107,7 +243,7 @@ def resolve_package_directory(
 
     ``package.package_id`` is the unique Roboflow registry identifier (API field ``packageId``).
     """
-    metadata = get_model_from_provider(
+    metadata = fetch_model_metadata(
         model_id=model_id,
         provider=provider,
         api_key=api_key,
@@ -130,23 +266,12 @@ def resolve_package_directory(
         package_id=package_id,
         quantization=quantization,
     )
-    package_dir = make_package_dir(
-        target_dir,
+    package_dir = download_package_directory(
         model_id=model_id,
-        package_id=package.package_id,
+        package=package,
+        target_dir=target_dir,
+        force_download=force_download,
     )
-
-    if force_download or not package_dir.is_dir():
-        package_dir.mkdir(parents=True, exist_ok=True)
-        download_files_to_directory(
-            target_dir=str(package_dir),
-            files_specs=[
-                (artifact.file_handle, artifact.download_url, artifact.md5_hash)
-                for artifact in package.package_artefacts
-            ],
-            verify_hash_while_download=True,
-            download_files_without_hash=False,
-        )
 
     return package_dir, package, metadata.model_variant
 

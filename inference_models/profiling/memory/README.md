@@ -26,6 +26,18 @@ uv run python -m profiling.memory.cli --backend onnx ...
 Use `--backend torch` for torch, torch-script, and Hugging Face registry rows;
 `onnx` or `trt` for those harnesses.
 
+## Package selection paths
+
+Exactly one path must be used (see [`package_selection.py`](package_selection.py)):
+
+1. **`--model-id` + `--package-id`** — backend, architecture, task type, variant, and
+   quantization come from provider metadata and the chosen package.
+2. **`--model-id` + `--backend` + `--quantization`** — architecture, task type, and
+   variant come from model metadata. Fails when more than one package matches.
+3. **`--model-id` + `--backend` + `--quantization` + `--architecture` + `--task-type`**
+   — validates registry identity against model metadata, then requires a unique
+   matching package. Optional `--model-variant` for validation.
+
 ## Quick start
 
 List registry rows for a harness:
@@ -34,13 +46,11 @@ List registry rows for a harness:
 uv run python -m profiling.memory.cli --list-onnx-models
 ```
 
-Profile a registered model (package resolved under `--packages-target-dir`):
+Profile with path 2 (common when you know backend and quantization):
 
 ```bash
 uv run python -m profiling.memory.cli \
   --model-id workspace/yolov8n-640 \
-  --architecture yolov8 \
-  --task-type object-detection \
   --backend onnx \
   --quantization fp32 \
   --profile-tier customer
@@ -107,6 +117,8 @@ uv run python profiling/scripts/fetch_model_package.py --model-id … ...
 | `workers/{torch,onnx,trt}.py` | Per-backend measurement harnesses |
 | `metadata.py` | `MemoryProfileRecord` schema and assembly |
 | `registry_input_profiles.json` | Input contracts linked to registry entries |
+| `package_selection.py` | Three package identity resolution paths |
+| `package_resolve.py` | Provider fetch, filtering, and download |
 | `package_input_profile.py` | Shape resolution and validation |
 | `profiling_inputs.py` | Task-profile method and infer-kwargs defaults |
 | `docs/` | Design notes and admission context |
