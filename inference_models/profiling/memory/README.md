@@ -17,35 +17,27 @@ uv sync --extra profiling-memory
 
 Set `ROBOFLOW_API_KEY` when resolving packages from Roboflow.
 
-## CLI entry points
-
-All three console scripts invoke the same CLI; pass `--backend` to select the
-harness:
-
-| Script | Typical `--backend` |
-|--------|---------------------|
-| `memory-profile-pytorch` | `torch` (also torch-script and Hugging Face registry rows) |
-| `memory-profile-onnx` | `onnx` |
-| `memory-profile-trt` | `trt` |
-
-Equivalent module invocation:
+## CLI
 
 ```bash
-uv run python -m profiling.memory.cli profile --backend onnx ...
+uv run python -m profiling.memory.cli --backend onnx ...
 ```
+
+Use `--backend torch` for torch, torch-script, and Hugging Face registry rows;
+`onnx` or `trt` for those harnesses.
 
 ## Quick start
 
 List registry rows for a harness:
 
 ```bash
-uv run memory-profile-onnx --list-onnx-models
+uv run python -m profiling.memory.cli --list-onnx-models
 ```
 
 Profile a registered model (package resolved under `--packages-target-dir`):
 
 ```bash
-uv run memory-profile-onnx profile \
+uv run python -m profiling.memory.cli \
   --model-id workspace/yolov8n-640 \
   --architecture yolov8 \
   --task-type object-detection \
@@ -57,7 +49,7 @@ uv run memory-profile-onnx profile \
 Inspect resolved inputs without loading the GPU (`--dry-run`):
 
 ```bash
-uv run memory-profile-pytorch profile \
+uv run python -m profiling.memory.cli \
   --model-id workspace/my-vlm \
   --architecture gemma-4 \
   --task-type vlm \
