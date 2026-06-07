@@ -34,9 +34,9 @@ Exactly one path must be used (see [`package_selection.py`](package_selection.py
    quantization come from provider metadata and the chosen package.
 2. **`--model-id` + `--backend` + `--quantization`** — architecture, task type, and
    variant come from model metadata. Fails when more than one package matches.
-3. **`--model-id` + `--backend` + `--quantization` + `--architecture` + `--task-type`**
-   — validates registry identity against model metadata, then requires a unique
-   matching package. Optional `--model-variant` for validation.
+3. **`--backend` + `--quantization` + `--architecture` + `--task-type` + `--model-variant`**
+   — looks up the canonical provider model (`{architecture}/{model_variant}`),
+   resolves `model_id` from metadata, and requires a unique matching package.
 
 ## Quick start
 
@@ -56,13 +56,13 @@ uv run python -m profiling.memory.cli \
   --profile-tier customer
 ```
 
-Inspect resolved inputs without loading the GPU (`--dry-run`):
+Inspect resolved inputs without loading the GPU (`--dry-run`, path 3):
 
 ```bash
 uv run python -m profiling.memory.cli \
-  --model-id workspace/my-vlm \
   --architecture gemma-4 \
   --task-type vlm \
+  --model-variant 4b-it \
   --backend torch \
   --quantization fp32 \
   --dry-run

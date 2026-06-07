@@ -37,9 +37,10 @@ def _metadata(
     *,
     packages: list[ModelPackageMetadata],
     model_variant: str | None = "yolov8-n",
+    model_id: str = "yolov8/yolov8-n",
 ) -> ModelMetadata:
     return ModelMetadata(
-        model_id="workspace/yolov8n",
+        model_id=model_id,
         model_architecture="yolov8",
         task_type="object-detection",
         model_packages=packages,
@@ -90,16 +91,29 @@ def test_classify_path_two() -> None:
 
 def test_classify_path_three() -> None:
     mode = classify_package_selection_mode(
-        model_id="workspace/yolov8n",
+        model_id=None,
         package_id=None,
         backend="onnx",
         architecture="yolov8",
         task_type="object-detection",
-        model_variant=None,
+        model_variant="yolov8-n",
         quantization="fp32",
     )
 
     assert mode == PackageSelectionMode.BY_REGISTRY_IDENTITY
+
+
+def test_classify_path_three_rejects_model_id() -> None:
+    with pytest.raises(ValueError, match="path 3"):
+        classify_package_selection_mode(
+            model_id="workspace/yolov8n",
+            package_id=None,
+            backend="onnx",
+            architecture="yolov8",
+            task_type="object-detection",
+            model_variant="yolov8-n",
+            quantization="fp32",
+        )
 
 
 def test_resolve_by_package_id(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -156,6 +170,39 @@ def test_resolve_by_backend_quantization_requires_single_match(
         )
 
 
+def test_resolve_by_registry_identity_fetches_canonical_provider_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = _package(
+        package_id="pkg-onnx",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+    )
+    metadata = _metadata(packages=[package])
+    fetched_model_ids: list[str] = []
+
+    def _fetch_model_metadata(**kwargs):
+        fetched_model_ids.append(kwargs["model_id"])
+        return metadata
+
+    monkeypatch.setattr(
+        "profiling.memory.package_selection.fetch_model_metadata",
+        _fetch_model_metadata,
+    )
+
+    selection = resolve_profiling_package_by_registry_identity(
+        harness_backend="onnx",
+        quantization="fp32",
+        architecture="yolov8",
+        task_type="object-detection",
+        model_variant="yolov8-n",
+    )
+
+    assert fetched_model_ids == ["yolov8/yolov8-n"]
+    assert selection.model_id == "yolov8/yolov8-n"
+    assert selection.model_variant == "yolov8-n"
+
+
 def test_resolve_by_registry_identity_validates_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -172,9 +219,9 @@ def test_resolve_by_registry_identity_validates_metadata(
 
     with pytest.raises(ValueError, match="architecture"):
         resolve_profiling_package_by_registry_identity(
-            model_id="workspace/yolov8n",
             harness_backend="onnx",
             quantization="fp32",
             architecture="resnet",
             task_type="object-detection",
+            model_variant="yolov8-n",
         )

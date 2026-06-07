@@ -321,7 +321,10 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     "--model-id",
     type=str,
     default=None,
-    help="Registered model id (required for all profiling package selection paths).",
+    help=(
+        "Registered model id. Required for paths 1 and 2; resolved from provider "
+        "metadata in path 3."
+    ),
 )
 @click.option(
     "--package-id",
@@ -371,8 +374,8 @@ def _print_human_readable_result(console: Console, result: Dict[str, Any]) -> No
     type=str,
     default=None,
     help=(
-        "Path 3 only (optional): validate against model metadata. "
-        "Resolved automatically in paths 1 and 2."
+        "Path 3 only: registry model variant (e.g. yolov8-n). "
+        "Resolved from model metadata in paths 1 and 2."
     ),
 )
 @click.option(
@@ -583,12 +586,6 @@ def main(
             backend=BackendType.TRT,
         )
         return
-
-    if not model_id:
-        raise click.UsageError(
-            "Missing --model-id. Use --list-torch-models, --list-onnx-models, "
-            "--list-trt-models, or --help."
-        )
 
     infer_extra = _load_json_dict(
         raw=infer_kwargs_json,

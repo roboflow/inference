@@ -15,6 +15,7 @@ from profiling.memory.package_resolve import (
     filter_packages,
     harness_backend_for_package_backend,
     package_backends_for_harness,
+    registry_identity_provider_model_id,
     require_single_package,
 )
 
@@ -51,12 +52,16 @@ def classify_package_selection_mode(
     quantization: Optional[str],
 ) -> PackageSelectionMode:
     """Classify which package-resolution path the CLI arguments request."""
-    if not model_id:
-        raise ValueError("--model-id is required for profiling.")
-
-    has_registry_identity = architecture is not None and task_type is not None
+    has_registry_identity = (
+        architecture is not None
+        and task_type is not None
+        and model_variant is not None
+    )
 
     if package_id is not None:
+        if not model_id:
+            raise ValueError("Package selection path 1 requires --model-id.")
+
         conflicting = [
             name
             for name, value in (
@@ -76,24 +81,42 @@ def classify_package_selection_mode(
 
         return PackageSelectionMode.BY_PACKAGE_ID
 
-    if backend and quantization and not has_registry_identity:
-        if model_variant is not None:
+    if backend and quantization and has_registry_identity:
+        if model_id is not None:
+            raise ValueError(
+                "Package selection path 3 accepts --backend, --quantization, "
+                "--architecture, --task-type, and --model-variant only; "
+                "do not pass --model-id."
+            )
+
+        return PackageSelectionMode.BY_REGISTRY_IDENTITY
+
+    if backend and quantization:
+        if not model_id:
+            raise ValueError("Package selection path 2 requires --model-id.")
+
+        if architecture is not None or task_type is not None or model_variant is not None:
+            extra = [
+                name
+                for name, value in (
+                    ("--architecture", architecture),
+                    ("--task-type", task_type),
+                    ("--model-variant", model_variant),
+                )
+                if value is not None
+            ]
             raise ValueError(
                 "Package selection path 2 accepts --model-id, --backend, and "
-                "--quantization only; do not pass --model-variant."
+                f"--quantization only; remove: {', '.join(extra)}."
             )
 
         return PackageSelectionMode.BY_BACKEND_QUANTIZATION
-
-    if backend and quantization and has_registry_identity:
-        return PackageSelectionMode.BY_REGISTRY_IDENTITY
 
     raise ValueError(
         "Specify exactly one package selection path:\n"
         "  1) --model-id and --package-id\n"
         "  2) --model-id, --backend, and --quantization\n"
-        "  3) --model-id, --backend, --quantization, --architecture, and --task-type "
-        "(optional --model-variant)"
+        "  3) --backend, --quantization, --architecture, --task-type, and --model-variant"
     )
 
 
@@ -188,7 +211,7 @@ def _validate_registry_metadata(
     metadata: ModelMetadata,
     architecture: str,
     task_type: str,
-    model_variant: Optional[str],
+    model_variant: str,
 ) -> None:
     if metadata.model_architecture != architecture:
         raise ValueError(
@@ -202,7 +225,7 @@ def _validate_registry_metadata(
             f"got {metadata.task_type!r} from model metadata."
         )
 
-    if model_variant is not None and metadata.model_variant != model_variant:
+    if metadata.model_variant != model_variant:
         raise ValueError(
             f"Expected model variant {model_variant!r}, "
             f"got {metadata.model_variant!r} from model metadata."
@@ -211,18 +234,21 @@ def _validate_registry_metadata(
 
 def resolve_profiling_package_by_registry_identity(
     *,
-    model_id: str,
     harness_backend: str,
     quantization: str,
     architecture: str,
     task_type: str,
-    model_variant: Optional[str] = None,
+    model_variant: str,
     provider: str = "roboflow",
     api_key: Optional[str] = None,
 ) -> ProfilingPackageSelection:
-    """Path 3: resolve from registry identity fields plus ``model_id``."""
+    """Path 3: resolve from registry identity; ``model_id`` comes from provider metadata."""
+    provider_model_id = registry_identity_provider_model_id(
+        architecture=architecture,
+        model_variant=model_variant,
+    )
     metadata = fetch_model_metadata(
-        model_id=model_id,
+        model_id=provider_model_id,
         provider=provider,
         api_key=api_key,
     )
@@ -244,8 +270,8 @@ def resolve_profiling_package_by_registry_identity(
         candidates,
         context=(
             f"backend={harness_backend!r}, quantization={quantization!r}, "
-            f"architecture={architecture!r}, task_type={task_type!r} "
-            f"on model {model_id!r}"
+            f"architecture={architecture!r}, task_type={task_type!r}, "
+            f"model_variant={model_variant!r}"
         ),
         available=metadata.model_packages,
     )
@@ -256,14 +282,14 @@ def resolve_profiling_package_by_registry_identity(
         harness_backend=harness_backend,
         architecture=architecture,
         task_type=task_type,
-        model_variant=model_variant or metadata.model_variant,
+        model_variant=model_variant,
         quantization=quantization,
     )
 
 
 def resolve_profiling_package_selection(
     *,
-    model_id: str,
+    model_id: Optional[str],
     package_id: Optional[str],
     backend: Optional[str],
     architecture: Optional[str],
@@ -285,7 +311,7 @@ def resolve_profiling_package_selection(
     )
 
     if mode == PackageSelectionMode.BY_PACKAGE_ID:
-        assert package_id is not None
+        assert package_id is not None and model_id is not None
 
         return resolve_profiling_package_by_id(
             model_id=model_id,
@@ -297,6 +323,8 @@ def resolve_profiling_package_selection(
     assert backend is not None and quantization is not None
 
     if mode == PackageSelectionMode.BY_BACKEND_QUANTIZATION:
+        assert model_id is not None
+
         return resolve_profiling_package_by_backend_quantization(
             model_id=model_id,
             harness_backend=backend,
@@ -305,10 +333,9 @@ def resolve_profiling_package_selection(
             api_key=api_key,
         )
 
-    assert architecture is not None and task_type is not None
+    assert architecture is not None and task_type is not None and model_variant is not None
 
     return resolve_profiling_package_by_registry_identity(
-        model_id=model_id,
         harness_backend=backend,
         quantization=quantization,
         architecture=architecture,

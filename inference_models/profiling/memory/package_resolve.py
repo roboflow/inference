@@ -75,6 +75,15 @@ def format_package_choices(packages: Sequence[ModelPackageMetadata]) -> str:
     )
 
 
+def registry_identity_provider_model_id(
+    *,
+    architecture: str,
+    model_variant: str,
+) -> str:
+    """Canonical Roboflow provider id for a registry template model."""
+    return f"{architecture}/{model_variant}"
+
+
 def fetch_model_metadata(
     *,
     model_id: str,
@@ -132,7 +141,7 @@ def require_single_package(
         f"Multiple packages match {context}: "
         f"{format_package_choices(candidates)}. "
         "Provide a more specific selection (for example --package-id or path 3 "
-        "with --architecture and --task-type)."
+        "with --architecture, --task-type, and --model-variant)."
     )
 
 
