@@ -52,11 +52,10 @@ SERVER_MODEL_IDLE_TIMEOUT_S = get_float_from_env(
 )
 
 # ── HTTP / TLS (server.main) ──────────────────────────────────────────────
-# PORT has two distinct defaults: 8443 for ``server.main`` (TLS-capable
-# orchestrated entry) and 8000 for the ``__main__`` block in app.py
-# (uvicorn dev runner). Keep both defaults as constants.
+# PORT defaults to 8000 for both ``server.main`` (orchestrated entry) and the
+# ``__main__`` block in app.py (uvicorn dev runner). Keep both as constants.
 SERVER_HOST = os.environ.get("HOST", "0.0.0.0")
-SERVER_PORT_DEFAULT = 8443
+SERVER_PORT_DEFAULT = 8000
 APP_PORT_DEFAULT = 8000
 PORT_ENV = "PORT"
 NUM_WORKERS = get_integer_from_env("NUM_WORKERS", default=4)

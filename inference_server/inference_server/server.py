@@ -18,7 +18,7 @@ Usage::
 Environment variables::
 
     HOST                    Bind host (default: 0.0.0.0)
-    PORT                    Bind port (default: 8443)
+    PORT                    Bind port (default: 8000)
     NUM_WORKERS             uvicorn worker processes (default: 4)
     SSL_CERTFILE            Path to TLS certificate (PEM). Enables HTTPS if set.
     SSL_KEYFILE             Path to TLS private key (PEM). Required when SSL_CERTFILE set.
