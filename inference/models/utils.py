@@ -1054,3 +1054,11 @@ if USE_INFERENCE_MODELS:
         )
 
         ROBOFLOW_MODEL_TYPES[("vlm", "glm-ocr")] = InferenceModelsGLMOCRAdapter
+
+    if MOONDREAM2_ENABLED:
+        from inference.models.moondream2.moondream2_inference_models import (
+            InferenceModelsMoondream2Adapter,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("lmm", "moondream2")] = InferenceModelsMoondream2Adapter
+        ROBOFLOW_MODEL_TYPES[("vlm", "moondream2")] = InferenceModelsMoondream2Adapter

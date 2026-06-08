@@ -31,7 +31,7 @@ class InferenceModelsMoondream2Adapter(Model):
 
         self.api_key = api_key if api_key else API_KEY
 
-        self.task_type = "llm"
+        self.task_type = "lmm"
 
         extra_weights_provider_headers = get_extra_weights_provider_headers(
             countinference=kwargs.get("countinference"),
