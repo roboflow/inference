@@ -114,6 +114,97 @@ def test_post_process_semantic_segmentation_logits_shifts_when_class_names_prepe
     assert torch.all(results[0].segmentation_map == 3)
 
 
+def _binary_meta(h, w):
+    return [
+        MagicMock(
+            inference_size=MagicMock(height=h, width=w),
+            pad_top=0,
+            pad_bottom=0,
+            pad_left=0,
+            pad_right=0,
+            size_after_pre_processing=MagicMock(height=h, width=w),
+            original_size=MagicMock(height=h, width=w),
+            static_crop_offset=MagicMock(offset_x=0, offset_y=0),
+        )
+    ]
+
+
+def test_post_process_semantic_segmentation_logits_binary_single_channel_foreground():
+    """A single-channel (Ultralytics nc==1) output uses the sigmoid foreground
+    probability — high-positive logits map to the lone foreground class, not the
+    degenerate softmax-over-one-channel."""
+    from inference_models.models.common.roboflow.post_processing import (
+        post_process_semantic_segmentation_logits,
+    )
+
+    h, w = 6, 6
+    logits = torch.full((1, 1, h, w), 5.0)  # sigmoid ~ 0.993 -> foreground
+
+    results = post_process_semantic_segmentation_logits(
+        model_results=logits,
+        pre_processing_meta=_binary_meta(h, w),
+        class_names=["background", "object"],
+        background_class_id=0,
+        device=torch.device("cpu"),
+        confidence=0.5,
+        recommended_parameters=None,
+        default_confidence=0.5,
+    )
+
+    assert results[0].segmentation_map.shape == (h, w)
+    assert torch.all(results[0].segmentation_map == 1)  # lone foreground class id
+    assert torch.all(results[0].confidence > 0.99)
+
+
+def test_post_process_semantic_segmentation_logits_binary_sub_threshold_to_background():
+    """Single-channel logits with low sigmoid confidence collapse to background."""
+    from inference_models.models.common.roboflow.post_processing import (
+        post_process_semantic_segmentation_logits,
+    )
+
+    h, w = 4, 4
+    logits = torch.full((1, 1, h, w), -5.0)  # sigmoid ~ 0.0067 -> below threshold
+
+    results = post_process_semantic_segmentation_logits(
+        model_results=logits,
+        pre_processing_meta=_binary_meta(h, w),
+        class_names=["background", "object"],
+        background_class_id=0,
+        device=torch.device("cpu"),
+        confidence=0.5,
+        recommended_parameters=None,
+        default_confidence=0.5,
+    )
+
+    assert torch.all(results[0].segmentation_map == 0)  # background
+    assert torch.all(results[0].confidence == 0.0)
+
+
+def test_post_process_semantic_segmentation_logits_maps_channels_when_background_not_first():
+    """K foreground channels with background NOT at index 0: channel j maps to
+    the j-th non-background class id, not a blanket +1."""
+    from inference_models.models.common.roboflow.post_processing import (
+        post_process_semantic_segmentation_logits,
+    )
+
+    h, w, num_channels = 6, 6, 3
+    logits = torch.zeros(1, num_channels, h, w)
+    logits[0, 0] = 5.0  # channel 0 dominant
+
+    results = post_process_semantic_segmentation_logits(
+        model_results=logits,
+        pre_processing_meta=_binary_meta(h, w),
+        class_names=["a", "background", "b", "c"],
+        background_class_id=1,
+        device=torch.device("cpu"),
+        confidence=0.0,
+        recommended_parameters=None,
+        default_confidence=0.0,
+    )
+
+    assert torch.all(results[0].segmentation_map == 0)
+
+
 def test_yolo26_semantic_segmentation_registered():
     from inference_models.models.auto_loaders.entities import BackendType
     from inference_models.models.auto_loaders.models_registry import (
