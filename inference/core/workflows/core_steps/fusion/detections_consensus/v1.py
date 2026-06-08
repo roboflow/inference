@@ -9,6 +9,7 @@ from uuid import uuid4
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -368,7 +369,21 @@ def enumerate_detections(
 
 
 def calculate_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> float:
-    iou = float(sv.box_iou_batch(detection_a.xyxy, detection_b.xyxy)[0][0])
+    if detection_a.mask is not None and detection_b.mask is not None:
+        iou = float(sv.mask_iou_batch(detection_a.mask, detection_b.mask)[0][0])
+    elif (
+        ORIENTED_BOX_COORDINATES in detection_a.data
+        and ORIENTED_BOX_COORDINATES in detection_b.data
+    ):
+        boxes_a = np.asarray(
+            detection_a.data[ORIENTED_BOX_COORDINATES], dtype=np.float32
+        )
+        boxes_b = np.asarray(
+            detection_b.data[ORIENTED_BOX_COORDINATES], dtype=np.float32
+        )
+        iou = float(sv.oriented_box_iou_batch(boxes_a, boxes_b)[0][0])
+    else:
+        iou = float(sv.box_iou_batch(detection_a.xyxy, detection_b.xyxy)[0][0])
     if math.isnan(iou):
         iou = 0
     return iou

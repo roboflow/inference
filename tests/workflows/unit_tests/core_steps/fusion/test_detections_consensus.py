@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import supervision as sv
 from pydantic import ValidationError
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.fusion.detections_consensus import v1
 from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
@@ -1034,6 +1035,59 @@ def test_calculate_iou_when_detections_do_overlap_partially() -> None:
 
     # then
     assert abs(result - 1 / 7) < 1e-5
+
+
+def _rotated_rect(
+    cx: float, cy: float, w: float, h: float, angle_deg: float
+) -> np.ndarray:
+    angle = np.deg2rad(angle_deg)
+    cos, sin = np.cos(angle), np.sin(angle)
+    rot = np.array([[cos, -sin], [sin, cos]])
+    corners = np.array(
+        [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]]
+    )
+    return (corners @ rot.T + [cx, cy]).astype(np.float32)
+
+
+def test_calculate_iou_uses_mask_iou_when_both_have_masks() -> None:
+    # Identical AABB, disjoint masks. AABB IoU would be 1.0; mask IoU is 0.
+    mask_a = np.zeros((1, 10, 10), dtype=bool)
+    mask_a[0, 0:5, 0:5] = True
+    mask_b = np.zeros((1, 10, 10), dtype=bool)
+    mask_b[0, 5:10, 5:10] = True
+    xyxy = np.array([[0, 0, 10, 10]], dtype=np.float32)
+
+    detection_a = sv.Detections(xyxy=xyxy, mask=mask_a)
+    detection_b = sv.Detections(xyxy=xyxy, mask=mask_b)
+
+    assert calculate_iou(detection_a, detection_b) == 0.0
+
+
+def test_calculate_iou_uses_obb_iou_when_both_have_oriented_boxes() -> None:
+    # Crossed thin rectangles at +/-45 deg — near-identical AABBs but
+    # barely-overlapping oriented bodies.
+    quad_a = _rotated_rect(50, 50, 100, 10, +45)
+    quad_b = _rotated_rect(50, 50, 100, 10, -45)
+    aabb = np.array(
+        [
+            [
+                quad_a[:, 0].min(),
+                quad_a[:, 1].min(),
+                quad_a[:, 0].max(),
+                quad_a[:, 1].max(),
+            ]
+        ],
+        dtype=np.float32,
+    )
+
+    detection_a = sv.Detections(
+        xyxy=aabb, data={ORIENTED_BOX_COORDINATES: quad_a[None, ...]}
+    )
+    detection_b = sv.Detections(
+        xyxy=aabb, data={ORIENTED_BOX_COORDINATES: quad_b[None, ...]}
+    )
+
+    assert calculate_iou(detection_a, detection_b) < 0.2
 
 
 def test_enumerate_detections_when_no_predictions_given() -> None:
