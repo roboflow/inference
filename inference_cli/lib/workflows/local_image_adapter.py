@@ -282,6 +282,45 @@ def _on_failure(
     progress_bar.update(task_id, advance=1)
 
 
+def _resolve_metadata_driven_workflow_parameters(
+    image_path: str,
+    images_metadata_input_mapping: Optional[Dict[str, str]],
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Resolve per-image metadata for parameter injection.
+
+    When `images_metadata_input_mapping` is non-empty, the function looks
+    up the sibling `.json` metadata file for `image_path`, validates that
+    every value in the mapping is a key in the metadata, and projects the
+    metadata into a `{workflow_input: value}` dict via the mapping.
+
+    Returns (params, error_summary). On the success path the params dict
+    is the projection (possibly empty when mapping is None/empty) and
+    error_summary is None. On any failure (missing file, missing required
+    keys) the params is None and error_summary explains why — the caller
+    forwards it verbatim to `on_failure`.
+    """
+    if not images_metadata_input_mapping:
+        return {}, None
+    assumed_metadata_file_path = replace_file_extension(image_path, extension=".json")
+    if not os.path.isfile(assumed_metadata_file_path):
+        return None, (
+            f"Cold not find required metadata file for image: {image_path}. "
+            f"Since `images_metadata_input_mapping` was specified, presence of metadata file is enforced."
+        )
+    metadata = read_json(path=assumed_metadata_file_path)
+    missing_keys = set(images_metadata_input_mapping.values()).difference(
+        metadata.keys()
+    )
+    if len(missing_keys) > 0:
+        return None, (
+            f"Cold not find required metadata keys specified in `images_metadata_input_mapping` for image: "
+            f"{image_path}. Missing keys: {missing_keys}."
+        )
+    return {
+        key: metadata[value] for key, value in images_metadata_input_mapping.items()
+    }, None
+
+
 def _process_single_image_from_directory(
     image_path: ImagePath,
     model_manager: ModelManagerDecorator,
@@ -302,36 +341,17 @@ def _process_single_image_from_directory(
     images_metadata_input_mapping: Optional[Dict[str, str]] = None,
     workflows_execution_engine_init_params: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    metadata_driven_workflow_parameters = {}
-    if images_metadata_input_mapping:
-        assumed_metadata_file_path = replace_file_extension(
-            image_path, extension=".json"
+    metadata_driven_workflow_parameters, metadata_error = (
+        _resolve_metadata_driven_workflow_parameters(
+            image_path=image_path,
+            images_metadata_input_mapping=images_metadata_input_mapping,
         )
-        if not os.path.isfile(assumed_metadata_file_path):
-            error_summary = (
-                f"Cold not find required metadata file for image: {image_path}. "
-                f"Since `images_metadata_input_mapping` was specified, presence of metadata file is enforced."
-            )
-            if debug_mode:
-                CLI_LOGGER.exception(error_summary)
-            on_failure(image_path, error_summary)
-            return False
-        metadata = read_json(path=assumed_metadata_file_path)
-        missing_keys = set(images_metadata_input_mapping.values()).difference(
-            metadata.keys()
-        )
-        if len(missing_keys) > 0:
-            error_summary = (
-                f"Cold not find required metadata keys specified in `images_metadata_input_mapping` for image: "
-                f"{image_path}. Missing keys: {missing_keys}."
-            )
-            if debug_mode:
-                CLI_LOGGER.exception(error_summary)
-            on_failure(image_path, error_summary)
-            return False
-        metadata_driven_workflow_parameters = {
-            key: metadata[value] for key, value in images_metadata_input_mapping.items()
-        }
+    )
+    if metadata_error is not None:
+        if debug_mode:
+            CLI_LOGGER.exception(metadata_error)
+        on_failure(image_path, metadata_error)
+        return False
     try:
         workflow_parameters = workflow_parameters or {}
         metadata_driven_workflow_parameters.update(workflow_parameters)
