@@ -34,6 +34,7 @@ from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
+    MemoryProfile,
     ModelDependency,
     ModelMetadata,
     ModelPackageMetadata,
@@ -72,6 +73,9 @@ class RoboflowModelPackageV1(BaseModel):
     trusted_source: bool = Field(alias="trustedSource", default=False)
     recommended_parameters: Optional[RecommendedParameters] = Field(
         alias="recommendedParameters", default=None
+    )
+    memory_profile: MemoryProfile = Field(
+        alias="memoryProfile", default_factory=MemoryProfile
     )
 
 
@@ -423,6 +427,7 @@ def parse_onnx_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -551,6 +556,7 @@ def parse_trt_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -585,6 +591,7 @@ def parse_torch_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -611,6 +618,7 @@ def parse_hf_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -630,6 +638,7 @@ def parse_ultralytics_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -679,6 +688,7 @@ def parse_torch_script_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
         torch_script_package_details=torch_script_package_details,
     )
 
