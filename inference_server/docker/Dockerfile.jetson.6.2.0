@@ -44,6 +44,6 @@ RUN uv venv --python 3.10 --system-site-packages /opt/venv \
 
 WORKDIR /app/inference_server
 
-EXPOSE 8443
+EXPOSE 8000
 
 CMD ["/bin/bash", "start_server.sh"]

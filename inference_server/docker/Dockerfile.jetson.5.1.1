@@ -49,7 +49,7 @@ RUN python -m pip install --no-cache-dir \
 
 WORKDIR /app/inference_server
 
-EXPOSE 8443
+EXPOSE 8000
 
 # l4t-ml base sets ENTRYPOINT ["bash"] (non-passthrough) → reset it, else CMD
 # would run as `bash /bin/bash start_server.sh`.

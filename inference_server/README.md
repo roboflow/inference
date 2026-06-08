@@ -46,7 +46,7 @@ Run (GPU):
 docker run --rm -it \
   --gpus all \
   --shm-size=2g \
-  -p 8443:8443 \
+  -p 8000:8000 \
   -e LOG_LEVEL=INFO \
   inference-server:gpu
 ```
@@ -63,7 +63,7 @@ serve self-signed TLS (a cert is generated at startup; clients must then skip
 verification with `curl --insecure` / `requests verify=False`).
 
 ```bash
-curl -X POST "http://localhost:8443/infer?model_id=yolov8n-640&format=json" \
+curl -X POST "http://localhost:8000/infer?model_id=yolov8n-640&format=json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: image/jpeg" \
   --data-binary @image.jpg
@@ -74,7 +74,7 @@ CPU image: build with `inference_server/docker/Dockerfile.cpu` and drop `--gpus 
 ## Fast infer
 
 ```bash
-curl -X POST "http://localhost:8443/infer?model_id=yolov8n-640&format=json" \
+curl -X POST "http://localhost:8000/infer?model_id=yolov8n-640&format=json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: image/jpeg" \
   --data-binary @image.jpg
@@ -84,7 +84,7 @@ curl -X POST "http://localhost:8443/infer?model_id=yolov8n-640&format=json" \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `8443` | HTTPS port |
+| `PORT` | `8000` | HTTP port |
 | `NUM_WORKERS` | `4` | uvicorn worker processes |
 | `LOG_LEVEL` | `INFO` | Log level |
 | `ENABLE_HTTPS` | | Set truthy to serve self-signed TLS (default: plain HTTP) |
