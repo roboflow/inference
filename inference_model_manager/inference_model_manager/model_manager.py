@@ -9,6 +9,7 @@ import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, List, Literal, Optional
 
+from inference_model_manager import configuration as cfg
 from inference_model_manager.backends.base import Backend
 from inference_model_manager.dispatch import _get_registry, invoke_task, resolve_task
 
@@ -82,7 +83,7 @@ class ModelManager:
 
         # Shared thread pool for DirectBackends and infer_async
         self._executor = ThreadPoolExecutor(
-            max_workers=8,
+            max_workers=cfg.INFERENCE_DIRECT_MAX_WORKERS,
             thread_name_prefix="mm-worker",
         )
 
