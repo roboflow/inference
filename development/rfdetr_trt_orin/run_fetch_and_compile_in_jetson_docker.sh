@@ -59,6 +59,7 @@ DOCKER_ENV=(
     -e "ROBOFLOW_API_HOST=${PROD_API_HOST}"
     -e "INFERENCE_HOME=${CONTAINER_OUTPUT_DIR}/.cache"
     -e "RUNNING_ON_JETSON=True"
+    -e "PYTHONPATH=${CONTAINER_WORKSPACE}/inference_models:${CONTAINER_WORKSPACE}/inference_models/development"
 )
 
 if [[ -n "${ROBOFLOW_API_KEY:-}" ]]; then

@@ -14,7 +14,8 @@ import click
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 INFERENCE_MODELS_ROOT = REPO_ROOT / "inference_models"
-for path in (SCRIPT_DIR, REPO_ROOT, INFERENCE_MODELS_ROOT):
+DEVELOPMENT_ROOT = INFERENCE_MODELS_ROOT / "development"
+for path in (SCRIPT_DIR, INFERENCE_MODELS_ROOT, DEVELOPMENT_ROOT):
     path_str = str(path)
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
@@ -50,7 +51,7 @@ def _fetch_onnx_package(
 ) -> tuple[Path, dict]:
     _configure_prod_api(prod_api_host=prod_api_host)
 
-    from inference_models.development.compilation.core import (
+    from compilation.core import (
         download_model_packages,
         select_matching_model_packages,
     )
@@ -116,7 +117,7 @@ def _compile_trt_package(
 ) -> tuple[dict, dict]:
     import onnxruntime
 
-    from inference_models.development.compilation.engine_builder import EngineBuilder
+    from compilation.engine_builder import EngineBuilder
     from inference_models.runtime_introspection.core import x_ray_runtime_environment
 
     onnx_path = source_onnx_dir / WEIGHTS_ONNX_FILE
