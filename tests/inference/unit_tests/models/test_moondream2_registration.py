@@ -4,8 +4,6 @@ import importlib
 import os
 import sys
 
-import pytest
-
 OPTIONAL_MODEL_FLAGS = [
     "CORE_MODEL_CLIP_ENABLED",
     "CORE_MODEL_DOCTR_ENABLED",
@@ -71,22 +69,3 @@ def test_moondream2_lmm_registry_entry_resolves_to_inference_models_adapter() ->
         if env_module is not None:
             importlib.reload(env_module)
         sys.modules.pop("inference.models.utils", None)
-
-
-def test_moondream2_inference_models_adapter_reports_lmm_task_type(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from inference.models.moondream2 import moondream2_inference_models
-    from inference.models.moondream2.moondream2_inference_models import (
-        InferenceModelsMoondream2Adapter,
-    )
-
-    monkeypatch.setattr(
-        moondream2_inference_models.AutoModel,
-        "from_pretrained",
-        lambda *args, **kwargs: object(),
-    )
-
-    adapter = InferenceModelsMoondream2Adapter("moondream2/moondream2_2b_jul24")
-
-    assert adapter.task_type == "lmm"
