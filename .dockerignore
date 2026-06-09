@@ -46,3 +46,14 @@ tmptmp
 **/venv/
 **/__pycache__/
 **/*.egg-info/
+
+# Not needed at runtime — these dirs are COPY'd wholesale into the image via the
+# editable source packages, so excluding them shrinks both context and image.
+# (READMEs are kept: pyproject `readme = "README.md"` is read at build time.)
+**/tests/
+**/docs/
+**/examples/
+**/dockerfiles/
+inference_models/development/
+mkdocs.yml
+**/pytest.ini
