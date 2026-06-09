@@ -241,14 +241,13 @@ def _compile_trt_package(
 
 
 def _verify_trt_package(*, trt_package_dir: Path) -> None:
-    from inference_models import AutoModel
-
-    model = AutoModel.from_local_package(
-        package_path=str(trt_package_dir),
-        backend="trt",
-    )
     import numpy as np
 
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_trt import (
+        RFDetrForInstanceSegmentationTRT,
+    )
+
+    model = RFDetrForInstanceSegmentationTRT.from_pretrained(str(trt_package_dir))
     image = np.zeros((640, 640, 3), dtype=np.uint8)
     _ = model(image)
 

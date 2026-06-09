@@ -156,7 +156,7 @@ Production registration is a separate step after staging E2E passes (see the add
 | `--static-batch` | off | Static batch instead of dynamic |
 | `--skip-fetch` | off | Reuse existing `source_onnx/` |
 | `--skip-compile` | off | Download only |
-| `--verify` | off | Smoke test with `AutoModel.from_local_package` |
+| `--verify` | off | Smoke test with `RFDetrForInstanceSegmentationTRT.from_pretrained` |
 | `--staging-model-id` | `rfdetr-seg-nano` | Model id written into the manifest |
 
 ## `register_rfdetr_trt_orin_staging.py` options
