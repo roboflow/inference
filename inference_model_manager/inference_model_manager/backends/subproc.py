@@ -45,12 +45,7 @@ import numpy as np
 from inference_model_manager.backends.base import Backend
 from inference_model_manager.backends.utils.shm_pool import SHMPool
 from inference_model_manager.backends.utils.transport import default_transport
-from inference_model_manager.configuration import (
-    DEBUG_BENCHMARK_MODE_ENV,
-    ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_DEFAULT,
-    ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV,
-    INFERENCE_ZMQ_TRANSPORT_ENV,
-)
+from inference_model_manager import configuration as cfg
 from inference_model_manager.dispatch import invoke_task
 
 logger = logging.getLogger(__name__)
@@ -70,11 +65,10 @@ _MSG_STATS_REQ = b"\x05"  # parent→worker: force stats refresh (no payload)
 
 _STATS_SENTINEL = "STATS"  # sentinel for outbound queue → sends _MSG_STATS_REQ
 
-_HEARTBEAT_INTERVAL_S = 2.0
-_WORKER_HEARTBEAT_TIMEOUT = 30.0  # seconds of silence → unhealthy
+_HEARTBEAT_INTERVAL_S = cfg.INFERENCE_WORKER_HEARTBEAT_INTERVAL_S
+_WORKER_HEARTBEAT_TIMEOUT = cfg.INFERENCE_WORKER_HEARTBEAT_TIMEOUT_S  # silence → unhealthy
 
-_DEFAULT_BATCH_MAX_SIZE = 8
-_DEFAULT_BATCH_MAX_WAIT_MS = 5.0
+_BATCH_SIZE_FALLBACK = 8
 
 
 # ---------------------------------------------------------------------------
@@ -146,9 +140,9 @@ def _worker_main(
     Loads model, attaches SHMPool, signals READY, then greedy-batches
     T_SLOT_READY messages and sends T_RESULT per completed slot.
     """
-    if os.environ.get(ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV) is None:
-        os.environ[ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV] = (
-            ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_DEFAULT
+    if os.environ.get(cfg.ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV) is None:
+        os.environ[cfg.ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV] = (
+            cfg.ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_DEFAULT
         )
 
     import zmq  # noqa: PLC0415
@@ -166,7 +160,7 @@ def _worker_main(
             gpu_device if (use_gpu and gpu_device) else ("cuda:0" if use_gpu else "cpu")
         )
         _log.info("Worker(%s): loading on %s", model_id, device)
-        if os.environ.get(DEBUG_BENCHMARK_MODE_ENV):
+        if os.environ.get(cfg.DEBUG_BENCHMARK_MODE_ENV):
             from inference_model_manager.backends.passthrough_model import (
                 PassthroughModel,
             )
@@ -216,7 +210,7 @@ def _worker_main(
             pool,
             sock,
             batch_decode_fn,
-            effective_bs or _DEFAULT_BATCH_MAX_SIZE,
+            effective_bs or _BATCH_SIZE_FALLBACK,
             batch_max_wait_ms,
             _log,
         )
@@ -577,8 +571,8 @@ class SubprocessBackend(Backend):
         n_slots: int,
         input_mb: float,
         # Worker batching
-        batch_max_size: int = _DEFAULT_BATCH_MAX_SIZE,
-        batch_max_delay_ms: float = _DEFAULT_BATCH_MAX_WAIT_MS,
+        batch_max_size: int = 0,
+        batch_max_delay_ms: float = 0.0,
         # Orchestrated-mode callbacks
         on_result_callback: Optional[Callable] = None,
         on_death_callback: Optional[Callable] = None,
@@ -588,7 +582,7 @@ class SubprocessBackend(Backend):
         use_cuda_ipc: Optional[bool] = None,  # reserved, unused
         # Misc
         decoder: str = "imagecodecs",
-        worker_start_timeout: float = 120.0,
+        worker_start_timeout: float = cfg.INFERENCE_WORKER_START_TIMEOUT_S,
         **kwargs,
     ) -> None:
         import zmq  # noqa: PLC0415
@@ -632,7 +626,7 @@ class SubprocessBackend(Backend):
         self._zmq_sock = self._zmq_ctx.socket(zmq.PAIR)
         self._zmq_sock.setsockopt(zmq.LINGER, 0)
 
-        _transport = os.environ.get(INFERENCE_ZMQ_TRANSPORT_ENV, default_transport())
+        _transport = os.environ.get(cfg.INFERENCE_ZMQ_TRANSPORT_ENV, default_transport())
         _sock_id = f"sp_{os.getpid()}_{uuid.uuid4().hex[:8]}"
         if _transport == "ipc":
             self._zmq_addr = f"ipc:///tmp/inference_{_sock_id}.ipc"

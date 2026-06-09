@@ -49,15 +49,7 @@ import zmq.asyncio
 
 from inference_model_manager.backends.utils.shm_pool import SHMPool
 from inference_model_manager.backends.utils.transport import zmq_addr
-from inference_model_manager.configuration import (
-    INFERENCE_VRAM_ADMISSION_CONTROL,
-    INFERENCE_VRAM_HEADROOM_MB,
-    INFERENCE_VRAM_IDLE_CUTOFF_S,
-    INFERENCE_VRAM_RECENT_WINDOW_S,
-    INFERENCE_VRAM_WINDOW_SIZE,
-    MMP_INPUT_MB_DEFAULT,
-    MMP_N_SLOTS_DEFAULT,
-)
+from inference_model_manager import configuration as cfg
 from inference_model_manager.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
@@ -275,23 +267,24 @@ class ModelManagerProcess:
 
     def __init__(
         self,
-        n_slots: int = 32,
-        input_mb: float = 20.0,
-        stale_reap_interval_s: float = 10.0,
-        stale_slot_max_age_s: float = 30.0,
-        evict_threshold: float = 0.9,
-        evict_check_interval_s: float = 5.0,
-        monitor_interval_s: float = 5.0,
-        idle_timeout_s: float = 300.0,
+        n_slots: int = cfg.MMP_N_SLOTS_DEFAULT,
+        input_mb: float = cfg.MMP_INPUT_MB_DEFAULT,
+        stale_reap_interval_s: float = cfg.INFERENCE_STALE_REAP_INTERVAL_S,
+        stale_slot_max_age_s: float = cfg.INFERENCE_STALE_SLOT_MAX_AGE_S,
+        evict_threshold: float = cfg.INFERENCE_GPU_EVICTION_THRESHOLD,
+        evict_check_interval_s: float = cfg.INFERENCE_EVICT_CHECK_INTERVAL_S,
+        monitor_interval_s: float = cfg.INFERENCE_MONITOR_INTERVAL_S,
+        idle_timeout_s: float = cfg.INFERENCE_MODEL_IDLE_TIMEOUT_S,
+        load_oom_max_evictions: int = cfg.INFERENCE_LOAD_OOM_MAX_EVICTIONS,
         decoder: str = "imagecodecs",
         batch_max_size: int = 0,
         batch_max_wait_ms: float = 5.0,
-        max_pinned_memory_mb: int = 0,
-        vram_admission: bool = False,
-        vram_window_size: int = 60,
-        vram_idle_cutoff_s: Optional[float] = None,
-        vram_headroom_mb: float = 512.0,
-        vram_recent_window_s: float = 30.0,
+        max_pinned_memory_mb: int = cfg.INFERENCE_MAX_PINNED_MEMORY_MB,
+        vram_admission: bool = cfg.INFERENCE_VRAM_ADMISSION_CONTROL,
+        vram_window_size: int = cfg.INFERENCE_VRAM_WINDOW_SIZE,
+        vram_idle_cutoff_s: Optional[float] = cfg.INFERENCE_VRAM_IDLE_CUTOFF_S,
+        vram_headroom_mb: float = cfg.INFERENCE_VRAM_HEADROOM_MB,
+        vram_recent_window_s: float = cfg.INFERENCE_VRAM_RECENT_WINDOW_S,
     ) -> None:
         """
         Args:
@@ -314,6 +307,7 @@ class ModelManagerProcess:
         self._evict_check_interval_s = evict_check_interval_s
         self._monitor_interval_s = monitor_interval_s
         self._idle_timeout_s = idle_timeout_s
+        self._load_oom_max_evictions = load_oom_max_evictions
         self._vram_admission = vram_admission
         self._vram_window_size = vram_window_size
         self._vram_idle_cutoff_s = (
@@ -793,7 +787,7 @@ class ModelManagerProcess:
             idle_s = (now - last_access) if last_access else None
             req_times = self._model_request_times.get(f, [])
             # Trim stale entries for accurate rate
-            cutoff = now - 60.0
+            cutoff = now - self._vram_recent_window_s
             while req_times and req_times[0] < cutoff:
                 req_times.pop(0)
 
@@ -882,8 +876,8 @@ class ModelManagerProcess:
         # Sliding window: append timestamp, trim old entries
         times = self._model_request_times.setdefault(model_id, [])
         times.append(now)
-        # Keep only last 60s of timestamps
-        cutoff = now - 60.0
+        # Keep only the recent-window of timestamps
+        cutoff = now - self._vram_recent_window_s
         while times and times[0] < cutoff:
             times.pop(0)
         backend = self._backends.get(model_id)
@@ -1009,7 +1003,7 @@ class ModelManagerProcess:
                     return
 
         model_id_or_path = model_id.rsplit(":", 1)[0]
-        max_retries = 5  # safety cap — never loop forever
+        max_retries = self._load_oom_max_evictions  # safety cap — never loop forever
 
         for attempt in range(max_retries):
             logger.info(
@@ -1535,28 +1529,25 @@ def main() -> None:
     parser.add_argument(
         "--n-slots",
         type=int,
-        default=MMP_N_SLOTS_DEFAULT,
+        default=cfg.MMP_N_SLOTS_DEFAULT,
     )
     parser.add_argument(
         "--input-mb",
         type=float,
-        default=MMP_INPUT_MB_DEFAULT,
+        default=cfg.MMP_INPUT_MB_DEFAULT,
     )
     parser.add_argument(
         "--addr", default=None, help="ZMQ bind address (default: platform auto)"
     )
-    parser.add_argument("--evict-threshold", type=float, default=0.9)
+    parser.add_argument(
+        "--evict-threshold", type=float, default=cfg.INFERENCE_GPU_EVICTION_THRESHOLD
+    )
     args = parser.parse_args()
 
     mmp = ModelManagerProcess(
         n_slots=args.n_slots,
         input_mb=args.input_mb,
         evict_threshold=args.evict_threshold,
-        vram_admission=INFERENCE_VRAM_ADMISSION_CONTROL,
-        vram_window_size=INFERENCE_VRAM_WINDOW_SIZE,
-        vram_idle_cutoff_s=INFERENCE_VRAM_IDLE_CUTOFF_S,
-        vram_headroom_mb=INFERENCE_VRAM_HEADROOM_MB,
-        vram_recent_window_s=INFERENCE_VRAM_RECENT_WINDOW_S,
     )
     asyncio.run(mmp.run(addr=args.addr))
 
