@@ -68,6 +68,22 @@ RUN python3 -m pip install packaging==24.1 && rm -rf ~/.cache/pip
 # Install flash_attn required for Paligemma and Florence2
 RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
 
+# TEST-ONLY: overlay the patched SAM3 serialize_prompt onto the installed inference-models wheel.
+# inference-models ships as a pinned PyPI wheel (~=0.29.0 in requirements.gpu.txt), so the source fix
+# in this repo's inference_models/ dir does not reach the image without a new release. This overwrites
+# the single fixed file to validate the single-point serialize_prompt IndexError fix (PR #2423) on
+# staging. The build fails if the target is missing, so we never silently ship unpatched.
+# Remove this block once inference-models is published with the fix and the pin is bumped.
+COPY inference_models/inference_models/models/sam3/sam3_torch.py /tmp/sam3_torch_patched.py
+RUN set -eux; \
+    found=0; \
+    for d in /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/site-packages; do \
+        target="$d/inference_models/models/sam3/sam3_torch.py"; \
+        if [ -f "$target" ]; then cp /tmp/sam3_torch_patched.py "$target"; found=1; fi; \
+    done; \
+    test "$found" = 1; \
+    rm -f /tmp/sam3_torch_patched.py
+
 # Start runtime stage
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
 
