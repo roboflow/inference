@@ -28,6 +28,10 @@ on:
           - '3.11'
           - '3.12'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   integration-tests-inference-models-cpu:
     name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}

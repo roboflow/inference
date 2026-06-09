@@ -7,6 +7,8 @@ import aiohttp
 import pytest
 import requests.exceptions
 from aioresponses import aioresponses
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from requests_mock import Mocker
 from yarl import URL
 
@@ -3355,6 +3357,94 @@ def test_get_workflow_specification_raises_timeout_when_no_cache(
             workflow_id="timeout_no_cache_workflow",
             use_cache=False,
         )
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_workflow_specification_falls_back_to_api_when_ephemeral_cache_get_fails(
+    get_mock: MagicMock,
+) -> None:
+    # Previously redis connection error would bubble up and look like a Roboflow API outage
+    # this was because redis.exceptions.ConnectionError subclasses builtin ConnectionError,
+    # which wrap_roboflow_api_errors would map to RoboflowAPIConnectionError if it
+    # escaped the ephemeral cache layer.
+
+    # given
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="cache_unavailable_workflow",
+        api_key="my_api_key",
+    )
+    get_mock.return_value = MagicMock(
+        status_code=200,
+        json=MagicMock(
+            return_value={
+                "workflow": {
+                    "config": json.dumps(
+                        {"specification": {"from": "api_after_cache_failure"}}
+                    )
+                }
+            }
+        ),
+    )
+    ephemeral_cache = MagicMock()
+    ephemeral_cache.get.side_effect = RedisConnectionError("Dragonfly unreachable")
+
+    # when
+    result = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="cache_unavailable_workflow",
+        ephemeral_cache=ephemeral_cache,
+    )
+
+    # then
+    assert result == {
+        "from": "api_after_cache_failure",
+        "id": None,
+    }
+    assert get_mock.call_count == 1
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_workflow_specification_returns_when_ephemeral_cache_set_fails(
+    get_mock: MagicMock,
+) -> None:
+    # given
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="cache_set_failure_workflow",
+        api_key="my_api_key",
+    )
+    get_mock.return_value = MagicMock(
+        status_code=200,
+        json=MagicMock(
+            return_value={
+                "workflow": {
+                    "config": json.dumps(
+                        {"specification": {"from": "api_despite_cache_set_failure"}}
+                    )
+                }
+            }
+        ),
+    )
+    ephemeral_cache = MagicMock()
+    ephemeral_cache.get.return_value = None
+    ephemeral_cache.set.side_effect = RedisTimeoutError("Dragonfly write timeout")
+
+    # when
+    result = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="cache_set_failure_workflow",
+        ephemeral_cache=ephemeral_cache,
+    )
+
+    # then
+    assert result == {
+        "from": "api_despite_cache_set_failure",
+        "id": None,
+    }
+    assert get_mock.call_count == 1
 
 
 # --- LICENSE_SERVER / wrap_url proxy tests ---
