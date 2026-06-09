@@ -55,7 +55,10 @@ from inference_models.models.rfdetr.pre_processing import pre_process_network_in
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt_lean as trt
+    except ImportError:
+        import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Could not import RFDetr model with TRT backend - this error means that some additional dependencies "

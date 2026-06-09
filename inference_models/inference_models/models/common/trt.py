@@ -19,7 +19,10 @@ from inference_models.models.common.roboflow.model_packages import TRTConfig
 from inference_models.utils.environment import get_boolean_from_env
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt_lean as trt
+    except ImportError:
+        import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Running model with TRT backend on GPU requires trt which is not installed in the environment. "
