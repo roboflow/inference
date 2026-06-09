@@ -793,9 +793,7 @@ def serialize_prompt(
             labels_list = point_labels
 
         # point_coordinates is shaped (num_prompts, num_points, 2); iterate prompts
-        # then points. Previously this loop consumed the leading prompt axis as if it
-        # were a single coordinate, so a single-point prompt (shape (1, 1, 2)) made
-        # `coord` equal to [[x, y]] (length 1) and `coord[1]` raised IndexError.
+        # then points.
         for prompt_coords, prompt_labels in zip(coords_list, labels_list):
             for coord, label in zip(prompt_coords, prompt_labels):
                 result["points"].append(
