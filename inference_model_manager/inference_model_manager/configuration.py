@@ -22,6 +22,51 @@ from inference_models.utils.environment import (
 MMP_N_SLOTS_DEFAULT = get_integer_from_env("MMP_N_SLOTS", default=32)
 MMP_INPUT_MB_DEFAULT = get_float_from_env("MMP_INPUT_MB", default=20.0)
 
+# ── MMP lifecycle / eviction / monitoring (model_manager_process.py) ────────
+INFERENCE_STALE_REAP_INTERVAL_S = get_float_from_env(
+    "INFERENCE_STALE_REAP_INTERVAL_S", default=10.0
+)
+INFERENCE_STALE_SLOT_MAX_AGE_S = get_float_from_env(
+    "INFERENCE_STALE_SLOT_MAX_AGE_S", default=30.0
+)
+INFERENCE_GPU_EVICTION_THRESHOLD = get_float_from_env(
+    "INFERENCE_GPU_EVICTION_THRESHOLD", default=0.9
+)
+INFERENCE_EVICT_CHECK_INTERVAL_S = get_float_from_env(
+    "INFERENCE_EVICT_CHECK_INTERVAL_S", default=5.0
+)
+INFERENCE_MONITOR_INTERVAL_S = get_float_from_env(
+    "INFERENCE_MONITOR_INTERVAL_S", default=5.0
+)
+INFERENCE_MODEL_IDLE_TIMEOUT_S = get_float_from_env(
+    "INFERENCE_MODEL_IDLE_TIMEOUT_S", default=300.0
+)
+INFERENCE_LOAD_OOM_MAX_EVICTIONS = get_integer_from_env(
+    "INFERENCE_LOAD_OOM_MAX_EVICTIONS", default=5
+)
+INFERENCE_MAX_PINNED_MEMORY_MB = get_integer_from_env(
+    "INFERENCE_MAX_PINNED_MEMORY_MB", default=0
+)
+INFERENCE_MMP_START_TIMEOUT_S = get_float_from_env(
+    "INFERENCE_MMP_START_TIMEOUT_S", default=30.0
+)
+
+# ── ModelManager (model_manager.py) ─────────────────────────────────────────
+INFERENCE_DIRECT_MAX_WORKERS = get_integer_from_env(
+    "INFERENCE_DIRECT_MAX_WORKERS", default=8
+)
+
+# ── Subprocess worker tunables (backends/subproc.py) ────────────────────────
+INFERENCE_WORKER_HEARTBEAT_INTERVAL_S = get_float_from_env(
+    "INFERENCE_WORKER_HEARTBEAT_INTERVAL_S", default=2.0
+)
+INFERENCE_WORKER_HEARTBEAT_TIMEOUT_S = get_float_from_env(
+    "INFERENCE_WORKER_HEARTBEAT_TIMEOUT_S", default=30.0
+)
+INFERENCE_WORKER_START_TIMEOUT_S = get_float_from_env(
+    "INFERENCE_WORKER_START_TIMEOUT_S", default=120.0
+)
+
 # ── VRAM-aware admission control (model_manager_process.py) ─────────────────
 INFERENCE_VRAM_ADMISSION_CONTROL = get_boolean_from_env(
     "INFERENCE_VRAM_ADMISSION_CONTROL", default=False

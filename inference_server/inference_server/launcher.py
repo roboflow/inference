@@ -27,6 +27,7 @@ import logging
 import threading
 from typing import Optional, Union
 
+from inference_model_manager import configuration as mmp_config
 from inference_model_manager.model_manager import ModelManager
 from inference_server import configuration
 
@@ -103,19 +104,21 @@ def launch_inprocess(
 
 def launch_orchestrated(
     *,
-    max_pinned_memory_mb: int = 0,
+    max_pinned_memory_mb: int = mmp_config.INFERENCE_MAX_PINNED_MEMORY_MB,
     n_slots: int = 64,
     input_mb: float = 20.0,
     mmp_addr: Optional[str] = None,
-    gpu_eviction_threshold: float = 0.90,
-    evict_check_interval_s: float = 5.0,
-    stale_reap_interval_s: float = 10.0,
-    stale_slot_max_age_s: float = 30.0,
-    mmp_start_timeout: float = 30.0,
+    gpu_eviction_threshold: float = mmp_config.INFERENCE_GPU_EVICTION_THRESHOLD,
+    evict_check_interval_s: float = mmp_config.INFERENCE_EVICT_CHECK_INTERVAL_S,
+    monitor_interval_s: float = mmp_config.INFERENCE_MONITOR_INTERVAL_S,
+    stale_reap_interval_s: float = mmp_config.INFERENCE_STALE_REAP_INTERVAL_S,
+    stale_slot_max_age_s: float = mmp_config.INFERENCE_STALE_SLOT_MAX_AGE_S,
+    load_oom_max_evictions: int = mmp_config.INFERENCE_LOAD_OOM_MAX_EVICTIONS,
+    mmp_start_timeout: float = mmp_config.INFERENCE_MMP_START_TIMEOUT_S,
     decoder: str = "imagecodecs",
     batch_max_size: int = 0,
     batch_max_wait_ms: float = 5.0,
-    idle_timeout_s: float = 300.0,
+    idle_timeout_s: float = mmp_config.INFERENCE_MODEL_IDLE_TIMEOUT_S,
 ) -> LaunchHandle:
     """Start a ModelManagerProcess and return a LaunchHandle.
 
@@ -131,7 +134,6 @@ def launch_orchestrated(
         #   sock.connect(handle.mmp_addr)
         #   pool = SHMPool.attach(handle.shm_name, n_slots=128, ...)
     """
-    from inference_model_manager import configuration as mmp_config
     from inference_model_manager.backends.utils.transport import zmq_addr as _zmq_addr
     from inference_model_manager.model_manager_process import ModelManagerProcess
 
@@ -143,8 +145,10 @@ def launch_orchestrated(
         max_pinned_memory_mb=max_pinned_memory_mb,
         evict_threshold=gpu_eviction_threshold,
         evict_check_interval_s=evict_check_interval_s,
+        monitor_interval_s=monitor_interval_s,
         stale_reap_interval_s=stale_reap_interval_s,
         stale_slot_max_age_s=stale_slot_max_age_s,
+        load_oom_max_evictions=load_oom_max_evictions,
         decoder=decoder,
         batch_max_size=batch_max_size,
         batch_max_wait_ms=batch_max_wait_ms,
