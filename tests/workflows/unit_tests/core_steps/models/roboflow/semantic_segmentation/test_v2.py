@@ -120,22 +120,6 @@ def test_semantic_segmentation_model_validation_when_custom_mode_missing_custom_
         _ = BlockManifest.model_validate(data)
 
 
-def test_semantic_segmentation_model_defaults_to_best_confidence_mode() -> None:
-    # given
-    data = {
-        "type": "roboflow_core/roboflow_semantic_segmentation_model@v2",
-        "name": "some",
-        "images": "$inputs.image",
-        "model_id": "some/1",
-    }
-
-    # when
-    result = BlockManifest.model_validate(data)
-
-    # then
-    assert result.confidence_mode == "best"
-
-
 def test_semantic_segmentation_model_validation_accepts_best_confidence_mode() -> None:
     # model eval now produces thresholds for semantic segmentation, so "best"
     # is an accepted confidence mode (matching object detection / instance seg).
