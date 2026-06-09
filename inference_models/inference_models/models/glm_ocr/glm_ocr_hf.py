@@ -17,6 +17,7 @@ from inference_models.configuration import (
     RUNNING_ON_JETSON,
 )
 from inference_models.entities import ColorFormat
+from inference_models.models.common.dynamic_batching import DynamicBatchingMixin
 
 TEXT_RECOGNITION_PROMPT = "Text Recognition:"
 FORMULA_RECOGNITION_PROMPT = "Formula Recognition:"
@@ -49,7 +50,7 @@ def _is_ampere_plus(device: torch.device) -> bool:
     return major >= 8
 
 
-class GlmOcrHF:
+class GlmOcrHF(DynamicBatchingMixin):
     default_dtype = torch.bfloat16
 
     @classmethod
@@ -224,13 +225,18 @@ class GlmOcrHF:
     ) -> torch.Tensor:
         if max_new_tokens is None:
             max_new_tokens = INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS
+        gen_kwargs = {"max_new_tokens": max_new_tokens, "do_sample": do_sample}
+        if self._dynamic_batching_enabled():
+            return self._submit_to_dynamic_batcher(inputs=inputs, gen_kwargs=gen_kwargs)
+        return self._run_locked_generation(inputs=inputs, gen_kwargs=gen_kwargs)
+
+    def _run_locked_generation(self, inputs: dict, gen_kwargs: dict) -> torch.Tensor:
         input_len = inputs["input_ids"].shape[-1]
 
         with self._lock, torch.inference_mode():
             generation = self._model.generate(
                 **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=do_sample,
+                **gen_kwargs,
             )
 
         return generation[:, input_len:]

@@ -172,6 +172,7 @@ from inference.core.env import (
     GET_MODEL_REGISTRY_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS,
+    HTTP_API_THREADPOOL_WORKERS,
     INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
@@ -2529,6 +2530,20 @@ class HttpInterface(BaseInterface):
                 )
                 startup_thread.start()
                 logger.info("Model initialization started in the background.")
+
+        if HTTP_API_THREADPOOL_WORKERS:
+
+            @app.on_event("startup")
+            async def adjust_http_threadpool_size():
+                """Resize the anyio thread pool serving sync HTTP handlers."""
+                import anyio.to_thread
+
+                limiter = anyio.to_thread.current_default_thread_limiter()
+                limiter.total_tokens = HTTP_API_THREADPOOL_WORKERS
+                logger.info(
+                    "HTTP API thread pool resized to %s threads",
+                    HTTP_API_THREADPOOL_WORKERS,
+                )
 
         # Attach health/readiness endpoints
         @app.get("/readiness", status_code=200)

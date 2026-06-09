@@ -16,6 +16,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_SMOL_VLM_DEFAULT_SKIP_SPECIAL_TOKENS,
 )
 from inference_models.entities import ColorFormat
+from inference_models.models.common.dynamic_batching import DynamicBatchingMixin
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     ResizeMode,
@@ -51,7 +52,15 @@ def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
     return major >= 8
 
 
-class SmolVLMHF:
+class SmolVLMHF(DynamicBatchingMixin):
+
+    # SmolVLM (Idefics3) `pixel_values` is `[batch, num_images, 3, H, W]` with
+    # `pixel_attention_mask` of `[batch, num_images, H, W]` - the number of image
+    # splits varies per request, so the images dimension is zero-padded to the
+    # longest request before concatenation (all-zero images are dropped by the
+    # model, mirroring how the processor pads multi-sample batches).
+    BATCH_CAT_KEYS = ()
+    BATCH_FRAME_PAD_KEYS = ("pixel_values", "pixel_attention_mask")
 
     @classmethod
     def from_pretrained(
@@ -271,11 +280,16 @@ class SmolVLMHF:
         do_sample: bool = INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
+        gen_kwargs = {"max_new_tokens": max_new_tokens, "do_sample": do_sample}
+        if self._dynamic_batching_enabled():
+            return self._submit_to_dynamic_batcher(inputs=inputs, gen_kwargs=gen_kwargs)
+        return self._run_locked_generation(inputs=inputs, gen_kwargs=gen_kwargs)
+
+    def _run_locked_generation(self, inputs: dict, gen_kwargs: dict) -> torch.Tensor:
         with self._lock:
             generation = self._model.generate(
                 **inputs,
-                do_sample=do_sample,
-                max_new_tokens=max_new_tokens,
+                **gen_kwargs,
                 pad_token_id=self._processor.tokenizer.pad_token_id,
                 eos_token_id=self._processor.tokenizer.eos_token_id,
             )

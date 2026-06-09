@@ -47,6 +47,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_PALIGEMMA_DEFAULT_SKIP_SPECIAL_TOKENS,
 )
 from inference_models.entities import ColorFormat
+from inference_models.models.common.dynamic_batching import DynamicBatchingMixin
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     ResizeMode,
@@ -57,7 +58,11 @@ from inference_models.models.common.roboflow.pre_processing import (
 )
 
 
-class PaliGemmaHF:
+class PaliGemmaHF(DynamicBatchingMixin):
+
+    # PaliGemma `pixel_values` is `[batch, 3, H, W]` with a fixed, processor-enforced
+    # resolution - rows batch by plain concatenation on dim 0.
+    BATCH_CAT_KEYS = ("pixel_values",)
 
     @classmethod
     def from_pretrained(
@@ -237,10 +242,14 @@ class PaliGemmaHF:
         do_sample: bool = INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE,
         **kwargs,
     ) -> torch.Tensor:
+        gen_kwargs = {"max_new_tokens": max_new_tokens, "do_sample": do_sample}
+        if self._dynamic_batching_enabled():
+            return self._submit_to_dynamic_batcher(inputs=inputs, gen_kwargs=gen_kwargs)
+        return self._run_locked_generation(inputs=inputs, gen_kwargs=gen_kwargs)
+
+    def _run_locked_generation(self, inputs: dict, gen_kwargs: dict) -> torch.Tensor:
         with self._lock, torch.inference_mode():
-            generation = self._model.generate(
-                **inputs, max_new_tokens=max_new_tokens, do_sample=do_sample
-            )
+            generation = self._model.generate(**inputs, **gen_kwargs)
             input_len = inputs["input_ids"].shape[-1]
             return generation[:, input_len:]
 

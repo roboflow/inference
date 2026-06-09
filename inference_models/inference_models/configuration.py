@@ -146,6 +146,24 @@ INFERENCE_MODELS_DEFAULT_SKIP_SPECIAL_TOKENS = get_boolean_from_env(
     default=False,
 )
 
+# Dynamic micro-batching of concurrent generation requests for HF VLM models
+INFERENCE_MODELS_DYNAMIC_BATCHING_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_DYNAMIC_BATCHING_ENABLED",
+    default=False,
+)
+INFERENCE_MODELS_DYNAMIC_BATCH_MAX_SIZE = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_DYNAMIC_BATCH_MAX_SIZE",
+    default=8,
+)
+INFERENCE_MODELS_DYNAMIC_BATCH_MAX_WAIT_MS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_DYNAMIC_BATCH_MAX_WAIT_MS",
+    default=30,
+)
+INFERENCE_MODELS_DYNAMIC_BATCH_RESULT_TIMEOUT_S = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_DYNAMIC_BATCH_RESULT_TIMEOUT_S",
+    default=120,
+)
+
 
 # Model-specific parameters defaults
 INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE = get_float_from_env(

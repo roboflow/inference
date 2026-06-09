@@ -18,6 +18,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_QWEN3_5_DEFAULT_MAX_NEW_TOKENS,
 )
 from inference_models.entities import ColorFormat
+from inference_models.models.common.dynamic_batching import DynamicBatchingMixin
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     ResizeMode,
@@ -26,7 +27,7 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.qwen3vl.qwen3vl_hf import _get_qwen3vl_attn_implementation
 
 
-class Qwen35HF:
+class Qwen35HF(DynamicBatchingMixin):
     default_dtype = torch.bfloat16
 
     @classmethod
@@ -248,13 +249,18 @@ class Qwen35HF:
     ) -> torch.Tensor:
         if max_new_tokens is None:
             max_new_tokens = INFERENCE_MODELS_QWEN3_5_DEFAULT_MAX_NEW_TOKENS
+        gen_kwargs = {"max_new_tokens": max_new_tokens, "do_sample": do_sample}
+        if self._dynamic_batching_enabled():
+            return self._submit_to_dynamic_batcher(inputs=inputs, gen_kwargs=gen_kwargs)
+        return self._run_locked_generation(inputs=inputs, gen_kwargs=gen_kwargs)
+
+    def _run_locked_generation(self, inputs: dict, gen_kwargs: dict) -> torch.Tensor:
         input_len = inputs["input_ids"].shape[-1]
 
         with self._lock, torch.inference_mode():
             generation = self._model.generate(
                 **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=do_sample,
+                **gen_kwargs,
                 pad_token_id=self._processor.tokenizer.pad_token_id,
                 eos_token_id=self._processor.tokenizer.eos_token_id,
                 bos_token_id=self._processor.tokenizer.bos_token_id,
