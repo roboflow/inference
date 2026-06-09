@@ -131,6 +131,7 @@ def launch_orchestrated(
         #   sock.connect(handle.mmp_addr)
         #   pool = SHMPool.attach(handle.shm_name, n_slots=128, ...)
     """
+    from inference_model_manager import configuration as mmp_config
     from inference_model_manager.backends.utils.transport import zmq_addr as _zmq_addr
     from inference_model_manager.model_manager_process import ModelManagerProcess
 
@@ -148,6 +149,11 @@ def launch_orchestrated(
         batch_max_size=batch_max_size,
         batch_max_wait_ms=batch_max_wait_ms,
         idle_timeout_s=idle_timeout_s,
+        vram_admission=mmp_config.INFERENCE_VRAM_ADMISSION_CONTROL,
+        vram_window_size=mmp_config.INFERENCE_VRAM_WINDOW_SIZE,
+        vram_idle_cutoff_s=mmp_config.INFERENCE_VRAM_IDLE_CUTOFF_S,
+        vram_headroom_mb=mmp_config.INFERENCE_VRAM_HEADROOM_MB,
+        vram_recent_window_s=mmp_config.INFERENCE_VRAM_RECENT_WINDOW_S,
     )
 
     ready = threading.Event()

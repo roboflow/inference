@@ -40,6 +40,7 @@ import signal
 import struct
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol
 
@@ -49,6 +50,11 @@ import zmq.asyncio
 from inference_model_manager.backends.utils.shm_pool import SHMPool
 from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_model_manager.configuration import (
+    INFERENCE_VRAM_ADMISSION_CONTROL,
+    INFERENCE_VRAM_HEADROOM_MB,
+    INFERENCE_VRAM_IDLE_CUTOFF_S,
+    INFERENCE_VRAM_RECENT_WINDOW_S,
+    INFERENCE_VRAM_WINDOW_SIZE,
     MMP_INPUT_MB_DEFAULT,
     MMP_N_SLOTS_DEFAULT,
 )
@@ -281,6 +287,11 @@ class ModelManagerProcess:
         batch_max_size: int = 0,
         batch_max_wait_ms: float = 5.0,
         max_pinned_memory_mb: int = 0,
+        vram_admission: bool = False,
+        vram_window_size: int = 60,
+        vram_idle_cutoff_s: Optional[float] = None,
+        vram_headroom_mb: float = 512.0,
+        vram_recent_window_s: float = 30.0,
     ) -> None:
         """
         Args:
@@ -303,6 +314,13 @@ class ModelManagerProcess:
         self._evict_check_interval_s = evict_check_interval_s
         self._monitor_interval_s = monitor_interval_s
         self._idle_timeout_s = idle_timeout_s
+        self._vram_admission = vram_admission
+        self._vram_window_size = vram_window_size
+        self._vram_idle_cutoff_s = (
+            vram_idle_cutoff_s if vram_idle_cutoff_s is not None else idle_timeout_s
+        )
+        self._vram_headroom_mb = vram_headroom_mb
+        self._vram_recent_window_s = vram_recent_window_s
         self._manager = ModelManager(
             n_slots=n_slots,
             input_mb=input_mb,
@@ -327,6 +345,14 @@ class ModelManagerProcess:
 
         # flavor → list of request timestamps (sliding window for request rate)
         self._model_request_times: dict[str, list[float]] = {}
+
+        # VRAM admission control state (only used when _vram_admission is on)
+        # flavor → sliding window of measured GPU MB samples (footprint = max)
+        self._vram_window: dict[str, deque] = {}
+        # model_id → static per-batch VRAM MB (0 = no data); fetched once, cached
+        self._vram_meta_cache: dict[str, int] = {}
+        # flavors currently being evicted by an admission plan (race guard)
+        self._unloading: set[str] = set()
 
         # Cache hit/miss counters (model already loaded vs triggered load)
         self._cache_hits: int = 0
@@ -955,6 +981,33 @@ class ModelManagerProcess:
             self._stub_load(model_id, fs)
             return
 
+        if self._vram_admission:
+            decision, victims = self._vram_admission_plan(model_id, api_key)
+            if decision == "no_capacity":
+                logger.warning(
+                    "MMP: VRAM admission denied '%s' — no evictable capacity",
+                    model_id,
+                )
+                self._fail_load(model_id, fs, _ERR_SERVER_FULL)
+                return
+            if decision == "evict":
+                need = self._required_mb(model_id, api_key)
+                deficit = need - (self._gpu_free_mb() - self._vram_headroom_mb)
+                logger.warning(
+                    "MMP: VRAM admission evicting %s to load '%s' (deficit=%.0f MB)",
+                    victims,
+                    model_id,
+                    deficit,
+                )
+                secured = await self._execute_eviction_plan(victims, deficit)
+                if not secured:
+                    logger.warning(
+                        "MMP: VRAM admission aborted for '%s' — capacity lost mid-evict",
+                        model_id,
+                    )
+                    self._fail_load(model_id, fs, _ERR_SERVER_FULL)
+                    return
+
         model_id_or_path = model_id.rsplit(":", 1)[0]
         max_retries = 5  # safety cap — never loop forever
 
@@ -1196,6 +1249,184 @@ class ModelManagerProcess:
             logger.warning("MMP: eviction of '%s' failed", model_id, exc_info=True)
             return False
 
+    # ------------------------------------------------------------------
+    # VRAM-aware admission control
+    # ------------------------------------------------------------------
+
+    def _record_vram_samples(self, samples: dict) -> None:
+        """Append measured per-model GPU MB into each model's sliding window."""
+        for flavor, mb in samples.items():
+            window = self._vram_window.get(flavor)
+            if window is None:
+                window = deque(maxlen=self._vram_window_size)
+                self._vram_window[flavor] = window
+            window.append(mb)
+
+    def _footprint_mb(self, flavor: str) -> float:
+        """Resolved VRAM footprint of a loaded model.
+
+        Measured peak (max of sliding window) wins; falls back to the static
+        per-batch figure from MemoryProfile; 0 when neither is known.
+        """
+        window = self._vram_window.get(flavor)
+        if window:
+            return max(window)
+        return self._vram_meta_cache.get(flavor, 0)
+
+    def _fetch_vram_mb(self, model_id: str, api_key: str, batch: int) -> int:
+        """Metadata-only Roboflow lookup: max static VRAM across packages (MB).
+
+        Returns 0 on any failure or when no MemoryProfile data exists.
+        """
+        try:
+            from inference_models.weights_providers.roboflow import (
+                get_model_metadata,
+            )
+
+            meta = get_model_metadata(model_id, api_key or None)
+            values = []
+            for pkg in meta.model_packages:
+                profile = getattr(pkg, "memory_profile", None)
+                if profile is None:
+                    continue
+                vram = profile.vram_for_batch(batch)
+                if vram:
+                    values.append(vram)
+            return max(values) if values else 0
+        except Exception:
+            logger.debug(
+                "MMP: VRAM metadata fetch failed for '%s'", model_id, exc_info=True
+            )
+            return 0
+
+    def _required_mb(self, model_id: str, api_key: str = "", batch: int = 1) -> int:
+        """VRAM needed to admit an incoming model (MB). Fetched once, cached."""
+        if model_id in self._vram_meta_cache:
+            return self._vram_meta_cache[model_id]
+        mb = self._fetch_vram_mb(model_id, api_key, batch)
+        self._vram_meta_cache[model_id] = mb
+        return mb
+
+    def _recent_count(self, flavor: str, window_s: float) -> int:
+        """Number of inferences for a model within the last ``window_s`` seconds."""
+        times = self._model_request_times.get(flavor)
+        if not times:
+            return 0
+        cutoff = time.monotonic() - window_s
+        return sum(1 for t in times if t >= cutoff)
+
+    def _gpu_free_mb(self) -> float:
+        """Free GPU 0 memory in MB. Returns 0.0 if unavailable (overridable)."""
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                free, _total = torch.cuda.mem_get_info(0)
+                return free / 1024 / 1024
+        except Exception:
+            pass
+        try:
+            import pynvml  # nvidia-ml-py
+
+            pynvml.nvmlInit()
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            return info.free / 1024 / 1024
+        except Exception:
+            pass
+        return 0.0
+
+    def _plan_evictions(self, deficit_mb: float) -> Optional[list]:
+        """Pick coldest loaded models whose combined footprint covers deficit_mb.
+
+        Excludes hot (idle <= cutoff), in-flight, and already-unloading models.
+        Coldest-first by (oldest last access, fewest recent inferences).
+        Returns the ordered victim list, or None if the cold set cannot cover it.
+        """
+        now = time.monotonic()
+        in_flight = {mid for _, _, mid in self._pending.values()}
+        evictable = [
+            f
+            for f, fs in self._models.items()
+            if fs.loaded
+            and f not in in_flight
+            and f not in self._unloading
+            and (now - self._model_access.get(f, 0.0)) > self._vram_idle_cutoff_s
+        ]
+        evictable.sort(
+            key=lambda f: (
+                self._model_access.get(f, 0.0),
+                self._recent_count(f, self._vram_recent_window_s),
+            )
+        )
+        plan = []
+        secured = 0.0
+        for flavor in evictable:
+            plan.append(flavor)
+            secured += self._footprint_mb(flavor)
+            if secured >= deficit_mb:
+                return plan
+        return None
+
+    def _vram_admission_plan(self, model_id: str, api_key: str = "") -> tuple:
+        """Decide admission for an incoming model without mutating state.
+
+        Returns (decision, victims) where decision is "admit" | "evict" |
+        "no_capacity". need == 0 (no data) always admits.
+        """
+        need = self._required_mb(model_id, api_key)
+        if need == 0:
+            return "admit", []
+        free = self._gpu_free_mb() - self._vram_headroom_mb
+        if free >= need:
+            return "admit", []
+        plan = self._plan_evictions(need - free)
+        if plan is None:
+            return "no_capacity", []
+        return "evict", plan
+
+    def _is_still_evictable(self, flavor: str) -> bool:
+        """Re-validation used mid-plan: model still loaded, idle, and not in-flight."""
+        fs = self._models.get(flavor)
+        if not fs or not fs.loaded:
+            return False
+        in_flight = {mid for _, _, mid in self._pending.values()}
+        if flavor in in_flight:
+            return False
+        idle = time.monotonic() - self._model_access.get(flavor, 0.0)
+        return idle > self._vram_idle_cutoff_s
+
+    async def _execute_eviction_plan(
+        self, plan: list, deficit_mb: float
+    ) -> bool:
+        """Unload victims one at a time, re-validating each step (revocable).
+
+        If a planned victim turned hot/in-flight, drop it and elect a replacement
+        covering the remaining deficit. If no replacement exists, abort (leaving
+        already-unloaded victims unloaded) and return False.
+        Returns True once secured >= deficit_mb.
+        """
+        loop = asyncio.get_running_loop()
+        secured = 0.0
+        queue = list(plan)
+        while secured < deficit_mb and queue:
+            victim = queue.pop(0)
+            if not self._is_still_evictable(victim):
+                replacement = self._plan_evictions(deficit_mb - secured)
+                if replacement is None:
+                    return False
+                queue = replacement
+                continue
+            footprint = self._footprint_mb(victim)
+            self._unloading.add(victim)
+            try:
+                ok = await loop.run_in_executor(None, self._evict_model, victim)
+            finally:
+                self._unloading.discard(victim)
+            if ok:
+                secured += footprint
+        return secured >= deficit_mb
+
     def _pick_eviction_candidate(self) -> Optional[str]:
         """Pick best model to evict. Cold models first, then LRU among warm.
 
@@ -1235,6 +1466,10 @@ class ModelManagerProcess:
                 self._stats_snapshot = await loop.run_in_executor(
                     None, self._collect_stats
                 )
+                if self._vram_admission:
+                    self._record_vram_samples(
+                        self._stats_snapshot.get("per_model_gpu_mb", {})
+                    )
             except Exception:
                 logger.exception("MMP: monitoring loop error")
 
@@ -1317,6 +1552,11 @@ def main() -> None:
         n_slots=args.n_slots,
         input_mb=args.input_mb,
         evict_threshold=args.evict_threshold,
+        vram_admission=INFERENCE_VRAM_ADMISSION_CONTROL,
+        vram_window_size=INFERENCE_VRAM_WINDOW_SIZE,
+        vram_idle_cutoff_s=INFERENCE_VRAM_IDLE_CUTOFF_S,
+        vram_headroom_mb=INFERENCE_VRAM_HEADROOM_MB,
+        vram_recent_window_s=INFERENCE_VRAM_RECENT_WINDOW_S,
     )
     asyncio.run(mmp.run(addr=args.addr))
 
