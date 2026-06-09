@@ -131,6 +131,14 @@ trt10 = [
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
   "Mako>=1.3.11",
 ]
+# Runtime-only TRT: lean runtime (executes prebuilt engines) without the ~6GB
+# full builder libs. Code prefers `tensorrt_lean` over `tensorrt`. Use for
+# serving images; use `trt10` (full) where engines are BUILT (development/).
+trt10-runtime = [
+  "tensorrt-lean-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
+  "Mako>=1.3.11",
+]
 test = [
   "pytest>=9.0.3",
   "pytest-timeout==2.4.0",
