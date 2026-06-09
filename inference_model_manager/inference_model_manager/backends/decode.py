@@ -20,6 +20,7 @@ import io
 import logging
 from typing import Any, Callable, List
 
+import imagecodecs
 import numpy as np
 from PIL import Image
 
@@ -40,6 +41,46 @@ _FTYP_MAGIC = b"ftyp"
 
 def _is_heif(data: bytes | memoryview) -> bool:
     return bytes(data[_FTYP_OFFSET : _FTYP_OFFSET + 4]) == _FTYP_MAGIC
+
+
+def _select_codec(head: bytes) -> str | None:
+    """Map header magic bytes to an imagecodecs codec name, or None if unknown.
+
+    Dispatch explicitly instead of imagecodecs.imread(): imread() probes every
+    registered codec when the format is unknown, and the bundled OpenEXR codec
+    writes "EXR_ERR_FILE_BAD_HEADER" to C stderr on every non-EXR image before
+    the real codec succeeds. Explicit dispatch never touches the EXR codec.
+    Unrecognised headers return None and fall back to imread() probing.
+    """
+    if head[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    if head[:3] == b"GIF":
+        return "gif"
+    if head[:4] in (b"II*\x00", b"MM\x00*"):
+        return "tiff"
+    if head[:2] == b"BM":
+        return "bmp"
+    if head[:2] == b"\xff\x4f" or (
+        head[:4] == b"\x00\x00\x00\x0c" and head[4:8] == b"jP  "
+    ):
+        return "jpeg2k"
+    return None
+
+
+def _decode_ic(data: bytes | memoryview) -> np.ndarray:
+    """Decode compressed image bytes to RGB HWC uint8 via an explicit codec.
+
+    Falls back to imagecodecs.imread() probing when the header is unrecognised.
+    """
+    raw = bytes(data)
+    codec = _select_codec(raw)
+    if codec is None:
+        return imagecodecs.imread(raw)
+    return getattr(imagecodecs, f"{codec}_decode")(raw)
 
 
 def _decode_heif(data: bytes) -> np.ndarray:
@@ -66,17 +107,15 @@ def make_decoder(name: str, device: str = "cuda:0") -> Callable[[bytes], Any]:
         Callable ``(bytes) -> image``.
     """
     if name == "imagecodecs":
-        import imagecodecs  # noqa: PLC0415
 
         def _decode_imagecodecs(data: bytes) -> Any:
             if _is_heif(data):
                 return _decode_heif(data)
-            return imagecodecs.imread(data)  # RGB HWC uint8 numpy
+            return _decode_ic(data)  # RGB HWC uint8 numpy
 
         return _decode_imagecodecs
 
     if name == "nvjpeg":
-        import imagecodecs  # noqa: PLC0415
         import numpy as np  # noqa: PLC0415
         import torch  # noqa: PLC0415
         import torchvision.io  # noqa: PLC0415
@@ -88,7 +127,7 @@ def make_decoder(name: str, device: str = "cuda:0") -> Callable[[bytes], Any]:
                 buf = torch.frombuffer(bytearray(data), dtype=torch.uint8)
                 return torchvision.io.decode_jpeg(buf, device=torch_device)
             # Non-JPEG fallback
-            img = _decode_heif(data) if _is_heif(data) else imagecodecs.imread(data)
+            img = _decode_heif(data) if _is_heif(data) else _decode_ic(data)
             return (
                 torch.from_numpy(np.ascontiguousarray(img))
                 .permute(2, 0, 1)
@@ -118,7 +157,6 @@ def make_batch_decoder(
                     Non-JPEG images always fall back to imagecodecs.
                     When ``False`` (default), imagecodecs handles all formats.
     """
-    import imagecodecs as _ic  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
     import torch  # noqa: PLC0415
 
@@ -163,7 +201,7 @@ def make_batch_decoder(
                     for i in jpeg_idx:
                         try:
                             raw = bytes(mvs[i])
-                            img = _ic.imread(raw)
+                            img = _decode_ic(raw)
                             out[i] = (
                                 torch.from_numpy(np.ascontiguousarray(img))
                                 .permute(2, 0, 1)
@@ -177,7 +215,7 @@ def make_batch_decoder(
             # Non-JPEG: imagecodecs (or HEIF fallback) per image → CHW RGB tensor
             for i, mv in zip(other_idx, other_mvs):
                 raw = bytes(mv)
-                img = _decode_heif(raw) if _is_heif(raw) else _ic.imread(raw)
+                img = _decode_heif(raw) if _is_heif(raw) else _decode_ic(raw)
                 out[i] = (
                     torch.from_numpy(np.ascontiguousarray(img))
                     .permute(2, 0, 1)
@@ -193,7 +231,7 @@ def make_batch_decoder(
         out = []
         for mv in mvs:
             raw = bytes(mv)
-            img = _decode_heif(raw) if _is_heif(raw) else _ic.imread(raw)
+            img = _decode_heif(raw) if _is_heif(raw) else _decode_ic(raw)
             t = torch.from_numpy(np.ascontiguousarray(img)).permute(2, 0, 1)
             if torch_device.type != "cpu":
                 t = t.to(torch_device)
