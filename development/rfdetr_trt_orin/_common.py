@@ -15,6 +15,7 @@ INFERENCE_CONFIG_FILE = "inference_config.json"
 TRT_CONFIG_FILE = "trt_config.json"
 ENGINE_PLAN_FILE = "engine.plan"
 WEIGHTS_ONNX_FILE = "weights.onnx"
+MODEL_CONFIG_FILE = "model_config.json"
 REGISTRATION_MANIFEST_FILE = "registration_manifest.json"
 
 TRT_PACKAGE_FILE_HANDLES = [
@@ -99,3 +100,23 @@ def validate_trt_package_dir(*, trt_package_dir: Path) -> None:
         raise FileNotFoundError(
             f"TRT package directory {trt_package_dir} is missing: {missing}"
         )
+
+
+def write_model_config(
+    *,
+    trt_package_dir: Path,
+    model_architecture: str,
+    task_type: Optional[str],
+    backend_type: str = "trt",
+) -> Path:
+    """Write model_config.json for local AutoModel.from_pretrained(path) loading."""
+    config_path = trt_package_dir / MODEL_CONFIG_FILE
+    write_json(
+        config_path,
+        {
+            "model_architecture": model_architecture,
+            "task_type": task_type,
+            "backend_type": backend_type,
+        },
+    )
+    return config_path

@@ -107,7 +107,14 @@ rfdetr-seg-nano-orin-trt-build/
     ├── inference_config.json      # adjusted for TRT (static spatial size)
     ├── class_names.txt
     ├── env-x-ray.json             # compile-time Jetson environment snapshot
-    └── registration_manifest.json # metadata for register_rfdetr_trt_orin_staging.py
+    ├── registration_manifest.json # metadata for register_rfdetr_trt_orin_staging.py
+    └── model_config.json          # optional (--write-model-config); local use only
+```
+
+`model_config.json` is **not** part of the sealed registry package. When loading via `AutoModel.from_pretrained("rfdetr-seg-nano")`, the library generates it in the cache from registry metadata. Pass `--write-model-config` only if you want to load the folder directly:
+
+```python
+AutoModel.from_pretrained("/path/to/trt_package", backend="trt")
 ```
 
 ## Phase 3: Register on staging
@@ -157,6 +164,7 @@ Production registration is a separate step after staging E2E passes (see the add
 | `--skip-fetch` | off | Reuse existing `source_onnx/` |
 | `--skip-compile` | off | Download only |
 | `--verify` | off | Smoke test with `RFDetrForInstanceSegmentationTRT.from_pretrained` |
+| `--write-model-config` | off | Write local-only `model_config.json` (not registered on staging) |
 | `--staging-model-id` | `rfdetr-seg-nano` | Model id written into the manifest |
 
 ## `register_rfdetr_trt_orin_staging.py` options

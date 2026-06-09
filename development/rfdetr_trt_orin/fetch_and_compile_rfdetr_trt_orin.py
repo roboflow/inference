@@ -33,6 +33,7 @@ from _common import (  # noqa: E402
     get_training_input_size,
     prepare_adjusted_inference_config,
     write_json,
+    write_model_config as write_local_model_config,
 )
 
 
@@ -337,7 +338,14 @@ def _verify_trt_package(*, trt_package_dir: Path) -> None:
     "--verify/--no-verify",
     default=False,
     show_default=True,
-    help="Run a local AutoModel smoke test after compilation.",
+    help="Run a local TRT smoke test after compilation.",
+)
+@click.option(
+    "--write-model-config/--no-write-model-config",
+    default=False,
+    show_default=True,
+    help="Write model_config.json into trt_package/ for local AutoModel loading. "
+    "Not uploaded during staging registration.",
 )
 @click.option(
     "--staging-model-id",
@@ -361,6 +369,7 @@ def main(
     skip_fetch: bool,
     skip_compile: bool,
     verify: bool,
+    write_model_config: bool,
     staging_model_id: str,
 ) -> None:
     """Fetch prod ONNX and compile a registry-ready Jetson TRT package."""
@@ -438,6 +447,14 @@ def main(
         precision=precision,
     )
     write_json(trt_package_dir / REGISTRATION_MANIFEST_FILE, registration_manifest)
+
+    if write_model_config:
+        model_config_path = write_local_model_config(
+            trt_package_dir=trt_package_dir,
+            model_architecture=metadata["model_architecture"],
+            task_type=metadata["task_type"],
+        )
+        click.echo(f"Wrote local-only {model_config_path.name} (not registered).")
 
     if verify:
         click.echo("Running local TRT smoke test ...")
