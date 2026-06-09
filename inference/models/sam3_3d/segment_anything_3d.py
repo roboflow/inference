@@ -341,6 +341,8 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                 model_id="sam3-3d-weights-vc6vz/1",
                 endpoint_type=ModelEndpointType.ORT,
                 device_id=self.device_id,
+                countinference=self.countinference,
+                service_secret=self.service_secret,
             )["ort"]
             if "weights" not in api_data:
                 raise ModelArtefactError(

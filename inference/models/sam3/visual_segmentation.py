@@ -375,6 +375,8 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 api_key=self.api_key,
                 model_id=self.endpoint,
                 endpoint_type=endpoint_type,
+                countinference=self.countinference,
+                service_secret=self.service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {self.api_key} does not have access to model {self.endpoint}"
@@ -397,6 +399,8 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             model_id=self.endpoint,
             endpoint_type=ModelEndpointType.ORT,
             device_id=self.device_id,
+            countinference=self.countinference,
+            service_secret=self.service_secret,
         )
 
         ort = api_data.get("ort") if isinstance(api_data, dict) else None

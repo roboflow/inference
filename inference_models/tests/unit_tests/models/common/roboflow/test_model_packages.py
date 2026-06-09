@@ -20,7 +20,6 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_key_points_metadata,
     parse_trt_config,
-    resolve_background_class_id,
 )
 
 
@@ -269,28 +268,6 @@ def test_parse_class_names_file_when_valid_config_provided(
 
     # then
     assert result == ["some", "other", "yet-another"]
-
-
-def test_resolve_background_class_id_when_background_present() -> None:
-    # when
-    result = resolve_background_class_id(["background", "road", "sidewalk"])
-
-    # then
-    assert result == 0
-
-
-def test_resolve_background_class_id_is_case_insensitive() -> None:
-    # when
-    result = resolve_background_class_id(["road", "Background", "sidewalk"])
-
-    # then
-    assert result == 1
-
-
-def test_resolve_background_class_id_when_background_absent() -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = resolve_background_class_id(["road", "sidewalk", "building"])
 
 
 def test_parse_inference_config_when_path_does_not_exists() -> None:
