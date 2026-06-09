@@ -1262,16 +1262,31 @@ if triton is not None:
             while y_tile_start <= roi_y_end:
                 row_y = y_tile_start + rows
                 output_y = row_y[:, None]
-                active = (row_y[:, None] < roi_y_end) & column_active[None, :]
-                boundary_active = (row_y[:, None] <= roi_y_end) & column_active[None, :]
+                row_active = row_y[:, None] < roi_y_end
+                boundary_row_active = row_y[:, None] <= roi_y_end
+                active = row_active & column_active[None, :]
+                boundary_active = boundary_row_active & column_active[None, :]
 
                 y_base = output_y * 2
-                source_y0 = tl.load(y_idx + y_base, mask=active, other=0).to(tl.int64)
-                source_y1 = tl.load(y_idx + y_base + 1, mask=active, other=0).to(
+                # Triton 3.2 requires load masks to match pointer rank exactly;
+                # keep the row-only interpolation tables separate from the
+                # full [rows, cols] mask used for mask-logit sampling.
+                source_y0 = tl.load(y_idx + y_base, mask=row_active, other=0).to(
                     tl.int64
                 )
-                y_weight0 = tl.load(y_weight + y_base, mask=active, other=0.0)
-                y_weight1 = tl.load(y_weight + y_base + 1, mask=active, other=0.0)
+                source_y1 = tl.load(
+                    y_idx + y_base + 1,
+                    mask=row_active,
+                    other=0,
+                ).to(
+                    tl.int64
+                )
+                y_weight0 = tl.load(y_weight + y_base, mask=row_active, other=0.0)
+                y_weight1 = tl.load(
+                    y_weight + y_base + 1,
+                    mask=row_active,
+                    other=0.0,
+                )
                 value00 = tl.load(
                     masks
                     + mask_base
@@ -1313,26 +1328,27 @@ if triton is not None:
                 # current positive after previous background starts a run;
                 # previous positive followed by current background ends it.
                 previous_y = output_y - 1
-                previous_active = boundary_active & (row_y[:, None] > roi_y_start)
+                previous_row_active = boundary_row_active & (row_y[:, None] > roi_y_start)
+                previous_active = previous_row_active & column_active[None, :]
                 previous_y_base = previous_y * 2
                 prev_source_y0 = tl.load(
                     y_idx + previous_y_base,
-                    mask=previous_active,
+                    mask=previous_row_active,
                     other=0,
                 ).to(tl.int64)
                 prev_source_y1 = tl.load(
                     y_idx + previous_y_base + 1,
-                    mask=previous_active,
+                    mask=previous_row_active,
                     other=0,
                 ).to(tl.int64)
                 prev_y_weight0 = tl.load(
                     y_weight + previous_y_base,
-                    mask=previous_active,
+                    mask=previous_row_active,
                     other=0.0,
                 )
                 prev_y_weight1 = tl.load(
                     y_weight + previous_y_base + 1,
-                    mask=previous_active,
+                    mask=previous_row_active,
                     other=0.0,
                 )
                 prev_value00 = tl.load(
