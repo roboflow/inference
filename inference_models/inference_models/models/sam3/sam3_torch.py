@@ -792,14 +792,19 @@ def serialize_prompt(
         else:
             labels_list = point_labels
 
-        for coord, label in zip(coords_list, labels_list):
-            result["points"].append(
-                {
-                    "x": coord[0] if isinstance(coord, (list, tuple)) else coord,
-                    "y": coord[1] if isinstance(coord, (list, tuple)) else 0,
-                    "positive": bool(label),
-                }
-            )
+        # point_coordinates is shaped (num_prompts, num_points, 2); iterate prompts
+        # then points. Previously this loop consumed the leading prompt axis as if it
+        # were a single coordinate, so a single-point prompt (shape (1, 1, 2)) made
+        # `coord` equal to [[x, y]] (length 1) and `coord[1]` raised IndexError.
+        for prompt_coords, prompt_labels in zip(coords_list, labels_list):
+            for coord, label in zip(prompt_coords, prompt_labels):
+                result["points"].append(
+                    {
+                        "x": coord[0] if isinstance(coord, (list, tuple)) else coord,
+                        "y": coord[1] if isinstance(coord, (list, tuple)) else 0,
+                        "positive": bool(label),
+                    }
+                )
 
     if boxes is not None:
         if isinstance(boxes, torch.Tensor):
