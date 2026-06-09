@@ -18,8 +18,9 @@ def str_to_bool(value: Optional[str]) -> bool:
     return value.strip().lower() in {"true", "1", "yes", "y", "on"}
 
 
-# Top-level switch: when true, qwen3_5 model types are served by the vLLM
-# proxy class instead of the in-process HF adapter.
+# Top-level switch: when true, supported Qwen VL model types (qwen3_5,
+# qwen3vl) are served by the vLLM proxy classes instead of the in-process HF
+# adapters.
 VLLM_PROXY_ENABLED = str_to_bool(os.getenv("VLLM_PROXY_ENABLED"))
 
 DEFAULT_VLLM_BASE_URL = "http://127.0.0.1:8000"

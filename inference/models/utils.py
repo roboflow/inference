@@ -467,12 +467,20 @@ except:
 
 try:
     if QWEN_3_ENABLED:
-        from inference.models import LoRAQwen3VL, Qwen3VL
+        if VLLM_PROXY_ENABLED:
+            from inference.models.vllm_proxy.qwen3vl_vllm import Qwen3VLVLLMProxy
 
-        qwen3vl_models = {
-            ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VL,
-            ("text-image-pairs", "qwen3vl-2b-instruct-peft"): LoRAQwen3VL,
-        }
+            qwen3vl_models = {
+                ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VLVLLMProxy,
+                ("text-image-pairs", "qwen3vl-2b-instruct-peft"): Qwen3VLVLLMProxy,
+            }
+        else:
+            from inference.models import LoRAQwen3VL, Qwen3VL
+
+            qwen3vl_models = {
+                ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VL,
+                ("text-image-pairs", "qwen3vl-2b-instruct-peft"): LoRAQwen3VL,
+            }
         ROBOFLOW_MODEL_TYPES.update(qwen3vl_models)
 except:
     warnings.warn(
@@ -810,12 +818,17 @@ if USE_INFERENCE_MODELS:
                     InferenceModelsQwen25VLAdapter
                 )
             elif variant.startswith("qwen3vl-"):
-                from inference.models.qwen3vl.qwen3vl_inference_models import (
-                    InferenceModelsQwen3VLAdapter,
-                )
+                if VLLM_PROXY_ENABLED:
+                    from inference.models.vllm_proxy.qwen3vl_vllm import (
+                        Qwen3VLVLLMProxy as _Qwen3VLModelClass,
+                    )
+                else:
+                    from inference.models.qwen3vl.qwen3vl_inference_models import (
+                        InferenceModelsQwen3VLAdapter as _Qwen3VLModelClass,
+                    )
 
-                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen3VLAdapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "qwen3vl")] = InferenceModelsQwen3VLAdapter
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = _Qwen3VLModelClass
+                ROBOFLOW_MODEL_TYPES[("vlm", "qwen3vl")] = _Qwen3VLModelClass
             elif variant.startswith("qwen3_5"):
                 if VLLM_PROXY_ENABLED:
                     from inference.models.vllm_proxy.qwen3_5_vllm import (

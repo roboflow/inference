@@ -2,8 +2,12 @@
 
 Maps a Roboflow `model_id` to the name it is served under in vLLM:
 
-- Base model ids (matching `VLLM_SERVED_BASE_VARIANT`) require no
-  registration - vLLM already serves the base model.
+- Base model ids (matching `VLLM_SERVED_BASE_VARIANT` or
+  `VLLM_SERVED_BASE_NAME`) require no registration - vLLM already serves the
+  base model.
+- Fine-tunes must match the configured base: `VLLM_SERVED_BASE_VARIANT` is
+  `<architecture>-<variant>` (e.g. `qwen3_5-0.8b`, `qwen3vl-2b`) and registry
+  metadata is normalised via `normalize_base_variant` before comparison.
 - Fine-tunes resolve their model package via the Roboflow weights provider
   (the api_key is passed through so registry-side access control applies),
   download ONLY the adapter artifacts, run `patch_adapter`, and register the
@@ -39,7 +43,11 @@ from inference_models.weights_providers.core import get_model_from_provider
 
 ADAPTERS_CACHE_SUBDIR = "vllm-adapters"
 BASE_PACKAGE_DIR_PREFIX = "base/"
-SUPPORTED_MODEL_ARCHITECTURE = "qwen3_5"
+SUPPORTED_MODEL_ARCHITECTURES = ("qwen3_5", "qwen3vl")
+
+# Registry fine-tune variants carry this suffix; a fine-tune of base X is
+# servable on a pool whose vLLM container serves X.
+PEFT_VARIANT_SUFFIX = "-peft"
 
 
 @dataclass
@@ -59,6 +67,33 @@ def sanitize_for_slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9_-]+", "-", value.lower())
     slug = re.sub(r"[_-]{2,}", "-", slug)
     return slug.strip("-")
+
+
+def normalize_base_variant(
+    model_architecture: Optional[str], model_variant: Optional[str]
+) -> Optional[str]:
+    """Maps registry metadata to the canonical `<architecture>-<variant>` form.
+
+    `VLLM_SERVED_BASE_VARIANT` is configured as
+    `<architecture>-<variant-with-peft-suffix-stripped>` (e.g.
+    `qwen3_5-0.8b`, `qwen3vl-2b`). Registry metadata is inconsistent across
+    families: qwen3_5 models report variants that already carry the
+    architecture prefix (`qwen3_5-0.8b`), while qwen3vl fine-tunes report
+    bare variants (`2b-peft`). Normalisation: lowercase, strip a trailing
+    `-peft` (a fine-tune of base X is servable on the pool serving X), then
+    prefix with `<architecture>-` unless the variant already starts with it.
+
+    Returns None when either field is missing.
+    """
+    if not model_architecture or not model_variant:
+        return None
+    architecture = model_architecture.strip().lower()
+    variant = model_variant.strip().lower()
+    if variant.endswith(PEFT_VARIANT_SUFFIX):
+        variant = variant[: -len(PEFT_VARIANT_SUFFIX)]
+    if variant == architecture or variant.startswith(f"{architecture}-"):
+        return variant
+    return f"{architecture}-{variant}"
 
 
 class AdapterManager:
@@ -86,32 +121,44 @@ class AdapterManager:
         already-registered adapter is just touched in the LRU order).
 
         Raises:
-            NotServableOnVLLMError: If the model is not a qwen3_5 model whose
-                base variant matches the vLLM deployment.
+            NotServableOnVLLMError: If the model is not a supported Qwen VL
+                model whose base variant matches the vLLM deployment.
             AdapterNotServableError: If the adapter cannot be patched into a
                 vLLM-servable form.
         """
         served_base_variant = get_vllm_served_base_variant()
-        if model_id.lower() == served_base_variant.lower():
-            return get_vllm_served_base_name()
+        served_base_name = get_vllm_served_base_name()
+        # Base-model ids short-circuit: ids equal to the configured variant
+        # (qwen3_5-0.8b) or to the served base name (qwen3vl-2b-instruct)
+        # require no registration - vLLM already serves the base model.
+        if model_id.lower() in {
+            served_base_variant.lower(),
+            served_base_name.lower(),
+        }:
+            return served_base_name
         metadata = get_model_from_provider(
             model_id=model_id,
             provider="roboflow",
             api_key=api_key,
             weights_provider_extra_headers=weights_provider_extra_headers,
         )
-        if not (metadata.model_architecture or "").startswith(
-            SUPPORTED_MODEL_ARCHITECTURE
+        if not (metadata.model_architecture or "").lower().startswith(
+            SUPPORTED_MODEL_ARCHITECTURES
         ):
             raise NotServableOnVLLMError(
                 f"Model {model_id} has architecture "
                 f"{metadata.model_architecture!r} which is not servable by the "
-                f"vLLM proxy (expected {SUPPORTED_MODEL_ARCHITECTURE!r})."
+                f"vLLM proxy (expected one of {SUPPORTED_MODEL_ARCHITECTURES!r})."
             )
-        if metadata.model_variant != served_base_variant:
+        normalized_variant = normalize_base_variant(
+            model_architecture=metadata.model_architecture,
+            model_variant=metadata.model_variant,
+        )
+        if normalized_variant != served_base_variant.lower():
             raise NotServableOnVLLMError(
-                f"Model {model_id} is based on variant "
-                f"{metadata.model_variant!r}, but the vLLM deployment serves "
+                f"Model {model_id} is based on {normalized_variant!r} "
+                f"(architecture {metadata.model_architecture!r}, variant "
+                f"{metadata.model_variant!r}), but the vLLM deployment serves "
                 f"{served_base_variant!r} (VLLM_SERVED_BASE_VARIANT)."
             )
         package = self._select_model_package(model_id=model_id, metadata=metadata)

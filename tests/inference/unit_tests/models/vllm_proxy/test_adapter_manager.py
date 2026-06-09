@@ -5,7 +5,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from inference.models.vllm_proxy import adapter_manager as adapter_manager_module
-from inference.models.vllm_proxy.adapter_manager import AdapterManager
+from inference.models.vllm_proxy.adapter_manager import (
+    AdapterManager,
+    normalize_base_variant,
+)
 from inference.models.vllm_proxy.errors import NotServableOnVLLMError
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.weights_providers.entities import (
@@ -92,6 +95,95 @@ def _install_provider(monkeypatch, metadata_by_model_id: dict) -> MagicMock:
     )
     monkeypatch.setattr(adapter_manager_module, "get_model_from_provider", provider)
     return provider
+
+
+class TestNormalizeBaseVariant:
+    @pytest.mark.parametrize(
+        "architecture, variant, expected",
+        [
+            # qwen3_5 variants already carry the architecture prefix
+            ("qwen3_5", "qwen3_5-0.8b", "qwen3_5-0.8b"),
+            ("qwen3_5", "qwen3_5-0.8b-peft", "qwen3_5-0.8b"),
+            # ... but bare variants are normalised the same way
+            ("qwen3_5", "0.8b", "qwen3_5-0.8b"),
+            ("qwen3_5", "0.8b-peft", "qwen3_5-0.8b"),
+            # qwen3vl registry metadata reports bare variants
+            ("qwen3vl", "2b", "qwen3vl-2b"),
+            ("qwen3vl", "2b-peft", "qwen3vl-2b"),
+            ("qwen3vl", "qwen3vl-2b-peft", "qwen3vl-2b"),
+            # case-insensitive
+            ("QWEN3VL", "2B-PEFT", "qwen3vl-2b"),
+            # non-peft suffixes are preserved
+            ("qwen3vl", "2b-instruct", "qwen3vl-2b-instruct"),
+            # missing fields
+            (None, "2b", None),
+            ("qwen3vl", None, None),
+            ("", "", None),
+        ],
+    )
+    def test_normalization_matrix(
+        self, architecture: Optional[str], variant: Optional[str], expected
+    ) -> None:
+        assert (
+            normalize_base_variant(
+                model_architecture=architecture, model_variant=variant
+            )
+            == expected
+        )
+
+
+class TestVariantMatching:
+    """Matrix for the base-variant verification of fine-tune metadata.
+
+    The configured VLLM_SERVED_BASE_VARIANT must equal
+    `<architecture>-<variant-with-peft-suffix-stripped>`.
+    """
+
+    @pytest.mark.parametrize(
+        "architecture, variant, served_variant, accepted",
+        [
+            ("qwen3_5", "qwen3_5-0.8b", "qwen3_5-0.8b", True),
+            ("qwen3_5", "0.8b-peft", "qwen3_5-0.8b", True),
+            ("qwen3_5", "qwen3_5-0.8b-peft", "qwen3_5-0.8b", True),
+            ("qwen3vl", "2b-peft", "qwen3vl-2b", True),
+            ("qwen3vl", "2b", "qwen3vl-2b", True),
+            ("qwen3vl", "2B-PEFT", "qwen3vl-2b", True),
+            # family mismatch
+            ("qwen3vl", "2b-peft", "qwen3_5-0.8b", False),
+            ("qwen3_5", "0.8b-peft", "qwen3vl-2b", False),
+            # size mismatch within the family
+            ("qwen3_5", "qwen3_5-2b", "qwen3_5-0.8b", False),
+            ("qwen3vl", "4b-peft", "qwen3vl-2b", False),
+        ],
+    )
+    def test_fine_tune_variant_matching(
+        self,
+        monkeypatch,
+        fake_download,
+        model_cache_dir,
+        architecture: str,
+        variant: str,
+        served_variant: str,
+        accepted: bool,
+    ) -> None:
+        # given
+        monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", served_variant)
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(
+            model_id=model_id,
+            model_architecture=architecture,
+            model_variant=variant,
+        )
+        _install_provider(monkeypatch, {model_id: metadata})
+        manager = AdapterManager(client=MagicMock())
+
+        # when / then
+        if accepted:
+            served_name = manager.resolve_and_register(model_id=model_id)
+            assert served_name.startswith("some-workspace-some-project-1-")
+        else:
+            with pytest.raises(NotServableOnVLLMError):
+                manager.resolve_and_register(model_id=model_id)
 
 
 class TestResolveAndRegister:
@@ -247,6 +339,62 @@ class TestResolveAndRegister:
         # when / then
         with pytest.raises(NotServableOnVLLMError):
             manager.resolve_and_register(model_id=model_id)
+
+    def test_base_id_matching_served_base_name_short_circuits(
+        self, monkeypatch
+    ) -> None:
+        # given - the qwen3vl base id ("qwen3vl-2b-instruct") differs from
+        # the configured variant ("qwen3vl-2b"); it must short-circuit via
+        # VLLM_SERVED_BASE_NAME without a provider call.
+        monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", "qwen3vl-2b")
+        monkeypatch.setenv("VLLM_SERVED_BASE_NAME", "qwen3vl-2b-instruct")
+        provider = _install_provider(monkeypatch, {})
+        manager = AdapterManager(client=MagicMock())
+
+        # when
+        served_name = manager.resolve_and_register(model_id="qwen3vl-2b-instruct")
+
+        # then
+        assert served_name == "qwen3vl-2b-instruct"
+        provider.assert_not_called()
+
+    def test_base_id_short_circuit_is_case_insensitive(self, monkeypatch) -> None:
+        # given
+        monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", "qwen3vl-2b")
+        monkeypatch.setenv("VLLM_SERVED_BASE_NAME", "qwen3vl-2b-instruct")
+        provider = _install_provider(monkeypatch, {})
+        manager = AdapterManager(client=MagicMock())
+
+        # when
+        served_name = manager.resolve_and_register(model_id="QWEN3VL-2B")
+
+        # then
+        assert served_name == "qwen3vl-2b-instruct"
+        provider.assert_not_called()
+
+    def test_qwen3vl_fine_tune_is_registered_on_qwen3vl_pool(
+        self, monkeypatch, fake_download, model_cache_dir
+    ) -> None:
+        # given - registry metadata shape of the image-text/218 lab adapter:
+        # architecture "qwen3vl", variant "2b-peft".
+        monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", "qwen3vl-2b")
+        monkeypatch.setenv("VLLM_SERVED_BASE_NAME", "qwen3vl-2b-instruct")
+        model_id = "image-text/218"
+        metadata = build_metadata(
+            model_id=model_id,
+            model_architecture="qwen3vl",
+            model_variant="2b-peft",
+        )
+        _install_provider(monkeypatch, {model_id: metadata})
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        # when
+        served_name = manager.resolve_and_register(model_id=model_id, api_key="key")
+
+        # then
+        assert served_name.startswith("image-text-218-pkg1-")
+        client.load_lora_adapter.assert_called_once()
 
     def test_custom_served_base_variant_is_respected(self, monkeypatch) -> None:
         # given
