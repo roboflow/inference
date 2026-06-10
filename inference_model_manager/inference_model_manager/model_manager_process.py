@@ -1366,11 +1366,10 @@ class ModelManagerProcess:
         """Decide admission for an incoming model without mutating state.
 
         Returns (decision, victims) where decision is "admit" | "evict" |
-        "no_capacity". need == 0 (no data) always admits.
+        "no_capacity". A model with no footprint data is treated as need == 0
+        and still subject to the headroom floor (gpu_free >= headroom).
         """
         need = self._required_mb(model_id, api_key)
-        if need == 0:
-            return "admit", []
         free = self._gpu_free_mb() - self._vram_headroom_mb
         if free >= need:
             return "admit", []
