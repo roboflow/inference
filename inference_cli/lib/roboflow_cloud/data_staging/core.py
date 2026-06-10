@@ -237,16 +237,6 @@ def create_batch_of_images(
         ),
     ] = False,
 ) -> None:
-    print(
-        images_dir,
-        ingest_id,
-        notifications_url,
-        notification_categories,
-        batch_name,
-        api_key,
-        debug_mode,
-    )
-    raise Exception()
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     if notification_categories:
