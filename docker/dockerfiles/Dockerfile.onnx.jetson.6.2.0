@@ -208,7 +208,7 @@ RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/cuda12,sharin
 # Limit MAX_JOBS to prevent timeout during CUDA kernel compilation
 # Using 2.8.3 - removed legacy features (rotary, xentropy, fused_softmax, ft_attention) for faster builds
 RUN export MAX_JOBS=4 && \
-    python3 -m pip install --break-system-packages --no-build-isolation flash-attn==2.8.3
+    python3 -m pip install --break-system-packages --no-build-isolation --no-dependencies flash-attn==2.8.3
 
 # Copy requirements files (done after compilation to improve cache efficiency)
 WORKDIR /build/reqs
