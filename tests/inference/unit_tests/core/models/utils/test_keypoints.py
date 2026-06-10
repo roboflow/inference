@@ -1,10 +1,23 @@
-from typing import List
+import pytest
 
 from inference.core.entities.responses.inference import Keypoint
+from inference.core.exceptions import ModelArtefactError
 from inference.core.models.utils.keypoints import (
     model_keypoints_to_response,
     superset_keypoints_count,
 )
+
+
+def test_superset_keypoints_count_without_metadata_raises() -> None:
+    # Missing metadata means model artefacts were not loaded; fail loudly like
+    # model_keypoints_to_response does, instead of silently reporting 0 keypoints.
+    with pytest.raises(ModelArtefactError):
+        superset_keypoints_count()
+
+
+def test_superset_keypoints_count_with_empty_metadata_returns_zero() -> None:
+    # Empty (but provided) metadata is a valid input with zero keypoints.
+    assert superset_keypoints_count({}) == 0
 
 
 def test_superset_keypoints_count() -> None:
