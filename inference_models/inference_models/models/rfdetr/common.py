@@ -1,13 +1,12 @@
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
 from torchvision.transforms import functional
 
-from inference_models import Detections, InstanceDetections, InstancesRLEMasks
+from inference_models import Detections, InstanceDetections, InstancesRLEMasks, KeyPoints
 from inference_models.configuration import (
     INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED,
 )
-from inference_models import Detections, InstanceDetections, InstancesRLEMasks, KeyPoints
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.roboflow.model_packages import (
