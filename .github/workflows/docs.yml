@@ -93,6 +93,8 @@ jobs:
         working-directory: ./inference_repo
 
       - name: Build block docs
+        env:
+          LOAD_ENTERPRISE_BLOCKS: "TRUE"
         run: python -m development.docs.build_block_docs
         working-directory: ./inference_repo
 

@@ -41,6 +41,7 @@ COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_CENTER_CROP_URL = "https://storage.go
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-crop-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-bs-nonsquare-letterbox.zip"
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-bs-nonsquare-letterbox.zip"
+RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-kp-preview-onnx-glue-sticks.zip"
 
 OG_RFDETR_WEIGHTS_URL = "https://storage.googleapis.com/rfdetr/rf-detr-base-coco.pth"
 
@@ -425,6 +426,14 @@ def coin_counting_rfdetr_nano_torch_cs_stretch_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL,
         package_name="coin-counting-rfdetr-nano-torch-cs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_kp_preview_onnx_glue_sticks_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL,
+        package_name="rfdetr-kp-preview-onnx-glue-sticks",
     )
 
 

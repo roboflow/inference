@@ -39,9 +39,7 @@ def mocked_v1():
     with (
         mock.patch.object(v1, "get_workspace_name") as workspace_mock,
         mock.patch.object(v1, "batch_update_image_metadata_at_roboflow") as batch_mock,
-        mock.patch.object(
-            v1, "update_image_metadata_at_roboflow"
-        ) as single_mock,
+        mock.patch.object(v1, "update_image_metadata_at_roboflow") as single_mock,
     ):
         workspace_mock.return_value = "my-workspace"
         batch_mock.return_value = {"taskId": "task-123"}

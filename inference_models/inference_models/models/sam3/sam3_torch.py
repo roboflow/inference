@@ -792,14 +792,17 @@ def serialize_prompt(
         else:
             labels_list = point_labels
 
-        for coord, label in zip(coords_list, labels_list):
-            result["points"].append(
-                {
-                    "x": coord[0] if isinstance(coord, (list, tuple)) else coord,
-                    "y": coord[1] if isinstance(coord, (list, tuple)) else 0,
-                    "positive": bool(label),
-                }
-            )
+        # point_coordinates is shaped (num_prompts, num_points, 2); iterate prompts
+        # then points.
+        for prompt_coords, prompt_labels in zip(coords_list, labels_list):
+            for coord, label in zip(prompt_coords, prompt_labels):
+                result["points"].append(
+                    {
+                        "x": coord[0] if isinstance(coord, (list, tuple)) else coord,
+                        "y": coord[1] if isinstance(coord, (list, tuple)) else 0,
+                        "positive": bool(label),
+                    }
+                )
 
     if boxes is not None:
         if isinstance(boxes, torch.Tensor):

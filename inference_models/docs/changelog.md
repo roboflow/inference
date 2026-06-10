@@ -8,8 +8,8 @@
   `INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED=True` to generate COCO RLE
   masks directly from sparse interpolated mask regions on supported CUDA
   inputs.
-
----
+- Added RF-DETR preview keypoint support (ONNX backend).
+- Added support for fine-tuned YOLO26 semantic segmentation models.
 
 ## `0.28.7`
 
