@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
 
 import typer
 from typing_extensions import Annotated
@@ -269,11 +269,14 @@ def process_images_with_workflow(
     job_name: Annotated[
         Optional[str], typer.Option("--job-name", "-jn", help="Name of your job")
     ] = None,
-    image_metadata_mapping: Annotated[Optional[List[str]], typer.Option(
-        "--metadata-mapping",
-        "-mm",
-        help="Key-value mapping of workflow input to metadata key as workflow_input=metadata_key. Repeatable.",
-    )] = None,
+    image_metadata_mapping: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--metadata-mapping",
+            "-mm",
+            help="Key-value mapping of workflow input to metadata key as workflow_input=metadata_key. Repeatable.",
+        ),
+    ] = None,
 ) -> None:
     if image_metadata_mapping is not None:
         image_metadata_mapping = parse_key_value(image_metadata_mapping)

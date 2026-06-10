@@ -316,7 +316,7 @@ def _resolve_metadata_driven_workflow_parameters(
         return (
             None,
             f"Could not read metadata from {assumed_metadata_file_path} or the format of assumed "
-            f"metadata file is invalid: {error}"
+            f"metadata file is invalid: {error}",
         )
     if len(missing_keys) > 0:
         return None, (

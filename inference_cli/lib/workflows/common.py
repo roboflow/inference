@@ -299,4 +299,3 @@ class WorkflowsImagesProcessingIndex:
             registered_images = index_entry.image_outputs[field_name]
             results.append((image_path, registered_images))
         return results
-

@@ -1646,7 +1646,9 @@ def pull_batch_element_to_directory(
         override_existing=override_existing,
     ):
         return None
-    is_archive = file_metadata.file_name.endswith(".tar.gz") or file_metadata.file_name.endswith(".tar")
+    is_archive = file_metadata.file_name.endswith(
+        ".tar.gz"
+    ) or file_metadata.file_name.endswith(".tar")
     if not is_archive:
         result_path = pull_file_to_directory(
             url=file_metadata.download_url,

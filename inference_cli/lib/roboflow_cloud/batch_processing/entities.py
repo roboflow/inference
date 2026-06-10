@@ -103,6 +103,7 @@ class StagingBatchInputV1(BaseModel):
         serialization_alias="imagesMetadataPart", default=None
     )
 
+
 class AggregationFormat(str, Enum):
     CSV = "csv"
     JSONL = "jsonl"

@@ -541,5 +541,3 @@ def test_workflows_images_processor_index() -> None:
         ),
         ("/inputs/image_2.jpg", ["/some/image_2.jpg/crops/0.jpg"]),
     ], "Expected all crops outputs to be indexed"
-
-

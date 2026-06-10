@@ -13,9 +13,7 @@ def test_parse_key_value_returns_empty_dict_for_empty_input() -> None:
 
 
 def test_parse_key_value_preserves_equals_signs_inside_value() -> None:
-    assert parse_key_value(["url=https://x?a=b&c=d"]) == {
-        "url": "https://x?a=b&c=d"
-    }
+    assert parse_key_value(["url=https://x?a=b&c=d"]) == {"url": "https://x?a=b&c=d"}
 
 
 def test_parse_key_value_raises_bad_parameter_when_separator_missing() -> None:

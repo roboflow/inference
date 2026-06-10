@@ -6,7 +6,9 @@ from inference_cli.lib.workflows.local_image_adapter import (
 )
 
 
-def _write_image_with_metadata(tmp_path, image_name: str, metadata: Union[dict, list]) -> str:
+def _write_image_with_metadata(
+    tmp_path, image_name: str, metadata: Union[dict, list]
+) -> str:
     image_path = tmp_path / image_name
     image_path.write_bytes(b"fake-image-bytes")
     metadata_path = tmp_path / f"{image_path}.json"
@@ -55,9 +57,7 @@ def test_resolve_reports_error_when_metadata_file_is_missing(tmp_path) -> None:
 def test_resolve_reports_error_listing_missing_keys_when_metadata_malformed(
     tmp_path,
 ) -> None:
-    image_path = _write_image_with_metadata(
-        tmp_path, "img.jpg", metadata=[]
-    )
+    image_path = _write_image_with_metadata(tmp_path, "img.jpg", metadata=[])
 
     params, error = _resolve_metadata_driven_workflow_parameters(
         image_path=image_path,
@@ -70,6 +70,7 @@ def test_resolve_reports_error_listing_missing_keys_when_metadata_malformed(
     assert params is None
     assert error is not None
     assert "Could not read metadata from" in error
+
 
 def test_resolve_reports_error_listing_missing_keys_when_metadata_incomplete(
     tmp_path,

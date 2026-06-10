@@ -4,7 +4,7 @@ import random
 import string
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Generator, List, Optional, Set, Union, Dict
+from typing import Dict, Generator, List, Optional, Set, Union
 
 import backoff
 import requests
