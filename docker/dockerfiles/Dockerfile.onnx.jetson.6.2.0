@@ -7,6 +7,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
 ARG PYTORCH_VERSION=2.6.0
 ARG TORCHVISION_VERSION=0.21.0
+ARG TRITON_VERSION=3.2.0
 ARG OPENCV_VERSION=4.13.0
 # Per-Jetson-platform OpenCV build parameters. To replicate this from-source
 # OpenCV section in another Jetson dockerfile (jp51, jp71), copy the OpenCV
@@ -339,10 +340,62 @@ RUN cd /usr/local/lib/python3.10/dist-packages && \
     rm -rf */examples */benchmarks */docs || true && \
     rm -rf skimage/data || true
 
-# Stage 2: Runtime
+# Stage 2: Triton builder — compile from source (needs apt cmake 3.x; main builder uses cmake 4.2).
+FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS triton-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TRITON_VERSION=3.2.0
+ENV LANG=en_US.UTF-8
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-triton-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-triton-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        libxml2-dev \
+        ninja-build \
+        python3 \
+        python3-dev \
+        python3-pip \
+        zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Torch 2.6.0 on JP6.2 pairs with Triton ${TRITON_VERSION}.
+RUN set -eux; \
+    rm -rf /tmp/triton-build /tmp/triton-wheels; \
+    mkdir -p /tmp/triton-wheels; \
+    git clone --depth 1 --branch v${TRITON_VERSION} https://github.com/triton-lang/triton.git /tmp/triton-build/src; \
+    git -C /tmp/triton-build/src submodule update --init --recursive; \
+    python3 -m pip install --no-cache-dir \
+        "setuptools>=40.8.0" \
+        wheel \
+        "cmake>=3.18,<4.0" \
+        "ninja>=1.11.1" \
+        "pybind11>=2.13.1"; \
+    MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
+        --no-build-isolation \
+        --no-deps \
+        /tmp/triton-build/src/python \
+        --wheel-dir /tmp/triton-wheels; \
+    set -- /tmp/triton-wheels/triton-${TRITON_VERSION}-*.whl; \
+    if [ ! -e "$1" ]; then \
+        echo "Expected source-built Triton wheel for ${TRITON_VERSION} was not found" >&2; \
+        exit 1; \
+    fi; \
+    python3 -m pip install --no-cache-dir "$1"; \
+    rm -rf /root/.triton/llvm /tmp/triton-build /tmp/triton-wheels; \
+    python3 -c "import triton; print('triton', triton.__version__)"; \
+    test ! -d /root/.triton/llvm
+
+# Stage 3: Runtime
 FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TRITON_VERSION=3.2.0
 ENV LANG=en_US.UTF-8
 
 WORKDIR /app
@@ -389,42 +442,20 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     python3-gi \
     gir1.2-gstreamer-1.0 \
     gir1.2-gst-plugins-base-1.0 \
-    libatlas3-base
+    libatlas3-base \
+    build-essential \
+    python3-dev \
+    zlib1g-dev \
+    libxml2-dev
 
-# Torch 2.6.0 on JP6.2 pairs with Triton 3.2.0.
-RUN set -eux; \
-    apt-get update -y; \
-    apt-get install -y --no-install-recommends \
-        build-essential \
-        cmake \
-        git \
-        libxml2-dev \
-        ninja-build \
-        python3-dev \
-        zlib1g-dev; \
-    rm -rf /var/lib/apt/lists/*; \
-    rm -rf /tmp/triton-build /tmp/triton-wheels; \
-    mkdir -p /tmp/triton-wheels; \
-    git clone --depth 1 --branch v3.2.0 https://github.com/triton-lang/triton.git /tmp/triton-build/src; \
-    git -C /tmp/triton-build/src submodule update --init --recursive; \
-    python3 -m pip install --no-cache-dir \
-        "setuptools>=40.8.0" \
-        wheel \
-        "cmake>=3.18,<4.0" \
-        "ninja>=1.11.1" \
-        "pybind11>=2.13.1"; \
-    MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
-        --no-build-isolation \
-        --no-deps \
-        /tmp/triton-build/src/python \
-        --wheel-dir /tmp/triton-wheels; \
-    set -- /tmp/triton-wheels/triton-3.2.0-*.whl; \
-    if [ ! -e "$1" ]; then \
-        echo "Expected source-built Triton wheel for 3.2.0 was not found" >&2; \
-        exit 1; \
-    fi; \
-    python3 -m pip install --no-cache-dir "$1"; \
-    rm -rf /var/lib/apt/lists/* /tmp/triton-build /tmp/triton-wheels
+# build-essential/python3-dev/zlib1g-dev/libxml2-dev: required for Triton JIT kernel compilation
+# at runtime (gcc alone is insufficient; needs g++, make, and libc6-dev from build-essential).
+
+# Triton (built in triton-builder; LLVM cache excluded, nvidia JIT tools retained).
+COPY --from=triton-builder /usr/local/lib/python3.10/dist-packages/triton /usr/local/lib/python3.10/dist-packages/triton
+COPY --from=triton-builder /usr/local/lib/python3.10/dist-packages/triton-${TRITON_VERSION}*.dist-info /usr/local/lib/python3.10/dist-packages/
+COPY --from=triton-builder /root/.triton/nvidia /root/.triton/nvidia
+COPY --from=triton-builder /root/.triton/json /root/.triton/json
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
