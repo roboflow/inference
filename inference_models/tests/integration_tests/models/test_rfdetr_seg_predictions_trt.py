@@ -494,6 +494,12 @@ def test_trt_triton_preprocess_output_matches_reference_preprocess(
             pytest.skip("TRT engine package is not compatible with this platform")
         raise
 
+    # This test exercises the runtime fast path directly; initialize the
+    # adapter-level gate/runtime even when the process default leaves it off.
+    model._fast_preprocess_enabled = True
+    model._fast_preprocess_runtime = triton_preprocess_runtime.FastPreprocessRuntime(
+        device=model._device
+    )
     monkeypatch.setattr(triton_preprocess_runtime, "_FAST_PATH_ENABLED", False)
     reference_predictions = model(asl_image_numpy)
 
