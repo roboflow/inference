@@ -5,6 +5,8 @@ FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
+ARG PYTORCH_VERSION=2.6.0
+ARG TORCHVISION_VERSION=0.21.0
 ARG OPENCV_VERSION=4.13.0
 # Per-Jetson-platform OpenCV build parameters. To replicate this from-source
 # OpenCV section in another Jetson dockerfile (jp51, jp71), copy the OpenCV
@@ -109,11 +111,11 @@ RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar
 # mount auto-creates /build/pytorch/pytorch/ before git clone runs, and git
 # refuses to clone into a non-empty target.
 WORKDIR /build/pytorch
-RUN git clone --recursive --branch v2.6.0 https://github.com/pytorch/pytorch
+RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
 # build/ is cache-mounted so a stage rerun reuses CMake/ninja state and object
 # files. Cache id scoped to (version, arch, SM) so a version or target bump
 # starts from a clean cache instead of contaminating the previous one.
-RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-2.6.0-${TARGETARCH}-sm87 \
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
     cd pytorch && \
     python3 -m pip install -r requirements.txt && \
@@ -127,7 +129,7 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
     export USE_FBGEMM=0 USE_KINETO=0 USE_CUPTI_SO=0 && \
     export USE_FLASH_ATTENTION=1 USE_MEM_EFF_ATTENTION=1 && \
     export USE_MPS=0 USE_ROCM=0 && \
-    export PYTORCH_BUILD_VERSION=2.6.0 PYTORCH_BUILD_NUMBER=1 && \
+    export PYTORCH_BUILD_VERSION=${PYTORCH_VERSION} PYTORCH_BUILD_NUMBER=1 && \
     export CMAKE_BUILD_TYPE=Release BUILD_SHARED_LIBS=ON USE_PRIORITIZED_TEXT_FOR_LD=1 && \
     export MAX_JOBS=12 && \
     export CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
@@ -138,12 +140,12 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
 # Clone in its own RUN so build/ cache mount overlays cleanly.
 WORKDIR /build/torchvision
 RUN for i in 1 2 3; do \
-        git clone --branch v0.21.0 https://github.com/pytorch/vision && break || sleep 60; \
+        git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
     done
-RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-0.21.0-${TARGETARCH}-sm87 \
+RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-${TORCHVISION_VERSION}-${TARGETARCH}-sm87 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
     cd vision && \
-    export BUILD_VERSION=0.21.0 TORCH_CUDA_ARCH_LIST="8.7" && \
+    export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="8.7" && \
     export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
     python3 setup.py bdist_wheel && \
     python3 -m pip install dist/torchvision-*.whl
@@ -342,6 +344,7 @@ RUN cd /usr/local/lib/python3.10/dist-packages && \
 FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG PYTORCH_VERSION=2.6.0
 ENV LANG=en_US.UTF-8
 
 WORKDIR /app

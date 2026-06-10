@@ -11,6 +11,9 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
+ARG PYTORCH_VERSION=2.4.1
+ARG TORCHVISION_VERSION=0.19.1
+
 COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.doctr.txt \
@@ -33,8 +36,8 @@ RUN python -m pip install \
     -r requirements.easyocr.txt \
     -r requirements.gpu.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
-    "torch==2.4.1" \
-    "torchvision==0.19.1" \
+    "torch==${PYTORCH_VERSION}" \
+    "torchvision==${TORCHVISION_VERSION}" \
     "transformers<=5.7.0"
 
 # Torch 2.4.1 on JP5.1 pairs with Triton 3.0.0.
