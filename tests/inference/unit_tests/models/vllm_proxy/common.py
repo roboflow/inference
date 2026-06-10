@@ -28,8 +28,9 @@ def build_adapter_config(
     use_rslora: bool = False,
     target_modules: Optional[List[str]] = None,
     modules_to_save: Optional[List[str]] = None,
+    base_model_name_or_path: Optional[str] = None,
 ) -> dict:
-    return {
+    config = {
         "peft_type": "LORA",
         "r": r,
         "lora_alpha": lora_alpha,
@@ -45,6 +46,9 @@ def build_adapter_config(
         "lora_bias": False,
         "exclude_modules": None,
     }
+    if base_model_name_or_path is not None:
+        config["base_model_name_or_path"] = base_model_name_or_path
+    return config
 
 
 def build_adapter_tensors(

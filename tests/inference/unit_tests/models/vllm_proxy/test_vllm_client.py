@@ -157,6 +157,92 @@ class TestLoraAdapterEndpoints:
         assert kwargs["json"] == {"lora_name": "adapter-1"}
 
 
+class TestCorrelationHeaderPassthrough:
+    """X-Request-Id passthrough so vLLM logs correlate with platform ids."""
+
+    @pytest.fixture
+    def execution_id_ctx(self):
+        from inference_sdk.config import execution_id
+
+        token = execution_id.set("exec-123")
+        yield
+        execution_id.reset(token)
+
+    @pytest.fixture
+    def correlation_id_ctx(self):
+        from asgi_correlation_id import correlation_id
+
+        token = correlation_id.set("req-456")
+        yield
+        correlation_id.reset(token)
+
+    def test_execution_id_is_sent_on_chat_completion(
+        self, client: VLLMClient, execution_id_ctx
+    ) -> None:
+        # given
+        client._session.request.return_value = make_response(payload={"choices": []})
+
+        # when
+        client.chat_completion(model="m", messages=[])
+
+        # then
+        _, kwargs = client._session.request.call_args
+        assert kwargs["headers"]["X-Request-Id"] == "exec-123"
+
+    def test_execution_id_is_sent_on_load_and_unload(
+        self, client: VLLMClient, execution_id_ctx
+    ) -> None:
+        # given
+        client._session.request.return_value = make_response()
+
+        # when
+        client.load_lora_adapter(name="adapter-1", path="/cache/adapter-1")
+        client.unload_lora_adapter(name="adapter-1")
+
+        # then
+        for call in client._session.request.call_args_list:
+            assert call.kwargs["headers"]["X-Request-Id"] == "exec-123"
+
+    def test_execution_id_takes_precedence_over_request_id(
+        self, client: VLLMClient, execution_id_ctx, correlation_id_ctx
+    ) -> None:
+        # given
+        client._session.request.return_value = make_response(payload={"choices": []})
+
+        # when
+        client.chat_completion(model="m", messages=[])
+
+        # then
+        _, kwargs = client._session.request.call_args
+        assert kwargs["headers"]["X-Request-Id"] == "exec-123"
+
+    def test_request_id_is_used_when_no_execution_id(
+        self, client: VLLMClient, correlation_id_ctx
+    ) -> None:
+        # given
+        client._session.request.return_value = make_response(payload={"choices": []})
+
+        # when
+        client.chat_completion(model="m", messages=[])
+
+        # then
+        _, kwargs = client._session.request.call_args
+        assert kwargs["headers"]["X-Request-Id"] == "req-456"
+
+    def test_no_header_is_sent_outside_correlation_context(
+        self, client: VLLMClient
+    ) -> None:
+        # given
+        client._session.request.return_value = make_response(payload={"choices": []})
+
+        # when
+        client.chat_completion(model="m", messages=[])
+
+        # then
+        _, kwargs = client._session.request.call_args
+        assert "X-Request-Id" not in kwargs.get("headers", {})
+
+
 class TestModelsAndHealth:
     def test_list_models_returns_data(self, client: VLLMClient) -> None:
         # given

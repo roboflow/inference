@@ -35,7 +35,12 @@ from inference.models.vllm_proxy.config import (
     get_vllm_served_base_name,
     get_vllm_served_base_variant,
 )
-from inference.models.vllm_proxy.errors import NotServableOnVLLMError, VLLMProxyError
+from inference.models.vllm_proxy.errors import (
+    AdapterNotServableError,
+    NotServableOnVLLMError,
+    VLLMHTTPError,
+    VLLMProxyError,
+)
 from inference.models.vllm_proxy.vllm_client import VLLMClient
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.utils.download import download_files_to_directory
@@ -257,8 +262,11 @@ class AdapterManager:
             src_dir=source_dir,
             dst_dir=patched_dir,
             policy=get_vllm_dora_policy(),
+            model_id=model_id,
         )
-        self._client.load_lora_adapter(name=slug, path=patched_dir)
+        self._load_adapter_into_vllm(
+            slug=slug, model_id=model_id, patched_dir=patched_dir
+        )
         logger.info(
             "Registered LoRA adapter %s (model_id=%s, package_id=%s) with vLLM",
             slug,
@@ -273,6 +281,32 @@ class AdapterManager:
             source_dir=source_dir,
             patched_dir=patched_dir,
         )
+
+    def _load_adapter_into_vllm(
+        self, slug: str, model_id: str, patched_dir: str
+    ) -> None:
+        """Loads the patched adapter, surfacing 5xx load failures as typed errors.
+
+        vLLM returns HTTP 500 when an adapter passes local validation but is
+        rejected at load time (e.g. tensor-shape mismatch against the served
+        base) - re-raised as `AdapterNotServableError` naming the adapter and
+        excerpting vLLM's response so on-call sees the real cause instead of
+        an opaque proxy 500. Connection errors (`VLLMConnectionError`) and
+        non-5xx HTTP errors propagate unchanged: they indicate sidecar /
+        request problems, not a broken adapter, and stay retryable.
+        """
+        try:
+            self._client.load_lora_adapter(name=slug, path=patched_dir)
+        except VLLMHTTPError as error:
+            if error.status_code < 500:
+                raise
+            body_excerpt = (error.response_body or "").strip()[:500]
+            raise AdapterNotServableError(
+                f"vLLM rejected LoRA adapter {slug} (model_id={model_id}) at "
+                f"load time with HTTP {error.status_code}. The adapter passed "
+                f"local validation but could not be loaded into the served "
+                f"base model - vLLM said: {body_excerpt!r}"
+            ) from error
 
     def _evict_lru_adapters(self) -> None:
         max_registered = get_vllm_max_registered_adapters()

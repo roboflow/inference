@@ -27,11 +27,46 @@ from inference.models.vllm_proxy.errors import VLLMConnectionError, VLLMHTTPErro
 
 CONNECTION_POOL_SIZE = 128
 
+# The vLLM OpenAI server echoes this header into its request logging, which
+# makes vLLM container logs correlatable with the platform's
+# execution_id/request_id (threaded through producer/consumer/inference logs).
+CORRELATION_HEADER = "X-Request-Id"
+
 _CONNECTIVITY_ERRORS = (
     requests.exceptions.ConnectionError,
     requests.exceptions.Timeout,
     ConnectionError,
 )
+
+
+def get_correlation_value() -> Optional[str]:
+    """Best-effort read of the platform correlation id for the current context.
+
+    Prefers the workflow `execution_id` contextvar (`inference_sdk.config`,
+    set from the `EXECUTION_ID_HEADER` request header / by the workflow
+    executor) and falls back to the ASGI `correlation_id` (request id)
+    contextvar - the same two sources `inference.core.logger` injects into
+    structured log records. Deliberately defensive: any import or lookup
+    failure yields None so the client also works outside a request context
+    (and in environments without these packages).
+    """
+    try:
+        from inference_sdk.config import execution_id
+
+        value = execution_id.get() if execution_id is not None else None
+        if value:
+            return str(value)
+    except Exception:
+        pass
+    try:
+        from asgi_correlation_id import correlation_id
+
+        value = correlation_id.get()
+        if value:
+            return str(value)
+    except Exception:
+        pass
+    return None
 
 
 def build_image_content_part(
@@ -147,6 +182,11 @@ class VLLMClient:
 
     def _request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
         url = f"{self._base_url}{path}"
+        correlation_value = get_correlation_value()
+        if correlation_value:
+            headers = dict(kwargs.pop("headers", None) or {})
+            headers.setdefault(CORRELATION_HEADER, correlation_value)
+            kwargs["headers"] = headers
         try:
             response = self._session.request(
                 method, url, timeout=self._request_timeout_s, **kwargs

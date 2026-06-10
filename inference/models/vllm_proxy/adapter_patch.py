@@ -33,9 +33,12 @@ from typing import Callable, Dict, List, Optional, Tuple
 import torch
 from safetensors.torch import load_file, save_file
 
+from inference.core import logger
 from inference.models.vllm_proxy.config import (
     get_vllm_adapter_key_template,
     get_vllm_max_lora_rank,
+    get_vllm_served_base_name,
+    get_vllm_served_base_variant,
     get_vllm_vision_lora_norm_threshold,
 )
 from inference.models.vllm_proxy.errors import AdapterNotServableError
@@ -43,6 +46,11 @@ from inference.models.vllm_proxy.errors import AdapterNotServableError
 ADAPTER_CONFIG_FILE = "adapter_config.json"
 ADAPTER_WEIGHTS_FILE = "adapter_model.safetensors"
 PATCH_REPORT_FILE = "patch_report.json"
+
+# Outcomes of the `base_model_name_or_path` vs served-base cross-check,
+# recorded in `PatchReport.base_model_check` / `patch_report.json`.
+BASE_MODEL_CHECK_MATCH = "match"
+BASE_MODEL_CHECK_SKIPPED = "skipped-missing-base_model_name_or_path"
 
 DORA_POLICIES = ("reject", "strip", "svd")
 
@@ -101,6 +109,8 @@ class PatchReport:
     svd_rank: Optional[int] = None
     source_weights_digest: Optional[str] = None
     patched_weights_digest: Optional[str] = None
+    base_model_name_or_path: Optional[str] = None
+    base_model_check: str = BASE_MODEL_CHECK_SKIPPED
     notes: List[str] = field(default_factory=list)
 
 
@@ -112,12 +122,18 @@ def patch_adapter(
     max_lora_rank: Optional[int] = None,
     vision_norm_threshold: Optional[float] = None,
     key_template: Optional[str] = None,
+    model_id: Optional[str] = None,
 ) -> PatchReport:
     """Transforms the adapter in `src_dir` into a vLLM-servable one in `dst_dir`.
 
     Pipeline:
         1. Validate `adapter_config.json` (`modules_to_save` empty, rank within
-           `VLLM_MAX_LORA_RANK`).
+           `VLLM_MAX_LORA_RANK`), and cross-check the adapter's own
+           `base_model_name_or_path` against the served base
+           (`VLLM_SERVED_BASE_VARIANT` / `VLLM_SERVED_BASE_NAME`) - registry
+           variant metadata can be wrong, and loading an adapter trained on a
+           different base fails deep inside vLLM with an opaque tensor-shape
+           error.
         2. Drop vision-tower tensors; raise if any dropped vision `lora_B`
            tensor has a norm above `VLLM_VISION_LORA_NORM_THRESHOLD` (a
            meaningfully trained vision adapter cannot be approximated by a
@@ -141,6 +157,8 @@ def patch_adapter(
             `VLLM_VISION_LORA_NORM_THRESHOLD`).
         key_template: Remap target template with a `{suffix}` placeholder
             (defaults to `VLLM_ADAPTER_KEY_TEMPLATE`).
+        model_id: Roboflow model id the adapter belongs to - only used to
+            make error/log messages actionable.
 
     Raises:
         AdapterNotServableError: If the adapter cannot be made servable.
@@ -158,6 +176,9 @@ def patch_adapter(
 
     config = _load_adapter_config(adapter_dir=src_dir)
     _validate_adapter_config(config=config, max_lora_rank=max_lora_rank)
+    declared_base, base_model_check = cross_check_base_model(
+        config=config, model_id=model_id
+    )
     source_use_dora = bool(config.get("use_dora", False))
     lora_rank = int(config["r"])
 
@@ -177,6 +198,8 @@ def patch_adapter(
         key_template=key_template,
         total_source_tensors=len(tensors),
         source_weights_digest=_sha256_of_file(weights_path),
+        base_model_name_or_path=declared_base,
+        base_model_check=base_model_check,
     )
 
     tensors = _drop_vision_tensors(
@@ -327,6 +350,69 @@ def remap_adapter_weight_key(key: str, key_template: str) -> str:
             suffix = core[len(layers_prefix) :]
             return key_template.format(suffix=suffix)
     return key
+
+
+def normalize_base_model_reference(value: str) -> str:
+    """Normalises a base-model reference for the served-base cross-check.
+
+    Lowercases, strips any org prefix (`qwen/qwen3_5-2b` -> `qwen3_5-2b`) and
+    drops separator characters, so `qwen/qwen3_5-0.8b`, `Qwen3.5-0.8B` and
+    `qwen3_5-0.8b` all compare equal, while genuinely different bases
+    (`qwen3_5-2b` vs `qwen3_5-0.8b`) stay distinct.
+    """
+    value = value.strip().lower()
+    if "/" in value:
+        value = value.rsplit("/", 1)[-1]
+    return re.sub(r"[^a-z0-9]+", "", value)
+
+
+def cross_check_base_model(
+    config: dict, model_id: Optional[str] = None
+) -> Tuple[Optional[str], str]:
+    """Cross-checks the adapter's declared base against the served base.
+
+    Registry variant metadata occasionally contradicts the adapter's own
+    `adapter_config.json` (incident 2026-06-10: `image-text/223` was recorded
+    as a `0.8b-peft` fine-tune but its adapter config declared
+    `qwen/qwen3_5-2b`). Without this pre-flight check the mismatch only
+    surfaces as an opaque tensor-shape `RuntimeError` inside vLLM's
+    `/v1/load_lora_adapter`.
+
+    Returns `(declared_base, check_result)` where `check_result` is one of
+    `BASE_MODEL_CHECK_MATCH` / `BASE_MODEL_CHECK_SKIPPED`. The check is
+    skipped (with a warning) when `base_model_name_or_path` is missing/empty.
+
+    Raises:
+        AdapterNotServableError: When the declared base matches neither
+            `VLLM_SERVED_BASE_VARIANT` nor `VLLM_SERVED_BASE_NAME`.
+    """
+    declared_base = (config.get("base_model_name_or_path") or "").strip()
+    if not declared_base:
+        logger.warning(
+            "Adapter config for model %s declares no base_model_name_or_path "
+            "- skipping the served-base cross-check.",
+            model_id or "<unknown>",
+        )
+        return None, BASE_MODEL_CHECK_SKIPPED
+    served_base_variant = get_vllm_served_base_variant()
+    served_base_name = get_vllm_served_base_name()
+    normalized_declared = normalize_base_model_reference(declared_base)
+    if normalized_declared in {
+        normalize_base_model_reference(served_base_variant),
+        normalize_base_model_reference(served_base_name),
+    }:
+        return declared_base, BASE_MODEL_CHECK_MATCH
+    raise AdapterNotServableError(
+        f"Adapter for model {model_id or '<unknown>'} declares "
+        f"base_model_name_or_path={declared_base!r} in its "
+        f"adapter_config.json, but this vLLM deployment serves base "
+        f"{served_base_variant!r} (VLLM_SERVED_BASE_VARIANT; served name "
+        f"{served_base_name!r}). The model's registry variant metadata "
+        f"contradicts the adapter's own config - this is a registry data "
+        f"bug: fix the recorded modelVariant for "
+        f"{model_id or 'this model'} so it matches the adapter's true base "
+        f"{declared_base!r}."
+    )
 
 
 def extract_module_path(key: str) -> Optional[str]:

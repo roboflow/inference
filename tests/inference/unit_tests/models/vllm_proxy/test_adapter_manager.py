@@ -9,14 +9,22 @@ from inference.models.vllm_proxy.adapter_manager import (
     AdapterManager,
     normalize_base_variant,
 )
-from inference.models.vllm_proxy.errors import NotServableOnVLLMError
+from inference.models.vllm_proxy.errors import (
+    AdapterNotServableError,
+    NotServableOnVLLMError,
+    VLLMConnectionError,
+    VLLMHTTPError,
+)
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
     ModelMetadata,
     ModelPackageMetadata,
 )
-from tests.inference.unit_tests.models.vllm_proxy.common import write_adapter_package
+from tests.inference.unit_tests.models.vllm_proxy.common import (
+    build_adapter_config,
+    write_adapter_package,
+)
 
 
 def build_metadata(
@@ -395,6 +403,108 @@ class TestResolveAndRegister:
         # then
         assert served_name.startswith("image-text-218-pkg1-")
         client.load_lora_adapter.assert_called_once()
+
+    def test_registry_variant_contradicting_adapter_config_is_rejected_preflight(
+        self, monkeypatch, model_cache_dir
+    ) -> None:
+        # given - exact reproduction of the image-text/223 incident
+        # (2026-06-10, staging): registry metadata says modelVariant
+        # "0.8b-peft" (so variant matching against the 0.8b pool passes),
+        # but the adapter's own adapter_config.json declares
+        # base_model_name_or_path "qwen/qwen3_5-2b".
+        monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", "qwen3_5-0.8b")
+        model_id = "image-text/223"
+        metadata = build_metadata(
+            model_id=model_id,
+            model_architecture="qwen3_5",
+            model_variant="0.8b-peft",
+        )
+        _install_provider(monkeypatch, {model_id: metadata})
+
+        def _fake_download(target_dir: str, files_specs, verbose=True, **kwargs):
+            write_adapter_package(
+                target_dir=target_dir,
+                config=build_adapter_config(
+                    base_model_name_or_path="qwen/qwen3_5-2b"
+                ),
+            )
+
+        monkeypatch.setattr(
+            adapter_manager_module, "download_files_to_directory", _fake_download
+        )
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        # when / then - rejected BEFORE any vLLM load attempt, naming both
+        # the adapter's declared base and the served base
+        with pytest.raises(AdapterNotServableError) as error:
+            manager.resolve_and_register(model_id=model_id, api_key="key")
+        message = str(error.value)
+        assert "qwen/qwen3_5-2b" in message
+        assert "qwen3_5-0.8b" in message
+        assert "image-text/223" in message
+        client.load_lora_adapter.assert_not_called()
+
+    def test_vllm_5xx_on_load_is_surfaced_as_adapter_not_servable(
+        self, monkeypatch, fake_download, model_cache_dir
+    ) -> None:
+        # given - vLLM rejects the adapter deep inside set_lora (the opaque
+        # tensor-shape 500 from the image-text/223 incident)
+        model_id = "some-workspace/some-project/1"
+        _install_provider(monkeypatch, {model_id: build_metadata(model_id=model_id)})
+        client = MagicMock()
+        client.load_lora_adapter.side_effect = VLLMHTTPError(
+            message="vLLM sidecar returned HTTP 500 for POST /v1/load_lora_adapter",
+            status_code=500,
+            response_body=(
+                "RuntimeError: The size of tensor a (1024) must match the "
+                "size of tensor b (2048)"
+            ),
+        )
+        manager = AdapterManager(client=client)
+
+        # when / then
+        with pytest.raises(AdapterNotServableError) as error:
+            manager.resolve_and_register(model_id=model_id)
+        message = str(error.value)
+        assert "some-workspace-some-project-1-pkg1-" in message  # adapter slug
+        assert model_id in message
+        assert "size of tensor a (1024)" in message  # vLLM body excerpt
+        assert isinstance(error.value.__cause__, VLLMHTTPError)
+
+    def test_connection_error_on_load_propagates_unchanged(
+        self, monkeypatch, fake_download, model_cache_dir
+    ) -> None:
+        # given - sidecar down is an infra problem, not an adapter problem
+        model_id = "some-workspace/some-project/1"
+        _install_provider(monkeypatch, {model_id: build_metadata(model_id=model_id)})
+        client = MagicMock()
+        client.load_lora_adapter.side_effect = VLLMConnectionError(
+            "Could not reach vLLM sidecar"
+        )
+        manager = AdapterManager(client=client)
+
+        # when / then
+        with pytest.raises(VLLMConnectionError):
+            manager.resolve_and_register(model_id=model_id)
+
+    def test_vllm_4xx_on_load_propagates_unchanged(
+        self, monkeypatch, fake_download, model_cache_dir
+    ) -> None:
+        # given - non-5xx HTTP errors keep their typed identity
+        model_id = "some-workspace/some-project/1"
+        _install_provider(monkeypatch, {model_id: build_metadata(model_id=model_id)})
+        client = MagicMock()
+        client.load_lora_adapter.side_effect = VLLMHTTPError(
+            message="vLLM sidecar returned HTTP 400 for POST /v1/load_lora_adapter",
+            status_code=400,
+            response_body="invalid adapter",
+        )
+        manager = AdapterManager(client=client)
+
+        # when / then
+        with pytest.raises(VLLMHTTPError):
+            manager.resolve_and_register(model_id=model_id)
 
     def test_custom_served_base_variant_is_respected(self, monkeypatch) -> None:
         # given

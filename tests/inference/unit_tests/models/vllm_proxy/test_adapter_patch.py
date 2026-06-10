@@ -6,7 +6,10 @@ import torch
 from safetensors.torch import load_file
 
 from inference.models.vllm_proxy.adapter_patch import (
+    BASE_MODEL_CHECK_MATCH,
+    BASE_MODEL_CHECK_SKIPPED,
     _dora_merged_weight,
+    normalize_base_model_reference,
     patch_adapter,
     remap_adapter_weight_key,
     svd_convert,
@@ -186,6 +189,117 @@ class TestPatchAdapterValidation:
                 dst_dir=str(tmp_path / "dst"),
                 max_lora_rank=LORA_RANK - 1,
             )
+
+
+class TestNormalizeBaseModelReference:
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("qwen/qwen3_5-2b", "qwen352b"),
+            ("qwen3_5-0.8b", "qwen3508b"),
+            ("Qwen/Qwen3-VL-2B-Instruct", "qwen3vl2binstruct"),
+            ("qwen3vl-2b-instruct", "qwen3vl2binstruct"),
+            ("  Qwen3.5-0.8B  ", "qwen3508b"),
+        ],
+    )
+    def test_normalization(self, value: str, expected: str) -> None:
+        assert normalize_base_model_reference(value) == expected
+
+
+class TestBaseModelCrossCheck:
+    """Pre-flight cross-check of adapter_config.json's base against the pool.
+
+    Guards against registry metadata bugs (incident 2026-06-10:
+    image-text/223 recorded as 0.8b-peft, adapter trained on qwen3_5-2b).
+    """
+
+    def test_mismatched_base_raises_naming_both_values(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        # given - served pool is qwen3_5-0.8b, adapter declares qwen/qwen3_5-2b
+        monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", "qwen3_5-0.8b")
+        src_dir = write_adapter_package(
+            target_dir=str(tmp_path / "src"),
+            config=build_adapter_config(base_model_name_or_path="qwen/qwen3_5-2b"),
+        )
+
+        # when / then
+        with pytest.raises(AdapterNotServableError) as error:
+            patch_adapter(
+                src_dir=src_dir,
+                dst_dir=str(tmp_path / "dst"),
+                model_id="image-text/223",
+            )
+        message = str(error.value)
+        assert "qwen/qwen3_5-2b" in message
+        assert "qwen3_5-0.8b" in message
+        assert "image-text/223" in message
+        assert "registry" in message
+
+    def test_matching_base_passes_and_is_recorded_in_patch_report(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        # given - org-prefixed config value matching the served variant
+        monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", "qwen3_5-0.8b")
+        src_dir = write_adapter_package(
+            target_dir=str(tmp_path / "src"),
+            config=build_adapter_config(base_model_name_or_path="qwen/qwen3_5-0.8b"),
+        )
+        dst_dir = str(tmp_path / "dst")
+
+        # when
+        report = patch_adapter(src_dir=src_dir, dst_dir=dst_dir)
+
+        # then
+        assert report.base_model_check == BASE_MODEL_CHECK_MATCH
+        assert report.base_model_name_or_path == "qwen/qwen3_5-0.8b"
+        with open(os.path.join(dst_dir, "patch_report.json")) as f:
+            persisted = json.load(f)
+        assert persisted["base_model_check"] == BASE_MODEL_CHECK_MATCH
+        assert persisted["base_model_name_or_path"] == "qwen/qwen3_5-0.8b"
+
+    def test_base_matching_served_base_name_passes(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        # given - HF-style reference matches VLLM_SERVED_BASE_NAME (not the
+        # variant), with different separators/casing
+        monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", "qwen3vl-2b")
+        monkeypatch.setenv("VLLM_SERVED_BASE_NAME", "qwen3vl-2b-instruct")
+        src_dir = write_adapter_package(
+            target_dir=str(tmp_path / "src"),
+            config=build_adapter_config(
+                base_model_name_or_path="Qwen/Qwen3-VL-2B-Instruct"
+            ),
+        )
+
+        # when
+        report = patch_adapter(src_dir=src_dir, dst_dir=str(tmp_path / "dst"))
+
+        # then
+        assert report.base_model_check == BASE_MODEL_CHECK_MATCH
+
+    def test_missing_base_model_field_skips_check_with_warning(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        # given - fixture config carries no base_model_name_or_path
+        from inference.models.vllm_proxy import adapter_patch as adapter_patch_module
+        from unittest.mock import MagicMock
+
+        logger_mock = MagicMock()
+        monkeypatch.setattr(adapter_patch_module, "logger", logger_mock)
+        src_dir = write_adapter_package(target_dir=str(tmp_path / "src"))
+        dst_dir = str(tmp_path / "dst")
+
+        # when
+        report = patch_adapter(src_dir=src_dir, dst_dir=dst_dir)
+
+        # then
+        assert report.base_model_check == BASE_MODEL_CHECK_SKIPPED
+        assert report.base_model_name_or_path is None
+        logger_mock.warning.assert_called_once()
+        with open(os.path.join(dst_dir, "patch_report.json")) as f:
+            persisted = json.load(f)
+        assert persisted["base_model_check"] == BASE_MODEL_CHECK_SKIPPED
 
 
 class TestPatchAdapterVisionFiltering:
