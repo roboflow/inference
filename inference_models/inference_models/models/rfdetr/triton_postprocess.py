@@ -58,6 +58,12 @@ _SPARSE_BLOCK_COLS = 8
 _SPARSE_MAX_TOTAL_RUNS = 8192
 _SPARSE_MAX_CLASSES_PER_QUERY = 4
 _SPARSE_TOPK_MAX_TOTAL_RUNS = _SPARSE_MAX_TOTAL_RUNS * _SPARSE_MAX_CLASSES_PER_QUERY
+# RF-DETR Seg 2XLarge emits 192x192 masks with 300 queries and COCO class
+# logits. The sparse path supports that shape by scanning source-mask support
+# in fixed tiles instead of one giant Triton vector.
+_SPARSE_SOURCE_BOUNDS_BLOCK_PIXELS = 1024
+_MAX_RFDETR_SEG_2XLARGE_MASK_PIXELS = 192 * 192
+_MAX_QUERY_CLASS_PRODUCTS = 65536
 _MAX_INTERPOLATION_WEIGHT_CACHE_ENTRIES = 16
 _INTERPOLATION_WEIGHT_CACHE = OrderedDict()
 _INTERPOLATION_WEIGHT_CACHE_LOCK = Lock()
@@ -156,6 +162,19 @@ def _interpolation_cache_key(
     )
 
 
+def _allocate_source_bounds(
+    rows: int,
+    mask_height: int,
+    mask_width: int,
+    device: torch.device,
+) -> torch.Tensor:
+    """Allocate source-mask positive-support bounds for sparse RLE kernels."""
+    bounds = torch.empty((rows, 4), dtype=torch.int32, device=device)
+    bounds[:, 0].fill_(mask_height)
+    bounds[:, 1].fill_(-1)
+    bounds[:, 2].fill_(mask_width)
+    bounds[:, 3].fill_(-1)
+    return bounds
 def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     image_bboxes: torch.Tensor,
     image_scores: torch.Tensor,
@@ -228,6 +247,12 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         dtype=torch.int32,
         device=image_scores.device,
     )
+    source_bounds = _allocate_source_bounds(
+        rows=num_queries,
+        mask_height=mask_height,
+        mask_width=mask_width,
+        device=image_scores.device,
+    )
     _select_best_query_metadata_kernel[(num_queries,)](
         image_scores,
         image_bboxes,
@@ -244,10 +269,28 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         METADATA_STRIDE=_HEADER_SIZE,
         FLAG_MULTICLASS=True,
     )
+    _positive_source_bounds_kernel[
+        (
+            num_queries,
+            triton.cdiv(mask_height * mask_width, _SPARSE_SOURCE_BOUNDS_BLOCK_PIXELS),
+        )
+    ](
+        image_masks,
+        metadata,
+        source_bounds,
+        mask_height,
+        mask_width,
+        image_masks.stride(0),
+        image_masks.stride(1),
+        image_masks.stride(2),
+        BLOCK_PIXELS=_SPARSE_SOURCE_BOUNDS_BLOCK_PIXELS,
+        METADATA_STRIDE=_HEADER_SIZE,
+    )
     _sparse_atomic_rle_from_metadata_kernel[
         (num_queries, triton.cdiv(_SPARSE_MAX_ROI_WIDTH, _SPARSE_BLOCK_COLS))
     ](
         image_masks,
+        source_bounds,
         y_idx,
         y_weight,
         x_idx,
@@ -262,7 +305,6 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         image_masks.stride(0),
         image_masks.stride(1),
         image_masks.stride(2),
-        BLOCK_MASK=triton.next_power_of_2(mask_height * mask_width),
         BLOCK_OUT_H=triton.next_power_of_2(output_height),
         BLOCK_OUT_W=triton.next_power_of_2(output_width),
         BLOCK_ROI_H=_BLOCK_ROI_H,
@@ -304,6 +346,12 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         dtype=torch.int32,
         device=image_scores.device,
     )
+    source_bounds = _allocate_source_bounds(
+        rows=topk_metadata_rows,
+        mask_height=mask_height,
+        mask_width=mask_width,
+        device=image_scores.device,
+    )
     _select_topk_query_class_metadata_kernel[(num_queries,)](
         image_scores,
         image_bboxes,
@@ -321,6 +369,23 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         MAX_CLASSES_PER_QUERY=_SPARSE_MAX_CLASSES_PER_QUERY,
         FLAG_OVERFLOW_CLASSES=True,
     )
+    _positive_source_bounds_kernel[
+        (
+            topk_metadata_rows,
+            triton.cdiv(mask_height * mask_width, _SPARSE_SOURCE_BOUNDS_BLOCK_PIXELS),
+        )
+    ](
+        image_masks,
+        metadata,
+        source_bounds,
+        mask_height,
+        mask_width,
+        image_masks.stride(0),
+        image_masks.stride(1),
+        image_masks.stride(2),
+        BLOCK_PIXELS=_SPARSE_SOURCE_BOUNDS_BLOCK_PIXELS,
+        METADATA_STRIDE=_HEADER_SIZE,
+    )
     _sparse_atomic_rle_from_metadata_kernel[
         (
             topk_metadata_rows,
@@ -328,6 +393,7 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         )
     ](
         image_masks,
+        source_bounds,
         y_idx,
         y_weight,
         x_idx,
@@ -342,7 +408,6 @@ def post_process_single_instance_segmentation_result_to_rle_masks_triton(
         image_masks.stride(0),
         image_masks.stride(1),
         image_masks.stride(2),
-        BLOCK_MASK=triton.next_power_of_2(mask_height * mask_width),
         BLOCK_OUT_H=triton.next_power_of_2(output_height),
         BLOCK_OUT_W=triton.next_power_of_2(output_width),
         BLOCK_ROI_H=_BLOCK_ROI_H,
@@ -515,8 +580,8 @@ def _unsupported_triton_postprocess_reason(
     output_height = image_meta.original_size.height
     output_width = image_meta.original_size.width
     if (
-        num_queries * num_classes > 16384
-        or mask_height * mask_width > 8192
+        num_queries * num_classes > _MAX_QUERY_CLASS_PRODUCTS
+        or mask_height * mask_width > _MAX_RFDETR_SEG_2XLARGE_MASK_PIXELS
         or output_height <= 0
         or output_width <= 0
         or output_height > 4096
@@ -907,8 +972,79 @@ if triton is not None:
             work_scores = tl.where(class_offsets == selected_class, -1.0, work_scores)
 
     @triton.jit
+    def _positive_source_bounds_kernel(
+        masks,
+        metadata,
+        source_bounds,
+        mask_height: tl.constexpr,
+        mask_width: tl.constexpr,
+        mask_stride_q: tl.constexpr,
+        mask_stride_h: tl.constexpr,
+        mask_stride_w: tl.constexpr,
+        BLOCK_PIXELS: tl.constexpr,
+        METADATA_STRIDE: tl.constexpr,
+    ):
+        """Compute positive source-mask support bounds for one metadata row.
+
+        The older sparse RLE kernel scanned the whole source mask in a single
+        Triton vector to derive this support. RF-DETR Seg 2XLarge has 192x192
+        masks, so this helper scans the source mask in fixed-size tiles and
+        atomically reduces into ``source_bounds``.
+        """
+        rank = tl.program_id(0)
+        tile = tl.program_id(1)
+        meta_base = rank * METADATA_STRIDE
+        is_valid_detection = tl.load(metadata + meta_base + 0) > 0.5
+        query_index = tl.load(metadata + meta_base + 9).to(tl.int32)
+
+        pixel_offsets = tile * BLOCK_PIXELS + tl.arange(0, BLOCK_PIXELS)
+        mask_active = pixel_offsets < (mask_height * mask_width)
+        source_y = pixel_offsets // mask_width
+        source_x = pixel_offsets - source_y * mask_width
+        mask_values = tl.load(
+            masks
+            + query_index * mask_stride_q
+            + source_y * mask_stride_h
+            + source_x * mask_stride_w,
+            mask=is_valid_detection & mask_active,
+            other=-1.0,
+        )
+        positive_source = is_valid_detection & mask_active & (mask_values > 0.0)
+        local_y_min = tl.min(tl.where(positive_source, source_y, mask_height), axis=0)
+        local_y_max = tl.max(tl.where(positive_source, source_y, -1), axis=0)
+        local_x_min = tl.min(tl.where(positive_source, source_x, mask_width), axis=0)
+        local_x_max = tl.max(tl.where(positive_source, source_x, -1), axis=0)
+        has_positive_source = local_y_max >= 0
+        bounds_base = rank * 4
+        tl.atomic_min(
+            source_bounds + bounds_base + 0,
+            local_y_min,
+            sem="relaxed",
+            mask=has_positive_source,
+        )
+        tl.atomic_max(
+            source_bounds + bounds_base + 1,
+            local_y_max,
+            sem="relaxed",
+            mask=has_positive_source,
+        )
+        tl.atomic_min(
+            source_bounds + bounds_base + 2,
+            local_x_min,
+            sem="relaxed",
+            mask=has_positive_source,
+        )
+        tl.atomic_max(
+            source_bounds + bounds_base + 3,
+            local_x_max,
+            sem="relaxed",
+            mask=has_positive_source,
+        )
+
+    @triton.jit
     def _sparse_atomic_rle_from_metadata_kernel(
         masks,
+        source_bounds,
         y_idx,
         y_weight,
         x_idx,
@@ -923,7 +1059,6 @@ if triton is not None:
         mask_stride_q: tl.constexpr,
         mask_stride_h: tl.constexpr,
         mask_stride_w: tl.constexpr,
-        BLOCK_MASK: tl.constexpr,
         BLOCK_OUT_H: tl.constexpr,
         BLOCK_OUT_W: tl.constexpr,
         BLOCK_ROI_H: tl.constexpr,
@@ -963,6 +1098,9 @@ if triton is not None:
                 ``0`` active flag and column ``9`` source query id. It writes
                 columns ``11:15`` with ``roi_y_start, roi_y_end, roi_x_start,
                 roi_x_end`` for diagnostics.
+            source_bounds: CUDA int32 tensor with shape ``[metadata_rows, 4]``
+                containing ``source_y_min, source_y_max, source_x_min,
+                source_x_max`` for positive source logits in the selected mask.
             records: CUDA int32 tensor with shape ``[MAX_TOTAL_RUNS + 1, 3]``.
                 ``records[0, 0]`` is atomically incremented for every emitted
                 run and ``records[0, 1]`` is set when capacity is exceeded.
@@ -976,8 +1114,6 @@ if triton is not None:
             mask_stride_q: Stride between query masks in ``masks``.
             mask_stride_h: Row stride for ``masks``.
             mask_stride_w: Column stride for ``masks``.
-            BLOCK_MASK: Power-of-two tile covering ``mask_height * mask_width``
-                so the kernel can find positive source support in one vector.
             BLOCK_OUT_H: Power-of-two tile covering all output rows.
             BLOCK_OUT_W: Power-of-two tile covering all output columns.
             BLOCK_ROI_H: Number of output rows scanned per inner row tile.
@@ -998,26 +1134,14 @@ if triton is not None:
         if not is_valid_detection:
             return
 
-        mask_offsets = tl.arange(0, BLOCK_MASK)
-        mask_active = mask_offsets < (mask_height * mask_width)
-        source_y = mask_offsets // mask_width
-        source_x = mask_offsets - source_y * mask_width
-        mask_values = tl.load(
-            masks
-            + query_index * mask_stride_q
-            + source_y * mask_stride_h
-            + source_x * mask_stride_w,
-            mask=mask_active,
-            other=-1.0,
-        )
-        positive_source = mask_active & (mask_values > 0.0)
         # Any output pixel depending only on non-positive source pixels cannot
         # cross the >0 threshold, so derive the minimal candidate ROI from the
         # positive source support plus a one-pixel interpolation halo.
-        source_y_min = tl.min(tl.where(positive_source, source_y, mask_height), axis=0)
-        source_y_max = tl.max(tl.where(positive_source, source_y, -1), axis=0)
-        source_x_min = tl.min(tl.where(positive_source, source_x, mask_width), axis=0)
-        source_x_max = tl.max(tl.where(positive_source, source_x, -1), axis=0)
+        bounds_base = rank * 4
+        source_y_min = tl.load(source_bounds + bounds_base + 0)
+        source_y_max = tl.load(source_bounds + bounds_base + 1)
+        source_x_min = tl.load(source_bounds + bounds_base + 2)
+        source_x_max = tl.load(source_bounds + bounds_base + 3)
         has_positive_source = source_y_max >= 0
         if not has_positive_source:
             return

@@ -343,7 +343,7 @@ def test_rfdetr_triton_postproc_unsupported_reason_matrix(
     elif case == "class_mapping_too_small":
         kwargs["classes_re_mapping"] = _class_mapping(torch.device("cpu"), 1)
     elif case == "input_size_exceeds_limits":
-        kwargs = _support_kwargs(num_queries=129, num_classes=128)
+        kwargs = _support_kwargs(mask_size=(193, 193))
     elif case == "padding":
         kwargs["image_meta"] = _metadata(padding=(1, 0, 0, 0))
     elif case == "static_crop":
@@ -355,6 +355,37 @@ def test_rfdetr_triton_postproc_unsupported_reason_matrix(
 
     assert reason == expected_reason
     assert not _supports_triton_postprocess_path(**kwargs)
+
+
+def test_rfdetr_triton_postproc_accepts_2xlarge_shape_limits(monkeypatch) -> None:
+    monkeypatch.setattr(triton_postprocess, "triton", object())
+    device = torch.device("cpu")
+    num_queries = 300
+    num_classes = 91
+    kwargs = {
+        "image_bboxes": torch.empty(
+            (num_queries, 4),
+            dtype=torch.float32,
+            device=device,
+        ),
+        "image_scores": torch.empty(
+            (num_queries, num_classes),
+            dtype=torch.float32,
+            device=device,
+        ),
+        "image_masks": torch.empty(
+            (num_queries, 192, 192),
+            dtype=torch.float32,
+            device=device,
+        ),
+        "image_meta": _metadata(height=1080, width=1920),
+        "threshold": 0.4,
+        "classes_re_mapping": _class_mapping(device, num_classes=num_classes),
+    }
+
+    reason = _unsupported_triton_postprocess_reason(**kwargs)
+
+    assert reason == "cuda_device_required"
 
 
 @pytest.mark.parametrize("case", ["no_class_mapping", "tensor_threshold", "padding"])
@@ -538,6 +569,60 @@ def test_rfdetr_triton_postproc_matches_reference_rle_path() -> None:
 
     assert _unsupported_triton_postprocess_reason(**cuda_kwargs) is None
     assert _supports_triton_postprocess_path(**cuda_kwargs)
+    actual = post_process_single_instance_segmentation_result_to_rle_masks_triton(
+        **cuda_kwargs
+    )
+
+    assert actual is not None
+    _assert_detections_equal(actual, expected)
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or triton_postprocess.triton is None,
+    reason="CUDA and Triton are required",
+)
+def test_rfdetr_triton_postproc_matches_reference_with_large_source_mask() -> None:
+    cpu = torch.device("cpu")
+    cuda = torch.device("cuda")
+    bboxes_cpu = torch.tensor(
+        [
+            [0.50, 0.50, 0.50, 0.50],
+            [0.25, 0.25, 0.20, 0.20],
+        ],
+        dtype=torch.float32,
+        device=cpu,
+    )
+    logits_cpu = torch.tensor(
+        [
+            [4.0, -4.0],
+            [-4.0, -4.0],
+        ],
+        dtype=torch.float32,
+        device=cpu,
+    )
+    masks_cpu = torch.full((2, 96, 96), -2.0, dtype=torch.float32, device=cpu)
+    masks_cpu[0, 24:72, 24:72] = 2.0
+    scores_cpu = torch.sigmoid(logits_cpu)
+    metadata = _metadata(height=128, width=128)
+    expected = _post_process_single_instance_segmentation_result_to_rle_masks(
+        image_bboxes=bboxes_cpu,
+        image_logits=scores_cpu,
+        image_masks=masks_cpu,
+        image_meta=metadata,
+        threshold=0.4,
+        num_classes=2,
+        classes_re_mapping=_class_mapping(cpu),
+    )
+    cuda_kwargs = {
+        "image_bboxes": bboxes_cpu.to(cuda),
+        "image_scores": scores_cpu.to(cuda),
+        "image_masks": masks_cpu.to(cuda),
+        "image_meta": metadata,
+        "threshold": 0.4,
+        "classes_re_mapping": _class_mapping(cuda),
+    }
+
+    assert _unsupported_triton_postprocess_reason(**cuda_kwargs) is None
     actual = post_process_single_instance_segmentation_result_to_rle_masks_triton(
         **cuda_kwargs
     )
