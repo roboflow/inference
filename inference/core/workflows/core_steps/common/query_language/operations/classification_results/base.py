@@ -1,5 +1,7 @@
 from typing import Any, List, Union
 
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY_IN_INFERENCE_MODELS_METADATA
+from inference_models import ClassificationPrediction, MultiLabelClassificationPrediction
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     ClassificationProperty,
 )
@@ -15,6 +17,23 @@ def extract_top_class(prediction: dict) -> Union[str, List[str]]:
     if "top" in prediction:
         return prediction["top"]
     return prediction.get("predicted_classes", [])
+
+
+def extract_top_class_tensor_native(
+    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction]
+) -> Union[str, List[str]]:
+    if isinstance(prediction, ClassificationPrediction):
+        pass
+    elif isinstance(prediction, MultiLabelClassificationPrediction):
+        pass
+    else:
+        raise InvalidInputTypeError(
+            public_message=f"While executing extract_top_class_tensor_native(...) operation "
+                           f"it was expected to get `inference_models.ClassificationPrediction` or "
+                           f"`inference_models.MultiLabelClassificationPrediction`, but got "
+                           f"instance of type {type(prediction)}",
+            context=f"step_execution | roboflow_query_language_evaluation",
+        )
 
 
 def extract_top_class_confidence(prediction: dict) -> Union[float, List[float]]:

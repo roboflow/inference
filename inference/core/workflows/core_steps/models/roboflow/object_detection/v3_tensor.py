@@ -404,9 +404,6 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
 
 
 def _read_or_generate_inference_id(detections) -> str:
-    """Read inference_id from sv.Detections.data, or mint a fresh uuid4 per
-    image when the adapter did not supply one (locked decision
-    [ITERATE 6.B]: per-image scope)."""
     if len(detections) > 0:
         existing = detections.data.get(INFERENCE_ID_KEY)
         if existing is not None and len(existing) > 0 and existing[0] is not None:
