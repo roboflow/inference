@@ -112,12 +112,20 @@ def show_job_details(
         raise typer.Exit(code=1)
 
 
-def parse_key_value(values: List[str]) -> Dict[str, str]:
+def parse_key_value(
+    values: List[str],
+    require_non_empty_keys: bool = True,
+    require_non_empty_values: bool = True,
+) -> Dict[str, str]:
     result: Dict[str, str] = {}
     for item in values:
         if "=" not in item:
             raise typer.BadParameter(f"'{item}' must be in key=value format")
         key, value = item.split("=", 1)  # split once, so values may contain '='
+        if require_non_empty_keys and not key:
+            raise typer.BadParameter(f"Empty key in item '{item}'")
+        if require_non_empty_values and not value:
+            raise typer.BadParameter(f"Empty value in item '{item}'")
         result[key] = value
     return result
 

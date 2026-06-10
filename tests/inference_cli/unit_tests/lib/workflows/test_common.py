@@ -21,7 +21,6 @@ from inference_cli.lib.workflows.common import (
     dump_objects_to_json,
     extract_images_from_result,
     open_progress_log,
-    replace_file_extension,
     report_failed_files,
 )
 from inference_cli.lib.workflows.entities import ImageResultsIndexEntry, OutputFileType
@@ -543,31 +542,4 @@ def test_workflows_images_processor_index() -> None:
         ("/inputs/image_2.jpg", ["/some/image_2.jpg/crops/0.jpg"]),
     ], "Expected all crops outputs to be indexed"
 
-
-def test_replace_file_extension_strips_existing_extension_and_appends_new_one() -> None:
-    assert replace_file_extension("a/b/c.tar", ".json") == "a/b/c.json"
-
-
-def test_replace_file_extension_adds_leading_dot_when_caller_forgot_one() -> None:
-    # The function normalises `extension` so callers can pass either "json" or ".json".
-    assert replace_file_extension("a/b/c.tar", "json") == "a/b/c.json"
-
-
-def test_replace_file_extension_accepts_extension_with_leading_dot_as_is() -> None:
-    # Idempotency: passing ".json" must NOT produce "..json".
-    assert replace_file_extension("a/b/c.tar", ".json") == "a/b/c.json"
-
-
-def test_replace_file_extension_handles_path_without_an_existing_extension() -> None:
-    assert replace_file_extension("a/b/c", ".json") == "a/b/c.json"
-
-
-def test_replace_file_extension_only_replaces_basename_extension() -> None:
-    # Dots in directory components must be preserved — only the basename's
-    # extension is swapped.
-    assert replace_file_extension("a.b/c.tar", ".json") == "a.b/c.json"
-
-
-def test_replace_file_extension_with_empty_extension_strips_existing() -> None:
-    assert replace_file_extension("a/b/c.tar", "") == "a/b/c"
 

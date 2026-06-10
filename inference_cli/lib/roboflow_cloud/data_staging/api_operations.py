@@ -8,7 +8,6 @@ from io import BytesIO
 from multiprocessing.pool import Pool, ThreadPool
 from threading import Lock
 from typing import Dict, Generator, List, Optional, Set, TextIO, Tuple, Union
-from urllib.parse import urlparse
 from uuid import uuid4
 
 import backoff

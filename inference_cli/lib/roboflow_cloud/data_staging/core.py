@@ -157,7 +157,6 @@ def create_batch_of_images(
         Optional[str],
         typer.Option(
             "--images-dir",
-            "-i",
             help="Path to your images directory to upload (required if data source is 'local-directory')",
         ),
     ] = None,
@@ -191,7 +190,7 @@ def create_batch_of_images(
         Optional[str],
         typer.Option(
             "--ingest-id",
-            "-in-id",
+            "-i",
             help="Identifier assigned for references ingest (if value not provided - system will auto-assign) - "
             "only relevant when `notifications-url` specified",
         ),
@@ -238,6 +237,8 @@ def create_batch_of_images(
         ),
     ] = False,
 ) -> None:
+    print(images_dir, ingest_id, notifications_url, notification_categories, batch_name, api_key, debug_mode)
+    raise Exception()
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     if notification_categories:

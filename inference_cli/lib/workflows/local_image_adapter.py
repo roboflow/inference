@@ -24,7 +24,6 @@ from inference_cli.lib.workflows.common import (
     denote_image_processed,
     dump_image_processing_results,
     open_progress_log,
-    replace_file_extension,
     report_failed_files,
 )
 from inference_cli.lib.workflows.entities import (
@@ -289,9 +288,10 @@ def _resolve_metadata_driven_workflow_parameters(
     """Resolve per-image metadata for parameter injection.
 
     When `images_metadata_input_mapping` is non-empty, the function looks
-    up the sibling `.json` metadata file for `image_path`, validates that
-    every value in the mapping is a key in the metadata, and projects the
-    metadata into a `{workflow_input: value}` dict via the mapping.
+    up the sibling `.json` metadata file for `image_path` (adding ".json"
+    to file name), validates that every value in the mapping is a key in
+    the metadata, and projects the metadata into a `{workflow_input: value}`
+    dict via the mapping.
 
     Returns (params, error_summary). On the success path the params dict
     is the projection (possibly empty when mapping is None/empty) and
@@ -301,19 +301,26 @@ def _resolve_metadata_driven_workflow_parameters(
     """
     if not images_metadata_input_mapping:
         return {}, None
-    assumed_metadata_file_path = replace_file_extension(image_path, extension=".json")
+    assumed_metadata_file_path = f"{image_path}.json"
     if not os.path.isfile(assumed_metadata_file_path):
         return None, (
-            f"Cold not find required metadata file for image: {image_path}. "
+            f"Could not find required metadata file for image: {image_path}. "
             f"Since `images_metadata_input_mapping` was specified, presence of metadata file is enforced."
         )
-    metadata = read_json(path=assumed_metadata_file_path)
-    missing_keys = set(images_metadata_input_mapping.values()).difference(
-        metadata.keys()
-    )
+    try:
+        metadata = read_json(path=assumed_metadata_file_path)
+        missing_keys = set(images_metadata_input_mapping.values()).difference(
+            metadata.keys()
+        )
+    except Exception as error:
+        return (
+            None,
+            f"Could not read metadata from {assumed_metadata_file_path} or the format of assumed "
+            f"metadata file is invalid: {error}"
+        )
     if len(missing_keys) > 0:
         return None, (
-            f"Cold not find required metadata keys specified in `images_metadata_input_mapping` for image: "
+            f"Could not find required metadata keys specified in `images_metadata_input_mapping` for image: "
             f"{image_path}. Missing keys: {missing_keys}."
         )
     return {
