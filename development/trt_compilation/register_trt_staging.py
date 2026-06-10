@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Register a compiled Jetson Orin TRT package to Roboflow staging."""
+"""Register a locally compiled TensorRT package to Roboflow staging."""
 
 from __future__ import annotations
 
@@ -87,9 +87,8 @@ def _build_local_files_mapping(
 @click.option(
     "--trt-package-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
-    default=Path("./rfdetr-seg-nano-orin-trt-build/trt_package"),
-    show_default=True,
-    help="Directory produced by fetch_and_compile_rfdetr_trt_orin.py.",
+    required=True,
+    help="Directory produced by fetch_and_compile_trt.py (contains engine.plan, etc.).",
 )
 @click.option(
     "--staging-api-host",
@@ -132,6 +131,7 @@ def main(
     click.echo(f"Model id       : {resolved_model_id}")
     click.echo(f"Source model id: {registration_manifest.get('sourceModelId')}")
     click.echo(f"Precision      : {registration_manifest.get('precision')}")
+    click.echo(f"Machine type   : {package_manifest.get('machineType')}")
     click.echo(f"Staging host   : {staging_api_host}")
     click.echo(f"Package files  : {', '.join(file_handles)}")
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch RF-DETR ONNX from production and compile a Jetson Orin TRT package."""
+"""Fetch an ONNX model package from the registry and compile a TRT package locally."""
 
 from __future__ import annotations
 
@@ -22,15 +22,17 @@ for path in (SCRIPT_DIR, INFERENCE_MODELS_ROOT, DEVELOPMENT_ROOT):
 
 from _common import (  # noqa: E402
     CLASS_NAMES_FILE,
-    DEFAULT_MODEL_ID,
     DEFAULT_PROD_API_HOST,
     ENGINE_PLAN_FILE,
     INFERENCE_CONFIG_FILE,
     REGISTRATION_MANIFEST_FILE,
+    SOURCE_METADATA_FILE,
     TRT_CONFIG_FILE,
     WEIGHTS_ONNX_FILE,
     build_registration_manifest,
+    default_output_dir,
     get_training_input_size,
+    load_source_metadata,
     prepare_adjusted_inference_config,
     write_json,
     write_model_config as write_local_model_config,
@@ -42,6 +44,38 @@ def _configure_prod_api(*, prod_api_host: str) -> None:
     os.environ["ROBOFLOW_API_HOST"] = prod_api_host
 
 
+def _select_onnx_package(
+    *,
+    matching_packages: list,
+    package_id: Optional[str],
+) -> object:
+    if package_id is not None:
+        selected = [
+            package for package in matching_packages if package.package_id == package_id
+        ]
+        if not selected:
+            available_ids = [package.package_id for package in matching_packages]
+            raise click.ClickException(
+                f"No ONNX package with id {package_id!r}. "
+                f"Available package ids: {available_ids}"
+            )
+        if len(selected) != 1:
+            raise click.ClickException(
+                f"Expected one package for id {package_id!r}, found {len(selected)}."
+            )
+        return selected[0]
+
+    if len(matching_packages) != 1:
+        package_ids = [package.package_id for package in matching_packages]
+        raise click.ClickException(
+            "Expected exactly one matching ONNX package. "
+            f"Found {len(matching_packages)}: {package_ids}. "
+            "Pass --package-id to select one."
+        )
+
+    return matching_packages[0]
+
+
 def _fetch_onnx_package(
     *,
     model_id: str,
@@ -49,6 +83,7 @@ def _fetch_onnx_package(
     prod_api_host: str,
     roboflow_api_key: Optional[str],
     dynamic_batch: bool,
+    package_id: Optional[str],
 ) -> tuple[Path, dict]:
     _configure_prod_api(prod_api_host=prod_api_host)
 
@@ -74,17 +109,22 @@ def _fetch_onnx_package(
             f"(dynamic_batch={dynamic_batch})."
         )
 
+    selected_package = _select_onnx_package(
+        matching_packages=matching_packages,
+        package_id=package_id,
+    )
+
     source_onnx_dir = output_dir / "source_onnx"
     source_onnx_dir.mkdir(parents=True, exist_ok=True)
     package_dirs = download_model_packages(
-        matching_model_packages=matching_packages,
+        matching_model_packages=[selected_package],
         target_path=str(source_onnx_dir),
     )
     if len(package_dirs) != 1:
-        package_ids = [Path(path).name for path in package_dirs]
+        package_dir_names = [Path(path).name for path in package_dirs]
         raise click.ClickException(
             "Expected exactly one ONNX package to download, got "
-            f"{len(package_dirs)}: {package_ids}"
+            f"{len(package_dirs)}: {package_dir_names}"
         )
 
     package_dir = Path(package_dirs[0])
@@ -101,6 +141,7 @@ def _fetch_onnx_package(
         "model_variant": model_metadata.model_variant,
         "source_package_id": package_dir.name,
     }
+    write_json(output_dir / SOURCE_METADATA_FILE, metadata)
     return package_dir, metadata
 
 
@@ -128,7 +169,8 @@ def _compile_trt_package(
     runtime_xray = x_ray_runtime_environment()
     if runtime_xray.trt_version is None:
         raise click.ClickException(
-            "TensorRT was not detected. Run this script on a Jetson Orin with JetPack."
+            "TensorRT was not detected. Run this script on hardware with "
+            "TensorRT installed (Jetson or NVIDIA GPU server)."
         )
 
     session = onnxruntime.InferenceSession(str(onnx_path))
@@ -244,28 +286,51 @@ def _compile_trt_package(
 def _verify_trt_package(*, trt_package_dir: Path) -> None:
     import numpy as np
 
-    from inference_models.models.rfdetr.rfdetr_instance_segmentation_trt import (
-        RFDetrForInstanceSegmentationTRT,
-    )
+    from inference_models.models.auto_loaders.core import AutoModel
 
-    model = RFDetrForInstanceSegmentationTRT.from_pretrained(str(trt_package_dir))
-    image = np.zeros((640, 640, 3), dtype=np.uint8)
+    inference_config_path = trt_package_dir / INFERENCE_CONFIG_FILE
+    height, width = get_training_input_size(inference_config_path=inference_config_path)
+
+    model = AutoModel.from_pretrained(str(trt_package_dir), backend="trt")
+    image = np.zeros((height, width, 3), dtype=np.uint8)
     _ = model(image)
+
+
+def _resolve_source_onnx_dir(*, output_dir: Path, metadata: dict) -> Path:
+    source_onnx_root = output_dir / "source_onnx"
+    source_package_id = metadata.get("source_package_id")
+    if source_package_id:
+        source_onnx_dir = source_onnx_root / source_package_id
+        if source_onnx_dir.is_dir():
+            return source_onnx_dir
+
+    package_dirs = sorted(path for path in source_onnx_root.iterdir() if path.is_dir())
+    if len(package_dirs) != 1:
+        raise click.ClickException(
+            f"Expected one directory under {source_onnx_root}, found "
+            f"{len(package_dirs)}."
+        )
+
+    return package_dirs[0]
 
 
 @click.command()
 @click.option(
     "--model-id",
-    default=DEFAULT_MODEL_ID,
-    show_default=True,
+    required=True,
     help="Roboflow model id or alias to fetch from production.",
 )
 @click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
-    default=Path("./rfdetr-seg-nano-orin-trt-build"),
-    show_default=True,
-    help="Directory for downloaded ONNX and compiled TRT artefacts.",
+    default=None,
+    help="Directory for downloaded ONNX and compiled TRT artefacts. "
+    "Defaults to ./{model-id}-trt-build.",
+)
+@click.option(
+    "--package-id",
+    default=None,
+    help="Specific ONNX package id when multiple packages match.",
 )
 @click.option(
     "--prod-api-host",
@@ -349,13 +414,14 @@ def _verify_trt_package(*, trt_package_dir: Path) -> None:
 )
 @click.option(
     "--staging-model-id",
-    default=DEFAULT_MODEL_ID,
-    show_default=True,
-    help="Model id written into registration_manifest.json for staging upload.",
+    default=None,
+    help="Model id written into registration_manifest.json for staging upload. "
+    "Defaults to --model-id.",
 )
 def main(
     model_id: str,
-    output_dir: Path,
+    output_dir: Optional[Path],
+    package_id: Optional[str],
     prod_api_host: str,
     roboflow_api_key: Optional[str],
     precision: Literal["fp16", "fp32"],
@@ -370,46 +436,42 @@ def main(
     skip_compile: bool,
     verify: bool,
     write_model_config: bool,
-    staging_model_id: str,
+    staging_model_id: Optional[str],
 ) -> None:
-    """Fetch prod ONNX and compile a registry-ready Jetson TRT package."""
+    """Fetch prod ONNX and compile a registry-ready TRT package on local hardware."""
     if skip_fetch and skip_compile:
         raise click.ClickException("At least one of fetch or compile must run.")
 
     if roboflow_api_key is None:
         roboflow_api_key = os.getenv("ROBOFLOW_API_KEY")
 
-    output_dir = output_dir.resolve()
-    source_onnx_root = output_dir / "source_onnx"
-    trt_package_dir = output_dir / "trt_package"
+    resolved_output_dir = (
+        output_dir.resolve()
+        if output_dir is not None
+        else default_output_dir(model_id=model_id).resolve()
+    )
+    trt_package_dir = resolved_output_dir / "trt_package"
+    resolved_staging_model_id = staging_model_id or model_id
 
     metadata: dict
     source_onnx_dir: Path
 
     if skip_fetch:
-        package_dirs = sorted(path for path in source_onnx_root.iterdir() if path.is_dir())
-        if len(package_dirs) != 1:
-            raise click.ClickException(
-                f"Expected one directory under {source_onnx_root}, found "
-                f"{len(package_dirs)}."
-            )
-        source_onnx_dir = package_dirs[0]
-        metadata = {
-            "model_id": model_id,
-            "model_architecture": "rfdetr",
-            "task_type": "instance-segmentation",
-            "model_variant": None,
-            "source_package_id": source_onnx_dir.name,
-        }
+        metadata = load_source_metadata(output_dir=resolved_output_dir)
+        source_onnx_dir = _resolve_source_onnx_dir(
+            output_dir=resolved_output_dir,
+            metadata=metadata,
+        )
         click.echo(f"Reusing ONNX package at {source_onnx_dir}")
     else:
         click.echo(f"Fetching ONNX for {model_id} from {prod_api_host} ...")
         source_onnx_dir, metadata = _fetch_onnx_package(
             model_id=model_id,
-            output_dir=output_dir,
+            output_dir=resolved_output_dir,
             prod_api_host=prod_api_host,
             roboflow_api_key=roboflow_api_key,
             dynamic_batch=not static_batch,
+            package_id=package_id,
         )
         click.echo(f"Downloaded ONNX package to {source_onnx_dir}")
 
@@ -437,7 +499,7 @@ def main(
     )
 
     registration_manifest = build_registration_manifest(
-        model_id=staging_model_id,
+        model_id=resolved_staging_model_id,
         source_model_id=metadata["model_id"],
         model_architecture=metadata["model_architecture"],
         task_type=metadata["task_type"],
@@ -466,7 +528,7 @@ def main(
     click.echo(f"  ONNX source : {source_onnx_dir}")
     click.echo(f"  TRT package : {trt_package_dir}")
     click.echo(
-        "Next: run register_rfdetr_trt_orin_staging.py against trt_package/ on staging."
+        "Next: run register_trt_staging.py against trt_package/ on staging."
     )
 
 

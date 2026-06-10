@@ -1,4 +1,4 @@
-"""Shared constants and helpers for RF-DETR Jetson Orin TRT package workflows."""
+"""Shared constants and helpers for local TensorRT model compilation workflows."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-DEFAULT_MODEL_ID = "rfdetr-seg-nano"
 DEFAULT_PROD_API_HOST = "https://api.roboflow.com"
 DEFAULT_STAGING_API_HOST = "https://api.roboflow.one"
 
@@ -17,6 +16,7 @@ ENGINE_PLAN_FILE = "engine.plan"
 WEIGHTS_ONNX_FILE = "weights.onnx"
 MODEL_CONFIG_FILE = "model_config.json"
 REGISTRATION_MANIFEST_FILE = "registration_manifest.json"
+SOURCE_METADATA_FILE = "source_metadata.json"
 
 TRT_PACKAGE_FILE_HANDLES = [
     CLASS_NAMES_FILE,
@@ -84,9 +84,19 @@ def load_registration_manifest(*, trt_package_dir: Path) -> Dict[str, Any]:
     if not manifest_path.is_file():
         raise FileNotFoundError(
             f"Missing {REGISTRATION_MANIFEST_FILE} in {trt_package_dir}. "
-            "Run fetch_and_compile_rfdetr_trt_orin.py first."
+            "Run fetch_and_compile_trt.py first."
         )
     return read_json(manifest_path)
+
+
+def load_source_metadata(*, output_dir: Path) -> Dict[str, Any]:
+    metadata_path = output_dir / SOURCE_METADATA_FILE
+    if not metadata_path.is_file():
+        raise FileNotFoundError(
+            f"Missing {SOURCE_METADATA_FILE} in {output_dir}. "
+            "Run fetch_and_compile_trt.py without --skip-fetch first."
+        )
+    return read_json(metadata_path)
 
 
 def validate_trt_package_dir(*, trt_package_dir: Path) -> None:
@@ -120,3 +130,8 @@ def write_model_config(
         },
     )
     return config_path
+
+
+def default_output_dir(*, model_id: str) -> Path:
+    sanitized_model_id = model_id.replace("/", "-")
+    return Path(f"./{sanitized_model_id}-trt-build")

@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
-# Run fetch_and_compile_rfdetr_trt_orin.py inside the Jetson 6.2.0 inference image.
+# Run fetch_and_compile_trt.py inside an inference Docker image with GPU access.
 #
-# Intended to run ON a Jetson Orin host with nvidia-container-runtime configured.
-# The image entrypoint starts the inference server; this script overrides it to
-# run the compile workflow instead.
+# Intended to run on a compile host with nvidia-container-runtime configured:
+#   - Jetson (Orin, Xavier, etc.) with a matching Jetson inference image
+#   - NVIDIA GPU server with a matching GPU inference image
+#
+# The image entrypoint normally starts the inference server; this script overrides
+# it to run the compile workflow instead.
 #
 # Mounts:
-#   - development/rfdetr_trt_orin  (live-editable script tree)
-#   - inference_models             (required by the compile script; not mounted as
-#                                   editable source in the runtime image)
+#   - development/trt_compilation  (live-editable script tree)
+#   - inference_models             (required by the compile script)
 #   - host output directory        (compiled TRT package + logs)
 #
 # Usage:
-#   ./run_fetch_and_compile_in_jetson_docker.sh
-#   ./run_fetch_and_compile_in_jetson_docker.sh -- --precision fp16 --verify
-#   OUTPUT_DIR=/data/rfdetr-trt ./run_fetch_and_compile_in_jetson_docker.sh
+#   MODEL_ID=rfdetr-seg-nano ./run_in_docker.sh
+#   MODEL_ID=yolov8n-640 IMAGE=roboflow/roboflow-inference-server-gpu:latest ./run_in_docker.sh
+#   MODEL_ID=rfdetr-seg-nano ./run_in_docker.sh -- --precision fp16 --verify
+#   MODEL_ID=rfdetr-seg-nano OUTPUT_DIR=/data/trt-build ./run_in_docker.sh
 
 set -euo pipefail
 
@@ -22,15 +25,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 IMAGE="${IMAGE:-roboflow/roboflow-inference-server-jetson-6.2.0:latest}"
-OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/../rfdetr-seg-nano-orin-trt-build}"
+MODEL_ID="${MODEL_ID:?Set MODEL_ID to the Roboflow model id to compile}"
+OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/../${MODEL_ID//\//-}-trt-build}"
 CONTAINER_WORKSPACE="${CONTAINER_WORKSPACE:-/workspace/inference}"
 CONTAINER_OUTPUT_DIR="${CONTAINER_OUTPUT_DIR:-/workspace/output}"
-CONTAINER_SCRIPT="${CONTAINER_WORKSPACE}/development/rfdetr_trt_orin/fetch_and_compile_rfdetr_trt_orin.py"
+CONTAINER_SCRIPT="${CONTAINER_WORKSPACE}/development/trt_compilation/fetch_and_compile_trt.py"
 LOG_FILE="${LOG_FILE:-${OUTPUT_DIR}/fetch_and_compile.log}"
 
-MODEL_ID="${MODEL_ID:-rfdetr-seg-nano}"
 PROD_API_HOST="${PROD_API_HOST:-https://api.roboflow.com}"
 PULL_IMAGE="${PULL_IMAGE:-false}"
+RUNNING_ON_JETSON="${RUNNING_ON_JETSON:-auto}"
 
 mkdir -p "${OUTPUT_DIR}"
 
@@ -51,6 +55,7 @@ echo "Repo root        : ${REPO_ROOT}"
 echo "Script dir mount : ${SCRIPT_DIR}"
 echo "Output dir mount : ${OUTPUT_DIR} -> ${CONTAINER_OUTPUT_DIR}"
 echo "Docker image     : ${IMAGE}"
+echo "Model id         : ${MODEL_ID}"
 echo "Log file         : ${LOG_FILE}"
 echo ""
 
@@ -58,9 +63,12 @@ DOCKER_ENV=(
     -e "ROBOFLOW_ENVIRONMENT=prod"
     -e "ROBOFLOW_API_HOST=${PROD_API_HOST}"
     -e "INFERENCE_HOME=${CONTAINER_OUTPUT_DIR}/.cache"
-    -e "RUNNING_ON_JETSON=True"
     -e "PYTHONPATH=${CONTAINER_WORKSPACE}/inference_models:${CONTAINER_WORKSPACE}/inference_models/development"
 )
+
+if [[ "${RUNNING_ON_JETSON}" == "true" ]] || [[ "${IMAGE}" == *jetson* ]]; then
+    DOCKER_ENV+=(-e "RUNNING_ON_JETSON=True")
+fi
 
 if [[ -n "${ROBOFLOW_API_KEY:-}" ]]; then
     DOCKER_ENV+=(-e "ROBOFLOW_API_KEY=${ROBOFLOW_API_KEY}")
@@ -76,14 +84,16 @@ if ((${#EXTRA_ARGS[@]} > 0)); then
     PYTHON_ARGS+=("${EXTRA_ARGS[@]}")
 fi
 
+CONTAINER_NAME="trt-compile-${MODEL_ID//\//-}"
+
 echo "Starting container ..."
 set +e
 docker run --rm \
-    --name rfdetr-trt-orin-compile \
+    --name "${CONTAINER_NAME}" \
     --runtime nvidia \
     --privileged \
     --network bridge \
-    -v "${SCRIPT_DIR}:${CONTAINER_WORKSPACE}/development/rfdetr_trt_orin" \
+    -v "${SCRIPT_DIR}:${CONTAINER_WORKSPACE}/development/trt_compilation" \
     -v "${REPO_ROOT}/inference_models:${CONTAINER_WORKSPACE}/inference_models" \
     -v "${OUTPUT_DIR}:${CONTAINER_OUTPUT_DIR}" \
     -v /tmp:/tmp \
