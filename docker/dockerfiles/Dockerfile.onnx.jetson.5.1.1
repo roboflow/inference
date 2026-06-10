@@ -1,18 +1,6 @@
 FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.3
 
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
-    ffmpeg \
-    git \
-    libxml2-dev \
-    ninja-build \
-    python3-dev \
-    zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-ARG PYTORCH_VERSION=2.4.1
-ARG TORCHVISION_VERSION=0.19.1
+RUN apt-get update -y && apt-get install -y ffmpeg
 
 COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
@@ -36,12 +24,22 @@ RUN python -m pip install \
     -r requirements.easyocr.txt \
     -r requirements.gpu.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
-    "torch==${PYTORCH_VERSION}" \
-    "torchvision==${TORCHVISION_VERSION}" \
+    "torch==2.4.1" \
+    "torchvision==0.19.1" \
     "transformers<=5.7.0"
 
 # Torch 2.4.1 on JP5.1 pairs with Triton 3.0.0.
 RUN set -eux; \
+    apt-get update -y; \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        libxml2-dev \
+        ninja-build \
+        python3-dev \
+        zlib1g-dev; \
+    rm -rf /var/lib/apt/lists/*; \
     rm -rf /tmp/triton-build /tmp/triton-wheels; \
     mkdir -p /tmp/triton-wheels; \
     git clone --depth 1 --branch v3.0.0 https://github.com/triton-lang/triton.git /tmp/triton-build/src; \
@@ -62,8 +60,15 @@ RUN set -eux; \
         exit 1; \
     fi; \
     python -m pip install --no-cache-dir "$1"; \
-    rm -rf /tmp/triton-build /tmp/triton-wheels
-
+    apt-get purge -y --auto-remove \
+        build-essential \
+        cmake \
+        git \
+        libxml2-dev \
+        ninja-build \
+        python3-dev \
+        zlib1g-dev; \
+    rm -rf /var/lib/apt/lists/* /tmp/triton-build /tmp/triton-wheels
 
 WORKDIR /app/
 COPY inference inference

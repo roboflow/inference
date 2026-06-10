@@ -28,7 +28,6 @@ RUN apt-get update -y && \
     libtiff-dev \
     libcurl4-openssl-dev \
     libssl-dev \
-    libxml2-dev \
     zlib1g-dev \
     libxext6 \
     libvips-dev \
@@ -223,7 +222,6 @@ RUN cd /usr/local/lib/python3.10/dist-packages && \
 FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG PYTORCH_VERSION=2.6.0
 ENV LANG=en_US.UTF-8
 
 WORKDIR /app
@@ -244,8 +242,6 @@ RUN apt-get update -y && \
     libgomp1 \
     python3 \
     python3-pip \
-    build-essential \
-    cmake \
     libxext6 \
     libvips42 \
     libglib2.0-0 \
@@ -255,20 +251,26 @@ RUN apt-get update -y && \
     libexpat1 \
     ca-certificates \
     curl \
-    git \
     libv4l-0 \
     libavcodec58 \
     libavformat58 \
     libswscale5 \
     libatlas3-base \
-    libxml2-dev \
-    ninja-build \
-    python3-dev \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Torch 2.6.0 on JP6.0 pairs with Triton 3.2.0.
 RUN set -eux; \
+    apt-get update -y; \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        libxml2-dev \
+        ninja-build \
+        python3-dev \
+        zlib1g-dev; \
+    rm -rf /var/lib/apt/lists/*; \
     rm -rf /tmp/triton-build /tmp/triton-wheels; \
     mkdir -p /tmp/triton-wheels; \
     git clone --depth 1 --branch v3.2.0 https://github.com/triton-lang/triton.git /tmp/triton-build/src; \
@@ -290,7 +292,15 @@ RUN set -eux; \
         exit 1; \
     fi; \
     python3 -m pip install --no-cache-dir "$1"; \
-    rm -rf /tmp/triton-build /tmp/triton-wheels
+    apt-get purge -y --auto-remove \
+        build-essential \
+        cmake \
+        git \
+        libxml2-dev \
+        ninja-build \
+        python3-dev \
+        zlib1g-dev; \
+    rm -rf /var/lib/apt/lists/* /tmp/triton-build /tmp/triton-wheels
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/

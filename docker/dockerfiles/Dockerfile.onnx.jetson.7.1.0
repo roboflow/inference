@@ -56,7 +56,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-bu
     libtiff-dev \
     libcurl4-openssl-dev \
     libssl-dev \
-    libxml2-dev \
     zlib1g-dev \
     libxext6 \
     libvips-dev \
@@ -253,7 +252,6 @@ RUN cd /usr/local/lib/python3.12/dist-packages && \
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG PYTORCH_VERSION=2.10.0
 ENV LANG=en_US.UTF-8
 
 WORKDIR /app
@@ -297,8 +295,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     libgomp1 \
     python3 \
     python3-pip \
-    build-essential \
-    cmake \
     libxext6 \
     libvips42 \
     libglib2.0-0 \
@@ -307,7 +303,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     libpng16-16t64 \
     libexpat1 \
     curl \
-    git \
     libv4l-0 \
     libavcodec60 \
     libavformat60 \
@@ -316,13 +311,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     libatlas3-base \
     libgl1 \
     libglib2.0-0 \
-    libatomic1 \
-    libxml2-dev \
-    ninja-build \
-    python3-dev
+    libatomic1
 
 # Torch 2.10.0 on JP7.1 pairs with Triton 3.6.0.
 RUN set -eux; \
+    apt-get update -y; \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        libxml2-dev \
+        ninja-build \
+        python3-dev \
+        zlib1g-dev; \
     rm -rf /tmp/triton-build /tmp/triton-wheels; \
     mkdir -p /tmp/triton-wheels; \
     git clone --depth 1 --branch v3.6.0 https://github.com/triton-lang/triton.git /tmp/triton-build/src; \
@@ -340,7 +341,15 @@ RUN set -eux; \
         exit 1; \
     fi; \
     python3 -m pip install --break-system-packages --no-cache-dir "$1"; \
-    rm -rf /tmp/triton-build /tmp/triton-wheels
+    apt-get purge -y --auto-remove \
+        build-essential \
+        cmake \
+        git \
+        libxml2-dev \
+        ninja-build \
+        python3-dev \
+        zlib1g-dev; \
+    rm -rf /var/lib/apt/lists/* /tmp/triton-build /tmp/triton-wheels
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
