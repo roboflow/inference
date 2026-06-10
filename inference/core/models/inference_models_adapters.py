@@ -35,6 +35,7 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
+    GCP_SERVERLESS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
 )
@@ -300,8 +301,18 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
             disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
         )
+        if GCP_SERVERLESS:
+            enforce_dense_masks_in_inference_models = False
+        else:
+            enforce_dense_masks_in_inference_models = kwargs.get(
+                "enforce_dense_masks_in_inference_models",
+                False,
+            )
         kwargs["pre_processing_overrides"] = pre_processing_overrides
-        if "rle" in self._model.supported_mask_formats:
+        if (
+            "rle" in self._model.supported_mask_formats
+            and not enforce_dense_masks_in_inference_models
+        ):
             kwargs["mask_format"] = "rle"
         return kwargs
 

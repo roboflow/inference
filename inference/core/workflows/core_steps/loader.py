@@ -175,6 +175,9 @@ from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
     RateLimiterBlockV1,
 )
 from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
+from inference.core.workflows.core_steps.formatters.current_time.v1 import (
+    CurrentTimeBlockV1,
+)
 from inference.core.workflows.core_steps.formatters.expression.v1 import (
     ExpressionBlockV1,
 )
@@ -460,6 +463,9 @@ from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
+from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
+    RoboflowAssetLibraryAttributesBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -716,6 +722,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
@@ -831,6 +838,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
+        RoboflowAssetLibraryAttributesBlockV1,
         ContinueIfBlockV1,
         InnerWorkflowBlockV1,
         RateLimiterBlockV1,
@@ -847,6 +855,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DimensionCollapseBlockV1,
         DetectionsListRollUpBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
+        CurrentTimeBlockV1,
         AnthropicClaudeBlockV1,
         AnthropicClaudeBlockV2,
         AnthropicClaudeBlockV3,

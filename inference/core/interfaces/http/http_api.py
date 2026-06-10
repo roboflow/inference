@@ -3,6 +3,7 @@ import concurrent
 import logging
 import os
 import re
+import warnings
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
@@ -139,6 +140,7 @@ from inference.core.entities.responses.workflows import (
     WorkflowValidationStatus,
 )
 from inference.core.env import (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ALLOW_ORIGINS,
     API_BASE_URL,
     API_LOGGING_ENABLED,
@@ -195,8 +197,8 @@ from inference.core.env import (
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING,
     WORKFLOWS_STEP_EXECUTION_MODE,
+    WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -294,6 +296,7 @@ from inference.core.telemetry import (
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.utils.url_utils import wrap_url
+from inference.core.warnings import InferenceDeprecationWarning
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     WorkflowBlockError,
@@ -352,6 +355,16 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
+
+
+if ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
+    warnings.warn(
+        "Your `inference` configuration specifies `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`. "
+        "Currently, Workflows Custom Python blocks are allowed by default - but this is going to change 19.06.2026. "
+        "If your workload relies on that setting, please make adjustment to your configuration before the inference "
+        "release following mentioned date. Otherwise - you may ignore this warning.",
+        category=InferenceDeprecationWarning,
+    )
 
 
 @dataclass(frozen=True)
@@ -577,7 +590,11 @@ class HttpInterface(BaseInterface):
 
         @app.middleware("http")
         async def set_request_path_context(request: Request, call_next):
-            token = current_request_path.set(request.url.path)
+            # CVE-2026-48710: prefer the raw ASGI scope path over
+            # request.url.path. This ContextVar feeds downstream registry
+            # metadata (_model_request_paths in ModelManagerBase), so a
+            # Host-poisoned path would surface in model-info responses.
+            token = current_request_path.set(request.scope["path"])
             try:
                 return await call_next(request)
             finally:
@@ -713,9 +730,13 @@ class HttpInterface(BaseInterface):
                 t1 = time.time()
 
                 # exclusions
+                # CVE-2026-48710: use the raw ASGI scope path so a malicious
+                # Host header (e.g. `Host: x?/docs`) cannot poison request.url.path
+                # and slip an authenticated route into the allowlist.
+                scope_path = request.scope["path"]
                 skip_check = (
                     request.method not in ["GET", "POST"]
-                    or request.url.path
+                    or scope_path
                     in [
                         "/",
                         "/docs",
@@ -726,12 +747,12 @@ class HttpInterface(BaseInterface):
                         "/openapi.json",  # needed for /docs and /redoc
                         "/model/registry",  # dont auth this route, usually not used on serverlerless, but queue based serverless uses it internally (not accessible from outside)
                     ]
-                    or request.url.path.startswith("/static/")
-                    or request.url.path.startswith("/_next/")
+                    or scope_path.startswith("/static/")
+                    or scope_path.startswith("/_next/")
                 )
 
                 # for these routes we only want to auth if dynamic python modules are provided
-                if request.url.path in [
+                if scope_path in [
                     "/workflows/blocks/describe",
                     "/workflows/definition/schema",
                 ]:
@@ -788,7 +809,10 @@ class HttpInterface(BaseInterface):
                         "serverless.authorization.check",
                         attributes={
                             "http.method": request.method,
-                            "http.target": request.url.path,
+                            # CVE-2026-48710: log the real ASGI path. The span
+                            # records the auth decision, so it must not be
+                            # forgeable via Host header.
+                            "http.target": scope_path,
                         },
                     ) as auth_span:
                         req_params = request.query_params
@@ -970,14 +994,21 @@ class HttpInterface(BaseInterface):
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
 
-        if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+        if (
+            DEDICATED_DEPLOYMENT_WORKSPACE_URL
+            or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        ):
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
                 # exclusions
+                # CVE-2026-48710: use the raw ASGI scope path so a malicious
+                # Host header (e.g. `Host: x?/docs`) cannot poison request.url.path
+                # and slip an authenticated route into the allowlist.
+                scope_path = request.scope["path"]
                 skip_check = (
                     request.method not in ["GET", "POST"]
-                    or request.url.path
+                    or scope_path
                     in [
                         "/",
                         "/docs",
@@ -988,8 +1019,8 @@ class HttpInterface(BaseInterface):
                         "/metrics",
                         "/openapi.json",  # needed for /docs and /redoc
                     ]
-                    or request.url.path.startswith("/static/")
-                    or request.url.path.startswith("/_next/")
+                    or scope_path.startswith("/static/")
+                    or scope_path.startswith("/_next/")
                 )
                 if skip_check:
                     return await call_next(request)
@@ -1036,8 +1067,14 @@ class HttpInterface(BaseInterface):
                             workspace_id = await get_roboflow_workspace_async(
                                 api_key=api_key
                             )
-
-                        if workspace_id != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                        allowed_workspaces = set()
+                        if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                            allowed_workspaces.add(DEDICATED_DEPLOYMENT_WORKSPACE_URL)
+                        if WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT:
+                            allowed_workspaces.update(
+                                WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+                            )
+                        if workspace_id not in allowed_workspaces:
                             return _unauthorized_response("Unauthorized api_key")
 
                         cached_api_keys[api_key] = AuthorizationCacheEntry(

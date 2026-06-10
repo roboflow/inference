@@ -239,6 +239,8 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
         client_config = InferenceConfiguration(
             confidence_threshold=confidence,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,

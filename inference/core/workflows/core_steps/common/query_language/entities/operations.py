@@ -765,6 +765,21 @@ class NumberLowerEqual(BinaryOperator):
     type: Literal["(Number) <="]
 
 
+class NumberInRange(BinaryOperator):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Checks if first value (number) is within the inclusive range given as second value (list of two numbers: [min, max])",
+            "operands_number": 2,
+            "operands_kinds": [
+                [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+                [LIST_OF_VALUES_KIND],
+            ],
+            "output_kind": [BOOLEAN_KIND],
+        },
+    )
+    type: Literal["(Number) in range"]
+
+
 class StringStartsWith(BinaryOperator):
     model_config = ConfigDict(
         json_schema_extra={
@@ -994,6 +1009,7 @@ class BinaryStatement(BaseModel):
             StringContains,
             StringEndsWith,
             StringStartsWith,
+            NumberInRange,
             NumberLowerEqual,
             NumberLower,
             NumberGreaterEqual,

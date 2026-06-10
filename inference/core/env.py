@@ -53,6 +53,7 @@ API_BASE_URL = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+API_PROXY_BASE_URL = os.getenv("API_PROXY_BASE_URL", API_BASE_URL)
 
 # Suffix path to be appended to API_BASE_URL for endpoints that serve model weights.
 # This is only expected to be used in Roboflow internal hosting environments.
@@ -739,7 +740,11 @@ DEVICE = os.getenv("DEVICE")
 DEDICATED_DEPLOYMENT_WORKSPACE_URL = os.environ.get(
     "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None
 )
-
+WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT = safe_split_value(
+    value=os.getenv("WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT"),
+    delimiter=",",
+    strip=True,
+)
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
 STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
 

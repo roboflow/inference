@@ -8,6 +8,7 @@ from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    QWEN_3_5_ENABLED,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -28,6 +29,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -71,10 +75,10 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/qwen3_5vl@v1"]
 
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    prompt: Optional[str] = Field(
+    prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Optional text prompt to provide additional context to Qwen3.5-VL. Otherwise it will just be a default one, which may affect the desired model behavior.",
-        examples=["What is in this image?"],
+        examples=["What is in this image?", "$inputs.prompt"],
     )
     model_version: Union[
         Literal["qwen3_5-0.8b", "qwen3_5-2b"],
@@ -86,10 +90,10 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["qwen3_5-0.8b", "qwen3_5-2b"],
     )
 
-    system_prompt: Optional[str] = Field(
+    system_prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Optional system prompt to provide additional context to Qwen3.5-VL.",
-        examples=["You are a helpful assistant."],
+        examples=["You are a helpful assistant.", "$inputs.system_prompt"],
     )
 
     enable_thinking: bool = Field(
@@ -132,6 +136,31 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restrictions = [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Requires a GPU; run_locally() loads a model that needs CUDA.",
+                applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+                applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
+            ),
+        ]
+        if not QWEN_3_5_ENABLED:
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.HARD,
+                    note=(
+                        "QWEN_3_5_ENABLED=False on Roboflow Hosted Serverless: "
+                        "the Qwen3.5-VL endpoint is not registered, so "
+                        "run_remotely() returns 404."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+                )
+            )
+        return restrictions
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
