@@ -108,6 +108,11 @@ COPY examples/notebooks .
 
 WORKDIR /app/
 COPY inference inference
+# Overwrite the PyPI-installed inference_models content with the repo source.
+# The builder stage installs inference_models DEPENDENCIES from the repo's
+# uv.lock, but the package content itself resolved from the registry — repo
+# changes to inference_models/ never shipped without this line.
+COPY inference_models/inference_models /usr/local/lib/python3.10/dist-packages/inference_models
 COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh
