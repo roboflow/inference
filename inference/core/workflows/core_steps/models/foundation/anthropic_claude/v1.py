@@ -165,6 +165,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_version: Union[
         Selector(kind=[STRING_KIND]),
         Literal[
+            "claude-fable-5",
             "claude-opus-4-7",
             "claude-opus-4-6",
             "claude-sonnet-4-6",
@@ -376,6 +377,7 @@ def execute_claude_requests(
 
 
 EXACT_MODELS_VERSIONS_MAPPING = {
+    "claude-fable-5": "claude-fable-5",
     "claude-opus-4-7": "claude-opus-4-7",
     "claude-opus-4-6": "claude-opus-4-6",
     "claude-sonnet-4-6": "claude-sonnet-4-6",
