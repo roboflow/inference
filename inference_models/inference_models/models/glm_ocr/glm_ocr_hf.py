@@ -208,10 +208,15 @@ class GlmOcrHF(DynamicBatchingMixin):
             return_tensors="pt",
         )
 
+        # The GLM checkpoint ships a bare `PreTrainedTokenizerFast`, whose
+        # default `model_input_names` makes `apply_chat_template` emit
+        # `token_type_ids`. The model does not consume it and the dynamic
+        # batcher cannot collate it - keeping it would force every concurrent
+        # batch into the serial fallback, so it is dropped here.
         inputs = {
             k: v.to(self._device)
             for k, v in inputs.items()
-            if isinstance(v, torch.Tensor)
+            if isinstance(v, torch.Tensor) and k != "token_type_ids"
         }
 
         return inputs

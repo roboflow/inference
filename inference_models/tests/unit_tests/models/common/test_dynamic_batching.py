@@ -6,6 +6,7 @@ from threading import Event, Lock
 from typing import Optional
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 import torch
 
@@ -728,3 +729,76 @@ def test_glm_ocr_generate_routes_through_batcher_when_enabled(monkeypatch) -> No
     assert getattr(glm_ocr, "_dynamic_batcher", None) is not None
     assert result.tolist() == [[21, 22]]
     assert model.generate.call_args.kwargs["max_new_tokens"] == 4
+
+
+def test_glm_ocr_concurrent_requests_batch_despite_tokenizer_token_type_ids(
+    monkeypatch,
+) -> None:
+    # given - regression test: GLM's bare `PreTrainedTokenizerFast` emits
+    # `token_type_ids` from `apply_chat_template`; if `pre_process_generation`
+    # let it through, every concurrent batch would fail collation and fall
+    # back to serial execution
+    from inference_models.models.glm_ocr.glm_ocr_hf import GlmOcrHF
+
+    monkeypatch.setattr(
+        configuration, "INFERENCE_MODELS_DYNAMIC_BATCHING_ENABLED", True
+    )
+    gate = Event()
+    generate_batch_sizes = []
+    calls_lock = Lock()
+
+    class _GatedModel:
+        def generate(self, **kwargs):
+            input_ids = kwargs["input_ids"]
+            with calls_lock:
+                generate_batch_sizes.append(input_ids.shape[0])
+                is_first_call = len(generate_batch_sizes) == 1
+            if is_first_call:
+                assert gate.wait(timeout=10.0), "Model gate never released"
+            new_tokens = torch.full((input_ids.shape[0], 2), 7, dtype=torch.long)
+            return torch.cat([input_ids, new_tokens], dim=1)
+
+    def _chat_template_inputs(*args, **kwargs):
+        input_ids = torch.tensor([[11, 12]], dtype=torch.long)
+        return {
+            "input_ids": input_ids,
+            "attention_mask": torch.ones_like(input_ids),
+            "token_type_ids": torch.zeros_like(input_ids),
+            "pixel_values": torch.randn(4, 8),
+            "image_grid_thw": torch.tensor([[1, 2, 2]]),
+        }
+
+    processor = MagicMock()
+    processor.apply_chat_template.side_effect = _chat_template_inputs
+    processor.tokenizer.pad_token_id = PAD_TOKEN_ID
+    processor.tokenizer.eos_token_id = 2
+    glm_ocr = GlmOcrHF(
+        model=_GatedModel(), processor=processor, device=torch.device("cpu")
+    )
+    image = np.zeros((2, 2, 3), dtype=np.uint8)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        # when - first request occupies the batcher thread inside the model
+        first = executor.submit(
+            glm_ocr.generate, glm_ocr.pre_process_generation(images=image), 4
+        )
+        wait_for(lambda: len(generate_batch_sizes) == 1)
+        batcher = glm_ocr._get_dynamic_batcher()
+        # two more requests queue up behind the in-flight one
+        second = executor.submit(
+            glm_ocr.generate, glm_ocr.pre_process_generation(images=image), 4
+        )
+        third = executor.submit(
+            glm_ocr.generate, glm_ocr.pre_process_generation(images=image), 4
+        )
+        wait_for(lambda: batcher._queue.qsize() == 2)
+        gate.set()
+
+        # then - all requests produce the single-request output contract
+        for future in (first, second, third):
+            assert future.result(timeout=5).tolist() == [[7, 7]]
+
+    # then - queued requests ran as one batched call, with no serial fallback
+    assert generate_batch_sizes == [1, 2]
+    assert batcher.stats["batched_requests"] == 2
+    assert batcher.stats["serial_fallbacks"] == 0

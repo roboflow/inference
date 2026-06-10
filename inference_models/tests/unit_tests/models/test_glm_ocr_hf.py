@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import numpy as np
+import torch
 
 from inference_models.configuration import (
     INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
@@ -22,3 +23,35 @@ def test_generate_uses_default_max_new_tokens_when_none_is_given() -> None:
         INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS
     )
     assert result.tolist() == [[21, 22]]
+
+
+def test_pre_process_generation_drops_token_type_ids() -> None:
+    # given - the GLM checkpoint ships a bare `PreTrainedTokenizerFast`, whose
+    # default `model_input_names` makes `apply_chat_template` emit
+    # `token_type_ids` - the model does not consume it and the dynamic batcher
+    # cannot collate it
+    input_ids = torch.tensor([[11, 12]], dtype=torch.long)
+    processor = MagicMock()
+    processor.apply_chat_template.return_value = {
+        "input_ids": input_ids,
+        "attention_mask": torch.ones_like(input_ids),
+        "token_type_ids": torch.zeros_like(input_ids),
+        "pixel_values": torch.randn(4, 8),
+        "image_grid_thw": torch.tensor([[1, 2, 2]]),
+    }
+    glm_ocr = GlmOcrHF(
+        model=MagicMock(), processor=processor, device=torch.device("cpu")
+    )
+
+    # when
+    result = glm_ocr.pre_process_generation(
+        images=np.zeros((2, 2, 3), dtype=np.uint8)
+    )
+
+    # then
+    assert set(result.keys()) == {
+        "input_ids",
+        "attention_mask",
+        "pixel_values",
+        "image_grid_thw",
+    }
