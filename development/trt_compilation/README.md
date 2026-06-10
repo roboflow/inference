@@ -49,6 +49,13 @@ chmod +x run_in_docker.sh
 MODEL_ID=rfdetr-seg-nano ./run_in_docker.sh
 ```
 
+Or via **remote-runner** from your dev machine:
+
+```bash
+./scripts/launch.sh --host orin-agx-jp62 --recipe trt-compile \
+  --script-arg model-id=rfdetr-seg-nano
+```
+
 AGX has more memory than NX/Nano — you can use higher compile settings:
 
 ```bash
