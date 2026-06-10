@@ -1,4 +1,5 @@
-from typing import Any, List, Literal, Optional, Tuple, Type, Union
+from dataclasses import dataclass
+from typing import Any, List, Literal, Optional, Type, Union
 
 import requests
 import supervision as sv
@@ -309,36 +310,45 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         if boxes is None:
             boxes = [None] * len(images)
 
+        self._model_manager.add_model(
+            model_id=SAM3_INTERACTIVE_MODEL_ID,
+            api_key=self._api_key,
+        )
+
         predictions = []
         for single_image, boxes_for_image in zip(images, boxes):
-            (
-                prompts,
-                prompt_class_ids,
-                prompt_class_names,
-                prompt_detection_ids,
-            ) = self._build_prompts(boxes_for_image=boxes_for_image, points=points)
-            inference_request = Sam2SegmentationRequest(
-                image=single_image.to_inference_format(numpy_preferred=True),
-                model_id=SAM3_INTERACTIVE_MODEL_ID,
-                api_key=self._api_key,
-                source="workflow-execution",
-                prompts=Sam2PromptSet(prompts=prompts),
-                multimask_output=multimask_output,
+            groups = self._build_prompt_groups(
+                boxes_for_image=boxes_for_image, points=points
             )
-            self._model_manager.add_model(
-                model_id=SAM3_INTERACTIVE_MODEL_ID,
-                api_key=self._api_key,
+            segmentation_predictions, class_ids, class_names, detection_ids = (
+                [],
+                [],
+                [],
+                [],
             )
-            segmentation_response = self._model_manager.infer_from_request_sync(
-                SAM3_INTERACTIVE_MODEL_ID, inference_request
-            )
+            for group in groups:
+                inference_request = Sam2SegmentationRequest(
+                    image=single_image.to_inference_format(numpy_preferred=True),
+                    model_id=SAM3_INTERACTIVE_MODEL_ID,
+                    api_key=self._api_key,
+                    source="workflow-execution",
+                    prompts=Sam2PromptSet(prompts=group.prompts),
+                    multimask_output=multimask_output,
+                )
+                segmentation_response = self._model_manager.infer_from_request_sync(
+                    SAM3_INTERACTIVE_MODEL_ID, inference_request
+                )
+                segmentation_predictions.extend(segmentation_response.predictions)
+                class_ids.extend(group.class_ids)
+                class_names.extend(group.class_names)
+                detection_ids.extend(group.detection_ids)
             prediction = (
                 convert_sam2_segmentation_response_to_inference_instances_seg_response(
-                    sam2_segmentation_predictions=segmentation_response.predictions,
+                    sam2_segmentation_predictions=segmentation_predictions,
                     image=single_image,
-                    prompt_class_ids=prompt_class_ids,
-                    prompt_class_names=prompt_class_names,
-                    prompt_detection_ids=prompt_detection_ids,
+                    prompt_class_ids=class_ids,
+                    prompt_class_names=class_names,
+                    prompt_detection_ids=detection_ids,
                     threshold=threshold,
                 )
             )
@@ -377,26 +387,34 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
 
         predictions = []
         for single_image, boxes_for_image in zip(images, boxes):
-            (
-                prompts,
-                prompt_class_ids,
-                prompt_class_names,
-                prompt_detection_ids,
-            ) = self._build_prompts(boxes_for_image=boxes_for_image, points=points)
-            result = client.sam3_visual_segment(
-                inference_input=single_image.base64_image,
-                prompts=[prompt.dict(exclude_none=True) for prompt in prompts],
-                multimask_output=multimask_output,
+            groups = self._build_prompt_groups(
+                boxes_for_image=boxes_for_image, points=points
             )
+            segmentation_predictions, class_ids, class_names, detection_ids = (
+                [],
+                [],
+                [],
+                [],
+            )
+            for group in groups:
+                result = client.sam3_visual_segment(
+                    inference_input=single_image.base64_image,
+                    prompts=[
+                        prompt.dict(exclude_none=True) for prompt in group.prompts
+                    ],
+                    multimask_output=multimask_output,
+                )
+                segmentation_predictions.extend(_parse_segmentation_predictions(result))
+                class_ids.extend(group.class_ids)
+                class_names.extend(group.class_names)
+                detection_ids.extend(group.detection_ids)
             prediction = (
                 convert_sam2_segmentation_response_to_inference_instances_seg_response(
-                    sam2_segmentation_predictions=_parse_segmentation_predictions(
-                        result
-                    ),
+                    sam2_segmentation_predictions=segmentation_predictions,
                     image=single_image,
-                    prompt_class_ids=prompt_class_ids,
-                    prompt_class_names=prompt_class_names,
-                    prompt_detection_ids=prompt_detection_ids,
+                    prompt_class_ids=class_ids,
+                    prompt_class_names=class_names,
+                    prompt_detection_ids=detection_ids,
                     threshold=threshold,
                 )
             )
@@ -425,48 +443,58 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
 
         predictions = []
         for single_image, boxes_for_image in zip(images, boxes):
-            (
-                prompts,
-                prompt_class_ids,
-                prompt_class_names,
-                prompt_detection_ids,
-            ) = self._build_prompts(boxes_for_image=boxes_for_image, points=points)
-            payload = {
-                "image": {"type": "base64", "value": single_image.base64_image},
-                "prompts": Sam2PromptSet(prompts=prompts).dict(exclude_none=True),
-                "multimask_output": multimask_output,
-            }
-            try:
-                headers = {"Content-Type": "application/json"}
-                if ROBOFLOW_INTERNAL_SERVICE_NAME:
-                    headers["X-Roboflow-Internal-Service-Name"] = (
-                        ROBOFLOW_INTERNAL_SERVICE_NAME
+            groups = self._build_prompt_groups(
+                boxes_for_image=boxes_for_image, points=points
+            )
+            segmentation_predictions, class_ids, class_names, detection_ids = (
+                [],
+                [],
+                [],
+                [],
+            )
+            for group in groups:
+                payload = {
+                    "image": {"type": "base64", "value": single_image.base64_image},
+                    "prompts": Sam2PromptSet(prompts=group.prompts).dict(
+                        exclude_none=True
+                    ),
+                    "multimask_output": multimask_output,
+                }
+                try:
+                    headers = {"Content-Type": "application/json"}
+                    if ROBOFLOW_INTERNAL_SERVICE_NAME:
+                        headers["X-Roboflow-Internal-Service-Name"] = (
+                            ROBOFLOW_INTERNAL_SERVICE_NAME
+                        )
+                    if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+                        headers["X-Roboflow-Internal-Service-Secret"] = (
+                            ROBOFLOW_INTERNAL_SERVICE_SECRET
+                        )
+                    headers = build_roboflow_api_headers(explicit_headers=headers)
+                    response = requests.post(
+                        wrap_url(f"{endpoint}?api_key={self._api_key}"),
+                        json=payload,
+                        headers=headers,
+                        timeout=60,
                     )
-                if ROBOFLOW_INTERNAL_SERVICE_SECRET:
-                    headers["X-Roboflow-Internal-Service-Secret"] = (
-                        ROBOFLOW_INTERNAL_SERVICE_SECRET
-                    )
-                headers = build_roboflow_api_headers(explicit_headers=headers)
-                response = requests.post(
-                    wrap_url(f"{endpoint}?api_key={self._api_key}"),
-                    json=payload,
-                    headers=headers,
-                    timeout=60,
-                )
-                response.raise_for_status()
-                resp_json = response.json()
-            except Exception as e:
-                raise Exception(f"SAM3 interactive request failed: {e}")
+                    response.raise_for_status()
+                    resp_json = response.json()
+                except Exception as e:
+                    raise Exception(f"SAM3 interactive request failed: {e}")
 
+                segmentation_predictions.extend(
+                    _parse_segmentation_predictions(resp_json)
+                )
+                class_ids.extend(group.class_ids)
+                class_names.extend(group.class_names)
+                detection_ids.extend(group.detection_ids)
             prediction = (
                 convert_sam2_segmentation_response_to_inference_instances_seg_response(
-                    sam2_segmentation_predictions=_parse_segmentation_predictions(
-                        resp_json
-                    ),
+                    sam2_segmentation_predictions=segmentation_predictions,
                     image=single_image,
-                    prompt_class_ids=prompt_class_ids,
-                    prompt_class_names=prompt_class_names,
-                    prompt_detection_ids=prompt_detection_ids,
+                    prompt_class_ids=class_ids,
+                    prompt_class_names=class_names,
+                    prompt_detection_ids=detection_ids,
                     threshold=threshold,
                 )
             )
@@ -481,15 +509,19 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         )
 
     @staticmethod
-    def _build_prompts(
+    def _build_prompt_groups(
         boxes_for_image: Optional[sv.Detections],
         points: Optional[List[Any]],
-    ) -> Tuple[List[Sam2Prompt], List[Optional[int]], List[str], List[Optional[str]]]:
-        prompts: List[Sam2Prompt] = []
-        prompt_class_ids: List[Optional[int]] = []
-        prompt_class_names: List[str] = []
-        prompt_detection_ids: List[Optional[str]] = []
-        if boxes_for_image is not None:
+    ) -> List["_PromptGroup"]:
+        # The SAM prompt encoder batches a request's prompts into a single
+        # tensor, so one request cannot mix box-carrying and box-less prompts -
+        # box and point prompts are therefore issued as separate requests.
+        groups: List[_PromptGroup] = []
+        if boxes_for_image is not None and len(boxes_for_image) > 0:
+            prompts: List[Sam2Prompt] = []
+            class_ids: List[Optional[int]] = []
+            class_names: List[str] = []
+            detection_ids: List[Optional[str]] = []
             for xyxy, _, _, class_id, _, bbox_data in boxes_for_image:
                 x1, y1, x2, y2 = xyxy
                 width = x2 - x1
@@ -504,20 +536,34 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                         )
                     )
                 )
-                prompt_class_ids.append(class_id)
-                prompt_class_names.append(bbox_data[DETECTIONS_CLASS_NAME_FIELD])
-                prompt_detection_ids.append(bbox_data[DETECTION_ID_FIELD])
+                class_ids.append(class_id)
+                class_names.append(bbox_data[DETECTIONS_CLASS_NAME_FIELD])
+                detection_ids.append(bbox_data[DETECTION_ID_FIELD])
+            groups.append(
+                _PromptGroup(
+                    prompts=prompts,
+                    class_ids=class_ids,
+                    class_names=class_names,
+                    detection_ids=detection_ids,
+                )
+            )
         if points:
-            prompts.append(Sam2Prompt(points=_as_sam2_points(points)))
-            prompt_class_ids.append(0)
-            prompt_class_names.append("foreground")
-            prompt_detection_ids.append(None)
-        if not prompts:
+            groups.append(
+                _PromptGroup(
+                    prompts=[Sam2Prompt(points=_as_sam2_points(points))],
+                    class_ids=[0],
+                    class_names=["foreground"],
+                    detection_ids=[None],
+                )
+            )
+        if boxes_for_image is None and not points:
             raise ValueError(
                 "SAM 3 Interactive block requires at least one prompt - "
                 "provide `points` and/or `boxes` input."
             )
-        return prompts, prompt_class_ids, prompt_class_names, prompt_detection_ids
+        # boxes input connected but no detections for this image -> no prompts,
+        # runners emit empty predictions
+        return groups
 
     def _post_process_result(
         self,
@@ -534,6 +580,14 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             predictions=predictions,
         )
         return [{"predictions": prediction} for prediction in predictions]
+
+
+@dataclass(frozen=True)
+class _PromptGroup:
+    prompts: List[Sam2Prompt]
+    class_ids: List[Optional[int]]
+    class_names: List[str]
+    detection_ids: List[Optional[str]]
 
 
 def _parse_segmentation_predictions(

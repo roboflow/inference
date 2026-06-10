@@ -165,13 +165,45 @@ def test_run_locally_with_boxes_and_points(
     )
 
     assert len(result) == 1
-    inference_request = mock_model_manager.infer_from_request_sync.call_args[0][1]
-    prompts = inference_request.prompts.prompts
-    # one prompt per box + one prompt for the points
-    assert len(prompts) == 2
-    assert prompts[0].box is not None
-    assert prompts[0].box.x == 30  # box centre of [10, 10, 50, 50]
-    assert prompts[1].points[0].x == 320
+    # box and point prompts cannot be mixed in a single SAM prompt batch,
+    # so the block issues one request per prompt group
+    assert mock_model_manager.infer_from_request_sync.call_count == 2
+    box_request = mock_model_manager.infer_from_request_sync.call_args_list[0][0][1]
+    box_prompts = box_request.prompts.prompts
+    assert len(box_prompts) == 1
+    assert box_prompts[0].box is not None
+    assert box_prompts[0].box.x == 30  # box centre of [10, 10, 50, 50]
+    assert box_prompts[0].points is None
+    points_request = mock_model_manager.infer_from_request_sync.call_args_list[1][0][1]
+    point_prompts = points_request.prompts.prompts
+    assert len(point_prompts) == 1
+    assert point_prompts[0].box is None
+    assert point_prompts[0].points[0].x == 320
+    # masks from both requests are merged into a single output
+    predictions = result[0]["predictions"]
+    assert list(predictions["class_name"]) == ["object", "foreground"]
+
+
+def test_run_locally_with_empty_detections_and_no_points(
+    mock_model_manager, mock_workflow_image_data
+) -> None:
+    block = SegmentAnything3InteractiveBlockV1(
+        model_manager=mock_model_manager,
+        api_key="test_api_key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    result = block.run(
+        images=[mock_workflow_image_data],
+        points=None,
+        boxes=[sv.Detections.empty()],
+        threshold=0.0,
+        multimask_output=True,
+    )
+
+    assert len(result) == 1
+    assert len(result[0]["predictions"]) == 0
+    mock_model_manager.infer_from_request_sync.assert_not_called()
 
 
 @patch(
