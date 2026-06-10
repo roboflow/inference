@@ -239,12 +239,19 @@ class TestAdmissionPlan:
         decision, victims = mmp._vram_admission_plan("m")
         assert decision == "no_capacity"
 
-    def test_need_zero_always_admits(self):
+    def test_need_zero_admits_within_headroom(self):
         mmp = _mmp(vram_headroom_mb=0.0)
-        mmp._vram_meta_cache["m"] = 0  # no data
+        mmp._vram_meta_cache["m"] = 0  # no data, treated as 0 footprint
         mmp._gpu_free_mb = lambda: 0.0
         decision, _ = mmp._vram_admission_plan("m")
         assert decision == "admit"
+
+    def test_need_zero_denied_when_headroom_exceeds_free(self):
+        mmp = _mmp(vram_headroom_mb=4096.0)
+        mmp._vram_meta_cache["m"] = 0  # no data, treated as 0 footprint
+        mmp._gpu_free_mb = lambda: 2000.0  # below headroom, nothing evictable
+        decision, _ = mmp._vram_admission_plan("m")
+        assert decision == "no_capacity"
 
 
 # ---------------------------------------------------------------------------
