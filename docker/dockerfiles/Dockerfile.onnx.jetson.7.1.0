@@ -56,6 +56,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-bu
     libtiff-dev \
     libcurl4-openssl-dev \
     libssl-dev \
+    libxml2-dev \
     zlib1g-dev \
     libxext6 \
     libvips-dev \
@@ -91,6 +92,18 @@ RUN python3 -m pip install --break-system-packages --ignore-installed pip setupt
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv
+
+COPY docker/scripts/triton_build_from_source.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/triton_build_from_source.sh && \
+    mkdir -p /build/out/triton-wheels
+# Torch 2.10.0 on JP7.1 pairs with Triton 3.6.0.
+RUN TRITON_VERSION=3.6.0 \
+    TRITON_WHEEL_DIR=/build/out/triton-wheels \
+    TRITON_BUILD_DIR=/build/triton-src \
+    TRITON_PYTHON_BIN=python3 \
+    TRITON_BUILD_MAX_JOBS=4 \
+    TRITON_PIP_BREAK_SYSTEM_PACKAGES=1 \
+    /usr/local/bin/triton_build_from_source.sh
 
 # Compile GDAL from source
 WORKDIR /build/gdal
@@ -252,7 +265,7 @@ RUN cd /usr/local/lib/python3.12/dist-packages && \
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TRITON_VERSION=3.6.0
+ARG PYTORCH_VERSION=2.10.0
 ENV LANG=en_US.UTF-8
 
 WORKDIR /app
@@ -314,9 +327,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     libglib2.0-0 \
     libatomic1
 
-RUN python3 -m pip install --break-system-packages --no-cache-dir \
-    --extra-index-url https://pypi.jetson-ai-lab.io/sbsa/cu130 \
-    "triton==${TRITON_VERSION}"
+COPY --from=builder /build/out/triton-wheels /opt/triton-wheels
+
+# Torch 2.10.0 on JP7.1 pairs with Triton 3.6.0.
+RUN set -eux; \
+    set -- /opt/triton-wheels/triton-3.6.0-*.whl; \
+    if [ ! -e "$1" ]; then \
+        echo "Expected source-built Triton wheel for 3.6.0 was not found" >&2; \
+        exit 1; \
+    fi; \
+    python3 -m pip install --break-system-packages --no-cache-dir "$1"
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/

@@ -54,6 +54,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-bu
     libtiff-dev \
     libcurl4-openssl-dev \
     libssl-dev \
+    libxml2-dev \
     zlib1g-dev \
     libxext6 \
     libvips-dev \
@@ -94,6 +95,17 @@ RUN python3 -m pip install --upgrade pip setuptools wheel && \
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv
+
+COPY docker/scripts/triton_build_from_source.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/triton_build_from_source.sh && \
+    mkdir -p /build/out/triton-wheels
+# Torch 2.6.0 on JP6.2 pairs with Triton 3.2.0.
+RUN TRITON_VERSION=3.2.0 \
+    TRITON_WHEEL_DIR=/build/out/triton-wheels \
+    TRITON_BUILD_DIR=/build/triton-src \
+    TRITON_PYTHON_BIN=python3 \
+    TRITON_BUILD_MAX_JOBS=4 \
+    /usr/local/bin/triton_build_from_source.sh
 
 # Compile GDAL from source
 WORKDIR /build/gdal
@@ -343,7 +355,7 @@ RUN cd /usr/local/lib/python3.10/dist-packages && \
 FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TRITON_VERSION=3.6.0
+ARG PYTORCH_VERSION=2.6.0
 ENV LANG=en_US.UTF-8
 
 WORKDIR /app
@@ -392,9 +404,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     gir1.2-gst-plugins-base-1.0 \
     libatlas3-base
 
-RUN python3 -m pip install --no-cache-dir \
-    --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
-    "triton==${TRITON_VERSION}"
+COPY --from=builder /build/out/triton-wheels /opt/triton-wheels
+
+# Torch 2.6.0 on JP6.2 pairs with Triton 3.2.0.
+RUN set -eux; \
+    set -- /opt/triton-wheels/triton-3.2.0-*.whl; \
+    if [ ! -e "$1" ]; then \
+        echo "Expected source-built Triton wheel for 3.2.0 was not found" >&2; \
+        exit 1; \
+    fi; \
+    python3 -m pip install --no-cache-dir "$1"
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
