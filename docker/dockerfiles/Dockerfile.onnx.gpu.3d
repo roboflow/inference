@@ -53,8 +53,7 @@ RUN uv pip install --system \
 # Install setup.py requirements for flash_attn
 RUN python3 -m pip install packaging==24.1 && rm -rf ~/.cache/pip
 
-# Install flash_attn required for Paligemma, Florence2, and SAM3 3D without
-# allowing pip to replace the preinstalled torch build.
+# Install flash_attn required for Paligemma and Florence2
 RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
 
 ENV TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9;9.0"
