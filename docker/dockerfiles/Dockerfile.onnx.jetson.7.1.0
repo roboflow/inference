@@ -330,12 +330,12 @@ RUN set -eux; \
     git -C /tmp/triton-build/src submodule update --init --recursive; \
     python3 -m pip install --break-system-packages --no-cache-dir \
         -r /tmp/triton-build/src/python/requirements.txt; \
-    MAX_JOBS=4 python3 -m pip wheel --break-system-packages --no-cache-dir \
+    MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
         --no-build-isolation \
         --no-deps \
         /tmp/triton-build/src \
         --wheel-dir /tmp/triton-wheels; \
-    set -- /tmp/triton-wheels/triton-3.6.0-*.whl; \
+    set -- /tmp/triton-wheels/triton-3.6.0*.whl; \
     if [ ! -e "$1" ]; then \
         echo "Expected source-built Triton wheel for 3.6.0 was not found" >&2; \
         exit 1; \
