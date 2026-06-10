@@ -60,14 +60,6 @@ RUN set -eux; \
         exit 1; \
     fi; \
     python -m pip install --no-cache-dir "$1"; \
-    apt-get purge -y --auto-remove \
-        build-essential \
-        cmake \
-        git \
-        libxml2-dev \
-        ninja-build \
-        python3-dev \
-        zlib1g-dev; \
     rm -rf /var/lib/apt/lists/* /tmp/triton-build /tmp/triton-wheels
 
 WORKDIR /app/
