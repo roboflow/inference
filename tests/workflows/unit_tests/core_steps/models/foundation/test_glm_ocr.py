@@ -26,9 +26,7 @@ def test_manifest_accepts_literal_task_type():
 
 def test_manifest_accepts_selector_task_type():
     """task_type must accept $inputs.X references for dynamic mode selection."""
-    result = BlockManifest.model_validate(
-        {**BASE, "task_type": "$inputs.task_type"}
-    )
+    result = BlockManifest.model_validate({**BASE, "task_type": "$inputs.task_type"})
     assert result.task_type == "$inputs.task_type"
 
 
@@ -40,9 +38,7 @@ def test_manifest_rejects_invalid_literal_task_type():
 def test_manifest_defers_required_checks_for_selector_task_type():
     """With a dynamic task_type we can't know it's 'custom', so a missing
     prompt must NOT raise at parse time (it is enforced at runtime instead)."""
-    result = BlockManifest.model_validate(
-        {**BASE, "task_type": "$inputs.task_type"}
-    )
+    result = BlockManifest.model_validate({**BASE, "task_type": "$inputs.task_type"})
     assert result.prompt is None
 
 
