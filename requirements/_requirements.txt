@@ -4,7 +4,8 @@ APScheduler>=3.10.1,<4.0.0
 asyncua~=1.1.5
 cachetools<6.0.0
 cython~=3.0.0
-python-dotenv~=1.2.2
+python-dotenv~=1.0.0
+tzdata>=2024.1
 fastapi>=0.100,<0.116  # be careful with upper pin - fastapi might remove support for on_event
 numpy>=2.0.0,<2.4.0
 opencv-python>=4.8.1.78,<=4.10.0.84

@@ -19,7 +19,13 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     Selector,
 )
-from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference.core.workflows.prototypes.block import (
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+    BlockResult,
+    RuntimeRestriction,
+    WorkflowBlockManifest,
+)
 
 DEFAULT_LOST_TRACK_BUFFER = 30
 DEFAULT_TRACK_ACTIVATION_THRESHOLD = 0.7
@@ -156,6 +162,13 @@ class ByteTrackManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+        ]
 
 
 class ByteTrackBlockV1(TrackerBlockBase):

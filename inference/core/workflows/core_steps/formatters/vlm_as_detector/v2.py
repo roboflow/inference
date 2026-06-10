@@ -15,6 +15,9 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
 )
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
+    parse_gemini_object_detection_response,
+)
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -310,7 +313,7 @@ class VLMAsDetectorBlockV2(WorkflowBlock):
 
 def string2json(
     raw_json: str,
-) -> Tuple[bool, dict]:
+) -> Tuple[bool, Union[dict, list]]:
     json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(raw_json)
     if len(json_blocks_found) == 0:
         return try_parse_json(raw_json)
@@ -318,9 +321,16 @@ def string2json(
     return try_parse_json(first_block)
 
 
-def try_parse_json(content: str) -> Tuple[bool, dict]:
+def try_parse_json(content: str) -> Tuple[bool, Union[dict, list]]:
     try:
-        return False, json.loads(content)
+        parsed = json.loads(content)
+        if isinstance(parsed, (dict, list)):
+            return False, parsed
+        logging.warning(
+            "Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v2` block. "
+            f"Unexpected JSON root type: {type(parsed).__name__}."
+        )
+        return True, {}
     except Exception as error:
         logging.warning(
             f"Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v1` block. "
@@ -450,7 +460,7 @@ def get_4digit_from_md5(input_string):
 REGISTERED_PARSERS = {
     # LLMs
     ("openai", "object-detection"): parse_llm_object_detection_response,
-    ("google-gemini", "object-detection"): parse_llm_object_detection_response,
+    ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
     ("anthropic-claude", "object-detection"): parse_llm_object_detection_response,
     # Florence 2
     ("florence-2", "object-detection"): partial(

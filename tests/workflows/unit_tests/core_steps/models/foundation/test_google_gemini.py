@@ -71,7 +71,7 @@ def test_gemini_step_validation_when_prompt_is_given_directly() -> None:
 
 @pytest.mark.parametrize(
     "model_version",
-    ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.0-flash", "$inputs.model"],
+    ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash", "$inputs.model"],
 )
 def test_gemini_step_validation_when_model_version_valid(model_version: str) -> None:
     # given
@@ -99,7 +99,7 @@ def test_gemini_step_validation_with_model_alias() -> None:
         "images": "$inputs.image",
         "task_type": "caption",
         "api_key": "$inputs.google_api_key",
-        "model_version": "gemini-2.0-flash-exp",  # This is an alias
+        "model_version": "gemini-2.5-pro-preview-05-06",  # This is an alias
     }
 
     # when
@@ -107,7 +107,7 @@ def test_gemini_step_validation_with_model_alias() -> None:
 
     # then
     # Should be converted to the canonical name
-    assert result.model_version == "gemini-2.0-flash"
+    assert result.model_version == "gemini-2.5-pro"
 
 
 @pytest.mark.parametrize("thinking_level", ["low", "high", "$inputs.thinking"])
