@@ -393,65 +393,6 @@ def post_process_instance_segmentation_results_to_rle_masks(
             pre_processing_meta,
         )
     ]
-        denorm_size_whwh = torch.tensor(
-            [
-                denorm_size.width,
-                denorm_size.height,
-                denorm_size.width,
-                denorm_size.height,
-            ],
-            device=device,
-        )
-        padding = (
-            image_meta.pad_left,
-            image_meta.pad_top,
-            image_meta.pad_right,
-            image_meta.pad_bottom,
-        )
-        selected_boxes_xyxy = selected_boxes_xyxy_pct * denorm_size_whwh
-        aligned_boxes, rle_masks = [], []
-        for bbox, mask in align_instance_segmentation_results_to_rle_masks(
-            image_bboxes=selected_boxes_xyxy,
-            masks=selected_masks,
-            padding=padding,
-            scale_height=image_meta.scale_height,
-            scale_width=image_meta.scale_width,
-            original_size=image_meta.original_size,
-            size_after_pre_processing=image_meta.size_after_pre_processing,
-            inference_size=denorm_size,
-            static_crop_offset=image_meta.static_crop_offset,
-        ):
-            aligned_boxes.append(bbox)
-            rle_masks.append(mask)
-        instances_masks = InstancesRLEMasks.from_coco_rle_masks(
-            image_size=(
-                image_meta.original_size.height,
-                image_meta.original_size.width,
-            ),
-            masks=rle_masks,
-        )
-        if len(aligned_boxes) > 0:
-            aligned_boxes_tensor = torch.stack(aligned_boxes, dim=0)
-            final_results.append(
-                InstanceDetections(
-                    xyxy=aligned_boxes_tensor.round().int(),
-                    confidence=confidence,
-                    class_id=top_classes.int(),
-                    mask=instances_masks,
-                )
-            )
-        else:
-            final_results.append(
-                InstanceDetections(
-                    xyxy=torch.empty(
-                        (0, 4), dtype=torch.int32, device=image_bboxes.device
-                    ),
-                    class_id=top_classes.int(),
-                    confidence=confidence,
-                    mask=instances_masks,
-                )
-            )
-    return final_results
 
 
 def cxcywh_to_xyxy(boxes):
