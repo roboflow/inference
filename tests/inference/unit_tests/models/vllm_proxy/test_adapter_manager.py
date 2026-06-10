@@ -1,3 +1,4 @@
+import json
 import os
 from typing import List, Optional
 from unittest.mock import MagicMock
@@ -105,6 +106,40 @@ def _install_provider(monkeypatch, metadata_by_model_id: dict) -> MagicMock:
     return provider
 
 
+def _install_download_with_config(
+    monkeypatch, base_model_name_or_path: Optional[str]
+) -> list:
+    """Installs a download fake writing an adapter declaring the given base."""
+    calls = []
+
+    def _fake_download(target_dir: str, files_specs, verbose=True, **kwargs):
+        calls.append(target_dir)
+        write_adapter_package(
+            target_dir=target_dir,
+            config=build_adapter_config(
+                base_model_name_or_path=base_model_name_or_path
+            ),
+        )
+
+    monkeypatch.setattr(
+        adapter_manager_module, "download_files_to_directory", _fake_download
+    )
+    return calls
+
+
+def _install_logger_mock(monkeypatch) -> MagicMock:
+    logger_mock = MagicMock()
+    monkeypatch.setattr(adapter_manager_module, "logger", logger_mock)
+    return logger_mock
+
+
+def _rendered_warnings(logger_mock: MagicMock) -> List[str]:
+    return [
+        call.args[0] % tuple(call.args[1:])
+        for call in logger_mock.warning.call_args_list
+    ]
+
+
 class TestNormalizeBaseVariant:
     @pytest.mark.parametrize(
         "architecture, variant, expected",
@@ -141,30 +176,28 @@ class TestNormalizeBaseVariant:
 
 
 class TestVariantMatching:
-    """Matrix for the base-variant verification of fine-tune metadata.
+    """Matrix for the ADVISORY base-variant check of fine-tune metadata.
 
-    The configured VLLM_SERVED_BASE_VARIANT must equal
-    `<architecture>-<variant-with-peft-suffix-stripped>`.
+    The configured VLLM_SERVED_BASE_VARIANT equals
+    `<architecture>-<variant-with-peft-suffix-stripped>`. Registry
+    `modelVariant` is sometimes misregistered (incident 2026-06-10:
+    `image-text/223`), so a mismatch no longer rejects pre-download - it
+    logs a warning and defers to the adapter's own `adapter_config.json`
+    (`cross_check_base_model` in `patch_adapter`), which is authoritative.
     """
 
     @pytest.mark.parametrize(
-        "architecture, variant, served_variant, accepted",
+        "architecture, variant, served_variant",
         [
-            ("qwen3_5", "qwen3_5-0.8b", "qwen3_5-0.8b", True),
-            ("qwen3_5", "0.8b-peft", "qwen3_5-0.8b", True),
-            ("qwen3_5", "qwen3_5-0.8b-peft", "qwen3_5-0.8b", True),
-            ("qwen3vl", "2b-peft", "qwen3vl-2b", True),
-            ("qwen3vl", "2b", "qwen3vl-2b", True),
-            ("qwen3vl", "2B-PEFT", "qwen3vl-2b", True),
-            # family mismatch
-            ("qwen3vl", "2b-peft", "qwen3_5-0.8b", False),
-            ("qwen3_5", "0.8b-peft", "qwen3vl-2b", False),
-            # size mismatch within the family
-            ("qwen3_5", "qwen3_5-2b", "qwen3_5-0.8b", False),
-            ("qwen3vl", "4b-peft", "qwen3vl-2b", False),
+            ("qwen3_5", "qwen3_5-0.8b", "qwen3_5-0.8b"),
+            ("qwen3_5", "0.8b-peft", "qwen3_5-0.8b"),
+            ("qwen3_5", "qwen3_5-0.8b-peft", "qwen3_5-0.8b"),
+            ("qwen3vl", "2b-peft", "qwen3vl-2b"),
+            ("qwen3vl", "2b", "qwen3vl-2b"),
+            ("qwen3vl", "2B-PEFT", "qwen3vl-2b"),
         ],
     )
-    def test_fine_tune_variant_matching(
+    def test_matching_variant_registers_without_warning(
         self,
         monkeypatch,
         fake_download,
@@ -172,7 +205,6 @@ class TestVariantMatching:
         architecture: str,
         variant: str,
         served_variant: str,
-        accepted: bool,
     ) -> None:
         # given
         monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", served_variant)
@@ -183,15 +215,66 @@ class TestVariantMatching:
             model_variant=variant,
         )
         _install_provider(monkeypatch, {model_id: metadata})
+        logger_mock = _install_logger_mock(monkeypatch)
         manager = AdapterManager(client=MagicMock())
 
-        # when / then
-        if accepted:
-            served_name = manager.resolve_and_register(model_id=model_id)
-            assert served_name.startswith("some-workspace-some-project-1-")
-        else:
-            with pytest.raises(NotServableOnVLLMError):
-                manager.resolve_and_register(model_id=model_id)
+        # when
+        served_name = manager.resolve_and_register(model_id=model_id)
+
+        # then
+        assert served_name.startswith("some-workspace-some-project-1-")
+        logger_mock.warning.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "architecture, variant, served_variant",
+        [
+            # family mismatch
+            ("qwen3vl", "2b-peft", "qwen3_5-0.8b"),
+            ("qwen3_5", "0.8b-peft", "qwen3vl-2b"),
+            # size mismatch within the family
+            ("qwen3_5", "qwen3_5-2b", "qwen3_5-0.8b"),
+            ("qwen3vl", "4b-peft", "qwen3vl-2b"),
+        ],
+    )
+    def test_mismatching_variant_defers_to_adapter_config(
+        self,
+        monkeypatch,
+        model_cache_dir,
+        architecture: str,
+        variant: str,
+        served_variant: str,
+    ) -> None:
+        # given - the registry variant contradicts this pool, but the
+        # adapter's own config declares this pool's base. adapter_config is
+        # authoritative, so the adapter must be ACCEPTED (these rows were
+        # rejected by the pre-download variant gate before the registry was
+        # demoted to advisory).
+        monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", served_variant)
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(
+            model_id=model_id,
+            model_architecture=architecture,
+            model_variant=variant,
+        )
+        _install_provider(monkeypatch, {model_id: metadata})
+        downloads = _install_download_with_config(
+            monkeypatch, base_model_name_or_path=f"qwen/{served_variant}"
+        )
+        logger_mock = _install_logger_mock(monkeypatch)
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        # when
+        served_name = manager.resolve_and_register(model_id=model_id)
+
+        # then - downloaded, accepted, registered; both warnings emitted
+        # (variant-gate deferral + misregistration drift audit)
+        assert served_name.startswith("some-workspace-some-project-1-")
+        assert len(downloads) == 1
+        client.load_lora_adapter.assert_called_once()
+        warnings = _rendered_warnings(logger_mock)
+        assert any("deferring to adapter_config" in message for message in warnings)
+        assert any("misregistered" in message for message in warnings)
 
 
 class TestResolveAndRegister:
@@ -315,27 +398,54 @@ class TestResolveAndRegister:
         assert manager.get_registration(served_names[1]) is not None
         assert manager.get_registration(served_names[2]) is not None
 
-    def test_wrong_base_variant_is_rejected(self, monkeypatch) -> None:
-        # given
+    def test_wrong_base_variant_is_rejected_by_adapter_config_cross_check(
+        self, monkeypatch, model_cache_dir
+    ) -> None:
+        # given - registry variant qwen3_5-2b at the (default) qwen3_5-0.8b
+        # pool, with an adapter_config that agrees (a genuine 2b fine-tune).
+        # The pre-download variant gate used to raise here; the registry is
+        # now advisory, so the download proceeds and the authoritative
+        # adapter_config cross-check rejects, naming both bases.
         model_id = "some-workspace/some-project/1"
         metadata = build_metadata(model_id=model_id, model_variant="qwen3_5-2b")
         _install_provider(monkeypatch, {model_id: metadata})
-        manager = AdapterManager(client=MagicMock())
+        downloads = _install_download_with_config(
+            monkeypatch, base_model_name_or_path="qwen/qwen3_5-2b"
+        )
+        client = MagicMock()
+        manager = AdapterManager(client=client)
 
         # when / then
-        with pytest.raises(NotServableOnVLLMError):
+        with pytest.raises(AdapterNotServableError) as error:
             manager.resolve_and_register(model_id=model_id)
+        assert len(downloads) == 1  # the variant gate did NOT block
+        message = str(error.value)
+        assert "qwen/qwen3_5-2b" in message
+        assert "qwen3_5-0.8b" in message
+        client.load_lora_adapter.assert_not_called()
 
-    def test_wrong_architecture_is_rejected(self, monkeypatch) -> None:
-        # given
+    @pytest.mark.parametrize("architecture", ["qwen25vl", "florence2"])
+    def test_wrong_architecture_is_rejected_pre_download(
+        self, monkeypatch, architecture: str
+    ) -> None:
+        # given - modelArchitecture (unlike modelVariant) has not been
+        # observed misregistered, so it stays a hard pre-download gate
+        # preventing florence/qwen2.5 artifact downloads.
         model_id = "some-workspace/some-project/1"
-        metadata = build_metadata(model_id=model_id, model_architecture="qwen25vl")
+        metadata = build_metadata(model_id=model_id, model_architecture=architecture)
         _install_provider(monkeypatch, {model_id: metadata})
-        manager = AdapterManager(client=MagicMock())
+        download = MagicMock()
+        monkeypatch.setattr(
+            adapter_manager_module, "download_files_to_directory", download
+        )
+        client = MagicMock()
+        manager = AdapterManager(client=client)
 
         # when / then
         with pytest.raises(NotServableOnVLLMError):
             manager.resolve_and_register(model_id=model_id)
+        download.assert_not_called()
+        client.load_lora_adapter.assert_not_called()
 
     def test_missing_hf_package_is_rejected(self, monkeypatch) -> None:
         # given
@@ -404,14 +514,61 @@ class TestResolveAndRegister:
         assert served_name.startswith("image-text-218-pkg1-")
         client.load_lora_adapter.assert_called_once()
 
+    def test_misregistered_variant_accepted_when_adapter_config_matches_pool(
+        self, monkeypatch, model_cache_dir
+    ) -> None:
+        # given - image-text/223 arriving at the pool its FILE belongs to:
+        # registry metadata misregisters modelVariant as "0.8b-peft", but
+        # the adapter_config.json declares base "qwen/qwen3_5-2b" and this
+        # pool serves qwen3_5-2b. Once the producer routes by file, this
+        # pool must ACCEPT the adapter despite the registry variant, and
+        # emit the drift-audit warning naming both values.
+        monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", "qwen3_5-2b")
+        model_id = "image-text/223"
+        metadata = build_metadata(
+            model_id=model_id,
+            model_architecture="qwen3_5",
+            model_variant="0.8b-peft",
+        )
+        _install_provider(monkeypatch, {model_id: metadata})
+        downloads = _install_download_with_config(
+            monkeypatch, base_model_name_or_path="qwen/qwen3_5-2b"
+        )
+        logger_mock = _install_logger_mock(monkeypatch)
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        # when
+        served_name = manager.resolve_and_register(model_id=model_id, api_key="key")
+
+        # then - accepted and registered
+        assert served_name.startswith("image-text-223-pkg1-")
+        assert len(downloads) == 1
+        client.load_lora_adapter.assert_called_once()
+        assert manager.get_registration(served_name) is not None
+        # the drift-audit warning names the model and both values
+        warnings = _rendered_warnings(logger_mock)
+        drift_warnings = [m for m in warnings if "misregistered" in m]
+        assert len(drift_warnings) == 1
+        assert "image-text/223" in drift_warnings[0]
+        assert "0.8b-peft" in drift_warnings[0]
+        assert "qwen/qwen3_5-2b" in drift_warnings[0]
+        # both values are recorded in the patch report
+        _, load_kwargs = client.load_lora_adapter.call_args
+        with open(os.path.join(load_kwargs["path"], "patch_report.json")) as f:
+            report = json.load(f)
+        assert report["registry_variant"] == "0.8b-peft"
+        assert report["base_model_name_or_path"] == "qwen/qwen3_5-2b"
+
     def test_registry_variant_contradicting_adapter_config_is_rejected_preflight(
         self, monkeypatch, model_cache_dir
     ) -> None:
         # given - exact reproduction of the image-text/223 incident
-        # (2026-06-10, staging): registry metadata says modelVariant
-        # "0.8b-peft" (so variant matching against the 0.8b pool passes),
-        # but the adapter's own adapter_config.json declares
-        # base_model_name_or_path "qwen/qwen3_5-2b".
+        # (2026-06-10, staging) AT THE WRONG POOL: registry metadata says
+        # modelVariant "0.8b-peft" (so the advisory variant check against
+        # the 0.8b pool passes), but the adapter's own adapter_config.json
+        # declares base_model_name_or_path "qwen/qwen3_5-2b" - the
+        # authoritative cross-check must reject before any vLLM load.
         monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", "qwen3_5-0.8b")
         model_id = "image-text/223"
         metadata = build_metadata(

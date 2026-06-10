@@ -111,6 +111,10 @@ class PatchReport:
     patched_weights_digest: Optional[str] = None
     base_model_name_or_path: Optional[str] = None
     base_model_check: str = BASE_MODEL_CHECK_SKIPPED
+    # Registry modelVariant as recorded by the weights provider - advisory
+    # only (sometimes misregistered); kept alongside base_model_name_or_path
+    # so registry/adapter drift can be audited from the patch report.
+    registry_variant: Optional[str] = None
     notes: List[str] = field(default_factory=list)
 
 
@@ -123,6 +127,7 @@ def patch_adapter(
     vision_norm_threshold: Optional[float] = None,
     key_template: Optional[str] = None,
     model_id: Optional[str] = None,
+    registry_variant: Optional[str] = None,
 ) -> PatchReport:
     """Transforms the adapter in `src_dir` into a vLLM-servable one in `dst_dir`.
 
@@ -159,6 +164,9 @@ def patch_adapter(
             (defaults to `VLLM_ADAPTER_KEY_TEMPLATE`).
         model_id: Roboflow model id the adapter belongs to - only used to
             make error/log messages actionable.
+        registry_variant: Registry `modelVariant` as recorded by the weights
+            provider - advisory only, recorded in the patch report for
+            registry/adapter drift auditing.
 
     Raises:
         AdapterNotServableError: If the adapter cannot be made servable.
@@ -200,6 +208,7 @@ def patch_adapter(
         source_weights_digest=_sha256_of_file(weights_path),
         base_model_name_or_path=declared_base,
         base_model_check=base_model_check,
+        registry_variant=registry_variant,
     )
 
     tensors = _drop_vision_tensors(
