@@ -5,8 +5,6 @@ FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
-ARG PYTORCH_VERSION=2.6.0
-ARG TORCHVISION_VERSION=0.21.0
 ARG OPENCV_VERSION=4.13.0
 # Per-Jetson-platform OpenCV build parameters. To replicate this from-source
 # OpenCV section in another Jetson dockerfile (jp51, jp71), copy the OpenCV
@@ -96,17 +94,6 @@ RUN python3 -m pip install --upgrade pip setuptools wheel && \
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv
 
-COPY docker/scripts/triton_build_from_source.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/triton_build_from_source.sh && \
-    mkdir -p /build/out/triton-wheels
-# Torch 2.6.0 on JP6.2 pairs with Triton 3.2.0.
-RUN TRITON_VERSION=3.2.0 \
-    TRITON_WHEEL_DIR=/build/out/triton-wheels \
-    TRITON_BUILD_DIR=/build/triton-src \
-    TRITON_PYTHON_BIN=python3 \
-    TRITON_BUILD_MAX_JOBS=4 \
-    /usr/local/bin/triton_build_from_source.sh
-
 # Compile GDAL from source
 WORKDIR /build/gdal
 RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar.gz && \
@@ -122,11 +109,11 @@ RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar
 # mount auto-creates /build/pytorch/pytorch/ before git clone runs, and git
 # refuses to clone into a non-empty target.
 WORKDIR /build/pytorch
-RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
+RUN git clone --recursive --branch v2.6.0 https://github.com/pytorch/pytorch
 # build/ is cache-mounted so a stage rerun reuses CMake/ninja state and object
 # files. Cache id scoped to (version, arch, SM) so a version or target bump
 # starts from a clean cache instead of contaminating the previous one.
-RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87 \
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-2.6.0-${TARGETARCH}-sm87 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
     cd pytorch && \
     python3 -m pip install -r requirements.txt && \
@@ -140,7 +127,7 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
     export USE_FBGEMM=0 USE_KINETO=0 USE_CUPTI_SO=0 && \
     export USE_FLASH_ATTENTION=1 USE_MEM_EFF_ATTENTION=1 && \
     export USE_MPS=0 USE_ROCM=0 && \
-    export PYTORCH_BUILD_VERSION=${PYTORCH_VERSION} PYTORCH_BUILD_NUMBER=1 && \
+    export PYTORCH_BUILD_VERSION=2.6.0 PYTORCH_BUILD_NUMBER=1 && \
     export CMAKE_BUILD_TYPE=Release BUILD_SHARED_LIBS=ON USE_PRIORITIZED_TEXT_FOR_LD=1 && \
     export MAX_JOBS=12 && \
     export CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
@@ -151,12 +138,12 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
 # Clone in its own RUN so build/ cache mount overlays cleanly.
 WORKDIR /build/torchvision
 RUN for i in 1 2 3; do \
-        git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
+        git clone --branch v0.21.0 https://github.com/pytorch/vision && break || sleep 60; \
     done
-RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-${TORCHVISION_VERSION}-${TARGETARCH}-sm87 \
+RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-0.21.0-${TARGETARCH}-sm87 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
     cd vision && \
-    export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="8.7" && \
+    export BUILD_VERSION=0.21.0 TORCH_CUDA_ARCH_LIST="8.7" && \
     export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
     python3 setup.py bdist_wheel && \
     python3 -m pip install dist/torchvision-*.whl
@@ -355,7 +342,6 @@ RUN cd /usr/local/lib/python3.10/dist-packages && \
 FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG PYTORCH_VERSION=2.6.0
 ENV LANG=en_US.UTF-8
 
 WORKDIR /app
@@ -380,6 +366,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     libgomp1 \
     python3 \
     python3-pip \
+    build-essential \
+    cmake \
     libxext6 \
     libvips42 \
     libglib2.0-0 \
@@ -389,6 +377,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     libexpat1 \
     ca-certificates \
     curl \
+    git \
     libv4l-0 \
     libavcodec58 \
     libavformat58 \
@@ -399,21 +388,38 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
     gstreamer1.0-tools \
+    libxml2-dev \
+    ninja-build \
+    python3-dev \
     python3-gi \
     gir1.2-gstreamer-1.0 \
     gir1.2-gst-plugins-base-1.0 \
     libatlas3-base
 
-COPY --from=builder /build/out/triton-wheels /opt/triton-wheels
-
 # Torch 2.6.0 on JP6.2 pairs with Triton 3.2.0.
 RUN set -eux; \
-    set -- /opt/triton-wheels/triton-3.2.0-*.whl; \
+    rm -rf /tmp/triton-build /tmp/triton-wheels; \
+    mkdir -p /tmp/triton-wheels; \
+    git clone --depth 1 --branch v3.2.0 https://github.com/triton-lang/triton.git /tmp/triton-build/src; \
+    git -C /tmp/triton-build/src submodule update --init --recursive; \
+    python3 -m pip install --no-cache-dir \
+        "setuptools>=40.8.0" \
+        wheel \
+        "cmake>=3.18,<4.0" \
+        "ninja>=1.11.1" \
+        "pybind11>=2.13.1"; \
+    MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
+        --no-build-isolation \
+        --no-deps \
+        /tmp/triton-build/src/python \
+        --wheel-dir /tmp/triton-wheels; \
+    set -- /tmp/triton-wheels/triton-3.2.0-*.whl; \
     if [ ! -e "$1" ]; then \
         echo "Expected source-built Triton wheel for 3.2.0 was not found" >&2; \
         exit 1; \
     fi; \
-    python3 -m pip install --no-cache-dir "$1"
+    python3 -m pip install --no-cache-dir "$1"; \
+    rm -rf /tmp/triton-build /tmp/triton-wheels
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/

@@ -1,36 +1,15 @@
-FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.3 AS triton-builder
+FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.3
 
-ARG PYTORCH_VERSION=2.4.1
-ARG TORCHVISION_VERSION=0.19.1
-
-COPY docker/scripts/triton_build_from_source.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/triton_build_from_source.sh && \
-    mkdir -p /opt/triton-wheels
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
-    ninja-build \
+    ffmpeg \
     git \
     libxml2-dev \
+    ninja-build \
     python3-dev \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
-# Torch 2.4.1 on JP5.1 pairs with Triton 3.0.0.
-RUN TRITON_VERSION=3.0.0 \
-    TRITON_WHEEL_DIR=/opt/triton-wheels \
-    TRITON_BUILD_DIR=/tmp/triton-build \
-    TRITON_PYTHON_BIN=python3 \
-    TRITON_BUILD_MAX_JOBS=4 \
-    /usr/local/bin/triton_build_from_source.sh
-
-FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.3
-
-RUN apt-get update -y && apt-get install -y ffmpeg
-
-ARG PYTORCH_VERSION=2.4.1
-ARG TORCHVISION_VERSION=0.19.1
-
-COPY --from=triton-builder /opt/triton-wheels /opt/triton-wheels
 
 COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
@@ -54,18 +33,33 @@ RUN python -m pip install \
     -r requirements.easyocr.txt \
     -r requirements.gpu.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
-    "torch==${PYTORCH_VERSION}" \
-    "torchvision==${TORCHVISION_VERSION}" \
+    "torch==2.4.1" \
+    "torchvision==0.19.1" \
     "transformers<=5.7.0"
 
 # Torch 2.4.1 on JP5.1 pairs with Triton 3.0.0.
 RUN set -eux; \
-    set -- /opt/triton-wheels/triton-3.0.0-*.whl; \
+    rm -rf /tmp/triton-build /tmp/triton-wheels; \
+    mkdir -p /tmp/triton-wheels; \
+    git clone --depth 1 --branch v3.0.0 https://github.com/triton-lang/triton.git /tmp/triton-build/src; \
+    git -C /tmp/triton-build/src submodule update --init --recursive; \
+    python -m pip install --no-cache-dir \
+        "setuptools>=40.8.0" \
+        wheel \
+        "cmake>=3.18,<4.0" \
+        "ninja>=1.11.1"; \
+    MAX_JOBS=4 python -m pip wheel --no-cache-dir \
+        --no-build-isolation \
+        --no-deps \
+        /tmp/triton-build/src/python \
+        --wheel-dir /tmp/triton-wheels; \
+    set -- /tmp/triton-wheels/triton-3.0.0-*.whl; \
     if [ ! -e "$1" ]; then \
         echo "Expected source-built Triton wheel for 3.0.0 was not found" >&2; \
         exit 1; \
     fi; \
-    python -m pip install --no-cache-dir "$1"
+    python -m pip install --no-cache-dir "$1"; \
+    rm -rf /tmp/triton-build /tmp/triton-wheels
 
 
 WORKDIR /app/

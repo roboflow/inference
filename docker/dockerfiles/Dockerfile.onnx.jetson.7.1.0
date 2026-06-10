@@ -5,8 +5,6 @@ FROM ubuntu:24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
-ARG PYTORCH_VERSION=2.10.0
-ARG TORCHVISION_VERSION=0.25.0
 ARG OPENCV_VERSION=4.10.0
 ARG ONNXRUNTIME_VERSION=1.24.2
 ENV LANG=en_US.UTF-8
@@ -93,18 +91,6 @@ RUN python3 -m pip install --break-system-packages --ignore-installed pip setupt
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv
 
-COPY docker/scripts/triton_build_from_source.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/triton_build_from_source.sh && \
-    mkdir -p /build/out/triton-wheels
-# Torch 2.10.0 on JP7.1 pairs with Triton 3.6.0.
-RUN TRITON_VERSION=3.6.0 \
-    TRITON_WHEEL_DIR=/build/out/triton-wheels \
-    TRITON_BUILD_DIR=/build/triton-src \
-    TRITON_PYTHON_BIN=python3 \
-    TRITON_BUILD_MAX_JOBS=4 \
-    TRITON_PIP_BREAK_SYSTEM_PACKAGES=1 \
-    /usr/local/bin/triton_build_from_source.sh
-
 # Compile GDAL from source
 WORKDIR /build/gdal
 RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar.gz && \
@@ -123,9 +109,9 @@ ENV CUDA_HOME=/usr/local/cuda \
 # Clone in its own RUN so the build/ cache mount overlays cleanly (mount would
 # otherwise auto-create the parent and break git clone).
 WORKDIR /build/pytorch
-RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
+RUN git clone --recursive --branch v2.10.0 https://github.com/pytorch/pytorch
 # build/ is cache-mounted (Thor = sm 11.0); cache id includes version + arch.
-RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm110 \
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-2.10.0-${TARGETARCH}-sm110 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
     cd pytorch && \
     python3 -m pip install --break-system-packages -r requirements.txt && \
@@ -139,7 +125,7 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
     export USE_FBGEMM=0 USE_KINETO=0 USE_CUPTI_SO=0 && \
     export USE_FLASH_ATTENTION=1 USE_MEM_EFF_ATTENTION=1 && \
     export USE_MPS=0 USE_ROCM=0 && \
-    export PYTORCH_BUILD_VERSION=${PYTORCH_VERSION} PYTORCH_BUILD_NUMBER=1 && \
+    export PYTORCH_BUILD_VERSION=2.10.0 PYTORCH_BUILD_NUMBER=1 && \
     export CMAKE_BUILD_TYPE=Release BUILD_SHARED_LIBS=ON USE_PRIORITIZED_TEXT_FOR_LD=1 && \
     export MAX_JOBS=12 && \
     export CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
@@ -150,12 +136,12 @@ RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pyt
 # Clone in its own RUN so build/ cache mount overlays cleanly.
 WORKDIR /build/torchvision
 RUN for i in 1 2 3; do \
-        git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
+        git clone --branch v0.25.0 https://github.com/pytorch/vision && break || sleep 60; \
     done
-RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-${TORCHVISION_VERSION}-${TARGETARCH}-sm110 \
+RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-0.25.0-${TARGETARCH}-sm110 \
     --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
     cd vision && \
-    export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="11.0" && \
+    export BUILD_VERSION=0.25.0 TORCH_CUDA_ARCH_LIST="11.0" && \
     export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
     python3 setup.py bdist_wheel && \
     python3 -m pip install --break-system-packages dist/torchvision-*.whl
@@ -212,8 +198,8 @@ COPY requirements/_requirements.txt \
 
 # Install Python dependencies
 # IMPORTANT: Use --override to protect our source-compiled torch/torchvision from being replaced
-RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
-    echo "torchvision==${TORCHVISION_VERSION}" >> /tmp/overrides.txt && \
+RUN echo "torch==2.10.0" > /tmp/overrides.txt && \
+    echo "torchvision==0.25.0" >> /tmp/overrides.txt && \
     uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
     --override /tmp/overrides.txt \
     -r _requirements.txt \
@@ -265,7 +251,6 @@ RUN cd /usr/local/lib/python3.12/dist-packages && \
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG PYTORCH_VERSION=2.10.0
 ENV LANG=en_US.UTF-8
 
 WORKDIR /app
@@ -309,6 +294,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     libgomp1 \
     python3 \
     python3-pip \
+    build-essential \
+    cmake \
     libxext6 \
     libvips42 \
     libglib2.0-0 \
@@ -317,6 +304,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     libpng16-16t64 \
     libexpat1 \
     curl \
+    git \
     libv4l-0 \
     libavcodec60 \
     libavformat60 \
@@ -325,18 +313,31 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     libatlas3-base \
     libgl1 \
     libglib2.0-0 \
-    libatomic1
-
-COPY --from=builder /build/out/triton-wheels /opt/triton-wheels
+    libatomic1 \
+    libxml2-dev \
+    ninja-build \
+    python3-dev
 
 # Torch 2.10.0 on JP7.1 pairs with Triton 3.6.0.
 RUN set -eux; \
-    set -- /opt/triton-wheels/triton-3.6.0-*.whl; \
+    rm -rf /tmp/triton-build /tmp/triton-wheels; \
+    mkdir -p /tmp/triton-wheels; \
+    git clone --depth 1 --branch v3.6.0 https://github.com/triton-lang/triton.git /tmp/triton-build/src; \
+    git -C /tmp/triton-build/src submodule update --init --recursive; \
+    python3 -m pip install --break-system-packages --no-cache-dir \
+        -r /tmp/triton-build/src/python/requirements.txt; \
+    MAX_JOBS=4 python3 -m pip wheel --break-system-packages --no-cache-dir \
+        --no-build-isolation \
+        --no-deps \
+        /tmp/triton-build/src \
+        --wheel-dir /tmp/triton-wheels; \
+    set -- /tmp/triton-wheels/triton-3.6.0-*.whl; \
     if [ ! -e "$1" ]; then \
         echo "Expected source-built Triton wheel for 3.6.0 was not found" >&2; \
         exit 1; \
     fi; \
-    python3 -m pip install --break-system-packages --no-cache-dir "$1"
+    python3 -m pip install --break-system-packages --no-cache-dir "$1"; \
+    rm -rf /tmp/triton-build /tmp/triton-wheels
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
