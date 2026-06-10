@@ -1,42 +1,56 @@
 """Unit tests for SAM3Torch interactive (PVS) prompt handling."""
 
+import importlib
 import sys
 from threading import RLock
-from unittest.mock import MagicMock
+from types import ModuleType
+from typing import Generator
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 import torch
 
-
-def _install_sam3_package_mocks():
-    names = [
-        "sam3",
-        "sam3.eval",
-        "sam3.eval.postprocessors",
-        "sam3.model",
-        "sam3.model.sam3_image_processor",
-        "sam3.model.utils",
-        "sam3.model.utils.misc",
-        "sam3.train",
-        "sam3.train.data",
-        "sam3.train.data.collator",
-        "sam3.train.data.sam3_image_dataset",
-        "sam3.train.transforms",
-        "sam3.train.transforms.basic_for_api",
-    ]
-    for name in names:
-        sys.modules.setdefault(name, MagicMock())
-
-
-_install_sam3_package_mocks()
-
 from inference_models.models.sam3.entities import SAM3ImageEmbeddings
-from inference_models.models.sam3.sam3_torch import SAM3Torch
+
+# Meta's `sam3` package ships only with the CUDA extras (torch-cu*), so it is
+# not installed in the unit-test environment and the module under test cannot
+# be imported without stubbing it.
+_SAM3_PACKAGE_MODULES = [
+    "sam3",
+    "sam3.eval",
+    "sam3.eval.postprocessors",
+    "sam3.model",
+    "sam3.model.sam3_image_processor",
+    "sam3.model.utils",
+    "sam3.model.utils.misc",
+    "sam3.train",
+    "sam3.train.data",
+    "sam3.train.data.collator",
+    "sam3.train.data.sam3_image_dataset",
+    "sam3.train.transforms",
+    "sam3.train.transforms.basic_for_api",
+]
+
+SAM3_TORCH_MODULE = "inference_models.models.sam3.sam3_torch"
 
 
-def _build_model_with_mocked_predictor(num_prompts: int) -> SAM3Torch:
-    model = SAM3Torch.__new__(SAM3Torch)
+@pytest.fixture()
+def sam3_torch_module() -> Generator[ModuleType, None, None]:
+    """Imports the module under test with `sam3` stubbed, per test.
+
+    `patch.dict` restores `sys.modules` to its pre-test state on exit, which
+    drops both the stubs and the module imported against them - no mocked
+    modules leak into other tests.
+    """
+    stubs = {name: MagicMock() for name in _SAM3_PACKAGE_MODULES}
+    with patch.dict(sys.modules, stubs):
+        sys.modules.pop(SAM3_TORCH_MODULE, None)
+        yield importlib.import_module(SAM3_TORCH_MODULE)
+
+
+def _build_model_with_mocked_predictor(sam3_torch_module: ModuleType, num_prompts: int):
+    model = sam3_torch_module.SAM3Torch.__new__(sam3_torch_module.SAM3Torch)
     model._predict_inst_lock = RLock()
     model._model = MagicMock()
     if num_prompts == 1:
@@ -64,11 +78,13 @@ def _example_embeddings() -> SAM3ImageEmbeddings:
     )
 
 
-def test_predict_for_single_image_forwards_all_boxes():
+def test_predict_for_single_image_forwards_all_boxes(
+    sam3_torch_module: ModuleType,
+) -> None:
     """Regression test: multiple box prompts must all reach the predictor -
     previously only the first box was forwarded."""
     # given
-    model = _build_model_with_mocked_predictor(num_prompts=2)
+    model = _build_model_with_mocked_predictor(sam3_torch_module, num_prompts=2)
     boxes = np.array([[0, 0, 4, 4], [2, 2, 6, 6]])
 
     # when
@@ -86,9 +102,11 @@ def test_predict_for_single_image_forwards_all_boxes():
     assert prediction.scores.shape == (2,)
 
 
-def test_predict_for_single_image_accepts_flat_single_box():
+def test_predict_for_single_image_accepts_flat_single_box(
+    sam3_torch_module: ModuleType,
+) -> None:
     # given
-    model = _build_model_with_mocked_predictor(num_prompts=1)
+    model = _build_model_with_mocked_predictor(sam3_torch_module, num_prompts=1)
 
     # when
     prediction = model._predict_for_single_image(
@@ -105,9 +123,11 @@ def test_predict_for_single_image_accepts_flat_single_box():
     assert prediction.scores.shape == (1,)
 
 
-def test_predict_for_single_image_selects_best_proposal_per_prompt():
+def test_predict_for_single_image_selects_best_proposal_per_prompt(
+    sam3_torch_module: ModuleType,
+) -> None:
     # given
-    model = _build_model_with_mocked_predictor(num_prompts=2)
+    model = _build_model_with_mocked_predictor(sam3_torch_module, num_prompts=2)
 
     # when
     prediction = model._predict_for_single_image(
