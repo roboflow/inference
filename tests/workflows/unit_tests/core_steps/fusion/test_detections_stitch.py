@@ -3,6 +3,7 @@ from typing import Union
 import numpy as np
 import pytest
 import supervision as sv
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
     BlockManifest,
@@ -477,3 +478,49 @@ def test_detections_stitch_missing_parent_coordinates_error() -> None:
 
     # then
     assert "parent_coordinates" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "parent_offset",
+    [
+        pytest.param((250, 300), id="positive-offset"),
+        pytest.param((0, 0), id="zero-offset"),
+        pytest.param((100, 0), id="x-only-offset"),
+    ],
+)
+def test_detections_stitch_shifts_oriented_bounding_box_corners(
+    parent_offset: tuple,
+) -> None:
+    """OBB corners stored in `data['xyxyxyxy']` must follow the same offset
+    applied to `xyxy`; without that, stitched OBB detections carry an AABB
+    in image coords next to corners still in tile-local coords, which breaks
+    downstream OBB-aware NMS / NMM."""
+    # given
+    block = DetectionsStitchBlockV1()
+    reference_image = make_test_image(width=1000, height=1000)
+    tile_corners = np.array(
+        [[[25.0, 50.0], [50.0, 25.0], [75.0, 50.0], [50.0, 75.0]]],
+        dtype=np.float32,
+    )
+    detections = make_test_detections(
+        boxes=np.array([[25.0, 25.0, 75.0, 75.0]], dtype=np.float32),
+        parent_offset=parent_offset,
+        parent_dims=(1000, 1000),
+    )
+    detections.data[ORIENTED_BOX_COORDINATES] = tile_corners
+
+    # when
+    result = block.run(
+        reference_image=reference_image,
+        predictions=[detections],
+        overlap_filtering_strategy="none",
+        iou_threshold=0.3,
+    )
+
+    # then
+    merged = result["predictions"]
+    dx, dy = parent_offset
+    expected_xyxy = np.array([[25 + dx, 25 + dy, 75 + dx, 75 + dy]], dtype=np.float32)
+    expected_corners = tile_corners + np.array([dx, dy], dtype=np.float32)
+    assert np.allclose(merged.xyxy, expected_xyxy)
+    assert np.allclose(merged.data[ORIENTED_BOX_COORDINATES], expected_corners)
