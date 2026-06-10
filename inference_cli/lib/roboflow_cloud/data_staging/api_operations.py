@@ -8,7 +8,6 @@ from io import BytesIO
 from multiprocessing.pool import Pool, ThreadPool
 from threading import Lock
 from typing import Dict, Generator, List, Optional, Set, TextIO, Tuple, Union
-from urllib.parse import urlparse
 from uuid import uuid4
 
 import backoff
@@ -643,6 +642,86 @@ def trigger_images_references_ingest(
         return ImageReferencesIngestResponse.model_validate(response_data)
     except (ValidationError, ValueError, KeyError) as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
+
+
+def create_images_batch_from_roboql_query(
+    query: str,
+    batch_id: str,
+    api_key: str,
+    ingest_id: Optional[str] = None,
+    batch_name: Optional[str] = None,
+    notifications_url: Optional[str] = None,
+) -> None:
+    workspace = get_workspace(api_key=api_key)
+    trigger_roboql_batch_ingest(
+        workspace=workspace,
+        batch_id=batch_id,
+        query=query,
+        api_key=api_key,
+        ingest_id=ingest_id,
+        batch_name=batch_name,
+        notifications_url=notifications_url,
+    )
+    print(
+        f"RoboQL ingest accepted for batch '{batch_id}'. The batch is materialised "
+        "asynchronously by the data-staging worker — initial counts will be zero "
+        "until the worker registers shards."
+    )
+    if notifications_url:
+        print(f"Monitor updates that will be sent to: {notifications_url}")
+    print(
+        f"Use `inference rf-cloud data-staging show-batch-details --batch-id {batch_id}` "
+        "to inspect the batch once it appears, and "
+        f"`inference rf-cloud data-staging list-batch-content --batch-id {batch_id}` "
+        "to list its files once the worker has staged them."
+    )
+
+
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryError,
+    max_tries=3,
+    interval=1,
+)
+def trigger_roboql_batch_ingest(
+    workspace: str,
+    batch_id: str,
+    query: str,
+    api_key: str,
+    ingest_id: Optional[str] = None,
+    batch_name: Optional[str] = None,
+    notifications_url: Optional[str] = None,
+) -> None:
+    params = {}
+    if api_key is not None:
+        params["api_key"] = api_key
+    payload: Dict[str, Union[str, None]] = {"query": query}
+    if batch_name is not None:
+        payload["displayName"] = batch_name
+    if ingest_id is not None:
+        payload["ingestId"] = ingest_id
+    if notifications_url is not None:
+        payload["notificationsURL"] = notifications_url
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/roboql-ingest",
+            params=params,
+            timeout=REQUEST_TIMEOUT,
+            json=payload,
+        )
+    except (ConnectionError, requests.exceptions.ConnectionError) as error:
+        raise RetryError(
+            f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
+        ) from error
+    except Timeout as e:
+        raise RetryError(
+            f"Timeout error. Could not complete `trigger_roboql_batch_ingest(...)` operation "
+            f"within {REQUEST_TIMEOUT} seconds. Verify connectivity and try again. "
+            f"You may also set `ROBOFLOW_API_REQUEST_TIMEOUT` env variable to a larger "
+            f"value (in seconds), e.g. `export ROBOFLOW_API_REQUEST_TIMEOUT=120`. "
+            f"If the problem persists - contact Roboflow support."
+        ) from e
+    handle_response_errors(response=response, operation_name="trigger RoboQL ingest")
 
 
 def create_videos_batch_from_directory(
@@ -1567,21 +1646,21 @@ def pull_batch_element_to_directory(
         override_existing=override_existing,
     ):
         return None
-    parsed_url = urlparse(file_metadata.download_url)
-    file_name = os.path.basename(parsed_url.path)
-    is_archive = file_name.endswith(".tar.gz") or file_name.endswith(".tar")
+    is_archive = file_metadata.file_name.endswith(
+        ".tar.gz"
+    ) or file_metadata.file_name.endswith(".tar")
     if not is_archive:
         result_path = pull_file_to_directory(
             url=file_metadata.download_url,
             target_directory=target_directory,
-            file_name=file_name,
+            file_name=file_metadata.file_name,
         )
         export_log.denote_export(file_metadata=file_metadata, local_path=result_path)
         return None
     with tempfile.TemporaryDirectory() as tmp_dir:
         download_and_unpack_archive(
             url=file_metadata.download_url,
-            file_name=file_name,
+            file_name=file_metadata.file_name,
             pull_dir=tmp_dir,
             target_dir=target_directory,
         )
