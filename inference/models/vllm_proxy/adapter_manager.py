@@ -20,15 +20,23 @@ Maps a Roboflow `model_id` to the name it is served under in vLLM:
   patched adapter with vLLM's dynamic LoRA endpoint.
 
 Cache keys combine model_id + package_id + a content digest because package
-ids are NOT unique per model version. Registered adapters are tracked with
-LRU bookkeeping bounded by `VLLM_MAX_REGISTERED_ADAPTERS`.
+ids are NOT unique per model version.
+
+Registration semantics (multi-process): several gunicorn workers each hold
+their own AdapterManager but instruct ONE shared vLLM engine, so the
+per-process map can go stale (worker recycles, vLLM restarts). The map is
+therefore only trusted to skip the expensive download/patch work; the cheap,
+idempotent `load_lora_adapter` call is ALWAYS re-issued so vLLM remains the
+source of truth. The manager never unloads adapters: vLLM's own
+`--max-cpu-loras` LRU bounds host memory and refills from disk, and disk
+growth is handled outside (pod recycle / future GC).
+`VLLM_MAX_REGISTERED_ADAPTERS` is a warn-only threshold.
 """
 
 import hashlib
 import os
 import re
 import threading
-from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -49,7 +57,6 @@ from inference.models.vllm_proxy.errors import (
     AdapterNotServableError,
     NotServableOnVLLMError,
     VLLMHTTPError,
-    VLLMProxyError,
 )
 from inference.models.vllm_proxy.vllm_client import VLLMClient
 from inference_models.models.auto_loaders.entities import BackendType
@@ -112,12 +119,17 @@ def normalize_base_variant(
 
 
 class AdapterManager:
-    """Thread-safe, idempotent adapter registration with LRU eviction."""
+    """Thread-safe, idempotent adapter registration (registration-only).
+
+    Never unloads adapters from vLLM - the engine's own `--max-cpu-loras`
+    LRU bounds memory. The local map only short-circuits download/patch
+    work; the idempotent vLLM registration call is always re-issued.
+    """
 
     def __init__(self, client: Optional[VLLMClient] = None):
         self._client = client or VLLMClient()
         self._lock = threading.Lock()
-        self._registered: "OrderedDict[str, AdapterRegistration]" = OrderedDict()
+        self._registered: Dict[str, AdapterRegistration] = {}
 
     @property
     def client(self) -> VLLMClient:
@@ -132,8 +144,13 @@ class AdapterManager:
         """Resolves `model_id` to the name it is served under in vLLM.
 
         Base model ids return the served base name without registration.
-        Fine-tunes are downloaded, patched and registered (idempotent: an
-        already-registered adapter is just touched in the LRU order).
+        Fine-tunes are downloaded, patched and registered. Idempotent, with
+        a multi-process twist: when the slug is already in the local map and
+        its patched dir is still on disk, the expensive download/patch work
+        is skipped but the cheap `load_lora_adapter` call is ALWAYS
+        re-issued - the per-process map may be stale relative to the shared
+        vLLM engine (another worker's actions, vLLM restarts), and vLLM
+        treats re-registration as success.
 
         Registry `modelArchitecture` gates pre-download (unsupported families
         are rejected before any artifact download); registry `modelVariant`
@@ -212,8 +229,17 @@ class AdapterManager:
             content_digest=content_digest,
         )
         with self._lock:
-            if slug in self._registered:
-                self._registered.move_to_end(slug)
+            existing = self._registered.get(slug)
+            if existing is not None and os.path.isdir(existing.patched_dir):
+                # Skip ONLY the expensive download/patch work. The vLLM
+                # registration call must still happen: this process's map
+                # may be stale (shared engine, NUM_WORKERS>1) and the call
+                # is idempotent and ~ms with files already on disk.
+                self._load_adapter_into_vllm(
+                    slug=slug,
+                    model_id=existing.model_id,
+                    patched_dir=existing.patched_dir,
+                )
                 return slug
             registration = self._download_patch_and_load(
                 slug=slug,
@@ -225,8 +251,19 @@ class AdapterManager:
                 registry_variant_matches=registry_variant_matches,
             )
             self._registered[slug] = registration
-            self._evict_lru_adapters()
+            self._warn_if_over_max_registered()
         return slug
+
+    def invalidate(self, served_name: str) -> None:
+        """Drops `served_name` from the local registration map.
+
+        Used by the request-path self-heal when vLLM reports the adapter
+        unknown despite local bookkeeping (vLLM restart, desync across
+        gunicorn workers): the next `resolve_and_register` re-runs the full
+        path (files already on disk make it near-instant).
+        """
+        with self._lock:
+            self._registered.pop(served_name, None)
 
     def get_registration(self, served_name: str) -> Optional[AdapterRegistration]:
         with self._lock:
@@ -354,21 +391,25 @@ class AdapterManager:
                 f"base model - vLLM said: {body_excerpt!r}"
             ) from error
 
-    def _evict_lru_adapters(self) -> None:
+    def _warn_if_over_max_registered(self) -> None:
+        """Warn-only threshold - the manager NEVER unloads adapters.
+
+        With NUM_WORKERS>1 every gunicorn worker instructs the same shared
+        vLLM engine; unloading from one worker's bookkeeping would yank
+        adapters other workers still serve. vLLM's own `--max-cpu-loras`
+        LRU bounds host memory and refills from disk; disk growth is
+        handled outside (pod recycle / future GC).
+        """
         max_registered = get_vllm_max_registered_adapters()
-        while len(self._registered) > max_registered:
-            evicted_slug, _ = self._registered.popitem(last=False)
-            try:
-                self._client.unload_lora_adapter(name=evicted_slug)
-                logger.info("Evicted LRU LoRA adapter %s from vLLM", evicted_slug)
-            except VLLMProxyError as error:
-                # The adapter may have been evicted on the vLLM side already -
-                # bookkeeping stays consistent either way.
-                logger.warning(
-                    "Failed to unload LoRA adapter %s from vLLM: %s",
-                    evicted_slug,
-                    error,
-                )
+        if len(self._registered) > max_registered:
+            logger.warning(
+                "Registered LoRA adapter count %d exceeds "
+                "VLLM_MAX_REGISTERED_ADAPTERS=%d. No adapter is unloaded "
+                "(vLLM's --max-cpu-loras LRU bounds memory); consider "
+                "recycling the pod if disk growth becomes a concern.",
+                len(self._registered),
+                max_registered,
+            )
 
 
 _ADAPTER_MANAGER: Optional[AdapterManager] = None

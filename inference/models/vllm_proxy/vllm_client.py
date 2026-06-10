@@ -162,7 +162,13 @@ class VLLMClient:
             raise
 
     def unload_lora_adapter(self, name: str) -> None:
-        """Unregisters the LoRA adapter served under `name`."""
+        """Unregisters the LoRA adapter served under `name`.
+
+        Operational/debugging use only - the AdapterManager never calls
+        this: with NUM_WORKERS>1 all workers share one vLLM engine, so an
+        automatic unload from one worker would break the others. vLLM's
+        `--max-cpu-loras` LRU bounds memory by itself.
+        """
         self._request("POST", "/v1/unload_lora_adapter", json={"lora_name": name})
 
     def list_models(self) -> List[Dict[str, Any]]:

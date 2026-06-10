@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 
+from inference.core import logger
 from inference.core.entities.responses import (
     InferenceResponseImage,
     LMMInferenceResponse,
@@ -45,6 +46,7 @@ from inference.models.vllm_proxy.adapter_manager import (
     AdapterManager,
     get_adapter_manager,
 )
+from inference.models.vllm_proxy.errors import VLLMHTTPError
 from inference.models.vllm_proxy.vllm_client import build_image_content_part
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
@@ -130,7 +132,10 @@ class QwenVLLMProxyBase(Model):
         self.api_key = api_key if api_key else API_KEY
         self.task_type = "lmm"
         self.model_id = model_id
-        extra_weights_provider_headers = get_extra_weights_provider_headers(
+        # Kept for the request-path self-heal, which re-resolves the adapter
+        # when the shared vLLM engine no longer knows it (engine restart /
+        # per-worker map desync under NUM_WORKERS>1).
+        self._weights_provider_extra_headers = get_extra_weights_provider_headers(
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
         )
@@ -140,7 +145,7 @@ class QwenVLLMProxyBase(Model):
         self._served_name = self._adapter_manager.resolve_and_register(
             model_id=model_id,
             api_key=self.api_key,
-            weights_provider_extra_headers=extra_weights_provider_headers,
+            weights_provider_extra_headers=self._weights_provider_extra_headers,
         )
         self._client = self._adapter_manager.client
         self._inference_config = self._load_inference_config()
@@ -227,14 +232,71 @@ class QwenVLLMProxyBase(Model):
         max_new_tokens = kwargs.get("max_new_tokens")
         if max_new_tokens is None:
             max_new_tokens = self.default_max_new_tokens
-        response = self._client.chat_completion(
+        chat_template_kwargs = self._build_chat_template_kwargs(kwargs=kwargs)
+        try:
+            response = self._chat_completion(
+                inputs=inputs,
+                max_new_tokens=max_new_tokens,
+                chat_template_kwargs=chat_template_kwargs,
+            )
+        except VLLMHTTPError as error:
+            if not self._is_unknown_served_model_error(error=error):
+                raise
+            # Self-heal: this process registered the adapter, but the SHARED
+            # vLLM engine no longer knows it (engine restart, or per-worker
+            # registration-map desync under NUM_WORKERS>1). Files are on the
+            # shared volume, so re-registration is ~ms. Retry exactly once -
+            # a second unknown-model failure propagates.
+            logger.warning(
+                "vLLM does not know served model %s (model_id=%s) despite "
+                "local registration - re-registering and retrying once. "
+                "vLLM said: %r",
+                self._served_name,
+                self.model_id,
+                (error.response_body or "")[:200],
+            )
+            self._adapter_manager.invalidate(served_name=self._served_name)
+            self._served_name = self._adapter_manager.resolve_and_register(
+                model_id=self.model_id,
+                api_key=self.api_key,
+                weights_provider_extra_headers=self._weights_provider_extra_headers,
+            )
+            response = self._chat_completion(
+                inputs=inputs,
+                max_new_tokens=max_new_tokens,
+                chat_template_kwargs=chat_template_kwargs,
+            )
+        return response["choices"][0]["message"]["content"] or ""
+
+    def _chat_completion(
+        self,
+        inputs: List[dict],
+        max_new_tokens: int,
+        chat_template_kwargs: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return self._client.chat_completion(
             model=self._served_name,
             messages=inputs,
             temperature=0,
             max_tokens=max_new_tokens,
-            chat_template_kwargs=self._build_chat_template_kwargs(kwargs=kwargs),
+            chat_template_kwargs=chat_template_kwargs,
         )
-        return response["choices"][0]["message"]["content"] or ""
+
+    def _is_unknown_served_model_error(self, error: VLLMHTTPError) -> bool:
+        """True iff vLLM rejected the request because OUR served model is unknown.
+
+        vLLM's OpenAI server answers 404 with `The model `<name>` does not
+        exist.` for unknown served models. Matched defensively: HTTP 404 +
+        the served name in the body + a not-found phrasing. Anything else
+        (other adapters, genuine 4xx/5xx) must NOT trigger the self-heal
+        retry.
+        """
+        if error.status_code != 404:
+            return False
+        body = (error.response_body or "").lower()
+        if self._served_name.lower() not in body:
+            return False
+        return "does not exist" in body or "not found" in body
 
     def _build_chat_template_kwargs(
         self, kwargs: Dict[str, Any]

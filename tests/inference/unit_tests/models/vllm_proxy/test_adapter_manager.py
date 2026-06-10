@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 from typing import List, Optional
 from unittest.mock import MagicMock
 
@@ -351,10 +352,13 @@ class TestResolveAndRegister:
         # then
         assert served_v1 != served_v2
 
-    def test_re_registration_is_idempotent(
+    def test_re_registration_skips_download_but_always_recalls_vllm_load(
         self, monkeypatch, fake_download, model_cache_dir
     ) -> None:
-        # given
+        # given - with NUM_WORKERS>1 the per-process map can be stale
+        # relative to the shared vLLM engine, so a slug already in the map
+        # must STILL re-issue the idempotent load_lora_adapter call, while
+        # the expensive download/patch work stays skipped.
         model_id = "some-workspace/some-project/1"
         _install_provider(monkeypatch, {model_id: build_metadata(model_id=model_id)})
         client = MagicMock()
@@ -366,13 +370,38 @@ class TestResolveAndRegister:
 
         # then
         assert served_first == served_second
-        assert client.load_lora_adapter.call_count == 1
+        assert client.load_lora_adapter.call_count == 2
+        for _, load_kwargs in client.load_lora_adapter.call_args_list:
+            assert load_kwargs["name"] == served_first
         assert len(fake_download) == 1
 
-    def test_lru_eviction_unloads_oldest_adapter(
+    def test_recorded_slug_with_missing_patched_dir_redoes_download_and_patch(
         self, monkeypatch, fake_download, model_cache_dir
     ) -> None:
-        # given
+        # given - the map records the slug but the patched dir vanished from
+        # disk (external GC): the download/patch fast-path must not be taken.
+        model_id = "some-workspace/some-project/1"
+        _install_provider(monkeypatch, {model_id: build_metadata(model_id=model_id)})
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+        served_name = manager.resolve_and_register(model_id=model_id)
+        shutil.rmtree(manager.get_registration(served_name).patched_dir)
+
+        # when
+        served_again = manager.resolve_and_register(model_id=model_id)
+
+        # then
+        assert served_again == served_name
+        assert len(fake_download) == 2
+        assert os.path.isdir(manager.get_registration(served_name).patched_dir)
+
+    def test_overflow_past_max_registered_warns_and_never_unloads(
+        self, monkeypatch, fake_download, model_cache_dir
+    ) -> None:
+        # given - VLLM_MAX_REGISTERED_ADAPTERS is a warn-only threshold:
+        # all gunicorn workers share ONE vLLM engine, so an automatic unload
+        # driven by one worker's bookkeeping would yank adapters the other
+        # workers still serve. vLLM's own --max-cpu-loras LRU bounds memory.
         monkeypatch.setenv("VLLM_MAX_REGISTERED_ADAPTERS", "2")
         metadata_by_model_id = {
             f"ws/project-{i}/1": build_metadata(
@@ -383,6 +412,7 @@ class TestResolveAndRegister:
             for i in range(3)
         }
         _install_provider(monkeypatch, metadata_by_model_id)
+        logger_mock = _install_logger_mock(monkeypatch)
         client = MagicMock()
         manager = AdapterManager(client=client)
 
@@ -392,11 +422,37 @@ class TestResolveAndRegister:
             for model_id in metadata_by_model_id
         ]
 
-        # then
-        client.unload_lora_adapter.assert_called_once_with(name=served_names[0])
-        assert manager.get_registration(served_names[0]) is None
-        assert manager.get_registration(served_names[1]) is not None
-        assert manager.get_registration(served_names[2]) is not None
+        # then - no unload, all registrations retained, WARN emitted
+        client.unload_lora_adapter.assert_not_called()
+        for served_name in served_names:
+            assert manager.get_registration(served_name) is not None
+        warnings = _rendered_warnings(logger_mock)
+        assert any(
+            "exceeds" in message and "VLLM_MAX_REGISTERED_ADAPTERS=2" in message
+            for message in warnings
+        )
+
+    def test_invalidate_drops_slug_and_next_resolution_reregisters(
+        self, monkeypatch, fake_download, model_cache_dir
+    ) -> None:
+        # given
+        model_id = "some-workspace/some-project/1"
+        _install_provider(monkeypatch, {model_id: build_metadata(model_id=model_id)})
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+        served_name = manager.resolve_and_register(model_id=model_id)
+
+        # when
+        manager.invalidate(served_name=served_name)
+
+        # then - dropped from the map; re-resolution registers again (files
+        # already on disk are re-downloaded by the fake, re-patched, and the
+        # vLLM load call re-issued) and never unloads
+        assert manager.get_registration(served_name) is None
+        assert manager.resolve_and_register(model_id=model_id) == served_name
+        assert manager.get_registration(served_name) is not None
+        assert client.load_lora_adapter.call_count == 2
+        client.unload_lora_adapter.assert_not_called()
 
     def test_wrong_base_variant_is_rejected_by_adapter_config_cross_check(
         self, monkeypatch, model_cache_dir

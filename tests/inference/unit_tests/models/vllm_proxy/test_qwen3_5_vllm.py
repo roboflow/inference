@@ -8,6 +8,8 @@ import torch
 
 from inference.core.entities.responses import LMMInferenceResponse
 from inference.models.vllm_proxy import qwen3_5_vllm as qwen3_5_vllm_module
+from inference.models.vllm_proxy import qwen_vllm_base as qwen_vllm_base_module
+from inference.models.vllm_proxy.errors import VLLMConnectionError, VLLMHTTPError
 from inference.models.vllm_proxy.qwen3_5_vllm import (
     MIN_PIXELS,
     Qwen35VLLMProxy,
@@ -22,10 +24,14 @@ class _FakeAdapterManager:
         self.client = MagicMock()
         self.served_name = served_name
         self.resolve_calls = []
+        self.invalidate_calls = []
 
     def resolve_and_register(self, **kwargs):
         self.resolve_calls.append(kwargs)
         return self.served_name
+
+    def invalidate(self, served_name):
+        self.invalidate_calls.append(served_name)
 
     def get_registration(self, served_name):
         return None
@@ -154,6 +160,130 @@ class TestPredict:
         _, kwargs = fake_manager.client.chat_completion.call_args
         assert kwargs["max_tokens"] == 512
         assert kwargs["chat_template_kwargs"] == {"enable_thinking": True}
+
+
+def _unknown_model_error(served_name: str = "qwen3_5-0.8b") -> VLLMHTTPError:
+    """The 404 vLLM's OpenAI server returns for an unknown served model."""
+    return VLLMHTTPError(
+        message="vLLM sidecar returned HTTP 404 for POST /v1/chat/completions",
+        status_code=404,
+        response_body=(
+            '{"object":"error","message":"The model `'
+            + served_name
+            + '` does not exist.","type":"NotFoundError","code":404}'
+        ),
+    )
+
+
+class TestSelfHealOnUnknownLora:
+    """The shared vLLM engine may forget an adapter this worker's map still
+    records (engine restart, NUM_WORKERS>1 desync). On the unknown-model
+    404 naming our adapter, predict must invalidate + re-register + retry
+    exactly once."""
+
+    def test_unknown_model_error_triggers_reregister_and_single_retry(
+        self,
+        monkeypatch,
+        model: Qwen35VLLMProxy,
+        fake_manager: _FakeAdapterManager,
+    ) -> None:
+        # given
+        logger_mock = MagicMock()
+        monkeypatch.setattr(qwen_vllm_base_module, "logger", logger_mock)
+        fake_manager.client.chat_completion.side_effect = [
+            _unknown_model_error(),
+            {"choices": [{"message": {"content": "a cat"}}]},
+        ]
+
+        # when
+        result = model.predict([{"role": "user", "content": []}])
+
+        # then - healed: invalidated, re-resolved, retried once, result back
+        assert result == "a cat"
+        assert fake_manager.invalidate_calls == ["qwen3_5-0.8b"]
+        # one resolve at __init__ + one for the self-heal
+        assert len(fake_manager.resolve_calls) == 2
+        assert fake_manager.resolve_calls[1]["model_id"] == "qwen3_5-0.8b"
+        assert fake_manager.resolve_calls[1]["api_key"] == "some-key"
+        assert fake_manager.client.chat_completion.call_count == 2
+        logger_mock.warning.assert_called_once()
+
+    def test_second_consecutive_unknown_model_error_propagates(
+        self, model: Qwen35VLLMProxy, fake_manager: _FakeAdapterManager
+    ) -> None:
+        # given - re-registration did not help: no retry loop
+        fake_manager.client.chat_completion.side_effect = [
+            _unknown_model_error(),
+            _unknown_model_error(),
+        ]
+
+        # when / then
+        with pytest.raises(VLLMHTTPError):
+            model.predict([{"role": "user", "content": []}])
+        assert fake_manager.client.chat_completion.call_count == 2
+        assert fake_manager.invalidate_calls == ["qwen3_5-0.8b"]
+        assert len(fake_manager.resolve_calls) == 2
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            # 404 about a DIFFERENT served model
+            VLLMHTTPError(
+                message="HTTP 404",
+                status_code=404,
+                response_body="The model `other-adapter` does not exist.",
+            ),
+            # 404 naming our model but not a not-found phrasing
+            VLLMHTTPError(
+                message="HTTP 404",
+                status_code=404,
+                response_body="qwen3_5-0.8b: route unavailable",
+            ),
+            # not-found phrasing but not a 404
+            VLLMHTTPError(
+                message="HTTP 500",
+                status_code=500,
+                response_body="The model `qwen3_5-0.8b` does not exist.",
+            ),
+            # empty body
+            VLLMHTTPError(message="HTTP 404", status_code=404, response_body=None),
+            # generic server error
+            VLLMHTTPError(
+                message="HTTP 503",
+                status_code=503,
+                response_body="engine overloaded",
+            ),
+        ],
+    )
+    def test_other_http_errors_do_not_retry(
+        self,
+        model: Qwen35VLLMProxy,
+        fake_manager: _FakeAdapterManager,
+        error: VLLMHTTPError,
+    ) -> None:
+        # given
+        fake_manager.client.chat_completion.side_effect = error
+
+        # when / then
+        with pytest.raises(VLLMHTTPError):
+            model.predict([{"role": "user", "content": []}])
+        assert fake_manager.client.chat_completion.call_count == 1
+        assert fake_manager.invalidate_calls == []
+        assert len(fake_manager.resolve_calls) == 1  # __init__ only
+
+    def test_connection_error_does_not_retry(
+        self, model: Qwen35VLLMProxy, fake_manager: _FakeAdapterManager
+    ) -> None:
+        # given
+        fake_manager.client.chat_completion.side_effect = VLLMConnectionError(
+            "Could not reach vLLM sidecar"
+        )
+
+        # when / then
+        with pytest.raises(VLLMConnectionError):
+            model.predict([{"role": "user", "content": []}])
+        assert fake_manager.client.chat_completion.call_count == 1
+        assert fake_manager.invalidate_calls == []
 
 
 class TestPostprocess:
