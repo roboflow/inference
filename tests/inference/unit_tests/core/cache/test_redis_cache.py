@@ -22,7 +22,9 @@ def test_zadd_with_expire_sets_server_side_ttl():
     mock_client.pipeline.return_value.__enter__.return_value = pipe
 
     # when
-    cache.zadd("inference:srv-0:model/1", value={"foo": "bar"}, score=123.0, expire=120.0)
+    cache.zadd(
+        "inference:srv-0:model/1", value={"foo": "bar"}, score=123.0, expire=120.0
+    )
 
     # then - ZADD and a real server-side EXPIRE are issued in one pipeline
     pipe.zadd.assert_called_once()
