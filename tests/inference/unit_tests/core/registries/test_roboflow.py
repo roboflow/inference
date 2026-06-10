@@ -452,7 +452,7 @@ def test_get_model_type_when_versioned_model_from_new_model_registry_is_requeste
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
     construct_model_type_cache_path_mock.return_value = metadata_path
     get_model_metadata_from_inference_models_registry_mock.return_value = {
-        "modelType": "rfdetr-nano",
+        "modelType": "rfdetr",
         "taskType": "object-detection",
     }
 
@@ -463,7 +463,7 @@ def test_get_model_type_when_versioned_model_from_new_model_registry_is_requeste
     )
 
     # then
-    assert result == ("object-detection", "rfdetr-nano")
+    assert result == ("object-detection", "rfdetr")
     get_model_metadata_from_inference_models_registry_mock.assert_called_once_with(
         api_key="my_api_key",
         model_id="coco/38",

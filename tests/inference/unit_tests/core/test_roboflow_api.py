@@ -913,7 +913,7 @@ def test_get_model_metadata_from_inference_models_registry_when_wrong_api_key_us
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         status_code=401,
     )
 
@@ -955,7 +955,7 @@ def test_get_model_metadata_from_inference_models_registry_when_wrong_model_used
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         status_code=404,
     )
 
@@ -997,7 +997,7 @@ def test_get_model_metadata_from_inference_models_registry_when_http_error_occur
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         status_code=500,
     )
 
@@ -1043,7 +1043,7 @@ def test_get_model_metadata_from_inference_models_registry_when_response_parsing
     expected_response = b"For sure not a JSON payload"
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         content=expected_response,
     )
 
@@ -1132,10 +1132,14 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 ) -> None:
     # given
     expected_response = {
-        "modelId": "coins_detection/1",
-        "type": "object-detection",
-        "taskType": "object-detection",
-        "modelType": "rfdetr-nano",
+        "status": "ok",
+        "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coins_detection/1",
+            "modelArchitecture": "rfdetr",
+            "modelVariant": "rfdetr-nano",
+            "taskType": "object-detection",
+        },
     }
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
@@ -1152,7 +1156,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
     assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
     assert result == {
-        "modelType": "rfdetr-nano",
+        "modelType": "rfdetr",
         "taskType": "object-detection",
     }
 
@@ -1163,10 +1167,14 @@ def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_pr
 ) -> None:
     # given
     expected_response = {
-        "modelId": "rfdetr-nano",
-        "type": "object-detection",
-        "taskType": "object-detection",
-        "modelType": "rfdetr-nano",
+        "status": "ok",
+        "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "rfdetr-nano",
+            "modelArchitecture": "rfdetr",
+            "modelVariant": "rfdetr-nano",
+            "taskType": "object-detection",
+        },
     }
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
@@ -1183,7 +1191,7 @@ def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_pr
     assert "modelid=rfdetr-nano" in requests_mock.last_request.query
     assert "Authorization" not in requests_mock.last_request.headers
     assert result == {
-        "modelType": "rfdetr-nano",
+        "modelType": "rfdetr",
         "taskType": "object-detection",
     }
 
@@ -1196,10 +1204,14 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 ) -> None:
     # given
     expected_response = {
-        "modelId": "coins_detection/1",
-        "type": "object-detection",
-        "taskType": "object-detection",
-        "modelType": "yolov8",
+        "status": "ok",
+        "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coins_detection/1",
+            "modelArchitecture": "yolov8",
+            "modelVariant": None,
+            "taskType": "object-detection",
+        },
     }
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
@@ -1237,10 +1249,14 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 ) -> None:
     # given
     expected_response = {
-        "modelId": "coins_detection/1",
-        "type": "object-detection",
-        "taskType": "object-detection",
-        "modelType": "yolov8",
+        "status": "ok",
+        "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coins_detection/1",
+            "modelArchitecture": "yolov8",
+            "modelVariant": None,
+            "taskType": "object-detection",
+        },
     }
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),

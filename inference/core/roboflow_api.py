@@ -626,9 +626,10 @@ def get_model_metadata_from_inference_models_registry(
         params=query,
     )
     raw_api_data = _get_from_url(url=api_url, headers=headers)
+    model_metadata = raw_api_data["modelMetadata"]
     api_data = {
-        "modelType": raw_api_data["modelType"],
-        "taskType": raw_api_data["taskType"],
+        "modelType": model_metadata["modelArchitecture"],
+        "taskType": model_metadata["taskType"],
     }
     cache.set(
         api_data_cache_key,
