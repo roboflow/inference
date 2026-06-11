@@ -150,9 +150,11 @@ def _get_air_gapped_info_for_block(
     Compatible task types from ``get_compatible_task_types()`` are always
     attached when present.
     """
-    task_types = manifest_cls.get_compatible_task_types()
+    task_types = manifest_cls.get_compatible_task_types() if hasattr(manifest_cls, "get_compatible_task_types") else []
 
     # 1. Explicit cloud/internet declaration
+    if not hasattr(manifest_cls, "get_air_gapped_availability"):
+        return BlockAirGappedInfo(available=True, compatible_task_types=task_types)
     availability = manifest_cls.get_air_gapped_availability()
     if not availability.available:
         return BlockAirGappedInfo(
@@ -162,7 +164,7 @@ def _get_air_gapped_info_for_block(
         )
 
     # 2. Foundation models with locally-cacheable weights
-    model_variants = manifest_cls.get_supported_model_variants()
+    model_variants = manifest_cls.get_supported_model_variants() if hasattr(manifest_cls, "get_supported_model_variants") else None
     if model_variants is not None:
         cached = has_cached_model_variant(model_variants)
         # Use the first variant as a representative identifier for the UI.

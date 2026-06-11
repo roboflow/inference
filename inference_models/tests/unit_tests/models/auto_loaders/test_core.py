@@ -535,3 +535,132 @@ def _create_file(path: str, content: str) -> None:
 def _read_file(path: str) -> str:
     with open(path, "r") as f:
         return f.read()
+
+
+# ---------------------------------------------------------------------------
+# find_cached_model_package_dir
+# ---------------------------------------------------------------------------
+
+
+class TestFindCachedModelPackageDir:
+
+    def test_returns_package_dir_when_model_config_exists(self, tmp_path):
+        from inference_models.models.auto_loaders.core import (
+            find_cached_model_package_dir,
+            slugify_model_id_to_os_safe_format,
+        )
+
+        model_id = "coco/22"
+        slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+        pkg_dir = tmp_path / "models-cache" / slug / "pkg001"
+        pkg_dir.mkdir(parents=True)
+        (pkg_dir / "model_config.json").write_text(
+            json.dumps({"task_type": "object-detection"})
+        )
+
+        with mock.patch(
+            "inference_models.models.auto_loaders.core.INFERENCE_HOME", str(tmp_path)
+        ):
+            result = find_cached_model_package_dir(model_id)
+
+        assert result == str(pkg_dir)
+
+    def test_returns_none_when_no_cache(self, tmp_path):
+        from inference_models.models.auto_loaders.core import (
+            find_cached_model_package_dir,
+        )
+
+        with mock.patch(
+            "inference_models.models.auto_loaders.core.INFERENCE_HOME", str(tmp_path)
+        ):
+            result = find_cached_model_package_dir("nonexistent/model")
+
+        assert result is None
+
+    def test_returns_none_when_no_model_config(self, tmp_path):
+        from inference_models.models.auto_loaders.core import (
+            find_cached_model_package_dir,
+            slugify_model_id_to_os_safe_format,
+        )
+
+        model_id = "my/model"
+        slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+        pkg_dir = tmp_path / "models-cache" / slug / "pkg001"
+        pkg_dir.mkdir(parents=True)
+        (pkg_dir / "weights.onnx").write_text("fake")
+
+        with mock.patch(
+            "inference_models.models.auto_loaders.core.INFERENCE_HOME", str(tmp_path)
+        ):
+            result = find_cached_model_package_dir(model_id)
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# RetryError offline fallback in from_pretrained
+# ---------------------------------------------------------------------------
+
+
+class TestFromPretrainedOfflineFallback:
+
+    def test_falls_back_to_cached_package_on_retry_error(self, tmp_path):
+        from inference_models.errors import RetryError
+        from inference_models.models.auto_loaders.core import (
+            find_cached_model_package_dir,
+            slugify_model_id_to_os_safe_format,
+        )
+
+        model_id = "test/model"
+        slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+        pkg_dir = tmp_path / "models-cache" / slug / "pkg001"
+        pkg_dir.mkdir(parents=True)
+        (pkg_dir / "model_config.json").write_text(
+            json.dumps(
+                {
+                    "model_id": model_id,
+                    "task_type": "object-detection",
+                    "model_architecture": "yolov8n",
+                    "backend_type": "onnxruntime",
+                }
+            )
+        )
+
+        fake_model = MagicMock()
+
+        with mock.patch(
+            "inference_models.models.auto_loaders.core.INFERENCE_HOME", str(tmp_path)
+        ), mock.patch(
+            "inference_models.models.auto_loaders.core.get_model_from_provider",
+            side_effect=RetryError("network down"),
+        ), mock.patch(
+            "inference_models.models.auto_loaders.core.attempt_loading_model_from_local_storage",
+            return_value=fake_model,
+        ) as mock_load:
+            from inference_models.models.auto_loaders.core import AutoModel
+
+            result = AutoModel.from_pretrained(
+                model_id_or_path=model_id,
+                api_key="test-key",
+            )
+
+        assert result is fake_model
+        mock_load.assert_called_once()
+        assert mock_load.call_args[1]["model_dir_or_weights_path"] == str(pkg_dir)
+
+    def test_reraises_retry_error_when_no_cache(self, tmp_path):
+        from inference_models.errors import RetryError
+
+        with mock.patch(
+            "inference_models.models.auto_loaders.core.INFERENCE_HOME", str(tmp_path)
+        ), mock.patch(
+            "inference_models.models.auto_loaders.core.get_model_from_provider",
+            side_effect=RetryError("network down"),
+        ):
+            from inference_models.models.auto_loaders.core import AutoModel
+
+            with pytest.raises(RetryError):
+                AutoModel.from_pretrained(
+                    model_id_or_path="nonexistent/model",
+                    api_key="test-key",
+                )
