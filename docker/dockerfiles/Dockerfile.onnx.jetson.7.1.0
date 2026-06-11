@@ -279,6 +279,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     apt-get install -y --no-install-recommends \
     cuda-cudart-13-0 \
     cuda-libraries-13-0 \
+    cuda-nvcc-13-0 \
+    # ptxas for sm_110a; Triton bundled ptxas-blackwell is CUDA 12.9
     libcudnn9-cuda-13 \
     tensorrt-libs \
     python3-libnvinfer \
@@ -375,7 +377,10 @@ RUN chmod +x /usr/local/bin/run_uvicorn.sh
 RUN python -m pip install --break-system-packages --force-reinstall "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
 
 # Environment variables
-ENV NVIDIA_VISIBLE_DEVICES=all \
+ENV CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/cuda/bin:$PATH \
+    TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda/bin/ptxas \
+    NVIDIA_VISIBLE_DEVICES=all \
     VERSION_CHECK_MODE=once \
     CORE_MODEL_SAM2_ENABLED=True \
     NUM_WORKERS=1 \
