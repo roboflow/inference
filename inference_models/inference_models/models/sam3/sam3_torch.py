@@ -466,10 +466,10 @@ class SAM3Torch:
                 boxes_list = boxes.cpu().tolist()
             else:
                 boxes_list = boxes
-            if len(boxes_list) > 0 and isinstance(boxes_list[0], (int, float)):
-                args["box"] = boxes_list
-            else:
-                args["box"] = boxes_list[0] if boxes_list else None
+            # Either a flat [x1, y1, x2, y2] box or a [num_prompts, 4] batch -
+            # the predictor reshapes both to (-1, 2, 2), so all boxes must be
+            # forwarded (taking only the first one silently drops prompts).
+            args["box"] = boxes_list if boxes_list else None
 
         args = pad_points(args)
         if not any(args.values()):
