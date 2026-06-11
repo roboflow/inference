@@ -2,14 +2,15 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import supervision as sv
-import torch
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
 
+from inference.core.workflows.core_steps.common.tensor_native import (
+    take_prediction_by_mask,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -198,46 +199,6 @@ class LineCounterManifest(WorkflowBlockManifest):
         ]
 
 
-def _take_native_detections_by_mask(
-    detections: Union[Detections, InstanceDetections],
-    mask: np.ndarray,
-) -> Union[Detections, InstanceDetections]:
-    """Slice a tensor-native prediction by a boolean mask (the dataclasses do
-    not support `detections[mask]`). Per-detection state (`bboxes_metadata`) and
-    masks (dense or RLE) are carried over for the surviving rows."""
-    indices = np.nonzero(np.asarray(mask))[0].tolist()
-    index_tensor = torch.as_tensor(
-        indices, dtype=torch.long, device=detections.xyxy.device
-    )
-    bboxes_metadata = None
-    if detections.bboxes_metadata is not None:
-        bboxes_metadata = [detections.bboxes_metadata[i] for i in indices]
-    if isinstance(detections, InstanceDetections):
-        mask_field = detections.mask
-        if isinstance(mask_field, InstancesRLEMasks):
-            new_mask = InstancesRLEMasks(
-                image_size=mask_field.image_size,
-                masks=[mask_field.masks[i] for i in indices],
-            )
-        else:
-            new_mask = mask_field[index_tensor]
-        return InstanceDetections(
-            xyxy=detections.xyxy[index_tensor],
-            class_id=detections.class_id[index_tensor],
-            confidence=detections.confidence[index_tensor],
-            mask=new_mask,
-            image_metadata=detections.image_metadata,
-            bboxes_metadata=bboxes_metadata,
-        )
-    return Detections(
-        xyxy=detections.xyxy[index_tensor],
-        class_id=detections.class_id[index_tensor],
-        confidence=detections.confidence[index_tensor],
-        image_metadata=detections.image_metadata,
-        bboxes_metadata=bboxes_metadata,
-    )
-
-
 class LineCounterBlockV2(WorkflowBlock):
     def __init__(self):
         self._batch_of_line_zones: Dict[str, sv.LineZone] = {}
@@ -300,8 +261,8 @@ class LineCounterBlockV2(WorkflowBlock):
             tracker_id=np.array([int(tracker_id) for tracker_id in tracker_ids], dtype=int),
         )
         mask_in, mask_out = line_zone.trigger(detections=sv_input)
-        detections_in = _take_native_detections_by_mask(detections, mask_in)
-        detections_out = _take_native_detections_by_mask(detections, mask_out)
+        detections_in = take_prediction_by_mask(detections, mask_in)
+        detections_out = take_prediction_by_mask(detections, mask_out)
 
         return {
             OUTPUT_KEY_COUNT_IN: line_zone.in_count,

@@ -39,23 +39,50 @@ else:
     from inference.core.workflows.core_steps.analytics.line_counter.v2_tensor import (
         LineCounterBlockV2,
     )
-from inference.core.workflows.core_steps.analytics.overlap.v1 import OverlapBlockV1
-from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
-    PathDeviationAnalyticsBlockV1,
-)
-from inference.core.workflows.core_steps.analytics.path_deviation.v2 import (
-    PathDeviationAnalyticsBlockV2,
-)
-from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
-    TimeInZoneBlockV1,
-)
-from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
-    TimeInZoneBlockV2,
-)
-from inference.core.workflows.core_steps.analytics.time_in_zone.v3 import (
-    TimeInZoneBlockV3,
-)
-from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.analytics.overlap.v1 import (
+        OverlapBlockV1,
+    )
+    from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
+        PathDeviationAnalyticsBlockV1,
+    )
+    from inference.core.workflows.core_steps.analytics.path_deviation.v2 import (
+        PathDeviationAnalyticsBlockV2,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
+        TimeInZoneBlockV1,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
+        TimeInZoneBlockV2,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v3 import (
+        TimeInZoneBlockV3,
+    )
+    from inference.core.workflows.core_steps.analytics.velocity.v1 import (
+        VelocityBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.analytics.overlap.v1_tensor import (
+        OverlapBlockV1,
+    )
+    from inference.core.workflows.core_steps.analytics.path_deviation.v1_tensor import (
+        PathDeviationAnalyticsBlockV1,
+    )
+    from inference.core.workflows.core_steps.analytics.path_deviation.v2_tensor import (
+        PathDeviationAnalyticsBlockV2,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v1_tensor import (
+        TimeInZoneBlockV1,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v2_tensor import (
+        TimeInZoneBlockV2,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v3_tensor import (
+        TimeInZoneBlockV3,
+    )
+    from inference.core.workflows.core_steps.analytics.velocity.v1_tensor import (
+        VelocityBlockV1,
+    )
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
 from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 import (
