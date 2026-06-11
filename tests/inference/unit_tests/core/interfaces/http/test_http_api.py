@@ -29,6 +29,25 @@ class _DummyResponse(BaseModel):
     ok: bool = True
 
 
+class _DummyArray:
+    def __init__(self, value):
+        self._value = value
+
+    def tolist(self):
+        return self._value
+
+
+class _DummyImage:
+    base64_image = "depth-image"
+
+
+class _DummyDepthResponse:
+    response = {
+        "normalized_depth": _DummyArray([[0.0]]),
+        "image": _DummyImage(),
+    }
+
+
 def _make_inference_request() -> dict:
     return {
         "model_id": "florence-2-base",
@@ -234,6 +253,51 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     assert model_manager.infer_from_request_sync.call_args.args[0] == "florence-2-base"
     inference_request = model_manager.infer_from_request_sync.call_args.args[1]
     assert inference_request.model_id == "florence-2-base"
+    assert inference_request.api_key == "query-api-key"
+
+
+def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyDepthResponse()
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/depth-estimation",
+            params={"api_key": "query-api-key"},
+            json={
+                "model_id": "depth-anything-v3/small",
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"normalized_depth": [[0.0]], "image": "depth-image"}
+    model_manager.add_model.assert_called_once_with(
+        "depth-anything-v3/small",
+        "query-api-key",
+        countinference=None,
+        service_secret=None,
+    )
+    model_manager.infer_from_request_sync.assert_called_once()
+    inference_request = model_manager.infer_from_request_sync.call_args.args[1]
+    assert inference_request.model_id == "depth-anything-v3/small"
     assert inference_request.api_key == "query-api-key"
 
 
