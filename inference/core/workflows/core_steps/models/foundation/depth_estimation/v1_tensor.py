@@ -1,0 +1,293 @@
+from typing import List, Literal, Optional, Type, Union
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from pydantic import ConfigDict, Field
+
+from inference.core.env import (
+    DEPTH_ESTIMATION_ENABLED,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
+)
+from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
+from inference.core.workflows.execution_engine.entities.tensor_native_types import (
+    TENSOR_KIND,
+)
+from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
+    STRING_KIND,
+    ImageInputField,
+    Selector,
+)
+from inference.core.workflows.prototypes.block import (
+    BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
+from inference_sdk import InferenceHTTPClient
+
+
+class BlockManifest(WorkflowBlockManifest):
+    # Standard model configuration for UI, schema, etc.
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "Depth Estimation",
+            "version": "v1",
+            "short_description": "Run Depth Estimation on an image.",
+            "long_description": (
+                """
+                🎯 This workflow block performs depth estimation on images using Apple's DepthPro model. It analyzes the spatial relationships
+                and depth information in images to create a depth map where:
+
+                📊 Each pixel's value represents its relative distance from the camera
+                🔍 Lower values (darker colors) indicate closer objects
+                🔭 Higher values (lighter colors) indicate further objects
+
+                The model outputs:
+                1. 🗺️ A depth map showing the relative distances of objects in the scene
+                2. 📐 The camera's field of view (in degrees)
+                3. 🔬 The camera's focal length
+
+                This is particularly useful for:
+                - 🏗️ Understanding 3D structure from 2D images
+                - 🎨 Creating depth-aware visualizations
+                - 📏 Analyzing spatial relationships in scenes
+                - 🕶️ Applications in augmented reality and 3D reconstruction
+
+                ⚡ The model runs efficiently on Apple Silicon (M1-M4) using Metal Performance Shaders (MPS) for accelerated inference.
+                """
+            ),
+            "license": "Apache-2.0",
+            "block_type": "model",
+            "search_keywords": [
+                "Depth Estimation",
+                "Depth Anything",
+                "Depth Anything V2",
+                "Depth Anything V3",
+                "Hugging Face",
+                "HuggingFace",
+            ],
+            "is_vlm_block": True,
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 5.5,
+            },
+        },
+        protected_namespaces=(),
+    )
+    type: Literal["roboflow_core/depth_estimation@v1"]
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+
+    model_version: Union[
+        Literal[
+            "depth-anything-v2/small",
+            "depth-anything-v3/small",
+            "depth-anything-v3/base",
+        ],
+        Selector(kind=[STRING_KIND]),
+    ] = Field(
+        default="depth-anything-v3/small",
+        description="The Depth Estimation model to be used for inference.",
+        examples=["depth-anything-v2/small", "$inputs.variant"],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name="image", kind=[IMAGE_KIND]),
+            OutputDefinition(name="normalized_depth", kind=[TENSOR_KIND]),
+        ]
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        # Only images can be passed in as a list/batch
+        return ["images"]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restrictions = [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Requires a GPU; run_locally() loads a model that needs CUDA.",
+                applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+                applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
+            ),
+        ]
+        if not DEPTH_ESTIMATION_ENABLED:
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.HARD,
+                    note=(
+                        "DEPTH_ESTIMATION_ENABLED=False on Roboflow Hosted "
+                        "Serverless: the depth-estimation endpoint is not "
+                        "registered, so run_remotely() returns 404."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+                )
+            )
+        return restrictions
+
+    @classmethod
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
+        """Return list of model_id variants that can satisfy this block."""
+        return [
+            "depth-anything-v2/small",
+            "depth-anything-v3/small",
+            "depth-anything-v3/base",
+        ]
+
+
+def _depth_to_visualization(
+    origin_image: WorkflowImageData,
+    normalized_depth: torch.Tensor,
+) -> WorkflowImageData:
+    # The colored depth map is an image output, so it has to land on the host as
+    # a uint8 RGB raster anyway - mirror the numpy adapter's viridis colouring.
+    depth_for_viz = (normalized_depth * 255.0).to(torch.uint8).detach().cpu().numpy()
+    cmap = plt.get_cmap("viridis")
+    colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)
+    return WorkflowImageData.copy_and_replace(
+        origin_image_data=origin_image,
+        numpy_image=colored_depth,
+    )
+
+
+class DepthEstimationBlockV1(WorkflowBlock):
+    def __init__(
+        self,
+        model_manager: ModelManager,
+        api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
+    ):
+        self._model_manager = model_manager
+        self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["model_manager", "api_key", "step_execution_mode"]
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
+
+    def run(
+        self,
+        images: Batch[WorkflowImageData],
+        model_version: str = "depth-anything-v3/small",
+    ) -> BlockResult:
+        if self._step_execution_mode == StepExecutionMode.LOCAL:
+            return self.run_locally(
+                images=images,
+                model_version=model_version,
+            )
+        elif self._step_execution_mode == StepExecutionMode.REMOTE:
+            return self.run_remotely(
+                images=images,
+                model_version=model_version,
+            )
+        else:
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        model_version: str = "depth-anything-v3/small",
+    ) -> BlockResult:
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
+            api_key=self._api_key,
+        )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+
+        predictions = []
+        for single_image in images:
+            result = client.depth_estimation(
+                inference_input=single_image.base64_image,
+                model_id=model_version,
+            )
+            # Convert the result back to the expected format
+            # Remote returns: {"normalized_depth": [...], "image": hex_string}
+            image_output = WorkflowImageData.copy_and_replace(
+                origin_image_data=single_image,
+                base64_image=result.get("image", ""),
+            )
+
+            # Remote returns the depth map as a nested JSON list; bring it back
+            # into the tensor-native representation (torch.Tensor).
+            normalized_depth = torch.as_tensor(
+                result.get("normalized_depth", []), dtype=torch.float32
+            )
+
+            # Return in the same format as local execution expects
+            predictions.append(
+                {
+                    "image": image_output,
+                    "normalized_depth": normalized_depth,
+                }
+            )
+
+        return predictions
+
+    def run_locally(
+        self,
+        images: Batch[WorkflowImageData],
+        model_version: str = "depth-anything-v3/small",
+    ) -> BlockResult:
+        # Register Depth Estimation with the model manager.
+        self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
+
+        predictions = []
+        for single_image in images:
+            # Tensor-native local path: the depth adapter's
+            # run_tensor_native_inference returns a list of raw depth maps as
+            # torch.Tensor kept on-device (no numpy round-trip).
+            depth_maps = self._model_manager.run_tensor_native_inference(
+                model_version,
+                images=[single_image.tensor_image],
+                input_color_format="rgb",
+            )
+            depth_map = depth_maps[0]
+            depth_min = depth_map.min()
+            depth_max = depth_map.max()
+            if depth_max == depth_min:
+                raise ValueError("Depth map has no variation (min equals max)")
+            # Normalise to [0, 1] in torch - this stays the block's output.
+            normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
+            image_output = _depth_to_visualization(
+                origin_image=single_image,
+                normalized_depth=normalized_depth,
+            )
+            predictions.append(
+                {
+                    "image": image_output,
+                    "normalized_depth": normalized_depth,
+                }
+            )
+
+        return predictions

@@ -670,3 +670,22 @@ TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND = Kind(
     serialised_data_type="dict",
     internal_data_type="inference_models.SemanticSegmentationResult",
 )
+
+
+TENSOR_KIND_DOCS = """
+This kind represents a raw, multi-dimensional numeric tensor kept on-device as a
+`torch.Tensor`. It is the tensor-native counterpart of `numpy_array`, but it is a
+standalone kind with its own name (`tensor`) - it does NOT replace or alias
+`numpy_array`; the two coexist.
+
+It is used by blocks that emit dense numeric maps (for example, the depth map
+produced by Depth Estimation) and want to keep the data on the accelerator,
+avoiding an eager GPU -> CPU / numpy round-trip.
+"""
+TENSOR_KIND = Kind(
+    name="tensor",
+    description="A raw multi-dimensional numeric tensor (torch.Tensor)",
+    docs=TENSOR_KIND_DOCS,
+    serialised_data_type="list",
+    internal_data_type="torch.Tensor",
+)

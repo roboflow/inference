@@ -197,7 +197,8 @@ from inference.core.workflows.execution_engine.entities.tensor_native_types impo
     TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND, TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND, \
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND, TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND, \
     TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND, \
-    TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND, TENSOR_NATIVE_EMBEDDING_KIND
+    TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND, TENSOR_NATIVE_EMBEDDING_KIND, \
+    TENSOR_KIND
 
 from inference.core.workflows.core_steps.common.serializers import serialise_image
 
@@ -368,9 +369,14 @@ else:
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
-    DepthEstimationBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
+        DepthEstimationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1_tensor import (
+        DepthEstimationBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
     EasyOCRBlockV1,
 )
@@ -1376,6 +1382,7 @@ def load_kinds() -> List[Kind]:
         CONTOURS_KIND,
         LANGUAGE_MODEL_OUTPUT_KIND,
         NUMPY_ARRAY_KIND,
+        TENSOR_KIND,
         QR_CODE_DETECTION_KIND,
         BAR_CODE_DETECTION_KIND,
         PREDICTION_TYPE_KIND,
