@@ -10,7 +10,7 @@ import queue
 import struct
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from queue import Queue
@@ -89,6 +89,10 @@ class VideoMetadata:
         time_base: Time base for interpreting pts values (optional)
         declared_fps: Declared/expected frames per second (optional)
         measured_fps: Measured actual frames per second (optional)
+        errors: Per-frame errors reported by the server (workflow execution
+            failures, output serialization failures, etc). Empty list means
+            the frame processed cleanly. Subscribe with `@session.on_error`
+            to react only to error frames.
     """
 
     frame_id: int
@@ -97,6 +101,7 @@ class VideoMetadata:
     time_base: Optional[float] = None
     declared_fps: Optional[float] = None
     measured_fps: Optional[float] = None
+    errors: List[str] = field(default_factory=list)
 
 
 class _VideoStream:
@@ -196,6 +201,7 @@ class WebRTCSession:
         self._frame_handlers: List[Callable] = []
         self._data_field_handlers: Dict[str, List[Callable]] = {}
         self._data_global_handler: Optional[Callable] = None
+        self._error_handlers: List[Callable] = []
 
         # Chunk reassembly for binary messages
         self._chunk_reassembler = ChunkReassembler()
@@ -255,12 +261,17 @@ class WebRTCSession:
                 raise RuntimeError("Cannot use closed WebRTCSession")
 
     def _parse_video_metadata(
-        self, video_metadata_dict: Optional[dict]
+        self,
+        video_metadata_dict: Optional[dict],
+        errors: Optional[List[str]] = None,
     ) -> Optional[VideoMetadata]:
         """Parse video metadata from message dict.
 
         Args:
             video_metadata_dict: Dictionary containing video metadata fields
+            errors: Per-frame errors reported by the server alongside the
+                metadata (e.g. workflow execution failures). Attached to the
+                returned VideoMetadata so handlers can react to them.
 
         Returns:
             VideoMetadata instance or None if parsing fails or dict is None
@@ -276,6 +287,7 @@ class WebRTCSession:
                 time_base=video_metadata_dict.get("time_base"),
                 declared_fps=video_metadata_dict.get("declared_fps"),
                 measured_fps=video_metadata_dict.get("measured_fps"),
+                errors=list(errors) if errors else [],
             )
         except (KeyError, ValueError, TypeError) as e:
             logger.warning(f"Failed to parse video_metadata: {e}")
@@ -458,6 +470,36 @@ class WebRTCSession:
             return fn
 
         return decorator
+
+    def on_error(self, callback: Callable) -> Callable:
+        """Decorator to register per-frame error handlers.
+
+        The server reports per-frame errors alongside each data channel
+        message (workflow execution failures, output serialization failures,
+        etc.). Handlers registered here are invoked **only** for frames whose
+        error list is non-empty.
+
+        Handler signature options:
+            handler(errors: List[str], metadata: VideoMetadata)
+            handler(errors: List[str])
+
+        Example:
+            @session.on_error
+            def on_err(errors: List[str], metadata: VideoMetadata):
+                logger.error(f"frame {metadata.frame_id} failed: {errors}")
+                session.close()  # bail out on first error
+
+        Notes:
+            - These errors are *server-reported* per-frame failures. They do
+              NOT include connection failures, ICE failures, or setup errors;
+              those surface as exceptions from `run()` or as ERROR-level log
+              lines from the SDK.
+            - Errors are also attached to `VideoMetadata.errors` for every
+              frame, so existing `@on_data` / `@on_frame` handlers can inspect
+              `metadata.errors` directly without registering a separate hook.
+        """
+        self._error_handlers.append(callback)
+        return callback
 
     def run(self) -> None:
         """Block and process frames until close() is called or stream ends.
@@ -812,10 +854,24 @@ class WebRTCSession:
                         pass
                     return
 
-                # Extract video metadata if present (for data handlers)
+                # Extract video metadata if present (for data handlers).
+                # Errors are merged into the metadata so any handler can read
+                # `metadata.errors`; dedicated `@on_error` handlers fire below.
+                errors = parsed_message.get("errors") or []
                 metadata = self._parse_video_metadata(
-                    parsed_message.get("video_metadata")
+                    parsed_message.get("video_metadata"),
+                    errors=errors,
                 )
+
+                # Dispatch per-frame error handlers (only when errors present)
+                if errors and self._error_handlers:
+                    for handler in list(self._error_handlers):
+                        try:
+                            self._invoke_data_handler(handler, errors, metadata)
+                        except Exception:
+                            logger.warning(
+                                "Error calling on_error handler", exc_info=True
+                            )
 
                 # Get serialized output data
                 serialized_data = parsed_message.get("serialized_output_data")
