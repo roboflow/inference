@@ -218,3 +218,5 @@ inference_testing
 
 openspec*/
 opsx/
+
+.cursor/
