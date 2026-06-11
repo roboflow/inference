@@ -29,6 +29,25 @@ class _DummyResponse(BaseModel):
     ok: bool = True
 
 
+class _DummyArray:
+    def __init__(self, value):
+        self._value = value
+
+    def tolist(self):
+        return self._value
+
+
+class _DummyImage:
+    base64_image = "depth-image"
+
+
+class _DummyDepthResponse:
+    response = {
+        "normalized_depth": _DummyArray([[0.0]]),
+        "image": _DummyImage(),
+    }
+
+
 def _make_inference_request() -> dict:
     return {
         "model_id": "florence-2-base",
@@ -251,10 +270,7 @@ def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> N
     model_manager = MagicMock()
     model_manager.pingback = None
     model_manager.num_errors = 0
-    model_manager.infer_from_request_sync.return_value = {
-        "normalized_depth": [[0.0]],
-        "image": "depth-image",
-    }
+    model_manager.infer_from_request_sync.return_value = _DummyDepthResponse()
 
     interface = http_api.HttpInterface(model_manager=model_manager)
 
