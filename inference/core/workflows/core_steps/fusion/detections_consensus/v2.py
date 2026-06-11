@@ -9,6 +9,7 @@ from uuid import uuid4
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -67,7 +68,7 @@ Combine detection predictions from multiple models using a majority vote consens
 This block fuses predictions from multiple detection models by requiring agreement (consensus) among models before accepting detections. The block:
 
 1. Takes detection predictions from multiple model sources (object detection, instance segmentation, or keypoint detection) as input
-2. Matches detections from different models that overlap spatially by calculating Intersection over Union (IoU) between bounding boxes
+2. Matches detections from different models that overlap spatially by calculating Intersection over Union (IoU) on the geometry the detections actually carry: segmentation masks when both sides have them, oriented bounding box corners when both sides have them, and axis-aligned bounding boxes otherwise (v1 always compared axis-aligned boxes, which over-matches detections whose boxes overlap even though their masks or rotated bodies do not)
 3. Compares overlapping detections against an IoU threshold to determine if they represent the same object
 4. Counts "votes" for each detection by finding matching detections from other models (subject to class-awareness if enabled)
 5. Requires a minimum number of votes (`required_votes`) before accepting a detection as part of the consensus output
@@ -113,7 +114,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Detections Consensus",
-            "version": "v1",
+            "version": "v2",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -125,7 +126,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal["roboflow_core/detections_consensus@v1", "DetectionsConsensus"]
+    type: Literal["roboflow_core/detections_consensus@v2"]
     predictions_batches: List[
         Selector(
             kind=[
@@ -229,7 +230,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class DetectionsConsensusBlockV1(WorkflowBlock):
+class DetectionsConsensusBlockV2(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -368,7 +369,29 @@ def enumerate_detections(
 
 
 def calculate_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> float:
-    iou = float(sv.box_iou_batch(detection_a.xyxy, detection_b.xyxy)[0][0])
+    """Compute IoU on the geometry the detections actually carry.
+
+    Dispatch order: segmentation masks when both sides have them, oriented
+    box corners (``data["xyxyxyxy"]``) when both sides have them, and the
+    axis-aligned ``xyxy`` boxes otherwise. The v1 block always compared
+    ``xyxy``, which over-matches detections whose boxes overlap even though
+    their masks or rotated bodies do not.
+    """
+    if detection_a.mask is not None and detection_b.mask is not None:
+        iou = float(sv.mask_iou_batch(detection_a.mask, detection_b.mask)[0][0])
+    elif (
+        ORIENTED_BOX_COORDINATES in detection_a.data
+        and ORIENTED_BOX_COORDINATES in detection_b.data
+    ):
+        boxes_a = np.asarray(
+            detection_a.data[ORIENTED_BOX_COORDINATES], dtype=np.float32
+        )
+        boxes_b = np.asarray(
+            detection_b.data[ORIENTED_BOX_COORDINATES], dtype=np.float32
+        )
+        iou = float(sv.oriented_box_iou_batch(boxes_a, boxes_b)[0][0])
+    else:
+        iou = float(sv.box_iou_batch(detection_a.xyxy, detection_b.xyxy)[0][0])
     if math.isnan(iou):
         iou = 0
     return iou
