@@ -208,13 +208,18 @@ RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/cuda12,sharin
         --cmake_extra_defines CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
     python3 -m pip install --break-system-packages build/cuda12/Release/dist/onnxruntime_gpu-*.whl
 
-# flash-attn is intentionally NOT installed: its wheel/source default builds
-# target sm80/sm90 only, and on Orin (sm87) every kernel launch fails with
-# "no kernel image is available" (verified on the published image). Worse,
-# transformers' is_flash_attn_2_available() returned True, so PaliGemma/Qwen-VL
-# selected flash_attention_2 and crashed at inference; without the package they
-# fall back to eager/SDPA, which works. (A future perf PR can reinstate it with
-# FLASH_ATTN_CUDA_ARCHS=87.) Removing it also saves ~390MB.
+# Install flash-attn, built for Orin's actual architecture (sm87).
+# The previous build used the default arch list (sm80;sm90), so every kernel
+# launch on Orin failed with "no kernel image is available" - and because the
+# package still imported, transformers' is_flash_attn_2_available() returned
+# True and PaliGemma/Qwen-VL selected flash_attention_2, then crashed at
+# inference. Building for sm87 makes the feature actually work and the
+# single-arch binary is ~195MB smaller than the old dual-arch one.
+# Limit MAX_JOBS to prevent timeout/OOM during CUDA kernel compilation.
+# Using 2.8.3 - removed legacy features (rotary, xentropy, fused_softmax, ft_attention) for faster builds
+RUN export MAX_JOBS=4 && \
+    export FLASH_ATTN_CUDA_ARCHS="87" TORCH_CUDA_ARCH_LIST="8.7" && \
+    python3 -m pip install --break-system-packages --no-build-isolation flash-attn==2.8.3
 
 # Copy requirements files (done after compilation to improve cache efficiency)
 WORKDIR /build/reqs
@@ -391,11 +396,34 @@ RUN cd /usr/local/lib/python3.10/dist-packages && \
         -name '*.so*' -type f | grep -vE '/[^/]+\.libs/' | xargs -r -n32 -P4 strip --strip-unneeded 2>/dev/null || true
 # ---- end image-slim cleanup ----
 
-# Stage 2: Runtime
-FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
+# CUDA runtime library donor stage: pinned to the exact image the runtime
+# stage previously used as its base, so library versions stay bit-identical.
+FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime AS cuda_rt
+
+# Stage 2: Runtime.
+# Plain ubuntu:22.04 (the same distro the l4t-cuda base wraps) instead of
+# l4t-cuda:12.6.11-runtime: the base shipped 1.8GB of CUDA libraries plus a
+# ~210MB mesa/freeglut-dev layer, of which only the 20 libraries COPY'd below
+# are actually referenced (readelf NEEDED + dlopen-string scan over every .so
+# in the image). Net ~300MB smaller. GPU/BSP access is unchanged: on JetPack 6
+# the nvidia-container-runtime injects libcuda/tegra libs from the host at
+# container start, driven by the NVIDIA_* envs replicated below.
+FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
+
+# Replicated verbatim from the l4t-cuda:12.6.11-runtime base / published image.
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    NVIDIA_REQUIRE_CUDA="cuda>=12.6" \
+    NVIDIA_REQUIRE_JETPACK_HOST_MOUNTS=base-only \
+    NVIDIA_PRODUCT_NAME=CUDA \
+    PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Library search paths the l4t-cuda base provided via ld.so.conf.d (tegra/nvidia
+# dirs are populated by the host mounts injected at container start).
+RUN printf '/usr/local/cuda/lib64\n/usr/lib/aarch64-linux-gnu/tegra\n/usr/lib/aarch64-linux-gnu/tegra-egl\n/usr/lib/aarch64-linux-gnu/nvidia\n/usr/lib/aarch64-linux-gnu/gstreamer-1.0\n' > /etc/ld.so.conf.d/nvidia-tegra.conf
 
 WORKDIR /app
 
@@ -409,6 +437,9 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 #   gstreamer1.0-tools (debug CLIs), python3-gi + gir1.2-* (no `import gi`
 #   anywhere; cv2 links the GStreamer C libs directly), libatlas3-base (zero .so
 #   NEEDs ATLAS; BLAS is libopenblas0).
+# libegl1/libgles2 (glvnd loaders, ~1.8MB) are required by the host-injected NV
+# GStreamer plugins (nvarguscamerasrc/nvivafilter/nveglglessink/...); the actual
+# EGL/GLES drivers come from the host's tegra-egl mount at container start.
 # The dpkg path-exclude keeps docs/man/locale out of every package this layer installs.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-runtime-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-runtime-${TARGETARCH} \
@@ -417,6 +448,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     printf 'path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/locale/*\n' > /etc/dpkg/dpkg.cfg.d/01-nodoc && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends \
+    tzdata \
     libopenblas0 \
     libsqlite3-0 \
     libtiff5 \
@@ -442,7 +474,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     libgstreamer1.0-0 \
     libgstreamer-plugins-base1.0-0 \
     gstreamer1.0-plugins-base \
-    gstreamer1.0-plugins-good
+    gstreamer1.0-plugins-good \
+    libegl1 \
+    libgles2
 
 # No system GDAL: rasterio (the only GDAL consumer, via requirements.sam.txt)
 # installs as a manylinux wheel with its own bundled libgdal/libproj/gdal-data;
@@ -451,9 +485,38 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
 # rasterio's bundled data directory and break CRS handling.
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
+# CUDA runtime libraries, exact files (not globs: the source dir mixes real
+# files and symlinks, and COPY dereferences symlinks, which would triple-copy
+# every library). The 20 libs below are the complete set referenced by
+# torch/onnxruntime/cv2/pycuda/cudnn/TensorRT (readelf NEEDED + dlopen-string
+# scan). Deliberately not shipped (unreferenced): cusolverMg, npps, cufile,
+# nvfatbin, nvblas, nppisu, cufftw, nvToolsExt, cupti.
+COPY --from=cuda_rt \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcudart.so.12.6.68 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcublas.so.12.6.1.4 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcublasLt.so.12.6.1.4 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcufft.so.11.2.6.59 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcurand.so.10.3.7.68 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcusolver.so.11.6.4.69 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcusparse.so.12.5.3.3 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnvJitLink.so.12.6.68 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnvrtc.so.12.6.68 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnvrtc-builtins.so.12.6.68 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppc.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppial.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppicc.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppidei.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppif.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppig.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppim.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppist.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppitc.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcudla.so.1.0.0 \
+     /usr/local/cuda/lib64/
+
 # Copy CUDA libraries (only versioned files, then create symlinks to save ~2GB).
 # No libnvToolsExt COPY: the builder keeps it elsewhere (the old glob matched
-# nothing) and the l4t-cuda runtime base already ships it.
+# nothing) and zero .so in the image references it.
 # No libcupti COPY: torch is built USE_KINETO=0 USE_CUPTI_SO=0 and an aggregate
 # readelf NEEDED scan over every .so in the image found zero cupti references.
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libcudnn*.so.*.*.* /usr/local/cuda/lib64/
@@ -482,14 +545,17 @@ COPY --from=builder /usr/lib/aarch64-linux-gnu/nvidia/libnvdla_compiler.so* /usr
 # be configured to mount them; without that, cv2 here can dispatch a GStreamer
 # pipeline but `nvv4l2decoder` / `nvvidconv` / `nvjpegenc` won't resolve.
 
-# Create symlinks for cuDNN and TensorRT (saves ~2GB by not duplicating files)
+# Create symlinks for CUDA/cuDNN/TensorRT (saves ~2GB by not duplicating files).
+# libnvrtc-builtins needs its two-level soname on top of the .so/.so.MAJ links
+# the loop creates: libnvrtc dlopens it as libnvrtc-builtins.so.12.6.
 RUN cd /usr/local/cuda/lib64 && \
     for lib in *.so.*.*.*; do \
         base=$(echo $lib | sed 's/\.so\..*/\.so/') && \
         maj=$(echo $lib | sed 's/\(.*\.so\.[0-9]*\)\..*/\1/') && \
         ln -sf $lib $maj && \
         ln -sf $lib $base; \
-    done
+    done && \
+    ln -sf libnvrtc-builtins.so.12.6.68 libnvrtc-builtins.so.12.6
 
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 RUN ldconfig
