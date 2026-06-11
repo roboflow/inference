@@ -351,12 +351,20 @@ else:
     from inference.core.workflows.core_steps.models.foundation.clip.v1_tensor import (
         ClipModelBlockV1,
     )
-from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
-    ClipComparisonBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 import (
-    ClipComparisonBlockV2,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
+        ClipComparisonBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 import (
+        ClipComparisonBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1_tensor import (
+        ClipComparisonBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2_tensor import (
+        ClipComparisonBlockV2,
+    )
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
