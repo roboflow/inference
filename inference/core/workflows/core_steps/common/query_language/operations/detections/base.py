@@ -30,11 +30,10 @@ from inference.core.workflows.core_steps.common.query_language.operations.utils 
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
-from inference.core.workflows.execution_engine.constants import (
-    CLASS_NAMES_KEY,
-    DETECTION_ID_KEY,
-    IMAGE_DIMENSIONS_KEY,
+from inference.core.workflows.core_steps.common.serializers_tensor import (
+    serialise_sv_detections as serialise_tensor_native_detections,
 )
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 
 
 def detections_anchor_coordinates(
@@ -958,9 +957,13 @@ def _rename_detections_tensor_native(
         dtype=detections.class_id.dtype,
         device=detections.class_id.device,
     )
+    allowed_names = {class_map.get(name, name) for name in original_class_names}
+    allowed_names.update(class_map.values())
     image_metadata = detections_copy.image_metadata or {}
     image_metadata[CLASS_NAMES_KEY] = {
-        class_id: class_name for class_name, class_id in new_class_mapping.items()
+        class_id: class_name
+        for class_name, class_id in new_class_mapping.items()
+        if class_name in allowed_names
     }
     detections_copy.image_metadata = image_metadata
     return detections_copy
@@ -976,44 +979,8 @@ def _detections_to_dictionary_tensor_native(
         operation_name="detections_to_dictionary",
         execution_context=execution_context,
     )
-    sv_detections = detections.to_supervision()
-    class_names = _resolve_class_names(
-        detections, operation_name="detections_to_dictionary"
-    )
-    sv_detections.data["class_name"] = np.array(class_names, dtype=object)
-    bboxes_metadata = _bboxes_metadata_list(detections)
-    detection_ids = [data.get(DETECTION_ID_KEY) for data in bboxes_metadata]
-    if any(detection_id is None for detection_id in detection_ids):
-        raise OperationError(
-            public_message=f"Executing detections_to_dictionary(...) in context "
-            f"{execution_context}, but `bboxes_metadata['{DETECTION_ID_KEY}']` is "
-            f"missing for at least one detection — the producer block must attach it.",
-            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
-        )
-    sv_detections.data[DETECTION_ID_KEY] = np.array(detection_ids, dtype=object)
-    tracker_ids = [data.get("tracker_id") for data in bboxes_metadata]
-    if len(tracker_ids) > 0 and all(
-        tracker_id is not None for tracker_id in tracker_ids
-    ):
-        sv_detections.tracker_id = np.array(
-            [int(tracker_id) for tracker_id in tracker_ids], dtype=int
-        )
-    image_metadata = detections.image_metadata or {}
-    image_dimensions = image_metadata.get(IMAGE_DIMENSIONS_KEY)
-    if image_dimensions is not None:
-        sv_detections.data[IMAGE_DIMENSIONS_KEY] = np.array(
-            [image_dimensions] * len(detection_ids), dtype=object
-        )
-    handled_keys = {"class_name", DETECTION_ID_KEY, "tracker_id"}
-    extra_keys = {
-        key for data in bboxes_metadata for key in data
-    } - handled_keys
-    for key in extra_keys:
-        sv_detections.data[key] = np.array(
-            [data.get(key) for data in bboxes_metadata], dtype=object
-        )
     try:
-        return serialise_sv_detections(detections=sv_detections)
+        return serialise_tensor_native_detections(detections=detections)
     except Exception as error:
         raise OperationError(
             public_message=f"While Using operation detections_to_dictionary(...) in context {execution_context} "

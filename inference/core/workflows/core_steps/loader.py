@@ -140,6 +140,8 @@ from inference.core.workflows.execution_engine.entities.tensor_native_types impo
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND, TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND_DOCS, \
     TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND, TENSOR_NATIVE_EMBEDDING_KIND_DOCS
 
+from inference.core.workflows.core_steps.common.serializers import serialise_image
+
 if ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.common.deserializers_tensor import (
         deserialize_detections_kind,
@@ -147,7 +149,6 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
         deserialize_rle_detections_kind,
     )
     from inference.core.workflows.core_steps.common.serializers_tensor import (
-        serialise_image,
         serialise_rle_sv_detections,
         serialise_sv_detections,
     )
@@ -158,7 +159,6 @@ else:
         deserialize_rle_detections_kind,
     )
     from inference.core.workflows.core_steps.common.serializers import (
-        serialise_image,
         serialise_rle_sv_detections,
         serialise_sv_detections,
     )

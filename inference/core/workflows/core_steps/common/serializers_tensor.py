@@ -1,25 +1,303 @@
-"""
-Tensor-native sibling of `common/serializers.py`. Per the plan's locked
-decision [ITERATE 3.B], we ship this file from day one so the loader
-can swap imports symmetrically with the deserializer side.
+from typing import Any, Optional, Union
 
-The lazy `tensor_image -> numpy_image` fallback inside
-`WorkflowImageData` (via `base64_image -> numpy_image`) means the numpy
-`serialise_image` already produces correct, JSON-byte-identical output
-when called against a tensor-backed `WorkflowImageData`. So this module
-currently re-exports the numpy implementations. Future optimisations
-(e.g., a tensor -> JPEG path that bypasses the numpy cache) can replace
-the bound names without changing the loader-facing contract.
-"""
+import numpy as np
+import supervision as sv
+import torch
+
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
+from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 
 from inference.core.workflows.core_steps.common.serializers import (
-    serialise_image,
-    serialise_rle_sv_detections,
-    serialise_sv_detections,
+    _attach_parent_metadata_to_detection_dict,
+    mask_to_polygon,
+)
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_rle_sv_detections as _serialise_rle_sv_detections_numpy,
+)
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_sv_detections as _serialise_sv_detections_numpy,
+)
+from inference.core.workflows.execution_engine.constants import (
+    AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
+    AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
+    AREA_KEY_IN_INFERENCE_RESPONSE,
+    AREA_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_ANGLE_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_HEIGHT_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_RECT_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_WIDTH_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
+    CLASS_ID_KEY,
+    CLASS_NAME_KEY,
+    CLASS_NAMES_KEY,
+    CONFIDENCE_KEY,
+    DETECTED_CODE_KEY,
+    DETECTION_ID_KEY,
+    HEIGHT_KEY,
+    IMAGE_DIMENSIONS_KEY,
+    KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
+    PARENT_ID_KEY,
+    PARENT_ORIGIN_KEY,
+    PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE,
+    PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
+    POLYGON_KEY,
+    POLYGON_KEY_IN_INFERENCE_RESPONSE,
+    POLYGON_KEY_IN_SV_DETECTIONS,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+    ROOT_PARENT_ORIGIN_KEY,
+    SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE,
+    SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+    SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+    SPEED_KEY_IN_INFERENCE_RESPONSE,
+    SPEED_KEY_IN_SV_DETECTIONS,
+    TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE,
+    TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
+    TRACKER_ID_KEY,
+    VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+    VELOCITY_KEY_IN_SV_DETECTIONS,
+    WIDTH_KEY,
+    X_KEY,
+    Y_KEY,
 )
 
-__all__ = [
-    "serialise_image",
-    "serialise_sv_detections",
-    "serialise_rle_sv_detections",
-]
+serialise_rle_sv_detections = _serialise_rle_sv_detections_numpy
+
+TensorNativeDetections = Union[Detections, InstanceDetections]
+
+
+def serialise_sv_detections(
+    detections: TensorNativeDetections,
+) -> dict:
+    if not isinstance(detections, (Detections, InstanceDetections)):
+        raise ValueError(
+            f"serialise_sv_detections(...) expected `inference_models.Detections`, "
+            f"`inference_models.InstanceDetections` or `sv.Detections`, "
+            f"got {type(detections)}."
+        )
+    image_metadata = detections.image_metadata or {}
+    detections_number = int(detections.xyxy.shape[0])
+    bboxes_metadata = detections.bboxes_metadata
+    if bboxes_metadata is None:
+        bboxes_metadata = [{} for _ in range(detections_number)]
+    class_names_mapping = None
+    if detections_number > 0:
+        class_names_mapping = image_metadata.get(CLASS_NAMES_KEY)
+        if class_names_mapping is None:
+            raise ValueError(
+                f"Serialising tensor-native detections, but "
+                f"`image_metadata['{CLASS_NAMES_KEY}']` is missing - the producer "
+                f"block must attach the class_id -> name mapping."
+            )
+    boxes = detections.xyxy.detach().cpu().tolist()
+    confidences = detections.confidence.detach().cpu().tolist()
+    class_ids = [int(value) for value in detections.class_id.detach().cpu().tolist()]
+    serialized_detections = []
+    for index in range(detections_number):
+        data = bboxes_metadata[index]
+        detection_dict = {}
+        x1, y1, x2, y2 = (float(coordinate) for coordinate in boxes[index])
+        detection_dict[WIDTH_KEY] = abs(x2 - x1)
+        detection_dict[HEIGHT_KEY] = abs(y2 - y1)
+        detection_dict[X_KEY] = x1 + detection_dict[WIDTH_KEY] / 2
+        detection_dict[Y_KEY] = y1 + detection_dict[HEIGHT_KEY] / 2
+        detection_dict[CONFIDENCE_KEY] = float(confidences[index])
+        detection_dict[CLASS_ID_KEY] = class_ids[index]
+        if isinstance(detections, InstanceDetections):
+            polygon = _resolve_instance_polygon(
+                mask=detections.mask, index=index, data=data
+            )
+            if polygon is None:
+                # ignoring the whole instance - mirrors the numpy serialiser
+                continue
+            detection_dict[POLYGON_KEY] = []
+            for x, y in polygon:
+                detection_dict[POLYGON_KEY].append(
+                    {
+                        X_KEY: float(x),
+                        Y_KEY: float(y),
+                    }
+                )
+        if data.get("tracker_id") is not None:
+            detection_dict[TRACKER_ID_KEY] = int(data["tracker_id"])
+        detection_dict[CLASS_NAME_KEY] = _resolve_class_name(
+            class_id=class_ids[index], class_names_mapping=class_names_mapping
+        )
+        if DETECTION_ID_KEY not in data:
+            raise ValueError(
+                f"Serialising tensor-native detections, but "
+                f"`bboxes_metadata['{DETECTION_ID_KEY}']` is missing for detection "
+                f"at index {index} - the producer block must attach it."
+            )
+        detection_dict[DETECTION_ID_KEY] = str(data[DETECTION_ID_KEY])
+        if PATH_DEVIATION_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE] = data[
+                PATH_DEVIATION_KEY_IN_SV_DETECTIONS
+            ]
+        if TIME_IN_ZONE_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE] = data[
+                TIME_IN_ZONE_KEY_IN_SV_DETECTIONS
+            ]
+        if POLYGON_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[POLYGON_KEY_IN_INFERENCE_RESPONSE] = (
+                np.asarray(data[POLYGON_KEY_IN_SV_DETECTIONS])
+                .astype(float)
+                .round()
+                .astype(int)
+                .tolist()
+            )
+        if (
+            BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS in data
+            and BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS in data
+            and BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS in data
+            and BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS in data
+        ):
+            detection_dict[BOUNDING_RECT_ANGLE_KEY_IN_INFERENCE_RESPONSE] = data[
+                BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS
+            ]
+            detection_dict[BOUNDING_RECT_RECT_KEY_IN_INFERENCE_RESPONSE] = data[
+                BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS
+            ]
+            detection_dict[BOUNDING_RECT_HEIGHT_KEY_IN_INFERENCE_RESPONSE] = data[
+                BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS
+            ]
+            detection_dict[BOUNDING_RECT_WIDTH_KEY_IN_INFERENCE_RESPONSE] = data[
+                BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS
+            ]
+        if PARENT_ID_KEY in image_metadata:
+            detection_dict[PARENT_ID_KEY] = str(image_metadata[PARENT_ID_KEY])
+        # Add parent origin metadata if detection is based on a crop/slice
+        if (
+            PARENT_ID_KEY in image_metadata
+            and ROOT_PARENT_ID_KEY in image_metadata
+            and str(image_metadata[PARENT_ID_KEY])
+            != str(image_metadata[ROOT_PARENT_ID_KEY])
+        ):
+            _attach_parent_metadata_to_detection_dict(
+                detection_dict=detection_dict,
+                data=image_metadata,
+                coordinates_key=PARENT_COORDINATES_KEY,
+                dimensions_key=PARENT_DIMENSIONS_KEY,
+                origin_key=PARENT_ORIGIN_KEY,
+            )
+            detection_dict[ROOT_PARENT_ID_KEY] = str(
+                image_metadata[ROOT_PARENT_ID_KEY]
+            )
+            _attach_parent_metadata_to_detection_dict(
+                detection_dict=detection_dict,
+                data=image_metadata,
+                coordinates_key=ROOT_PARENT_COORDINATES_KEY,
+                dimensions_key=ROOT_PARENT_DIMENSIONS_KEY,
+                origin_key=ROOT_PARENT_ORIGIN_KEY,
+            )
+        if (
+            KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS in data
+            and KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS in data
+            and KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS in data
+            and KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in data
+        ):
+            kp_class_id = data[KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS]
+            kp_class_name = data[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS]
+            kp_confidence = data[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS]
+            kp_xy = data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]
+            detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE] = []
+            for (
+                keypoint_class_id,
+                keypoint_class_name,
+                keypoint_confidence,
+                (x, y),
+            ) in zip(kp_class_id, kp_class_name, kp_confidence, kp_xy):
+                detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE].append(
+                    {
+                        "class_id": int(keypoint_class_id),
+                        "class": str(keypoint_class_name),
+                        "confidence": float(keypoint_confidence),
+                        "x": float(x),
+                        "y": float(y),
+                    }
+                )
+        if DETECTED_CODE_KEY in data:
+            detection_dict[DETECTED_CODE_KEY] = data[DETECTED_CODE_KEY]
+        if VELOCITY_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[VELOCITY_KEY_IN_INFERENCE_RESPONSE] = _to_plain_list(
+                data[VELOCITY_KEY_IN_SV_DETECTIONS]
+            )
+        if SPEED_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[SPEED_KEY_IN_INFERENCE_RESPONSE] = float(
+                data[SPEED_KEY_IN_SV_DETECTIONS]
+            )
+        if SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE] = (
+                _to_plain_list(data[SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS])
+            )
+        if SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE] = float(
+                data[SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS]
+            )
+        if AREA_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[AREA_KEY_IN_INFERENCE_RESPONSE] = float(
+                data[AREA_KEY_IN_SV_DETECTIONS]
+            )
+        if AREA_CONVERTED_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE] = float(
+                data[AREA_CONVERTED_KEY_IN_SV_DETECTIONS]
+            )
+        serialized_detections.append(detection_dict)
+    serialized_image_metadata = {
+        "width": None,
+        "height": None,
+    }
+    image_dimensions = image_metadata.get(IMAGE_DIMENSIONS_KEY)
+    if image_dimensions is not None:
+        serialized_image_metadata = {
+            "width": int(image_dimensions[1]),
+            "height": int(image_dimensions[0]),
+        }
+    return {"image": serialized_image_metadata, "predictions": serialized_detections}
+
+
+def _resolve_instance_polygon(
+    mask: Union[torch.Tensor, InstancesRLEMasks],
+    index: int,
+    data: dict,
+) -> Optional[Any]:
+    declared_polygon = data.get(POLYGON_KEY_IN_SV_DETECTIONS)
+    if declared_polygon is not None and len(declared_polygon) > 2:
+        return declared_polygon
+    if isinstance(mask, InstancesRLEMasks):
+        instance_mask = coco_rle_masks_to_numpy_mask(
+            InstancesRLEMasks(image_size=mask.image_size, masks=[mask.masks[index]])
+        )[0]
+    else:
+        instance_mask = mask[index].detach().cpu().numpy()
+    return mask_to_polygon(mask=instance_mask)
+
+
+def _resolve_class_name(class_id: int, class_names_mapping: dict) -> str:
+    class_name = class_names_mapping.get(class_id)
+    if class_name is None:
+        raise ValueError(
+            f"Serialising tensor-native detections, class_id={class_id} is missing "
+            f"from the class_names mapping "
+            f"(keys present: {sorted(class_names_mapping.keys())})."
+        )
+    return str(class_name)
+
+
+def _to_plain_list(value: Any) -> list:
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    return list(value)
