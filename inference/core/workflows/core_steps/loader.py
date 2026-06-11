@@ -325,9 +325,14 @@ else:
     from inference.core.workflows.core_steps.fusion.overlap_analysis.v1_tensor import (
         OverlapAnalysisBlockV1,
     )
-from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
-    CosineSimilarityBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
+        CosineSimilarityBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.math.cosine_similarity.v1_tensor import (
+        CosineSimilarityBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     AnthropicClaudeBlockV1,
 )
@@ -549,12 +554,22 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
 )
-from inference.core.workflows.core_steps.sampling.identify_changes.v1 import (
-    IdentifyChangesBlockV1,
-)
-from inference.core.workflows.core_steps.sampling.identify_outliers.v1 import (
-    IdentifyOutliersBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sampling.identify_changes.v1 import (
+        IdentifyChangesBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sampling.identify_changes.v1_tensor import (
+        IdentifyChangesBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sampling.identify_outliers.v1 import (
+        IdentifyOutliersBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sampling.identify_outliers.v1_tensor import (
+        IdentifyOutliersBlockV1,
+    )
 from inference.core.workflows.core_steps.secrets_providers.environment_secrets_store.v1 import (
     EnvironmentSecretsStoreBlockV1,
 )
