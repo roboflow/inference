@@ -9,21 +9,26 @@ from typing import Set
 logger = logging.getLogger(__name__)
 
 try:
+    from triton.runtime.errors import OutOfResources as _OutOfResources
     from triton.runtime.errors import PTXASError as _PTXASError
 except ImportError:  # pragma: no cover - optional at import time
+    _OutOfResources = ()
     _PTXASError = ()
+
+_TRITON_JIT_EXCEPTION_TYPES = _PTXASError + _OutOfResources
 
 _RUNTIME_ERROR_MARKERS = (
     "c compiler",
     "ptxas",
     "ptx codegen",
     "triton ptx",
+    "out of resource",
 )
 
 
 def is_triton_jit_failure(exc: BaseException) -> bool:
     """Return whether ``exc`` looks like a Triton compile-time failure."""
-    if _PTXASError and isinstance(exc, _PTXASError):
+    if _TRITON_JIT_EXCEPTION_TYPES and isinstance(exc, _TRITON_JIT_EXCEPTION_TYPES):
         return True
     if isinstance(exc, RuntimeError):
         message = str(exc).lower()

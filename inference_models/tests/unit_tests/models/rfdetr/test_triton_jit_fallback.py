@@ -103,6 +103,24 @@ def test_is_triton_jit_failure_rejects_unrelated_runtime_error() -> None:
     assert not is_triton_jit_failure(RuntimeError("CUDA out of memory"))
 
 
+def test_is_triton_jit_failure_detects_out_of_resources_message() -> None:
+    exc = RuntimeError(
+        "out of resource: shared memory, Required: 131072, Hardware limit: 101376. "
+        "Reducing block sizes or `num_stages` may help."
+    )
+
+    assert is_triton_jit_failure(exc)
+
+
+def test_is_triton_jit_failure_detects_out_of_resources_type() -> None:
+    pytest.importorskip("triton")
+    from triton.runtime.errors import OutOfResources
+
+    exc = OutOfResources(required=131072, limit=101376, name="shared memory")
+
+    assert is_triton_jit_failure(exc)
+
+
 def test_warn_triton_jit_fallback_logs_once(caplog: pytest.LogCaptureFixture) -> None:
     warned_reasons: set[str] = set()
     exc = RuntimeError("Failed to find C compiler")
