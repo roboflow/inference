@@ -3687,6 +3687,8 @@ class HttpInterface(BaseInterface):
                         DepthEstimationResponse: The response containing the normalized depth map and optional visualization.
                     """
                     logger.debug(f"Reached /infer/depth-estimation")
+                    if api_key is not None:
+                        inference_request.api_key = api_key
                     depth_model_id = inference_request.model_id
                     self.model_manager.add_model(
                         depth_model_id,
