@@ -63,6 +63,7 @@ T_ENSURE_LOADED = b"\x09"
 T_ALLOC = b"\x01"
 T_SUBMIT = b"\x02"
 T_FREE = b"\x03"
+T_CANCEL = b"\x04"
 
 # MMP → uvicorn (hot path)
 T_MODEL_READY = b"\x0a"
@@ -567,6 +568,8 @@ class ModelManagerProcess:
                 await self._handle_submit(identity, data)
             elif msg_type == T_FREE:
                 self._handle_free(data)
+            elif msg_type == T_CANCEL:
+                self._handle_cancel(data)
             elif msg_type == T_LOAD:
                 await self._handle_load(identity, data)
             elif msg_type == T_UNLOAD:
@@ -684,6 +687,22 @@ class ModelManagerProcess:
             self._pool.free_slot(slot_id)
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # T_CANCEL — client gave up (timeout / disconnect)
+    # wire: Q   req_id(8)
+    # ------------------------------------------------------------------
+
+    def _handle_cancel(self, data: list[bytes]) -> None:
+        """Client abandoned req_id. Drop its reply target but do NOT free the
+        slot — the worker may still hold a ticket for it. The slot is freed when
+        the worker's T_RESULT lands (the pending-None branch in
+        _on_result_on_loop) or when the reaper reclaims it. This is what stops a
+        slot being reused while a live worker ticket still references it."""
+        if not data or len(data[0]) < 8:
+            return
+        req_id = struct.unpack_from(">Q", data[0])[0]
+        self._pending.pop(req_id, None)
 
     # ------------------------------------------------------------------
     # T_LOAD (admin) — trigger model load + reply T_OK immediately
