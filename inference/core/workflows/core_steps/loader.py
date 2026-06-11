@@ -756,75 +756,180 @@ from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v
 )
 
 # Visualizers
-from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
-    BackgroundColorVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.blur.v1 import (
-    BlurVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.bounding_box.v1 import (
-    BoundingBoxVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.circle.v1 import (
-    CircleVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.classification_label.v1 import (
-    ClassificationLabelVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.color.v1 import (
-    ColorVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.corner.v1 import (
-    CornerVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.crop.v1 import (
-    CropVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.dot.v1 import (
-    DotVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.ellipse.v1 import (
-    EllipseVisualizationBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
+        BackgroundColorVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.background_color.v1_tensor import (
+        BackgroundColorVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.blur.v1 import (
+        BlurVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.blur.v1_tensor import (
+        BlurVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.bounding_box.v1 import (
+        BoundingBoxVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.bounding_box.v1_tensor import (
+        BoundingBoxVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.circle.v1 import (
+        CircleVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.circle.v1_tensor import (
+        CircleVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.classification_label.v1 import (
+        ClassificationLabelVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.classification_label.v1_tensor import (
+        ClassificationLabelVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.color.v1 import (
+        ColorVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.color.v1_tensor import (
+        ColorVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.corner.v1 import (
+        CornerVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.corner.v1_tensor import (
+        CornerVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.crop.v1 import (
+        CropVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.crop.v1_tensor import (
+        CropVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.dot.v1 import (
+        DotVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.dot.v1_tensor import (
+        DotVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.ellipse.v1 import (
+        EllipseVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.ellipse.v1_tensor import (
+        EllipseVisualizationBlockV1,
+    )
 from inference.core.workflows.core_steps.visualizations.grid.v1 import (
     GridVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.halo.v1 import (
-    HaloVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.halo.v2 import (
-    HaloVisualizationBlockV2,
-)
-from inference.core.workflows.core_steps.visualizations.heatmap.v1 import (
-    HeatmapVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.icon.v1 import (
-    IconVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.keypoint.v1 import (
-    KeypointVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.label.v1 import (
-    LabelVisualizationBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.halo.v1 import (
+        HaloVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.halo.v1_tensor import (
+        HaloVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.halo.v2 import (
+        HaloVisualizationBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.halo.v2_tensor import (
+        HaloVisualizationBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.heatmap.v1 import (
+        HeatmapVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.heatmap.v1_tensor import (
+        HeatmapVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.icon.v1 import (
+        IconVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.icon.v1_tensor import (
+        IconVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.keypoint.v1 import (
+        KeypointVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.keypoint.v1_tensor import (
+        KeypointVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.label.v1 import (
+        LabelVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.label.v1_tensor import (
+        LabelVisualizationBlockV1,
+    )
 from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
     LineCounterZoneVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.mask.v1 import (
-    MaskVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.model_comparison.v1 import (
-    ModelComparisonVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
-    PixelateVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
-    PolygonVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.polygon.v2 import (
-    PolygonVisualizationBlockV2,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.mask.v1 import (
+        MaskVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.mask.v1_tensor import (
+        MaskVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.model_comparison.v1 import (
+        ModelComparisonVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.model_comparison.v1_tensor import (
+        ModelComparisonVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
+        PixelateVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.pixelate.v1_tensor import (
+        PixelateVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
+        PolygonVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.polygon.v1_tensor import (
+        PolygonVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.polygon.v2 import (
+        PolygonVisualizationBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.polygon.v2_tensor import (
+        PolygonVisualizationBlockV2,
+    )
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
     PolygonZoneVisualizationBlockV1,
 )
@@ -834,12 +939,22 @@ from inference.core.workflows.core_steps.visualizations.reference_path.v1 import
 from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.trace.v1 import (
-    TraceVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
-    TriangleVisualizationBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.trace.v1 import (
+        TraceVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.trace.v1_tensor import (
+        TraceVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
+        TriangleVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.triangle.v1_tensor import (
+        TriangleVisualizationBlockV1,
+    )
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
