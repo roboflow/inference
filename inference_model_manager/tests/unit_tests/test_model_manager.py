@@ -410,3 +410,53 @@ class TestModelManagerBackendCreation:
         mm.load("model-a", api_key="", warmup_iters=3)
 
         assert fb._fake_model._inference_count == 3
+
+
+class _SignalSlotBackend(FakeBackend):
+    """FakeBackend that also satisfies the MMP load-success path."""
+
+    def signal_slot(self, slot_id, req_id, params_bytes=b"{}"):
+        pass
+
+
+class TestReloadAfterWorkerDeath:
+    """Regression: reload after a worker dies must clear the stale, unhealthy
+    backend left in ModelManager — otherwise the reload load() is rejected with
+    'already loaded' and the model is wedged forever."""
+
+    def test_reload_clears_stale_backend(self):
+        from inference_model_manager.model_manager_process import (
+            ModelManagerProcess,
+            ModelState,
+        )
+
+        mmp = ModelManagerProcess(vram_admission=False)
+
+        created: List[_SignalSlotBackend] = []
+
+        def fake_create(model_id, api_key, backend, **kwargs):
+            fb = _SignalSlotBackend(model_id)
+            created.append(fb)
+            return fb
+
+        mmp._manager._create_backend = fake_create
+
+        # Initial load — backend lands in ModelManager._backends.
+        mmp._manager.load("yolov8n:0", api_key="")
+        stale = created[-1]
+
+        # Simulate worker death: entry still present but unhealthy.
+        stale._state = "unhealthy"
+        assert "yolov8n:0" in mmp._manager
+
+        # Reload path (what _schedule_reload triggers).
+        mmp._models["yolov8n:0"] = ModelState(loading=True, loaded=False)
+        asyncio.run(mmp._load_model("yolov8n:0", api_key=""))
+
+        # Stale entry was unloaded; a fresh healthy backend replaced it —
+        # no 'already loaded' rejection.
+        assert stale._unloaded is True
+        assert mmp._models["yolov8n:0"].loaded is True
+        assert len(created) == 2
+        assert mmp._manager.get_backend("yolov8n:0") is created[-1]
+        assert created[-1].is_healthy is True

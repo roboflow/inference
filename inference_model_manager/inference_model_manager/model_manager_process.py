@@ -1024,6 +1024,17 @@ class ModelManagerProcess:
         model_id_or_path = model_id.rsplit(":", 1)[0]
         max_retries = self._load_oom_max_evictions  # safety cap — never loop forever
 
+        # Reload after worker death/unhealthy leaves a stale entry in the
+        # ModelManager. Clear it (freeing its resources) so the load below
+        # won't be rejected with "already loaded".
+        if model_id in self._manager:
+            try:
+                await loop.run_in_executor(
+                    None, lambda: self._manager.unload(model_id)
+                )
+            except Exception:
+                self._manager._backends.pop(model_id, None)
+
         for attempt in range(max_retries):
             logger.info(
                 "MMP: loading '%s' (weights=%s device=%s attempt=%d)",
