@@ -6,9 +6,7 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.workflows.core_steps.trackers._base import (
-    TRACKER_PREDICTION_KINDS,
-)
+from inference.core.workflows.core_steps.trackers._base import TRACKER_PREDICTION_KINDS
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
