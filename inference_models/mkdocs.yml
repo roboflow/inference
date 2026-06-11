@@ -73,6 +73,7 @@ nav:
           - SAM: models/sam-interactive-segmentation.md
           - SAM2: models/sam2-interactive-segmentation.md
           - SAM2 RT: models/sam2-rt-video-tracking.md
+          - SAM3 Video: models/sam3-video-concept-tracking.md
       - Vision-Language Models:
           - Florence-2: models/florence2.md
           - Gemma 4: models/gemma4.md
