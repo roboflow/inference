@@ -248,38 +248,83 @@ from inference.core.workflows.core_steps.formatters.json_parser.v1 import (
 from inference.core.workflows.core_steps.formatters.property_definition.v1 import (
     PropertyDefinitionBlockV1,
 )
-from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
-    VLMAsClassifierBlockV1,
-)
-from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v2 import (
-    VLMAsClassifierBlockV2,
-)
-from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
-    VLMAsDetectorBlockV1,
-)
-from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
-    VLMAsDetectorBlockV2,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
+        VLMAsClassifierBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1_tensor import (
+        VLMAsClassifierBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v2 import (
+        VLMAsClassifierBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v2_tensor import (
+        VLMAsClassifierBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
+        VLMAsDetectorBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1_tensor import (
+        VLMAsDetectorBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
+        VLMAsDetectorBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2_tensor import (
+        VLMAsDetectorBlockV2,
+    )
 from inference.core.workflows.core_steps.fusion.buffer.v1 import BufferBlockV1
-from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
-    DetectionsClassesReplacementBlockV1,
-)
-from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
-    DetectionsConsensusBlockV1,
-)
-from inference.core.workflows.core_steps.fusion.detections_list_rollup.v1 import (
-    DetectionsListRollUpBlockV1,
-)
-from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
-    DetectionsStitchBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
+        DetectionsClassesReplacementBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1_tensor import (
+        DetectionsClassesReplacementBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
+        DetectionsConsensusBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.detections_consensus.v1_tensor import (
+        DetectionsConsensusBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.detections_list_rollup.v1 import (
+        DetectionsListRollUpBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.detections_list_rollup.v1_tensor import (
+        DetectionsListRollUpBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
+        DetectionsStitchBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.detections_stitch.v1_tensor import (
+        DetectionsStitchBlockV1,
+    )
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
-from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
-    OverlapAnalysisBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
+        OverlapAnalysisBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.overlap_analysis.v1_tensor import (
+        OverlapAnalysisBlockV1,
+    )
 from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
 )
@@ -520,25 +565,57 @@ from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
     EmailNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
-from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import (
+        ONVIFSinkBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.onvif_movement.v1_tensor import (
+        ONVIFSinkBlockV1,
+    )
 from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
     RoboflowAssetLibraryAttributesBlockV1,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
-    RoboflowCustomMetadataBlockV1,
-)
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
-    RoboflowDatasetUploadBlockV1,
-)
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
-    RoboflowDatasetUploadBlockV2,
-)
-from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
-    ModelMonitoringInferenceAggregatorBlockV1,
-)
-from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
-    RoboflowVisionEventsBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
+        RoboflowCustomMetadataBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1_tensor import (
+        RoboflowCustomMetadataBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
+        RoboflowDatasetUploadBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
+        RoboflowDatasetUploadBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
+        RoboflowDatasetUploadBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2_tensor import (
+        RoboflowDatasetUploadBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
+        ModelMonitoringInferenceAggregatorBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1_tensor import (
+        ModelMonitoringInferenceAggregatorBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
+        RoboflowVisionEventsBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1_tensor import (
+        RoboflowVisionEventsBlockV1,
+    )
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
