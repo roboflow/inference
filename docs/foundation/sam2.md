@@ -232,3 +232,80 @@ masks = request.json()['masks']
 ```
 
 This request returns segmentation masks that represent the object of interest.
+
+## Video Tracking in Workflows
+
+The **SAM2 Video Tracker** workflow block (`roboflow_core/segment_anything_2_video@v1`)
+runs SAM2's streaming video predictor frame by frame, keeping per-video temporal
+memory so object identities are preserved across frames. Feed it bounding boxes
+from an upstream detector; it converts each box to a mask and tracks it on
+subsequent frames, emitting instance segmentation predictions whose `tracker_id`
+stays stable for as long as SAM2 follows the object. Masks inherit the class
+name, class id, and confidence of the detection that prompted them.
+
+Key properties:
+
+- **Stateful and local-only.** The block keeps one tracking session per
+  `video_metadata.video_identifier`, so it can multiplex many streams, but the
+  session lives in process memory: the block requires
+  `WORKFLOWS_STEP_EXECUTION_MODE=local` and is intended to be driven by
+  `InferencePipeline`, which delivers frames one at a time with video metadata
+  attached. It is not suitable for stateless HTTP requests, and a GPU is
+  required.
+- **Prompt scheduling.** `prompt_mode` controls when detector boxes are
+  consumed as prompts:
+    - `first_frame` (default) — prompt once per session, then track silently.
+    - `every_n_frames` — re-seed every `prompt_interval` frames, picking up
+      objects that entered the scene since the last prompt.
+    - `every_frame` — re-seed on every frame; effectively a per-frame
+      detector→mask adapter with SAM-stable tracker ids.
+- **Model variants.** `model_id` selects the Hiera backbone size:
+  `sam2video/tiny`, `sam2video/small` (default), `sam2video/base-plus`,
+  `sam2video/large`.
+
+### Example
+
+```python
+from inference import InferencePipeline
+from inference.core.interfaces.stream.sinks import render_boxes
+
+WORKFLOW = {
+    "version": "1.0",
+    "inputs": [{"type": "InferenceImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "name": "detector",
+            "images": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "roboflow_core/segment_anything_2_video@v1",
+            "name": "tracker",
+            "images": "$inputs.image",
+            "boxes": "$steps.detector.predictions",
+            "prompt_mode": "every_n_frames",
+            "prompt_interval": 30,
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.tracker.predictions",
+        }
+    ],
+}
+
+pipeline = InferencePipeline.init_with_workflow(
+    video_reference="path/to/video.mp4",  # or an RTSP URL / camera id
+    workflow_specification=WORKFLOW,
+    on_prediction=render_boxes,
+    api_key="<YOUR-API-KEY>",
+)
+pipeline.start()
+pipeline.join()
+```
+
+For open-vocabulary video tracking from text prompts (no upstream detector),
+see the SAM3 Video Tracker block in the [SAM 3 documentation](sam3.md).
