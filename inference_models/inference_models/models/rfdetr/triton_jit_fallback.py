@@ -11,11 +11,10 @@ logger = logging.getLogger(__name__)
 try:
     from triton.runtime.errors import OutOfResources as _OutOfResources
     from triton.runtime.errors import PTXASError as _PTXASError
-except ImportError:  # pragma: no cover - optional at import time
-    _OutOfResources = ()
-    _PTXASError = ()
 
-_TRITON_JIT_EXCEPTION_TYPES = _PTXASError + _OutOfResources
+    _TRITON_JIT_EXCEPTION_TYPES = (_PTXASError, _OutOfResources)
+except ImportError:  # pragma: no cover - optional at import time
+    _TRITON_JIT_EXCEPTION_TYPES = ()
 
 _RUNTIME_ERROR_MARKERS = (
     "c compiler",
