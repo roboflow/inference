@@ -13,14 +13,27 @@ from inference.core.workflows.errors import (
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
+    get_active_collector,
+)
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
+    capture_output,
+    create_dynamic_block_code_error,
+    extract_code_snippet,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+
+try:
+    from inference_sdk.config import execution_id as _execution_id_ctxvar
+except ImportError:
+    _execution_id_ctxvar = None
 
 IMPORTS_LINES = [
     "from typing import Any, List, Dict, Set, Optional",
@@ -40,11 +53,18 @@ IMPORTS_LINES = [
 # Shared globals dict for all custom python blocks in local mode
 _LOCAL_SHARED_GLOBALS = {}
 
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
-    capture_output,
-    create_dynamic_block_code_error,
-    extract_code_snippet,
-)
+
+def _current_workflow_execution_id() -> Optional[str]:
+    """Return the current workflow execution id, sourced from the existing
+    ``inference_sdk.config.execution_id`` ContextVar.
+
+    The execution engine sets that ContextVar inside every worker thread via
+    ``safe_execute_step`` so it is reliably populated by the time a block's
+    ``run()`` method executes.
+    """
+    if _execution_id_ctxvar is None:
+        return None
+    return _execution_id_ctxvar.get()
 
 
 def assembly_custom_python_block(
@@ -72,13 +92,7 @@ def assembly_custom_python_block(
         )
     run_function = getattr(code_module, python_code.run_function_name)
 
-    def run(
-        self,
-        *args,
-        _workflow_execution_id: Optional[str] = None,
-        **kwargs,
-    ) -> BlockResult:
-        self._workflow_execution_id = _workflow_execution_id
+    def run(self, *args, **kwargs) -> BlockResult:
         # Check if we're using Modal remote execution
         if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
             # Remote execution via Modal - allowed even if local execution is disabled
@@ -116,8 +130,9 @@ def assembly_custom_python_block(
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
                     # stdout/stderr already reach the process streams in real time via the
-                    # tee in capture_output(); buffers are only used to attach context on error.
-                    return run_function(self, *args, **kwargs)
+                    # tee in capture_output(); buffers are also forwarded to the active
+                    # debug collector (if any) and used to attach context on error.
+                    result = run_function(self, *args, **kwargs)
             except Exception as error:
                 raise create_dynamic_block_code_error(
                     error=error,
@@ -127,6 +142,17 @@ def assembly_custom_python_block(
                     stderr=stderr_buf.getvalue() or None,
                     block_type_name=block_type_name,
                 ) from error
+            collector = get_active_collector()
+            if collector is not None:
+                step_name = (
+                    getattr(self, "_workflow_step_name", None) or block_type_name
+                )
+                collector.record(
+                    step_name=step_name,
+                    stdout=stdout_buf.getvalue() or None,
+                    stderr=stderr_buf.getvalue() or None,
+                )
+            return result
 
     if python_code.init_function_code is not None and not hasattr(
         code_module, python_code.init_function_name
@@ -144,15 +170,12 @@ def assembly_custom_python_block(
         self._api_key = api_key
 
     def get_workflow_context(self) -> Dict[str, Any]:
-        context = {
+        return {
             "step_name": getattr(self, "_workflow_step_name", None),
             "step_selector": getattr(self, "_workflow_step_selector", None),
             "block_type": getattr(self, "_workflow_step_type", block_type_name),
+            "workflow_execution_id": _current_workflow_execution_id(),
         }
-        workflow_execution_id = getattr(self, "_workflow_execution_id", None)
-        if workflow_execution_id is not None:
-            context["workflow_execution_id"] = workflow_execution_id
-        return context
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:

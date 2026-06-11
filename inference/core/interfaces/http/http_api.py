@@ -4,6 +4,7 @@ import logging
 import os
 import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import partial
 from threading import Lock, Thread
@@ -316,6 +317,9 @@ from inference.core.workflows.execution_engine.profiling.core import (
 from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     get_workflow_schema_description,
     parse_workflow_definition,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
+    register_debug_collector,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
@@ -1273,11 +1277,32 @@ class HttpInterface(BaseInterface):
             is_preview = False
             if hasattr(workflow_request, "is_preview"):
                 is_preview = workflow_request.is_preview
-            workflow_results = execution_engine.run(
-                runtime_parameters=workflow_request.inputs,
-                serialize_results=True,
-                _is_preview=is_preview,
-            )
+            # Capture python-block stdout/stderr when:
+            #   - the caller explicitly opts in via `debug=True`, OR
+            #   - this is a UI preview run (`is_preview=True`). The Roboflow web
+            #     editor sends `is_preview=True` for every preview run, and its
+            #     "Debug Mode" toggle only augments the spec with extra outputs
+            #     (it doesn't set our `debug` flag), so we piggy-back on preview
+            #     to make the logs visible in the editor's JSON view.
+            debug_requested = getattr(workflow_request, "debug", False) or is_preview
+            if debug_requested:
+                # The collector is published via a ContextVar; the execution
+                # engine re-binds it inside every worker thread spawned by its
+                # ThreadPoolExecutor (see `safe_execute_step`).
+                debug_ctx = register_debug_collector()
+            else:
+                debug_ctx = nullcontext()
+            with debug_ctx as collector:
+                workflow_results = execution_engine.run(
+                    runtime_parameters=workflow_request.inputs,
+                    serialize_results=True,
+                    _is_preview=is_preview,
+                )
+                python_block_logs = (
+                    collector.snapshot()
+                    if debug_requested and collector is not None
+                    else None
+                ) or None
             with profiler.profile_execution_phase(
                 name="workflow_results_filtering",
                 categories=["inference_package_operation"],
@@ -1290,6 +1315,7 @@ class HttpInterface(BaseInterface):
             response = WorkflowInferenceResponse(
                 outputs=outputs,
                 profiler_trace=profiler_trace,
+                python_block_logs=python_block_logs,
             )
             return orjson_response(response=response)
 

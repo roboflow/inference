@@ -25,6 +25,12 @@ class WorkflowInferenceRequest(BaseModel):
         "allow profiling traces to be exported to clients. Only applies for Workflows definitions saved "
         "on Roboflow platform.",
     )
+    debug: bool = Field(
+        default=False,
+        description="When True, captures stdout/stderr emitted by custom Python blocks executed locally "
+        "and returns them in the response under `python_block_logs`. Has no effect on Modal / OCI "
+        "sandbox executions today.",
+    )
     workflow_id: Optional[str] = Field(
         default=None, description="Optional identifier of workflow"
     )

@@ -53,6 +53,9 @@ from inference.core.workflows.execution_engine.v1.executor.flow_coordinator impo
 from inference.core.workflows.execution_engine.v1.executor.output_constructor import (
     construct_workflow_output,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
+    current_debug_collector,
+)
 from inference.core.workflows.execution_engine.v1.executor.utils import (
     run_steps_in_parallel,
 )
@@ -188,6 +191,10 @@ def execute_steps(
         duration_minimum_value = apply_duration_minimum.get()
     else:
         duration_minimum_value = None
+    # Capture the active debug-log collector (if any) in the request thread,
+    # so that worker threads can re-bind the ContextVar locally — ContextVars
+    # set in this thread do not propagate into ThreadPoolExecutor workers.
+    debug_collector = current_debug_collector.get()
     # Capture OTel context so it can be re-attached inside worker threads
     otel_ctx = capture_context()
     logger.debug(f"Executing steps: {next_steps}.")
@@ -201,6 +208,7 @@ def execute_steps(
             workflow_execution_id=workflow_execution_id,
             processing_time_collector=processing_time_collector,
             duration_minimum_value=duration_minimum_value,
+            debug_collector=debug_collector,
             step_error_handler=step_error_handler,
             otel_ctx=otel_ctx,
         )
@@ -221,18 +229,21 @@ def safe_execute_step(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     profiler: Optional[WorkflowsProfiler] = None,
-    workflow_execution_id: str = "",
+    workflow_execution_id: Optional[str] = None,
     processing_time_collector=None,
     duration_minimum_value=None,
+    debug_collector=None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     otel_ctx=None,
 ) -> None:
-    if execution_id is not None:
+    if execution_id is not None and workflow_execution_id:
         execution_id.set(workflow_execution_id)
     if remote_processing_times is not None and processing_time_collector is not None:
         remote_processing_times.set(processing_time_collector)
     if apply_duration_minimum is not None and duration_minimum_value is not None:
         apply_duration_minimum.set(duration_minimum_value)
+    if debug_collector is not None:
+        current_debug_collector.set(debug_collector)
     # Re-attach OTel context in worker thread so trace propagation works.
     # Must detach when done — threads are reused in the pool, and leaked
     # contexts cause incorrect span parenting on subsequent tasks.
@@ -251,7 +262,6 @@ def safe_execute_step(
                     workflow=workflow,
                     execution_data_manager=execution_data_manager,
                     profiler=profiler,
-                    workflow_execution_id=workflow_execution_id,
                 )
                 logger.debug(
                     f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
@@ -291,7 +301,6 @@ def run_step(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     profiler: WorkflowsProfiler,
-    workflow_execution_id: str,
 ) -> None:
     if execution_data_manager.is_step_simd(step_selector=step_selector):
         return run_simd_step(
@@ -299,28 +308,13 @@ def run_step(
             workflow=workflow,
             execution_data_manager=execution_data_manager,
             profiler=profiler,
-            workflow_execution_id=workflow_execution_id,
         )
     return run_non_simd_step(
         step_selector=step_selector,
         workflow=workflow,
         execution_data_manager=execution_data_manager,
         profiler=profiler,
-        workflow_execution_id=workflow_execution_id,
     )
-
-
-def run_step_instance(
-    step_instance: WorkflowBlock,
-    parameters: Dict[str, Any],
-    workflow_execution_id: str,
-) -> Any:
-    if hasattr(step_instance, "get_workflow_context"):
-        return step_instance.run(
-            **parameters,
-            _workflow_execution_id=workflow_execution_id,
-        )
-    return step_instance.run(**parameters)
 
 
 def run_simd_step(
@@ -328,7 +322,6 @@ def run_simd_step(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     profiler: Optional[WorkflowsProfiler] = None,
-    workflow_execution_id: str = "",
 ) -> None:
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step
@@ -345,14 +338,12 @@ def run_simd_step(
             step_instance=step_instance,
             execution_data_manager=execution_data_manager,
             profiler=profiler,
-            workflow_execution_id=workflow_execution_id,
         )
     return run_simd_step_in_non_batch_mode(
         step_selector=step_selector,
         step_instance=step_instance,
         execution_data_manager=execution_data_manager,
         profiler=profiler,
-        workflow_execution_id=workflow_execution_id,
     )
 
 
@@ -361,7 +352,6 @@ def run_simd_step_in_batch_mode(
     step_instance: WorkflowBlock,
     execution_data_manager: ExecutionDataManager,
     profiler: Optional[WorkflowsProfiler] = None,
-    workflow_execution_id: str = "",
 ) -> None:
     with profiler.profile_execution_phase(
         name="step_input_assembly",
@@ -384,11 +374,7 @@ def run_simd_step_in_batch_mode(
             outputs = []
         else:
             try:
-                outputs = run_step_instance(
-                    step_instance=step_instance,
-                    parameters=step_input.parameters,
-                    workflow_execution_id=workflow_execution_id,
-                )
+                outputs = step_instance.run(**step_input.parameters)
             except Exception as exc:
                 if INFERENCE_DEBUG_OUTPUT_DIR:
                     _store_crash_info(
@@ -415,7 +401,6 @@ def run_simd_step_in_non_batch_mode(
     step_instance: WorkflowBlock,
     execution_data_manager: ExecutionDataManager,
     profiler: Optional[WorkflowsProfiler] = None,
-    workflow_execution_id: str = "",
 ) -> None:
     indices, results = [], []
     with profiler.profile_execution_phase(
@@ -435,11 +420,7 @@ def run_simd_step_in_non_batch_mode(
                     "step": step_selector,
                 },
             ):
-                result = run_step_instance(
-                    step_instance=step_instance,
-                    parameters=input_definition.parameters,
-                    workflow_execution_id=workflow_execution_id,
-                )
+                result = step_instance.run(**input_definition.parameters)
             results.append(result)
             indices.append(input_definition.index)
     with profiler.profile_execution_phase(
@@ -459,7 +440,6 @@ def run_non_simd_step(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     profiler: Optional[WorkflowsProfiler] = None,
-    workflow_execution_id: str = "",
 ) -> None:
     with profiler.profile_execution_phase(
         name="step_input_assembly",
@@ -481,11 +461,7 @@ def run_non_simd_step(
             "step": step_selector,
         },
     ):
-        step_result = run_step_instance(
-            step_instance=step_instance,
-            parameters=step_input,
-            workflow_execution_id=workflow_execution_id,
-        )
+        step_result = step_instance.run(**step_input)
     with profiler.profile_execution_phase(
         name="step_output_registration",
         categories=["execution_engine_operation"],

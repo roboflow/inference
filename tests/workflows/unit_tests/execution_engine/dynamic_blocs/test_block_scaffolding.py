@@ -15,6 +15,9 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffoldi
     assembly_custom_python_block,
     create_dynamic_module,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
+    register_debug_collector,
+)
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
 )
@@ -246,3 +249,119 @@ def run_function(self, a, b) -> BlockResult:
     workflow_block_instance = workflow_block_class()
     with pytest.raises(WorkflowEnvironmentConfigurationError):
         _ = workflow_block_instance.run(a=3, b=5)
+
+
+def test_run_assembled_custom_python_block_captures_stdout_and_stderr_for_debug_collector() -> (
+    None
+):
+    # given - a block that writes to both streams as part of normal execution
+    manifest = BlockManifest
+    run_function = """
+import sys
+
+def run_function(self, a, b) -> BlockResult:
+    print("hello from block", a, b)
+    print("oops", file=sys.stderr)
+    return {"result": a + b}
+"""
+    python_code = PythonCode(
+        type="PythonCode",
+        run_function_code=run_function,
+        run_function_name="run_function",
+        imports=[],
+    )
+    workflow_block_class = assembly_custom_python_block(
+        block_type_name="some",
+        unique_identifier="debug-id",
+        manifest=manifest,
+        python_code=python_code,
+    )
+    workflow_block_instance = workflow_block_class()
+    workflow_block_instance._workflow_step_name = "my_step"
+
+    # when - run inside an active debug collector scope (ContextVar-published)
+    with register_debug_collector() as collector:
+        execution_result = workflow_block_instance.run(a=3, b=5)
+        snapshot = collector.snapshot()
+
+    # then - block result is unchanged AND stdout/stderr surfaced in collector
+    assert execution_result == {"result": 8}
+    assert list(snapshot.keys()) == ["my_step"]
+    assert len(snapshot["my_step"]) == 1
+    entry = snapshot["my_step"][0]
+    assert "hello from block 3 5" in entry["stdout"]
+    assert "oops" in entry["stderr"]
+
+
+def test_get_workflow_context_reads_workflow_execution_id_from_contextvar() -> None:
+    # given - a dynamic block that returns the workflow context it sees
+    manifest = BlockManifest
+    run_function = """
+def run_function(self, value) -> BlockResult:
+    return self.get_workflow_context()
+"""
+    python_code = PythonCode(
+        type="PythonCode",
+        run_function_code=run_function,
+        run_function_name="run_function",
+        imports=[],
+    )
+    workflow_block_class = assembly_custom_python_block(
+        block_type_name="ContextProbe",
+        unique_identifier="ctx-id",
+        manifest=manifest,
+        python_code=python_code,
+    )
+    workflow_block_instance = workflow_block_class()
+    workflow_block_instance._workflow_step_name = "probe"
+    workflow_block_instance._workflow_step_type = "ContextProbe"
+    workflow_block_instance._workflow_step_selector = "$steps.probe"
+
+    # when - the execution_id ContextVar is set, mimicking what the engine
+    # does inside `safe_execute_step` for every worker thread
+    from inference_sdk.config import execution_id
+
+    token = execution_id.set("exec-from-ctxvar")
+    try:
+        context = workflow_block_instance.run(value=1)
+    finally:
+        execution_id.reset(token)
+
+    # then - the context dict reflects the static metadata + the ContextVar
+    assert context == {
+        "step_name": "probe",
+        "step_selector": "$steps.probe",
+        "block_type": "ContextProbe",
+        "workflow_execution_id": "exec-from-ctxvar",
+    }
+
+
+def test_run_assembled_custom_python_block_does_not_record_when_no_collector_active() -> (
+    None
+):
+    # given - a block writing output but no active collector in the ContextVar
+    manifest = BlockManifest
+    run_function = """
+def run_function(self, a, b) -> BlockResult:
+    print("noisy")
+    return {"result": a + b}
+"""
+    python_code = PythonCode(
+        type="PythonCode",
+        run_function_code=run_function,
+        run_function_name="run_function",
+        imports=[],
+    )
+    workflow_block_class = assembly_custom_python_block(
+        block_type_name="some",
+        unique_identifier="quiet-id",
+        manifest=manifest,
+        python_code=python_code,
+    )
+    workflow_block_instance = workflow_block_class()
+
+    # when - execute without an active collector
+    execution_result = workflow_block_instance.run(a=1, b=2)
+
+    # then - regular result, no exception, no recording side effect
+    assert execution_result == {"result": 3}

@@ -21,6 +21,13 @@ class WorkflowInferenceResponse(BaseModel):
         description="Profiler events",
         default=None,
     )
+    python_block_logs: Optional[Dict[str, List[Dict[str, Optional[str]]]]] = Field(
+        default=None,
+        description="When `debug=True` was set on the request, stdout/stderr captured for "
+        "each local custom Python block execution, keyed by step name. Each step maps to "
+        "the list of invocations (in execution order) with `stdout` and `stderr` strings "
+        "(or null if empty). Only populated for local executions.",
+    )
 
 
 class WorkflowValidationStatus(BaseModel):
@@ -63,8 +70,10 @@ class ExternalOperationDescription(BaseModel):
 
     property_name_options: Optional[List[str]] = Field(
         default=None,
-        description=("List of possible property names. \
-            Optional parameter for operations extracting property values from data. "),
+        description=(
+            "List of possible property names. \
+            Optional parameter for operations extracting property values from data. "
+        ),
         examples=[
             "size",
             "height",
