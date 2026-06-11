@@ -343,9 +343,14 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 i
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
     AnthropicClaudeBlockV3,
 )
-from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
-    ClipModelBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
+        ClipModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.clip.v1_tensor import (
+        ClipModelBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
     ClipComparisonBlockV1,
 )
