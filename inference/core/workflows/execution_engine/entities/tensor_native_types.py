@@ -240,6 +240,64 @@ TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
 )
 
 
+TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS = """
+This kind represents single instance segmentation prediction in form of an
+`inference_models.InstanceDetections` object whose masks are RLE-encoded
+(`mask` is an `inference_models.models.base.types.InstancesRLEMasks`, rather
+than a dense `torch.Tensor`). It is otherwise identical to
+`instance_segmentation_prediction` - the same `image_metadata` and
+`bboxes_metadata` conventions apply.
+
+Example:
+```
+inference_models.InstanceDetections(
+    xyxy=torch.Tensor([
+       [        865,       153.5,        1189,       422.5],
+       [      192.5,        77.5,       995.5,       722.5]]
+    ),
+    mask=InstancesRLEMasks(image_size=(425, 640), masks=[...]),
+    confidence=torch.Tensor([    0.84955,     0.74344]),
+    class_id=torch.Tensor([2, 7]),
+    image_metadata={
+        "class_names": {0: "car", 1: "truck"},
+        "image_dimensions": [425, 640],
+        "parent_id": "image.[0]",
+        "inference_id": "51dfa8d5-261c-4dcb-ab30-9aafe9b52379",
+        "prediction_type": "rle-instance-segmentation",
+        "root_parent_id": "image.[0]",
+        "root_parent_coordinates": [0, 0],
+        "root_parent_dimensions": [425, 640],
+        "parent_coordinates": [0, 0],
+        "parent_dimensions": [425, 640],
+        "scaling_relative_to_parent": 1.0,
+        "scaling_relative_to_root_parent": 1.0,
+    }
+    bboxes_metadata={
+        'detection_id': [
+            '51dfa8d5-261c-4dcb-ab30-9aafe9b52379', 'c0c684d1-1e30-4880-aedd-29e67e417264'
+        ],
+    }
+)
+```
+
+The additional `image_metadata` / `bboxes_metadata` fields carry the same
+meaning as documented for `instance_segmentation_prediction`.
+
+**SERIALISATION:**
+
+Execution Engine behind API will serialise underlying data once selector of this kind is declared as
+Workflow output - serialisation preserves the RLE mask representation. Entity
+details: [InstanceSegmentationInferenceResponse](https://detect.roboflow.com/docs)
+"""
+TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
+    name="rle_instance_segmentation_prediction",
+    description="Prediction with detected bounding boxes and RLE-encoded segmentation masks in form of inference_models.InstanceDetections(...) object",
+    docs=TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
+    internal_data_type="inference_models.InstanceDetections",
+)
+
+
 TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND_DOCS = """
 This kind represents single object detection prediction in form of Tuple[`inference_models.KeyPoints`, Optional[`inference_models.Detections`]] object.
 

@@ -195,8 +195,9 @@ from inference.core.workflows.core_steps.common.serializers import (
 )
 from inference.core.workflows.execution_engine.entities.tensor_native_types import \
     TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND, TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND, \
-    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND, TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND_DOCS, \
-    TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND, TENSOR_NATIVE_EMBEDDING_KIND_DOCS
+    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND, TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND, \
+    TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND, \
+    TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND, TENSOR_NATIVE_EMBEDDING_KIND
 
 from inference.core.workflows.core_steps.common.serializers import serialise_image
 
@@ -642,18 +643,38 @@ from inference.core.workflows.core_steps.sinks.twilio.sms.v2 import (
     TwilioSMSNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
-from inference.core.workflows.core_steps.trackers.botsort.v1 import (
-    BoTSORTBlockV1 as TrackerBoTSORTBlockV1,
-)
-from inference.core.workflows.core_steps.trackers.bytetrack.v1 import (
-    ByteTrackBlockV1 as TrackerByteTrackBlockV1,
-)
-from inference.core.workflows.core_steps.trackers.ocsort.v1 import (
-    OCSORTBlockV1 as TrackerOCSORTBlockV1,
-)
-from inference.core.workflows.core_steps.trackers.sort.v1 import (
-    SORTBlockV1 as TrackerSORTBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.trackers.botsort.v1 import (
+        BoTSORTBlockV1 as TrackerBoTSORTBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.trackers.botsort.v1_tensor import (
+        BoTSORTBlockV1 as TrackerBoTSORTBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.trackers.bytetrack.v1 import (
+        ByteTrackBlockV1 as TrackerByteTrackBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.trackers.bytetrack.v1_tensor import (
+        ByteTrackBlockV1 as TrackerByteTrackBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.trackers.ocsort.v1 import (
+        OCSORTBlockV1 as TrackerOCSORTBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.trackers.ocsort.v1_tensor import (
+        OCSORTBlockV1 as TrackerOCSORTBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.trackers.sort.v1 import (
+        SORTBlockV1 as TrackerSORTBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.trackers.sort.v1_tensor import (
+        SORTBlockV1 as TrackerSORTBlockV1,
+    )
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
         AbsoluteStaticCropBlockV1,
@@ -1219,7 +1240,8 @@ def load_kinds() -> List[Kind]:
         ZONE_KIND,
         OBJECT_DETECTION_PREDICTION_KIND if not ENABLE_TENSOR_DATA_REPRESENTATION else TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND if not ENABLE_TENSOR_DATA_REPRESENTATION else TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-        KEYPOINT_DETECTION_PREDICTION_KIND if not ENABLE_TENSOR_DATA_REPRESENTATION else TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND_DOCS,
+        RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND if not ENABLE_TENSOR_DATA_REPRESENTATION else TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        KEYPOINT_DETECTION_PREDICTION_KIND if not ENABLE_TENSOR_DATA_REPRESENTATION else TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
         SEMANTIC_SEGMENTATION_PREDICTION_KIND if not ENABLE_TENSOR_DATA_REPRESENTATION else TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND,
         RGB_COLOR_KIND,
         IMAGE_KEYPOINTS_KIND,
@@ -1235,6 +1257,6 @@ def load_kinds() -> List[Kind]:
         BYTES_KIND,
         INFERENCE_ID_KIND,
         SECRET_KIND,
-        EMBEDDING_KIND if not ENABLE_TENSOR_DATA_REPRESENTATION else TENSOR_NATIVE_EMBEDDING_KIND_DOCS,
+        EMBEDDING_KIND if not ENABLE_TENSOR_DATA_REPRESENTATION else TENSOR_NATIVE_EMBEDDING_KIND,
         TIMESTAMP_KIND,
     ]
