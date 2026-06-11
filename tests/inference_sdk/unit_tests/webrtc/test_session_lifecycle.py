@@ -223,6 +223,30 @@ class TestDecorators:
         assert "predictions" in mock_session._data_field_handlers
         assert handle_predictions in mock_session._data_field_handlers["predictions"]
 
+    def test_on_error_registers_handler(self, mock_session):
+        """Test registering per-frame error handler."""
+
+        @mock_session.on_error
+        def handle_err(errors, metadata):
+            pass
+
+        assert handle_err in mock_session._error_handlers
+
+    def test_parse_video_metadata_attaches_errors(self, mock_session):
+        """Errors passed alongside metadata are surfaced on VideoMetadata."""
+        md = mock_session._parse_video_metadata(
+            {"frame_id": 7, "received_at": datetime.now().isoformat()},
+            errors=["workflow block X failed"],
+        )
+        assert md is not None
+        assert md.frame_id == 7
+        assert md.errors == ["workflow block X failed"]
+
+    def test_video_metadata_default_errors_is_empty(self):
+        """VideoMetadata constructed without errors defaults to an empty list."""
+        md = VideoMetadata(frame_id=1, received_at=datetime.now())
+        assert md.errors == []
+
 
 class TestVideoStream:
     """Tests for video stream iterator."""
