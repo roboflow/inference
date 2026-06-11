@@ -23,6 +23,7 @@ from inference_models.models.base.instance_segmentation import InstanceDetection
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.types import InstancesRLEMasks
+from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 
 TensorNativeDetections = Union[Detections, InstanceDetections]
 KeyPointPrediction = Tuple[KeyPoints, Optional[Detections]]
@@ -151,3 +152,18 @@ def split_key_point_prediction(
             )
         return key_points, detections
     return None, prediction
+
+
+def instance_mask_to_numpy(
+    detections: InstanceDetections,
+    index: int,
+) -> np.ndarray:
+    """Materialise a single instance's mask as a 2-D ``np.ndarray`` of bool
+    ``(H, W)``. RLE masks are decoded one instance at a time so the full stack
+    is never materialised at once (the same convention as the serialiser)."""
+    mask = detections.mask
+    if isinstance(mask, InstancesRLEMasks):
+        return coco_rle_masks_to_numpy_mask(
+            InstancesRLEMasks(image_size=mask.image_size, masks=[mask.masks[index]])
+        )[0]
+    return mask[index].detach().to("cpu").numpy().astype(bool)

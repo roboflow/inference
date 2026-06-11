@@ -118,12 +118,20 @@ from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
 from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
     ImagePreprocessingBlockV1,
 )
-from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
-    MaskAreaMeasurementBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1 import (
-    MaskEdgeSnapBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
+        MaskAreaMeasurementBlockV1,
+    )
+    from inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1 import (
+        MaskEdgeSnapBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1_tensor import (
+        MaskAreaMeasurementBlockV1,
+    )
+    from inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1_tensor import (
+        MaskEdgeSnapBlockV1,
+    )
 from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1 import (
     MorphologicalTransformationBlockV1,
 )
@@ -143,12 +151,20 @@ from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import 
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v2 import (
     SIFTComparisonBlockV2,
 )
-from inference.core.workflows.core_steps.classical_cv.size_measurement.v1 import (
-    SizeMeasurementBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
-    TemplateMatchingBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.size_measurement.v1 import (
+        SizeMeasurementBlockV1,
+    )
+    from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
+        TemplateMatchingBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.size_measurement.v1_tensor import (
+        SizeMeasurementBlockV1,
+    )
+    from inference.core.workflows.core_steps.classical_cv.template_matching.v1_tensor import (
+        TemplateMatchingBlockV1,
+    )
 from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
 )
