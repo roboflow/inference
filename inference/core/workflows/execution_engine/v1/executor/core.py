@@ -44,6 +44,9 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_last_chunk_of_selector,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
+    current_debug_collector,
+)
 from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
     ExecutionDataManager,
 )
@@ -52,9 +55,6 @@ from inference.core.workflows.execution_engine.v1.executor.flow_coordinator impo
 )
 from inference.core.workflows.execution_engine.v1.executor.output_constructor import (
     construct_workflow_output,
-)
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
-    current_debug_collector,
 )
 from inference.core.workflows.execution_engine.v1.executor.utils import (
     run_steps_in_parallel,
@@ -242,8 +242,10 @@ def safe_execute_step(
         remote_processing_times.set(processing_time_collector)
     if apply_duration_minimum is not None and duration_minimum_value is not None:
         apply_duration_minimum.set(duration_minimum_value)
-    if debug_collector is not None:
-        current_debug_collector.set(debug_collector)
+    # Always (re)bind, including None: pool threads are reused across requests,
+    # and a conditional set would leave a previous request's collector bound in
+    # this thread, silently accumulating logs on a dead object.
+    current_debug_collector.set(debug_collector)
     # Re-attach OTel context in worker thread so trace propagation works.
     # Must detach when done — threads are reused in the pool, and leaked
     # contexts cause incorrect span parenting on subsequent tasks.

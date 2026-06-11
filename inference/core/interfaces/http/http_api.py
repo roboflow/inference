@@ -1277,14 +1277,10 @@ class HttpInterface(BaseInterface):
             is_preview = False
             if hasattr(workflow_request, "is_preview"):
                 is_preview = workflow_request.is_preview
-            # Capture python-block stdout/stderr when:
-            #   - the caller explicitly opts in via `debug=True`, OR
-            #   - this is a UI preview run (`is_preview=True`). The Roboflow web
-            #     editor sends `is_preview=True` for every preview run, and its
-            #     "Debug Mode" toggle only augments the spec with extra outputs
-            #     (it doesn't set our `debug` flag), so we piggy-back on preview
-            #     to make the logs visible in the editor's JSON view.
-            debug_requested = getattr(workflow_request, "debug", False) or is_preview
+            # Capture python-block stdout/stderr only when the caller explicitly
+            # opts in via `debug=True` (clients must set the flag - preview runs
+            # do not enable it implicitly).
+            debug_requested = getattr(workflow_request, "debug", False)
             if debug_requested:
                 # The collector is published via a ContextVar; the execution
                 # engine re-binds it inside every worker thread spawned by its
