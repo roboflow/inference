@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, List, Literal, Optional, Set, Tuple, Union
+from typing import Generic, Iterator, List, Literal, Optional, Set, Tuple, Union
 
 import numpy as np
 import supervision as sv
@@ -29,6 +29,47 @@ class InstanceDetections:
     bboxes_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of bboxes
     )
+
+    def __len__(self) -> int:
+        return int(self.xyxy.shape[0])
+
+    def __iter__(self) -> Iterator[Tuple]:
+        """Iterates detections yielding 7-tuples:
+        (xyxy, mask, class_id, confidence, tracker_id, data, metadata)
+
+        - xyxy: torch.Tensor of shape (4,) - single bbox [x1, y1, x2, y2]
+        - mask: per-instance dense torch.Tensor of shape (H, W) or coco-representation
+            of RLE mask: {"size": (h, w), "counts": count}
+        - class_id: scalar tensor (0-dim)
+        - confidence: scalar tensor (0-dim)
+        - tracker_id: value of `bboxes_metadata[i]["tracker_id"]` or None
+        - data: per-detection dict (`bboxes_metadata[i]`, `{}` if not set)
+        - metadata: per-image dict (`image_metadata`, `{}` if not set)
+        """
+        bboxes_metadata = self.bboxes_metadata
+        if bboxes_metadata is None:
+            bboxes_metadata = [{} for _ in range(len(self))]
+        image_metadata = self.image_metadata or {}
+        for index in range(len(self)):
+            data = bboxes_metadata[index]
+            if self.mask is None:
+                selected_mask = None
+            elif isinstance(self.mask, InstancesRLEMasks):
+                selected_mask = {
+                    "size": list(self.mask.image_size),
+                    "counts": self.mask.masks[index],
+                }
+            else:
+                selected_mask = self.mask[index]
+            yield (
+                self.xyxy[index],
+                selected_mask,
+                self.class_id[index],
+                self.confidence[index],
+                data.get("tracker_id"),
+                data,
+                image_metadata,
+            )
 
     def to_supervision(self) -> sv.Detections:
         """Convert instance segmentation detections to Supervision Detections format.

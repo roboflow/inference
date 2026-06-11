@@ -1,5 +1,5 @@
 from copy import copy, deepcopy
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import supervision as sv
@@ -626,36 +626,6 @@ def _concatenate_detections(
     )
 
 
-def _iterate_tensor_native_detections(
-    detections: TensorNativeDetections,
-) -> Iterator[Tuple]:
-    """Yields the 7-tuple consumed by extract_detection_property_tensor_native:
-    (xyxy, mask, class_id, confidence, tracker_id, data, metadata).
-
-    `tracker_id` is lifted from the per-box `bboxes_metadata` dict (that is where
-    tracker blocks attach it); a dense mask yields its per-instance slice, RLE masks
-    yield None.
-    """
-    bboxes_metadata = _bboxes_metadata_list(detections)
-    image_metadata = detections.image_metadata or {}
-    dense_mask = None
-    if isinstance(detections, InstanceDetections) and isinstance(
-        detections.mask, torch.Tensor
-    ):
-        dense_mask = detections.mask
-    for index in range(_detections_count(detections)):
-        data = bboxes_metadata[index]
-        yield (
-            detections.xyxy[index],
-            dense_mask[index] if dense_mask is not None else None,
-            detections.class_id[index],
-            detections.confidence[index],
-            data.get("tracker_id"),
-            data,
-            image_metadata,
-        )
-
-
 def _detections_anchor_coordinates_tensor_native(
     detections: TensorNativeDetections, anchor: Position
 ) -> List[List[int]]:
@@ -750,7 +720,7 @@ def _filter_detections_tensor_native(
     _ensure_tensor_native_detections(detections, operation_name="filter_detections")
     local_parameters = copy(global_parameters)
     indices_to_keep = []
-    for index, detection in enumerate(_iterate_tensor_native_detections(detections)):
+    for index, detection in enumerate(detections):
         local_parameters[DEFAULT_OPERAND_NAME] = detection
         if filtering_fun(local_parameters):
             indices_to_keep.append(index)

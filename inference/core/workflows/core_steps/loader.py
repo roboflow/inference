@@ -15,9 +15,14 @@ from inference.core.env import (
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
 )
-from inference.core.workflows.core_steps.analytics.detection_event_log.v1 import (
-    DetectionEventLogBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.analytics.detection_event_log.v1 import (
+        DetectionEventLogBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.analytics.detection_event_log.v1_tensor import (
+        DetectionEventLogBlockV1,
+    )
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
 )

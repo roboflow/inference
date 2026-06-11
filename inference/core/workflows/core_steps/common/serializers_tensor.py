@@ -16,9 +16,6 @@ from inference.core.workflows.core_steps.common.serializers import (
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_rle_sv_detections as _serialise_rle_sv_detections_numpy,
 )
-from inference.core.workflows.core_steps.common.serializers import (
-    serialise_sv_detections as _serialise_sv_detections_numpy,
-)
 from inference.core.workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
     AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
