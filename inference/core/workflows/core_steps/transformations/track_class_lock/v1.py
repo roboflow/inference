@@ -1,11 +1,14 @@
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from copy import deepcopy
-from typing import Dict, List, Literal, Optional, Set, Type, Union
+from typing import Annotated, Dict, List, Literal, Optional, Set, Type, Union
 
 import numpy as np
 import supervision as sv
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
+from inference.core.workflows.core_steps.trackers._base import (
+    TRACKER_PREDICTION_KINDS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -13,9 +16,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -28,6 +29,11 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "tracked_detections"
+# Upper bound on concurrently tracked video streams. Images flowing through
+# steps like Dynamic Crop carry a unique video_identifier per crop, which
+# would otherwise grow per-video state without limit on long-running servers;
+# least-recently-seen video state is evicted beyond this cap.
+MAX_TRACKED_VIDEOS: int = 256
 LONG_DESCRIPTION = """
 Lock the class label of each tracked object by majority voting, eliminating class
 flicker in video workflows where a model alternates between similar classes for the
@@ -86,61 +92,64 @@ class BlockManifest(WorkflowBlockManifest):
     image: Selector(kind=[IMAGE_KIND]) = Field(
         description="Image with embedded video metadata. The video_metadata contains video_identifier used to maintain separate voting state for different videos.",
     )
-    detections: Selector(
-        kind=[
-            OBJECT_DETECTION_PREDICTION_KIND,
-            INSTANCE_SEGMENTATION_PREDICTION_KIND,
-        ]
-    ) = Field(  # type: ignore
-        description="Tracked object detection or instance segmentation predictions. Must include tracker_id information from a tracking block.",
+    detections: Selector(kind=TRACKER_PREDICTION_KINDS) = Field(  # type: ignore
+        description="Tracked predictions (object detection, instance segmentation, keypoint detection or RLE instance segmentation). Must include tracker_id information from a tracking block.",
         examples=["$steps.byte_tracker.tracked_detections"],
     )
-    min_votes: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    min_votes: Union[Optional[Annotated[int, Field(ge=1)]], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=10,
         description="Cumulative qualifying votes a class needs before the initial lock is acquired. Higher values delay locking but make the initial decision more reliable.",
         examples=[10, "$inputs.min_votes"],
     )
-    vote_confidence: Union[Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    vote_confidence: Union[Optional[Annotated[float, Field(ge=0.0, le=1.0)]], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         default=0.8,
         description="Minimum prediction confidence for a frame to count, both for pre-lock votes and post-lock challenger streaks. Frames below this threshold are ignored.",
         examples=[0.8, "$inputs.vote_confidence"],
     )
-    lead_margin: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    lead_margin: Union[Optional[Annotated[int, Field(ge=0)]], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=3,
         description="Number of votes by which the top class must lead the runner-up before locking. Prevents premature locks when two classes are contested.",
         examples=[3, "$inputs.lead_margin"],
     )
-    switch_after: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    switch_after: Union[Optional[Annotated[int, Field(ge=1)]], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=15,
-        description="Number of CONSECUTIVE qualifying frames of the same challenger class required to change an existing lock. Any interruption resets the streak.",
+        description="Number of CONSECUTIVE qualifying frames of the same challenger class required to change an existing lock. Any interruption resets the streak. Minimum 1 (a value of 1 switches on a single contrary frame; use >= 2 to enforce a multi-frame streak).",
         examples=[15, "$inputs.switch_after"],
     )
-    state_ttl: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    state_ttl: Union[Optional[Annotated[int, Field(ge=1)]], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=300,
         description="Number of frames after which state of unseen tracks is purged.",
         examples=[300, "$inputs.state_ttl"],
     )
-    reattach_window: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    reattach_window: Union[Optional[Annotated[int, Field(ge=0)]], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=30,
         description="When a NEW tracker id appears where a locked track disappeared within this many frames, the new track inherits the lost track's lock and votes. Bridges tracker id switches caused by short detection gaps. Set to 0 to disable re-attachment.",
         examples=[30, "$inputs.reattach_window"],
     )
-    reattach_iou: Union[Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    reattach_iou: Union[Optional[Annotated[float, Field(ge=0.0, le=1.0)]], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         default=0.3,
         description="Minimum IoU between a new detection's bounding box and a recently lost locked track's last known bounding box for the lock to be inherited. Higher values require the object to reappear closer to where it vanished.",
         examples=[0.3, "$inputs.reattach_iou"],
     )
 
+    @model_validator(mode="after")
+    def validate_reattach_window_within_state_ttl(self) -> "BlockManifest":
+        if (
+            isinstance(self.state_ttl, int)
+            and isinstance(self.reattach_window, int)
+            and self.reattach_window > self.state_ttl
+        ):
+            raise ValueError(
+                "`reattach_window` must not exceed `state_ttl` - lost tracks are "
+                "purged after `state_ttl` frames, so re-attachment beyond that "
+                "point can never happen."
+            )
+        return self
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(
-                name=OUTPUT_KEY,
-                kind=[
-                    OBJECT_DETECTION_PREDICTION_KIND,
-                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                ],
-            ),
+            OutputDefinition(name=OUTPUT_KEY, kind=TRACKER_PREDICTION_KINDS),
         ]
 
     @classmethod
@@ -157,7 +166,7 @@ class BlockManifest(WorkflowBlockManifest):
 
 class TrackClassLockBlockV1(WorkflowBlock):
     def __init__(self):
-        self._per_video_state: Dict[str, dict] = {}
+        self._per_video_state: "OrderedDict[str, dict]" = OrderedDict()
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -179,9 +188,13 @@ class TrackClassLockBlockV1(WorkflowBlock):
             raise ValueError(
                 f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
             )
+        video_id = image.video_metadata.video_identifier
         video_state = self._per_video_state.setdefault(
-            image.video_metadata.video_identifier, {"tracks": {}, "frame": 0}
+            video_id, {"tracks": {}, "frame": 0}
         )
+        self._per_video_state.move_to_end(video_id)
+        while len(self._per_video_state) > MAX_TRACKED_VIDEOS:
+            self._per_video_state.popitem(last=False)
         video_state["frame"] += 1
         frame = video_state["frame"]
         tracks = video_state["tracks"]
@@ -189,6 +202,11 @@ class TrackClassLockBlockV1(WorkflowBlock):
         dets = deepcopy(detections)
         n = len(dets)
         locked_flags = np.zeros(n, dtype=bool)
+
+        if dets.confidence is None and n > 0:
+            # trackers may emit detections without confidence; materialize it
+            # so locked confidence can be written back per detection
+            dets.confidence = np.ones(n, dtype=np.float32)
 
         class_names = dets.data.get("class_name")
         if class_names is not None:
@@ -234,11 +252,13 @@ class TrackClassLockBlockV1(WorkflowBlock):
             st["last_seen"] = frame
             st["last_xyxy"] = np.array(dets.xyxy[i], copy=True)
 
-            cname = (
-                str(class_names[i])
-                if class_names is not None
-                else str(dets.class_id[i])
-            )
+            if class_names is not None:
+                cname = str(class_names[i])
+            elif dets.class_id is not None:
+                cname = str(dets.class_id[i])
+            else:
+                # no class identity available for this detection
+                continue
             conf = float(dets.confidence[i]) if dets.confidence is not None else 1.0
             qualifying = conf >= vote_confidence
 
@@ -247,7 +267,8 @@ class TrackClassLockBlockV1(WorkflowBlock):
                 if qualifying:
                     st["votes"][cname] += 1
                     st["conf_sum"][cname] += conf
-                    st["class_ids"][cname] = int(dets.class_id[i])
+                    if dets.class_id is not None:
+                        st["class_ids"][cname] = int(dets.class_id[i])
                 if st["votes"]:
                     ranked = sorted(
                         st["votes"].items(), key=lambda kv: kv[1], reverse=True
@@ -268,7 +289,8 @@ class TrackClassLockBlockV1(WorkflowBlock):
                         st["challenger"] = cname
                         st["streak"] = 1
                         st["streak_conf"] = conf
-                        st["class_ids"][cname] = int(dets.class_id[i])
+                        if dets.class_id is not None:
+                            st["class_ids"][cname] = int(dets.class_id[i])
                     if st["streak"] >= switch_after:
                         new = st["challenger"]
                         st["locked"] = new
@@ -282,7 +304,8 @@ class TrackClassLockBlockV1(WorkflowBlock):
                 lc = st["locked"]
                 if class_names is not None:
                     class_names[i] = lc
-                dets.class_id[i] = st["class_ids"][lc]
+                if dets.class_id is not None and lc in st["class_ids"]:
+                    dets.class_id[i] = st["class_ids"][lc]
                 denom = max(st["votes"][lc], 1)
                 dets.confidence[i] = min(1.0, st["conf_sum"][lc] / denom)
                 locked_flags[i] = True

@@ -1,10 +1,13 @@
 import datetime
+from copy import deepcopy
 
 import numpy as np
 import pytest
 import supervision as sv
+from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
+    MAX_TRACKED_VIDEOS,
     BlockManifest,
     TrackClassLockBlockV1,
 )
@@ -326,6 +329,104 @@ def test_track_class_lock_reattach_disabled_with_zero_window() -> None:
     )
 
     # then
+    assert not result["tracked_detections"].data["class_locked"][0]
+
+
+def test_track_class_lock_bounds_per_video_state() -> None:
+    # given - more distinct video identifiers than the cap (e.g. images
+    # produced by Dynamic Crop carry a unique identifier per crop)
+    block = TrackClassLockBlockV1()
+
+    # when
+    for v in range(MAX_TRACKED_VIDEOS + 50):
+        block.run(image=_image(f"vid_{v}"), detections=_frame("cat", 0.9), **KNOBS)
+
+    # then - least-recently-seen video state is evicted, recent ones survive
+    assert len(block._per_video_state) == MAX_TRACKED_VIDEOS
+    assert "vid_0" not in block._per_video_state
+    assert f"vid_{MAX_TRACKED_VIDEOS + 49}" in block._per_video_state
+
+
+def test_track_class_lock_manifest_rejects_zero_switch_after() -> None:
+    # given - switch_after=0 would fire a class switch on the very first
+    # qualifying challenger frame, bypassing the stability requirement
+    data = {
+        "type": "roboflow_core/track_class_lock@v1",
+        "name": "class_lock",
+        "image": "$inputs.image",
+        "detections": "$steps.byte_tracker.tracked_detections",
+        "switch_after": 0,
+    }
+
+    # when / then
+    with pytest.raises(ValidationError):
+        BlockManifest.model_validate(data)
+
+
+def test_track_class_lock_manifest_rejects_reattach_window_beyond_state_ttl() -> None:
+    # given - tracks are purged after state_ttl frames, so a reattach_window
+    # larger than state_ttl can never fire
+    data = {
+        "type": "roboflow_core/track_class_lock@v1",
+        "name": "class_lock",
+        "image": "$inputs.image",
+        "detections": "$steps.byte_tracker.tracked_detections",
+        "state_ttl": 10,
+        "reattach_window": 30,
+    }
+
+    # when / then
+    with pytest.raises(ValidationError):
+        BlockManifest.model_validate(data)
+
+
+def test_track_class_lock_handles_detections_without_confidence() -> None:
+    # given - sv.Detections allows confidence=None; votes fall back to 1.0
+    block = TrackClassLockBlockV1()
+    frame = _frame("cat", 0.9)
+    frame.confidence = None
+
+    # when - locking and writing confidence back must not raise
+    for _ in range(10):
+        result = block.run(image=_image(), detections=deepcopy(frame), **KNOBS)
+
+    # then
+    out = result["tracked_detections"]
+    assert out.data["class_locked"][0]
+    assert abs(float(out.confidence[0]) - 1.0) < 1e-9
+
+
+def test_track_class_lock_handles_detections_without_class_id() -> None:
+    # given - class identity comes from class_name only
+    block = TrackClassLockBlockV1()
+    frame = _frame("cat", 0.9)
+    frame.class_id = None
+
+    # when - voting, locking and relabelling must not raise
+    for _ in range(10):
+        result = block.run(image=_image(), detections=deepcopy(frame), **KNOBS)
+
+    # then
+    out = result["tracked_detections"]
+    assert out.data["class_locked"][0]
+    assert out.data["class_name"][0] == "cat"
+    assert out.class_id is None
+
+
+def test_track_class_lock_skips_detections_without_any_class_identity() -> None:
+    # given - neither class_name nor class_id present
+    block = TrackClassLockBlockV1()
+    frame = sv.Detections(
+        xyxy=np.array([[10.0, 10.0, 50.0, 50.0]]),
+        confidence=np.array([0.9]),
+        tracker_id=np.array([7]),
+    )
+
+    # when
+    for _ in range(10):
+        result = block.run(image=_image(), detections=deepcopy(frame), **KNOBS)
+
+    # then - never locks, never crashes
     assert not result["tracked_detections"].data["class_locked"][0]
 
 
