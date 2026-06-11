@@ -29,7 +29,7 @@ async def start_worker(
         webrtc_request.webrtc_config = WebRTCConfig(
             iceServers=[
                 RTCIceServer(
-                    urls=[webrtc_request.webrtc_turn_config.urls],
+                    urls=webrtc_request.webrtc_turn_config.urls,
                     username=webrtc_request.webrtc_turn_config.username,
                     credential=webrtc_request.webrtc_turn_config.credential,
                 )
