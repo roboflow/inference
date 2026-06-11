@@ -1230,10 +1230,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-concept-segmentation-text-prompts" class="md-nav__link">
+  <a href="#2-concept-segmentation-text-and-exemplar-prompts" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Concept Segmentation (Text Prompts)
+        2. Concept Segmentation (Text and Exemplar Prompts)
       
     </span>
   </a>
@@ -1324,10 +1324,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-sam3-raw-api" class="md-nav__link">
+  <a href="#2-sam3-via-the-inference-sdk" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. SAM3 raw API
+        2. SAM3 via the Inference SDK
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-sam3-raw-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. SAM3 raw API
       
     </span>
   </a>
@@ -1808,10 +1819,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-concept-segmentation-text-prompts" class="md-nav__link">
+  <a href="#2-concept-segmentation-text-and-exemplar-prompts" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Concept Segmentation (Text Prompts)
+        2. Concept Segmentation (Text and Exemplar Prompts)
       
     </span>
   </a>
@@ -1902,10 +1913,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-sam3-raw-api" class="md-nav__link">
+  <a href="#2-sam3-via-the-inference-sdk" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. SAM3 raw API
+        2. SAM3 via the Inference SDK
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-sam3-raw-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. SAM3 raw API
       
     </span>
   </a>
@@ -1945,8 +1967,9 @@
 <h1 id="segment-anything-3-sam-3">Segment Anything 3 (SAM 3)<a class="headerlink" href="#segment-anything-3-sam-3" title="Permanent link">&para;</a></h1>
 <p><a href="https://ai.meta.com/sam3">Segment Anything 3 (SAM 3)</a> is a unified foundation model for promptable segmentation in images and videos. It builds upon SAM 2 by introducing the ability to exhaustively segment all instances of an open-vocabulary concept specified by a short text phrase or exemplars.</p>
 <p>SAM 3 can detect, segment, and track objects using:
-- <strong>Text prompts</strong> (e.g., "a person", "red car")
-- <strong>Visual prompts</strong> (boxes, points)</p>
+- <strong>Text prompts</strong> (e.g., "a person", "red car") — segment every instance of a concept
+- <strong>Exemplar box prompts</strong> — box one example object and segment every similar instance, optionally combined with text and with negative exemplars to exclude lookalikes
+- <strong>Interactive visual prompts</strong> (points, boxes) — segment one specific object, SAM 2 style</p>
 <h2 id="how-to-use-sam-3-with-inference">How to Use SAM 3 with Inference<a class="headerlink" href="#how-to-use-sam-3-with-inference" title="Permanent link">&para;</a></h2>
 <p>You can use SAM 3 via the Inference Python SDK or the HTTP API.</p>
 <h3 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h3>
@@ -1972,10 +1995,29 @@
 <span class="n">image_path</span> <span class="o">=</span> <span class="s2">&quot;path/to/your/image.jpg&quot;</span>
 
 <span class="c1"># Define prompts</span>
-<span class="c1"># SAM 3 supports both text and visual prompts</span>
+<span class="c1"># SAM 3 supports text prompts, exemplar box prompts, and combinations of both</span>
 <span class="n">prompts</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="c1"># Text prompt: segment every instance of a concept</span>
     <span class="n">Sam3Prompt</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="s2">&quot;person&quot;</span><span class="p">),</span>
-    <span class="n">Sam3Prompt</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="s2">&quot;car&quot;</span><span class="p">)</span>
+    <span class="c1"># Exemplar prompt: box one example object (absolute pixels, top-left</span>
+    <span class="c1"># anchored XYWH) and segment every similar instance in the image.</span>
+    <span class="c1"># box_labels is required: 1 = positive exemplar, 0 = negative exemplar.</span>
+    <span class="n">Sam3Prompt</span><span class="p">(</span>
+        <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;visual&quot;</span><span class="p">,</span>
+        <span class="n">boxes</span><span class="o">=</span><span class="p">[</span><span class="n">Sam3Prompt</span><span class="o">.</span><span class="n">Box</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="mi">1409</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="mi">705</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">112</span><span class="p">,</span> <span class="n">height</span><span class="o">=</span><span class="mi">183</span><span class="p">)],</span>
+        <span class="n">box_labels</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+    <span class="p">),</span>
+    <span class="c1"># Combined prompt: text narrowed by exemplars. Here the negative</span>
+    <span class="c1"># exemplar suppresses instances similar to the second box.</span>
+    <span class="n">Sam3Prompt</span><span class="p">(</span>
+        <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;visual&quot;</span><span class="p">,</span>
+        <span class="n">text</span><span class="o">=</span><span class="s2">&quot;car&quot;</span><span class="p">,</span>
+        <span class="n">boxes</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">Sam3Prompt</span><span class="o">.</span><span class="n">BoxXYXY</span><span class="p">(</span><span class="n">x0</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">y0</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">x1</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">y1</span><span class="o">=</span><span class="mi">400</span><span class="p">),</span>
+            <span class="n">Sam3Prompt</span><span class="o">.</span><span class="n">BoxXYXY</span><span class="p">(</span><span class="n">x0</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">y0</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">x1</span><span class="o">=</span><span class="mi">700</span><span class="p">,</span> <span class="n">y1</span><span class="o">=</span><span class="mi">400</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="n">box_labels</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+    <span class="p">),</span>
 <span class="p">]</span>
 
 <span class="c1"># Run inference</span>
@@ -2023,8 +2065,8 @@
 <h4 id="1-start-the-server">1. Start the Server<a class="headerlink" href="#1-start-the-server" title="Permanent link">&para;</a></h4>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>-it<span class="w"> </span>--rm<span class="w"> </span>-p<span class="w"> </span><span class="m">9001</span>:9001<span class="w"> </span>--gpus<span class="o">=</span>all<span class="w"> </span>roboflow/inference-server:latest
 </code></pre></div>
-<h4 id="2-concept-segmentation-text-prompts">2. Concept Segmentation (Text Prompts)<a class="headerlink" href="#2-concept-segmentation-text-prompts" title="Permanent link">&para;</a></h4>
-<p>This is the most common usage for SAM 3, allowing you to segment objects by text description.</p>
+<h4 id="2-concept-segmentation-text-and-exemplar-prompts">2. Concept Segmentation (Text and Exemplar Prompts)<a class="headerlink" href="#2-concept-segmentation-text-and-exemplar-prompts" title="Permanent link">&para;</a></h4>
+<p>This is the most common usage for SAM 3, allowing you to segment all instances of a concept. Concepts can be described by text:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s1">&#39;http://localhost:9001/sam3/concept_segment?api_key=&lt;YOUR_API_KEY&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
@@ -2035,6 +2077,27 @@
 <span class="s1">    &quot;prompts&quot;: [</span>
 <span class="s1">        { &quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;cat&quot; },</span>
 <span class="s1">        { &quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;dog&quot; }</span>
+<span class="s1">    ]</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div>
+<p>Concepts can also be described by exemplar boxes — box one example object and SAM 3 segments every similar instance. Boxes use absolute pixel coordinates, either top-left anchored XYWH (<code>{"x", "y", "width", "height"}</code>) or corner form (<code>{"x0", "y0", "x1", "y1"}</code>). <code>box_labels</code> is required alongside <code>boxes</code>: <code>1</code> marks a positive exemplar, <code>0</code> a negative exemplar to exclude lookalikes. Text and exemplars can be combined in one prompt:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s1">&#39;http://localhost:9001/sam3/concept_segment?api_key=&lt;YOUR_API_KEY&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">    &quot;image&quot;: {</span>
+<span class="s1">      &quot;type&quot;: &quot;url&quot;,</span>
+<span class="s1">      &quot;value&quot;: &quot;https://media.roboflow.com/inference/sample.jpg&quot;</span>
+<span class="s1">    },</span>
+<span class="s1">    &quot;prompts&quot;: [</span>
+<span class="s1">        {</span>
+<span class="s1">          &quot;type&quot;: &quot;visual&quot;,</span>
+<span class="s1">          &quot;text&quot;: &quot;dog&quot;,</span>
+<span class="s1">          &quot;boxes&quot;: [</span>
+<span class="s1">            { &quot;x&quot;: 100, &quot;y&quot;: 200, &quot;width&quot;: 150, &quot;height&quot;: 120 },</span>
+<span class="s1">            { &quot;x0&quot;: 400, &quot;y0&quot;: 200, &quot;x1&quot;: 550, &quot;y1&quot;: 320 }</span>
+<span class="s1">          ],</span>
+<span class="s1">          &quot;box_labels&quot;: [1, 0]</span>
+<span class="s1">        }</span>
 <span class="s1">    ]</span>
 <span class="s1">  }&#39;</span>
 </code></pre></div>
@@ -2051,16 +2114,22 @@
 <span class="s1">  }&#39;</span>
 <span class="c1"># Returns an &quot;image_id&quot;</span>
 </code></pre></div>
-<p><strong>Step 2: Segment with Points</strong></p>
+<p><strong>Step 2: Segment with Points and/or a Box</strong></p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s1">&#39;http://localhost:9001/sam3/visual_segment?api_key=&lt;YOUR_API_KEY&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
 <span class="s1">    &quot;image_id&quot;: &quot;&lt;IMAGE_ID_FROM_STEP_1&gt;&quot;,</span>
 <span class="s1">    &quot;prompts&quot;: [</span>
-<span class="s1">      { &quot;points&quot;: [ { &quot;x&quot;: 100, &quot;y&quot;: 100, &quot;positive&quot;: true } ] }</span>
-<span class="s1">    ]</span>
+<span class="s1">      {</span>
+<span class="s1">        &quot;points&quot;: [ { &quot;x&quot;: 100, &quot;y&quot;: 100, &quot;positive&quot;: true } ],</span>
+<span class="s1">        &quot;box&quot;: { &quot;x&quot;: 100, &quot;y&quot;: 100, &quot;width&quot;: 200, &quot;height&quot;: 150 }</span>
+<span class="s1">      }</span>
+<span class="s1">    ],</span>
+<span class="s1">    &quot;multimask_output&quot;: false</span>
 <span class="s1">  }&#39;</span>
 </code></pre></div>
+<p>A prompt can contain <code>points</code>, a <code>box</code>, or both. Positive points include the clicked region; negative points (<code>"positive": false</code>) exclude it — add points to iteratively refine the mask. Note that the PVS <code>box</code> is <strong>center-anchored</strong> XYWH (<code>x</code>, <code>y</code> is the box center), unlike concept segmentation boxes which are top-left anchored.</p>
+<p>The response contains the single highest-confidence mask for the prompt: <code>multimask_output</code> controls how many internal mask proposals the model generates (three when <code>true</code>), but the best proposal is always selected for the response. Send one prompt per request — multiple prompts in one request currently return only one prediction.</p>
 <h2 id="workflow-integration">Workflow Integration<a class="headerlink" href="#workflow-integration" title="Permanent link">&para;</a></h2>
 <p>SAM 3 is fully integrated into <a href="https://inference.roboflow.com/workflows/core_steps/">Inference Workflows</a>. You can use the <strong>SAM 3</strong> block to add zero-shot instance segmentation to your pipeline.</p>
 <p>The Workflow block allows you to:
@@ -2147,7 +2216,37 @@ If you have created a workflow in Roboflow platform you can use <code>workspace_
 <span class="n">cv</span><span class="o">.</span><span class="n">waitKey</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
 <span class="n">cv</span><span class="o">.</span><span class="n">destroyAllWindows</span><span class="p">()</span>
 </code></pre></div>
-<h3 id="2-sam3-raw-api">2. SAM3 raw API<a class="headerlink" href="#2-sam3-raw-api" title="Permanent link">&para;</a></h3>
+<h3 id="2-sam3-via-the-inference-sdk">2. SAM3 via the Inference SDK<a class="headerlink" href="#2-sam3-via-the-inference-sdk" title="Permanent link">&para;</a></h3>
+<p>The <code>inference-sdk</code> client wraps both SAM3 endpoints. Prompt dicts take the same shape as the HTTP payloads, so text, exemplar, and combined prompts all work:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
+
+<span class="n">client</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
+    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;https://serverless.roboflow.com&quot;</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;&lt;YOUR_ROBOFLOW_API_KEY&gt;&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Concept segmentation: text, exemplar boxes, or both per prompt</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">sam3_concept_segment</span><span class="p">(</span>
+    <span class="n">inference_input</span><span class="o">=</span><span class="s2">&quot;https://media.roboflow.com/inference/people-walking.jpg&quot;</span><span class="p">,</span>
+    <span class="n">prompts</span><span class="o">=</span><span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;person&quot;</span><span class="p">},</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;visual&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;boxes&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="mi">1409</span><span class="p">,</span> <span class="s2">&quot;y&quot;</span><span class="p">:</span> <span class="mi">705</span><span class="p">,</span> <span class="s2">&quot;width&quot;</span><span class="p">:</span> <span class="mi">112</span><span class="p">,</span> <span class="s2">&quot;height&quot;</span><span class="p">:</span> <span class="mi">183</span><span class="p">}],</span>
+            <span class="s2">&quot;box_labels&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="p">},</span>
+    <span class="p">],</span>
+    <span class="n">output_prob_thresh</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Interactive visual segmentation: points and/or a center-anchored box</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">sam3_visual_segment</span><span class="p">(</span>
+    <span class="n">inference_input</span><span class="o">=</span><span class="s2">&quot;https://media.roboflow.com/inference/people-walking.jpg&quot;</span><span class="p">,</span>
+    <span class="n">prompts</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;points&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="mi">1465</span><span class="p">,</span> <span class="s2">&quot;y&quot;</span><span class="p">:</span> <span class="mi">796</span><span class="p">,</span> <span class="s2">&quot;positive&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">}]}],</span>
+    <span class="n">multimask_output</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<h3 id="3-sam3-raw-api">3. SAM3 raw API<a class="headerlink" href="#3-sam3-raw-api" title="Permanent link">&para;</a></h3>
 <p>For direct API access to SAM3 without workflows, you can use Roboflow's serverless endpoint.
 This approach gives you raw segmentation results that you can process however you need.
 The example below shows how to segment a dog and draw the resulting polygon directly on the image using OpenCV.</p>

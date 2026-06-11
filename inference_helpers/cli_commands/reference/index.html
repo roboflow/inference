@@ -1550,10 +1550,11 @@
 <p><strong>Options</strong>:</p>
 <ul>
 <li><code>-b, --batch-id TEXT</code>: Identifier of new batch (must be lower-cased letters with &#x27;-&#x27; and &#x27;_&#x27; allowed  [required]</li>
-<li><code>-ds, --data-source [local-directory|references-file|cloud-storage]</code>: Source of the data - either local directory or JSON file with references.  [default: local-directory]</li>
-<li><code>-i, --images-dir TEXT</code>: Path to your images directory to upload (required if data source is &#x27;local-directory&#x27;)</li>
+<li><code>-ds, --data-source [local-directory|references-file|cloud-storage|roboql]</code>: Source of the data - either local directory or JSON file with references.  [default: local-directory]</li>
+<li><code>--images-dir TEXT</code>: Path to your images directory to upload (required if data source is &#x27;local-directory&#x27;)</li>
 <li><code>-r, --references TEXT</code>: Path to JSON file with URLs of files to be ingested (required if data source is &#x27;references-file&#x27;)</li>
 <li><code>-bp, --bucket-path TEXT</code>: Cloud storage path with optional glob pattern (e.g., &#x27;s3://bucket/path/*<em>/</em>.jpg&#x27;, &#x27;gs://bucket/images/&#x27;). Required for cloud-storage source. Supports S3, GCS, and Azure.</li>
+<li><code>-q, --query TEXT</code>: RoboQL query selecting images from the Roboflow platform (required if data source is &#x27;roboql&#x27;). The batch is materialised asynchronously by the data-staging worker.</li>
 <li><code>-i, --ingest-id TEXT</code>: Identifier assigned for references ingest (if value not provided - system will auto-assign) - only relevant when <code>notifications-url</code> specified</li>
 <li><code>--notifications-url TEXT</code>: Webhook URL where system should send notifications about ingest status</li>
 <li><code>--notification-category TEXT</code>: Selecting specific notification categories (ingest-status / files-status) in combination with <code>--notifications-url</code> you may filter which notifications are going to be sent to your system. Please note that filtering of notifications do only work with ingests of files references via signed URLs and will not be applicable for ingests from local storage.</li>
@@ -1570,7 +1571,7 @@
 <p><strong>Options</strong>:</p>
 <ul>
 <li><code>-b, --batch-id TEXT</code>: Identifier of new batch (must be lower-cased letters with &#x27;-&#x27; and &#x27;_&#x27; allowed  [required]</li>
-<li><code>-ds, --data-source [local-directory|references-file|cloud-storage]</code>: Source of the data - either local directory or JSON file with references.  [default: local-directory]</li>
+<li><code>-ds, --data-source [local-directory|references-file|cloud-storage|roboql]</code>: Source of the data - either local directory or JSON file with references.  [default: local-directory]</li>
 <li><code>-v, --videos-dir TEXT</code>: Path to your videos directory to upload</li>
 <li><code>-r, --references TEXT</code>: Path to JSON file with URLs of files to be ingested (required if data source is &#x27;references-file&#x27;)</li>
 <li><code>-bp, --bucket-path TEXT</code>: Cloud storage path with optional glob pattern (e.g., &#x27;s3://bucket/path/*<em>/</em>.mp4&#x27;, &#x27;gs://bucket/videos/&#x27;). Required for cloud-storage source. Supports S3, GCS, and Azure.</li>
@@ -1680,7 +1681,8 @@
 <li><code>--image-input-name TEXT</code>: Name of the Workflow input that defines placeholder for image to be processed</li>
 <li><code>--save-image-outputs / --no-save-image-outputs</code>: Flag controlling persistence of Workflow outputs that are images  [default: no-save-image-outputs]</li>
 <li><code>--image-outputs-to-save TEXT</code>: Use this option to filter out workflow image outputs you want to save</li>
-<li><code>-p, --part-name TEXT</code>: Name of the batch part (relevant for multipart batches</li>
+<li><code>-p, --part-name TEXT</code>: Name of the batch part with images (relevant for multipart batches)</li>
+<li><code>-imp, --images-metadata-part-name TEXT</code>: Name of batch part bringing images metadata (relevant for multipart batches)</li>
 <li><code>-mt, --machine-type [cpu|gpu]</code>: Type of machine</li>
 <li><code>--workers-per-machine INTEGER</code>: Number of workers to run on a single machine - more workers equals better resources utilisation, but may cause out of memory errors for bulky Workflows.</li>
 <li><code>-ms, --machine-size [xs|s|m|l|xl]</code>: (Deprecated - use --workers-per-machine) Size of machine</li>
@@ -1694,6 +1696,7 @@
 <li><code>--notifications-url TEXT</code>: URL of the Webhook to be used for job state notifications.</li>
 <li><code>-ib, --inference-backend [old-inference|inference-models]</code>: Inference backend to use</li>
 <li><code>-jn, --job-name TEXT</code>: Name of your job</li>
+<li><code>-mm, --metadata-mapping TEXT</code>: Key-value mapping of workflow input to metadata key as workflow_input=metadata_key. Repeatable.</li>
 <li><code>--help</code>: Show this message and exit.</li>
 </ul>
 <h4 id="inference-rf-cloud-batch-processing-process-videos-with-workflow"><code>inference rf-cloud batch-processing process-videos-with-workflow</code><a class="headerlink" href="#inference-rf-cloud-batch-processing-process-videos-with-workflow" title="Permanent link">&para;</a></h4>
@@ -1709,7 +1712,7 @@
 <li><code>--image-input-name TEXT</code>: Name of the Workflow input that defines placeholder for image to be processed</li>
 <li><code>--save-image-outputs / --no-save-image-outputs</code>: Flag controlling persistence of Workflow outputs that are images  [default: no-save-image-outputs]</li>
 <li><code>--image-outputs-to-save TEXT</code>: Use this option to filter out workflow image outputs you want to save</li>
-<li><code>-p, --part-name TEXT</code>: Name of the batch part (relevant for multipart batches</li>
+<li><code>-p, --part-name TEXT</code>: Name of the batch part relevant for multipart batches</li>
 <li><code>-mt, --machine-type [cpu|gpu]</code>: Type of machine</li>
 <li><code>--workers-per-machine INTEGER</code>: Number of workers to run on a single machine - more workers equals better resources utilisation, but may cause out of memory errors for bulky Workflows.</li>
 <li><code>-ms, --machine-size [xs|s|m|l|xl]</code>: (Deprecated - use --workers-per-machine) Size of machine</li>

@@ -17,7 +17,7 @@ we apply secondary model.
 Secondary model is supposed to make prediction from dogs breed classifier model
 to assign detailed class for each dog instance.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoibng0M2tDUmdUYkg0d0ZGaDZ2NUYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODA2ODU1MTZ9.eCYbc3ch9YYukxRKLm_E-u8OTgCCby-dGYIyaCy-Mj8?showGraph=true" loading="lazy" title="Roboflow Workflow for detection plus classification" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoibng0M2tDUmdUYkg0d0ZGaDZ2NUYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODExODcxODR9.LQKhCFsDBcoU_IdHt3lrrQbf5_YmGyWMPN-91buCaAs?showGraph=true" loading="lazy" title="Roboflow Workflow for detection plus classification" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -82,7 +82,7 @@ has level 2 (there are bunch of classification results for each input image). Th
 two inputs and produces result at dimensionality level 1 - exactly the same as predictions from 
 object detection model.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiNGpkaHZvbUNNM1g0S3pkQzNrMVkiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODA2ODU1MTd9.Xshgd_2naZuU0GJIzfjywBuYmlFWRRB7osXM_I1mMqs?showGraph=true" loading="lazy" title="Roboflow Workflow for detections classes replacement" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiNGpkaHZvbUNNM1g0S3pkQzNrMVkiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODExODcxODV9.Fe3LMcBp7pPO82uQ9k-j5CGwR689Ny41dn9nET6ogeQ?showGraph=true" loading="lazy" title="Roboflow Workflow for detections classes replacement" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -155,7 +155,7 @@ model vote to add predicted bounding box to the output prediction
 votes to accept bounding box to the output prediction - this way you may improve the quality of 
 predictions
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiR2o4aEpIYUtCQU9MOHp0Y29MQ0EiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODA2ODU1MTh9.ZKYhcm0Urmgjtp6FzpVYkeUfg9AtaIRnZ9Fy6643hWY?showGraph=true" loading="lazy" title="Roboflow Workflow for detections consensus" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiR2o4aEpIYUtCQU9MOHp0Y29MQ0EiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODExODcxODZ9.GB4-8HccfQhivNU_cFSaZzPJwOHEH4EMPnWm7GW5JsE?showGraph=true" loading="lazy" title="Roboflow Workflow for detections consensus" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -216,7 +216,7 @@ predictions
 This example showcases how to compare predictions from two different models using Workflows and 
 Model Comparison Visualization block.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZnUzUDBld1BCa1B2VDgwWE5TRksiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODA2ODU1MTl9.v9u-YXvXW3efaILECn_dQZ1dLnyIz3FA-DHRberLaeQ?showGraph=true" loading="lazy" title="Roboflow Workflow for two detection models comparison" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZnUzUDBld1BCa1B2VDgwWE5TRksiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODExODcxODh9.TwzZRExWdi31vFK6ddCYrjhZVKGLalDm_aoSDoJ_4BI?showGraph=true" loading="lazy" title="Roboflow Workflow for two detection models comparison" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -294,7 +294,7 @@ separate sources — different models, different processing stages, a "primary"
 detector vs a "context" detector, etc. The relation is not symmetric: the
 denominator is always the reference detection's area.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMmpQeXNIUjRyM2lKRGZqVTZSaloiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODA2ODU1MTl9.ISZyp0AyLBUL5q4jTAGnJ1wMOUobcqcWd9rX0l8OwuM?showGraph=true" loading="lazy" title="Roboflow Workflow for overlap analysis" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMmpQeXNIUjRyM2lKRGZqVTZSaloiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODExODcxODh9.ydVJbf2iYeUAT-dEEZ-prINHfnxh8Qtipx_GszeP_wY?showGraph=true" loading="lazy" title="Roboflow Workflow for overlap analysis" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

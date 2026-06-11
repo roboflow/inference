@@ -1018,7 +1018,11 @@
     height: 0;
     margin: 0;
     padding: 0;
-    overflow: hidden;
+    overflow: visible;
+  }
+
+  [data-md-toggle=drawer]:checked ~ .md-container .md-sidebar--primary {
+    display: block;
   }
 </style>
 <script>

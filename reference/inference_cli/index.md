@@ -16,3 +16,9 @@ Data staging operations for uploading and managing data in the Roboflow cloud.
 
 ::: inference_cli.lib.roboflow_cloud.data_staging.api_operations
 
+## `lib/workflows`
+
+Workflow execution adapters for local images, remote images, and video sources.
+
+::: inference_cli.lib.workflows.local_image_adapter
+
