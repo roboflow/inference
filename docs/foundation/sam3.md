@@ -210,11 +210,10 @@ The response contains the single highest-confidence mask for the prompt: `multim
 
 ## Workflow Integration
 
-SAM 3 is fully integrated into [Inference Workflows](https://inference.roboflow.com/workflows/core_steps/). You can use the **SAM 3** block to add zero-shot instance segmentation to your pipeline.
+SAM 3 is fully integrated into [Inference Workflows](https://inference.roboflow.com/workflows/core_steps/). Two blocks are available:
 
-The Workflow block allows you to:
-- Use **Text Prompts** to segment objects by class name.
-- Use **Box Prompts** from other detection models (like YOLO) to generate precise masks for detected objects.
+- The **SAM 3** block runs concept segmentation: use **Text Prompts** to segment all instances of a class by name.
+- The **SAM 3 Interactive** block runs promptable visual segmentation (PVS): use **Point Prompts** (positive/negative clicks) and/or **Box Prompts** from other detection models (like YOLO) to segment specific objects.
 
 ### Example: Text Prompting in Workflows
 
@@ -222,6 +221,13 @@ The Workflow block allows you to:
 2. Connect an image input.
 3. In the `class_names` field, enter the classes you want to segment (e.g., `["person", "vehicle"]`).
 4. The block will output instance segmentation predictions compatible with other workflow steps.
+
+### Example: Point Prompting in Workflows
+
+1. Add a **SAM 3 Interactive** block to your workflow.
+2. Connect an image input.
+3. In the `points` field, provide labeled points (or connect a workflow input of kind `labeled_points`), e.g. `[{"x": 320, "y": 240, "positive": true}, {"x": 100, "y": 100, "positive": false}]`. Positive points mark the object to segment; negative points exclude regions to refine the mask.
+4. Optionally connect detections from another model to the `boxes` field - each box becomes a separate prompt and its class name is forwarded to the predicted mask.
 
 ## Capabilities & Features
 
