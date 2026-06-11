@@ -20,8 +20,10 @@ SAM3 Video provides open-vocabulary video object tracking:
   no video file required upfront
 
 !!! info "Looking for box-prompted video tracking?"
-    To seed tracking from detector boxes instead of text, use the
-    [SAM2 video tracker](sam2-interactive-segmentation.md) (`sam2video` model family).
+    To seed tracking from detector boxes instead of text, use `sam3trackervideo` -
+    SAM3's visually prompted tracker, which shares this checkpoint and the SAM2-shaped
+    `prompt`/`track` contract (see [below](#sam3-tracker-box-prompted-tracking)) - or
+    the lighter `sam2video` family.
 
 ## License
 
@@ -33,7 +35,11 @@ SAM3 Video requires a **Roboflow API key**.
 
 | Model | Model ID |
 |-------|----------|
-| SAM3 Video (single checkpoint) | `sam3video` |
+| SAM3 Video concept tracker (text prompts) | `sam3video` |
+| SAM3 Tracker (box prompts, SAM2-shaped contract) | `sam3trackervideo` |
+
+Both ids resolve to the same weights package - the checkpoint contains the detector and
+tracker weights, and each model class loads the subset it needs.
 
 ## Supported Backends
 
@@ -128,8 +134,8 @@ Every streaming step returns a `SAM3VideoFrameResult`:
 ### Session semantics
 
 - **Text-only by design.** `prompt()` accepts text concepts exclusively - there is no box or
-  point parameter. Box-prompted video tracking is a separate model family
-  (`Sam3TrackerVideoModel`), not wrapped by `sam3video`.
+  point parameter. Box-prompted video tracking is the separate `sam3trackervideo` model
+  (see below).
 - **One session per stream.** `prompt(..., clear_old_prompts=True)` (the default) starts a
   fresh session; pass `clear_old_prompts=False` with an existing `state_dict` to add concepts
   to an ongoing session.
@@ -139,11 +145,38 @@ Every streaming step returns a `SAM3VideoFrameResult`:
   streams, periodically re-seeding with a fresh `prompt()` call bounds memory at the cost of
   resetting object ids.
 
+## SAM3 Tracker (box-prompted tracking)
+
+`sam3trackervideo` wraps `Sam3TrackerVideoModel` - the SAM2-style visually prompted
+tracker built into the same checkpoint. It exposes the exact `prompt`/`track` contract of
+the `sam2video` family (`prompt(image, bboxes=[...])` returning
+`(masks, object_ids, state_dict)` tuples), so it is a drop-in `model_id` swap wherever
+`sam2video` is used. Compared to SAM2 it shares SAM3's larger perception-encoder backbone,
+which substantially improves identity retention on long videos (LVOSv2 +8.9 J&F vs
+SAM 2.1-L) and crowded scenes (MOSEv2 +12.4), at higher compute cost - treat the
+`sam2video` sizes as the speed tiers and `sam3trackervideo` as the quality tier.
+
+```python
+from inference_models import AutoModel
+
+model = AutoModel.from_pretrained("sam3trackervideo", api_key="your_api_key")
+
+# Seed tracking with boxes on the first frame, then track
+masks, object_ids, state = model.prompt(frame0, bboxes=[(477, 337, 560, 529)])
+masks, object_ids, state = model.track(frame1, state_dict=state)
+```
+
+Text prompts are rejected by this model - concept tracking is `sam3video`'s job.
+
 ## Workflows
 
 The [`roboflow_core/sam3_video@v1`](https://inference.roboflow.com/workflows/blocks/sam_3_video/)
-block wraps this model for video workflows: text prompts via `class_names`, one tracking
-session per `video_identifier`, per-frame class labels from `prompt_to_object_ids`, and
-detection scores exposed as `confidence`. It requires local step execution (drive it with
-`InferencePipeline`) - see the [SAM3 docs](https://inference.roboflow.com/foundation/sam3/)
-for a full workflow example.
+block wraps the concept tracker for video workflows: text prompts via `class_names`, one
+tracking session per `video_identifier`, per-frame class labels from
+`prompt_to_object_ids`, and detection scores exposed as `confidence`. It requires local
+step execution (drive it with `InferencePipeline`) - see the
+[SAM3 docs](https://inference.roboflow.com/foundation/sam3/) for a full workflow example.
+
+`sam3trackervideo` is available through the **SAM2 Video Tracker** block
+(`roboflow_core/segment_anything_2_video@v1`) - select it as the `model_id` to run
+detector-seeded tracking with SAM3 quality.

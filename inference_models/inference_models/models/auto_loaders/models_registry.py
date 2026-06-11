@@ -444,6 +444,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.sam3_video.sam3_video_hf",
         class_name="SAM3Video",
     ),
+    ("sam3trackervideo", INSTANCE_SEGMENTATION_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.sam3_tracker_video.sam3_tracker_video_hf",
+        class_name="SAM3TrackerVideo",
+    ),
     ("deep-lab-v3-plus", SEMANTIC_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_torch",
         class_name="DeepLabV3PlusForSemanticSegmentationTorch",

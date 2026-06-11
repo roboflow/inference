@@ -261,7 +261,12 @@ Key properties:
       detector→mask adapter with SAM-stable tracker ids.
 - **Model variants.** `model_id` selects the Hiera backbone size:
   `sam2video/tiny`, `sam2video/small` (default), `sam2video/base-plus`,
-  `sam2video/large`.
+  `sam2video/large`. The block also accepts `sam3trackervideo` — SAM3's
+  visually prompted tracker, which uses the same box-prompt contract but a
+  much larger backbone. It is markedly better at keeping object identities
+  on long videos and in crowded scenes (see the SAM3 paper's VOS results),
+  at higher compute cost; treat it as the max-quality tier and the
+  `sam2video` sizes as the speed tiers.
 
 ### Example
 

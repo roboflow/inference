@@ -252,7 +252,9 @@ Key properties:
   once; the session is only re-seeded when the stream restarts or
   `class_names` changes. For detector-driven (box-prompted) video tracking,
   use the SAM2 Video Tracker block instead (see the
-  [SAM 2 documentation](sam2.md)).
+  [SAM 2 documentation](sam2.md)) — it also accepts `sam3trackervideo` as
+  `model_id` to run SAM3's visually prompted tracker, which shares the
+  `sam3video` weights package.
 - **Model.** `model_id` defaults to `sam3video`, the HuggingFace transformers
   port of SAM3 video, which exposes the frame-by-frame streaming interface
   (the native `sam3` package's video predictor requires the whole video
