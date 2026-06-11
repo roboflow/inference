@@ -40,6 +40,10 @@ def _make_inference_request() -> dict:
     }
 
 
+def _route_paths(interface):
+    return {route.path for route in interface.app.routes}
+
+
 def _build_serverless_interface(
     monkeypatch,
     usage_check_result,
@@ -121,6 +125,69 @@ def _build_dedicated_deployment_interface(
     model_manager.infer_from_request_sync.return_value = _DummyResponse()
     interface = http_api.HttpInterface(model_manager=model_manager)
     return interface, model_manager, workspace_lookup_mock
+
+
+def test_serverless_registers_sam3_routes_when_model_flags_are_enabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_SAM3_ENABLED", True)
+    monkeypatch.setattr(http_api, "SAM3_3D_OBJECTS_ENABLED", True)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/sam3/embed_image" in paths
+    assert "/sam3_3d/infer" in paths
+
+
+def test_serverless_sam3_3d_route_only_depends_on_sam3_3d_flag(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_SAM3_ENABLED", False)
+    monkeypatch.setattr(http_api, "SAM3_3D_OBJECTS_ENABLED", True)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/sam3/embed_image" not in paths
+    assert "/sam3_3d/infer" in paths
+
+
+def test_serverless_does_not_register_sam3_3d_route_when_sam3_3d_flag_is_disabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_SAM3_ENABLED", True)
+    monkeypatch.setattr(http_api, "SAM3_3D_OBJECTS_ENABLED", False)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/sam3/embed_image" in paths
+    assert "/sam3_3d/infer" not in paths
 
 
 def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
