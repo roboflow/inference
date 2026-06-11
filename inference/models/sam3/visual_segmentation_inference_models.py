@@ -1,7 +1,7 @@
 import copy
 from io import BytesIO
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
@@ -201,10 +201,14 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
             save_to_mask_input_cache=save_logits_to_cache,
             use_embeddings_cache=True,
         )[0]
-        return _choose_most_confident_sam_prediction(
-            masks=prediction.masks.cpu().numpy(),
-            scores=prediction.scores.cpu().numpy(),
-            low_resolution_logits=prediction.logits.cpu().numpy(),
+        # SAM3Torch already selects the most confident of the multimask proposals
+        # for each prompt, so masks/scores/logits arrive with exactly one entry
+        # per prompt. Reducing again here would collapse a multi-prompt request
+        # into a single prediction.
+        return (
+            prediction.masks.cpu().numpy(),
+            prediction.scores.cpu().numpy(),
+            prediction.logits.cpu().numpy(),
         )
 
 
@@ -224,28 +228,6 @@ def _pad_points(args: Dict[str, Any]) -> Dict[str, Any]:
                 "Can't have point labels without corresponding point coordinates"
             )
     return args
-
-
-def _choose_most_confident_sam_prediction(
-    masks: np.ndarray,
-    scores: np.ndarray,
-    low_resolution_logits: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    if masks.ndim == 3:
-        masks = np.expand_dims(masks, axis=0)
-        scores = np.expand_dims(scores, axis=0)
-        low_resolution_logits = np.expand_dims(low_resolution_logits, axis=0)
-    selected_masks, selected_scores, selected_logits = [], [], []
-    for mask, score, low_res in zip(masks, scores, low_resolution_logits):
-        max_idx = int(np.argsort(score)[-1])
-        selected_masks.append(mask[max_idx])
-        selected_scores.append(score[max_idx].item())
-        selected_logits.append(low_res[max_idx])
-    return (
-        np.asarray(selected_masks),
-        np.asarray(selected_scores),
-        np.asarray(selected_logits),
-    )
 
 
 def _build_polygon_response(

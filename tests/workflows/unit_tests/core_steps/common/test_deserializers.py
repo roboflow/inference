@@ -13,6 +13,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_float_zero_to_one_kind,
     deserialize_image_kind,
     deserialize_integer_kind,
+    deserialize_labeled_points_kind,
     deserialize_list_of_values_kind,
     deserialize_numpy_array,
     deserialize_optional_string_kind,
@@ -1310,3 +1311,63 @@ def test_deserialize_rle_detections_kind_with_root_parent_origin_metadata() -> N
     assert "root_parent_dimensions" in result.data
     assert np.allclose(result.data["root_parent_dimensions"], np.array([[400, 900]]))
     assert "rle_mask" in result.data
+
+
+def test_deserialize_labeled_points_kind_when_valid_dicts_given() -> None:
+    # given
+    points = [
+        {"x": 100, "y": 200, "positive": True},
+        {"x": 300, "y": 400, "positive": False},
+        {"x": 500, "y": 600},
+    ]
+
+    # when
+    result = deserialize_labeled_points_kind(parameter="some", value=points)
+
+    # then
+    assert result == [
+        {"x": 100, "y": 200, "positive": True},
+        {"x": 300, "y": 400, "positive": False},
+        {"x": 500, "y": 600, "positive": True},
+    ]
+
+
+def test_deserialize_labeled_points_kind_when_valid_sequences_given() -> None:
+    # given
+    points = [(100, 200), [300, 400, False], (500, 600, 1)]
+
+    # when
+    result = deserialize_labeled_points_kind(parameter="some", value=points)
+
+    # then
+    assert result == [
+        {"x": 100, "y": 200, "positive": True},
+        {"x": 300, "y": 400, "positive": False},
+        {"x": 500, "y": 600, "positive": True},
+    ]
+
+
+def test_deserialize_labeled_points_kind_when_not_a_list_given() -> None:
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = deserialize_labeled_points_kind(parameter="some", value="invalid")
+
+
+def test_deserialize_labeled_points_kind_when_point_misses_coordinates() -> None:
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = deserialize_labeled_points_kind(parameter="some", value=[{"x": 100}])
+
+
+def test_deserialize_labeled_points_kind_when_point_has_invalid_format() -> None:
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = deserialize_labeled_points_kind(parameter="some", value=[(1,)])
+
+
+def test_deserialize_labeled_points_kind_when_coordinates_are_not_numbers() -> None:
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = deserialize_labeled_points_kind(
+            parameter="some", value=[{"x": "a", "y": 100}]
+        )
