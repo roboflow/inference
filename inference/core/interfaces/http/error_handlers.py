@@ -123,6 +123,9 @@ def _build_execution_error_response(
                 block_traceback=error.block_traceback,
             ),
         ],
+        # Attached by the workflow-run route when `debug=True` and the run
+        # failed; carries logs of python blocks executed before the failure.
+        python_block_logs=getattr(error, "python_block_logs", None),
     )
 
 

@@ -210,3 +210,9 @@ class WorkflowErrorResponse(BaseModel):
     inner_error_type: Optional[str] = None
     inner_error_message: Optional[str] = None
     blocks_errors: Optional[List[WorkflowBlockError]] = None
+    python_block_logs: Optional[Dict[str, List[Dict[str, Optional[str]]]]] = Field(
+        default=None,
+        description="When `debug=True` was set on the request, stdout/stderr captured for "
+        "each local custom Python block execution that completed before (or caused) the "
+        "failure, keyed by step name. Same format as on `WorkflowInferenceResponse`.",
+    )

@@ -336,6 +336,47 @@ def run_function(self, value) -> BlockResult:
     }
 
 
+def test_run_assembled_custom_python_block_records_logs_to_collector_when_block_raises() -> (
+    None
+):
+    # given - a block that prints and then fails
+    manifest = BlockManifest
+    run_function = """
+import sys
+
+def run_function(self, a, b) -> BlockResult:
+    print("about to fail with", a, b)
+    print("warning sign", file=sys.stderr)
+    raise RuntimeError("boom")
+"""
+    python_code = PythonCode(
+        type="PythonCode",
+        run_function_code=run_function,
+        run_function_name="run_function",
+        imports=[],
+    )
+    workflow_block_class = assembly_custom_python_block(
+        block_type_name="some",
+        unique_identifier="failing-id",
+        manifest=manifest,
+        python_code=python_code,
+    )
+    workflow_block_instance = workflow_block_class()
+    workflow_block_instance._workflow_step_name = "failing_step"
+
+    # when - block raises inside an active debug collector scope
+    with register_debug_collector() as collector:
+        with pytest.raises(DynamicBlockCodeError):
+            _ = workflow_block_instance.run(a=1, b=2)
+        snapshot = collector.snapshot()
+
+    # then - logs emitted before the failure are present in the collector
+    assert list(snapshot.keys()) == ["failing_step"]
+    entry = snapshot["failing_step"][0]
+    assert "about to fail with 1 2" in entry["stdout"]
+    assert "warning sign" in entry["stderr"]
+
+
 def test_run_assembled_custom_python_block_does_not_record_when_no_collector_active() -> (
     None
 ):

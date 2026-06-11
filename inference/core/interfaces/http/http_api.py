@@ -1289,11 +1289,23 @@ class HttpInterface(BaseInterface):
             else:
                 debug_ctx = nullcontext()
             with debug_ctx as collector:
-                workflow_results = execution_engine.run(
-                    runtime_parameters=workflow_request.inputs,
-                    serialize_results=True,
-                    _is_preview=is_preview,
-                )
+                try:
+                    workflow_results = execution_engine.run(
+                        runtime_parameters=workflow_request.inputs,
+                        serialize_results=True,
+                        _is_preview=is_preview,
+                    )
+                except Exception as error:
+                    # The error response is built outside this route (see
+                    # `with_route_exceptions`), after the collector's ContextVar
+                    # scope is gone - so carry the snapshot on the exception to
+                    # surface logs of the steps that ran before the failure.
+                    if collector is not None:
+                        logs_snapshot = collector.snapshot()
+                        if logs_snapshot:
+                            error.python_block_logs = logs_snapshot
+                    raise
+                # Empty snapshot (no block printed anything) -> null in response.
                 python_block_logs = (
                     collector.snapshot()
                     if debug_requested and collector is not None
