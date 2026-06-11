@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 T_ALLOC = b"\x01"
 T_SUBMIT = b"\x02"
 T_FREE = b"\x03"
+T_CANCEL = b"\x04"
 T_ENSURE_LOADED = b"\x09"
 T_LOAD = b"\x20"
 T_UNLOAD = b"\x21"
@@ -310,9 +311,11 @@ class MMPClient:
             effective_params.setdefault("task", task)
 
         slot_id = await self._alloc_slot(model_id, instance)
+        submit_req_id: Optional[int] = None
+        done = False
         try:
             self._write_input(slot_id, image, 0)
-            result = await self._submit_and_wait(
+            submit_req_id, result = await self._submit_and_wait(
                 slot_id,
                 model_id,
                 instance,
@@ -326,6 +329,9 @@ class MMPClient:
             if result[0] != "result":
                 raise RuntimeError(f"unexpected result type: {result[0]!r}")
 
+            # Got a real result: the worker has finished writing this slot and
+            # will not touch it again, so the client now owns the free.
+            done = True
             _, result_slot_id, result_sz = result
             hdr = self._read_slot_header(result_slot_id)
             if hdr is not None and hdr.status == SLOT_STATUS_ERROR:
@@ -344,7 +350,20 @@ class MMPClient:
             except Exception as exc:
                 raise RuntimeError("result deserialization failed") from exc
         finally:
-            self._free_slot(slot_id)
+            if done:
+                # Worker finished, we read the result → safe to free.
+                self._free_slot(slot_id)
+            elif submit_req_id is not None:
+                # Gave up (timeout / disconnect / error) while the worker may
+                # still hold a ticket for this slot. Do NOT free — that would let
+                # the slot be reused under a live ticket. Cancel instead; MMP
+                # frees the slot once the worker drains the ticket (or the reaper
+                # reclaims it).
+                self._cancel_req(submit_req_id)
+            else:
+                # Never submitted (alloc ok but write/submit failed) → no worker
+                # ticket exists → safe to free directly.
+                self._free_slot(slot_id)
 
     async def stats(self) -> dict:
         result = await self._lifecycle_req(T_STATS, b"", timeout_s=5.0)
@@ -449,8 +468,8 @@ class MMPClient:
         await self._sock.send_multipart([T_SUBMIT, header, params_json])
         try:
             if request is not None:
-                return await self._wait_with_disconnect(fut, request)
-            return await asyncio.wait_for(fut, timeout=self.infer_timeout_s)
+                return req_id, await self._wait_with_disconnect(fut, request)
+            return req_id, await asyncio.wait_for(fut, timeout=self.infer_timeout_s)
         except asyncio.TimeoutError:
             self._drop_future(req_id)
             raise
@@ -493,6 +512,19 @@ class MMPClient:
                 t.result() if not t.cancelled() and t.exception() is None else None
             )
         )
+
+    def _cancel_req(self, req_id: int) -> None:
+        """Tell MMP we gave up on req_id. MMP frees the slot once the worker
+        drains the ticket (or the reaper reclaims it) — never reuses it early."""
+        self._drop_future(req_id)
+
+        async def _send() -> None:
+            try:
+                await self._sock.send_multipart([T_CANCEL, struct.pack(">Q", req_id)])
+            except Exception:
+                logger.warning("cancel_req: failed for req %d", req_id, exc_info=True)
+
+        asyncio.create_task(_send())
 
     def _write_input(
         self, slot_id: int, chunk: bytes | memoryview, offset: int
