@@ -377,9 +377,14 @@ else:
     from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1_tensor import (
         DepthEstimationBlockV1,
     )
-from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
-    EasyOCRBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
+        EasyOCRBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1_tensor import (
+        EasyOCRBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     Florence2BlockV1,
 )
@@ -424,10 +429,22 @@ from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBloc
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.moondream2.v1 import (
-    Moondream2BlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.moondream2.v1 import (
+        Moondream2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.moondream2.v1_tensor import (
+        Moondream2BlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.ocr.v1 import (
+        OCRModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.ocr.v1_tensor import (
+        OCRModelBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
 )
@@ -446,9 +463,14 @@ from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 
 from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import (
     OpenRouterBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
-    PerceptionEncoderModelBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
+        PerceptionEncoderModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1_tensor import (
+        PerceptionEncoderModelBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
     Qwen35OpenRouterBlockV1,
 )

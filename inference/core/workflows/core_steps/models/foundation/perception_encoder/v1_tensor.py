@@ -1,0 +1,236 @@
+import hashlib
+from typing import List, Literal, Optional, Type, Union
+
+import torch
+from pydantic import ConfigDict, Field
+
+from inference.core.cache.lru_cache import LRUCache
+from inference.core.env import (
+    CORE_MODEL_PE_ENABLED,
+    HOSTED_CORE_MODEL_URL,
+    LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
+)
+from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.entities.base import (
+    OutputDefinition,
+    WorkflowImageData,
+)
+from inference.core.workflows.execution_engine.entities.tensor_native_types import (
+    TENSOR_NATIVE_EMBEDDING_KIND,
+)
+from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
+    STRING_KIND,
+    Selector,
+)
+from inference.core.workflows.prototypes.block import (
+    BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
+from inference_sdk import InferenceHTTPClient
+
+LONG_DESCRIPTION = """
+Use the Meta Perception Encoder model to create semantic embeddings of text and images.
+
+This block accepts an image or string and returns an embedding. The embedding can be used to compare
+similarity between different images or between images and text.
+"""
+
+
+class BlockManifest(WorkflowBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "Perception Encoder Embedding Model",
+            "version": "v1",
+            "short_description": "Generate an embedding of an image or string.",
+            "long_description": LONG_DESCRIPTION,
+            "license": "MIT",
+            "block_type": "model",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-paperclip",
+                "blockPriority": 9.9,
+            },
+        }
+    )
+    type: Literal["roboflow_core/perception_encoder@v1"]
+    name: str = Field(description="Unique name of step in workflows")
+    data: Union[Selector(kind=[IMAGE_KIND, STRING_KIND]), str] = Field(
+        title="Data",
+        description="The string or image to generate an embedding for.",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    version: Union[
+        Literal[
+            "PE-Core-B16-224",
+            "PE-Core-L14-336",
+            "PE-Core-G14-448",
+        ],
+        Selector(kind=[STRING_KIND]),
+    ] = Field(
+        default="PE-Core-L14-336",
+        description="Variant of Perception Encoder model",
+        examples=["PE-Core-B16-224", "$inputs.variant"],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name="embedding", kind=[TENSOR_NATIVE_EMBEDDING_KIND])
+        ]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restrictions = [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Requires a GPU; run_locally() loads a model that needs CUDA.",
+                applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+                applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
+            ),
+        ]
+        if not CORE_MODEL_PE_ENABLED:
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.HARD,
+                    note=(
+                        "CORE_MODEL_PE_ENABLED=False on Roboflow Hosted Serverless: "
+                        "the Perception Encoder endpoint is not registered, so "
+                        "run_remotely() returns 404."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+                )
+            )
+        return restrictions
+
+    @classmethod
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
+        """Return list of model_id variants that can satisfy this block."""
+        return [
+            "perception_encoder/PE-Core-B16-224",
+            "perception_encoder/PE-Core-L14-336",
+            "perception_encoder/PE-Core-G14-448",
+        ]
+
+
+text_cache = LRUCache()
+
+
+class PerceptionEncoderModelBlockV1(WorkflowBlock):
+    def __init__(
+        self,
+        model_manager: ModelManager,
+        api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
+    ):
+        self._model_manager = model_manager
+        self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["model_manager", "api_key", "step_execution_mode"]
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
+
+    def run(
+        self,
+        data: Union[WorkflowImageData, str],
+        version: str,
+    ) -> BlockResult:
+        if self._step_execution_mode is StepExecutionMode.LOCAL:
+            return self.run_locally(data=data, version=version)
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            return self.run_remotely(data=data, version=version)
+        else:
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
+
+    def run_locally(
+        self,
+        data: Union[WorkflowImageData, str],
+        version: str,
+    ) -> BlockResult:
+        # Tensor-native local path: register the Perception Encoder core model by
+        # id only (no InferenceRequest / image needed - that pydantic object
+        # requires an `image` and would force a numpy round-trip just to register),
+        # then run through the inference_models adapter's
+        # run_tensor_native_inference, which returns a torch.Tensor embedding kept
+        # on-device (no JSON / numpy round-trip). Registration is deferred until
+        # after the text cache check so a cache hit never loads the model.
+        pe_model_id = f"perception_encoder/{version}"
+        if isinstance(data, str):
+            hash_key = hashlib.md5((version + data).encode("utf-8")).hexdigest()
+            cached_value = text_cache.get(hash_key)
+            if cached_value is not None:
+                return {"embedding": cached_value}
+            self._model_manager.add_model(
+                pe_model_id,
+                self._api_key,
+                endpoint_type=ModelEndpointType.CORE_MODEL,
+            )
+            embeddings = self._model_manager.run_tensor_native_inference(
+                pe_model_id,
+                action="embed-text",
+                texts=[data],
+            )
+            embedding = embeddings[0]
+            text_cache.set(hash_key, embedding)
+            return {"embedding": embedding}
+        else:
+            self._model_manager.add_model(
+                pe_model_id,
+                self._api_key,
+                endpoint_type=ModelEndpointType.CORE_MODEL,
+            )
+            embeddings = self._model_manager.run_tensor_native_inference(
+                pe_model_id,
+                action="embed-image",
+                images=[data.tensor_image],
+                input_color_format="rgb",
+            )
+            return {"embedding": embeddings[0]}
+
+    def run_remotely(
+        self,
+        data: Union[WorkflowImageData, str],
+        version: str,
+    ) -> BlockResult:
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(api_url=api_url, api_key=self._api_key)
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+        if isinstance(data, str):
+            result = client.get_perception_encoder_text_embeddings(
+                text=data,
+                perception_encoder_version=version,
+            )
+        else:
+            result = client.get_perception_encoder_image_embeddings(
+                inference_input=data.base64_image,
+                perception_encoder_version=version,
+            )
+        # Remote returns a JSON embedding (List[List[float]]); convert to the
+        # tensor-native embedding representation (torch.Tensor).
+        return {
+            "embedding": torch.tensor(result["embeddings"][0], dtype=torch.float32)
+        }

@@ -14,7 +14,8 @@ Supported prediction shapes:
 - ``Tuple[KeyPoints, Optional[Detections]]``     (keypoint-detection workflow kind)
 """
 
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
+from uuid import uuid4
 
 import numpy as np
 import torch
@@ -24,6 +25,28 @@ from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
+
+from inference.core.workflows.execution_engine.constants import (
+    CLASS_ID_KEY,
+    CLASS_NAME_KEY,
+    CLASS_NAMES_KEY,
+    CONFIDENCE_KEY,
+    DETECTION_ID_KEY,
+    HEIGHT_KEY,
+    IMAGE_DIMENSIONS_KEY,
+    INFERENCE_ID_KEY,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+    WIDTH_KEY,
+    X_KEY,
+    Y_KEY,
+)
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 TensorNativeDetections = Union[Detections, InstanceDetections]
 KeyPointPrediction = Tuple[KeyPoints, Optional[Detections]]
@@ -167,3 +190,159 @@ def instance_mask_to_numpy(
             InstancesRLEMasks(image_size=mask.image_size, masks=[mask.masks[index]])
         )[0]
     return mask[index].detach().to("cpu").numpy().astype(bool)
+
+
+def build_native_image_metadata(
+    image: WorkflowImageData,
+    class_names: Dict[int, str],
+    prediction_type: str,
+    inference_id: Optional[str] = None,
+) -> dict:
+    """Build the per-image ``image_metadata`` dict carried by a tensor-native
+    ``Detections`` prediction produced by a model block.
+
+    Holds the ``class_id -> name`` map (required by the tensor-native serialiser),
+    the image dimensions, and the parent/root lineage needed for crop-aware
+    coordinate recovery downstream. Mirrors the convention in
+    ``formatters/vlm_as_detector/v1_tensor.py``, but with a parametrised
+    ``prediction_type``. The image shape is read without forcing a device->host
+    materialization (so tensor-only inputs stay on device).
+    """
+    height, width = image._read_shape_without_materialization()
+    parent = image.parent_metadata
+    root = image.workflow_root_ancestor_metadata
+    parent_coordinates = parent.origin_coordinates
+    root_coordinates = root.origin_coordinates
+    metadata = {
+        CLASS_NAMES_KEY: class_names,
+        PREDICTION_TYPE_KEY: prediction_type,
+        IMAGE_DIMENSIONS_KEY: [height, width],
+        PARENT_ID_KEY: parent.parent_id,
+        PARENT_COORDINATES_KEY: [
+            parent_coordinates.left_top_x,
+            parent_coordinates.left_top_y,
+        ],
+        PARENT_DIMENSIONS_KEY: [
+            parent_coordinates.origin_height,
+            parent_coordinates.origin_width,
+        ],
+        ROOT_PARENT_ID_KEY: root.parent_id,
+        ROOT_PARENT_COORDINATES_KEY: [
+            root_coordinates.left_top_x,
+            root_coordinates.left_top_y,
+        ],
+        ROOT_PARENT_DIMENSIONS_KEY: [
+            root_coordinates.origin_height,
+            root_coordinates.origin_width,
+        ],
+    }
+    if inference_id is not None:
+        metadata[INFERENCE_ID_KEY] = inference_id
+    return metadata
+
+
+def attach_native_detection_metadata(
+    detections: Detections,
+    image: WorkflowImageData,
+    class_names: Dict[int, str],
+    prediction_type: str,
+    inference_id: Optional[str] = None,
+) -> Detections:
+    """LOCAL-path helper for model blocks that get a native ``Detections`` straight
+    from an inference_models adapter's ``run_tensor_native_inference``.
+
+    The adapter fills ``xyxy`` / ``class_id`` / ``confidence`` (and sometimes a few
+    per-detection ``bboxes_metadata`` fields) but knows nothing about the workflow
+    image lineage. This attaches the workflow ``image_metadata`` and guarantees each
+    detection carries a ``detection_id`` (generated when missing), preserving any
+    keys the model already set (e.g. EasyOCR's per-box ``text``). Mutates and
+    returns the same object.
+    """
+    detections.image_metadata = build_native_image_metadata(
+        image=image,
+        class_names=class_names,
+        prediction_type=prediction_type,
+        inference_id=inference_id,
+    )
+    number_of_detections = int(detections.xyxy.shape[0])
+    if number_of_detections == 0:
+        detections.bboxes_metadata = None
+        return detections
+    existing = detections.bboxes_metadata
+    bboxes_metadata = []
+    for index in range(number_of_detections):
+        entry = (
+            dict(existing[index])
+            if existing is not None and index < len(existing)
+            else {}
+        )
+        entry.setdefault(DETECTION_ID_KEY, str(uuid4()))
+        bboxes_metadata.append(entry)
+    detections.bboxes_metadata = bboxes_metadata
+    return detections
+
+
+def native_detections_from_inference_predictions(
+    image: WorkflowImageData,
+    predictions: List[dict],
+    prediction_type: str,
+    class_names: Optional[Dict[int, str]] = None,
+    inference_id: Optional[str] = None,
+    device: Optional[torch.device] = None,
+) -> Detections:
+    """REMOTE-path helper: build a native ``Detections`` from standard inference
+    object-detection prediction dicts (center ``x``/``y``/``width``/``height``,
+    ``confidence``, ``class_id``, optional ``class`` name and ``detection_id``).
+
+    Boxes are converted from center form to corner ``xyxy``. When ``class_names``
+    is not supplied it is derived from the predictions' own ``class_id``/``class``
+    pairs so the serialiser can resolve every id. A ``detection_id`` is preserved
+    when present, otherwise generated.
+    """
+    xyxy: List[List[float]] = []
+    class_id: List[int] = []
+    confidence: List[float] = []
+    bboxes_metadata: List[dict] = []
+    derived_class_names: Dict[int, str] = {}
+    for prediction in predictions:
+        center_x = float(prediction[X_KEY])
+        center_y = float(prediction[Y_KEY])
+        box_width = float(prediction[WIDTH_KEY])
+        box_height = float(prediction[HEIGHT_KEY])
+        xyxy.append(
+            [
+                center_x - box_width / 2,
+                center_y - box_height / 2,
+                center_x + box_width / 2,
+                center_y + box_height / 2,
+            ]
+        )
+        prediction_class_id = int(prediction.get(CLASS_ID_KEY, 0))
+        class_id.append(prediction_class_id)
+        confidence.append(float(prediction.get(CONFIDENCE_KEY, 1.0)))
+        if CLASS_NAME_KEY in prediction:
+            derived_class_names[prediction_class_id] = str(prediction[CLASS_NAME_KEY])
+        bboxes_metadata.append(
+            {DETECTION_ID_KEY: str(prediction.get(DETECTION_ID_KEY) or uuid4())}
+        )
+    number_of_detections = len(xyxy)
+    resolved_class_names = (
+        class_names if class_names is not None else derived_class_names
+    )
+    image_metadata = build_native_image_metadata(
+        image=image,
+        class_names=resolved_class_names,
+        prediction_type=prediction_type,
+        inference_id=inference_id,
+    )
+    return Detections(
+        xyxy=torch.as_tensor(xyxy, dtype=torch.float32, device=device).reshape(-1, 4),
+        class_id=torch.as_tensor(class_id, dtype=torch.long, device=device).reshape(
+            -1
+        ),
+        confidence=torch.as_tensor(
+            confidence, dtype=torch.float32, device=device
+        ).reshape(-1),
+        image_metadata=image_metadata,
+        bboxes_metadata=bboxes_metadata if number_of_detections > 0 else None,
+    )
