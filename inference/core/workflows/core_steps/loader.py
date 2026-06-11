@@ -23,12 +23,22 @@ else:
     from inference.core.workflows.core_steps.analytics.detection_event_log.v1_tensor import (
         DetectionEventLogBlockV1,
     )
-from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
-    LineCounterBlockV1,
-)
-from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
-    LineCounterBlockV2,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
+        LineCounterBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.analytics.line_counter.v1_tensor import (
+        LineCounterBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
+        LineCounterBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.analytics.line_counter.v2_tensor import (
+        LineCounterBlockV2,
+    )
 from inference.core.workflows.core_steps.analytics.overlap.v1 import OverlapBlockV1
 from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
     PathDeviationAnalyticsBlockV1,
