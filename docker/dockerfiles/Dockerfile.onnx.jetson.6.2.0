@@ -489,17 +489,23 @@ ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # CUDA runtime libraries, exact files (not globs: the source dir mixes real
 # files and symlinks, and COPY dereferences symlinks, which would triple-copy
-# every library). The 20 libs below are the complete set referenced by
+# every library). The libs below are the complete set referenced by
 # torch/onnxruntime/cv2/pycuda/cudnn/TensorRT (readelf NEEDED + dlopen-string
-# scan). Deliberately not shipped (unreferenced): cusolverMg, npps, cufile,
-# nvfatbin, nvblas, nppisu, cufftw, nvToolsExt, cupti.
+# scan). The nine npp* imaging libs are shipped solely for cv2's CUDA modules
+# (kept as a supported acceleration surface). Deliberately not shipped
+# (unreferenced): cusolverMg, npps, cufile, nvfatbin, nvblas, nppisu, cufftw,
+# nvToolsExt, cupti. Also not shipped:
+# libcusolver (139MB) - torch only dlopens it lazily via libtorch_cuda_linalg
+# for linalg factorizations (inv/svd/cholesky), which nothing in this codebase
+# calls (the only torch.linalg use is linalg.norm, a reduction); verified
+# on-device that conv/LSTM/matmul/linalg.norm work without it. nvJitLink stays:
+# libcusparse has a NEEDED entry on it.
 COPY --from=cuda_rt \
      /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcudart.so.12.6.68 \
      /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcublas.so.12.6.1.4 \
      /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcublasLt.so.12.6.1.4 \
      /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcufft.so.11.2.6.59 \
      /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcurand.so.10.3.7.68 \
-     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcusolver.so.11.6.4.69 \
      /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcusparse.so.12.5.3.3 \
      /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnvJitLink.so.12.6.68 \
      /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnvrtc.so.12.6.68 \
