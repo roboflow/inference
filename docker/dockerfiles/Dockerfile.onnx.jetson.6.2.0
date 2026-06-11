@@ -49,10 +49,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-bu
     python3-dev \
     python3-pip \
     libopenblas-dev \
-    libproj-dev \
-    libsqlite3-dev \
     libtiff-dev \
-    libcurl4-openssl-dev \
     libssl-dev \
     zlib1g-dev \
     libxext6 \
@@ -95,18 +92,10 @@ RUN python3 -m pip install --upgrade pip setuptools wheel && \
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv
 
-# Compile GDAL from source.
-# NOTE: the runtime stage no longer ships this GDAL (rasterio bundles its own);
-# the build is kept only to avoid invalidating the layer-cache chain of the
-# expensive PyTorch/ORT/OpenCV compiles below. Remove in a follow-up that
-# accepts a one-off full rebuild.
-WORKDIR /build/gdal
-RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar.gz && \
-    tar -xzf gdal-3.11.5.tar.gz && \
-    cd gdal-3.11.5 && mkdir build && cd build && \
-    cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_PYTHON_BINDINGS=OFF && \
-    ninja && ninja install && ldconfig && \
-    cd ../.. && rm -rf gdal-3.11.5*
+# No from-source GDAL: rasterio (the only GDAL consumer, via
+# requirements.sam.txt) bundles its own libgdal/proj/data as a manylinux
+# wheel, nothing in this image or in roboflow-edge links the system GDAL
+# (verified via ldd scans, live deletion test, and edge repo/image audit).
 
 # Compile PyTorch from source with Jetson optimizations.
 # Clone is in its own RUN so the build/ cache mount in the next RUN can overlay
@@ -254,6 +243,19 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     "transformers>=4.57.3,<5.9.0" \
     packaging \
     && rm -rf ~/.cache/uv
+
+# Rebuild the bitsandbytes CUDA backend for Orin (sm87). The PyPI aarch64
+# wheel ships sm90-only kernels, so every GPU quantization op (the VLM
+# use_quantization paths) fails on Orin with "named symbol not found".
+# Replaces the wheel's lib in place; the version must match the wheel pin
+# resolved by the requirements above.
+RUN BNB_VERSION=$(python3 -c "import importlib.metadata as m; print(m.version('bitsandbytes'))") && \
+    git clone --depth 1 --branch ${BNB_VERSION} https://github.com/bitsandbytes-foundation/bitsandbytes.git /build/bitsandbytes-src && \
+    cd /build/bitsandbytes-src && \
+    cmake -DCOMPUTE_BACKEND=cuda -DCOMPUTE_CAPABILITY="87" . && \
+    make -j4 && \
+    cp bitsandbytes/libbitsandbytes_cuda*.so /usr/local/lib/python3.10/dist-packages/bitsandbytes/ && \
+    cd / && rm -rf /build/bitsandbytes-src
 
 # Build inference packages
 WORKDIR /build/inference
@@ -526,13 +528,16 @@ COPY --from=builder /usr/lib/aarch64-linux-gnu/libcudnn*.so.*.*.* /usr/local/cud
 # libnvinfer + libnvinfer_plugin (+libnvonnxparser); builder_resource is required
 # for on-device engine builds (ORT_TENSORRT_ENGINE_CACHE_ENABLE=1); lean is kept
 # because inference_models' engine builder sets trt.BuilderFlag.VERSION_COMPATIBLE.
-# Excluded as unreferenced: libnvinfer_dispatch, libnvinfer_vc_plugin.
+# vc_plugin is kept alongside lean (TRT plugins inside version-compatible
+# engines resolve through it). Excluded as unreferenced: libnvinfer_dispatch
+# (the dispatch runtime; nothing loads VC engines via dispatch here).
 # No libnvparsers COPY: TensorRT 10.x removed it (the old glob matched nothing
 # and produced an empty layer; strict BuildKit fails on unmatched COPY globs).
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvinfer.so.*.*.* \
      /usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.*.*.* \
      /usr/lib/aarch64-linux-gnu/libnvinfer_builder_resource.so.*.*.* \
      /usr/lib/aarch64-linux-gnu/libnvinfer_lean.so.*.*.* \
+     /usr/lib/aarch64-linux-gnu/libnvinfer_vc_plugin.so.*.*.* \
      /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so.*.*.* /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/nvidia/libnvdla_compiler.so* /usr/local/cuda/lib64/
