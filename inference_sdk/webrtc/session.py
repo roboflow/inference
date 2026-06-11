@@ -648,7 +648,7 @@ class WebRTCSession:
             turn_config = RTCConfiguration(
                 iceServers=[
                     RTCIceServer(
-                        urls=[turn_config["urls"]],
+                        urls=WebRTCSession._to_list(turn_config["urls"]),
                         username=turn_config["username"],
                         credential=turn_config["credential"],
                     )
