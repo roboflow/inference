@@ -128,7 +128,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
         **kwargs
     ) -> List[Detections]:
         caller_color_format = kwargs.pop("input_color_format", None)
-        kwargs = self.map_inference_kwargs(**kwargs)
+        kwargs = self.map_inference_kwargs(kwargs)
         kwargs["input_color_format"] = caller_color_format
         return self._model(images, **kwargs)
 
@@ -290,7 +290,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         **kwargs
     ) -> List[InstanceDetections]:
         caller_color_format = kwargs.pop("input_color_format", None)
-        kwargs = self.map_inference_kwargs(**kwargs)
+        kwargs = self.map_inference_kwargs(kwargs)
         kwargs["input_color_format"] = caller_color_format
         return self._model(images, **kwargs)
 
@@ -730,7 +730,7 @@ class InferenceModelsClassificationAdapter(Model):
         **kwargs
     ) -> Union[ClassificationPrediction, List[MultiLabelClassificationPrediction]]:
         caller_color_format = kwargs.pop("input_color_format", None)
-        kwargs = self.map_inference_kwargs(**kwargs)
+        kwargs = self.map_inference_kwargs(kwargs)
         kwargs["input_color_format"] = caller_color_format
         return self._model(images, **kwargs)
 
@@ -1075,7 +1075,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         **kwargs
     ) -> List[SemanticSegmentationResult]:
         caller_color_format = kwargs.pop("input_color_format", None)
-        kwargs = self.map_inference_kwargs(**kwargs)
+        kwargs = self.map_inference_kwargs(kwargs)
         kwargs["input_color_format"] = caller_color_format
         return self._model(images, **kwargs)
 
