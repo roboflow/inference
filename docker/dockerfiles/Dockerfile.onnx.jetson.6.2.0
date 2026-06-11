@@ -95,7 +95,11 @@ RUN python3 -m pip install --upgrade pip setuptools wheel && \
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv
 
-# Compile GDAL from source
+# Compile GDAL from source.
+# NOTE: the runtime stage no longer ships this GDAL (rasterio bundles its own);
+# the build is kept only to avoid invalidating the layer-cache chain of the
+# expensive PyTorch/ORT/OpenCV compiles below. Remove in a follow-up that
+# accepts a one-off full rebuild.
 WORKDIR /build/gdal
 RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar.gz && \
     tar -xzf gdal-3.11.5.tar.gz && \
@@ -204,11 +208,13 @@ RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/cuda12,sharin
         --cmake_extra_defines CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
     python3 -m pip install --break-system-packages build/cuda12/Release/dist/onnxruntime_gpu-*.whl
 
-# Install flash-attn package (requires CUDA-enabled PyTorch already installed)
-# Limit MAX_JOBS to prevent timeout during CUDA kernel compilation
-# Using 2.8.3 - removed legacy features (rotary, xentropy, fused_softmax, ft_attention) for faster builds
-RUN export MAX_JOBS=4 && \
-    python3 -m pip install --break-system-packages --no-build-isolation flash-attn==2.8.3
+# flash-attn is intentionally NOT installed: its wheel/source default builds
+# target sm80/sm90 only, and on Orin (sm87) every kernel launch fails with
+# "no kernel image is available" (verified on the published image). Worse,
+# transformers' is_flash_attn_2_available() returned True, so PaliGemma/Qwen-VL
+# selected flash_attention_2 and crashed at inference; without the package they
+# fall back to eager/SDPA, which works. (A future perf PR can reinstate it with
+# FLASH_ATTN_CUDA_ARCHS=87.) Removing it also saves ~390MB.
 
 # Copy requirements files (done after compilation to improve cache efficiency)
 WORKDIR /build/reqs
@@ -248,7 +254,7 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
 WORKDIR /build/inference
 COPY . .
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
-    python -m pip install wheel twine requests && \
+    python -m pip install wheel && \
     rm -f dist/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
     python .release/pypi/inference.gpu.setup.py bdist_wheel && \
@@ -337,13 +343,53 @@ RUN python3 -m pip uninstall -y boto3 botocore && \
 # Remove test directories, development tools, and unnecessary packages to reduce image size
 # This happens AFTER all package installations to ensure everything gets cleaned
 # Note: Keep numpy/torch test dirs (public APIs depend on them), keep .pyi files (lazy_loader needs them)
+# The pip uninstalls double as a safety net: packages never installed are skipped
+# with a warning (exit 0), so this block is idempotent across image variants.
+# ---- image-slim cleanup (re-executed verbatim by the local donor harness) ----
 RUN cd /usr/local/lib/python3.10/dist-packages && \
+    # Build-time tooling leaked in via pytorch/onnxruntime build requirements;
+    # none has a runtime reverse-dependency (cmake pip pkg alone is 82MB)
+    python3 -m pip uninstall -y cmake lintrunner hypothesis expecttest types-dataclasses astunparse optree \
+        twine keyring readme-renderer nh3 docutils id jeepney SecretStorage \
+        jaraco.classes jaraco.context jaraco.functools || true && \
+    # jupyterlab is no longer installed (dropped from requirements.jetson.txt: every
+    # consuming dockerfile deleted it post-install anyway); remove its dependency
+    # closure, which has zero runtime reverse-dependencies. Deliberately kept:
+    # defusedxml (supervision/doctr), websockets (uvicorn), websocket-client (docker SDK).
+    python3 -m pip uninstall -y babel jedi parso ipython pyzmq nbconvert nbclient nbformat \
+        prompt-toolkit terminado argon2-cffi argon2-cffi-bindings send2trash json5 overrides \
+        pexpect ptyprocess fqdn isoduration jsonpointer uri-template webcolors \
+        rfc3339-validator rfc3986-validator rfc3987 python-json-logger comm matplotlib-inline \
+        stack-data executing asttokens pure-eval fastjsonschema arrow mistune tinycss2 bleach \
+        pandocfilters jupyterlab-pygments tornado traitlets jupyter-core jupyter-client \
+        jupyter-server jupyter-events jupyter-server-terminals jupyter-lsp notebook-shim async-lru || true && \
     find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
-    rm -rf debugpy* jupyterlab* jupyter_* notebook* ipython* ipykernel* || true && \
+    rm -rf debugpy* jupyterlab* jupyter_* notebook* ipython* IPython* ipykernel* || true && \
     rm -rf onnx/backend/test onnx/test || true && \
     rm -rf scipy/*/tests pandas/tests || true && \
-    rm -rf */examples */benchmarks */docs || true && \
-    rm -rf skimage/data || true
+    # boto3/docs and botocore/docs are importable code (boto3.resources.factory
+    # -> boto3.docs; boto3 -> botocore.docs.docstring), not documentation - the
+    # old image only survived this glob because boto3/botocore were reinstalled
+    # afterwards in the runtime stage
+    find . -mindepth 2 -maxdepth 2 -type d \( -name examples -o -name benchmarks -o -name docs \) -not -path './botocore/docs' -not -path './boto3/docs' -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf skimage/data || true && \
+    # Residual nested test dirs (numpy/torch kept per the note above)
+    find . -type d \( -name tests -o -name test \) -not -path './numpy/*' -not -path './torch/*' -exec rm -rf {} + 2>/dev/null || true && \
+    # bitsandbytes ships CUDA fatbins for ~10 CUDA versions; keep only CUDA 12.6 (+cpu).
+    # (bnb selects exactly one lib at import based on the detected CUDA version.)
+    ( cd bitsandbytes 2>/dev/null && ls libbitsandbytes_cuda*.so 2>/dev/null | grep -v cuda126 | xargs -r rm -f ) || true && \
+    # torch C++ headers only serve torch.utils.cpp_extension JIT and the runtime
+    # image ships no compiler; torch/bin holds two identical 5MB protoc copies
+    rm -rf torch/include torch/bin/protoc* || true && \
+    # The ORT python binding statically links the runtime; the separate C-API
+    # libonnxruntime.so has zero NEEDED references in the image
+    rm -f onnxruntime/capi/libonnxruntime.so* || true && \
+    # Strip symbol tables from ELF .so files, EXCLUDING auditwheel-vendored *.libs
+    # dirs: stripping patchelf-rewritten libs corrupts them ("ELF load command
+    # address/offset not page-aligned"). Verified on-device incl. CUDA paths.
+    find /usr/local/lib/python3.10/dist-packages /usr/local/lib /usr/lib/python3.10/dist-packages \
+        -name '*.so*' -type f | grep -vE '/[^/]+\.libs/' | xargs -r -n32 -P4 strip --strip-unneeded 2>/dev/null || true
+# ---- end image-slim cleanup ----
 
 # Stage 2: Runtime
 FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
@@ -356,15 +402,22 @@ WORKDIR /app
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 # Install runtime dependencies (cache id is runtime-specific, distinct from builder).
+# Trimmed relative to the original list (all verified unreferenced on-device):
+#   file (libmagic; nothing executes it), libproj22 (+proj-data; only served the
+#   removed system GDAL - rasterio bundles its own proj), python3-pip (pip already
+#   ships in dist-packages and the runtime stage no longer runs pip),
+#   gstreamer1.0-tools (debug CLIs), python3-gi + gir1.2-* (no `import gi`
+#   anywhere; cv2 links the GStreamer C libs directly), libatlas3-base (zero .so
+#   NEEDs ATLAS; BLAS is libopenblas0).
+# The dpkg path-exclude keeps docs/man/locale out of every package this layer installs.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-runtime-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-runtime-${TARGETARCH} \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    printf 'path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/locale/*\n' > /etc/dpkg/dpkg.cfg.d/01-nodoc && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends \
-    file \
     libopenblas0 \
-    libproj22 \
     libsqlite3-0 \
     libtiff5 \
     libcurl4 \
@@ -372,7 +425,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     zlib1g \
     libgomp1 \
     python3 \
-    python3-pip \
     libxext6 \
     libvips42 \
     libglib2.0-0 \
@@ -390,33 +442,35 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     libgstreamer1.0-0 \
     libgstreamer-plugins-base1.0-0 \
     gstreamer1.0-plugins-base \
-    gstreamer1.0-plugins-good \
-    gstreamer1.0-tools \
-    python3-gi \
-    gir1.2-gstreamer-1.0 \
-    gir1.2-gst-plugins-base-1.0 \
-    libatlas3-base
+    gstreamer1.0-plugins-good
 
-# Copy GDAL (skip headers - not needed in runtime)
-COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
-COPY --from=builder /usr/local/bin/ogr* /usr/local/bin/
-COPY --from=builder /usr/local/bin/gnm* /usr/local/bin/
-COPY --from=builder /usr/local/lib/libgdal* /usr/local/lib/
-COPY --from=builder /usr/local/share/gdal /usr/local/share/gdal
-
-ENV GDAL_DATA=/usr/local/share/gdal
+# No system GDAL: rasterio (the only GDAL consumer, via requirements.sam.txt)
+# installs as a manylinux wheel with its own bundled libgdal/libproj/gdal-data;
+# zero .so in the image links the from-source libgdal (verified via ldd scan +
+# live deletion test). GDAL_DATA must stay unset or it would override
+# rasterio's bundled data directory and break CRS handling.
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # Copy CUDA libraries (only versioned files, then create symlinks to save ~2GB).
 # No libnvToolsExt COPY: the builder keeps it elsewhere (the old glob matched
 # nothing) and the l4t-cuda runtime base already ships it.
+# No libcupti COPY: torch is built USE_KINETO=0 USE_CUPTI_SO=0 and an aggregate
+# readelf NEEDED scan over every .so in the image found zero cupti references.
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libcudnn*.so.*.*.* /usr/local/cuda/lib64/
-COPY --from=builder /usr/local/cuda/targets/aarch64-linux/lib/libcupti*.so.*.*.* /usr/local/cuda/lib64/
 
 # TensorRT libraries (only versioned files, then create symlinks).
+# Explicit list instead of the old libnvinfer* glob: the ORT TensorRT EP NEEDs
+# libnvinfer + libnvinfer_plugin (+libnvonnxparser); builder_resource is required
+# for on-device engine builds (ORT_TENSORRT_ENGINE_CACHE_ENABLE=1); lean is kept
+# because inference_models' engine builder sets trt.BuilderFlag.VERSION_COMPATIBLE.
+# Excluded as unreferenced: libnvinfer_dispatch, libnvinfer_vc_plugin.
 # No libnvparsers COPY: TensorRT 10.x removed it (the old glob matched nothing
 # and produced an empty layer; strict BuildKit fails on unmatched COPY globs).
-COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvinfer*.so.*.*.* /usr/local/cuda/lib64/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvinfer.so.*.*.* \
+     /usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.*.*.* \
+     /usr/lib/aarch64-linux-gnu/libnvinfer_builder_resource.so.*.*.* \
+     /usr/lib/aarch64-linux-gnu/libnvinfer_lean.so.*.*.* \
+     /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so.*.*.* /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/nvidia/libnvdla_compiler.so* /usr/local/cuda/lib64/
 
@@ -447,10 +501,10 @@ RUN rm -rf /root/.cache/gstreamer-1.0 /home/*/.cache/gstreamer-1.0 2>/dev/null |
 
 # Copy Python packages
 COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
+# tensorrt_dispatch python pkg dropped along with libnvinfer_dispatch (zero
+# imports repo-wide); tensorrt_lean kept to match libnvinfer_lean above.
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt /usr/local/lib/python3.10/dist-packages/tensorrt
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt-10.7.0.dist-info
-COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_dispatch /usr/local/lib/python3.10/dist-packages/tensorrt_dispatch
-COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_dispatch-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt_dispatch-10.7.0.dist-info
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean /usr/local/lib/python3.10/dist-packages/tensorrt_lean
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info
 COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
