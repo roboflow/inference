@@ -47,6 +47,7 @@ from typing import Any, Optional, Protocol
 import zmq
 import zmq.asyncio
 
+from inference_model_manager.backends import _debuglog as _dbg  # DEBUGLOG
 from inference_model_manager.backends.utils.shm_pool import SHMPool
 from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_model_manager import configuration as cfg
@@ -542,6 +543,7 @@ class ModelManagerProcess:
             except Exception:
                 pass
             try:
+                _dbg.slot_freed("shutdown-drain", slot_id, req_id)  # DEBUGLOG
                 self._pool.free_slot(slot_id)
             except Exception:
                 pass
@@ -685,6 +687,7 @@ class ModelManagerProcess:
             return
         slot_id = struct.unpack_from(">I", data[0])[0]
         try:
+            _dbg.slot_freed("client-T_FREE", slot_id, "-")  # DEBUGLOG
             self._pool.free_slot(slot_id)
         except Exception:
             pass
@@ -941,6 +944,7 @@ class ModelManagerProcess:
                 slot_id,  # DEBUGLOG
             )  # DEBUGLOG
             # Stale reaper already freed this, or duplicate callback — free slot
+            _dbg.slot_freed("late-result", slot_id, req_id)  # DEBUGLOG
             self._pool.free_slot(slot_id)
             return
         identity, _, _ = pending
@@ -960,6 +964,7 @@ class ModelManagerProcess:
             await self._send(
                 identity, T_ERROR, struct.pack(">QB", req_id, _ERR_BACKEND)
             )
+            _dbg.slot_freed("backend-error", slot_id, req_id)  # DEBUGLOG
             self._pool.free_slot(slot_id)
             return
         self._pool.mark_done(slot_id, result_sz)
@@ -976,6 +981,7 @@ class ModelManagerProcess:
                 req_id,
                 slot_id,
             )
+            _dbg.slot_freed("peer-gone", slot_id, req_id)  # DEBUGLOG
             self._pool.free_slot(slot_id)
 
     # ------------------------------------------------------------------
@@ -1217,6 +1223,7 @@ class ModelManagerProcess:
                             identity, T_ERROR, struct.pack(">QB", req_id, _ERR_STALE)
                         )
                     )
+            _dbg.slot_freed("reaper", slot_id, req_id)  # DEBUGLOG
             self._pool.free_slot(slot_id)
 
     # ------------------------------------------------------------------
