@@ -380,6 +380,47 @@ def test_track_class_lock_manifest_rejects_reattach_window_beyond_state_ttl() ->
         BlockManifest.model_validate(data)
 
 
+def test_track_class_lock_manifest_rejects_null_param() -> None:
+    # given - None is not a meaningful value for these numeric knobs
+    data = {
+        "type": "roboflow_core/track_class_lock@v1",
+        "name": "class_lock",
+        "image": "$inputs.image",
+        "detections": "$steps.byte_tracker.tracked_detections",
+        "min_votes": None,
+    }
+
+    # when / then
+    with pytest.raises(ValidationError):
+        BlockManifest.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"min_votes": 0},
+        {"vote_confidence": -0.1},
+        {"vote_confidence": 1.1},
+        {"lead_margin": -1},
+        {"switch_after": 0},
+        {"state_ttl": 0},
+        {"reattach_window": -1},
+        {"reattach_iou": -0.1},
+        {"reattach_iou": 1.1},
+        {"reattach_window": 50, "state_ttl": 10},
+    ],
+)
+def test_track_class_lock_run_rejects_out_of_bounds_params(override: dict) -> None:
+    # given - selector-provided params bypass the manifest's pydantic bounds,
+    # so run() must re-validate them at runtime
+    block = TrackClassLockBlockV1()
+    knobs = {**KNOBS, **override}
+
+    # when / then
+    with pytest.raises(ValueError):
+        block.run(image=_image(), detections=_frame("cat", 0.9), **knobs)
+
+
 def test_track_class_lock_handles_detections_without_confidence() -> None:
     # given - sv.Detections allows confidence=None; votes fall back to 1.0
     block = TrackClassLockBlockV1()

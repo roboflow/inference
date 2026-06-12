@@ -94,37 +94,37 @@ class BlockManifest(WorkflowBlockManifest):
         description="Tracked predictions (object detection, instance segmentation, keypoint detection or RLE instance segmentation). Must include tracker_id information from a tracking block.",
         examples=["$steps.byte_tracker.tracked_detections"],
     )
-    min_votes: Union[Optional[Annotated[int, Field(ge=1)]], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    min_votes: Union[Annotated[int, Field(ge=1)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=10,
         description="Cumulative qualifying votes a class needs before the initial lock is acquired. Higher values delay locking but make the initial decision more reliable.",
         examples=[10, "$inputs.min_votes"],
     )
-    vote_confidence: Union[Optional[Annotated[float, Field(ge=0.0, le=1.0)]], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    vote_confidence: Union[Annotated[float, Field(ge=0.0, le=1.0)], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         default=0.8,
         description="Minimum prediction confidence for a frame to count, both for pre-lock votes and post-lock challenger streaks. Frames below this threshold are ignored.",
         examples=[0.8, "$inputs.vote_confidence"],
     )
-    lead_margin: Union[Optional[Annotated[int, Field(ge=0)]], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    lead_margin: Union[Annotated[int, Field(ge=0)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=3,
         description="Number of votes by which the top class must lead the runner-up before locking. Prevents premature locks when two classes are contested.",
         examples=[3, "$inputs.lead_margin"],
     )
-    switch_after: Union[Optional[Annotated[int, Field(ge=1)]], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    switch_after: Union[Annotated[int, Field(ge=1)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=15,
         description="Number of CONSECUTIVE qualifying frames of the same challenger class required to change an existing lock. Any interruption resets the streak. Minimum 1 (a value of 1 switches on a single contrary frame; use >= 2 to enforce a multi-frame streak).",
         examples=[15, "$inputs.switch_after"],
     )
-    state_ttl: Union[Optional[Annotated[int, Field(ge=1)]], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    state_ttl: Union[Annotated[int, Field(ge=1)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=300,
         description="Number of frames after which state of unseen tracks is purged.",
         examples=[300, "$inputs.state_ttl"],
     )
-    reattach_window: Union[Optional[Annotated[int, Field(ge=0)]], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    reattach_window: Union[Annotated[int, Field(ge=0)], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=30,
         description="When a NEW tracker id appears where a locked track disappeared within this many frames, the new track inherits the lost track's lock and votes. Bridges tracker id switches caused by short detection gaps. Set to 0 to disable re-attachment.",
         examples=[30, "$inputs.reattach_window"],
     )
-    reattach_iou: Union[Optional[Annotated[float, Field(ge=0.0, le=1.0)]], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    reattach_iou: Union[Annotated[float, Field(ge=0.0, le=1.0)], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         default=0.3,
         description="Minimum IoU between a new detection's bounding box and a recently lost locked track's last known bounding box for the lock to be inherited. Higher values require the object to reappear closer to where it vanished.",
         examples=[0.3, "$inputs.reattach_iou"],
@@ -182,6 +182,34 @@ class TrackClassLockBlockV1(WorkflowBlock):
         reattach_window: int,
         reattach_iou: float,
     ) -> BlockResult:
+        # selector-provided params bypass the manifest's pydantic Field bounds,
+        # so the same constraints are re-checked here at runtime
+        if min_votes < 1:
+            raise ValueError(f"`min_votes` must be >= 1, got {min_votes}")
+        if not 0.0 <= vote_confidence <= 1.0:
+            raise ValueError(
+                f"`vote_confidence` must be within [0.0, 1.0], got {vote_confidence}"
+            )
+        if lead_margin < 0:
+            raise ValueError(f"`lead_margin` must be >= 0, got {lead_margin}")
+        if switch_after < 1:
+            raise ValueError(f"`switch_after` must be >= 1, got {switch_after}")
+        if state_ttl < 1:
+            raise ValueError(f"`state_ttl` must be >= 1, got {state_ttl}")
+        if reattach_window < 0:
+            raise ValueError(
+                f"`reattach_window` must be >= 0, got {reattach_window}"
+            )
+        if not 0.0 <= reattach_iou <= 1.0:
+            raise ValueError(
+                f"`reattach_iou` must be within [0.0, 1.0], got {reattach_iou}"
+            )
+        if reattach_window > state_ttl:
+            raise ValueError(
+                f"`reattach_window` ({reattach_window}) must not exceed `state_ttl` "
+                f"({state_ttl}) - lost tracks are purged after `state_ttl` frames, so "
+                "re-attachment beyond that point can never happen."
+            )
         if len(detections) > 0 and detections.tracker_id is None:
             raise ValueError(
                 f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
