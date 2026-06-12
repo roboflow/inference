@@ -65,7 +65,9 @@ This block controls workflow execution flow and can be connected:
   empty to simply stop when nothing matches
 """
 
-SHORT_DESCRIPTION = "Route execution to one of several branches based on the value of an input."
+SHORT_DESCRIPTION = (
+    "Route execution to one of several branches based on the value of an input."
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -97,7 +99,7 @@ class BlockManifest(WorkflowBlockManifest):
     cases: Dict[str, StepSelector] = Field(
         title="Cases",
         description="Mapping of case value to the step that should execute when `value` matches "
-        "it, e.g. {\"red\": \"$steps.on_red\", \"blue\": \"$steps.on_blue\"}. Each target step "
+        'it, e.g. {"red": "$steps.on_red", "blue": "$steps.on_blue"}. Each target step '
         "may appear at most once across `cases` and `default_next_steps`.",
         examples=[{"red": "$steps.on_red", "blue": "$steps.on_blue"}],
         default_factory=dict,

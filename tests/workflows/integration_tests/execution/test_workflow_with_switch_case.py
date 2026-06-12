@@ -1,8 +1,8 @@
 import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
-from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 SWITCH_CASE_WORKFLOW = {
@@ -99,9 +99,9 @@ def test_switch_case_routes_to_expected_branch(
     # then
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "Single (non-batch) result expected"
-    assert result[0] == expected, (
-        f"Expected only the branch matching '{routing_value}' to execute"
-    )
+    assert (
+        result[0] == expected
+    ), f"Expected only the branch matching '{routing_value}' to execute"
 
 
 def test_switch_case_terminates_branch_when_no_match_and_no_default() -> None:
@@ -110,11 +110,7 @@ def test_switch_case_terminates_branch_when_no_match_and_no_default() -> None:
     workflow_definition = {
         **SWITCH_CASE_WORKFLOW,
         "steps": [
-            (
-                {**step, "default_next_steps": []}
-                if step["name"] == "switch"
-                else step
-            )
+            ({**step, "default_next_steps": []} if step["name"] == "switch" else step)
             for step in SWITCH_CASE_WORKFLOW["steps"]
             if step["name"] != "on_default"
         ],
