@@ -24,6 +24,8 @@ import imagecodecs
 import numpy as np
 from PIL import Image
 
+from inference_model_manager.backends import _debuglog as _dbg  # DEBUGLOG
+
 try:
     import pillow_heif
 
@@ -205,6 +207,8 @@ def make_batch_decoder(
 
             out: list[Any] = [None] * len(mvs)
 
+            _dbg.decode_batch_entry(mvs, jpeg_idx)  # DEBUGLOG
+
             # One decode_jpeg call for all JPEGs in the batch
             if jpeg_bufs:
                 try:
@@ -216,6 +220,7 @@ def make_batch_decoder(
                     for i, t in zip(jpeg_idx, decoded):
                         out[i] = t
                 except Exception:
+                    _dbg.decode_batch_failure()  # DEBUGLOG
                     log.warning(
                         "nvjpeg batch decode failed for %d JPEG(s), "
                         "falling back to CPU imagecodecs",
@@ -231,6 +236,7 @@ def make_batch_decoder(
                                 .to(torch_device)
                             )
                         except Exception:
+                            _dbg.fallback_failure(i, mvs[i])  # DEBUGLOG
                             log.exception(
                                 "CPU fallback decode also failed for slot index %d", i
                             )
