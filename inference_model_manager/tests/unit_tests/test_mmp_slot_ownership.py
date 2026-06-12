@@ -28,6 +28,7 @@ def _make_mmp(pool: SHMPool) -> ModelManagerProcess:
     mmp = ModelManagerProcess.__new__(ModelManagerProcess)
     mmp._pool = pool
     mmp._pending = {}
+    mmp._inflight = {}
     mmp._backends = {}
     mmp._models = {}
     mmp._model_access = {}

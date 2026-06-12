@@ -346,6 +346,11 @@ class ModelManagerProcess:
         # req_id → (uvicorn_identity, slot_id, flavor)
         self._pending: dict[int, tuple[bytes, int, str]] = {}
 
+        # slot_id → flavor for slots signalled to a worker and not yet
+        # resulted. The reaper must never free these: the worker may be
+        # mid-batch on them, and freeing allows re-allocation (torn slot).
+        self._inflight: dict[int, str] = {}
+
         # Strong refs for fire-and-forget tasks (GC'd mid-flight otherwise)
         self._bg_tasks: set = set()
 
@@ -442,6 +447,10 @@ class ModelManagerProcess:
         fs = self._models.get(model_id)
         if fs is None:
             return
+        # Worker is dead: its tickets are void. Drop them so the reaper can
+        # reclaim the slots once stale.
+        for slot_id in [s for s, m in self._inflight.items() if m == model_id]:
+            del self._inflight[slot_id]
         if fs.loading:
             return  # already reloading
         fs.loaded = False
@@ -992,6 +1001,8 @@ class ModelManagerProcess:
             logger.exception("MMP: signal_slot raised for '%s'", model_id)
             self._schedule_reload(model_id)
             self._on_result_on_loop(req_id, slot_id, 0)
+            return
+        self._inflight[slot_id] = model_id
 
     # ------------------------------------------------------------------
     # on_result — event-loop side
@@ -999,6 +1010,7 @@ class ModelManagerProcess:
 
     def _on_result_on_loop(self, req_id: int, slot_id: int, result_sz: int) -> None:
         """Must be called on the event loop thread."""
+        self._inflight.pop(slot_id, None)
         pending = self._pending.pop(req_id, None)
         if pending is None:
             logger.info(  # DEBUGLOG
@@ -1289,6 +1301,11 @@ class ModelManagerProcess:
         now_ns = time.monotonic_ns()
         slot_to_req = {s: r for r, (_, s, _) in self._pending.items()}
         for slot_id in stale:
+            if slot_id in self._inflight:
+                # A worker holds a live ticket for this slot (slow batch or
+                # cancelled request retained for the worker) — never free it
+                # under the worker; it would be re-allocated mid-batch.
+                continue
             req_id = slot_to_req.get(slot_id)
             hdr = None
             try:
