@@ -1,15 +1,11 @@
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from inference.core.entities.responses.inference import Keypoint
 from inference.core.exceptions import ModelArtefactError
 
 
-def superset_keypoints_count(
-    keypoints_metadata: Optional[Dict[int, Dict[int, str]]] = None,
-) -> int:
+def superset_keypoints_count(keypoints_metadata: Dict[int, Dict[int, str]]) -> int:
     """Returns the number of keypoints in the superset."""
-    if keypoints_metadata is None:
-        raise ModelArtefactError("Keypoints metadata not available.")
     max_keypoints = 0
     for keypoints in keypoints_metadata.values():
         if len(keypoints) > max_keypoints:
