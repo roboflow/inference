@@ -16,7 +16,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Response
 
 from inference_server import configuration as _cfg
-from inference_server.auth import validate_api_key
+from inference_server.auth import extract_bearer, validate_api_key
+from inference_server.errors import AuthBackendUnavailable
 from inference_server.proxies.base import ModelManagerProxy
 from inference_server.proxies.mm_wrapper import MMWrapper
 from inference_server.proxies.mmp_client import MMPClient
@@ -92,6 +93,11 @@ class _AuthMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket":
+            # No websocket routes exist; a future one must not ship
+            # unauthenticated by default.
+            await send({"type": "websocket.close", "code": 1008})
+            return
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -100,7 +106,9 @@ class _AuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        path = scope.get("path", "").rstrip("/")
+        # rstrip alone turns "/" into "" which is not in the skip set —
+        # the root path was always 401 despite being skip-listed.
+        path = scope.get("path", "").rstrip("/") or "/"
         if path in _AUTH_SKIP_PATHS:
             await self.app(scope, receive, send)
             return
@@ -110,8 +118,7 @@ class _AuthMiddleware:
             (k.decode("latin-1").lower(), v.decode("latin-1"))
             for k, v in scope.get("headers", [])
         )
-        auth = headers.get("authorization", "")
-        token = auth[7:] if auth.startswith("Bearer ") else ""
+        token = extract_bearer(headers.get("authorization", ""))
 
         if not token:
             response = Response(
@@ -121,7 +128,16 @@ class _AuthMiddleware:
             await response(scope, receive, send)
             return
 
-        valid, _ = await validate_api_key(token)
+        try:
+            valid, _ = await validate_api_key(token)
+        except AuthBackendUnavailable:
+            response = Response(
+                status_code=503,
+                headers={"Retry-After": "5"},
+                content=b"auth backend unavailable, try again",
+            )
+            await response(scope, receive, send)
+            return
         if not valid:
             response = Response(status_code=403, content=b"Invalid API key")
             await response(scope, receive, send)

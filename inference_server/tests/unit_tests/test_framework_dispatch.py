@@ -286,13 +286,55 @@ async def test_ensure_loaded_error_returns_500(fake_handler_entry):
 
 
 @pytest.mark.asyncio
-async def test_handler_value_error_returns_413(fake_handler_entry):
-    fake_handler_entry["handler"].side_effect = ValueError("too big")
+async def test_handler_value_error_returns_400(fake_handler_entry):
+    """ValueError is bad input (registry validation etc.), NOT payload-too-large."""
+    fake_handler_entry["handler"].side_effect = ValueError("'prompt' param required")
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_handler_payload_too_large_returns_413(fake_handler_entry):
+    from inference_server.errors import PayloadTooLargeError
+
+    fake_handler_entry["handler"].side_effect = PayloadTooLargeError("too big")
     with _stat_returns(("fake-task", "infer")):
         r = await handle_model_inference_request(
             _request(query=b"model_id=m"), _mock_proxy()
         )
     assert r.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_cuda_oom_is_500_not_busy(fake_handler_entry):
+    """Regression: substring matching classified 'Tried to allocate' as 503."""
+    fake_handler_entry["handler"].side_effect = RuntimeError(
+        "CUDA out of memory. Tried to allocate 2.00 GiB"
+    )
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 500
+    body = r.body.decode()
+    assert "Tried to allocate" not in body          # no internal text leaked
+    assert "ref " in body                            # correlation id present
+
+
+@pytest.mark.asyncio
+async def test_server_busy_error_returns_503_with_retry_after(fake_handler_entry):
+    from inference_server.errors import ServerBusyError
+
+    fake_handler_entry["handler"].side_effect = ServerBusyError("no capacity")
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 503
+    assert r.headers.get("retry-after") == "1"
 
 
 @pytest.mark.asyncio
@@ -306,14 +348,17 @@ async def test_handler_timeout_returns_504(fake_handler_entry):
 
 
 @pytest.mark.asyncio
-async def test_handler_no_slots_returns_503_server_busy(fake_handler_entry):
+async def test_plain_runtime_error_is_500_even_if_text_mentions_slots(
+    fake_handler_entry,
+):
+    """Busy classification is by ServerBusyError TYPE now — message text is
+    never inspected (substring matching misclassified CUDA OOM as busy)."""
     fake_handler_entry["handler"].side_effect = RuntimeError("no slots available")
     with _stat_returns(("fake-task", "infer")):
         r = await handle_model_inference_request(
             _request(query=b"model_id=m"), _mock_proxy()
         )
-    assert r.status_code == 503
-    assert b"SERVER_BUSY" in r.body
+    assert r.status_code == 500
 
 
 @pytest.mark.asyncio
