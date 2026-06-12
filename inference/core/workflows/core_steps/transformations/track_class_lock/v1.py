@@ -197,9 +197,7 @@ class TrackClassLockBlockV1(WorkflowBlock):
         if state_ttl < 1:
             raise ValueError(f"`state_ttl` must be >= 1, got {state_ttl}")
         if reattach_window < 0:
-            raise ValueError(
-                f"`reattach_window` must be >= 0, got {reattach_window}"
-            )
+            raise ValueError(f"`reattach_window` must be >= 0, got {reattach_window}")
         if not 0.0 <= reattach_iou <= 1.0:
             raise ValueError(
                 f"`reattach_iou` must be within [0.0, 1.0], got {reattach_iou}"
