@@ -208,6 +208,21 @@ def _worker_main(
         sock.setsockopt(zmq.LINGER, 0)
         sock.connect(zmq_addr)
 
+        decode_budget_fn = None
+        if device.startswith("cuda"):
+            import torch  # noqa: PLC0415
+
+            def decode_budget_fn() -> int:
+                try:
+                    free, _ = torch.cuda.mem_get_info()
+                except Exception:
+                    return 0
+                return _decode_bytes_budget(
+                    free,
+                    cfg.INFERENCE_DECODE_VRAM_HEADROOM_MB,
+                    cfg.INFERENCE_DECODE_VRAM_SCRATCH_FACTOR,
+                )
+
         _worker_loop(
             model,
             pool,
@@ -216,6 +231,7 @@ def _worker_main(
             effective_bs or _BATCH_SIZE_FALLBACK,
             batch_max_wait_ms,
             _log,
+            decode_budget_fn=decode_budget_fn,
         )
 
     except KeyboardInterrupt:
@@ -243,6 +259,7 @@ def _worker_loop(
     batch_max_size: int,
     batch_max_wait_ms: float,
     log,
+    decode_budget_fn: Optional[Callable[[], int]] = None,
 ) -> None:
     """Greedy batch loop — accumulate T_SLOT_READY, fire on size-or-timeout."""
     import zmq  # noqa: PLC0415 — subprocess; already in sys.modules from _worker_main
@@ -334,24 +351,37 @@ def _worker_loop(
                 last_heartbeat = now
             except zmq.ZMQError:
                 pass
-            try:
-                _process_slots(
-                    model, pool, pending, sock, batch_decode_fn, log, worker_stats
-                )
-            except Exception:
-                # A batch-level crash must not kill the worker: error out
-                # every slot we still own and keep serving.
-                log.exception("Worker: _process_slots crashed — erroring batch")
-                for slot_id, req_id, _ in pending:
-                    if not _slot_owned(pool, slot_id, req_id):
-                        continue
-                    try:
-                        _write_error_to_slot(pool, slot_id, "batch processing crashed")
-                        sock.send_multipart(
-                            [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
-                        )
-                    except Exception:
-                        pass
+            decode_max_bytes = decode_budget_fn() if decode_budget_fn else 0
+            for chunk in _split_batch_by_decoded_bytes(
+                pool, pending, decode_max_bytes
+            ):
+                if len(chunk) < len(pending):
+                    log.info(
+                        "Worker: decoded-bytes cap split batch of %d — "
+                        "processing chunk of %d",
+                        len(pending),
+                        len(chunk),
+                    )
+                try:
+                    _process_slots(
+                        model, pool, chunk, sock, batch_decode_fn, log, worker_stats
+                    )
+                except Exception:
+                    # A batch-level crash must not kill the worker: error out
+                    # every slot we still own and keep serving.
+                    log.exception("Worker: _process_slots crashed — erroring batch")
+                    for slot_id, req_id, _ in chunk:
+                        if not _slot_owned(pool, slot_id, req_id):
+                            continue
+                        try:
+                            _write_error_to_slot(
+                                pool, slot_id, "batch processing crashed"
+                            )
+                            sock.send_multipart(
+                                [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
+                            )
+                        except Exception:
+                            pass
             pending.clear()
             batch_start = 0.0
 
@@ -383,6 +413,58 @@ def _build_worker_stats_payload(worker_stats: dict) -> bytes:
             "uptime_s": round(uptime, 1),
         }
     ).encode()
+
+
+def _decode_bytes_budget(
+    free_vram_bytes: int, headroom_mb: float, scratch_factor: float
+) -> int:
+    """Decoded-bytes budget for one decode batch, from free VRAM right now.
+
+    Reserves ``headroom_mb`` for inference itself and divides the rest by
+    ``scratch_factor`` (nvjpeg working buffers exceed the output tensors).
+    Floors at 1 byte: a starved GPU degrades to one-image chunks, never to
+    an uncapped batch (0 means cap disabled to the splitter).
+    """
+    return max(
+        1, int((free_vram_bytes - headroom_mb * 1024 * 1024) / scratch_factor)
+    )
+
+
+def _split_batch_by_decoded_bytes(
+    pool: SHMPool,
+    batch: list[tuple[int, int, bytes]],
+    max_bytes: int,
+) -> list[list[tuple[int, int, bytes]]]:
+    """Split a batch into chunks whose summed estimated decoded size stays
+    under ``max_bytes``. Estimation reads only slot header bytes (JPEG SOF /
+    PNG IHDR) — no decode. A single image over the cap gets its own chunk;
+    nothing is ever dropped. ``max_bytes <= 0`` disables splitting.
+    """
+    if max_bytes <= 0 or len(batch) <= 1:
+        return [batch]
+    from inference_model_manager.backends.decode import estimate_decoded_bytes
+
+    chunks: list[list[tuple[int, int, bytes]]] = []
+    chunk: list[tuple[int, int, bytes]] = []
+    chunk_bytes = 0
+    for item in batch:
+        slot_id = item[0]
+        try:
+            hdr = pool.read_header(slot_id)
+            mv = pool.data_memoryview(slot_id)[: min(hdr.input_size, 65536)]
+            est = estimate_decoded_bytes(mv, hdr.input_size)
+            mv.release()
+        except Exception:
+            est = 0
+        if chunk and chunk_bytes + est > max_bytes:
+            chunks.append(chunk)
+            chunk = []
+            chunk_bytes = 0
+        chunk.append(item)
+        chunk_bytes += est
+    if chunk:
+        chunks.append(chunk)
+    return chunks
 
 
 def _slot_owned(pool: SHMPool, slot_id: int, req_id: int) -> bool:

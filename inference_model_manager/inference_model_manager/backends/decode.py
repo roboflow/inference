@@ -53,6 +53,66 @@ def _is_heif(data: bytes | memoryview) -> bool:
     )
 
 
+# Pessimistic decoded-size estimate (64MP RGB) for inputs whose dimensions
+# cannot be read from the header — keeps unknown formats from sneaking giant
+# decodes past the decoded-bytes batch cap.
+FALLBACK_DECODED_BYTES = 192_000_000
+
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+_NPY_MAGIC = b"\x93NUMPY"
+
+
+def jpeg_sof_dims(data: Any) -> tuple[int, int, int] | None:
+    """(height, width, n_components) from a JPEG SOF header, no decode.
+
+    Scans the first 64 KiB only. None if no SOF marker found.
+    """
+    buf = bytes(data[:65536])
+    i = 2
+    while i + 9 < len(buf):
+        if buf[i] != 0xFF:
+            i += 1
+            continue
+        marker = buf[i + 1]
+        if marker == 0xFF:
+            i += 1
+            continue
+        if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+            i += 2
+            continue
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            h = int.from_bytes(buf[i + 5 : i + 7], "big")
+            w = int.from_bytes(buf[i + 7 : i + 9], "big")
+            return h, w, buf[i + 9]
+        i += 2 + int.from_bytes(buf[i + 2 : i + 4], "big")
+    return None
+
+
+def estimate_decoded_bytes(prefix: Any, input_size: int) -> int:
+    """Estimated decoded RGB size from an input's header bytes, no decode.
+
+    ``prefix`` is the first <=64KiB of the payload; ``input_size`` the full
+    payload size. JPEG (SOF) and PNG (IHDR) report h*w*3; .npy payloads are
+    already decoded (input_size); anything else gets FALLBACK_DECODED_BYTES.
+    """
+    head = bytes(prefix[:8])
+    if head[:2] == b"\xff\xd8":
+        dims = jpeg_sof_dims(prefix)
+        if dims:
+            return dims[0] * dims[1] * 3
+        return FALLBACK_DECODED_BYTES
+    if head == _PNG_MAGIC:
+        if len(prefix) >= 24:
+            w = int.from_bytes(bytes(prefix[16:20]), "big")
+            h = int.from_bytes(bytes(prefix[20:24]), "big")
+            if w and h:
+                return h * w * 3
+        return FALLBACK_DECODED_BYTES
+    if bytes(prefix[:6]) == _NPY_MAGIC:
+        return input_size
+    return FALLBACK_DECODED_BYTES
+
+
 def _select_codec(head: bytes) -> str | None:
     """Map header magic bytes to an imagecodecs codec name, or None if unknown.
 
