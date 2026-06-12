@@ -300,7 +300,6 @@ def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> N
     assert inference_request.model_id == "depth-anything-v3/small"
     assert inference_request.api_key == "query-api-key"
 
-
 def test_depth_estimation_with_model_id_path_sets_request_model_id(monkeypatch) -> None:
     import inference.core.interfaces.http.http_api as http_api
 

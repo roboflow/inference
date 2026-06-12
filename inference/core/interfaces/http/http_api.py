@@ -3736,13 +3736,38 @@ class HttpInterface(BaseInterface):
                         DepthEstimationResponse: The response containing the normalized depth map and optional visualization.
                     """
                     logger.debug(f"Reached /infer/depth-estimation")
-                    return _infer_depth_estimation(
-                        inference_request=inference_request,
-                        request=request,
-                        api_key=api_key,
+                    # return _infer_depth_estimation(
+                    #     inference_request=inference_request,
+                    #     request=request,
+                    #     api_key=api_key,
+                    #     countinference=countinference,
+                    #     service_secret=service_secret,
+                    # )
+                    if api_key is not None:
+                        inference_request.api_key = api_key
+                    depth_model_id = inference_request.model_id
+                    self.model_manager.add_model(
+                        depth_model_id,
+                        inference_request.api_key,
                         countinference=countinference,
                         service_secret=service_secret,
                     )
+                    response = self.model_manager.infer_from_request_sync(
+                        depth_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(depth_model_id, actor)
+
+                    # Extract data from nested response structure
+                    depth_data = response.response
+                    depth_response = DepthEstimationResponse(
+                        normalized_depth=depth_data["normalized_depth"].tolist(),
+                        image=depth_data["image"].base64_image,
+                    )
+                    return depth_response
 
                 @app.post(
                     "/infer/depth-estimation/{model_id:path}",
@@ -3753,15 +3778,15 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 @usage_collector("request")
                 def depth_estimation_with_model_id(
-                    model_id: str,
-                    inference_request: DepthEstimationRequest,
-                    request: Request,
-                    api_key: Optional[str] = Query(
-                        None,
-                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-                    ),
-                    countinference: Optional[bool] = None,
-                    service_secret: Optional[str] = None,
+                        model_id: str,
+                        inference_request: DepthEstimationRequest,
+                        request: Request,
+                        api_key: Optional[str] = Query(
+                            None,
+                            description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                        ),
+                        countinference: Optional[bool] = None,
+                        service_secret: Optional[str] = None,
                 ):
                     """
                     Generate a depth map with the model identifier in the path.
