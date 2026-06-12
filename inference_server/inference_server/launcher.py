@@ -16,7 +16,7 @@ Two launch paths:
       handle.mmp_addr  — address FastAPI DEALER workers connect() to
       handle.shm_name  — SHMPool name FastAPI workers attach to
 
-Select via env var:  INFERENCE_DEPLOYMENT_MODE=inprocess|orchestrated
+Select via env var:  INFERENCE_DEPLOYMENT_MODE=bundled|mmp
 or pass mode= to launch().
 """
 
@@ -105,8 +105,8 @@ def launch_inprocess(
 def launch_orchestrated(
     *,
     max_pinned_memory_mb: int = mmp_config.INFERENCE_MAX_PINNED_MEMORY_MB,
-    n_slots: int = 64,
-    input_mb: float = 20.0,
+    n_slots: int = mmp_config.MMP_N_SLOTS_DEFAULT,
+    input_mb: float = mmp_config.MMP_INPUT_MB_DEFAULT,
     mmp_addr: Optional[str] = None,
     gpu_eviction_threshold: float = mmp_config.INFERENCE_GPU_EVICTION_THRESHOLD,
     evict_check_interval_s: float = mmp_config.INFERENCE_EVICT_CHECK_INTERVAL_S,

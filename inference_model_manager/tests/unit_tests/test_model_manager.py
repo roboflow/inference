@@ -503,3 +503,148 @@ class TestSubmitSlotFutureLifecycle:
             assert mm._pool.free_count == 2
         finally:
             mm.shutdown()
+
+
+class TestRawProcessContract:
+    def test_process_serialize_false_returns_raw_prediction(self):
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("model-a", api_key="")
+        raw = mm.process("model-a", serialize=False, images="img")
+        assert raw == {"prediction": "fake", "model_id": "model-a"}
+
+    def test_process_async_forwards_serialize_flag(self):
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("model-a", api_key="")
+        raw = asyncio.run(mm.process_async("model-a", serialize=False, images="img"))
+        assert raw == {"prediction": "fake", "model_id": "model-a"}
+
+
+class FakeVLM:
+    """Fake model class for MRO-name-based subprocess validation tests."""
+
+
+_registry.register(
+    FakeVLM,
+    "prompt",
+    method="prompt",
+    default=True,
+    params=["images", "prompt"],
+    validator=__import__(
+        "inference_model_manager.validators", fromlist=["validate_images_and_prompt"]
+    ).validate_images_and_prompt,
+    serializer=serialize_passthrough,
+    response_type="roboflow-text-v1",
+)
+
+
+class TestSubprocessPathParity:
+    def _mm_with_subproc_backend(self, mro_names=("FakeVLM",)):
+        mm = ModelManager(n_slots=2, input_mb=0.1)
+        captured: dict = {}
+
+        class _FakeSubprocBackend:
+            _model_mro_names = list(mro_names)
+
+            def submit_slot(self, slot_id, req_id, future, params_bytes):
+                captured.update(slot=slot_id, params=params_bytes, fut=future)
+
+        mm._backends["m"] = _FakeSubprocBackend()
+        mm._ensure_pool()
+        return mm, captured
+
+    def test_missing_required_param_rejected_before_slot_alloc(self):
+        mm, captured = self._mm_with_subproc_backend()
+        try:
+            with pytest.raises(ValueError, match="prompt"):
+                mm.submit("m", raw_input=b"\xff\xd8img")
+            assert mm._pool.free_count == 2          # no slot consumed
+            assert captured == {}
+        finally:
+            mm.shutdown()
+
+    def test_non_json_params_rejected_with_clear_error(self):
+        import numpy as np
+
+        mm, captured = self._mm_with_subproc_backend(mro_names=("FakeModel",))
+        try:
+            with pytest.raises(ValueError, match="JSON-serializable"):
+                mm.submit("m", raw_input=b"\xff\xd8img", embeddings=np.zeros(4))
+            assert mm._pool.free_count == 2
+        finally:
+            mm.shutdown()
+
+
+class TestLoadLockScope:
+    def test_concurrent_load_not_blocked_by_slow_backend_construction(self):
+        import time as _time
+
+        mm = ModelManager()
+        started = threading.Event()
+        release = threading.Event()
+
+        def create(model_id, api_key, backend, **kw):
+            if model_id == "slow":
+                started.set()
+                release.wait(timeout=5)
+            return FakeBackend(model_id)
+
+        mm._create_backend = create
+        t = threading.Thread(target=lambda: mm.load("slow", api_key=""))
+        t.start()
+        try:
+            assert started.wait(timeout=2)
+            t0 = _time.monotonic()
+            mm.load("fast", api_key="")              # must not wait on slow
+            assert _time.monotonic() - t0 < 1.0
+            assert "fast" in mm
+        finally:
+            release.set()
+            t.join(timeout=5)
+        assert "slow" in mm
+
+    def test_duplicate_load_while_loading_raises(self):
+        mm = ModelManager()
+        started = threading.Event()
+        release = threading.Event()
+
+        def create(model_id, api_key, backend, **kw):
+            started.set()
+            release.wait(timeout=5)
+            return FakeBackend(model_id)
+
+        mm._create_backend = create
+        t = threading.Thread(target=lambda: mm.load("dup", api_key=""))
+        t.start()
+        try:
+            assert started.wait(timeout=2)
+            with pytest.raises(ValueError, match="already loaded"):
+                mm.load("dup", api_key="")
+        finally:
+            release.set()
+            t.join(timeout=5)
+
+
+class TestDirectDrain:
+    def test_drain_waits_for_inflight(self):
+        import time as _time
+        from inference_model_manager.backends.direct import DirectBackend
+
+        b = DirectBackend.__new__(DirectBackend)
+        b._model_id = "m"
+        b._state_value = "loaded"
+        b._inflight = 1
+        b._inflight_lock = threading.Lock()
+        b._model = object()
+
+        def _finish_soon():
+            _time.sleep(0.2)
+            b.inflight_end()
+
+        threading.Thread(target=_finish_soon).start()
+        t0 = _time.monotonic()
+        b.drain_and_unload(timeout_s=5.0)
+        assert _time.monotonic() - t0 >= 0.15
+        assert b._model is None

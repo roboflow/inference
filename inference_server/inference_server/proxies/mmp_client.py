@@ -230,6 +230,13 @@ class MMPClient:
         self._sock.connect(self.mmp_addr)
 
         self._shm = SharedMemory(name=self.shm_name, create=False)
+        if len(self._shm.buf) % self.slot_total != 0:
+            raise RuntimeError(
+                f"SHM geometry mismatch: pool size {len(self._shm.buf)} is not "
+                f"divisible by slot_total {self.slot_total} — "
+                "INFERENCE_SHM_DATA_SIZE disagrees with the MMP that created "
+                "the pool; writes would corrupt neighboring slots"
+            )
         self._recv_task = asyncio.create_task(self._recv_loop(), name="zmq-recv")
         self.pipeline.start()
 

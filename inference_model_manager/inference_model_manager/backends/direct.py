@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -89,6 +90,8 @@ class DirectBackend(Backend):
         self._last_inference_ts = 0.0
         self._start_ts = time.monotonic()
         self._latencies: deque[float] = deque(maxlen=1000)
+        self._inflight = 0
+        self._inflight_lock = threading.Lock()
 
         model_type = type(self._model).__name__
         class_count = len(self.class_names) if self.class_names else 0
@@ -134,11 +137,31 @@ class DirectBackend(Backend):
     # Lifecycle
     # ------------------------------------------------------------------
 
+    def inflight_begin(self) -> None:
+        with self._inflight_lock:
+            self._inflight += 1
+
+    def inflight_end(self) -> None:
+        with self._inflight_lock:
+            self._inflight = max(0, self._inflight - 1)
+
     def drain_and_unload(self, timeout_s: float = 30.0) -> None:
         self._state_value = "draining"
         logger.info(
             "DirectBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s
         )
+        # Wait for in-flight forward passes — dropping the model under a live
+        # invoke_task crashes (CUDA error / AttributeError).
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline and self._inflight > 0:
+            time.sleep(0.05)
+        if self._inflight > 0:
+            logger.warning(
+                "DirectBackend(%s): drain timeout — %d inference(s) still "
+                "in flight, force-unloading",
+                self._model_id,
+                self._inflight,
+            )
         self.unload()
 
     def unload(self) -> None:
