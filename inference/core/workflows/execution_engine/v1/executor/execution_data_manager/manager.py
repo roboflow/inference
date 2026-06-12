@@ -569,7 +569,9 @@ class ExecutionDataManager:
         for target_step, branch_name in step_node.child_execution_branches.items():
             if target_step in selected_steps:
                 selected_execution_branches.add(branch_name)
-        for branch_name in step_node.child_execution_branches.values():
+        # multiple targets may share one execution branch (selectors kept in a list
+        # property), so deduplicate to avoid re-registering the same mask
+        for branch_name in set(step_node.child_execution_branches.values()):
             mask = branch_name in selected_execution_branches
             logger.debug(f"NON-SIMD flow control -> {branch_name}: {mask}")
             self._branching_manager.register_non_batch_mask(
