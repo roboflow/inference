@@ -238,6 +238,36 @@ class TestHandleUnload:
         asyncio.run(_run())
 
 
+class TestAllocBackpressure:
+    def test_alloc_rejected_when_model_at_inflight_cap(self, monkeypatch):
+        from inference_model_manager.backends.utils.shm_pool import SHMPool
+        from inference_model_manager.model_manager_process import _ERR_POOL_FULL
+        from inference_model_manager import configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_INFLIGHT_PER_MODEL", 2)
+        pool = SHMPool.create(n_slots=8, input_mb=0.1)
+        try:
+            mmp = _handler_mmp()
+            mmp._pool = pool
+            mmp._pending = {
+                1: (b"id", 0, "busy-model"),
+                2: (b"id", 1, "busy-model"),
+                3: (b"id", 2, "other-model"),
+            }
+            frame = [struct.pack(">QH", 7, 10) + b"busy-model"]
+            asyncio.run(mmp._handle_alloc(b"id1", frame))
+            assert mmp._sent == [
+                (b"id1", T_ERROR, struct.pack(">QB", 7, _ERR_POOL_FULL))
+            ]
+            # Other model still allocates fine
+            mmp._sent.clear()
+            frame2 = [struct.pack(">QH", 8, 11) + b"other-model"]
+            asyncio.run(mmp._handle_alloc(b"id1", frame2))
+            assert mmp._sent[0][1] != T_ERROR
+        finally:
+            pool.close()
+
+
 class TestRegisterBackendAccess:
     def test_register_overwrites_stale_access_timestamp(self):
         mmp = _bare_mmp()

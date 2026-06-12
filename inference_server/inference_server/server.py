@@ -255,7 +255,12 @@ def main() -> None:
         uvicorn_kwargs["ssl_certfile"] = ssl_cert
         uvicorn_kwargs["ssl_keyfile"] = ssl_key
 
-    uvicorn.run("inference_server.app:app", **uvicorn_kwargs)
+    try:
+        uvicorn.run("inference_server.app:app", **uvicorn_kwargs)
+    finally:
+        # Without this, exiting orphans GPU worker subprocesses and leaks the
+        # /dev/shm segment across restarts.
+        handle.shutdown()
 
 
 if __name__ == "__main__":

@@ -68,6 +68,8 @@ _STATS_SENTINEL = "STATS"  # sentinel for outbound queue → sends _MSG_STATS_RE
 
 _HEARTBEAT_INTERVAL_S = cfg.INFERENCE_WORKER_HEARTBEAT_INTERVAL_S
 _WORKER_HEARTBEAT_TIMEOUT = cfg.INFERENCE_WORKER_HEARTBEAT_TIMEOUT_S  # silence → unhealthy
+_WORKER_BUSY_TIMEOUT = cfg.INFERENCE_WORKER_BUSY_TIMEOUT_S  # silence while work outstanding
+_SEND_TIMEOUT_MS = 5000  # parent PAIR sends must never block forever
 
 _BATCH_SIZE_FALLBACK = 8
 
@@ -325,9 +327,31 @@ def _worker_loop(
         if pending and (
             len(pending) >= batch_max_size or (now - batch_start) >= batch_max_wait_s
         ):
-            _process_slots(
-                model, pool, pending, sock, batch_decode_fn, log, worker_stats
-            )
+            # Heartbeat at batch start — parent's busy-timeout clock runs from
+            # the last recv, and the loop cannot heartbeat during inference.
+            try:
+                sock.send_multipart([_MSG_HEARTBEAT, b""])
+                last_heartbeat = now
+            except zmq.ZMQError:
+                pass
+            try:
+                _process_slots(
+                    model, pool, pending, sock, batch_decode_fn, log, worker_stats
+                )
+            except Exception:
+                # A batch-level crash must not kill the worker: error out
+                # every slot we still own and keep serving.
+                log.exception("Worker: _process_slots crashed — erroring batch")
+                for slot_id, req_id, _ in pending:
+                    if not _slot_owned(pool, slot_id, req_id):
+                        continue
+                    try:
+                        _write_error_to_slot(pool, slot_id, "batch processing crashed")
+                        sock.send_multipart(
+                            [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
+                        )
+                    except Exception:
+                        pass
             pending.clear()
             batch_start = 0.0
 
@@ -450,6 +474,8 @@ def _process_slots(
             raw_decoded = batch_decode_fn([mvs[i] for i in raw_indices])
             for i, img in zip(raw_indices, raw_decoded):
                 images[i] = img
+                if img is None:  # per-image decode failure (decoder contract)
+                    decode_errors[i] = True
         except Exception:
             log.exception(
                 "Worker: batch decode failed for %d slot(s)", len(raw_indices)
@@ -555,11 +581,27 @@ def _process_slots(
         # Move tensors to CPU before pickle — result travels through SHM (CPU
         # memory), so serialising with device='cuda' just forces the receiver
         # to have a GPU for no reason.
-        if hasattr(result, "xyxy"):
-            result.xyxy = result.xyxy.cpu()
-            result.confidence = result.confidence.cpu()
-            result.class_id = result.class_id.cpu()
-        data = pickle.dumps(result)
+        try:
+            if hasattr(result, "xyxy"):
+                result.xyxy = result.xyxy.cpu()
+                result.confidence = result.confidence.cpu()
+                result.class_id = result.class_id.cpu()
+            data = pickle.dumps(result)
+        except Exception as exc:
+            # Unserializable result (numpy fields without .cpu(), unpicklable
+            # objects) must error this slot, not kill the worker.
+            log.exception("Worker: result serialization failed for slot %d", slot_id)
+            _write_error_to_slot(
+                pool, slot_id, f"result serialization failed: {exc}"
+            )
+            try:
+                sock.send_multipart(
+                    [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
+                )
+            except zmq.ZMQError:
+                return
+            n_err += 1
+            continue
         mv = pool.data_memoryview(slot_id)
         capacity = len(mv)
         if len(data) > capacity:
@@ -681,6 +723,9 @@ class SubprocessBackend(Backend):
         self._zmq_ctx = zmq.Context()
         self._zmq_sock = self._zmq_ctx.socket(zmq.PAIR)
         self._zmq_sock.setsockopt(zmq.LINGER, 0)
+        # PAIR sends block forever when the peer is gone — a dead worker must
+        # surface as worker death, not a hung recv thread.
+        self._zmq_sock.setsockopt(zmq.SNDTIMEO, _SEND_TIMEOUT_MS)
 
         _transport = os.environ.get(cfg.INFERENCE_ZMQ_TRANSPORT_ENV, default_transport())
         _sock_id = f"sp_{os.getpid()}_{uuid.uuid4().hex[:8]}"
@@ -751,6 +796,10 @@ class SubprocessBackend(Backend):
         self._outbound: queue.Queue = queue.Queue()
         self._slot_futures: Dict[int, tuple] = {}  # slot_id → (req_id, Future)
         self._slot_lock = threading.Lock()
+        # Signalled-but-unresulted slots — source of truth for queue_depth,
+        # drain, and busy-detection (slot_futures is empty in MMP mode).
+        self._outstanding = 0
+        self._death_handled = False
         self._on_result_callback: Optional[Callable] = on_result_callback
         self._on_death_callback: Optional[Callable] = on_death_callback
         self._recv_running = True
@@ -779,8 +828,9 @@ class SubprocessBackend(Backend):
                 f"SubprocessBackend({self._model_id!r}): recv thread is dead, "
                 "cannot enqueue work"
             )
+        with self._slot_lock:
+            self._outstanding += 1
         self._outbound.put((slot_id, req_id, params_bytes))
-        self._last_worker_activity = time.monotonic()
 
     def set_on_result_callback(self, callback: Callable[[int, int, int], None]) -> None:
         """Set MMP callback: called on each T_RESULT from worker."""
@@ -833,7 +883,8 @@ class SubprocessBackend(Backend):
                     try:
                         self._zmq_sock.send_multipart([_MSG_STATS_REQ, b""])
                     except zmq.ZMQError:
-                        pass
+                        self._handle_worker_death("stats send failed")
+                        return
                     continue
                 slot_id, req_id, params_bytes = item
                 try:
@@ -845,6 +896,7 @@ class SubprocessBackend(Backend):
                         ]
                     )
                 except zmq.ZMQError:
+                    self._handle_worker_death("slot-ready send failed")
                     return
 
             # Poll with 10ms timeout so outbound queue drains promptly
@@ -858,11 +910,7 @@ class SubprocessBackend(Backend):
             try:
                 frames = self._zmq_sock.recv_multipart()
             except zmq.ZMQError:
-                logger.error(
-                    "SubprocessBackend(%s): recv thread exiting due to ZMQError",
-                    self._model_id,
-                )
-                self._recv_dead = True
+                self._handle_worker_death("zmq recv failed")
                 return
 
             self._last_worker_activity = time.monotonic()
@@ -881,11 +929,19 @@ class SubprocessBackend(Backend):
                 req_id, slot_id, result_sz = struct.unpack(">QII", frames[1])
                 self._handle_result(req_id, slot_id, result_sz)
 
-    def _handle_worker_death(self) -> None:
-        """Called from recv thread when worker process exits unexpectedly."""
+    def _handle_worker_death(self, reason: str = "worker died") -> None:
+        """Abnormal-exit cleanup — EVERY abnormal recv-thread exit routes here.
+
+        Idempotent: rejects pending futures, notifies the owner per slot,
+        fires the death callback, and zeroes the outstanding counter.
+        """
+        if self._death_handled:
+            return
+        self._death_handled = True
         logger.error(
-            "SubprocessBackend(%s): worker died (pid=%s exitcode=%s)",
+            "SubprocessBackend(%s): %s (pid=%s exitcode=%s)",
             self._model_id,
+            reason,
             self._worker.pid,
             self._worker.exitcode,
         )
@@ -895,6 +951,7 @@ class SubprocessBackend(Backend):
         with self._slot_lock:
             pending = list(self._slot_futures.items())
             self._slot_futures.clear()
+            self._outstanding = 0
 
         for slot_id, (req_id, future) in pending:
             # Reject pending futures
@@ -927,6 +984,7 @@ class SubprocessBackend(Backend):
         """Called from recv thread on each T_RESULT."""
         # Resolve Future if one exists (standalone submit path)
         with self._slot_lock:
+            self._outstanding = max(0, self._outstanding - 1)
             entry = self._slot_futures.pop(slot_id, None)
         if entry is not None:
             _, future = entry
@@ -984,16 +1042,16 @@ class SubprocessBackend(Backend):
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             with self._slot_lock:
-                if not self._slot_futures:
-                    break
-                n = len(self._slot_futures)
+                n = self._outstanding + len(self._slot_futures)
+            if n == 0:
+                break
             logger.debug(
                 "SubprocessBackend(%s): %d slots still in-flight", self._model_id, n
             )
             time.sleep(0.1)
         else:
             with self._slot_lock:
-                n = len(self._slot_futures)
+                n = self._outstanding + len(self._slot_futures)
             if n > 0:
                 logger.warning(
                     "SubprocessBackend(%s): drain timeout — %d slots still in-flight, force-unloading",
@@ -1006,10 +1064,18 @@ class SubprocessBackend(Backend):
     def unload(self) -> None:
         self._state_value = "unhealthy"  # block new submits immediately
 
-        # Signal recv thread: send T_SHUTDOWN to worker, then exit
-        self._recv_running = False
+        # Sentinel alone terminates the recv loop (it sends T_SHUTDOWN first).
+        # Clearing _recv_running before the sentinel raced the loop's top
+        # check — the thread could exit without ever sending T_SHUTDOWN.
         self._outbound.put(None)  # None = shutdown sentinel
         self._recv_thread.join(timeout=5.0)
+        if self._recv_thread.is_alive():
+            # Thread wedged (e.g. blocked in a send) — kill the worker to
+            # unblock it, stop the loop flag, and retry.
+            self._recv_running = False
+            self._worker.kill()
+            self._recv_thread.join(timeout=2.0)
+        self._recv_running = False
 
         # Kill worker if still alive
         if self._worker.is_alive():
@@ -1023,9 +1089,17 @@ class SubprocessBackend(Backend):
                 if future is not None and not future.done():
                     future.set_exception(RuntimeError("backend unloaded"))
             self._slot_futures.clear()
+            self._outstanding = 0
 
-        self._zmq_sock.close(linger=0)
-        self._zmq_ctx.term()
+        if not self._recv_thread.is_alive():
+            self._zmq_sock.close(linger=0)
+            self._zmq_ctx.term()
+        else:
+            logger.warning(
+                "SubprocessBackend(%s): recv thread still alive after unload — "
+                "leaking ZMQ socket to avoid closing it under a live thread",
+                self._model_id,
+            )
 
         # Pool is externally owned — never close/unlink here
 
@@ -1050,8 +1124,16 @@ class SubprocessBackend(Backend):
         if not self._worker.is_alive():
             return "unhealthy"
         idle = time.monotonic() - self._last_worker_activity
-        if self._state_value == "loaded" and idle > _WORKER_HEARTBEAT_TIMEOUT:
-            return "unhealthy"
+        if self._state_value == "loaded":
+            # Busy workers (long batch in flight) get a longer leash than the
+            # idle heartbeat timeout — but a hung worker with outstanding work
+            # still trips eventually.
+            limit = (
+                _WORKER_BUSY_TIMEOUT if self._outstanding > 0
+                else _WORKER_HEARTBEAT_TIMEOUT
+            )
+            if idle > limit:
+                return "unhealthy"
         return self._state_value
 
     @property
@@ -1068,8 +1150,7 @@ class SubprocessBackend(Backend):
 
     @property
     def queue_depth(self) -> int:
-        with self._slot_lock:
-            return len(self._slot_futures)
+        return self._outstanding
 
     def stats(self) -> Dict[str, Any]:
         ws = self._worker_stats

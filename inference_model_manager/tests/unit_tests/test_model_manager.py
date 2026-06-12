@@ -485,3 +485,21 @@ class TestSubmitSlotFutureLifecycle:
             assert mm._pool.free_count == 2          # freed exactly on resolution
         finally:
             mm.shutdown()
+
+    def test_submit_slot_failure_fails_future_and_frees_slot(self):
+        from inference_model_manager.model_manager import ModelManager
+
+        mm = ModelManager(n_slots=2, input_mb=0.1)
+        try:
+            class _DeadBackend:
+                def submit_slot(self, slot_id, req_id, future, params_bytes):
+                    raise RuntimeError("recv thread is dead")
+
+            mm._backends["m"] = _DeadBackend()
+            mm._ensure_pool()
+            fut = mm.submit("m", raw_input=b"\xff\xd8abc")
+            with pytest.raises(RuntimeError, match="recv thread is dead"):
+                fut.result(timeout=1)
+            assert mm._pool.free_count == 2
+        finally:
+            mm.shutdown()
