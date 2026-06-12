@@ -204,6 +204,7 @@ class MMPClient:
         self._shm: Optional[SharedMemory] = None
         self._pending: dict[int, asyncio.Future] = {}
         self._recv_task: Optional[asyncio.Task] = None
+        self._bg_tasks: set[asyncio.Task] = set()
 
         self.pipeline = _PipelineCSV(
             pipeline_csv_path if pipeline_csv_path is not None else cfg.PIPELINE_CSV,
@@ -277,6 +278,9 @@ class MMPClient:
         except asyncio.TimeoutError:
             self._drop_future(req_id)
             return ("load_timeout", int(self.load_wait_s))
+        except asyncio.CancelledError:
+            self._drop_future(req_id)
+            raise
 
     async def load(self, model_id: str, api_key: str = "") -> tuple:
         mid_bytes = model_id.encode()
@@ -313,17 +317,18 @@ class MMPClient:
         if task:
             effective_params.setdefault("task", task)
 
-        slot_id = await self._alloc_slot(model_id, instance)
-        submit_req_id: Optional[int] = None
+        req_id = _new_req_id()
+        slot_id = await self._alloc_slot(req_id, model_id, instance)
+        submitted = False
         done = False
         try:
             self._write_input(slot_id, image, 0)
-            # Assign BEFORE awaiting: if _submit_and_wait raises (timeout /
-            # disconnect) after T_SUBMIT went out, the finally block must see
-            # the submit id and cancel — not free a slot the worker still holds.
-            submit_req_id = _new_req_id()
+            # Mark BEFORE awaiting: if _submit_and_wait raises (timeout /
+            # disconnect) after T_SUBMIT went out, the finally block must
+            # cancel — not free a slot the worker still holds.
+            submitted = True
             result = await self._submit_and_wait(
-                submit_req_id,
+                req_id,
                 slot_id,
                 model_id,
                 instance,
@@ -358,24 +363,20 @@ class MMPClient:
             except Exception as exc:
                 raise RuntimeError("result deserialization failed") from exc
         finally:
-            global _dbg_infer_count  # DEBUGLOG
-            _dbg_infer_count += 1  # DEBUGLOG
-            if _dbg_infer_count % 25 == 0:  # DEBUGLOG
-                _dbg.client_mem(len(self._pending))  # DEBUGLOG
             if done:
                 # Worker finished, we read the result → safe to free.
-                self._free_slot(slot_id)
-            elif submit_req_id is not None:
+                self._free_slot(slot_id, req_id)
+            elif submitted:
                 # Gave up (timeout / disconnect / error) while the worker may
                 # still hold a ticket for this slot. Do NOT free — that would let
                 # the slot be reused under a live ticket. Cancel instead; MMP
                 # frees the slot once the worker drains the ticket (or the reaper
                 # reclaims it).
-                self._cancel_req(submit_req_id)
+                self._cancel_req(req_id)
             else:
                 # Never submitted (alloc ok but write/submit failed) → no worker
                 # ticket exists → safe to free directly.
-                self._free_slot(slot_id)
+                self._free_slot(slot_id, req_id)
 
     async def stats(self) -> dict:
         result = await self._lifecycle_req(T_STATS, b"", timeout_s=5.0)
@@ -448,8 +449,7 @@ class MMPClient:
     def _drop_future(self, req_id: int) -> None:
         self._pending.pop(req_id, None)
 
-    async def _alloc_slot(self, model_id: str, instance: str = "") -> int:
-        req_id = _new_req_id()
+    async def _alloc_slot(self, req_id: int, model_id: str, instance: str = "") -> int:
         mid = _routing_key(model_id, instance).encode()
         payload = struct.pack(">QH", req_id, len(mid)) + mid
         fut = self._make_future(req_id)
@@ -457,6 +457,12 @@ class MMPClient:
         try:
             result = await asyncio.wait_for(fut, timeout=self.alloc_timeout_s)
         except asyncio.TimeoutError:
+            self._drop_future(req_id)
+            raise
+        except asyncio.CancelledError:
+            # Handler task cancelled (client disconnect) while T_ALLOC may be in
+            # flight. Drop the future; if MMP did allocate, the slot has no
+            # submit ticket and the reaper reclaims it (ownership-checked).
             self._drop_future(req_id)
             raise
         if result[0] == "error":
@@ -488,6 +494,9 @@ class MMPClient:
         except ClientDisconnected:
             self._drop_future(req_id)
             raise
+        except asyncio.CancelledError:
+            self._drop_future(req_id)
+            raise
 
     async def _wait_with_disconnect(
         self, fut: asyncio.Future, request: Request
@@ -507,23 +516,30 @@ class MMPClient:
         )
         for t in pending_tasks:
             t.cancel()
-        if disc_task in done:
-            raise ClientDisconnected()
-        return infer_task.result()
+        if infer_task in done:
+            # Result (or its timeout) won — or tied with disconnect. A resolved
+            # result means the worker is finished and the slot is readable; do
+            # not discard it just because the client also went away.
+            return infer_task.result()
+        raise ClientDisconnected()
 
-    def _free_slot(self, slot_id: int) -> None:
+    def _spawn_bg(self, coro) -> None:
+        """create_task with a strong reference — fire-and-forget tasks can be
+        GC'd mid-flight otherwise, silently dropping the T_FREE/T_CANCEL."""
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+    def _free_slot(self, slot_id: int, req_id: int) -> None:
         async def _send() -> None:
             try:
-                await self._sock.send_multipart([T_FREE, struct.pack(">I", slot_id)])
+                await self._sock.send_multipart(
+                    [T_FREE, struct.pack(">QI", req_id, slot_id)]
+                )
             except Exception:
                 logger.warning("free_slot: failed for slot %d", slot_id, exc_info=True)
 
-        task = asyncio.create_task(_send())
-        task.add_done_callback(
-            lambda t: (
-                t.result() if not t.cancelled() and t.exception() is None else None
-            )
-        )
+        self._spawn_bg(_send())
 
     def _cancel_req(self, req_id: int) -> None:
         """Tell MMP we gave up on req_id. MMP frees the slot once the worker
@@ -536,7 +552,7 @@ class MMPClient:
             except Exception:
                 logger.warning("cancel_req: failed for req %d", req_id, exc_info=True)
 
-        asyncio.create_task(_send())
+        self._spawn_bg(_send())
 
     def _write_input(
         self, slot_id: int, chunk: bytes | memoryview, offset: int
@@ -580,6 +596,9 @@ class MMPClient:
         try:
             return await asyncio.wait_for(fut, timeout=timeout_s)
         except asyncio.TimeoutError:
+            self._drop_future(req_id)
+            raise
+        except asyncio.CancelledError:
             self._drop_future(req_id)
             raise
 

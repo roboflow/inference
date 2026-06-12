@@ -19,6 +19,16 @@ logger = logging.getLogger(__name__)
 _to_bytes = None
 
 
+class _SlotFuture(Future):
+    """Future bound to a SHM slot. Cancellation is refused: cancelling would
+    fire the free-slot done-callback while the worker still holds the slot,
+    letting it be re-allocated and corrupted. The future resolves when the
+    worker's result arrives or worker-death cleanup rejects it."""
+
+    def cancel(self) -> bool:
+        return False
+
+
 def _get_to_bytes():
     global _to_bytes
     if _to_bytes is None:
@@ -408,11 +418,11 @@ class ModelManager:
                 params["task"] = task
             params_bytes = json.dumps(params, default=str).encode()
 
-            future: Future = Future()
+            future: Future = _SlotFuture()
 
             def _on_done(f: Future) -> None:
                 try:
-                    self._pool.free_slot(slot_id)
+                    self._pool.free_slot(slot_id, request_id=req_id)
                 except Exception:
                     pass
 
