@@ -91,13 +91,15 @@ def decode_batch_entry(mvs: List[Any], jpeg_idx: List[int]) -> None:
         if d:
             est_bytes += d[0] * d[1] * 3
     log.info(
-        "DBG decode batch: n=%d jpeg=%d compressed_mb=%.1f sof_dims=%s "
-        "est_decoded_mb=%.0f free_vram_mb=%.0f",
+        "DBG decode batch: pid=%d n=%d jpeg=%d compressed_mb=%.1f sof_dims=%s "
+        "est_decoded_mb=%.0f rss_mb=%.0f free_vram_mb=%.0f",
+        os.getpid(),
         len(mvs),
         len(jpeg_idx),
         sum(len(m) for m in mvs) / 1e6,
         dims,
         est_bytes / 1e6,
+        rss_mb(),
         free_vram_mb(),
     )
 
@@ -107,34 +109,74 @@ def decode_batch_failure() -> None:
     exc = sys.exc_info()[1]
     msg = str(exc).splitlines()[0] if exc is not None and str(exc) else ""
     log.info(
-        "DBG nvjpeg batch failure: %s: %s | free_vram_mb=%.0f",
+        "DBG nvjpeg batch failure: pid=%d %s: %s | rss_mb=%.0f free_vram_mb=%.0f",
+        os.getpid(),
         type(exc).__name__ if exc is not None else "?",
         msg,
+        rss_mb(),
         free_vram_mb(),
     )
 
 
 def fallback_failure(slot_index: int, mv: Any) -> None:
     log.info(
-        "DBG cpu fallback failure: slot_index=%d bytes=%d sof_dims=%s free_vram_mb=%.0f",
+        "DBG cpu fallback failure: pid=%d slot_index=%d bytes=%d sof_dims=%s "
+        "rss_mb=%.0f free_vram_mb=%.0f",
+        os.getpid(),
         slot_index,
         len(mv),
         jpeg_sof_dims(mv),
+        rss_mb(),
         free_vram_mb(),
     )
 
 
-def capture_slots(batch: List[tuple], mvs: List[Any]) -> List[Tuple[int, int]]:
-    """Record (input_size, crc32 of first 64 KiB) per slot + a batch-start line."""
-    state = [(len(mv), zlib.crc32(mv[:65536]) if len(mv) else 0) for mv in mvs]
+def stage(name: str) -> None:
+    """RSS/VRAM snapshot at a pipeline stage boundary — attributes leak growth."""
     alloc, reserved = cuda_mem_mb()
     log.info(
-        "DBG worker batch start: n=%d slots=%s req_ids=%s sizes=%s rss_mb=%.0f "
+        "DBG stage %s: pid=%d rss_mb=%.0f cuda_alloc_mb=%.0f cuda_reserved_mb=%.0f "
+        "free_vram_mb=%.0f",
+        name,
+        os.getpid(),
+        rss_mb(),
+        alloc,
+        reserved,
+        free_vram_mb(),
+    )
+
+
+def capture_slots(
+    pool: Any, batch: List[tuple], mvs: List[Any]
+) -> List[Tuple[int, int, int, int]]:
+    """Record (header_req_id, status, input_size, crc32 of first 64 KiB) per slot.
+
+    NOTE: header request_id is the client's ALLOC req_id; the batch carries the
+    client's SUBMIT req_id — different id spaces, never compare across them.
+    """
+    state = []
+    for (slot_id, _, _), mv in zip(batch, mvs):
+        try:
+            hdr = pool.read_header(slot_id)
+            state.append(
+                (
+                    hdr.request_id,
+                    hdr.status,
+                    len(mv),
+                    zlib.crc32(mv[:65536]) if len(mv) else 0,
+                )
+            )
+        except Exception:
+            state.append((0, -1, len(mv), 0))
+    alloc, reserved = cuda_mem_mb()
+    log.info(
+        "DBG worker batch start: pid=%d n=%d slots=%s req_ids=%s sizes=%s rss_mb=%.0f "
         "cuda_alloc_mb=%.0f cuda_reserved_mb=%.0f free_vram_mb=%.0f",
+        os.getpid(),
         len(batch),
         [b[0] for b in batch],
         [b[1] for b in batch],
-        [s for s, _ in state],
+        [s for _, _, s, _ in state],
         rss_mb(),
         alloc,
         reserved,
@@ -144,28 +186,41 @@ def capture_slots(batch: List[tuple], mvs: List[Any]) -> List[Tuple[int, int]]:
 
 
 def check_slots(
-    pool: Any, batch: List[tuple], mvs: List[Any], state: List[Tuple[int, int]]
+    pool: Any,
+    batch: List[tuple],
+    mvs: List[Any],
+    state: List[Tuple[int, int, int, int]],
 ) -> None:
-    """Detect slot mutation between capture_slots and now (torn read evidence)."""
+    """Detect slot mutation between capture_slots and now (torn read evidence).
+
+    Compares header-at-start vs header-now — same id space, immune to the
+    alloc-vs-submit req_id split.
+    """
     for i, (slot_id, req_id, _) in enumerate(batch):
         try:
             hdr = pool.read_header(slot_id)
         except Exception:
             continue
-        size0, crc0 = state[i]
-        if hdr.request_id != req_id or hdr.input_size != size0:
+        hdr_req0, status0, size0, crc0 = state[i]
+        if hdr.request_id != hdr_req0 or hdr.input_size != size0:
             log.error(
-                "DBG TORN SLOT: slot=%d req_id %d->%d input_size %d->%d status=%d",
+                "DBG TORN SLOT: pid=%d slot=%d batch_req_id=%d hdr_req_id %d->%d "
+                "input_size %d->%d status %d->%d",
+                os.getpid(),
                 slot_id,
                 req_id,
+                hdr_req0,
                 hdr.request_id,
                 size0,
                 hdr.input_size,
+                status0,
                 hdr.status,
             )
         elif len(mvs[i]) and zlib.crc32(mvs[i][:65536]) != crc0:
             log.error(
-                "DBG TORN SLOT: slot=%d req_id=%d payload crc changed mid-batch",
+                "DBG TORN SLOT: pid=%d slot=%d batch_req_id=%d payload crc changed "
+                "mid-batch",
+                os.getpid(),
                 slot_id,
                 req_id,
             )
@@ -174,8 +229,9 @@ def check_slots(
 def batch_done(n: int, t0: float) -> None:
     alloc, reserved = cuda_mem_mb()
     log.info(
-        "DBG worker batch done: n=%d t_ms=%.0f rss_mb=%.0f cuda_alloc_mb=%.0f "
+        "DBG worker batch done: pid=%d n=%d t_ms=%.0f rss_mb=%.0f cuda_alloc_mb=%.0f "
         "cuda_reserved_mb=%.0f free_vram_mb=%.0f",
+        os.getpid(),
         n,
         (time.monotonic() - t0) * 1000,
         rss_mb(),
@@ -183,3 +239,8 @@ def batch_done(n: int, t0: float) -> None:
         reserved,
         free_vram_mb(),
     )
+
+
+def slot_freed(reason: str, slot_id: int, req_id: Any) -> None:
+    """Attribute every MMP free_slot call site."""
+    log.info("DBG MMP free: reason=%s slot=%d req_id=%s", reason, slot_id, req_id)
