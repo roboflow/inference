@@ -30,6 +30,10 @@ import torch
 import torch.nn.functional as F
 from pycocotools import mask as mask_utils
 
+from inference_models.configuration import (
+    INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_PIXELS,
+    INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_RUNS,
+)
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
@@ -55,7 +59,7 @@ _MAX_EXACT_FLAT_INDEX = 1 << 24
 # active mask bounds, but the while loop below can advance through wider ROIs.
 _SPARSE_MAX_ROI_WIDTH = 512
 _SPARSE_BLOCK_COLS = 8
-_SPARSE_MAX_TOTAL_RUNS = 8192
+_SPARSE_MAX_TOTAL_RUNS = INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_RUNS
 _SPARSE_MAX_CLASSES_PER_QUERY = 4
 _SPARSE_TOPK_MAX_TOTAL_RUNS = _SPARSE_MAX_TOTAL_RUNS * _SPARSE_MAX_CLASSES_PER_QUERY
 # RF-DETR Seg 2XLarge emits 192x192 masks with 300 queries and COCO class
@@ -586,6 +590,8 @@ def _unsupported_triton_postprocess_reason(
         or output_width <= 0
         or output_height > 4096
         or output_width > 4096
+        or output_height * output_width
+        > INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_PIXELS
         or output_height * output_width >= _MAX_EXACT_FLAT_INDEX
     ):
         return "input_size_exceeds_triton_limits"
@@ -623,14 +629,39 @@ def _counts_from_runs(
     height: int,
     width: int,
 ) -> List[int]:
-    """Build uncompressed COCO RLE counts from sorted column-major runs."""
+    """Build uncompressed COCO RLE counts from sparse column-major runs."""
     total = height * width
+    if starts.size:
+        starts = starts.astype(np.int64, copy=True)
+        ends = ends.astype(np.int64, copy=True)
+        np.clip(starts, 0, total, out=starts)
+        np.clip(ends, 0, total, out=ends)
+        order = np.lexsort((ends, starts))
+        starts = starts[order]
+        ends = ends[order]
+
     lengths = ends - starts
     valid = lengths > 0
     if starts.size and not np.all(valid):
         starts = starts[valid]
         ends = ends[valid]
         lengths = lengths[valid]
+
+    if starts.size > 1:
+        merged_starts = [int(starts[0])]
+        merged_ends = [int(ends[0])]
+        for start, end in zip(starts[1:], ends[1:]):
+            start = int(start)
+            end = int(end)
+            if start <= merged_ends[-1]:
+                if end > merged_ends[-1]:
+                    merged_ends[-1] = end
+            else:
+                merged_starts.append(start)
+                merged_ends.append(end)
+        starts = np.asarray(merged_starts, dtype=np.int64)
+        ends = np.asarray(merged_ends, dtype=np.int64)
+        lengths = ends - starts
 
     if starts.size:
         run_count = starts.size
