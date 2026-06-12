@@ -64,7 +64,8 @@ class _MockManager:
     """Duck-type compatible with ModelManager for Phase 4 tests."""
 
     def __init__(self, n_slots: int = 8, input_mb: float = _TEST_INPUT_MB):
-        self.loaded: dict[str, bytes] = {}  # flavor → result_bytes
+        self.loaded: dict[str, bytes] = {}  # catalog: flavor → result_bytes
+        self.loaded_now: set[str] = set()  # manager state: currently loaded
 
         self.calls: list[str] = []  # log of method calls
         self._mmp: ModelManagerProcess | None = None
@@ -91,7 +92,11 @@ class _MockManager:
         self.calls.append(f"load:{model_id}")
         if model_id not in self.loaded:
             raise RuntimeError(f"Mock: unknown model '{model_id}'")
+        self.loaded_now.add(model_id)
         # Backend becomes available via get_backend() after this call
+
+    def __contains__(self, model_id: str) -> bool:
+        return model_id in self.loaded_now
 
     def get_backend(self, model_id: str):
         if model_id not in self.loaded or self._mmp is None:
@@ -104,7 +109,7 @@ class _MockManager:
         self, model_id: str, drain: bool = False, drain_timeout_s: float = 30.0
     ) -> None:
         self.calls.append(f"unload:{model_id}:drain={drain}")
-        self.loaded.pop(model_id, None)
+        self.loaded_now.discard(model_id)  # catalog (self.loaded) stays intact
 
     def stats(self) -> dict:
         return {"gpus": [], "models_loaded": list(self.loaded.keys())}
@@ -359,7 +364,8 @@ class TestLifecycleMessages:
         h.ensure_loaded("m")
         h.lifecycle_req(T_UNLOAD, "m")
         h.teardown()
-        assert "unload:m:drain=False" in mgr.calls
+        # Admin unload drains in-flight work before killing the worker
+        assert "unload:m:drain=True" in mgr.calls
 
 
 # ---------------------------------------------------------------------------
@@ -471,7 +477,7 @@ class TestLRUEviction:
 
         mmp._models["m"] = ModelState(loaded=True)
         mmp._model_access["m"] = 1.0
-        mmp._check_and_evict()
+        asyncio.run(mmp._check_and_evict())
         assert "unload:m:drain=True" in mgr.calls
         assert mmp._models["m"].loaded is False
 

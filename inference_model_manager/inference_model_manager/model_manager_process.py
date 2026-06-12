@@ -97,34 +97,48 @@ _ERR_SERVER_FULL = 7
 # ---------------------------------------------------------------------------
 
 
-def _gpu_used_fraction() -> float:
-    """Fraction of GPU 0 memory in use (0.0–1.0). Used by eviction loop. Returns 0.0 if unavailable."""
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            total = torch.cuda.get_device_properties(0).total_memory
-            if total > 0:
-                used = torch.cuda.memory_reserved(0)
-                return used / total
-    except Exception:
-        pass
-    try:
-        import pynvml  # nvidia-ml-py (drop-in; install nvidia-ml-py not pynvml)
-
-        pynvml.nvmlInit()
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-        if info.total > 0:
-            return info.used / info.total
-    except Exception:
-        pass
-    return 0.0
-
-
 # Set once NVML is found unavailable (no libnvidia-ml.so.1 / no NVIDIA GPU, e.g.
 # Jetson-Tegra or CPU) so the telemetry loop stops retrying + spamming tracebacks.
 _NVML_DISABLED = False
+
+_nvml_handle = None
+
+
+def _nvml_mem_info():
+    """Device-level GPU 0 memory via NVML, or None if unavailable.
+
+    Deliberately NOT torch: torch allocator stats are process-local and MMP
+    holds no models in orchestrated mode (always ~0), and torch.cuda calls
+    would create a CUDA context inside MMP costing hundreds of MB of the very
+    VRAM being budgeted. NVML handle cached after first init.
+    """
+    global _NVML_DISABLED, _nvml_handle
+    if _NVML_DISABLED:
+        return None
+    try:
+        import pynvml  # nvidia-ml-py (drop-in; install nvidia-ml-py not pynvml)
+
+        if _nvml_handle is None:
+            pynvml.nvmlInit()
+            _nvml_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+    except Exception:
+        _NVML_DISABLED = True
+        return None
+    try:
+        import pynvml
+
+        return pynvml.nvmlDeviceGetMemoryInfo(_nvml_handle)
+    except Exception:
+        return None
+
+
+def _gpu_used_fraction() -> float:
+    """Fraction of GPU 0 memory in use (0.0-1.0), device-level via NVML.
+    Returns 0.0 if unavailable (eviction loop then never triggers)."""
+    info = _nvml_mem_info()
+    if info is not None and info.total > 0:
+        return info.used / info.total
+    return 0.0
 
 
 def _collect_gpu_stats(
@@ -237,6 +251,8 @@ class ModelState:
     loading: bool = False
     # Each waiter: (uvicorn_identity, req_id, deadline_monotonic_s)
     load_waiters: list[tuple[bytes, int, float]] = field(default_factory=list)
+    # Admin T_LOAD waiters: (identity, req_id) — replied T_OK / T_ERROR
+    admin_waiters: list[tuple[bytes, int]] = field(default_factory=list)
     # Persisted load config — reused by _schedule_reload after worker death.
     api_key: str = ""
     device: str = ""
@@ -330,6 +346,9 @@ class ModelManagerProcess:
         # req_id → (uvicorn_identity, slot_id, flavor)
         self._pending: dict[int, tuple[bytes, int, str]] = {}
 
+        # Strong refs for fire-and-forget tasks (GC'd mid-flight otherwise)
+        self._bg_tasks: set = set()
+
         # flavor → ModelState
         self._models: dict[str, ModelState] = {}
 
@@ -391,10 +410,12 @@ class ModelManagerProcess:
         fs = self._models.setdefault(model_id, ModelState())
         fs.loading = False
         fs.loaded = True
-        # Prevent immediate eviction — treat load time as first access
-        self._model_access.setdefault(model_id, time.monotonic())
+        # Prevent immediate eviction — treat (re)load time as first access.
+        # Unconditional: a stale pre-crash timestamp surviving a reload would
+        # classify the fresh model cold and re-evict it (load/evict flapping).
+        self._model_access[model_id] = time.monotonic()
 
-        if self._loop is not None and fs.load_waiters:
+        if self._loop is not None and (fs.load_waiters or fs.admin_waiters):
             self._loop.call_soon_threadsafe(self._flush_load_waiters, model_id)
 
     def on_result(self, req_id: int, slot_id: int, result_sz: int) -> None:
@@ -752,24 +773,14 @@ class ModelManagerProcess:
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
             return
 
+        # Join the load (in progress or started here); replied on flush/fail.
+        fs.admin_waiters.append((identity, req_id))
         if not fs.loading:
             fs.api_key = api_key
             fs.loading = True
-            try:
-                await self._load_model(model_id, api_key=api_key)
-            except Exception:
-                await self._send(
-                    identity, T_ERROR, struct.pack(">QB", req_id, _ERR_LOAD_FAILED)
-                )
-                return
-
-        # Check if load succeeded
-        fs = self._models.get(model_id)
-        if fs and fs.loaded:
-            await self._send(identity, T_OK, struct.pack(">Q", req_id))
-        else:
-            await self._send(
-                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_LOAD_FAILED)
+            self._spawn(
+                self._load_model(model_id, api_key=api_key),
+                name=f"mmp-admin-load-{model_id}",
             )
 
     # ------------------------------------------------------------------
@@ -784,14 +795,26 @@ class ModelManagerProcess:
         req_id, mid_len = struct.unpack_from(">QH", frame)
         model_id = frame[10 : 10 + mid_len].decode(errors="replace")
 
+        # Off the dispatch path — a drain can take up to 30s and must not
+        # block _recv_loop for other clients.
+        self._spawn(
+            self._do_unload(identity, req_id, model_id),
+            name=f"mmp-unload-{model_id}",
+        )
+
+    async def _do_unload(self, identity: bytes, req_id: int, model_id: str) -> None:
+        """Admin unload off the dispatch path: drain in executor, reply after."""
         loop = asyncio.get_running_loop()
+        fs = self._models.get(model_id)
+        if fs:
+            fs.loaded = False
+            fs.loading = False
+        self._unloading.add(model_id)
         try:
             if self._manager is not None:
-                await loop.run_in_executor(None, lambda: self._manager.unload(model_id))
-            fs = self._models.get(model_id)
-            if fs:
-                fs.loaded = False
-                fs.loading = False
+                await loop.run_in_executor(
+                    None, lambda: self._manager.unload(model_id, drain=True)
+                )
             self._backends.pop(model_id, None)
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
         except Exception:
@@ -799,6 +822,8 @@ class ModelManagerProcess:
             await self._send(
                 identity, T_ERROR, struct.pack(">QB", req_id, _ERR_NOT_LOADED)
             )
+        finally:
+            self._unloading.discard(model_id)
 
     # ------------------------------------------------------------------
     # T_STATS — snapshot reply
@@ -1013,6 +1038,18 @@ class ModelManagerProcess:
     async def _load_model(
         self, model_id: str, api_key: str = "", device: str = ""
     ) -> None:
+        """Latch backstop: _load_model_inner reports failures via _fail_load
+        itself; this wrapper guarantees an unexpected exception can never
+        leave fs.loading latched True forever."""
+        try:
+            await self._load_model_inner(model_id, api_key=api_key, device=device)
+        except Exception:
+            logger.exception("MMP: _load_model('%s') crashed", model_id)
+            self._fail_load(model_id, self._models.get(model_id), _ERR_LOAD_FAILED)
+
+    async def _load_model_inner(
+        self, model_id: str, api_key: str = "", device: str = ""
+    ) -> None:
         """Load model via ModelManager with reactive admission loop.
 
         On CUDA OOM: evicts coldest model, retries. Repeats until success,
@@ -1030,7 +1067,9 @@ class ModelManagerProcess:
             return
 
         if self._vram_admission:
-            decision, victims = self._vram_admission_plan(model_id, api_key)
+            decision, victims, deficit = await self._vram_admission_plan(
+                model_id, api_key
+            )
             if decision == "no_capacity":
                 logger.warning(
                     "MMP: VRAM admission denied '%s' — no evictable capacity",
@@ -1039,8 +1078,6 @@ class ModelManagerProcess:
                 self._fail_load(model_id, fs, _ERR_SERVER_FULL)
                 return
             if decision == "evict":
-                need = self._required_mb(model_id, api_key)
-                deficit = need - (self._gpu_free_mb() - self._vram_headroom_mb)
                 logger.warning(
                     "MMP: VRAM admission evicting %s to load '%s' (deficit=%.0f MB)",
                     victims,
@@ -1121,11 +1158,13 @@ class ModelManagerProcess:
                     model_id,
                     candidate,
                 )
-                self._evict_model(candidate)
+                await self._evict_model(candidate)
 
                 # Force-clear partial load so next attempt doesn't hit "already loaded"
                 try:
-                    self._manager.unload(model_id)
+                    await loop.run_in_executor(
+                        None, lambda: self._manager.unload(model_id)
+                    )
                 except Exception:
                     # unload failed — force-remove from backends dict
                     self._manager._backends.pop(model_id, None)
@@ -1157,6 +1196,11 @@ class ModelManagerProcess:
                 asyncio.create_task(
                     self._send(identity, T_ERROR, struct.pack(">QB", req_id, err_code))
                 )
+            admin, fs.admin_waiters = fs.admin_waiters, []
+            for identity, req_id in admin:
+                asyncio.create_task(
+                    self._send(identity, T_ERROR, struct.pack(">QB", req_id, err_code))
+                )
         # Clean up any partial state
         self._backends.pop(model_id, None)
         self._model_access.pop(model_id, None)
@@ -1181,6 +1225,9 @@ class ModelManagerProcess:
                 asyncio.create_task(
                     self._send(identity, T_LOAD_TIMEOUT, struct.pack(">QI", req_id, 1))
                 )
+        admin, fs.admin_waiters = fs.admin_waiters, []
+        for identity, req_id in admin:
+            self._spawn(self._send(identity, T_OK, struct.pack(">Q", req_id)))
 
     async def _expire_waiter(
         self, model_id: str, identity: bytes, req_id: int, deadline: float
@@ -1258,11 +1305,11 @@ class ModelManagerProcess:
         while True:
             await asyncio.sleep(self._evict_check_interval_s)
             try:
-                self._check_and_evict()
+                await self._check_and_evict()
             except Exception:
                 logger.exception("MMP: error in eviction loop")
 
-    def _check_and_evict(self) -> None:
+    async def _check_and_evict(self) -> None:
         """Evict cold models if GPU memory exceeds threshold.
 
         Cold-first: models idle > idle_timeout_s are evicted first (oldest first).
@@ -1274,7 +1321,8 @@ class ModelManagerProcess:
         """
         if self._manager is None:
             return
-        gpu_frac = _gpu_used_fraction()
+        loop = asyncio.get_running_loop()
+        gpu_frac = await loop.run_in_executor(None, _gpu_used_fraction)
         if gpu_frac < self._evict_threshold:
             return
         candidate = self._pick_eviction_candidate()
@@ -1291,30 +1339,41 @@ class ModelManagerProcess:
             self._evict_threshold * 100,
             candidate,
         )
-        # Run in executor — drain_and_unload can block up to 30s
-        try:
-            asyncio.get_running_loop().run_in_executor(
-                None, self._evict_model, candidate
-            )
-        except RuntimeError:
-            # No event loop (test or direct call) — run synchronously
-            self._evict_model(candidate)
+        # Drain runs in executor inside _evict_model; only this loop task waits.
+        await self._evict_model(candidate)
 
-    def _evict_model(self, model_id: str) -> bool:
-        """Evict a single model. Returns True on success."""
+    def _unload_blocking(self, model_id: str) -> bool:
+        """Drain + unload via ModelManager. BLOCKING (up to drain timeout) —
+        call only from an executor thread."""
         try:
             self._manager.unload(model_id, drain=True)
-            fs = self._models.get(model_id)
-            if fs:
-                fs.loaded = False
-                fs.loading = False
-            self._backends.pop(model_id, None)
-            self._model_access.pop(model_id, None)
-            self._model_request_times.pop(model_id, None)
             return True
         except Exception:
             logger.warning("MMP: eviction of '%s' failed", model_id, exc_info=True)
             return False
+
+    async def _evict_model(self, model_id: str) -> bool:
+        """Evict one model. State marks on the event loop, drain in executor.
+
+        Marks the victim (loaded=False, _unloading) BEFORE draining so
+        concurrent submit routing, ENSURE_LOADED, and eviction pickers skip
+        it — prevents the double-unload of the same victim.
+        """
+        fs = self._models.get(model_id)
+        if fs:
+            fs.loaded = False
+        self._unloading.add(model_id)
+        try:
+            ok = await asyncio.get_running_loop().run_in_executor(
+                None, self._unload_blocking, model_id
+            )
+        finally:
+            self._unloading.discard(model_id)
+        if ok:
+            self._backends.pop(model_id, None)
+            self._model_access.pop(model_id, None)
+            self._model_request_times.pop(model_id, None)
+        return ok
 
     # ------------------------------------------------------------------
     # VRAM-aware admission control
@@ -1340,10 +1399,11 @@ class ModelManagerProcess:
             return max(window)
         return self._vram_meta_cache.get(flavor, 0)
 
-    def _fetch_vram_mb(self, model_id: str, api_key: str, batch: int) -> int:
+    def _fetch_vram_mb(self, model_id: str, api_key: str, batch: int) -> Optional[int]:
         """Metadata-only Roboflow lookup: max static VRAM across packages (MB).
 
-        Returns 0 on any failure or when no MemoryProfile data exists.
+        Returns 0 when no MemoryProfile data exists, None on fetch failure
+        (so transient failures are not cached).
         """
         try:
             from inference_models.weights_providers.roboflow import (
@@ -1364,13 +1424,16 @@ class ModelManagerProcess:
             logger.debug(
                 "MMP: VRAM metadata fetch failed for '%s'", model_id, exc_info=True
             )
-            return 0
+            return None
 
     def _required_mb(self, model_id: str, api_key: str = "", batch: int = 1) -> int:
-        """VRAM needed to admit an incoming model (MB). Fetched once, cached."""
+        """VRAM needed to admit an incoming model (MB). Cached on success;
+        transient fetch failures (None) are NOT cached so the next load retries."""
         if model_id in self._vram_meta_cache:
             return self._vram_meta_cache[model_id]
         mb = self._fetch_vram_mb(model_id, api_key, batch)
+        if mb is None:
+            return 0
         self._vram_meta_cache[model_id] = mb
         return mb
 
@@ -1382,26 +1445,13 @@ class ModelManagerProcess:
         cutoff = time.monotonic() - window_s
         return sum(1 for t in times if t >= cutoff)
 
-    def _gpu_free_mb(self) -> float:
-        """Free GPU 0 memory in MB. Returns 0.0 if unavailable (overridable)."""
-        try:
-            import torch
-
-            if torch.cuda.is_available():
-                free, _total = torch.cuda.mem_get_info(0)
-                return free / 1024 / 1024
-        except Exception:
-            pass
-        try:
-            import pynvml  # nvidia-ml-py
-
-            pynvml.nvmlInit()
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            return info.free / 1024 / 1024
-        except Exception:
-            pass
-        return 0.0
+    def _gpu_free_mb(self) -> Optional[float]:
+        """Free GPU 0 memory in MB via NVML. None if telemetry unavailable
+        (overridable in tests)."""
+        info = _nvml_mem_info()
+        if info is None:
+            return None
+        return info.free / 1024 / 1024
 
     def _plan_evictions(self, deficit_mb: float) -> Optional[list]:
         """Pick coldest loaded models whose combined footprint covers deficit_mb.
@@ -1435,21 +1485,28 @@ class ModelManagerProcess:
                 return plan
         return None
 
-    def _vram_admission_plan(self, model_id: str, api_key: str = "") -> tuple:
+    async def _vram_admission_plan(self, model_id: str, api_key: str = "") -> tuple:
         """Decide admission for an incoming model without mutating state.
 
-        Returns (decision, victims) where decision is "admit" | "evict" |
-        "no_capacity". A model with no footprint data is treated as need == 0
-        and still subject to the headroom floor (gpu_free >= headroom).
+        Returns (decision, victims, deficit_mb); decision is "admit" | "evict"
+        | "no_capacity". Admits unconditionally when the model has no
+        footprint data (need == 0) or GPU telemetry is unavailable — the
+        OOM-retry loop in _load_model is the backstop. Metadata fetch (HTTP)
+        and GPU probe run in the executor, never on the event loop.
         """
-        need = self._required_mb(model_id, api_key)
-        free = self._gpu_free_mb() - self._vram_headroom_mb
+        loop = asyncio.get_running_loop()
+        need = await loop.run_in_executor(None, self._required_mb, model_id, api_key)
+        free_mb = await loop.run_in_executor(None, self._gpu_free_mb)
+        if free_mb is None or need == 0:
+            return "admit", [], 0.0
+        free = free_mb - self._vram_headroom_mb
         if free >= need:
-            return "admit", []
-        plan = self._plan_evictions(need - free)
+            return "admit", [], 0.0
+        deficit = need - free
+        plan = self._plan_evictions(deficit)
         if plan is None:
-            return "no_capacity", []
-        return "evict", plan
+            return "no_capacity", [], deficit
+        return "evict", plan, deficit
 
     def _is_still_evictable(self, flavor: str) -> bool:
         """Re-validation used mid-plan: model still loaded, idle, and not in-flight."""
@@ -1484,11 +1541,7 @@ class ModelManagerProcess:
                 queue = replacement
                 continue
             footprint = self._footprint_mb(victim)
-            self._unloading.add(victim)
-            try:
-                ok = await loop.run_in_executor(None, self._evict_model, victim)
-            finally:
-                self._unloading.discard(victim)
+            ok = await self._evict_model(victim)
             if ok:
                 secured += footprint
         return secured >= deficit_mb
@@ -1501,7 +1554,9 @@ class ModelManagerProcess:
         now = time.monotonic()
         in_flight = {mid for _, _, mid in self._pending.values()}
         candidates = [
-            f for f, fs in self._models.items() if fs.loaded and f not in in_flight
+            f
+            for f, fs in self._models.items()
+            if fs.loaded and f not in in_flight and f not in self._unloading
         ]
         if not candidates:
             return None
@@ -1573,6 +1628,14 @@ class ModelManagerProcess:
     # ------------------------------------------------------------------
     # ZMQ send helper
     # ------------------------------------------------------------------
+
+    def _spawn(self, coro, name: str = "") -> asyncio.Task:
+        """create_task with a strong reference (fire-and-forget tasks can be
+        GC'd mid-flight otherwise)."""
+        task = asyncio.create_task(coro, name=name or None)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+        return task
 
     async def _send(self, identity: bytes, msg_type: bytes, payload: bytes) -> bool:
         """Send a message. Returns True on success, False on ZMQ error."""
