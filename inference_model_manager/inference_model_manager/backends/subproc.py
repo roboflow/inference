@@ -394,7 +394,7 @@ def _process_slots(
             log.error("Worker: slot %d has 0 bytes — skipping", batch[i][0])
             decode_errors[i] = True
 
-    _dbg_state = _dbg.capture_slots(batch, mvs)  # DEBUGLOG
+    _dbg_state = _dbg.capture_slots(pool, batch, mvs)  # DEBUGLOG
 
     # .npy slots — standalone mode (numpy arrays serialised via np.save)
     for i, (mv, npy) in enumerate(zip(mvs, is_npy)):
@@ -421,6 +421,7 @@ def _process_slots(
             for i in raw_indices:
                 decode_errors[i] = True
 
+    _dbg.stage("post-decode")  # DEBUGLOG
     _dbg.check_slots(pool, batch, mvs, _dbg_state)  # DEBUGLOG
 
     # Release memoryviews
@@ -482,6 +483,8 @@ def _process_slots(
             log.exception("Worker: invoke_task(task=%r) failed", task)
             for i in indices:
                 results[i] = _InferenceError(str(exc))
+
+    _dbg.stage("post-infer")  # DEBUGLOG
 
     n_ok = 0
     n_err = len(error_indices) if error_indices else 0
