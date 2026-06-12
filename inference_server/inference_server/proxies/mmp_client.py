@@ -29,11 +29,14 @@ from typing import Any, Optional
 import zmq.asyncio
 from fastapi import Request
 
+from inference_model_manager.backends import _debuglog as _dbg  # DEBUGLOG
 from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_server import configuration
 from inference_server.proxies.base import ClientDisconnected
 
 logger = logging.getLogger(__name__)
+
+_dbg_infer_count = 0  # DEBUGLOG
 
 # ---------------------------------------------------------------------------
 # Wire protocol constants (match model_manager_process.py)
@@ -355,6 +358,10 @@ class MMPClient:
             except Exception as exc:
                 raise RuntimeError("result deserialization failed") from exc
         finally:
+            global _dbg_infer_count  # DEBUGLOG
+            _dbg_infer_count += 1  # DEBUGLOG
+            if _dbg_infer_count % 25 == 0:  # DEBUGLOG
+                _dbg.client_mem(len(self._pending))  # DEBUGLOG
             if done:
                 # Worker finished, we read the result → safe to free.
                 self._free_slot(slot_id)
