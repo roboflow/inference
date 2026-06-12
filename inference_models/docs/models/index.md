@@ -95,6 +95,7 @@ The `inference-models` library supports a wide range of computer vision models a
 | [SAM](sam-interactive-segmentation.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [SAM2](sam2-interactive-segmentation.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [SAM2 RT](sam2-rt-video-tracking.md) | `torch` | Apache 2.0 | N/A | ✅ | ❌ |
+| [SAM3 Video](sam3-video-concept-tracking.md) | `hugging-face` | SAM License | N/A | 🔑 | ❌ |
 
 ### Vision-Language Models
 
