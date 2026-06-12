@@ -2,7 +2,7 @@ import datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from inference.core.env import (
     WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
@@ -16,9 +16,15 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 
 
 class RTCIceServer(BaseModel):
-    urls: List[str]
+    # Accepts a single URL or a list; always normalized to a list (per WebRTC spec).
+    urls: Union[str, List[str]]
     username: Optional[str] = None
     credential: Optional[str] = None
+
+    @field_validator("urls", mode="after")
+    @classmethod
+    def _normalize_urls(cls, value: Union[str, List[str]]) -> List[str]:
+        return [value] if isinstance(value, str) else value
 
 
 class WebRTCConfig(BaseModel):

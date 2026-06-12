@@ -5,6 +5,7 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 from supervision import OverlapFilter, move_boxes, move_masks
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
@@ -261,15 +262,25 @@ def move_detections(
     resolution_wh: Optional[Tuple[int, int]],
 ) -> sv.Detections:
     """
-    Copied from: https://github.com/roboflow/supervision/blob/5123085037ec594524fc8f9d9b71b1cd9f487e8d/supervision/detection/tools/inference_slicer.py#L17-L16
-    to avoid fragile contract with supervision, as this function is not element of public
-    API.
+    Shift detections by ``offset``, keeping every geometry field consistent:
+    axis-aligned boxes, segmentation masks, and oriented-box corners.
+
+    Mirrors ``supervision.detection.tools.inference_slicer.move_detections``;
+    kept local since that helper is not part of supervision's public API.
     """
     if len(detections) == 0:
         return detections
     if offset is None:
         raise ValueError("To move non-empty detections offset is needed, but not given")
     detections.xyxy = move_boxes(xyxy=detections.xyxy, offset=offset)
+    if ORIENTED_BOX_COORDINATES in detections.data:
+        # OBB corners live in `data["xyxyxyxy"]` with shape (N, 4, 2); broadcast
+        # `offset` (shape (2,)) over the trailing axis to translate each (x, y).
+        # Without this, downstream OBB-aware NMS/NMM compares corners in
+        # tile-local coords against `xyxy` already moved to image coords.
+        detections.data[ORIENTED_BOX_COORDINATES] = (
+            detections.data[ORIENTED_BOX_COORDINATES] + offset
+        )
     if detections.mask is not None:
         if resolution_wh is None:
             raise ValueError(
