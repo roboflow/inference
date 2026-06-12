@@ -36,13 +36,21 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 
-# HEIC/AVIF ftyp magic at offset 4
+# HEIC/AVIF: ISO-BMFF `ftyp` box at offset 4 + a HEIF/AVIF brand at offset 8.
+# The brand check matters: every ISO-BMFF file (MP4, MOV) has `ftyp` at 4.
 _FTYP_OFFSET = 4
 _FTYP_MAGIC = b"ftyp"
+_HEIF_BRANDS = frozenset(
+    (b"heic", b"heix", b"hevc", b"heim", b"heis", b"hevm", b"hevs",
+     b"mif1", b"msf1", b"avif", b"avis")
+)
 
 
 def _is_heif(data: bytes | memoryview) -> bool:
-    return bytes(data[_FTYP_OFFSET : _FTYP_OFFSET + 4]) == _FTYP_MAGIC
+    return (
+        bytes(data[_FTYP_OFFSET : _FTYP_OFFSET + 4]) == _FTYP_MAGIC
+        and bytes(data[8:12]) in _HEIF_BRANDS
+    )
 
 
 def _select_codec(head: bytes) -> str | None:
@@ -168,7 +176,10 @@ def make_batch_decoder(
     """Create a batch image decoder.
 
     Input:  list of memoryviews pointing to raw compressed image bytes.
-    Output: list of ``(C, H, W)`` RGB uint8 tensors, same order as input.
+    Output: list of ``(C, H, W)`` RGB uint8 tensors (or ``None`` per image
+            that failed to decode), same order as input. Per-image failures
+            never raise — callers must treat ``None`` as a decode error for
+            that index only.
 
     Args:
         device:     Target device for output tensors (e.g. ``"cuda:0"``, ``"cpu"``).
@@ -241,30 +252,41 @@ def make_batch_decoder(
                                 "CPU fallback decode also failed for slot index %d", i
                             )
 
-            # Non-JPEG: imagecodecs (or HEIF fallback) per image → CHW RGB tensor
+            # Non-JPEG: imagecodecs (or HEIF fallback) per image → CHW RGB tensor.
+            # Per-image isolation: a corrupt image yields None at its index,
+            # never an exception failing the whole batch.
             for i, mv in zip(other_idx, other_mvs):
-                raw = bytes(mv)
-                img = _decode_heif(raw) if _is_heif(raw) else _decode_ic(raw)
-                out[i] = (
-                    torch.from_numpy(np.ascontiguousarray(img))
-                    .permute(2, 0, 1)
-                    .to(torch_device)
-                )
+                try:
+                    raw = bytes(mv)
+                    img = _decode_heif(raw) if _is_heif(raw) else _decode_ic(raw)
+                    out[i] = (
+                        torch.from_numpy(np.ascontiguousarray(img))
+                        .permute(2, 0, 1)
+                        .to(torch_device)
+                    )
+                except Exception:
+                    log.warning("decode failed for batch index %d", i, exc_info=True)
 
             return out
 
         return _batch_decode_nvjpeg
 
-    # imagecodecs for everything (HEIF fallback when needed)
+    # imagecodecs for everything (HEIF fallback when needed).
+    # Per-image isolation: corrupt image → None at its index, never an
+    # exception failing the whole batch.
     def _batch_decode_imagecodecs(mvs: List[memoryview]) -> List[Any]:
-        out = []
-        for mv in mvs:
-            raw = bytes(mv)
-            img = _decode_heif(raw) if _is_heif(raw) else _decode_ic(raw)
-            t = torch.from_numpy(np.ascontiguousarray(img)).permute(2, 0, 1)
-            if torch_device.type != "cpu":
-                t = t.to(torch_device)
-            out.append(t)
+        out: list[Any] = []
+        for i, mv in enumerate(mvs):
+            try:
+                raw = bytes(mv)
+                img = _decode_heif(raw) if _is_heif(raw) else _decode_ic(raw)
+                t = torch.from_numpy(np.ascontiguousarray(img)).permute(2, 0, 1)
+                if torch_device.type != "cpu":
+                    t = t.to(torch_device)
+                out.append(t)
+            except Exception:
+                log.warning("decode failed for batch index %d", i, exc_info=True)
+                out.append(None)
         return out
 
     return _batch_decode_imagecodecs

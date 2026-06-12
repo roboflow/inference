@@ -318,7 +318,7 @@ class ModelManager:
             raw_input = kwargs.pop("images", None)
             result = self.submit(
                 model_id, task=task, raw_input=raw_input, **kwargs
-            ).result()
+            ).result(timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S)
             # Serialize subprocess result through registry (model lives in worker,
             # parent only has MRO class name strings from READY pipe).
             mro_names = getattr(backend, "_model_mro_names", [])
@@ -427,7 +427,13 @@ class ModelManager:
                     pass
 
             future.add_done_callback(_on_done)
-            backend.submit_slot(slot_id, req_id, future, params_bytes)
+            try:
+                backend.submit_slot(slot_id, req_id, future, params_bytes)
+            except Exception as exc:
+                # Dead recv thread etc. — fail the future; the done-callback
+                # frees the slot, so nothing leaks.
+                if not future.done():
+                    future.set_exception(exc)
             return future
 
         # Direct backend: validate sync, run in thread pool, record stats.
