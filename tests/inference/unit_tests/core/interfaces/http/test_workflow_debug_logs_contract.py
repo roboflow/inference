@@ -1,14 +1,14 @@
-"""Contract tests for `python_block_logs` and `workflow_debug_trace` exposure on the workflow run endpoint.
+"""Contract tests for `python_blocks_output_streams` and `python_blocks_debug_traces` exposure on the workflow run endpoint.
 
 These tests pin the over-the-wire JSON shape that clients (e.g. the Roboflow
 editor's Debug Mode) depend on:
-- `debug=True` + printing block -> 200 with `python_block_logs` populated,
-- `debug=True` + block using `debug.append()` -> 200 with `workflow_debug_trace` populated,
-- `debug=True` + failing block  -> 400 with `python_block_logs` (logs of the
+- `debug=True` + printing block -> 200 with `python_blocks_output_streams` populated,
+- `debug=True` + block using `debug_traces.append()` -> 200 with `python_blocks_debug_traces` populated,
+- `debug=True` + failing block  -> 400 with `python_blocks_output_streams` (logs of the
   steps executed before the failure, plus the failing step itself) and
   `block_traceback` carrying the failing step's streams,
-- no `debug` flag               -> `python_block_logs` is null,
-- `debug=True` + silent block   -> `python_block_logs` is null.
+- no `debug` flag               -> `python_blocks_output_streams` is null,
+- `debug=True` + silent block   -> `python_blocks_output_streams` is null.
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -82,7 +82,7 @@ def run(self, value) -> BlockResult:
 
 DEBUG_TRACE_BLOCK_CODE = """
 def run(self, value) -> BlockResult:
-    debug.append({"received": value, "doubled": value * 2}, add_timestamp=True)
+    debug_traces.append({"received": value, "doubled": value * 2}, add_timestamp=True)
     return {"result": value * 2}
 """
 
@@ -172,7 +172,9 @@ FAILING_SPECIFICATION = {
 }
 
 
-def test_workflow_run_with_debug_returns_workflow_debug_trace(monkeypatch) -> None:
+def test_workflow_run_with_debug_returns_python_blocks_debug_traces(
+    monkeypatch,
+) -> None:
     # given
     client = _build_test_client(monkeypatch)
 
@@ -190,7 +192,7 @@ def test_workflow_run_with_debug_returns_workflow_debug_trace(monkeypatch) -> No
     assert response.status_code == 200
     body = response.json()
     assert body["outputs"] == [{"result": 14}]
-    trace = body["workflow_debug_trace"]
+    trace = body["python_blocks_debug_traces"]
     assert len(trace) == 1
     assert trace[0]["step"] == "debug_trace_step"
     assert trace[0]["value"] == {"received": 7, "doubled": 14}
@@ -199,7 +201,9 @@ def test_workflow_run_with_debug_returns_workflow_debug_trace(monkeypatch) -> No
     assert trace[0]["timestamp"].endswith("+00:00")
 
 
-def test_workflow_run_with_debug_returns_python_block_logs(monkeypatch) -> None:
+def test_workflow_run_with_debug_returns_python_blocks_output_streams(
+    monkeypatch,
+) -> None:
     # given
     client = _build_test_client(monkeypatch)
 
@@ -217,7 +221,7 @@ def test_workflow_run_with_debug_returns_python_block_logs(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["outputs"] == [{"result": 7}]
-    logs = body["python_block_logs"]
+    logs = body["python_blocks_output_streams"]
     assert list(logs.keys()) == ["printing_step"]
     assert len(logs["printing_step"]) == 1
     entry = logs["printing_step"][0]
@@ -244,7 +248,7 @@ def test_workflow_run_failure_with_debug_returns_partial_logs_in_error_response(
     # then - 400 with logs of both the completed and the failing step
     assert response.status_code == 400
     body = response.json()
-    logs = body["python_block_logs"]
+    logs = body["python_blocks_output_streams"]
     assert "stdout of printing block: 7" in logs["printing_step"][0]["stdout"]
     assert "printed right before failure" in logs["failing_step"][0]["stdout"]
     # the failing step's streams also keep riding the block traceback
@@ -252,7 +256,7 @@ def test_workflow_run_failure_with_debug_returns_partial_logs_in_error_response(
     assert "printed right before failure" in block_error["block_traceback"]["stdout"]
 
 
-def test_workflow_run_without_debug_returns_null_python_block_logs(
+def test_workflow_run_without_debug_returns_null_python_blocks_output_streams(
     monkeypatch,
 ) -> None:
     # given
@@ -271,10 +275,10 @@ def test_workflow_run_without_debug_returns_null_python_block_logs(
     assert response.status_code == 200
     body = response.json()
     assert body["outputs"] == [{"result": 7}]
-    assert body.get("python_block_logs") is None
+    assert body.get("python_blocks_output_streams") is None
 
 
-def test_workflow_run_with_debug_and_silent_blocks_returns_null_python_block_logs(
+def test_workflow_run_with_debug_and_silent_blocks_returns_null_python_blocks_output_streams(
     monkeypatch,
 ) -> None:
     # given
@@ -294,10 +298,10 @@ def test_workflow_run_with_debug_and_silent_blocks_returns_null_python_block_log
     assert response.status_code == 200
     body = response.json()
     assert body["outputs"] == [{"result": 7}]
-    assert body.get("python_block_logs") is None
+    assert body.get("python_blocks_output_streams") is None
 
 
-def test_workflow_run_without_debug_returns_null_workflow_debug_trace(
+def test_workflow_run_without_debug_returns_null_python_blocks_debug_traces(
     monkeypatch,
 ) -> None:
     # given
@@ -314,4 +318,4 @@ def test_workflow_run_without_debug_returns_null_workflow_debug_trace(
 
     # then
     assert response.status_code == 200
-    assert response.json().get("workflow_debug_trace") is None
+    assert response.json().get("python_blocks_debug_traces") is None

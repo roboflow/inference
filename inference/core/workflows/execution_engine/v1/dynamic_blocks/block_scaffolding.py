@@ -48,7 +48,7 @@ IMPORTS_LINES = [
     "import shapely",
     "from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData",
     "from inference.core.workflows.prototypes.block import BlockResult",
-    "from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import debug",
+    "from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import debug_traces",
 ]
 
 # Shared globals dict for all custom python blocks in local mode

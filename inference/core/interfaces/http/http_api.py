@@ -1306,24 +1306,24 @@ class HttpInterface(BaseInterface):
                     if collector is not None:
                         logs_snapshot = collector.snapshot()
                         if logs_snapshot:
-                            error.python_block_logs = logs_snapshot
+                            error.python_blocks_output_streams = logs_snapshot
                         trace_snapshot = get_active_debug_trace()
                         if trace_snapshot is not None:
                             trace_entries = trace_snapshot.snapshot()
                             if trace_entries:
-                                error.workflow_debug_trace = trace_entries
+                                error.python_blocks_debug_traces = trace_entries
                     raise
                 # Empty snapshot (no block printed anything) -> null in response.
-                python_block_logs = (
+                python_blocks_output_streams = (
                     collector.snapshot()
                     if debug_requested and collector is not None
                     else None
                 ) or None
-                workflow_debug_trace = None
+                python_blocks_debug_traces = None
                 if debug_requested:
                     active_trace = get_active_debug_trace()
                     if active_trace is not None:
-                        workflow_debug_trace = active_trace.snapshot() or None
+                        python_blocks_debug_traces = active_trace.snapshot() or None
             with profiler.profile_execution_phase(
                 name="workflow_results_filtering",
                 categories=["inference_package_operation"],
@@ -1336,8 +1336,8 @@ class HttpInterface(BaseInterface):
             response = WorkflowInferenceResponse(
                 outputs=outputs,
                 profiler_trace=profiler_trace,
-                python_block_logs=python_block_logs,
-                workflow_debug_trace=workflow_debug_trace,
+                python_blocks_output_streams=python_blocks_output_streams,
+                python_blocks_debug_traces=python_blocks_debug_traces,
             )
             return orjson_response(response=response)
 

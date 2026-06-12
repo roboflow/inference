@@ -413,7 +413,7 @@ def test_run_assembled_custom_python_block_appends_to_debug_trace() -> None:
     manifest = BlockManifest
     run_function = """
 def run_function(self, a, b) -> BlockResult:
-    debug.append({"sum": a + b, "inputs": [a, b]})
+    debug_traces.append({"sum": a + b, "inputs": [a, b]})
     return {"result": a + b}
 """
     python_code = PythonCode(
