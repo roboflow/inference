@@ -229,20 +229,31 @@ class SHMPool:
             self._allocated.add(slot_id)
             return slot_id
 
-    def free_slot(self, slot_id: int) -> None:
+    def free_slot(self, slot_id: int, request_id: Optional[int] = None) -> None:
         """Return slot to the pool and zero its header.
 
+        If request_id is given, the free is ownership-checked: it is silently
+        ignored unless the header's request_id matches. This makes late frees
+        (reaper-reclaimed slot, late worker result, stale client T_FREE)
+        harmless after the slot has been re-allocated to a new request.
+
         Only the pool creator (owner) should call this.
-        Thread-safe: lock protects both header write and free-list append.
+        Thread-safe: lock protects header read+write and free-list append.
         """
         if not self._owner:
             raise RuntimeError("Only the pool creator can free slots")
         with self._cond:
             if slot_id not in self._allocated:
                 return  # double-free guard — silently ignore
+            off = self._slot_offset(slot_id)
+            if request_id is not None:
+                (current,) = struct.unpack_from(
+                    "<Q", self._shm.buf, off + _OFF_REQ_ID
+                )
+                if current != request_id:
+                    return  # stale free — slot since rebound to another request
             self._allocated.discard(slot_id)
             # Zero header inside lock so no reader sees partial state
-            off = self._slot_offset(slot_id)
             struct.pack_into(
                 _HEADER_FMT, self._shm.buf, off, SlotStatus.FREE, 0, 0, 0, 0, 0, 0
             )
@@ -288,16 +299,28 @@ class SHMPool:
     def mark_written(self, slot_id: int, input_size: int) -> None:
         """Fast update: status=WRITTEN + input_size. Data is already in slot.
         Size written first so cross-process readers never see WRITTEN with stale size.
+        Refreshes timestamp_ns so the reaper ages from submit, not alloc.
         """
         off = self._slot_offset(slot_id)
         struct.pack_into("<I", self._shm.buf, off + _OFF_INPUT_SZ, input_size)
+        struct.pack_into("<Q", self._shm.buf, off + _OFF_TS_NS, time.monotonic_ns())
         self._shm.buf[off + _OFF_STATUS] = SlotStatus.WRITTEN
 
     def mark_processing(self, slot_id: int, owner_pid: int) -> None:
-        """Worker sets status=PROCESSING and records its pid."""
+        """Worker sets status=PROCESSING and records its pid.
+        Refreshes timestamp_ns so the reaper ages from batch start, not alloc.
+        """
         off = self._slot_offset(slot_id)
         self._shm.buf[off + _OFF_STATUS] = SlotStatus.PROCESSING
         struct.pack_into("<i", self._shm.buf, off + _OFF_OWNER_PID, owner_pid)
+        struct.pack_into("<Q", self._shm.buf, off + _OFF_TS_NS, time.monotonic_ns())
+
+    def touch_slot(self, slot_id: int) -> None:
+        """Refresh timestamp_ns. Workers call this for queued slots so the
+        reaper does not reclaim slots that are merely waiting behind a long
+        batch."""
+        off = self._slot_offset(slot_id)
+        struct.pack_into("<Q", self._shm.buf, off + _OFF_TS_NS, time.monotonic_ns())
 
     def mark_done(self, slot_id: int, result_size: int) -> None:
         """Worker sets status=DONE + result_size after writing result area.

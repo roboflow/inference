@@ -12,6 +12,7 @@ from inference_model_manager.backends.utils.shm_pool import (
     _OFF_INPUT_SZ,
     _OFF_RESULT_SZ,
     _OFF_STATUS,
+    _OFF_TS_NS,
     SHMPool,
     SlotHeader,
     SlotStatus,
@@ -351,3 +352,107 @@ def test_fresh_slots_not_stale():
         assert slot not in pool.stale_slots(max_age_s=30.0)
     finally:
         pool.close()
+
+
+# ---------------------------------------------------------------------------
+# Ownership-checked free
+# ---------------------------------------------------------------------------
+
+
+def _age_slot(pool, slot_id, seconds=60):
+    off = slot_id * pool.slot_bytes
+    struct.pack_into(
+        "<Q",
+        pool._shm.buf,
+        off + _OFF_TS_NS,
+        time.monotonic_ns() - int(seconds * 1e9),
+    )
+
+
+class TestOwnershipCheckedFree:
+    def test_free_with_wrong_request_id_is_ignored(self):
+        pool = _make_pool()
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=111)
+            pool.free_slot(s, request_id=222)
+            assert pool.free_count == pool.n_slots - 1
+            assert pool.read_header(s).request_id == 111
+        finally:
+            pool.close()
+
+    def test_free_with_matching_request_id_frees(self):
+        pool = _make_pool()
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=111)
+            pool.free_slot(s, request_id=111)
+            assert pool.free_count == pool.n_slots
+        finally:
+            pool.close()
+
+    def test_free_without_request_id_still_frees(self):
+        pool = _make_pool()
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=111)
+            pool.free_slot(s)
+            assert pool.free_count == pool.n_slots
+        finally:
+            pool.close()
+
+    def test_stale_free_after_reallocation_does_not_free_new_owner(self):
+        pool = _make_pool(n_slots=1)
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=111)
+            pool.free_slot(s, request_id=111)      # reaper-style legitimate free
+            s2 = pool.alloc_slot()
+            assert s2 == s
+            pool.mark_allocated(s2, request_id=999)
+            pool.free_slot(s, request_id=111)      # late free from old owner
+            assert pool.free_count == 0
+            assert pool.read_header(s).request_id == 999
+        finally:
+            pool.close()
+
+
+# ---------------------------------------------------------------------------
+# Timestamp refresh — reaper ages from last transition, not alloc
+# ---------------------------------------------------------------------------
+
+
+class TestTimestampRefresh:
+    def test_touch_slot_unstales(self):
+        pool = _make_pool()
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=1)
+            _age_slot(pool, s)
+            assert pool.stale_slots(30.0) == [s]
+            pool.touch_slot(s)
+            assert pool.stale_slots(30.0) == []
+        finally:
+            pool.close()
+
+    def test_mark_written_refreshes_timestamp(self):
+        pool = _make_pool()
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=1)
+            _age_slot(pool, s)
+            pool.mark_written(s, 10)
+            assert pool.stale_slots(30.0) == []
+        finally:
+            pool.close()
+
+    def test_mark_processing_refreshes_timestamp(self):
+        pool = _make_pool()
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=1)
+            _age_slot(pool, s)
+            pool.mark_processing(s, owner_pid=1234)
+            assert pool.stale_slots(30.0) == []
+        finally:
+            pool.close()
