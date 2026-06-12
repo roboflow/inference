@@ -3,6 +3,7 @@ import concurrent
 import logging
 import os
 import re
+import warnings
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -140,6 +141,7 @@ from inference.core.entities.responses.workflows import (
     WorkflowValidationStatus,
 )
 from inference.core.env import (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ALLOW_ORIGINS,
     API_BASE_URL,
     API_LOGGING_ENABLED,
@@ -189,6 +191,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
+    SAM3_3D_OBJECTS_ENABLED,
     SAM3_EXEC_MODE,
     SAM3_FINE_TUNED_MODELS_ENABLED,
     STRUCTURED_API_LOGGING,
@@ -196,8 +199,8 @@ from inference.core.env import (
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING,
     WORKFLOWS_STEP_EXECUTION_MODE,
+    WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -206,6 +209,7 @@ from inference.core.exceptions import (
     InputImageLoadError,
     MissingApiKeyError,
     MissingServiceSecretError,
+    RequestDataContradiction,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     WebRTCConfigurationError,
@@ -295,6 +299,7 @@ from inference.core.telemetry import (
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.utils.url_utils import wrap_url
+from inference.core.warnings import InferenceDeprecationWarning
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     WorkflowBlockError,
@@ -356,6 +361,16 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 AUTH_CACHE_TTL_SECONDS = 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
+
+
+if ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
+    warnings.warn(
+        "Your `inference` configuration specifies `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`. "
+        "Currently, Workflows Custom Python blocks are allowed by default - but this is going to change 19.06.2026. "
+        "If your workload relies on that setting, please make adjustment to your configuration before the inference "
+        "release following mentioned date. Otherwise - you may ignore this warning.",
+        category=InferenceDeprecationWarning,
+    )
 
 
 @dataclass(frozen=True)
@@ -985,7 +1000,10 @@ class HttpInterface(BaseInterface):
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
 
-        if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+        if (
+            DEDICATED_DEPLOYMENT_WORKSPACE_URL
+            or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        ):
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -1055,8 +1073,14 @@ class HttpInterface(BaseInterface):
                             workspace_id = await get_roboflow_workspace_async(
                                 api_key=api_key
                             )
-
-                        if workspace_id != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                        allowed_workspaces = set()
+                        if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                            allowed_workspaces.add(DEDICATED_DEPLOYMENT_WORKSPACE_URL)
+                        if WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT:
+                            allowed_workspaces.update(
+                                WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+                            )
+                        if workspace_id not in allowed_workspaces:
                             return _unauthorized_response("Unauthorized api_key")
 
                         cached_api_keys[api_key] = AuthorizationCacheEntry(
@@ -3261,7 +3285,7 @@ class HttpInterface(BaseInterface):
                         )
                     return model_response
 
-            if CORE_MODEL_SAM3_ENABLED and not GCP_SERVERLESS:
+            if CORE_MODEL_SAM3_ENABLED:
 
                 @app.post(
                     "/sam3/embed_image",
@@ -3532,7 +3556,7 @@ class HttpInterface(BaseInterface):
                     )
                     return model_response
 
-            if CORE_MODEL_SAM3_ENABLED and not GCP_SERVERLESS:
+            if SAM3_3D_OBJECTS_ENABLED:
 
                 @app.post(
                     "/sam3_3d/infer",
@@ -3677,6 +3701,57 @@ class HttpInterface(BaseInterface):
 
             if DEPTH_ESTIMATION_ENABLED:
 
+                def _infer_depth_estimation(
+                    inference_request: DepthEstimationRequest,
+                    request: Request,
+                    api_key: Optional[str] = None,
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                    model_id: Optional[str] = None,
+                ) -> DepthEstimationResponse:
+                    if model_id is not None:
+                        fields_set = getattr(
+                            inference_request,
+                            "model_fields_set",
+                            getattr(
+                                inference_request, "__pydantic_fields_set__", set()
+                            ),
+                        )
+                        if (
+                            "model_id" in fields_set
+                            and inference_request.model_id is not None
+                            and inference_request.model_id != model_id
+                        ):
+                            raise RequestDataContradiction(
+                                f"Model ID mismatch: path specifies '{model_id}' but request body "
+                                f"specifies '{inference_request.model_id}'",
+                            )
+                        inference_request.model_id = model_id
+                    if api_key is not None:
+                        inference_request.api_key = api_key
+                    depth_model_id = inference_request.model_id
+                    self.model_manager.add_model(
+                        depth_model_id,
+                        inference_request.api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    response = self.model_manager.infer_from_request_sync(
+                        depth_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(depth_model_id, actor)
+
+                    # Extract data from nested response structure
+                    depth_data = response.response
+                    return DepthEstimationResponse(
+                        normalized_depth=depth_data["normalized_depth"].tolist(),
+                        image=depth_data["image"].base64_image,
+                    )
+
                 @app.post(
                     "/infer/depth-estimation",
                     response_model=DepthEstimationResponse,
@@ -3707,29 +3782,49 @@ class HttpInterface(BaseInterface):
                         DepthEstimationResponse: The response containing the normalized depth map and optional visualization.
                     """
                     logger.debug(f"Reached /infer/depth-estimation")
-                    depth_model_id = inference_request.model_id
-                    self.model_manager.add_model(
-                        depth_model_id,
-                        inference_request.api_key,
+                    return _infer_depth_estimation(
+                        inference_request=inference_request,
+                        request=request,
+                        api_key=api_key,
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = self.model_manager.infer_from_request_sync(
-                        depth_model_id, inference_request
-                    )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(depth_model_id, actor)
 
-                    # Extract data from nested response structure
-                    depth_data = response.response
-                    depth_response = DepthEstimationResponse(
-                        normalized_depth=depth_data["normalized_depth"].tolist(),
-                        image=depth_data["image"].base64_image,
+                @app.post(
+                    "/infer/depth-estimation/{model_id:path}",
+                    response_model=DepthEstimationResponse,
+                    summary="Depth Estimation with model ID in path",
+                    description="Run depth estimation. Model ID is specified in the URL path and can contain slashes.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def depth_estimation_with_model_id(
+                    model_id: str,
+                    inference_request: DepthEstimationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """
+                    Generate a depth map with the model identifier in the path.
+
+                    The model_id can be specified in the URL path. If model_id is also
+                    explicitly provided in the request body, it must match the path
+                    parameter.
+                    """
+                    logger.debug(f"Reached /infer/depth-estimation/{model_id}")
+                    return _infer_depth_estimation(
+                        inference_request=inference_request,
+                        request=request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                        model_id=model_id,
                     )
-                    return depth_response
 
             if CORE_MODEL_TROCR_ENABLED:
 

@@ -255,6 +255,18 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolo26.yolo26_instance_segmentation_trt",
         class_name="YOLO26ForInstanceSegmentationTRT",
     ),
+    ("yolo26", SEMANTIC_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_onnx",
+        class_name="YOLO26ForSemanticSegmentationOnnx",
+    ),
+    ("yolo26", SEMANTIC_SEGMENTATION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_torch_script",
+        class_name="YOLO26ForSemanticSegmentationTorchScript",
+    ),
+    ("yolo26", SEMANTIC_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_trt",
+        class_name="YOLO26ForSemanticSegmentationTRT",
+    ),
     ("yololite", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_models.models.yololite.yololite_object_detection_onnx",
@@ -350,6 +362,20 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_trt",
         class_name="RFDetrForInstanceSegmentationTRT",
     ),
+    ("rfdetr", KEYPOINT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_key_points_detection_onnx",
+            class_name="RFDetrForKeyPointsONNX",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
+    ),
     ("moondream2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.moondream2.moondream2_hf",
         class_name="MoonDream2HF",
@@ -413,6 +439,14 @@ REGISTERED_MODELS: Dict[
     ("sam2video", INSTANCE_SEGMENTATION_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.sam2_video.sam2_video_hf",
         class_name="SAM2Video",
+    ),
+    ("sam3video", INSTANCE_SEGMENTATION_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.sam3_video.sam3_video_hf",
+        class_name="SAM3Video",
+    ),
+    ("sam3trackervideo", INSTANCE_SEGMENTATION_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.sam3_tracker_video.sam3_tracker_video_hf",
+        class_name="SAM3TrackerVideo",
     ),
     ("deep-lab-v3-plus", SEMANTIC_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_torch",

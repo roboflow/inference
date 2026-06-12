@@ -7,6 +7,8 @@ import aiohttp
 import pytest
 import requests.exceptions
 from aioresponses import aioresponses
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from requests_mock import Mocker
 from yarl import URL
 
@@ -35,6 +37,7 @@ from inference.core.roboflow_api import (
     ServerlessUsageCheckResponse,
     add_custom_metadata,
     annotate_image_at_roboflow,
+    batch_update_image_metadata_at_roboflow,
     build_roboflow_api_headers,
     delete_cached_workflow_response_if_exists,
     get_from_url,
@@ -49,9 +52,11 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace_async,
     get_serverless_usage_check_async,
     get_workflow_specification,
+    post_to_roboflow_api,
     raise_from_lambda,
     register_image_at_roboflow,
     send_inference_results_to_model_monitoring,
+    update_image_metadata_at_roboflow,
     wrap_roboflow_api_errors,
     wrap_roboflow_api_errors_async,
 )
@@ -1803,6 +1808,102 @@ def test_annotate_image_at_roboflow_when_successful_response_expected(
     assert result == {"success": True}
 
 
+def test_update_image_metadata_at_roboflow_when_successful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/image_1/metadata"),
+        json={"success": True},
+    )
+
+    # when
+    result = update_image_metadata_at_roboflow(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        image_id="image_1",
+        metadata={"color": "red", "score": 0.8},
+        add_tags=["auto"],
+    )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+    assert requests_mock.last_request.json() == {
+        "metadata": {"color": "red", "score": 0.8},
+        "addTags": ["auto"],
+    }
+    assert result == {"success": True}
+
+
+def test_update_image_metadata_at_roboflow_when_wrong_image_id_used(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/missing/metadata"),
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotNotFoundError):
+        _ = update_image_metadata_at_roboflow(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            image_id="missing",
+            add_tags=["auto"],
+        )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+
+
+def test_batch_update_image_metadata_at_roboflow_when_successful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/metadata"),
+        json={"taskId": "task-123", "url": "/my_workspace/asynctasks/task-123"},
+    )
+    updates = [
+        {"imageId": "image_1", "metadata": {"color": "red"}},
+        {"imageId": "image_2", "addTags": ["auto"]},
+    ]
+
+    # when
+    result = batch_update_image_metadata_at_roboflow(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        updates=updates,
+    )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+    assert requests_mock.last_request.json() == {"updates": updates}
+    assert result == {"taskId": "task-123", "url": "/my_workspace/asynctasks/task-123"}
+
+
+def test_batch_update_image_metadata_at_roboflow_when_preflight_error_occurs(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/images/metadata"),
+        status_code=400,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        _ = batch_update_image_metadata_at_roboflow(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            updates=[{"imageId": "image_1", "addTags": ["auto"]}],
+        )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+
+
 @mock.patch.object(roboflow_api.requests, "get")
 def test_get_roboflow_labeling_batches_when_connection_error_occurs(
     get_mock: MagicMock,
@@ -2945,6 +3046,72 @@ def test_build_roboflow_api_headers_always_sets_version_header() -> None:
     assert result["custom"] == "value"
 
 
+def test_post_to_roboflow_api_uses_api_base_url_by_default_for_api_proxy(
+    requests_mock: Mocker,
+) -> None:
+    requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/apiproxy/openai?api_key=my_api_key"),
+        json={"status": "ok"},
+    )
+
+    result = post_to_roboflow_api(
+        endpoint="apiproxy/openai",
+        api_key="my_api_key",
+        payload={"prompt": "hello"},
+    )
+
+    assert result == {"status": "ok"}
+    assert requests_mock.last_request.url == wrap_url(
+        f"{API_BASE_URL}/apiproxy/openai?api_key=my_api_key"
+    )
+
+
+@mock.patch.object(
+    roboflow_api,
+    "API_PROXY_BASE_URL",
+    "https://heavy-v2-api-li37nwjfaq-uc.a.run.app/",
+)
+def test_post_to_roboflow_api_uses_api_proxy_base_url_for_api_proxy_endpoint(
+    requests_mock: Mocker,
+) -> None:
+    expected_url = wrap_url(
+        "https://heavy-v2-api-li37nwjfaq-uc.a.run.app/apiproxy/openai"
+        "?api_key=my_api_key&nocache=true"
+    )
+    requests_mock.post(url=expected_url, json={"status": "ok"})
+
+    result = post_to_roboflow_api(
+        endpoint="/apiproxy/openai",
+        api_key="my_api_key",
+        payload={"prompt": "hello"},
+        params=[("nocache", "true")],
+    )
+
+    assert result == {"status": "ok"}
+    assert requests_mock.last_request.url == expected_url
+
+
+@mock.patch.object(
+    roboflow_api,
+    "API_PROXY_BASE_URL",
+    "https://heavy-v2-api-li37nwjfaq-uc.a.run.app",
+)
+def test_post_to_roboflow_api_does_not_use_api_proxy_base_url_for_other_endpoints(
+    requests_mock: Mocker,
+) -> None:
+    expected_url = wrap_url(f"{API_BASE_URL}/some/endpoint?api_key=my_api_key")
+    requests_mock.post(url=expected_url, json={"status": "ok"})
+
+    result = post_to_roboflow_api(
+        endpoint="some/endpoint",
+        api_key="my_api_key",
+        payload={"prompt": "hello"},
+    )
+
+    assert result == {"status": "ok"}
+    assert requests_mock.last_request.url == expected_url
+
+
 @mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
 @mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
 def test_get_from_url_when_no_retires_possible(
@@ -3159,6 +3326,94 @@ def test_get_workflow_specification_raises_timeout_when_no_cache(
             workflow_id="timeout_no_cache_workflow",
             use_cache=False,
         )
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_workflow_specification_falls_back_to_api_when_ephemeral_cache_get_fails(
+    get_mock: MagicMock,
+) -> None:
+    # Previously redis connection error would bubble up and look like a Roboflow API outage
+    # this was because redis.exceptions.ConnectionError subclasses builtin ConnectionError,
+    # which wrap_roboflow_api_errors would map to RoboflowAPIConnectionError if it
+    # escaped the ephemeral cache layer.
+
+    # given
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="cache_unavailable_workflow",
+        api_key="my_api_key",
+    )
+    get_mock.return_value = MagicMock(
+        status_code=200,
+        json=MagicMock(
+            return_value={
+                "workflow": {
+                    "config": json.dumps(
+                        {"specification": {"from": "api_after_cache_failure"}}
+                    )
+                }
+            }
+        ),
+    )
+    ephemeral_cache = MagicMock()
+    ephemeral_cache.get.side_effect = RedisConnectionError("Dragonfly unreachable")
+
+    # when
+    result = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="cache_unavailable_workflow",
+        ephemeral_cache=ephemeral_cache,
+    )
+
+    # then
+    assert result == {
+        "from": "api_after_cache_failure",
+        "id": None,
+    }
+    assert get_mock.call_count == 1
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_workflow_specification_returns_when_ephemeral_cache_set_fails(
+    get_mock: MagicMock,
+) -> None:
+    # given
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="cache_set_failure_workflow",
+        api_key="my_api_key",
+    )
+    get_mock.return_value = MagicMock(
+        status_code=200,
+        json=MagicMock(
+            return_value={
+                "workflow": {
+                    "config": json.dumps(
+                        {"specification": {"from": "api_despite_cache_set_failure"}}
+                    )
+                }
+            }
+        ),
+    )
+    ephemeral_cache = MagicMock()
+    ephemeral_cache.get.return_value = None
+    ephemeral_cache.set.side_effect = RedisTimeoutError("Dragonfly write timeout")
+
+    # when
+    result = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="cache_set_failure_workflow",
+        ephemeral_cache=ephemeral_cache,
+    )
+
+    # then
+    assert result == {
+        "from": "api_despite_cache_set_failure",
+        "id": None,
+    }
+    assert get_mock.call_count == 1
 
 
 # --- LICENSE_SERVER / wrap_url proxy tests ---

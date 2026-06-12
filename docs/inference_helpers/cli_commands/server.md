@@ -37,6 +37,22 @@ in case that values of internal parameters needs to be adjusted. Any value passe
 is considered as more important and will shadow the value defined in `.env` file under the same target variable name.
 
 
+### Volume Mounts
+
+Use the `--volume` (or `-v`) flag to mount a host directory into the container. This is useful for persisting files written by workflows (e.g. via the `local_file_sink` block) to your local machine.
+
+```bash
+inference server start --volume /host/path:/container/path
+```
+
+You can mount multiple volumes by repeating the flag:
+
+```bash
+inference server start --volume /host/data:/data --volume /host/models:/models:ro
+```
+
+The optional `:ro` suffix mounts the volume as read-only. If omitted, the volume is mounted read-write.
+
 ### Development Mode
 
 Use the `--dev` flag to start the Inference Server in development mode. Development mode enables the Inference Server's built in notebook environment for easy testing and development.

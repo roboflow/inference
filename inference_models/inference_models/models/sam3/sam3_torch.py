@@ -466,10 +466,10 @@ class SAM3Torch:
                 boxes_list = boxes.cpu().tolist()
             else:
                 boxes_list = boxes
-            if len(boxes_list) > 0 and isinstance(boxes_list[0], (int, float)):
-                args["box"] = boxes_list
-            else:
-                args["box"] = boxes_list[0] if boxes_list else None
+            # Either a flat [x1, y1, x2, y2] box or a [num_prompts, 4] batch -
+            # the predictor reshapes both to (-1, 2, 2), so all boxes must be
+            # forwarded (taking only the first one silently drops prompts).
+            args["box"] = boxes_list if boxes_list else None
 
         args = pad_points(args)
         if not any(args.values()):
@@ -792,14 +792,17 @@ def serialize_prompt(
         else:
             labels_list = point_labels
 
-        for coord, label in zip(coords_list, labels_list):
-            result["points"].append(
-                {
-                    "x": coord[0] if isinstance(coord, (list, tuple)) else coord,
-                    "y": coord[1] if isinstance(coord, (list, tuple)) else 0,
-                    "positive": bool(label),
-                }
-            )
+        # point_coordinates is shaped (num_prompts, num_points, 2); iterate prompts
+        # then points.
+        for prompt_coords, prompt_labels in zip(coords_list, labels_list):
+            for coord, label in zip(prompt_coords, prompt_labels):
+                result["points"].append(
+                    {
+                        "x": coord[0] if isinstance(coord, (list, tuple)) else coord,
+                        "y": coord[1] if isinstance(coord, (list, tuple)) else 0,
+                        "positive": bool(label),
+                    }
+                )
 
     if boxes is not None:
         if isinstance(boxes, torch.Tensor):

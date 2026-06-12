@@ -3,7 +3,6 @@ from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import torch
-from torchvision.transforms import functional
 
 from inference_models import ColorFormat, SemanticSegmentationModel
 from inference_models.configuration import (
@@ -35,7 +34,13 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
     parse_trt_config,
 )
-from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
+from inference_models.models.common.roboflow.semantic_segmentation import (
+    resolve_background_class_id,
+    validate_class_names,
+)
+from inference_models.models.common.roboflow.post_processing import (
+    post_process_semantic_segmentation_logits,
+)
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
@@ -108,10 +113,8 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
-        try:
-            background_class_id = [c.lower() for c in class_names].index("background")
-        except ValueError:
-            background_class_id = -1
+        validate_class_names(class_names)
+        background_class_id = resolve_background_class_id(class_names)
         inference_config = parse_inference_config(
             config_path=model_package_content["inference_config.json"],
             allowed_resize_modes={
@@ -255,134 +258,18 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
         confidence: Confidence = "default",
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
-        confidence_filter = ConfidenceFilter(
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
-        )
         with torch.cuda.stream(self._post_process_stream):
             model_results.record_stream(self._post_process_stream)
-            results = []
-            for image_results, image_metadata in zip(
-                model_results, pre_processing_meta
-            ):
-                inference_size = image_metadata.inference_size
-                mask_h_scale = model_results.shape[2] / inference_size.height
-                mask_w_scale = model_results.shape[3] / inference_size.width
-                mask_pad_top, mask_pad_bottom, mask_pad_left, mask_pad_right = (
-                    round(mask_h_scale * image_metadata.pad_top),
-                    round(mask_h_scale * image_metadata.pad_bottom),
-                    round(mask_w_scale * image_metadata.pad_left),
-                    round(mask_w_scale * image_metadata.pad_right),
-                )
-                _, mh, mw = image_results.shape
-                if (
-                    mask_pad_top < 0
-                    or mask_pad_bottom < 0
-                    or mask_pad_left < 0
-                    or mask_pad_right < 0
-                ):
-                    image_results = torch.nn.functional.pad(
-                        image_results,
-                        (
-                            abs(min(mask_pad_left, 0)),
-                            abs(min(mask_pad_right, 0)),
-                            abs(min(mask_pad_top, 0)),
-                            abs(min(mask_pad_bottom, 0)),
-                        ),
-                        "constant",
-                        self._background_class_id,
-                    )
-                    padded_mask_offset_top = max(mask_pad_top, 0)
-                    padded_mask_offset_bottom = max(mask_pad_bottom, 0)
-                    padded_mask_offset_left = max(mask_pad_left, 0)
-                    padded_mask_offset_right = max(mask_pad_right, 0)
-                    image_results = image_results[
-                        :,
-                        padded_mask_offset_top : image_results.shape[1]
-                        - padded_mask_offset_bottom,
-                        padded_mask_offset_left : image_results.shape[2]
-                        - padded_mask_offset_right,
-                    ]
-                else:
-                    image_results = image_results[
-                        :,
-                        mask_pad_top : mh - mask_pad_bottom,
-                        mask_pad_left : mw - mask_pad_right,
-                    ]
-                if (
-                    image_results.shape[1]
-                    != image_metadata.size_after_pre_processing.height
-                    or image_results.shape[2]
-                    != image_metadata.size_after_pre_processing.width
-                ):
-                    image_results = functional.resize(
-                        image_results,
-                        [
-                            image_metadata.size_after_pre_processing.height,
-                            image_metadata.size_after_pre_processing.width,
-                        ],
-                        interpolation=functional.InterpolationMode.BILINEAR,
-                    )
-                image_results = torch.nn.functional.softmax(image_results, dim=0)
-                image_confidence, image_class_ids = torch.max(image_results, dim=0)
-                if (
-                    image_metadata.static_crop_offset.offset_x > 0
-                    or image_metadata.static_crop_offset.offset_y > 0
-                ):
-                    original_size_confidence_canvas = torch.zeros(
-                        (
-                            image_metadata.original_size.height,
-                            image_metadata.original_size.width,
-                        ),
-                        device=self._device,
-                        dtype=image_confidence.dtype,
-                    )
-                    original_size_confidence_canvas[
-                        image_metadata.static_crop_offset.offset_y : image_metadata.static_crop_offset.offset_y
-                        + image_confidence.shape[0],
-                        image_metadata.static_crop_offset.offset_x : image_metadata.static_crop_offset.offset_x
-                        + image_confidence.shape[1],
-                    ] = image_confidence
-                    original_size_confidence_class_id_canvas = (
-                        torch.ones(
-                            (
-                                image_metadata.original_size.height,
-                                image_metadata.original_size.width,
-                            ),
-                            device=self._device,
-                            dtype=image_class_ids.dtype,
-                        )
-                        * self._background_class_id
-                    )
-                    original_size_confidence_class_id_canvas[
-                        image_metadata.static_crop_offset.offset_y : image_metadata.static_crop_offset.offset_y
-                        + image_class_ids.shape[0],
-                        image_metadata.static_crop_offset.offset_x : image_metadata.static_crop_offset.offset_x
-                        + image_class_ids.shape[1],
-                    ] = image_class_ids
-                    image_class_ids = original_size_confidence_class_id_canvas
-                    image_confidence = original_size_confidence_canvas
-                threshold = confidence_filter.get_threshold(self.class_names)
-                if isinstance(threshold, torch.Tensor):
-                    threshold = threshold.to(
-                        dtype=image_confidence.dtype, device=image_confidence.device
-                    )
-                below = image_confidence < (
-                    threshold[image_class_ids.long()]
-                    if isinstance(threshold, torch.Tensor)
-                    else threshold
-                )
-                image_class_ids = image_class_ids.clone()
-                image_confidence = image_confidence.clone()
-                image_class_ids[below] = self._background_class_id
-                image_confidence[below] = 0.0
-                results.append(
-                    SemanticSegmentationResult(
-                        segmentation_map=image_class_ids,
-                        confidence=image_confidence,
-                    )
-                )
+            results = post_process_semantic_segmentation_logits(
+                model_results=model_results,
+                pre_processing_meta=pre_processing_meta,
+                class_names=self._class_names,
+                background_class_id=self._background_class_id,
+                device=self._device,
+                confidence=confidence,
+                recommended_parameters=self.recommended_parameters,
+                default_confidence=INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
+            )
         self._post_process_stream.synchronize()
         return results
 

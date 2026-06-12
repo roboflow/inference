@@ -26,6 +26,7 @@ from inference.core.exceptions import (
     PaymentRequiredError,
     PostProcessingError,
     PreProcessingError,
+    RequestDataContradiction,
     RoboflowAPIConnectionError,
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
@@ -182,6 +183,14 @@ def with_route_exceptions(route):
                 content={
                     "message": f"Error with model input. Cause: {error}",
                     "help_url": error.help_url,
+                },
+            )
+        except RequestDataContradiction as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": str(error),
                 },
             )
         except InvalidModelIDError as error:
@@ -629,6 +638,14 @@ def with_route_exceptions_async(route):
                 content={
                     "message": f"Error with model input. Cause: {error}",
                     "help_url": error.help_url,
+                },
+            )
+        except RequestDataContradiction as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": str(error),
                 },
             )
         except InvalidModelIDError as error:

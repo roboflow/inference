@@ -399,7 +399,7 @@ async def init_rtc_peer_connection(
 
     if webrtc_turn_config:
         turn_server = RTCIceServer(
-            urls=[webrtc_turn_config.urls],
+            urls=webrtc_turn_config.urls,
             username=webrtc_turn_config.username,
             credential=webrtc_turn_config.credential,
         )

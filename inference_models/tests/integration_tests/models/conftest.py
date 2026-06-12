@@ -41,6 +41,7 @@ COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_CENTER_CROP_URL = "https://storage.go
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-crop-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-bs-nonsquare-letterbox.zip"
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-bs-nonsquare-letterbox.zip"
+RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-kp-preview-onnx-glue-sticks.zip"
 
 OG_RFDETR_WEIGHTS_URL = "https://storage.googleapis.com/rfdetr/rf-detr-base-coco.pth"
 
@@ -166,6 +167,9 @@ YOLO26N_SEG_SNAKES_STRETCH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/ro
 YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-static.zip"
 YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-dynamic.zip"
 YOLO26N_SEG_SNAKES_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-torch-script.zip"
+YOLO26N_SEM_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-static.zip"
+YOLO26N_SEM_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-dynamic.zip"
+YOLO26N_SEM_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-torch-script.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-static.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-dynamic.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-torch-script.zip"
@@ -422,6 +426,14 @@ def coin_counting_rfdetr_nano_torch_cs_stretch_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL,
         package_name="coin-counting-rfdetr-nano-torch-cs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_kp_preview_onnx_glue_sticks_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL,
+        package_name="rfdetr-kp-preview-onnx-glue-sticks",
     )
 
 
@@ -1503,6 +1515,30 @@ def yolo26n_seg_snakes_letterbox_torch_script_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_SEG_SNAKES_LETTERBOX_TORCH_SCRIPT_URL,
         package_name="yolo26n-seg-snakes-letterbox-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_ONNX_STATIC_URL,
+        package_name="yolo26n-sem-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-sem-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_TORCH_SCRIPT_URL,
+        package_name="yolo26n-sem-torch-script",
     )
 
 

@@ -119,6 +119,10 @@ class InvalidModelIDError(Exception):
     pass
 
 
+class RequestDataContradiction(Exception):
+    pass
+
+
 class MalformedRoboflowAPIResponseError(Exception):
     pass
 
@@ -189,6 +193,10 @@ class RoboflowAPIIAnnotationRejectionError(RoboflowAPIRequestError):
 
 class MalformedWorkflowResponseError(RoboflowAPIRequestError):
     pass
+
+
+class CacheUnavailableError(Exception):
+    """Raised when the ephemeral cache (e.g. Redis/Dragonfly) cannot be reached."""
 
 
 class RoboflowAPIIAlreadyAnnotatedError(RoboflowAPIIAnnotationRejectionError):
