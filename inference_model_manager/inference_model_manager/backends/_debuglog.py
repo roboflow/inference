@@ -29,16 +29,26 @@ def rss_mb() -> float:
         return -1.0
 
 
-def locked_mb() -> float:
-    """VmLck from /proc/self/status — page-locked (CUDA-pinned) host memory."""
+def mem_split_mb() -> Tuple[float, float, float]:
+    """(RssAnon, RssShmem, VmLck) MB from /proc/self/status.
+
+    RssAnon = private heap (true leak measure); RssShmem = shared SHM-pool
+    pages first-touched by this process (counted per-process, one physical
+    copy); VmLck = page-locked (CUDA-pinned) host memory.
+    """
+    anon = shmem = lck = -1.0
     try:
         with open("/proc/self/status") as f:
             for line in f:
-                if line.startswith("VmLck:"):
-                    return int(line.split()[1]) / 1e3
+                if line.startswith("RssAnon:"):
+                    anon = int(line.split()[1]) / 1e3
+                elif line.startswith("RssShmem:"):
+                    shmem = int(line.split()[1]) / 1e3
+                elif line.startswith("VmLck:"):
+                    lck = int(line.split()[1]) / 1e3
     except Exception:
         pass
-    return -1.0
+    return anon, shmem, lck
 
 
 def free_vram_mb() -> float:
@@ -146,13 +156,16 @@ def fallback_failure(slot_index: int, mv: Any) -> None:
 def stage(name: str) -> None:
     """RSS/VRAM snapshot at a pipeline stage boundary — attributes leak growth."""
     alloc, reserved = cuda_mem_mb()
+    anon, shmem, lck = mem_split_mb()
     log.info(
-        "DBG stage %s: pid=%d rss_mb=%.0f locked_mb=%.0f cuda_alloc_mb=%.0f "
-        "cuda_reserved_mb=%.0f free_vram_mb=%.0f",
+        "DBG stage %s: pid=%d rss_mb=%.0f anon_mb=%.0f shm_mb=%.0f locked_mb=%.0f "
+        "cuda_alloc_mb=%.0f cuda_reserved_mb=%.0f free_vram_mb=%.0f",
         name,
         os.getpid(),
         rss_mb(),
-        locked_mb(),
+        anon,
+        shmem,
+        lck,
         alloc,
         reserved,
         free_vram_mb(),
@@ -241,14 +254,18 @@ def check_slots(
 
 def batch_done(n: int, t0: float) -> None:
     alloc, reserved = cuda_mem_mb()
+    anon, shmem, lck = mem_split_mb()
     log.info(
-        "DBG worker batch done: pid=%d n=%d t_ms=%.0f rss_mb=%.0f locked_mb=%.0f "
-        "cuda_alloc_mb=%.0f cuda_reserved_mb=%.0f free_vram_mb=%.0f",
+        "DBG worker batch done: pid=%d n=%d t_ms=%.0f rss_mb=%.0f anon_mb=%.0f "
+        "shm_mb=%.0f locked_mb=%.0f cuda_alloc_mb=%.0f cuda_reserved_mb=%.0f "
+        "free_vram_mb=%.0f",
         os.getpid(),
         n,
         (time.monotonic() - t0) * 1000,
         rss_mb(),
-        locked_mb(),
+        anon,
+        shmem,
+        lck,
         alloc,
         reserved,
         free_vram_mb(),
