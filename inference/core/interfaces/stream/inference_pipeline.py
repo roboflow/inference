@@ -820,6 +820,14 @@ class InferencePipeline:
             predictions_queue_size = int(predictions_queue_size)
         except ValueError:
             predictions_queue_size = 512
+        if (
+            _rfdetr_stream_pipeline_enabled()
+            and "INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE" not in os.environ
+        ):
+            # Stream-pipelined RF-DETR returns async response futures. Letting
+            # the producer queue hundreds of full-resolution VideoFrame objects
+            # can exhaust host memory on 4K videos before dispatch catches up.
+            predictions_queue_size = min(predictions_queue_size, 4)
         predictions_queue = Queue(maxsize=predictions_queue_size)
         return cls(
             on_video_frame=on_video_frame,

@@ -623,9 +623,8 @@ def _instance_detections_from_sparse_records(
     if int(records_host[0, 1]) != 0 or total_runs < 0 or total_runs > max_total_runs:
         return None
 
-    # Match RF-DETR's descending score order. ``metadata[:, 10]`` is the flat
-    # query-class index and gives a deterministic secondary order for equal
-    # scores without touching the mask records.
+    # Match RF-DETR's descending score order. ``metadata[:, 10]`` gives a
+    # deterministic secondary order for equal scores without touching masks.
     order = np.lexsort(
         (
             -metadata_host[active_ranks, 10],
@@ -786,6 +785,27 @@ def _instance_detections_from_sparse_query_records(
     )
 
 
+def _sparse_query_records_failure_reason(
+    class_metadata_host: np.ndarray,
+    records_host: np.ndarray,
+    max_total_runs: int,
+) -> str:
+    active_ranks = np.flatnonzero(class_metadata_host[:, 0] > 0.5)
+    if active_ranks.size == 0:
+        return "no_failure"
+    metadata_overflows = int(np.count_nonzero(class_metadata_host[active_ranks, 8] > 0.5))
+    total_runs = int(records_host[0, 0])
+    overflow_flag = int(records_host[0, 1])
+    reasons = []
+    if metadata_overflows:
+        reasons.append(f"metadata_overflows={metadata_overflows}")
+    if overflow_flag != 0:
+        reasons.append(f"records_overflow_flag={overflow_flag}")
+    if total_runs < 0 or total_runs > max_total_runs:
+        reasons.append(f"total_runs={total_runs} max_total_runs={max_total_runs}")
+    return ", ".join(reasons) if reasons else "unknown_invalid_sparse_records"
+
+
 def _deferred_instance_detections_from_sparse_query_records(
     class_metadata_host: torch.Tensor,
     records_host: torch.Tensor,
@@ -821,7 +841,14 @@ def _deferred_instance_detections_from_sparse_query_records(
                 max_detections=max_detections,
             )
             if result is None:
-                raise RuntimeError("Deferred RF-DETR Triton RLE postprocess failed")
+                reason = _sparse_query_records_failure_reason(
+                    class_metadata_host=class_metadata_host.numpy(),
+                    records_host=records_host.numpy(),
+                    max_total_runs=max_total_runs,
+                )
+                raise RuntimeError(
+                    f"Deferred RF-DETR Triton RLE postprocess failed: {reason}"
+                )
             return result
         finally:
             _release_pinned_host_buffer(class_metadata_host)
