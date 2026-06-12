@@ -33,6 +33,9 @@ class MMWrapper:
 
     def __init__(self, manager: ModelManager) -> None:
         self.manager = manager
+        # Per-model load dedup — two concurrent first requests must not both
+        # call manager.load (2x VRAM / load time).
+        self._load_locks: dict[str, asyncio.Lock] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle (lifespan)
@@ -56,16 +59,23 @@ class MMWrapper:
         api_key: str = "",
         device: str = "",
     ) -> tuple:
-        if model_id in self.manager.loaded_models():
+        if model_id in self.manager:
             return ("model_ready",)
-        try:
-            await asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: self.manager.load(model_id, api_key, device=device or None),
-            )
-        except Exception:
-            logger.warning("MMWrapper.ensure_loaded: load failed", exc_info=True)
-            return ("error", 1)
+        lock = self._load_locks.setdefault(model_id, asyncio.Lock())
+        async with lock:
+            # Re-check inside the lock — a concurrent request may have loaded.
+            if model_id in self.manager:
+                return ("model_ready",)
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    lambda: self.manager.load(
+                        model_id, api_key, device=device or None
+                    ),
+                )
+            except Exception:
+                logger.warning("MMWrapper.ensure_loaded: load failed", exc_info=True)
+                return ("error", 1)
         return ("model_ready",)
 
     async def load(self, model_id: str, api_key: str = "") -> tuple:
@@ -106,8 +116,10 @@ class MMWrapper:
         # (process_async runs in executor; cancellation propagates via task).
         call_kwargs = dict(params) if params else {}
         call_kwargs["images"] = image
+        # serialize=False: L1 output serializers expect the RAW prediction —
+        # the MMP wire carries raw pickles, so bundled mode must match.
         prediction = await self.manager.process_async(
-            model_id, task=task, **call_kwargs
+            model_id, task=task, serialize=False, **call_kwargs
         )
         if raw_pickle:
             return pickle.dumps(prediction)

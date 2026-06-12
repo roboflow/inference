@@ -240,3 +240,37 @@ def test_serializer_handles_batch_of_predictions():
     body = json.loads(resp.body)
     assert len(body["predictions"]) == 2
     assert s.call_count == 2
+
+
+def test_output_serializer_encodes_tensors_as_numbers():
+    import torch
+    from types import SimpleNamespace
+
+    pred = SimpleNamespace(
+        xyxy=torch.tensor([[1.0, 2.0, 3.0, 4.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9]),
+    )
+    common = CommonRequestParams(model_id="m", api_key="")
+    resp = serialize_object_detection(pred, common)
+    body = resp.body.decode()
+    assert "tensor(" not in body
+    payload = json.loads(body)
+    p = payload["predictions"][0]
+    assert p["xyxy"] == [[1.0, 2.0, 3.0, 4.0]]
+    assert p["class_id"] == [0]
+
+
+def test_output_serializer_nan_confidence_is_valid_json():
+    import torch
+    from types import SimpleNamespace
+
+    pred = SimpleNamespace(
+        xyxy=torch.tensor([[1.0, 2.0, 3.0, 4.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([float("nan")]),
+    )
+    common = CommonRequestParams(model_id="m", api_key="")
+    resp = serialize_object_detection(pred, common)
+    payload = json.loads(resp.body)  # literal NaN would raise here under strict parsers
+    assert payload["predictions"][0]["confidence"] == [None]

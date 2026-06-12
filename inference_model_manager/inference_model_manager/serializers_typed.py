@@ -67,6 +67,19 @@ def serialize_detections_compact(output: Any, model: Any) -> dict:
 
 def serialize_classification_compact(output: Any, model: Any) -> dict:
     """ClassificationPrediction → roboflow-classification-compact-v1"""
+    output = _unwrap_batch(output)
+    if isinstance(output, list):
+        return {
+            "type": "roboflow-classification-compact-v1",
+            "class_names": _class_names(model),
+            "batch": [
+                {
+                    "confidences": _to_list(o.confidence),
+                    "top_classes_ids": _to_list(o.class_id),
+                }
+                for o in output
+            ],
+        }
     return {
         "type": "roboflow-classification-compact-v1",
         "class_names": _class_names(model),
@@ -82,6 +95,19 @@ def serialize_classification_compact(output: Any, model: Any) -> dict:
 
 def serialize_multilabel_classification_compact(output: Any, model: Any) -> dict:
     """MultiLabelClassificationPrediction → roboflow-classification-compact-v1"""
+    output = _unwrap_batch(output)
+    if isinstance(output, list):
+        return {
+            "type": "roboflow-classification-compact-v1",
+            "class_names": _class_names(model),
+            "batch": [
+                {
+                    "confidences": _to_list(o.confidence),
+                    "detected_classes_ids": _to_list(o.class_ids),
+                }
+                for o in output
+            ],
+        }
     return {
         "type": "roboflow-classification-compact-v1",
         "class_names": _class_names(model),
@@ -100,6 +126,21 @@ def serialize_instance_segmentation_compact(output: Any, model: Any) -> dict:
 
     NOTE: mask is passed as-is for now. Phase 36 will add cropped RLE encoding.
     """
+    output = _unwrap_batch(output)
+    if isinstance(output, list):
+        return {
+            "type": "roboflow-instance-segmentation-compact-v1",
+            "class_names": _class_names(model),
+            "batch": [
+                {
+                    "xyxy": _to_list(o.xyxy),
+                    "class_id": _to_list(o.class_id),
+                    "confidence": _to_list(o.confidence),
+                    "mask": _to_list(o.mask),
+                }
+                for o in output
+            ],
+        }
     return {
         "type": "roboflow-instance-segmentation-compact-v1",
         "class_names": _class_names(model),
@@ -117,6 +158,19 @@ def serialize_instance_segmentation_compact(output: Any, model: Any) -> dict:
 
 def serialize_semantic_segmentation_compact(output: Any, model: Any) -> dict:
     """SemanticSegmentationResult → roboflow-semantic-segmentation-compact-v1"""
+    output = _unwrap_batch(output)
+    if isinstance(output, list):
+        return {
+            "type": "roboflow-semantic-segmentation-compact-v1",
+            "class_names": _class_names(model),
+            "batch": [
+                {
+                    "segmentation_map": _to_list(o.segmentation_map),
+                    "confidence": _to_list(o.confidence),
+                }
+                for o in output
+            ],
+        }
     return {
         "type": "roboflow-semantic-segmentation-compact-v1",
         "class_names": _class_names(model),
@@ -132,6 +186,20 @@ def serialize_semantic_segmentation_compact(output: Any, model: Any) -> dict:
 
 def serialize_keypoints_compact(output: Any, model: Any) -> dict:
     """KeyPoints → roboflow-keypoints-compact-v1"""
+    output = _unwrap_batch(output)
+    if isinstance(output, list):
+        return {
+            "type": "roboflow-keypoints-compact-v1",
+            "class_names": _class_names(model),
+            "batch": [
+                {
+                    "xy": _to_list(o.xy),
+                    "class_id": _to_list(o.class_id),
+                    "confidence": _to_list(o.confidence),
+                }
+                for o in output
+            ],
+        }
     return {
         "type": "roboflow-keypoints-compact-v1",
         "class_names": _class_names(model),
@@ -161,6 +229,13 @@ def serialize_embeddings(output: Any, model: Any) -> dict:
 
 def serialize_text(output: Any, model: Any) -> dict:
     """String or list of strings → roboflow-text-v1"""
+    if isinstance(output, list):
+        return {
+            "type": "roboflow-text-v1",
+            "batch": [
+                {"text": t if isinstance(t, str) else str(t)} for t in output
+            ],
+        }
     return {
         "type": "roboflow-text-v1",
         "text": output if isinstance(output, str) else str(output),
@@ -224,6 +299,20 @@ def serialize_detections_rich(output: Any, model: Any) -> dict:
 
 def serialize_classification_rich(output: Any, model: Any) -> dict:
     """ClassificationPrediction → roboflow-classification-rich-v1"""
+    output = _unwrap_batch(output)
+    if isinstance(output, list):
+        return {
+            "type": "roboflow-classification-rich-v1",
+            "batch": [
+                {
+                    "candidates": (one := serialize_classification_rich(o, model))[
+                        "candidates"
+                    ],
+                    "top": one["top"],
+                }
+                for o in output
+            ],
+        }
     names = _class_names(model)
     candidates = []
     for i in range(len(output.confidence)):

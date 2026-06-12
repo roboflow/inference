@@ -96,3 +96,44 @@ async def test_interface_returns_tasks_for_loaded_model():
     info = await wrapper.interface("acme/1")
     assert info["model_id"] == "acme/1"
     assert info["tasks"] == {"infer": {}}
+
+
+@pytest.mark.asyncio
+async def test_infer_requests_raw_prediction_from_manager():
+    """Bundled mode must hand L1 the RAW prediction (serialize=False) — the
+    registry-typed dict broke L1 serializers that expect .xyxy etc."""
+    mgr = _fake_manager(process_return={"raw": 1})
+    wrapper = MMWrapper(mgr)
+    await wrapper.infer(model_id="m", image=b"x")
+    kwargs = mgr.process_async.await_args.kwargs
+    assert kwargs["serialize"] is False
+
+
+@pytest.mark.asyncio
+async def test_concurrent_ensure_loaded_loads_once():
+    import asyncio
+    import threading
+    import time
+
+    class _SlowManager:
+        def __init__(self):
+            self.loaded = set()
+            self.load_calls = 0
+            self._lock = threading.Lock()
+
+        def __contains__(self, model_id):
+            return model_id in self.loaded
+
+        def load(self, model_id, api_key, device=None):
+            with self._lock:
+                self.load_calls += 1
+            time.sleep(0.05)
+            self.loaded.add(model_id)
+
+    mgr = _SlowManager()
+    wrapper = MMWrapper(mgr)
+    results = await asyncio.gather(
+        wrapper.ensure_loaded("m"), wrapper.ensure_loaded("m")
+    )
+    assert [r[0] for r in results] == ["model_ready", "model_ready"]
+    assert mgr.load_calls == 1

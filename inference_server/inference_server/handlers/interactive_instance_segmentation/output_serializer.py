@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any, Optional
 
 from fastapi import Response
@@ -11,6 +10,7 @@ from inference_model_manager.serializers_typed import (
     serialize_text,
 )
 from inference_server.framework.entities import CommonRequestParams
+from inference_server.serializers import serialize_json
 
 
 class _ModelProxy:
@@ -31,7 +31,7 @@ def _envelope(predictions: list, common: CommonRequestParams) -> Response:
         "predictions": predictions,
     }
     return Response(
-        content=json.dumps(envelope, default=str).encode(),
+        content=serialize_json(envelope),
         media_type="application/json",
     )
 
