@@ -550,6 +550,9 @@ from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v
 from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
     StitchOCRDetectionsBlockV2,
 )
+from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
+    TrackClassLockBlockV1,
+)
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
@@ -929,6 +932,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TimeInZoneBlockV1,
         TimeInZoneBlockV2,
         TimeInZoneBlockV3,
+        TrackClassLockBlockV1,
         TriangleVisualizationBlockV1,
         TextDisplayVisualizationBlockV1,
         VLMAsClassifierBlockV1,
