@@ -105,4 +105,8 @@ def test_run_remotely_calls_depth_estimation(
     assert len(result) == 1
     assert "normalized_depth" in result[0]
     assert "image" in result[0]
-    mock_client.depth_estimation.assert_called_once()
+    mock_client.depth_estimation.assert_called_once_with(
+        inference_input=mock_workflow_image_data.base64_image,
+        model_id="depth-anything-v3/small",
+        model_id_in_path=True,
+    )
