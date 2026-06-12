@@ -546,6 +546,33 @@ POINT_KIND = Kind(
     internal_data_type="Tuple[int, int]",
 )
 
+LABELED_POINTS_KIND_DOCS = """
+This kind represents a list of 2D points with positive/negative labels, used for interactive
+point prompting of segmentation models (like the SAM model family).
+
+Each point is a dict with `x` and `y` absolute pixel coordinates and a `positive` flag:
+positive points mark the object to segment, negative points mark regions to exclude.
+
+Example:
+```
+[
+    {"x": 300, "y": 220, "positive": true},
+    {"x": 380, "y": 260, "positive": false}
+]
+```
+
+Points may also be provided as `(x, y)` or `(x, y, positive)` sequences - missing `positive`
+labels are assumed to be positive. Runtime inputs of this kind are normalised to the dict form.
+"""
+
+LABELED_POINTS_KIND = Kind(
+    name="labeled_points",
+    description="List of 2D points with positive/negative labels",
+    docs=LABELED_POINTS_KIND_DOCS,
+    serialised_data_type="List[Dict[str, Any]]",
+    internal_data_type="List[Dict[str, Any]]",
+)
+
 CONTOURS_KIND_DOCS = """
 This kind represents a value of a list of numpy arrays where each array represents contour points.
 
