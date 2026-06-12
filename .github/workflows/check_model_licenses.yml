@@ -8,6 +8,10 @@ on:
       - ".github/workflows/check_model_licenses.yml"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validate-models:
     runs-on: ubuntu-latest

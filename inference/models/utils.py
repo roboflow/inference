@@ -990,6 +990,26 @@ if USE_INFERENCE_MODELS:
                 category=InferenceModelsStackMissing,
             )
 
+    # YOLO26 semantic segmentation is inference_models-only (no legacy implementation),
+    # so we add entries directly rather than swapping existing ones.
+    for variant in [
+        "yolo26",
+        "yolo26n-sem",
+        "yolo26s-sem",
+        "yolo26m-sem",
+        "yolo26l-sem",
+        "yolo26x-sem",
+    ]:
+        ROBOFLOW_MODEL_TYPES[("semantic-segmentation", variant)] = (
+            InferenceModelsSemanticSegmentationAdapter
+        )
+
+    # RFDETR keypoint detection is inference_models-only (no legacy implementation),
+    # so we add entries directly rather than swapping existing ones.
+    ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-preview")] = (
+        InferenceModelsKeyPointsDetectionAdapter
+    )
+
     # YOLOLite is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.
     for variant in [

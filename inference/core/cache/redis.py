@@ -115,9 +115,26 @@ class RedisCache(BaseCache):
         """
         # serializable_value = self.ensure_serializable(value)
         value = json.dumps(value)
-        self.client.zadd(key, {value: score})
         if expire:
+            # Set a server-side (sliding) TTL on the whole sorted set in the same
+            # round-trip as the ZADD. Without this the key only ever expired via the
+            # in-process ``self.zexpires`` bookkeeping reaped by ``_expire()`` below,
+            # which lives solely in this process' memory. If the process dies before
+            # those members are trimmed (e.g. a serverless/autoscaled pod scaling
+            # down), the key is orphaned in Redis forever with TTL -1 — an unbounded
+            # memory leak. A real EXPIRE lets Redis reclaim the key ``expire`` seconds
+            # after the last write regardless of process lifecycle. ``max(1, ...)``
+            # guards against EXPIRE 0 (immediate delete) for sub-second values.
+            with self.client.pipeline() as pipe:
+                pipe.zadd(key, {value: score})
+                pipe.expire(key, max(1, int(expire)))
+                pipe.execute()
+            # Keep per-member bookkeeping so ``_expire()`` can still trim individual
+            # expired members from an otherwise-live key (now a best-effort
+            # optimisation rather than the only safety net).
             self.zexpires[(key, score)] = expire + time.time()
+        else:
+            self.client.zadd(key, {value: score})
 
     def zrangebyscore(
         self,

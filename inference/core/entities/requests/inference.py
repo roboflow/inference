@@ -246,6 +246,13 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
         "require special decoding on the caller side - currently supported in `opt-in` mode when server is "
         "running with `USE_INFERENCE_MODELS=True` - otherwise it's ignored.",
     )
+    enforce_dense_masks_in_inference_models: Optional[bool] = Field(
+        default=False,
+        examples=[False],
+        description="Flag to enforce dense masks in inference models. Such masks are faster than "
+        "RLE but consume more memory which may be unstable in some cases. This flag cannot be tweaked "
+        "when used on Roboflow serverless platform.",
+    )
 
 
 class SemanticSegmentationInferenceRequest(CVInferenceRequest):
@@ -257,25 +264,12 @@ class SemanticSegmentationInferenceRequest(CVInferenceRequest):
 
     confidence: Confidence = Field(
         default=0.4,
-        examples=[0.5, "default"],
+        examples=[0.5, "best", "default"],
         description=(
-            '"default" uses the model built-in threshold, or pass a float. '
-            '"best" (model-eval threshold) is not supported for semantic '
-            "segmentation yet."
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
         ),
     )
-
-    # TODO: drop this validator once model eval supports semantic segmentation.
-    @field_validator("confidence", mode="before")
-    @classmethod
-    def _reject_best_confidence(cls, value: Any) -> Any:
-        if value == "best":
-            raise ValueError(
-                'confidence="best" is not supported for semantic segmentation '
-                "— model eval does not yet produce per-class thresholds for "
-                'this task. Use a float or "default".'
-            )
-        return value
 
 
 class ClassificationInferenceRequest(CVInferenceRequest):

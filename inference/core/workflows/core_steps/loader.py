@@ -119,6 +119,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_float_zero_to_one_kind,
     deserialize_image_kind,
     deserialize_integer_kind,
+    deserialize_labeled_points_kind,
     deserialize_list_of_values_kind,
     deserialize_numpy_array,
     deserialize_optional_string_kind,
@@ -153,6 +154,9 @@ from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
     RateLimiterBlockV1,
 )
 from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
+from inference.core.workflows.core_steps.formatters.current_time.v1 import (
+    CurrentTimeBlockV1,
+)
 from inference.core.workflows.core_steps.formatters.expression.v1 import (
     ExpressionBlockV1,
 )
@@ -335,6 +339,12 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
     SegmentAnything3BlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
+    SegmentAnything3InteractiveBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
+    SegmentAnything3VideoBlockV1,
+)
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
     RoboflowInstanceSegmentationModelBlockV4,
 )
@@ -433,6 +443,9 @@ from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
+from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
+    RoboflowAssetLibraryAttributesBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -540,6 +553,9 @@ from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v
 from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
     StitchOCRDetectionsBlockV2,
 )
+from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
+    TrackClassLockBlockV1,
+)
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
@@ -645,6 +661,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    LABELED_POINTS_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     NUMPY_ARRAY_KIND,
@@ -679,6 +696,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
@@ -724,6 +742,7 @@ KINDS_DESERIALIZERS = {
     SEMANTIC_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
     CLASSIFICATION_PREDICTION_KIND.name: deserialize_classification_prediction_kind,
     POINT_KIND.name: deserialize_point_kind,
+    LABELED_POINTS_KIND.name: deserialize_labeled_points_kind,
     ZONE_KIND.name: deserialize_zone_kind,
     RGB_COLOR_KIND.name: deserialize_rgb_color_kind,
     LANGUAGE_MODEL_OUTPUT_KIND.name: deserialize_string_kind,
@@ -794,6 +813,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
+        RoboflowAssetLibraryAttributesBlockV1,
         ContinueIfBlockV1,
         InnerWorkflowBlockV1,
         RateLimiterBlockV1,
@@ -810,6 +830,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DimensionCollapseBlockV1,
         DetectionsListRollUpBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
+        CurrentTimeBlockV1,
         AnthropicClaudeBlockV1,
         AnthropicClaudeBlockV2,
         AnthropicClaudeBlockV3,
@@ -901,6 +922,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SegmentAnything3BlockV1,
         SegmentAnything3BlockV2,
         SegmentAnything3BlockV3,
+        SegmentAnything3InteractiveBlockV1,
+        SegmentAnything3VideoBlockV1,
         SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
@@ -913,6 +936,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TimeInZoneBlockV1,
         TimeInZoneBlockV2,
         TimeInZoneBlockV3,
+        TrackClassLockBlockV1,
         TriangleVisualizationBlockV1,
         TextDisplayVisualizationBlockV1,
         VLMAsClassifierBlockV1,
@@ -1020,6 +1044,7 @@ def load_kinds() -> List[Kind]:
         CLASSIFICATION_PREDICTION_KIND,
         DETECTIONS_OVERLAPS_KIND,
         POINT_KIND,
+        LABELED_POINTS_KIND,
         ZONE_KIND,
         OBJECT_DETECTION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,

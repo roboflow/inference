@@ -53,6 +53,7 @@ API_BASE_URL = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+API_PROXY_BASE_URL = os.getenv("API_PROXY_BASE_URL", API_BASE_URL)
 
 # Suffix path to be appended to API_BASE_URL for endpoints that serve model weights.
 # This is only expected to be used in Roboflow internal hosting environments.
@@ -405,6 +406,8 @@ LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
 # Secure gateway address for air-gapped deployments.
 # Accepts SECURE_GATEWAY (preferred) or LICENSE_SERVER (legacy).
+# May be a bare host[:port] (proxied over http, legacy behaviour) or
+# scheme-qualified, e.g. https://gateway.local, for TLS gateways.
 _legacy_license_server = os.getenv("LICENSE_SERVER")
 SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
 if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
@@ -739,7 +742,11 @@ DEVICE = os.getenv("DEVICE")
 DEDICATED_DEPLOYMENT_WORKSPACE_URL = os.environ.get(
     "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None
 )
-
+WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT = safe_split_value(
+    value=os.getenv("WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT"),
+    delimiter=",",
+    strip=True,
+)
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
 STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
 

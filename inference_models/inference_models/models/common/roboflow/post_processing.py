@@ -7,10 +7,16 @@ from torchvision.transforms import functional
 from inference_models.configuration import INFERENCE_MODELS_DEFAULT_CONFIDENCE
 from inference_models.entities import Confidence, ImageDimensions
 from inference_models.logger import LOGGER
+from inference_models.models.base.semantic_segmentation import (
+    SemanticSegmentationResult,
+)
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
+)
+from inference_models.models.common.roboflow.semantic_segmentation import (
+    insert_background_class,
 )
 from inference_models.weights_providers.entities import RecommendedParameters
 
@@ -723,3 +729,165 @@ class ConfidenceFilter:
         ):
             return recommended_parameters.confidence
         return default_confidence
+
+
+def post_process_semantic_segmentation_logits(
+    model_results: torch.Tensor,
+    pre_processing_meta: List[PreProcessingMetadata],
+    class_names: List[str],
+    background_class_id: int,
+    device: torch.device,
+    confidence: Confidence,
+    recommended_parameters: Optional[RecommendedParameters],
+    default_confidence: float,
+) -> List[SemanticSegmentationResult]:
+    """Shared post-processing for semantic-segmentation models that emit
+    (B, K, H, W) float logits. Used by DeepLabV3+ and YOLO26-sem.
+
+    Steps: crop out letterbox padding → resize back to pre-letterbox size →
+    softmax over classes → argmax → place into original-image canvas if
+    static_crop was applied → apply per-class confidence threshold
+    (sub-threshold pixels collapse to background_class_id).
+
+    Single-channel (K==1) outputs are the Ultralytics binary (``nc==1``) head:
+    instead of softmax+argmax, the sigmoid foreground probability is used and the
+    lone foreground class is read from ``class_names`` (``[background, <fg>]``).
+    Sub-threshold pixels collapse to background via the same threshold step.
+    """
+    confidence_filter = ConfidenceFilter(
+        confidence=confidence,
+        recommended_parameters=recommended_parameters,
+        default_confidence=default_confidence,
+    )
+    results: List[SemanticSegmentationResult] = []
+    for image_results, image_metadata in zip(model_results, pre_processing_meta):
+        inference_size = image_metadata.inference_size
+        mask_h_scale = model_results.shape[2] / inference_size.height
+        mask_w_scale = model_results.shape[3] / inference_size.width
+        mask_pad_top, mask_pad_bottom, mask_pad_left, mask_pad_right = (
+            round(mask_h_scale * image_metadata.pad_top),
+            round(mask_h_scale * image_metadata.pad_bottom),
+            round(mask_w_scale * image_metadata.pad_left),
+            round(mask_w_scale * image_metadata.pad_right),
+        )
+        _, mh, mw = image_results.shape
+        if (
+            mask_pad_top < 0
+            or mask_pad_bottom < 0
+            or mask_pad_left < 0
+            or mask_pad_right < 0
+        ):
+            image_results = torch.nn.functional.pad(
+                image_results,
+                (
+                    abs(min(mask_pad_left, 0)),
+                    abs(min(mask_pad_right, 0)),
+                    abs(min(mask_pad_top, 0)),
+                    abs(min(mask_pad_bottom, 0)),
+                ),
+                "constant",
+                background_class_id,
+            )
+            padded_mask_offset_top = max(mask_pad_top, 0)
+            padded_mask_offset_bottom = max(mask_pad_bottom, 0)
+            padded_mask_offset_left = max(mask_pad_left, 0)
+            padded_mask_offset_right = max(mask_pad_right, 0)
+            image_results = image_results[
+                :,
+                padded_mask_offset_top : image_results.shape[1]
+                - padded_mask_offset_bottom,
+                padded_mask_offset_left : image_results.shape[2]
+                - padded_mask_offset_right,
+            ]
+        else:
+            image_results = image_results[
+                :,
+                mask_pad_top : mh - mask_pad_bottom,
+                mask_pad_left : mw - mask_pad_right,
+            ]
+        if (
+            image_results.shape[1] != image_metadata.size_after_pre_processing.height
+            or image_results.shape[2] != image_metadata.size_after_pre_processing.width
+        ):
+            image_results = functional.resize(
+                image_results,
+                [
+                    image_metadata.size_after_pre_processing.height,
+                    image_metadata.size_after_pre_processing.width,
+                ],
+                interpolation=functional.InterpolationMode.BILINEAR,
+            )
+        if image_results.shape[0] == 1:
+            image_confidence = image_results[0].sigmoid()
+            image_class_ids = insert_background_class(
+                torch.zeros_like(image_confidence, dtype=torch.long),
+                background_class_id=background_class_id,
+                num_classes=len(class_names),
+            )
+        else:
+            image_results = torch.nn.functional.softmax(image_results, dim=0)
+            image_confidence, image_class_ids = torch.max(image_results, dim=0)
+            if len(class_names) == image_results.shape[0] + 1:
+                image_class_ids = insert_background_class(
+                    image_class_ids,
+                    background_class_id=background_class_id,
+                    num_classes=len(class_names),
+                )
+        if (
+            image_metadata.static_crop_offset.offset_x > 0
+            or image_metadata.static_crop_offset.offset_y > 0
+        ):
+            original_size_confidence_canvas = torch.zeros(
+                (
+                    image_metadata.original_size.height,
+                    image_metadata.original_size.width,
+                ),
+                device=device,
+                dtype=image_confidence.dtype,
+            )
+            original_size_confidence_canvas[
+                image_metadata.static_crop_offset.offset_y : image_metadata.static_crop_offset.offset_y
+                + image_confidence.shape[0],
+                image_metadata.static_crop_offset.offset_x : image_metadata.static_crop_offset.offset_x
+                + image_confidence.shape[1],
+            ] = image_confidence
+            original_size_confidence_class_id_canvas = (
+                torch.ones(
+                    (
+                        image_metadata.original_size.height,
+                        image_metadata.original_size.width,
+                    ),
+                    device=device,
+                    dtype=image_class_ids.dtype,
+                )
+                * background_class_id
+            )
+            original_size_confidence_class_id_canvas[
+                image_metadata.static_crop_offset.offset_y : image_metadata.static_crop_offset.offset_y
+                + image_class_ids.shape[0],
+                image_metadata.static_crop_offset.offset_x : image_metadata.static_crop_offset.offset_x
+                + image_class_ids.shape[1],
+            ] = image_class_ids
+            image_class_ids = original_size_confidence_class_id_canvas
+            image_confidence = original_size_confidence_canvas
+        threshold = confidence_filter.get_threshold(class_names)
+        if isinstance(threshold, torch.Tensor):
+            threshold = threshold.to(
+                dtype=image_confidence.dtype, device=image_confidence.device
+            )
+        below = image_confidence < (
+            threshold[image_class_ids.long()]
+            if isinstance(threshold, torch.Tensor)
+            else threshold
+        )
+        image_class_ids = image_class_ids.clone()
+        image_confidence = image_confidence.clone()
+        image_class_ids[below] = background_class_id
+        image_confidence[below] = 0.0
+        results.append(
+            SemanticSegmentationResult(
+                segmentation_map=image_class_ids,
+                confidence=image_confidence,
+            )
+        )
+    return results

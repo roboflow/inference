@@ -14,16 +14,18 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v2 import (
+    MODEL_VERSION_MAPPING,
     BlockManifest,
     GoogleGemmaBlockV2,
-    MODEL_VERSION_MAPPING,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 
 def _stub_image() -> WorkflowImageData:
     return WorkflowImageData(
-        parent_metadata=MagicMock(parent_id="root", workflow_root_ancestor_metadata=None),
+        parent_metadata=MagicMock(
+            parent_id="root", workflow_root_ancestor_metadata=None
+        ),
         numpy_image=np.zeros((10, 10, 3), dtype=np.uint8),
     )
 

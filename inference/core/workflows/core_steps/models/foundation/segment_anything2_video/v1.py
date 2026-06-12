@@ -57,7 +57,12 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -135,15 +140,20 @@ class BlockManifest(WorkflowBlockManifest):
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default="sam2video/small",
         description=(
-            "Streaming SAM2 model id resolved by `inference_models`.  "
+            "Streaming video tracker model id resolved by `inference_models`.  "
             "The `sam2video` family ships four Hiera backbone sizes; "
-            "`small` is the default trade-off between speed and quality."
+            "`small` is the default trade-off between speed and quality.  "
+            "`sam3trackervideo` is SAM3's visually prompted tracker — the "
+            "same prompt contract with a larger backbone, markedly better "
+            "at identity retention on long videos and crowded scenes, at "
+            "higher compute cost."
         ),
         examples=[
             "sam2video/tiny",
             "sam2video/small",
             "sam2video/base-plus",
             "sam2video/large",
+            "sam3trackervideo",
         ],
     )
     prompt_mode: Literal["first_frame", "every_n_frames", "every_frame"] = Field(
@@ -188,12 +198,26 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Requires a GPU; the streaming SAM2 video model needs CUDA.",
+                applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+                applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
+            ),
+            STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+        ]
+
+    @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         return [
             "sam2video/small",
             "sam2video/tiny",
             "sam2video/base-plus",
             "sam2video/large",
+            "sam3trackervideo",
         ]
 
 
