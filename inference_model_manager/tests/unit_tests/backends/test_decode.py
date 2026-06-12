@@ -65,6 +65,22 @@ def webp_bytes() -> bytes:
     return bytes(imagecodecs.webp_encode(_make_rgb_array()))
 
 
+@pytest.fixture(scope="module")
+def gray_jpeg_bytes() -> bytes:
+    imagecodecs = pytest.importorskip("imagecodecs")
+    rng = np.random.default_rng(42)
+    gray = rng.integers(0, 255, (8, 8), dtype=np.uint8)
+    return bytes(imagecodecs.jpeg_encode(gray))
+
+
+@pytest.fixture(scope="module")
+def rgba_png_bytes() -> bytes:
+    imagecodecs = pytest.importorskip("imagecodecs")
+    rng = np.random.default_rng(42)
+    rgba = rng.integers(0, 255, (8, 8, 4), dtype=np.uint8)
+    return bytes(imagecodecs.png_encode(rgba))
+
+
 # ---------------------------------------------------------------------------
 # _select_codec / _decode_ic — explicit codec dispatch (no imread all-codec
 # probe, which makes the bundled OpenEXR codec spam stderr on every image)
@@ -113,6 +129,22 @@ class TestDecodeIcNoExrProbe:
         assert out.shape[2] == 3  # HWC RGB
 
 
+class TestDecodeIcChannelNormalization:
+    """_decode_ic promises RGB HWC — grayscale/alpha inputs must be normalized."""
+
+    def test_gray_jpeg_returns_hwc_3(self, gray_jpeg_bytes):
+        out = _decode_ic(gray_jpeg_bytes)
+        assert out.ndim == 3
+        assert out.shape[2] == 3
+        assert out.dtype == np.uint8
+
+    def test_rgba_png_returns_hwc_3(self, rgba_png_bytes):
+        out = _decode_ic(rgba_png_bytes)
+        assert out.ndim == 3
+        assert out.shape[2] == 3
+        assert out.dtype == np.uint8
+
+
 # ---------------------------------------------------------------------------
 # make_decoder — single-image
 # ---------------------------------------------------------------------------
@@ -148,6 +180,11 @@ class TestMakeDecoder:
         assert isinstance(result, torch.Tensor)
         assert result.ndim == 3
         assert result.shape[0] == 3  # CHW
+
+    def test_nvjpeg_gray_jpeg_returns_3_channels(self, gray_jpeg_bytes):
+        decode = make_decoder("nvjpeg", device="cpu")
+        result = decode(gray_jpeg_bytes)
+        assert result.shape[0] == 3
 
     def test_unknown_name_raises(self):
         with pytest.raises(ValueError, match="Unknown decoder"):
@@ -190,6 +227,11 @@ class TestMakeBatchDecoderImagecodecs:
         decode = make_batch_decoder("cpu", use_nvjpeg=False)
         results = decode([memoryview(jpeg_bytes)])
         assert results[0].device.type == "cpu"
+
+    def test_gray_jpeg_returns_3_channels(self, gray_jpeg_bytes):
+        decode = make_batch_decoder("cpu", use_nvjpeg=False)
+        results = decode([memoryview(gray_jpeg_bytes)])
+        assert results[0].shape[0] == 3
 
     def test_single_image_matches_make_decoder(self, jpeg_bytes):
         """Batch decoder with one JPEG should produce same CHW shape as single decoder."""
@@ -279,6 +321,28 @@ class TestMakeBatchDecoderNvjpeg:
             ic_module.imread = original_imread
 
         assert not called, "imagecodecs.imread should not be called for JPEG-only batch"
+
+    def test_gray_jpeg_returns_3_channels(self, gray_jpeg_bytes):
+        decode = make_batch_decoder("cpu", use_nvjpeg=True)
+        results = decode([memoryview(gray_jpeg_bytes)])
+        assert results[0].shape[0] == 3
+
+    def test_gray_jpeg_cpu_fallback_returns_3_channels(
+        self, gray_jpeg_bytes, monkeypatch
+    ):
+        """Regression: grayscale JPEG decoded via the CPU fallback (nvjpeg batch
+        failed) crashed permute(2, 0, 1) on the 2D array and left the slot None."""
+        import torchvision.io
+
+        def _raise(*args, **kwargs):
+            raise RuntimeError("simulated nvjpeg failure")
+
+        monkeypatch.setattr(torchvision.io, "decode_jpeg", _raise)
+        decode = make_batch_decoder("cpu", use_nvjpeg=True)
+        results = decode([memoryview(gray_jpeg_bytes)])
+        assert results[0] is not None
+        assert isinstance(results[0], torch.Tensor)
+        assert results[0].shape[0] == 3
 
     @pytest.mark.cuda
     def test_cuda_output_device(self, jpeg_bytes):
