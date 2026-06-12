@@ -36,9 +36,9 @@ from fastapi import Request
 class ModelManagerProxy(Protocol):
     """Backend-adapter contract. Two implementations:
 
-    - `DirectModelManagerProxy` — wraps `ModelManager` directly. In-process,
+    - `MMWrapper` — wraps `ModelManager` directly. In-process,
       no SHM, no ZMQ. Used by Workflows / InferencePipeline / dev mode.
-    - `OrchestratedModelManagerProxy` — wraps the FastAPI-worker side of MMP:
+    - `MMPClient` — wraps the FastAPI-worker side of MMP:
       DEALER socket + SHMPool attach + pending-futures recv loop. Used in
       production multi-worker uvicorn deployments.
 
@@ -48,6 +48,14 @@ class ModelManagerProxy(Protocol):
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
+
+    async def start(self) -> None:
+        """Connect/attach resources. Called once in app lifespan startup."""
+        ...
+
+    async def shutdown(self) -> None:
+        """Release sockets/SHM/manager. Called once in app lifespan teardown."""
+        ...
 
     async def ensure_loaded(
         self,

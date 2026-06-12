@@ -187,3 +187,48 @@ def test_free_and_cancel_tasks_are_strongly_referenced():
 
     types = asyncio.run(_run())
     assert T_FREE in types and T_CANCEL in types
+
+
+def test_start_rejects_shm_geometry_mismatch():
+    """Slot-size disagreement between client and MMP must fail at startup,
+    not silently corrupt neighboring slots at runtime."""
+    from multiprocessing.shared_memory import SharedMemory
+
+    shm = SharedMemory(create=True, size=(64 + 1024) * 4)  # 4 slots of 1024
+    try:
+        client = MMPClient(
+            mmp_addr="inproc://test",
+            shm_name=shm.name,
+            shm_data_size=2048,  # WRONG: MMP created 1024-byte slots
+            pipeline_csv_path="",
+        )
+
+        async def _run():
+            client._ctx = None
+
+            class _Sock:
+                def setsockopt(self, *a):
+                    pass
+
+                def connect(self, *a):
+                    pass
+
+            import inference_server.proxies.mmp_client as mod
+
+            # start() builds ctx/socket first — patch them out, keep SHM attach
+            orig_ctx = mod.zmq.asyncio.Context
+            with pytest.raises(RuntimeError, match="geometry mismatch"):
+                try:
+                    mod.zmq.asyncio.Context = lambda: type(
+                        "C", (), {"socket": lambda s, t: _Sock(), "term": lambda s: None}
+                    )()
+                    await client.start()
+                finally:
+                    mod.zmq.asyncio.Context = orig_ctx
+                    if client._recv_task is not None:
+                        client._recv_task.cancel()
+
+        asyncio.run(_run())
+    finally:
+        shm.close()
+        shm.unlink()

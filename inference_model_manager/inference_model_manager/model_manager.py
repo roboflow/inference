@@ -87,6 +87,8 @@ class ModelManager:
 
         self._backends: Dict[str, Backend] = {}
         self._lifecycle_lock = threading.Lock()
+        # model_ids reserved by an in-progress load (built outside the lock)
+        self._loading_ids: set[str] = set()
 
         # Shared SHM pool for subprocess backends — created lazily
         self._pool: Optional[Any] = None  # SHMPool, created on first subprocess load
@@ -145,19 +147,24 @@ class ModelManager:
         """
         load_target = model_id_or_path or model_id
 
+        # Reserve under the lock; build OUTSIDE it. Holding the lock across
+        # _create_backend (weight download + load, seconds to minutes) blocked
+        # unload/stats/list_models and every other load for the duration.
         with self._lifecycle_lock:
-            if model_id in self._backends:
+            if model_id in self._backends or model_id in self._loading_ids:
                 raise ValueError(f"Model '{model_id}' is already loaded")
+            self._loading_ids.add(model_id)
 
-            logger.info(
-                "Loading '%s' (model=%s) with backend=%s, device=%s, batch_max_size=%d",
-                model_id,
-                load_target,
-                backend,
-                device,
-                batch_max_size,
-            )
+        logger.info(
+            "Loading '%s' (model=%s) with backend=%s, device=%s, batch_max_size=%d",
+            model_id,
+            load_target,
+            backend,
+            device,
+            batch_max_size,
+        )
 
+        try:
             b = self._create_backend(
                 model_id=load_target,
                 api_key=api_key,
@@ -181,7 +188,10 @@ class ModelManager:
             elif hasattr(b, "_model_mro_names") and b._model_mro_names:
                 # SubprocessBackend — worker sent MRO class names in READY.
                 lazy_register_by_names(b._model_mro_names)
-            self._backends[model_id] = b
+            with self._lifecycle_lock:
+                self._backends[model_id] = b
+        finally:
+            self._loading_ids.discard(model_id)
 
         # Warmup outside the lock — model is registered, other models can load
         if warmup_iters > 0:
@@ -290,11 +300,22 @@ class ModelManager:
     # Processing — unified task dispatch
     # ------------------------------------------------------------------
 
-    def process(self, model_id: str, task: Optional[str] = None, **kwargs: Any) -> Any:
+    def process(
+        self,
+        model_id: str,
+        task: Optional[str] = None,
+        *,
+        serialize: bool = True,
+        **kwargs: Any,
+    ) -> Any:
         """Process a task on a loaded model. Blocks until result is ready.
 
         Uses the model registry to resolve ``task`` to the correct method.
         If ``task`` is None, the default task is used.
+
+        ``serialize=False`` returns the raw prediction object without the
+        registry-typed envelope — used by proxies whose callers serialize at
+        the HTTP layer (keeps bundled and MMP modes on one contract).
 
         For direct backends, calls the model method in-process.
         For subprocess backends, submits via SHM and waits for result.
@@ -319,6 +340,8 @@ class ModelManager:
             result = self.submit(
                 model_id, task=task, raw_input=raw_input, **kwargs
             ).result(timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S)
+            if not serialize:
+                return result
             # Serialize subprocess result through registry (model lives in worker,
             # parent only has MRO class name strings from READY pipe).
             mro_names = getattr(backend, "_model_mro_names", [])
@@ -339,19 +362,34 @@ class ModelManager:
         kwargs = _get_registry().validate(backend.model, task_name, kwargs)
 
         t0 = time.monotonic()
+        _begin = getattr(backend, "inflight_begin", None)
+        if _begin is not None:
+            _begin()
         try:
             result = invoke_task(backend.model, task=task, **kwargs)
         except Exception:
             backend.record_inference(t0, error=True)
             raise
+        finally:
+            _end = getattr(backend, "inflight_end", None)
+            if _end is not None:
+                _end()
         backend.record_inference(t0, error=False)
+
+        if not serialize:
+            return result
 
         # Serialize through registry (if entry exists)
         typed = _get_registry().serialize(backend.model, task_name, result)
         return typed if typed is not None else result
 
     async def process_async(
-        self, model_id: str, task: Optional[str] = None, **kwargs: Any
+        self,
+        model_id: str,
+        task: Optional[str] = None,
+        *,
+        serialize: bool = True,
+        **kwargs: Any,
     ) -> Any:
         """Process a task asynchronously.
 
@@ -362,7 +400,8 @@ class ModelManager:
             ValueError: If task is not supported by the model.
         """
         return await asyncio.get_running_loop().run_in_executor(
-            None, lambda: self.process(model_id, task=task, **kwargs)
+            None,
+            lambda: self.process(model_id, task=task, serialize=serialize, **kwargs),
         )
 
     def submit(
@@ -405,18 +444,41 @@ class ModelManager:
                     f"{self._pool.data_slot_bytes} B — increase input_mb"
                 )
 
+            # Validate through the registry BEFORE consuming a slot — same
+            # contract as the direct path, which validates in process().
+            mro_names = getattr(backend, "_model_mro_names", [])
+            if mro_names:
+                reg = _get_registry()
+                task_name = task or reg.get_default_task_by_mro_names(mro_names)
+                if task_name:
+                    entry = reg.get_entry_by_mro_names(mro_names, task_name)
+                    if entry is not None:
+                        vkwargs = dict(kwargs)
+                        if raw_input is not None:
+                            vkwargs["images"] = raw_input
+                        entry.validator(vkwargs)
+
+            # Pack task + kwargs into params_bytes for worker — BEFORE the
+            # slot alloc so an encoding failure cannot leak a slot.
+            params = dict(kwargs)
+            if task is not None:
+                params["task"] = task
+            try:
+                params_bytes = json.dumps(params).encode()
+            except TypeError as exc:
+                # default=str silently sent numpy arrays as their repr — an
+                # explicit error beats garbage params at the worker.
+                raise ValueError(
+                    "params not JSON-serializable for subprocess backend "
+                    f"(keys: {sorted(params)}): {exc}"
+                ) from exc
+
             req_id = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
             slot_id = self._pool.alloc_slot()
             self._pool.mark_allocated(slot_id, req_id)
             if input_bytes:
                 self._pool.data_memoryview(slot_id)[: len(input_bytes)] = input_bytes
             self._pool.mark_written(slot_id, len(input_bytes))
-
-            # Pack task + kwargs into params_bytes for worker
-            params = dict(kwargs)
-            if task is not None:
-                params["task"] = task
-            params_bytes = json.dumps(params, default=str).encode()
 
             future: Future = _SlotFuture()
 
@@ -446,11 +508,18 @@ class ModelManager:
 
         def _run():
             t0 = time.monotonic()
+            _begin = getattr(backend, "inflight_begin", None)
+            if _begin is not None:
+                _begin()
             try:
                 result = invoke_task(backend.model, task=task, **kwargs)
             except Exception:
                 backend.record_inference(t0, error=True)
                 raise
+            finally:
+                _end = getattr(backend, "inflight_end", None)
+                if _end is not None:
+                    _end()
             backend.record_inference(t0, error=False)
             return result
 

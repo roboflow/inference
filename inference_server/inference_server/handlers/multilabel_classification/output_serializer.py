@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import json
 from typing import Any, Optional
 
 from fastapi import Response
 
 from inference_model_manager.serializers_typed import (
-    serialize_classification_rich,
     serialize_multilabel_classification_compact,
 )
 from inference_server.framework.entities import CommonRequestParams
+from inference_server.serializers import serialize_json
 
 
 class _ModelProxy:
@@ -20,13 +19,10 @@ class _ModelProxy:
 
 
 def _serialize_one(prediction: Any, style: str) -> Any:
+    # Rich style intentionally falls back to compact: the rich classification
+    # serializer reads `class_id`, multilabel predictions expose `class_ids`.
     proxy = _ModelProxy(class_names=None)
-    serializer = (
-        serialize_classification_rich
-        if style == "rich"
-        else serialize_multilabel_classification_compact
-    )
-    return serializer(prediction, proxy)
+    return serialize_multilabel_classification_compact(prediction, proxy)
 
 
 def serialize_multilabel_classification(
@@ -45,6 +41,6 @@ def serialize_multilabel_classification(
         "predictions": typed,
     }
     return Response(
-        content=json.dumps(envelope, default=str).encode(),
+        content=serialize_json(envelope),
         media_type="application/json",
     )
