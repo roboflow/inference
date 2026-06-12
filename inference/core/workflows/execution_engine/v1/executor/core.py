@@ -47,6 +47,10 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
     current_debug_collector,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import (
+    current_debug_step_name,
+    current_debug_trace,
+)
 from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
     ExecutionDataManager,
 )
@@ -195,6 +199,7 @@ def execute_steps(
     # so that worker threads can re-bind the ContextVar locally — ContextVars
     # set in this thread do not propagate into ThreadPoolExecutor workers.
     debug_collector = current_debug_collector.get()
+    debug_trace = current_debug_trace.get()
     # Capture OTel context so it can be re-attached inside worker threads
     otel_ctx = capture_context()
     logger.debug(f"Executing steps: {next_steps}.")
@@ -209,6 +214,7 @@ def execute_steps(
             processing_time_collector=processing_time_collector,
             duration_minimum_value=duration_minimum_value,
             debug_collector=debug_collector,
+            debug_trace=debug_trace,
             step_error_handler=step_error_handler,
             otel_ctx=otel_ctx,
         )
@@ -233,6 +239,7 @@ def safe_execute_step(
     processing_time_collector=None,
     duration_minimum_value=None,
     debug_collector=None,
+    debug_trace=None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     otel_ctx=None,
 ) -> None:
@@ -246,13 +253,15 @@ def safe_execute_step(
     # and a conditional set would leave a previous request's collector bound in
     # this thread, silently accumulating logs on a dead object.
     current_debug_collector.set(debug_collector)
+    current_debug_trace.set(debug_trace)
+    step_name = get_last_chunk_of_selector(selector=step_selector)
+    current_debug_step_name.set(step_name)
     # Re-attach OTel context in worker thread so trace propagation works.
     # Must detach when done — threads are reused in the pool, and leaked
     # contexts cause incorrect span parenting on subsequent tasks.
     _otel_token = attach_context(otel_ctx)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
-    step_name = get_last_chunk_of_selector(selector=step_selector)
     try:
         with start_span("workflow.step", {"workflow.step": step_name}):
             try:

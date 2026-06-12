@@ -321,6 +321,9 @@ from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser impo
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
     register_debug_collector,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import (
+    get_active_debug_trace,
+)
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 
@@ -1304,6 +1307,11 @@ class HttpInterface(BaseInterface):
                         logs_snapshot = collector.snapshot()
                         if logs_snapshot:
                             error.python_block_logs = logs_snapshot
+                        trace_snapshot = get_active_debug_trace()
+                        if trace_snapshot is not None:
+                            trace_entries = trace_snapshot.snapshot()
+                            if trace_entries:
+                                error.workflow_debug_trace = trace_entries
                     raise
                 # Empty snapshot (no block printed anything) -> null in response.
                 python_block_logs = (
@@ -1311,6 +1319,11 @@ class HttpInterface(BaseInterface):
                     if debug_requested and collector is not None
                     else None
                 ) or None
+                workflow_debug_trace = None
+                if debug_requested:
+                    active_trace = get_active_debug_trace()
+                    if active_trace is not None:
+                        workflow_debug_trace = active_trace.snapshot() or None
             with profiler.profile_execution_phase(
                 name="workflow_results_filtering",
                 categories=["inference_package_operation"],
@@ -1324,6 +1337,7 @@ class HttpInterface(BaseInterface):
                 outputs=outputs,
                 profiler_trace=profiler_trace,
                 python_block_logs=python_block_logs,
+                workflow_debug_trace=workflow_debug_trace,
             )
             return orjson_response(response=response)
 

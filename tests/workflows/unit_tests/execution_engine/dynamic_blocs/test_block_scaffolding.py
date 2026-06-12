@@ -406,3 +406,47 @@ def run_function(self, a, b) -> BlockResult:
 
     # then - regular result, no exception, no recording side effect
     assert execution_result == {"result": 3}
+
+
+def test_run_assembled_custom_python_block_appends_to_debug_trace() -> None:
+    # given - a block that uses the injected `debug` variable
+    manifest = BlockManifest
+    run_function = """
+def run_function(self, a, b) -> BlockResult:
+    debug.append({"sum": a + b, "inputs": [a, b]})
+    return {"result": a + b}
+"""
+    python_code = PythonCode(
+        type="PythonCode",
+        run_function_code=run_function,
+        run_function_name="run_function",
+        imports=[],
+    )
+    workflow_block_class = assembly_custom_python_block(
+        block_type_name="DebugBlock",
+        unique_identifier="debug-trace-id",
+        manifest=manifest,
+        python_code=python_code,
+    )
+    workflow_block_instance = workflow_block_class()
+    workflow_block_instance._workflow_step_name = "debug_step"
+
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import (
+        current_debug_step_name,
+        get_active_debug_trace,
+    )
+
+    # when
+    with register_debug_collector():
+        token = current_debug_step_name.set("debug_step")
+        try:
+            execution_result = workflow_block_instance.run(a=3, b=5)
+            trace = get_active_debug_trace().snapshot()
+        finally:
+            current_debug_step_name.reset(token)
+
+    # then
+    assert execution_result == {"result": 8}
+    assert trace == [
+        {"step": "debug_step", "value": {"sum": 8, "inputs": [3, 5]}},
+    ]

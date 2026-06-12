@@ -1,8 +1,9 @@
-"""Contract tests for `python_block_logs` exposure on the workflow run endpoint.
+"""Contract tests for `python_block_logs` and `workflow_debug_trace` exposure on the workflow run endpoint.
 
 These tests pin the over-the-wire JSON shape that clients (e.g. the Roboflow
 editor's Debug Mode) depend on:
 - `debug=True` + printing block -> 200 with `python_block_logs` populated,
+- `debug=True` + block using `debug.append()` -> 200 with `workflow_debug_trace` populated,
 - `debug=True` + failing block  -> 400 with `python_block_logs` (logs of the
   steps executed before the failure, plus the failing step itself) and
   `block_traceback` carrying the failing step's streams,
@@ -79,6 +80,12 @@ def run(self, value) -> BlockResult:
     raise RuntimeError("boom")
 """
 
+DEBUG_TRACE_BLOCK_CODE = """
+def run(self, value) -> BlockResult:
+    debug.append({"received": value, "doubled": value * 2}, add_timestamp=True)
+    return {"result": value * 2}
+"""
+
 
 SUCCESS_SPECIFICATION = {
     "version": "1.0",
@@ -116,6 +123,28 @@ SILENT_SPECIFICATION = {
     ],
 }
 
+DEBUG_TRACE_SPECIFICATION = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowParameter", "name": "value"}],
+    "dynamic_blocks_definitions": [
+        _dynamic_block_definition("DebugTraceBlock", DEBUG_TRACE_BLOCK_CODE),
+    ],
+    "steps": [
+        {
+            "type": "DebugTraceBlock",
+            "name": "debug_trace_step",
+            "value": "$inputs.value",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.debug_trace_step.result",
+        },
+    ],
+}
+
 # failing_step consumes printing_step's output, so the printing step is
 # guaranteed to complete before the failure happens.
 FAILING_SPECIFICATION = {
@@ -141,6 +170,33 @@ FAILING_SPECIFICATION = {
         },
     ],
 }
+
+
+def test_workflow_run_with_debug_returns_workflow_debug_trace(monkeypatch) -> None:
+    # given
+    client = _build_test_client(monkeypatch)
+
+    # when
+    response = client.post(
+        "/workflows/run",
+        json={
+            "specification": DEBUG_TRACE_SPECIFICATION,
+            "inputs": {"value": 7},
+            "debug": True,
+        },
+    )
+
+    # then
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outputs"] == [{"result": 14}]
+    trace = body["workflow_debug_trace"]
+    assert len(trace) == 1
+    assert trace[0]["step"] == "debug_trace_step"
+    assert trace[0]["value"] == {"received": 7, "doubled": 14}
+    assert "timestamp" in trace[0]
+    assert trace[0]["timestamp_timezone"] == "UTC"
+    assert trace[0]["timestamp"].endswith("+00:00")
 
 
 def test_workflow_run_with_debug_returns_python_block_logs(monkeypatch) -> None:
@@ -239,3 +295,23 @@ def test_workflow_run_with_debug_and_silent_blocks_returns_null_python_block_log
     body = response.json()
     assert body["outputs"] == [{"result": 7}]
     assert body.get("python_block_logs") is None
+
+
+def test_workflow_run_without_debug_returns_null_workflow_debug_trace(
+    monkeypatch,
+) -> None:
+    # given
+    client = _build_test_client(monkeypatch)
+
+    # when
+    response = client.post(
+        "/workflows/run",
+        json={
+            "specification": DEBUG_TRACE_SPECIFICATION,
+            "inputs": {"value": 7},
+        },
+    )
+
+    # then
+    assert response.status_code == 200
+    assert response.json().get("workflow_debug_trace") is None

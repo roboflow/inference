@@ -27,8 +27,10 @@ class WorkflowInferenceRequest(BaseModel):
     )
     debug: bool = Field(
         default=False,
-        description="When True, captures stdout/stderr emitted by custom Python blocks executed locally "
-        "and returns them in the response under `python_block_logs`. Has no effect on Modal / OCI "
+        description="When True, captures stdout/stderr emitted by custom Python blocks executed "
+        "locally and returns them in the response under `python_block_logs`. Also activates "
+        "the workflow-scoped `debug` variable in custom Python blocks; values appended during "
+        "execution are returned under `workflow_debug_trace`. Has no effect on Modal / OCI "
         "sandbox executions today.",
     )
     workflow_id: Optional[str] = Field(

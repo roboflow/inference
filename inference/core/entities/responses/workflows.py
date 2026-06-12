@@ -28,6 +28,16 @@ class WorkflowInferenceResponse(BaseModel):
         "the list of invocations (in execution order) with `stdout` and `stderr` strings "
         "(or null if empty). Only populated for local executions.",
     )
+    workflow_debug_trace: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="When `debug=True` was set on the request, structured debug entries "
+        "appended via the `debug` variable in custom Python blocks, in chronological "
+        "execution order. Each entry has `step` (step name) and `value` (JSON-serialisable "
+        "payload, or string repr for non-serialisable values). When "
+        "`debug.append(..., add_timestamp=True)` was used, the entry also includes "
+        "`timestamp` (ISO-8601) and `timestamp_timezone` (IANA name, default `UTC`). "
+        "Only populated for local executions.",
+    )
 
 
 class WorkflowValidationStatus(BaseModel):
@@ -215,4 +225,10 @@ class WorkflowErrorResponse(BaseModel):
         description="When `debug=True` was set on the request, stdout/stderr captured for "
         "each local custom Python block execution that completed before (or caused) the "
         "failure, keyed by step name. Same format as on `WorkflowInferenceResponse`.",
+    )
+    workflow_debug_trace: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="When `debug=True` was set on the request, structured debug entries "
+        "appended via the `debug` variable before (or at) the failure. Same format as on "
+        "`WorkflowInferenceResponse`.",
     )

@@ -24,6 +24,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Dict, Generator, List, Optional
 
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import (
+    WorkflowDebugTrace,
+    current_debug_trace,
+)
+
 current_debug_collector: ContextVar[Optional["DebugLogsCollector"]] = ContextVar(
     "current_debug_collector", default=None
 )
@@ -104,11 +109,14 @@ def register_debug_collector() -> Generator[DebugLogsCollector, None, None]:
     ``safe_execute_step``).
     """
     collector = DebugLogsCollector()
+    trace = WorkflowDebugTrace()
     token = current_debug_collector.set(collector)
+    token_trace = current_debug_trace.set(trace)
     try:
         yield collector
     finally:
         current_debug_collector.reset(token)
+        current_debug_trace.reset(token_trace)
 
 
 def get_active_collector() -> Optional[DebugLogsCollector]:
