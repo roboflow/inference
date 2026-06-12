@@ -278,13 +278,33 @@ def slot_freed(reason: str, slot_id: int, req_id: Any) -> None:
 
 
 def client_mem(pending: int) -> None:
-    """Sampled memory snapshot for the uvicorn-side MMP client process."""
-    anon, shmem, _ = mem_split_mb()
+    """Sampled memory snapshot for the uvicorn-side MMP client process.
+
+    Discriminates leak type: anon drop after gc.collect() = reference cycles;
+    drop after malloc_trim(0) = glibc arena retention (fragmentation);
+    no drop = live references (true leak).
+    """
+    import gc  # noqa: PLC0415
+
+    anon0, shmem, _ = mem_split_mb()
+    gc.collect()
+    anon1, _, _ = mem_split_mb()
+    anon2 = -1.0
+    try:
+        import ctypes  # noqa: PLC0415
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+        anon2, _, _ = mem_split_mb()
+    except Exception:
+        pass
     log.info(
-        "DBG client mem: pid=%d rss_mb=%.0f anon_mb=%.0f shm_mb=%.0f pending=%d",
+        "DBG client mem: pid=%d rss_mb=%.0f anon_mb=%.0f after_gc_mb=%.0f "
+        "after_trim_mb=%.0f shm_mb=%.0f pending=%d",
         os.getpid(),
         rss_mb(),
-        anon,
+        anon0,
+        anon1,
+        anon2,
         shmem,
         pending,
     )
