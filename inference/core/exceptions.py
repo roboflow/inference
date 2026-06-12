@@ -119,6 +119,10 @@ class InvalidModelIDError(Exception):
     pass
 
 
+class RequestDataContradiction(Exception):
+    pass
+
+
 class MalformedRoboflowAPIResponseError(Exception):
     pass
 
