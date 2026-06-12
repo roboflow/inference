@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from inference.core.env import (
     DEFAULT_BUFFER_SIZE,
@@ -101,9 +101,15 @@ class WebRTCOffer(BaseModel):
 
 
 class WebRTCTURNConfig(BaseModel):
-    urls: str
+    # Accepts a single URL or a list; always normalized to a list (per WebRTC spec).
+    urls: Union[str, List[str]]
     username: str
     credential: str
+
+    @field_validator("urls", mode="after")
+    @classmethod
+    def _normalize_urls(cls, value: Union[str, List[str]]) -> List[str]:
+        return [value] if isinstance(value, str) else value
 
 
 class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):

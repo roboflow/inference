@@ -1,10 +1,13 @@
-from typing import List
-
 from inference.core.entities.responses.inference import Keypoint
 from inference.core.models.utils.keypoints import (
     model_keypoints_to_response,
     superset_keypoints_count,
 )
+
+
+def test_superset_keypoints_count_with_empty_metadata_returns_zero() -> None:
+    # Empty metadata is a valid input with zero keypoints.
+    assert superset_keypoints_count({}) == 0
 
 
 def test_superset_keypoints_count() -> None:

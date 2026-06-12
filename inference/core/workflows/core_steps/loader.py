@@ -119,6 +119,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_float_zero_to_one_kind,
     deserialize_image_kind,
     deserialize_integer_kind,
+    deserialize_labeled_points_kind,
     deserialize_list_of_values_kind,
     deserialize_numpy_array,
     deserialize_optional_string_kind,
@@ -341,6 +342,12 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
     SegmentAnything3BlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
+    SegmentAnything3InteractiveBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
+    SegmentAnything3VideoBlockV1,
+)
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
     RoboflowInstanceSegmentationModelBlockV4,
 )
@@ -549,6 +556,9 @@ from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v
 from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
     StitchOCRDetectionsBlockV2,
 )
+from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
+    TrackClassLockBlockV1,
+)
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
@@ -654,6 +664,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    LABELED_POINTS_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     NUMPY_ARRAY_KIND,
@@ -734,6 +745,7 @@ KINDS_DESERIALIZERS = {
     SEMANTIC_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
     CLASSIFICATION_PREDICTION_KIND.name: deserialize_classification_prediction_kind,
     POINT_KIND.name: deserialize_point_kind,
+    LABELED_POINTS_KIND.name: deserialize_labeled_points_kind,
     ZONE_KIND.name: deserialize_zone_kind,
     RGB_COLOR_KIND.name: deserialize_rgb_color_kind,
     LANGUAGE_MODEL_OUTPUT_KIND.name: deserialize_string_kind,
@@ -914,6 +926,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SegmentAnything3BlockV1,
         SegmentAnything3BlockV2,
         SegmentAnything3BlockV3,
+        SegmentAnything3InteractiveBlockV1,
+        SegmentAnything3VideoBlockV1,
         SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
@@ -926,6 +940,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TimeInZoneBlockV1,
         TimeInZoneBlockV2,
         TimeInZoneBlockV3,
+        TrackClassLockBlockV1,
         TriangleVisualizationBlockV1,
         TextDisplayVisualizationBlockV1,
         VLMAsClassifierBlockV1,
@@ -1033,6 +1048,7 @@ def load_kinds() -> List[Kind]:
         CLASSIFICATION_PREDICTION_KIND,
         DETECTIONS_OVERLAPS_KIND,
         POINT_KIND,
+        LABELED_POINTS_KIND,
         ZONE_KIND,
         OBJECT_DETECTION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
