@@ -34,7 +34,7 @@ def _loaded(mmp, name, access, footprint):
 def _stub_evict(mmp):
     evicted = []
 
-    def _evict(model_id):
+    async def _evict(model_id):
         evicted.append(model_id)
         fs = mmp._models.get(model_id)
         if fs:
@@ -217,7 +217,7 @@ class TestAdmissionPlan:
         mmp = _mmp(vram_headroom_mb=0.0)
         mmp._vram_meta_cache["m"] = 1000
         mmp._gpu_free_mb = lambda: 2000.0
-        decision, victims = mmp._vram_admission_plan("m")
+        decision, victims, _ = asyncio.run(mmp._vram_admission_plan("m"))
         assert decision == "admit"
         assert victims == []
 
@@ -228,30 +228,26 @@ class TestAdmissionPlan:
         mmp._model_access["old"] = 1.0
         mmp._vram_meta_cache["old"] = 1000
         mmp._gpu_free_mb = lambda: 800.0  # deficit 700, "old" covers it
-        decision, victims = mmp._vram_admission_plan("m")
+        decision, victims, deficit = asyncio.run(mmp._vram_admission_plan("m"))
         assert decision == "evict"
         assert victims == ["old"]
+        assert deficit == 700.0
 
     def test_no_capacity_when_unrecoverable(self):
         mmp = _mmp(vram_headroom_mb=0.0)
         mmp._vram_meta_cache["m"] = 5000
         mmp._gpu_free_mb = lambda: 100.0  # nothing evictable
-        decision, victims = mmp._vram_admission_plan("m")
+        decision, victims, _ = asyncio.run(mmp._vram_admission_plan("m"))
         assert decision == "no_capacity"
 
-    def test_need_zero_admits_within_headroom(self):
-        mmp = _mmp(vram_headroom_mb=0.0)
-        mmp._vram_meta_cache["m"] = 0  # no data, treated as 0 footprint
-        mmp._gpu_free_mb = lambda: 0.0
-        decision, _ = mmp._vram_admission_plan("m")
-        assert decision == "admit"
-
-    def test_need_zero_denied_when_headroom_exceeds_free(self):
+    def test_need_zero_admits_unconditionally(self):
+        # No footprint data → planner cannot reason; admit and rely on the
+        # OOM-retry backstop (headroom floor intentionally skipped).
         mmp = _mmp(vram_headroom_mb=4096.0)
-        mmp._vram_meta_cache["m"] = 0  # no data, treated as 0 footprint
-        mmp._gpu_free_mb = lambda: 2000.0  # below headroom, nothing evictable
-        decision, _ = mmp._vram_admission_plan("m")
-        assert decision == "no_capacity"
+        mmp._vram_meta_cache["m"] = 0
+        mmp._gpu_free_mb = lambda: 0.0
+        decision, _, _ = asyncio.run(mmp._vram_admission_plan("m"))
+        assert decision == "admit"
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +303,11 @@ class TestLoadModelGate:
     def test_no_capacity_fails_load(self):
         mmp = _mmp(vram_admission=True)
         mmp._manager = object()  # non-None: skip stub path, reach gate
-        mmp._vram_admission_plan = lambda model_id, api_key="": ("no_capacity", [])
+
+        async def _plan(model_id, api_key=""):
+            return ("no_capacity", [], 0.0)
+
+        mmp._vram_admission_plan = _plan
         failed = []
         mmp._fail_load = lambda model_id, fs, err: failed.append(err)
         asyncio.run(mmp._load_model("m"))
@@ -316,9 +316,11 @@ class TestLoadModelGate:
     def test_evict_abort_fails_load(self):
         mmp = _mmp(vram_admission=True)
         mmp._manager = object()
-        mmp._vram_admission_plan = lambda model_id, api_key="": ("evict", ["v"])
-        mmp._required_mb = lambda model_id, api_key="": 1000
-        mmp._gpu_free_mb = lambda: 0.0
+
+        async def _plan(model_id, api_key=""):
+            return ("evict", ["v"], 1000.0)
+
+        mmp._vram_admission_plan = _plan
 
         async def _abort(plan, deficit_mb):
             return False
@@ -332,7 +334,12 @@ class TestLoadModelGate:
     def test_flag_off_skips_gate(self):
         mmp = _mmp(vram_admission=False)
         called = []
-        mmp._vram_admission_plan = lambda *a, **k: called.append(1) or ("no_capacity", [])
+
+        async def _plan(*a, **k):
+            called.append(1)
+            return ("no_capacity", [], 0.0)
+
+        mmp._vram_admission_plan = _plan
 
         fake_backend = type("B", (), {"signal_slot": lambda *a, **k: None})()
 
@@ -342,6 +349,12 @@ class TestLoadModelGate:
 
             def get_backend(self, model_id):
                 return fake_backend
+
+            def unload(self, model_id, **kw):
+                pass
+
+            def __contains__(self, model_id):
+                return False
 
         mmp._manager = FakeMgr()
         asyncio.run(mmp._load_model("m"))
