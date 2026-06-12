@@ -11,10 +11,20 @@ slot once the worker drains the ticket).
 from __future__ import annotations
 
 import asyncio
+import pickle
+import struct
 
 import pytest
 
-from inference_server.proxies.mmp_client import T_CANCEL, T_FREE, T_SUBMIT, MMPClient
+from inference_server.proxies.mmp_client import (
+    T_ALLOC,
+    T_ALLOC_OK,
+    T_CANCEL,
+    T_FREE,
+    T_RESULT_READY,
+    T_SUBMIT,
+    MMPClient,
+)
 
 
 class _RecordingSock:
@@ -47,7 +57,7 @@ def test_submit_timeout_sends_cancel_not_free():
     async def _run() -> list[bytes]:
         client, sock = _make_client()
 
-        async def _fake_alloc(model_id, instance=""):
+        async def _fake_alloc(req_id, model_id, instance=""):
             return 5
 
         client._alloc_slot = _fake_alloc
@@ -73,7 +83,7 @@ def test_alloc_ok_but_submit_send_fails_frees_slot():
     async def _run() -> list[bytes]:
         client, sock = _make_client()
 
-        async def _fake_alloc(model_id, instance=""):
+        async def _fake_alloc(req_id, model_id, instance=""):
             return 5
 
         def _boom(slot_id, chunk, offset):
@@ -93,3 +103,87 @@ def test_alloc_ok_but_submit_send_fails_frees_slot():
     assert T_SUBMIT not in types
     assert T_CANCEL not in types
     assert T_FREE in types
+
+
+# ---------------------------------------------------------------------------
+# Slot ownership: one req_id per inference, T_FREE carries it
+# ---------------------------------------------------------------------------
+
+
+def test_single_req_id_for_alloc_submit_free():
+    async def _run():
+        client, sock = _make_client()
+        client._write_input = lambda slot_id, chunk, offset: None
+        client._read_slot_header = lambda slot_id: None
+        client._read_result = lambda slot_id, sz: pickle.dumps({"ok": 1})
+
+        task = asyncio.create_task(client.infer(model_id="m", image=b"\xff\xd8x"))
+        for _ in range(5):
+            await asyncio.sleep(0)
+        alloc_frame = [f for f in sock.sent if f[0] == T_ALLOC][0]
+        alloc_req = struct.unpack_from(">Q", alloc_frame[1])[0]
+
+        client._dispatch(T_ALLOC_OK, [struct.pack(">QI", alloc_req, 5)])
+        for _ in range(5):
+            await asyncio.sleep(0)
+        submit_frame = [f for f in sock.sent if f[0] == T_SUBMIT][0]
+        submit_req = struct.unpack_from(">Q", submit_frame[1])[0]
+        assert submit_req == alloc_req
+
+        client._dispatch(T_RESULT_READY, [struct.pack(">QII", submit_req, 5, 10)])
+        result = await task
+        assert result == {"ok": 1}
+        for _ in range(5):
+            await asyncio.sleep(0)
+        free_frame = [f for f in sock.sent if f[0] == T_FREE][0]
+        free_req, free_slot = struct.unpack(">QI", free_frame[1])
+        assert free_req == alloc_req
+        assert free_slot == 5
+
+    asyncio.run(_run())
+
+
+def test_disconnect_race_prefers_completed_result():
+    async def _run():
+        client, _ = _make_client()
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(("result", 5, 10))
+
+        class _DisconnectedRequest:
+            async def is_disconnected(self):
+                return True
+
+        return await client._wait_with_disconnect(fut, _DisconnectedRequest())
+
+    assert asyncio.run(_run()) == ("result", 5, 10)
+
+
+def test_alloc_cancellation_drops_pending_future():
+    async def _run():
+        client, sock = _make_client()
+        task = asyncio.create_task(client._alloc_slot(12345, "m"))
+        await asyncio.sleep(0)
+        assert 12345 in client._pending
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        assert 12345 not in client._pending
+
+    asyncio.run(_run())
+
+
+def test_free_and_cancel_tasks_are_strongly_referenced():
+    async def _run():
+        client, sock = _make_client()
+        client._free_slot(5, 111)
+        client._cancel_req(222)
+        assert len(client._bg_tasks) == 2
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert len(client._bg_tasks) == 0
+        return _msg_types(sock)
+
+    types = asyncio.run(_run())
+    assert T_FREE in types and T_CANCEL in types

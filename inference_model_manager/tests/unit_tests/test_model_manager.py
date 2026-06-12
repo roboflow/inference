@@ -460,3 +460,28 @@ class TestReloadAfterWorkerDeath:
         assert len(created) == 2
         assert mmp._manager.get_backend("yolov8n:0") is created[-1]
         assert created[-1].is_healthy is True
+
+
+class TestSubmitSlotFutureLifecycle:
+    def test_cancel_refused_and_slot_freed_only_on_resolution(self):
+        mm = ModelManager(n_slots=2, input_mb=0.1)
+        try:
+            captured: Dict[str, Any] = {}
+
+            class _FakeSubprocBackend:
+                def submit_slot(self, slot_id, req_id, future, params_bytes):
+                    captured.update(slot=slot_id, req=req_id, fut=future)
+
+            mm._backends["m"] = _FakeSubprocBackend()
+            mm._ensure_pool()  # normally created on first subprocess load
+            fut = mm.submit("m", raw_input=b"\xff\xd8abc")
+
+            assert mm._pool.free_count == 1          # slot held
+            assert fut.cancel() is False             # uncancellable
+            assert mm._pool.free_count == 1          # cancel freed nothing
+
+            captured["fut"].set_result("prediction")
+            assert fut.result(timeout=1) == "prediction"
+            assert mm._pool.free_count == 2          # freed exactly on resolution
+        finally:
+            mm.shutdown()

@@ -44,7 +44,7 @@ import numpy as np
 
 from inference_model_manager.backends import _debuglog as _dbg  # DEBUGLOG
 from inference_model_manager.backends.base import Backend
-from inference_model_manager.backends.utils.shm_pool import SHMPool
+from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 from inference_model_manager.backends.utils.transport import default_transport
 from inference_model_manager import configuration as cfg
 from inference_model_manager.dispatch import invoke_task
@@ -287,6 +287,10 @@ def _worker_loop(
             elif msg == _MSG_SLOT_READY and len(frames) > 1 and len(frames[1]) >= 12:
                 slot_id, req_id = struct.unpack(">IQ", frames[1][:12])
                 params_bytes = frames[2] if len(frames) > 2 else b"{}"
+                try:
+                    pool.touch_slot(slot_id)
+                except Exception:
+                    pass
                 if not pending:
                     batch_start = time.monotonic()
                 pending.append((slot_id, req_id, params_bytes))
@@ -357,6 +361,15 @@ def _build_worker_stats_payload(worker_stats: dict) -> bytes:
     ).encode()
 
 
+def _slot_owned(pool: SHMPool, slot_id: int, req_id: int) -> bool:
+    """True if the slot header is still bound to req_id. Guards every write
+    against slots the reaper reclaimed and re-allocated mid-flight."""
+    try:
+        return pool.read_header(slot_id).request_id == req_id
+    except Exception:
+        return False
+
+
 def _process_slots(
     model,
     pool: SHMPool,
@@ -370,6 +383,29 @@ def _process_slots(
     import zmq
 
     t0 = time.monotonic()
+
+    # Ownership gate: drop slots whose header no longer matches the signalled
+    # req_id (reaper reclaimed + re-allocated between T_SLOT_READY and now) or
+    # that are not in WRITTEN state. Claim survivors as PROCESSING (refreshes
+    # the reaper timestamp).
+    owned: list[tuple[int, int, bytes]] = []
+    for slot_id, req_id, params_bytes in batch:
+        hdr = pool.read_header(slot_id)
+        if hdr.status != SlotStatus.WRITTEN or hdr.request_id != req_id:
+            log.warning(
+                "Worker: skipping slot %d — ownership lost "
+                "(status=%d hdr_req=%d signal_req=%d)",
+                slot_id,
+                hdr.status,
+                hdr.request_id,
+                req_id,
+            )
+            continue
+        pool.mark_processing(slot_id, os.getpid())
+        owned.append((slot_id, req_id, params_bytes))
+    if not owned:
+        return
+    batch = owned
 
     # Parse per-slot params
     slot_params: list[dict] = []
@@ -436,6 +472,8 @@ def _process_slots(
     if error_indices:
         for i in error_indices:
             slot_id, req_id, _ = batch[i]
+            if not _slot_owned(pool, slot_id, req_id):
+                continue
             _write_error_to_slot(pool, slot_id, "image decode failed")
             try:
                 sock.send_multipart(
@@ -490,6 +528,14 @@ def _process_slots(
     n_err = len(error_indices) if error_indices else 0
 
     for (slot_id, req_id, _), result in zip(good_batch, results):
+        if not _slot_owned(pool, slot_id, req_id):
+            log.warning(
+                "Worker: dropping result for slot %d — ownership lost during "
+                "inference (req_id=%d)",
+                slot_id,
+                req_id,
+            )
+            continue
         if result is None or isinstance(result, _InferenceError):
             err_msg = (
                 result.message

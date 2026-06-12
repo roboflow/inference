@@ -48,7 +48,7 @@ import zmq
 import zmq.asyncio
 
 from inference_model_manager.backends import _debuglog as _dbg  # DEBUGLOG
-from inference_model_manager.backends.utils.shm_pool import SHMPool
+from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_model_manager import configuration as cfg
 from inference_model_manager.model_manager import ModelManager
@@ -673,22 +673,37 @@ class ModelManagerProcess:
         model_id = frame[18 : 18 + mid_len].decode(errors="replace")
         params_bytes = data[1] if len(data) > 1 else b"{}"
 
+        hdr = self._pool.read_header(slot_id)
+        if hdr.status != SlotStatus.ALLOCATED or hdr.request_id != req_id:
+            logger.warning(
+                "MMP: rejecting submit for slot %d — ownership mismatch "
+                "(status=%d hdr_req=%d submit_req=%d)",
+                slot_id,
+                hdr.status,
+                hdr.request_id,
+                req_id,
+            )
+            await self._send(
+                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_STALE)
+            )
+            return
+
         self._pending[req_id] = (identity, slot_id, model_id)
         self._pool.mark_written(slot_id, input_sz)
         self._forward_to_backend(model_id, slot_id, req_id, params_bytes)
 
     # ------------------------------------------------------------------
     # T_FREE
-    # wire: I   slot_id(4)
+    # wire: Q I   req_id(8) slot_id(4)
     # ------------------------------------------------------------------
 
     def _handle_free(self, data: list[bytes]) -> None:
-        if not data or len(data[0]) < 4:
+        if not data or len(data[0]) < 12:
             return
-        slot_id = struct.unpack_from(">I", data[0])[0]
+        req_id, slot_id = struct.unpack_from(">QI", data[0])
         try:
-            _dbg.slot_freed("client-T_FREE", slot_id, "-")  # DEBUGLOG
-            self._pool.free_slot(slot_id)
+            _dbg.slot_freed("client-T_FREE", slot_id, req_id)  # DEBUGLOG
+            self._pool.free_slot(slot_id, request_id=req_id)
         except Exception:
             pass
 
@@ -943,9 +958,11 @@ class ModelManagerProcess:
                 req_id,  # DEBUGLOG
                 slot_id,  # DEBUGLOG
             )  # DEBUGLOG
-            # Stale reaper already freed this, or duplicate callback — free slot
+            # Stale reaper already freed this, or duplicate callback — free
+            # slot only if it is still bound to this request (it may have been
+            # re-allocated since).
             _dbg.slot_freed("late-result", slot_id, req_id)  # DEBUGLOG
-            self._pool.free_slot(slot_id)
+            self._pool.free_slot(slot_id, request_id=req_id)
             return
         identity, _, _ = pending
         asyncio.create_task(
@@ -965,7 +982,7 @@ class ModelManagerProcess:
                 identity, T_ERROR, struct.pack(">QB", req_id, _ERR_BACKEND)
             )
             _dbg.slot_freed("backend-error", slot_id, req_id)  # DEBUGLOG
-            self._pool.free_slot(slot_id)
+            self._pool.free_slot(slot_id, request_id=req_id)
             return
         self._pool.mark_done(slot_id, result_sz)
         sent = await self._send(
@@ -982,7 +999,7 @@ class ModelManagerProcess:
                 slot_id,
             )
             _dbg.slot_freed("peer-gone", slot_id, req_id)  # DEBUGLOG
-            self._pool.free_slot(slot_id)
+            self._pool.free_slot(slot_id, request_id=req_id)
 
     # ------------------------------------------------------------------
     # Cold path — load
@@ -1203,6 +1220,7 @@ class ModelManagerProcess:
         slot_to_req = {s: r for r, (_, s, _) in self._pending.items()}
         for slot_id in stale:
             req_id = slot_to_req.get(slot_id)
+            hdr = None
             try:
                 hdr = self._pool.read_header(slot_id)
                 age_s = (now_ns - hdr.timestamp_ns) / 1e9 if hdr.timestamp_ns else 0.0
@@ -1224,7 +1242,13 @@ class ModelManagerProcess:
                         )
                     )
             _dbg.slot_freed("reaper", slot_id, req_id)  # DEBUGLOG
-            self._pool.free_slot(slot_id)
+            # Free under the request the header was bound to when sampled — if
+            # the request completed (and the slot was rebound) between
+            # stale_slots() and here, the free is a no-op.
+            if hdr is not None:
+                self._pool.free_slot(slot_id, request_id=hdr.request_id)
+            else:
+                self._pool.free_slot(slot_id)
 
     # ------------------------------------------------------------------
     # Eviction loop
