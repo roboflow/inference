@@ -88,6 +88,7 @@ providing compile-time verification of Workflows definitions.
 * [`instance_segmentation_prediction`](../kinds/instance_segmentation_prediction.md): Prediction with detected bounding boxes and segmentation masks in form of sv.Detections(...) object
 * [`integer`](../kinds/integer.md): Integer value
 * [`keypoint_detection_prediction`](../kinds/keypoint_detection_prediction.md): Prediction with detected bounding boxes and detected keypoints in form of sv.Detections(...) object
+* [`labeled_points`](../kinds/labeled_points.md): List of 2D points with positive/negative labels
 * [`language_model_output`](../kinds/language_model_output.md): LLM / VLM output
 * [`list_of_values`](../kinds/list_of_values.md): List of values of any type
 * [`numpy_array`](../kinds/numpy_array.md): Numpy array

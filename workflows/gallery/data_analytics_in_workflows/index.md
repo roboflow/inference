@@ -7,7 +7,7 @@ Below you can find example workflows you can use as inspiration to build your ap
 This example showcases how to export CSV file out of Workflow. Object detection results are 
 processed with **CSV Formatter** block to produce aggregated results.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiOHNoWDljcE84S1IxWUlub0M5b0siLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODExODcyNTd9.7Vmudc7G4_H-6OrH19eJxg_rIjFZ6G7ibsMIAKEonvw?showGraph=true" loading="lazy" title="Roboflow Workflow for csv formatter" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiOHNoWDljcE84S1IxWUlub0M5b0siLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NDh9.MFel_ZQU7GCK96D99qo61ZL8NlkuN9SWuQPsw8B1gUw?showGraph=true" loading="lazy" title="Roboflow Workflow for csv formatter" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -84,7 +84,7 @@ of bounding boxes per prediction in aggregated time window
     Copy the template into your Roboflow app, start `inference` server and use video preview 
     to get the results.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoianltSWlPTURKenJUdG1JbFplTzciLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODExODcyNTh9.bSOjh8MZPC7NFiZoRqfc6d_k5Y-A7NaCHGr4Qlu94OU?showGraph=true" loading="lazy" title="Roboflow Workflow for data aggregation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoianltSWlPTURKenJUdG1JbFplTzciLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NDh9.4mKgty0VT3rqxtcF-MeQ0syMUZvs0gj8iUKj6nojkMA?showGraph=true" loading="lazy" title="Roboflow Workflow for data aggregation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -173,7 +173,7 @@ This Workflow was created to achieve few ends:
     Copy the template into your Roboflow app, start `inference` server and use video preview 
     to get the results.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZWhZSUQzdTNkVEZZcFpFdmlHVjUiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODExODcyNjB9.lxS-glgRfNs1yhdmrJ62ZqtzjpgSLiVn-jGem0o0zvI?showGraph=true" loading="lazy" title="Roboflow Workflow for file sink for data aggregation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZWhZSUQzdTNkVEZZcFpFdmlHVjUiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NDl9.unwOwoWHyrxysIYTXtmMGl6BBkTLPTkczDvnxves1XI?showGraph=true" loading="lazy" title="Roboflow Workflow for file sink for data aggregation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

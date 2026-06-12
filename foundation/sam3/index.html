@@ -1284,6 +1284,45 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#example-point-prompting-in-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Point Prompting in Workflows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#video-tracking-in-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Video Tracking in Workflows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Video Tracking in Workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1873,6 +1912,45 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#example-point-prompting-in-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Point Prompting in Workflows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#video-tracking-in-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Video Tracking in Workflows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Video Tracking in Workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2131,10 +2209,11 @@
 <p>A prompt can contain <code>points</code>, a <code>box</code>, or both. Positive points include the clicked region; negative points (<code>"positive": false</code>) exclude it — add points to iteratively refine the mask. Note that the PVS <code>box</code> is <strong>center-anchored</strong> XYWH (<code>x</code>, <code>y</code> is the box center), unlike concept segmentation boxes which are top-left anchored.</p>
 <p>The response contains the single highest-confidence mask for the prompt: <code>multimask_output</code> controls how many internal mask proposals the model generates (three when <code>true</code>), but the best proposal is always selected for the response. Send one prompt per request — multiple prompts in one request currently return only one prediction.</p>
 <h2 id="workflow-integration">Workflow Integration<a class="headerlink" href="#workflow-integration" title="Permanent link">&para;</a></h2>
-<p>SAM 3 is fully integrated into <a href="https://inference.roboflow.com/workflows/core_steps/">Inference Workflows</a>. You can use the <strong>SAM 3</strong> block to add zero-shot instance segmentation to your pipeline.</p>
-<p>The Workflow block allows you to:
-- Use <strong>Text Prompts</strong> to segment objects by class name.
-- Use <strong>Box Prompts</strong> from other detection models (like YOLO) to generate precise masks for detected objects.</p>
+<p>SAM 3 is fully integrated into <a href="https://inference.roboflow.com/workflows/core_steps/">Inference Workflows</a>. Two blocks are available:</p>
+<ul>
+<li>The <strong>SAM 3</strong> block runs concept segmentation: use <strong>Text Prompts</strong> to segment all instances of a class by name.</li>
+<li>The <strong>SAM 3 Interactive</strong> block runs promptable visual segmentation (PVS): use <strong>Point Prompts</strong> (positive/negative clicks) and/or <strong>Box Prompts</strong> from other detection models (like YOLO) to segment specific objects.</li>
+</ul>
 <h3 id="example-text-prompting-in-workflows">Example: Text Prompting in Workflows<a class="headerlink" href="#example-text-prompting-in-workflows" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Add a <strong>SAM 3</strong> block to your workflow.</li>
@@ -2142,6 +2221,76 @@
 <li>In the <code>class_names</code> field, enter the classes you want to segment (e.g., <code>["person", "vehicle"]</code>).</li>
 <li>The block will output instance segmentation predictions compatible with other workflow steps.</li>
 </ol>
+<h3 id="example-point-prompting-in-workflows">Example: Point Prompting in Workflows<a class="headerlink" href="#example-point-prompting-in-workflows" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Add a <strong>SAM 3 Interactive</strong> block to your workflow.</li>
+<li>Connect an image input.</li>
+<li>In the <code>points</code> field, provide labeled points (or connect a workflow input of kind <code>labeled_points</code>), e.g. <code>[{"x": 320, "y": 240, "positive": true}, {"x": 100, "y": 100, "positive": false}]</code>. Positive points mark the object to segment; negative points exclude regions to refine the mask.</li>
+<li>Optionally connect detections from another model to the <code>boxes</code> field - each box becomes a separate prompt and its class name is forwarded to the predicted mask.</li>
+</ol>
+<h2 id="video-tracking-in-workflows">Video Tracking in Workflows<a class="headerlink" href="#video-tracking-in-workflows" title="Permanent link">&para;</a></h2>
+<p>The <strong>SAM3 Video Tracker</strong> workflow block (<code>roboflow_core/sam3_video@v1</code>) runs
+SAM3's streaming <em>concept tracker</em> frame by frame: you provide the concepts to
+track as text in <code>class_names</code>, and the model runs fused detection and
+tracking on every frame. Objects matching a concept keep a stable
+<code>tracker_id</code> across frames, and — unlike detector-seeded tracking — objects
+that enter the scene mid-stream are picked up automatically, with no
+re-prompting and no upstream detection model required. Each emitted mask
+carries the concept it matched as its class name and the model's detection
+score as its confidence (filter with <code>threshold</code>, default <code>0.5</code>).</p>
+<p>Key properties:</p>
+<ul>
+<li><strong>Stateful and local-only.</strong> The block keeps one tracking session per
+  <code>video_metadata.video_identifier</code> and requires
+  <code>WORKFLOWS_STEP_EXECUTION_MODE=local</code>; drive it with <code>InferencePipeline</code>,
+  which delivers frames one at a time with video metadata attached. A GPU is
+  required.</li>
+<li><strong>No prompt scheduling.</strong> Concept prompts are registered on the session
+  once; the session is only re-seeded when the stream restarts or
+  <code>class_names</code> changes. For detector-driven (box-prompted) video tracking,
+  use the SAM2 Video Tracker block instead (see the
+  <a href="../sam2/">SAM 2 documentation</a>) — it also accepts <code>sam3trackervideo</code> as
+  <code>model_id</code> to run SAM3's visually prompted tracker, which shares the
+  <code>sam3video</code> weights package.</li>
+<li><strong>Model.</strong> <code>model_id</code> defaults to <code>sam3video</code>, the HuggingFace transformers
+  port of SAM3 video, which exposes the frame-by-frame streaming interface
+  (the native <code>sam3</code> package's video predictor requires the whole video
+  upfront and cannot be used for live streams).</li>
+</ul>
+<h3 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferencePipeline</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.stream.sinks</span><span class="w"> </span><span class="kn">import</span> <span class="n">render_boxes</span>
+
+<span class="n">WORKFLOW</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;version&quot;</span><span class="p">:</span> <span class="s2">&quot;1.0&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;inputs&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;InferenceImage&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">}],</span>
+    <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;roboflow_core/sam3_video@v1&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;tracker&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;images&quot;</span><span class="p">:</span> <span class="s2">&quot;$inputs.image&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;class_names&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;person&quot;</span><span class="p">,</span> <span class="s2">&quot;forklift&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;threshold&quot;</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span>
+        <span class="p">},</span>
+    <span class="p">],</span>
+    <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;JsonField&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;predictions&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;selector&quot;</span><span class="p">:</span> <span class="s2">&quot;$steps.tracker.predictions&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">],</span>
+<span class="p">}</span>
+
+<span class="n">pipeline</span> <span class="o">=</span> <span class="n">InferencePipeline</span><span class="o">.</span><span class="n">init_with_workflow</span><span class="p">(</span>
+    <span class="n">video_reference</span><span class="o">=</span><span class="s2">&quot;path/to/video.mp4&quot;</span><span class="p">,</span>  <span class="c1"># or an RTSP URL / camera id</span>
+    <span class="n">workflow_specification</span><span class="o">=</span><span class="n">WORKFLOW</span><span class="p">,</span>
+    <span class="n">on_prediction</span><span class="o">=</span><span class="n">render_boxes</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;&lt;YOUR-API-KEY&gt;&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">pipeline</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="n">pipeline</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div>
 <h2 id="capabilities-features">Capabilities &amp; Features<a class="headerlink" href="#capabilities-features" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Open Vocabulary Segmentation</strong>: Unlike SAM 2 which requires visual prompts, SAM 3 can find objects based on text descriptions.</li>

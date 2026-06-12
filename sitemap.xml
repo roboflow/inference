@@ -298,6 +298,9 @@
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;cog_vlm&#x2f;</loc>
     </url>
     <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;sam3_interactive&#x2f;</loc>
+    </url>
+    <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;sam3&#x2f;</loc>
     </url>
     <url>
@@ -631,10 +634,16 @@
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;detections_stabilizer&#x2f;</loc>
     </url>
     <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;track_class_lock&#x2f;</loc>
+    </url>
+    <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;motion_detection&#x2f;</loc>
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;background_subtraction&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;sam3_video_tracker&#x2f;</loc>
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;sam2_video_tracker&#x2f;</loc>
@@ -797,6 +806,9 @@
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;kinds&#x2f;keypoint_detection_prediction&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;kinds&#x2f;labeled_points&#x2f;</loc>
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;kinds&#x2f;language_model_output&#x2f;</loc>

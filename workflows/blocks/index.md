@@ -293,6 +293,21 @@ hide:
 
 
 
+            <a href="sam3_interactive">
+              <div class="block">
+                
+                <div class="block_name"> <i class="fa-solid fa-eye" > </i>  SAM 3 Interactive</div>
+                <div class="block_description">Segment a specific object with SAM3 using point and/or bounding box prompts.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
             <a href="sam3">
               <div class="block">
                 
@@ -1931,6 +1946,21 @@ hide:
 
 
 
+            <a href="track_class_lock">
+              <div class="block">
+                
+                <div class="block_name"> <i class="fas fa-lock" > </i>  Track Class Lock</div>
+                <div class="block_description">Lock the class of each tracked object by majority voting to eliminate class flicker.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
             <a href="motion_detection">
               <div class="block">
                 
@@ -1951,6 +1981,21 @@ hide:
                 
                 <div class="block_name"> <i class="far fa-circle-minus" > </i>  Background Subtraction</div>
                 <div class="block_description">Subtract an image from its background history.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
+            <a href="sam3_video_tracker">
+              <div class="block">
+                
+                <div class="block_name"> <i class="fa-brands fa-meta" > </i>  SAM3 Video Tracker</div>
+                <div class="block_description">Segment and track objects across video frames from text prompts with SAM3's streaming concept tracker.</div>
                 <!-- <div class="block_license">APACHE-2.0</div> -->
               </div>
             </a>

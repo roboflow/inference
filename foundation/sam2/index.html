@@ -1256,6 +1256,34 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#video-tracking-in-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Video Tracking in Workflows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Video Tracking in Workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1807,6 +1835,34 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#video-tracking-in-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Video Tracking in Workflows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Video Tracking in Workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2010,6 +2066,84 @@ and start a sam2 server with
 <span class="n">masks</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">json</span><span class="p">()[</span><span class="s1">&#39;masks&#39;</span><span class="p">]</span>
 </code></pre></div>
 <p>This request returns segmentation masks that represent the object of interest.</p>
+<h2 id="video-tracking-in-workflows">Video Tracking in Workflows<a class="headerlink" href="#video-tracking-in-workflows" title="Permanent link">&para;</a></h2>
+<p>The <strong>SAM2 Video Tracker</strong> workflow block (<code>roboflow_core/segment_anything_2_video@v1</code>)
+runs SAM2's streaming video predictor frame by frame, keeping per-video temporal
+memory so object identities are preserved across frames. Feed it bounding boxes
+from an upstream detector; it converts each box to a mask and tracks it on
+subsequent frames, emitting instance segmentation predictions whose <code>tracker_id</code>
+stays stable for as long as SAM2 follows the object. Masks inherit the class
+name, class id, and confidence of the detection that prompted them.</p>
+<p>Key properties:</p>
+<ul>
+<li><strong>Stateful and local-only.</strong> The block keeps one tracking session per
+  <code>video_metadata.video_identifier</code>, so it can multiplex many streams, but the
+  session lives in process memory: the block requires
+  <code>WORKFLOWS_STEP_EXECUTION_MODE=local</code> and is intended to be driven by
+  <code>InferencePipeline</code>, which delivers frames one at a time with video metadata
+  attached. It is not suitable for stateless HTTP requests, and a GPU is
+  required.</li>
+<li><strong>Prompt scheduling.</strong> <code>prompt_mode</code> controls when detector boxes are
+  consumed as prompts:<ul>
+<li><code>first_frame</code> (default) — prompt once per session, then track silently.</li>
+<li><code>every_n_frames</code> — re-seed every <code>prompt_interval</code> frames, picking up
+  objects that entered the scene since the last prompt.</li>
+<li><code>every_frame</code> — re-seed on every frame; effectively a per-frame
+  detector→mask adapter with SAM-stable tracker ids.</li>
+</ul>
+</li>
+<li><strong>Model variants.</strong> <code>model_id</code> selects the Hiera backbone size:
+  <code>sam2video/tiny</code>, <code>sam2video/small</code> (default), <code>sam2video/base-plus</code>,
+  <code>sam2video/large</code>. The block also accepts <code>sam3trackervideo</code> — SAM3's
+  visually prompted tracker, which uses the same box-prompt contract but a
+  much larger backbone. It is markedly better at keeping object identities
+  on long videos and in crowded scenes (see the SAM3 paper's VOS results),
+  at higher compute cost; treat it as the max-quality tier and the
+  <code>sam2video</code> sizes as the speed tiers.</li>
+</ul>
+<h3 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferencePipeline</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference.core.interfaces.stream.sinks</span><span class="w"> </span><span class="kn">import</span> <span class="n">render_boxes</span>
+
+<span class="n">WORKFLOW</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;version&quot;</span><span class="p">:</span> <span class="s2">&quot;1.0&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;inputs&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;InferenceImage&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">}],</span>
+    <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;roboflow_core/roboflow_object_detection_model@v2&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;detector&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;images&quot;</span><span class="p">:</span> <span class="s2">&quot;$inputs.image&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;model_id&quot;</span><span class="p">:</span> <span class="s2">&quot;yolov8n-640&quot;</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;roboflow_core/segment_anything_2_video@v1&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;tracker&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;images&quot;</span><span class="p">:</span> <span class="s2">&quot;$inputs.image&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;boxes&quot;</span><span class="p">:</span> <span class="s2">&quot;$steps.detector.predictions&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;prompt_mode&quot;</span><span class="p">:</span> <span class="s2">&quot;every_n_frames&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;prompt_interval&quot;</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span>
+        <span class="p">},</span>
+    <span class="p">],</span>
+    <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;JsonField&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;predictions&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;selector&quot;</span><span class="p">:</span> <span class="s2">&quot;$steps.tracker.predictions&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">],</span>
+<span class="p">}</span>
+
+<span class="n">pipeline</span> <span class="o">=</span> <span class="n">InferencePipeline</span><span class="o">.</span><span class="n">init_with_workflow</span><span class="p">(</span>
+    <span class="n">video_reference</span><span class="o">=</span><span class="s2">&quot;path/to/video.mp4&quot;</span><span class="p">,</span>  <span class="c1"># or an RTSP URL / camera id</span>
+    <span class="n">workflow_specification</span><span class="o">=</span><span class="n">WORKFLOW</span><span class="p">,</span>
+    <span class="n">on_prediction</span><span class="o">=</span><span class="n">render_boxes</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;&lt;YOUR-API-KEY&gt;&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">pipeline</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="n">pipeline</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div>
+<p>For open-vocabulary video tracking from text prompts (no upstream detector),
+see the SAM3 Video Tracker block in the <a href="../sam3/">SAM 3 documentation</a>.</p>
 
 
 

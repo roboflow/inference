@@ -374,6 +374,14 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1
 
+## `core/workflows/core_steps/models/foundation/segment_anything3_interactive`
+
+::: inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1
+
+## `core/workflows/core_steps/models/foundation/segment_anything3_video`
+
+::: inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1
+
 ## `core/workflows/core_steps/models/foundation/stability_ai/inpainting`
 
 ::: inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1
