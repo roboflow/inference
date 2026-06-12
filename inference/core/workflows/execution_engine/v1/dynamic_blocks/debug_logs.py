@@ -28,13 +28,41 @@ current_debug_collector: ContextVar[Optional["DebugLogsCollector"]] = ContextVar
     "current_debug_collector", default=None
 )
 
+# Caps protecting response size and server memory: blocks printing in a loop
+# over a large batch can otherwise produce megabytes per request.
+MAX_CHARS_PER_STREAM = 16_384  # per stdout/stderr string in a single entry
+MAX_TOTAL_CHARS = 1_048_576  # per run, across all entries
+STREAM_TRUNCATION_MARKER = "\n... [output truncated]"
+CAPACITY_EXCEEDED_MARKER = (
+    "[log capture limit reached - further output of this run was dropped]"
+)
+
+
+def _truncate_stream(value: Optional[str], limit: int) -> Optional[str]:
+    if value is None or len(value) <= limit:
+        return value
+    return value[:limit] + STREAM_TRUNCATION_MARKER
+
 
 class DebugLogsCollector:
-    """Thread-safe collector for stdout/stderr produced by Python blocks."""
+    """Thread-safe collector for stdout/stderr produced by Python blocks.
 
-    def __init__(self) -> None:
+    Each stream of an entry is truncated to ``max_chars_per_stream``. Once the
+    total collected size of the run exceeds ``max_total_chars``, a single marker
+    entry is appended and all subsequent records are dropped.
+    """
+
+    def __init__(
+        self,
+        max_chars_per_stream: int = MAX_CHARS_PER_STREAM,
+        max_total_chars: int = MAX_TOTAL_CHARS,
+    ) -> None:
         self._lock = threading.Lock()
         self._entries: Dict[str, List[Dict[str, Optional[str]]]] = {}
+        self._max_chars_per_stream = max_chars_per_stream
+        self._max_total_chars = max_total_chars
+        self._total_chars = 0
+        self._capacity_exceeded = False
 
     def record(
         self,
@@ -44,7 +72,19 @@ class DebugLogsCollector:
     ) -> None:
         if stdout is None and stderr is None:
             return
+        stdout = _truncate_stream(stdout, self._max_chars_per_stream)
+        stderr = _truncate_stream(stderr, self._max_chars_per_stream)
+        entry_chars = len(stdout or "") + len(stderr or "")
         with self._lock:
+            if self._capacity_exceeded:
+                return
+            if self._total_chars + entry_chars > self._max_total_chars:
+                self._capacity_exceeded = True
+                self._entries.setdefault(step_name, []).append(
+                    {"stdout": CAPACITY_EXCEEDED_MARKER, "stderr": None}
+                )
+                return
+            self._total_chars += entry_chars
             self._entries.setdefault(step_name, []).append(
                 {"stdout": stdout, "stderr": stderr}
             )
