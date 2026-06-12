@@ -9,6 +9,7 @@ from uuid import uuid4
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
+from shapely.geometry import Polygon
 from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.execution_engine.constants import (
@@ -368,6 +369,54 @@ def enumerate_detections(
             yield source_id, detections[i]
 
 
+def _mask_pair_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> float:
+    """Exact mask IoU for a pair of single detections, restricted to
+    bounding-box windows.
+
+    A detection's mask is contained in its bounding box (boxes are derived
+    from masks across the platform), so the intersection can only live inside
+    the boxes' overlap window and each mask's area inside its own box window.
+    This keeps the cost proportional to the box sizes instead of the full
+    frame; results match the full-frame computation exactly.
+    """
+    ax1, ay1, ax2, ay2 = detection_a.xyxy[0]
+    bx1, by1, bx2, by2 = detection_b.xyxy[0]
+    ix1, iy1 = int(max(ax1, bx1)), int(max(ay1, by1))
+    ix2, iy2 = int(min(ax2, bx2)) + 1, int(min(ay2, by2)) + 1
+    if ix1 >= ix2 or iy1 >= iy2:
+        return 0.0
+    intersection = np.logical_and(
+        detection_a.mask[0, iy1:iy2, ix1:ix2],
+        detection_b.mask[0, iy1:iy2, ix1:ix2],
+    ).sum()
+    if intersection == 0:
+        return 0.0
+    area_a = detection_a.mask[0, int(ay1) : int(ay2) + 1, int(ax1) : int(ax2) + 1].sum()
+    area_b = detection_b.mask[0, int(by1) : int(by2) + 1, int(bx1) : int(bx2) + 1].sum()
+    union = area_a + area_b - intersection
+    if union <= 0:
+        return 0.0
+    return float(intersection) / float(union)
+
+
+def _oriented_box_pair_iou(corners_a: np.ndarray, corners_b: np.ndarray) -> float:
+    """Exact oriented-box IoU for a pair of (4, 2) corner arrays.
+
+    Computed analytically via polygon intersection, which is both exact and
+    allocation-free, unlike rasterization-based approaches whose cost and
+    accuracy depend on the coordinate magnitudes.
+    """
+    polygon_a = Polygon(corners_a)
+    polygon_b = Polygon(corners_b)
+    if not polygon_a.is_valid or not polygon_b.is_valid:
+        return 0.0
+    intersection = polygon_a.intersection(polygon_b).area
+    union = polygon_a.area + polygon_b.area - intersection
+    if union <= 0:
+        return 0.0
+    return float(intersection) / float(union)
+
+
 def calculate_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> float:
     """Compute IoU on the geometry the detections actually carry.
 
@@ -376,25 +425,30 @@ def calculate_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> flo
     axis-aligned ``xyxy`` boxes otherwise. The v1 block always compared
     ``xyxy``, which over-matches detections whose boxes overlap even though
     their masks or rotated bodies do not.
+
+    The box IoU is always computed first and acts as a gate: a mask lives
+    inside its bounding box and oriented-box corners live inside their
+    ``xyxy``, so disjoint boxes imply zero mask / oriented-box IoU. Most
+    cross-source pairs in a consensus run do not overlap at all, which keeps
+    the geometry comparison limited to actual match candidates.
     """
+    box_iou = float(sv.box_iou_batch(detection_a.xyxy, detection_b.xyxy)[0][0])
+    if math.isnan(box_iou) or box_iou == 0.0:
+        return 0.0
     if detection_a.mask is not None and detection_b.mask is not None:
-        iou = float(sv.mask_iou_batch(detection_a.mask, detection_b.mask)[0][0])
-    elif (
+        return _mask_pair_iou(detection_a, detection_b)
+    if (
         ORIENTED_BOX_COORDINATES in detection_a.data
         and ORIENTED_BOX_COORDINATES in detection_b.data
     ):
-        boxes_a = np.asarray(
-            detection_a.data[ORIENTED_BOX_COORDINATES], dtype=np.float32
-        )
-        boxes_b = np.asarray(
-            detection_b.data[ORIENTED_BOX_COORDINATES], dtype=np.float32
-        )
-        iou = float(sv.oriented_box_iou_batch(boxes_a, boxes_b)[0][0])
-    else:
-        iou = float(sv.box_iou_batch(detection_a.xyxy, detection_b.xyxy)[0][0])
-    if math.isnan(iou):
-        iou = 0
-    return iou
+        corners_a = np.asarray(
+            detection_a.data[ORIENTED_BOX_COORDINATES], dtype=np.float64
+        ).reshape(4, 2)
+        corners_b = np.asarray(
+            detection_b.data[ORIENTED_BOX_COORDINATES], dtype=np.float64
+        ).reshape(4, 2)
+        return _oriented_box_pair_iou(corners_a, corners_b)
+    return box_iou
 
 
 def agree_on_consensus_for_all_detections_sources(
