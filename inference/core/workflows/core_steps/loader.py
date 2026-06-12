@@ -342,6 +342,9 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
     SegmentAnything3InteractiveBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
+    SegmentAnything3VideoBlockV1,
+)
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
     RoboflowInstanceSegmentationModelBlockV4,
 )
@@ -549,6 +552,9 @@ from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v
 )
 from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
     StitchOCRDetectionsBlockV2,
+)
+from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
+    TrackClassLockBlockV1,
 )
 
 # Visualizers
@@ -917,6 +923,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SegmentAnything3BlockV2,
         SegmentAnything3BlockV3,
         SegmentAnything3InteractiveBlockV1,
+        SegmentAnything3VideoBlockV1,
         SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
@@ -929,6 +936,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TimeInZoneBlockV1,
         TimeInZoneBlockV2,
         TimeInZoneBlockV3,
+        TrackClassLockBlockV1,
         TriangleVisualizationBlockV1,
         TextDisplayVisualizationBlockV1,
         VLMAsClassifierBlockV1,
