@@ -275,3 +275,16 @@ def batch_done(n: int, t0: float) -> None:
 def slot_freed(reason: str, slot_id: int, req_id: Any) -> None:
     """Attribute every MMP free_slot call site."""
     log.info("DBG MMP free: reason=%s slot=%d req_id=%s", reason, slot_id, req_id)
+
+
+def client_mem(pending: int) -> None:
+    """Sampled memory snapshot for the uvicorn-side MMP client process."""
+    anon, shmem, _ = mem_split_mb()
+    log.info(
+        "DBG client mem: pid=%d rss_mb=%.0f anon_mb=%.0f shm_mb=%.0f pending=%d",
+        os.getpid(),
+        rss_mb(),
+        anon,
+        shmem,
+        pending,
+    )
