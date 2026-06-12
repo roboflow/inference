@@ -377,7 +377,7 @@ def test_depth_estimation_with_model_id_path_rejects_body_mismatch(
         )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == (
+    assert response.json()["message"] == (
         "Model ID mismatch: path specifies 'depth-anything-v3/small' "
         "but request body specifies 'depth-anything-v3/base'"
     )
