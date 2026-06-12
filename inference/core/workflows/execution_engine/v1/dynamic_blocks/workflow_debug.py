@@ -14,7 +14,8 @@ inside every worker thread spawned by ``ThreadPoolExecutor``.
 import json
 import threading
 from contextvars import ContextVar
-from datetime import datetime, timezone, tzinfo as DatetimeTzInfo
+from datetime import datetime, timezone
+from datetime import tzinfo as DatetimeTzInfo
 from typing import Any, Dict, List, Optional, Union
 from zoneinfo import ZoneInfo
 
