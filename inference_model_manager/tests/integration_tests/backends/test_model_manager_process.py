@@ -138,8 +138,8 @@ class _MMPHarness:
         )
         self.send(T_SUBMIT, header)
 
-    def free(self, slot_id: int) -> None:
-        self.send(T_FREE, struct.pack(">I", slot_id))
+    def free(self, req_id: int, slot_id: int) -> None:
+        self.send(T_FREE, struct.pack(">QI", req_id, slot_id))
 
     def teardown(self) -> None:
         self._mmp.stop()
@@ -252,18 +252,18 @@ class TestAlloc:
         harness.ensure_loaded("m")
         req_id, slot_id = harness.alloc("m")
         assert 0 <= slot_id < harness.mmp._n_slots
-        harness.free(slot_id)
+        harness.free(req_id, slot_id)
 
     def test_alloc_all_slots(self, harness):
         harness.mmp.register_backend("m", _MockBackend(harness.mmp))
         harness.ensure_loaded("m")
         slots = []
         for _ in range(harness.mmp._n_slots):
-            _, slot_id = harness.alloc("m")
-            slots.append(slot_id)
-        assert sorted(slots) == list(range(harness.mmp._n_slots))
-        for s in slots:
-            harness.free(s)
+            req_id, slot_id = harness.alloc("m")
+            slots.append((req_id, slot_id))
+        assert sorted(s for _, s in slots) == list(range(harness.mmp._n_slots))
+        for r, s in slots:
+            harness.free(r, s)
 
     def test_alloc_pool_exhausted_returns_error(self, harness):
         harness.mmp.register_backend("m", _MockBackend(harness.mmp))
@@ -311,7 +311,7 @@ class TestFullLifecycle:
         pool.close()
         assert result == result_payload
 
-        harness.free(slot_id)
+        harness.free(req_id, slot_id)
         # Give MMP time to free slot
         time.sleep(0.05)
         assert harness.mmp._pool.free_count == harness.mmp._n_slots
@@ -327,7 +327,7 @@ class TestFullLifecycle:
             harness.submit(req_id, slot_id, "m", b"img")
             msg_type, _ = harness.recv()
             assert msg_type == T_RESULT_READY
-            harness.free(slot_id)
+            harness.free(req_id, slot_id)
 
         time.sleep(0.05)
         assert harness.mmp._pool.free_count == harness.mmp._n_slots
@@ -374,7 +374,7 @@ class TestFullLifecycle:
         assert pool.read_header(slot_id).status == SlotStatus.DONE
         pool.close()
 
-        harness.free(slot_id)
+        harness.free(req_id, slot_id)
 
 
 class TestNoBackend:

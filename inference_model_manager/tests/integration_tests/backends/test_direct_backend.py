@@ -46,7 +46,7 @@ class TestDirectBackendPipeline:
             mm.shutdown()
 
         assert result is not None
-        assert len(result) == 2
+        assert len(result["batch"]) == 2
 
 
 @pytest.mark.slow
