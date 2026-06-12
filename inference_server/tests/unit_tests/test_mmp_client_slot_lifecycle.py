@@ -20,6 +20,7 @@ from inference_server.proxies.mmp_client import (
     T_ALLOC,
     T_ALLOC_OK,
     T_CANCEL,
+    T_ERROR,
     T_FREE,
     T_RESULT_READY,
     T_SUBMIT,
@@ -232,3 +233,57 @@ def test_start_rejects_shm_geometry_mismatch():
     finally:
         shm.close()
         shm.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Typed error classification (theme 7)
+# ---------------------------------------------------------------------------
+
+
+def test_oversized_image_raises_payload_too_large():
+    from inference_server.errors import PayloadTooLargeError
+
+    async def _run():
+        client, _ = _make_client()
+        with pytest.raises(PayloadTooLargeError):
+            await client.infer(model_id="m", image=b"x" * 2048)  # slot is 1024
+
+    asyncio.run(_run())
+
+
+def test_alloc_timeout_raises_server_busy():
+    from inference_server.errors import ServerBusyError
+
+    async def _run():
+        client, _ = _make_client()  # alloc_timeout_s=0.05, no reply ever
+        with pytest.raises(ServerBusyError):
+            await client._alloc_slot(1, "m")
+
+    asyncio.run(_run())
+
+
+def test_alloc_error_reply_raises_server_busy():
+    from inference_server.errors import ServerBusyError
+
+    async def _run():
+        client, sock = _make_client()
+        task = asyncio.create_task(client._alloc_slot(77, "m"))
+        await asyncio.sleep(0)
+        client._dispatch(T_ERROR, [struct.pack(">QB", 77, 1)])  # _ERR_POOL_FULL
+        with pytest.raises(ServerBusyError):
+            await task
+
+    asyncio.run(_run())
+
+
+def test_stats_error_reply_raises_instead_of_empty_dict():
+    async def _run():
+        client, sock = _make_client()
+        task = asyncio.create_task(client.stats())
+        await asyncio.sleep(0)
+        req_id = struct.unpack_from(">Q", sock.sent[0][1])[0]
+        client._dispatch(T_ERROR, [struct.pack(">QB", req_id, 4)])
+        with pytest.raises(RuntimeError, match="stats"):
+            await task
+
+    asyncio.run(_run())

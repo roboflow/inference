@@ -8,6 +8,7 @@ import logging
 
 from fastapi import APIRouter, Depends, Request, Response
 
+from inference_server.auth import extract_bearer
 from inference_server.dependencies import get_model_manager
 from inference_server.errors import error_response
 from inference_server.framework.dispatch import handle_model_inference_request
@@ -31,8 +32,7 @@ _V2_TODO = Response(
 
 
 def _bearer_token(request: Request) -> str:
-    auth = request.headers.get("authorization", "")
-    return auth[7:] if auth.startswith("Bearer ") else ""
+    return extract_bearer(request.headers.get("authorization", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +198,9 @@ async def v2_load_model(
         result = await mm.load(model_id, api_key)
     except asyncio.TimeoutError:
         return error_response(504, "TIMEOUT", "load request timeout")
+    except Exception:
+        logger.exception("v2 load proxy error for '%s'", model_id)
+        return error_response(503, "PROXY_ERROR", "model manager unreachable")
 
     if result[0] != "ok":
         return error_response(500, "LOAD_FAILED", "model load failed")
@@ -226,6 +229,9 @@ async def v2_unload_model(
         result = await mm.unload(model_id)
     except asyncio.TimeoutError:
         return error_response(504, "TIMEOUT", "unload request timeout")
+    except Exception:
+        logger.exception("v2 unload proxy error for '%s'", model_id)
+        return error_response(503, "PROXY_ERROR", "model manager unreachable")
 
     if result[0] != "ok":
         return error_response(500, "UNLOAD_FAILED", "model unload failed")

@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from typing import Any
 
 from fastapi import Request, Response
 from starlette.requests import ClientDisconnect
 
-from inference_server.errors import error_response
+from inference_server.auth import extract_bearer
+from inference_server.errors import (
+    PayloadTooLargeError,
+    ServerBusyError,
+    error_response,
+)
 from inference_server.framework.entities import (
     CommonRequestParams,
     InputParseError,
@@ -41,8 +47,7 @@ _COERCIBLE_QUERY_TYPES: frozenset[str] = frozenset({"str", "int", "float", "bool
 
 
 def _bearer_token(request: Request) -> str:
-    auth = request.headers.get("authorization", "")
-    return auth[7:] if auth.startswith("Bearer ") else ""
+    return extract_bearer(request.headers.get("authorization", ""))
 
 
 def decode_common_request_params(request: Request) -> CommonRequestParams:
@@ -176,22 +181,27 @@ async def handle_model_inference_request(
 
     try:
         prediction = await description.handler(action, input_data, proxy, server_hooks)
-    except ValueError as exc:
+    except PayloadTooLargeError as exc:
         return error_response(413, "PAYLOAD_TOO_LARGE", str(exc))
+    except ServerBusyError:
+        return error_response(
+            503,
+            "SERVER_BUSY",
+            "no capacity, try again",
+            follow_up="retry in 1s",
+            headers={"Retry-After": "1"},
+        )
+    except ValueError as exc:
+        return error_response(400, "INVALID_PARAM", str(exc))
     except asyncio.TimeoutError:
         return error_response(504, "TIMEOUT", "inference timeout")
     except ClientDisconnected:
         return Response(status_code=499)
     except RuntimeError as exc:
-        msg = str(exc) or "inference failed"
-        low = msg.lower()
-        if "no slots" in low or "alloc" in low:
-            return error_response(
-                503,
-                "SERVER_BUSY",
-                "no slots available, try again",
-                follow_up="retry in 1s",
-            )
-        return error_response(500, "INFERENCE_FAILED", msg)
+        # Full error logged with a correlation id; clients get the id only —
+        # backend error text can contain internal paths / stack fragments.
+        ref = uuid.uuid4().hex[:8]
+        logger.error("[dispatch] inference failed (ref %s): %s", ref, exc)
+        return error_response(500, "INFERENCE_FAILED", f"inference failed (ref {ref})")
 
     return description.output_serializer(prediction, common)

@@ -32,6 +32,7 @@ from fastapi import Request
 from inference_model_manager.backends import _debuglog as _dbg  # DEBUGLOG
 from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_server import configuration
+from inference_server.errors import PayloadTooLargeError, ServerBusyError
 from inference_server.proxies.base import ClientDisconnected
 
 logger = logging.getLogger(__name__)
@@ -317,7 +318,7 @@ class MMPClient:
         raw_pickle: bool = False,
     ) -> Any:
         if len(image) > self.shm_data_size:
-            raise ValueError(
+            raise PayloadTooLargeError(
                 f"image exceeds slot size ({len(image)} > {self.shm_data_size})"
             )
         effective_params = dict(params) if params else {}
@@ -389,7 +390,9 @@ class MMPClient:
         result = await self._lifecycle_req(T_STATS, b"", timeout_s=5.0)
         if result[0] == "stats":
             return json.loads(result[1])
-        return {}
+        # Swallowing this as {} made /v2/server/ready report 200 with a dead
+        # MMP — raise so callers hit their 503 paths.
+        raise RuntimeError(f"stats request failed: {result!r}")
 
     async def interface(self, model_id: str) -> dict:
         stats = await self.stats()
@@ -464,8 +467,10 @@ class MMPClient:
         try:
             result = await asyncio.wait_for(fut, timeout=self.alloc_timeout_s)
         except asyncio.TimeoutError:
+            # MMP unresponsive / pool stalled — a capacity condition, not an
+            # inference timeout (504).
             self._drop_future(req_id)
-            raise
+            raise ServerBusyError("slot allocation timed out") from None
         except asyncio.CancelledError:
             # Handler task cancelled (client disconnect) while T_ALLOC may be in
             # flight. Drop the future; if MMP did allocate, the slot has no
@@ -473,7 +478,8 @@ class MMPClient:
             self._drop_future(req_id)
             raise
         if result[0] == "error":
-            raise RuntimeError(f"alloc error code={result[1]}")
+            # Alloc-time T_ERROR is pool-full / per-model cap — retryable.
+            raise ServerBusyError(f"no capacity (code={result[1]})")
         return result[1]
 
     async def _submit_and_wait(

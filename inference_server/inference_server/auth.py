@@ -22,8 +22,17 @@ from typing import Optional
 import aiohttp
 
 from inference_server import configuration
+from inference_server.errors import AuthBackendUnavailable
 
 logger = logging.getLogger(__name__)
+
+
+def extract_bearer(value: str) -> str:
+    """Case-insensitive Bearer-token extraction (RFC 7235: scheme is
+    case-insensitive). Single source for all four call sites."""
+    if value[:7].lower() == "bearer ":
+        return value[7:].strip()
+    return ""
 
 API_BASE_URL = configuration.API_BASE_URL
 _CACHE_TTL_S = configuration.AUTH_CACHE_TTL_S
@@ -78,7 +87,12 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
 
     Returns:
         (True, workspace_id) on success.
-        (False, None) on failure (bad key, network error, etc.).
+        (False, None) on rejection (bad key).
+
+    Raises:
+        AuthBackendUnavailable: Roboflow API unreachable (transport failure).
+            NOT cached — a brief outage must not hard-fail keys for the
+            negative-cache TTL, and must surface as 503, never 403.
 
     Results are cached in-memory with TTL.
     """
@@ -120,11 +134,6 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
             )
             return True, workspace_id
 
-    except Exception:
+    except Exception as exc:
         logger.warning("Auth validation failed (network error)", exc_info=True)
-        _enforce_cache_limit()
-        _cache[_key_hash(api_key)] = _CacheEntry(
-            expires_at=now + _CACHE_FAIL_TTL_S,
-            valid=False,
-        )
-        return False, None
+        raise AuthBackendUnavailable(str(exc)) from exc
