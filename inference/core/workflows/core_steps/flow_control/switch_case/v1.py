@@ -101,6 +101,7 @@ class BlockManifest(WorkflowBlockManifest):
         "may appear at most once across `cases` and `default_next_steps`.",
         examples=[{"red": "$steps.on_red", "blue": "$steps.on_blue"}],
         default_factory=dict,
+        json_schema_extra={"always_visible": True},
     )
     case_insensitive: bool = Field(
         title="Case Insensitive",
