@@ -3,7 +3,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs impo
     STREAM_TRUNCATION_MARKER,
     DebugLogsCollector,
     get_active_collector,
-    register_debug_collector,
+    register_debug_session,
 )
 
 
@@ -62,9 +62,9 @@ def test_collector_ignores_empty_records() -> None:
     assert collector.snapshot() == {}
 
 
-def test_register_debug_collector_publishes_and_resets_contextvar() -> None:
+def test_register_debug_session_publishes_and_resets_contextvar() -> None:
     # given / when / then
     assert get_active_collector() is None
-    with register_debug_collector() as collector:
-        assert get_active_collector() is collector
+    with register_debug_session() as session:
+        assert get_active_collector() is session.output_streams
     assert get_active_collector() is None

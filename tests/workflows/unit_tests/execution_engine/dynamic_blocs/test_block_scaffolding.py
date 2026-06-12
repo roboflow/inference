@@ -16,7 +16,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffoldi
     create_dynamic_module,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
-    register_debug_collector,
+    register_debug_session,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
@@ -280,9 +280,9 @@ def run_function(self, a, b) -> BlockResult:
     workflow_block_instance._workflow_step_name = "my_step"
 
     # when - run inside an active debug collector scope (ContextVar-published)
-    with register_debug_collector() as collector:
+    with register_debug_session() as session:
         execution_result = workflow_block_instance.run(a=3, b=5)
-        snapshot = collector.snapshot()
+        snapshot = session.output_streams.snapshot()
 
     # then - block result is unchanged AND stdout/stderr surfaced in collector
     assert execution_result == {"result": 8}
@@ -365,10 +365,10 @@ def run_function(self, a, b) -> BlockResult:
     workflow_block_instance._workflow_step_name = "failing_step"
 
     # when - block raises inside an active debug collector scope
-    with register_debug_collector() as collector:
+    with register_debug_session() as session:
         with pytest.raises(DynamicBlockCodeError):
             _ = workflow_block_instance.run(a=1, b=2)
-        snapshot = collector.snapshot()
+        snapshot = session.output_streams.snapshot()
 
     # then - logs emitted before the failure are present in the collector
     assert list(snapshot.keys()) == ["failing_step"]
@@ -433,15 +433,14 @@ def run_function(self, a, b) -> BlockResult:
 
     from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import (
         current_debug_step_name,
-        get_active_debug_trace,
     )
 
     # when
-    with register_debug_collector():
+    with register_debug_session() as session:
         token = current_debug_step_name.set("debug_step")
         try:
             execution_result = workflow_block_instance.run(a=3, b=5)
-            trace = get_active_debug_trace().snapshot()
+            trace = session.debug_traces.snapshot()
         finally:
             current_debug_step_name.reset(token)
 

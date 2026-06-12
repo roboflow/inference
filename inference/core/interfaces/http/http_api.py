@@ -319,10 +319,7 @@ from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser impo
     parse_workflow_definition,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
-    register_debug_collector,
-)
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import (
-    get_active_debug_trace,
+    register_debug_session,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
@@ -1285,13 +1282,13 @@ class HttpInterface(BaseInterface):
             # do not enable it implicitly).
             debug_requested = getattr(workflow_request, "debug", False)
             if debug_requested:
-                # The collector is published via a ContextVar; the execution
-                # engine re-binds it inside every worker thread spawned by its
+                # Session state is published via ContextVars; the execution engine
+                # re-binds them inside every worker thread spawned by its
                 # ThreadPoolExecutor (see `safe_execute_step`).
-                debug_ctx = register_debug_collector()
+                debug_ctx = register_debug_session()
             else:
                 debug_ctx = nullcontext()
-            with debug_ctx as collector:
+            with debug_ctx as debug_session:
                 try:
                     workflow_results = execution_engine.run(
                         runtime_parameters=workflow_request.inputs,
@@ -1300,30 +1297,28 @@ class HttpInterface(BaseInterface):
                     )
                 except Exception as error:
                     # The error response is built outside this route (see
-                    # `with_route_exceptions`), after the collector's ContextVar
-                    # scope is gone - so carry the snapshot on the exception to
-                    # surface logs of the steps that ran before the failure.
-                    if collector is not None:
-                        logs_snapshot = collector.snapshot()
+                    # `with_route_exceptions`), after the session ContextVars
+                    # scope is gone - so carry snapshots on the exception to
+                    # surface debug output from steps that ran before the failure.
+                    if debug_session is not None:
+                        logs_snapshot = debug_session.output_streams.snapshot()
                         if logs_snapshot:
                             error.python_blocks_output_streams = logs_snapshot
-                        trace_snapshot = get_active_debug_trace()
-                        if trace_snapshot is not None:
-                            trace_entries = trace_snapshot.snapshot()
-                            if trace_entries:
-                                error.python_blocks_debug_traces = trace_entries
+                        trace_entries = debug_session.debug_traces.snapshot()
+                        if trace_entries:
+                            error.python_blocks_debug_traces = trace_entries
                     raise
-                # Empty snapshot (no block printed anything) -> null in response.
+                # Empty snapshots serialize as null in the response.
                 python_blocks_output_streams = (
-                    collector.snapshot()
-                    if debug_requested and collector is not None
+                    debug_session.output_streams.snapshot()
+                    if debug_requested and debug_session is not None
                     else None
                 ) or None
-                python_blocks_debug_traces = None
-                if debug_requested:
-                    active_trace = get_active_debug_trace()
-                    if active_trace is not None:
-                        python_blocks_debug_traces = active_trace.snapshot() or None
+                python_blocks_debug_traces = (
+                    debug_session.debug_traces.snapshot()
+                    if debug_requested and debug_session is not None
+                    else None
+                ) or None
             with profiler.profile_execution_phase(
                 name="workflow_results_filtering",
                 categories=["inference_package_operation"],

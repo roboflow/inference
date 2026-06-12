@@ -1,27 +1,32 @@
-"""Per-run capture of stdout/stderr emitted by dynamic Python blocks.
+"""Per-run debug capture for dynamic Python blocks (stdout/stderr and structured traces).
 
-The HTTP layer can opt-in to "debug" execution. When that happens, it activates a
-``DebugLogsCollector`` for the current workflow run via
-``register_debug_collector()``; the local Python block runner looks up that
-collector after each successful invocation and appends the captured
-stdout/stderr. The collected logs are then returned alongside the normal
-workflow outputs.
+The HTTP layer opts in via ``debug=True`` on the workflow run request. That activates
+a :class:`DebugSession` for the run through :func:`register_debug_session`, which
+publishes both:
+
+- a :class:`DebugLogsCollector` for stdout/stderr (returned as
+  ``python_blocks_output_streams``), and
+- a :class:`WorkflowDebugTrace` for ``debug_traces.append(...)`` calls (returned as
+  ``python_blocks_debug_traces``).
+
+Block runners look up the active session components through ContextVars after each
+invocation.
 
 Propagation model:
-- The active collector is stored in a ``ContextVar`` (``current_debug_collector``)
-  so it follows the same propagation model as the other per-run signals already
-  used by the execution engine (``execution_id``, ``remote_processing_times``,
-  ``apply_duration_minimum``). The engine captures its value in the request
-  thread and re-binds it inside each worker thread spawned by
-  ``ThreadPoolExecutor`` (see ``safe_execute_step``).
-- Only LOCAL execution is wired up today. Modal and OCI sandbox executors run
-  the user code out of process and would need their own payload extension to
-  bubble stdout/stderr back into the active collector.
+- Active session state is stored in ContextVars (``current_debug_collector``,
+  ``current_debug_trace``) using the same pattern as ``execution_id``,
+  ``remote_processing_times``, and ``apply_duration_minimum``. The engine captures
+  values in the request thread and re-binds them inside each worker thread spawned
+  by ``ThreadPoolExecutor`` (see ``safe_execute_step``).
+- Only LOCAL execution is wired up today. Modal and OCI sandbox executors run the
+  user code out of process and would need their own payload extension to bubble
+  captured output back into the active session.
 """
 
 import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Dict, Generator, List, Optional
 
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import (
@@ -99,23 +104,33 @@ class DebugLogsCollector:
             return {step: list(entries) for step, entries in self._entries.items()}
 
 
-@contextmanager
-def register_debug_collector() -> Generator[DebugLogsCollector, None, None]:
-    """Activate a fresh collector for the duration of the ``with`` block.
+@dataclass
+class DebugSession:
+    """Per-run debug state activated when ``debug=True`` on a workflow request."""
 
-    The collector is published via the ``current_debug_collector`` ContextVar
-    and removed on exit. Worker threads that need to see it must re-bind the
-    ContextVar inside their own thread (the execution engine does this in
+    output_streams: DebugLogsCollector
+    debug_traces: WorkflowDebugTrace
+
+
+@contextmanager
+def register_debug_session() -> Generator[DebugSession, None, None]:
+    """Activate stdout/stderr capture and structured debug traces for a run.
+
+    Both collectors are published via ContextVars for the duration of the
+    ``with`` block and removed on exit. Worker threads re-bind the ContextVars
+    inside their own thread (the execution engine does this in
     ``safe_execute_step``).
     """
-    collector = DebugLogsCollector()
-    trace = WorkflowDebugTrace()
-    token = current_debug_collector.set(collector)
-    token_trace = current_debug_trace.set(trace)
+    session = DebugSession(
+        output_streams=DebugLogsCollector(),
+        debug_traces=WorkflowDebugTrace(),
+    )
+    token_collector = current_debug_collector.set(session.output_streams)
+    token_trace = current_debug_trace.set(session.debug_traces)
     try:
-        yield collector
+        yield session
     finally:
-        current_debug_collector.reset(token)
+        current_debug_collector.reset(token_collector)
         current_debug_trace.reset(token_trace)
 
 
