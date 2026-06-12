@@ -71,6 +71,21 @@ def _select_codec(head: bytes) -> str | None:
     return None
 
 
+def _to_rgb_hwc(img: np.ndarray) -> np.ndarray:
+    """Normalize a decoded array to (H, W, 3): grayscale → replicate,
+    gray+alpha → replicate gray, RGBA → drop alpha."""
+    if img.ndim == 2:
+        return np.stack((img, img, img), axis=-1)
+    channels = img.shape[2]
+    if channels == 1:
+        return np.repeat(img, 3, axis=2)
+    if channels == 2:
+        return np.repeat(img[:, :, :1], 3, axis=2)
+    if channels == 4:
+        return img[:, :, :3]
+    return img
+
+
 def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     """Decode compressed image bytes to RGB HWC uint8 via an explicit codec.
 
@@ -79,8 +94,8 @@ def _decode_ic(data: bytes | memoryview) -> np.ndarray:
     raw = bytes(data)
     codec = _select_codec(raw)
     if codec is None:
-        return imagecodecs.imread(raw)
-    return getattr(imagecodecs, f"{codec}_decode")(raw)
+        return _to_rgb_hwc(imagecodecs.imread(raw))
+    return _to_rgb_hwc(getattr(imagecodecs, f"{codec}_decode")(raw))
 
 
 def _decode_heif(data: bytes) -> np.ndarray:
@@ -125,7 +140,11 @@ def make_decoder(name: str, device: str = "cuda:0") -> Callable[[bytes], Any]:
         def _decode_nvjpeg(data: bytes) -> Any:
             if data[:2] == b"\xff\xd8":
                 buf = torch.frombuffer(bytearray(data), dtype=torch.uint8)
-                return torchvision.io.decode_jpeg(buf, device=torch_device)
+                return torchvision.io.decode_jpeg(
+                    buf,
+                    mode=torchvision.io.ImageReadMode.RGB,
+                    device=torch_device,
+                )
             # Non-JPEG fallback
             img = _decode_heif(data) if _is_heif(data) else _decode_ic(data)
             return (
@@ -189,7 +208,11 @@ def make_batch_decoder(
             # One decode_jpeg call for all JPEGs in the batch
             if jpeg_bufs:
                 try:
-                    decoded = _tvio.decode_jpeg(jpeg_bufs, device=torch_device)
+                    decoded = _tvio.decode_jpeg(
+                        jpeg_bufs,
+                        mode=_tvio.ImageReadMode.RGB,
+                        device=torch_device,
+                    )
                     for i, t in zip(jpeg_idx, decoded):
                         out[i] = t
                 except Exception:
