@@ -80,6 +80,17 @@ INFERENCE_WORKER_START_TIMEOUT_S = get_float_from_env(
 INFERENCE_WORKER_BUSY_TIMEOUT_S = get_float_from_env(
     "INFERENCE_WORKER_BUSY_TIMEOUT_S", default=300.0
 )
+# Decoded-bytes batch cap, derived from free VRAM at batch-fire time:
+# budget = (free_vram - headroom) / scratch_factor. Headroom reserves VRAM
+# for inference itself; scratch_factor covers nvjpeg working buffers beyond
+# the output tensors. Many high-megapixel images must not form one multi-GB
+# GPU decode regardless of image count.
+INFERENCE_DECODE_VRAM_HEADROOM_MB = get_float_from_env(
+    "INFERENCE_DECODE_VRAM_HEADROOM_MB", default=1024.0
+)
+INFERENCE_DECODE_VRAM_SCRATCH_FACTOR = get_float_from_env(
+    "INFERENCE_DECODE_VRAM_SCRATCH_FACTOR", default=2.0
+)
 
 # ── VRAM-aware admission control (model_manager_process.py) ─────────────────
 INFERENCE_VRAM_ADMISSION_CONTROL = get_boolean_from_env(
