@@ -484,6 +484,13 @@ class ModelManagerProcess:
         self._router.setsockopt(zmq.RCVHWM, 0)
         self._router.setsockopt(zmq.LINGER, 0)
         bind_addr = addr or zmq_addr("mmprocess")
+        if bind_addr.startswith("ipc://"):
+            # libzmq does not unlink stale ipc socket files — after SIGKILL the
+            # next bind fails EADDRINUSE without this.
+            try:
+                os.unlink(bind_addr[len("ipc://"):])
+            except OSError:
+                pass
         self._router.bind(bind_addr)
         self._bound_addr = self._router.getsockopt_string(zmq.LAST_ENDPOINT)
         logger.info("MMP: ROUTER bound on %s", self._bound_addr)
@@ -544,7 +551,11 @@ class ModelManagerProcess:
             except asyncio.CancelledError:
                 break
             except zmq.ZMQError as exc:
-                logger.warning("MMP: recv error: %s", exc)
+                # A dead ROUTER means the hub can never serve again — shut down
+                # fully so the supervisor restarts us, instead of running as a
+                # zombie (background loops alive, no message processing).
+                logger.error("MMP: recv error, shutting down: %s", exc)
+                self._set_stop_event()
                 break
 
     # ------------------------------------------------------------------
@@ -668,6 +679,18 @@ class ModelManagerProcess:
         frame = data[0]
         req_id, mid_len = struct.unpack_from(">QH", frame)
         model_id = frame[10 : 10 + mid_len].decode(errors="replace")
+
+        # Optional fail-fast backpressure: cap in-flight requests per model so
+        # a slow model sheds load immediately instead of queueing into the
+        # 30s reaper window.
+        cap = cfg.INFERENCE_MAX_INFLIGHT_PER_MODEL
+        if cap > 0:
+            inflight = sum(1 for _, _, m in self._pending.values() if m == model_id)
+            if inflight >= cap:
+                await self._send(
+                    identity, T_ERROR, struct.pack(">QB", req_id, _ERR_POOL_FULL)
+                )
+                return
 
         try:
             slot_id = self._pool.alloc_slot(timeout=0)

@@ -51,9 +51,18 @@ INFERENCE_MMP_START_TIMEOUT_S = get_float_from_env(
     "INFERENCE_MMP_START_TIMEOUT_S", default=30.0
 )
 
+# Per-model in-flight cap enforced at T_ALLOC (0 = disabled). Fail-fast
+# backpressure: reject with pool-full instead of queueing into the reaper window.
+INFERENCE_MAX_INFLIGHT_PER_MODEL = get_integer_from_env(
+    "INFERENCE_MAX_INFLIGHT_PER_MODEL", default=0
+)
+
 # ── ModelManager (model_manager.py) ─────────────────────────────────────────
 INFERENCE_DIRECT_MAX_WORKERS = get_integer_from_env(
     "INFERENCE_DIRECT_MAX_WORKERS", default=8
+)
+INFERENCE_PROCESS_TIMEOUT_S = get_float_from_env(
+    "INFERENCE_PROCESS_TIMEOUT_S", default=300.0
 )
 
 # ── Subprocess worker tunables (backends/subproc.py) ────────────────────────
@@ -65,6 +74,11 @@ INFERENCE_WORKER_HEARTBEAT_TIMEOUT_S = get_float_from_env(
 )
 INFERENCE_WORKER_START_TIMEOUT_S = get_float_from_env(
     "INFERENCE_WORKER_START_TIMEOUT_S", default=120.0
+)
+# Liveness limit while the worker has outstanding work (long batches must not
+# be killed by the idle heartbeat timeout).
+INFERENCE_WORKER_BUSY_TIMEOUT_S = get_float_from_env(
+    "INFERENCE_WORKER_BUSY_TIMEOUT_S", default=300.0
 )
 
 # ── VRAM-aware admission control (model_manager_process.py) ─────────────────
