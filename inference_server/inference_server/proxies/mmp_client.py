@@ -315,7 +315,12 @@ class MMPClient:
         done = False
         try:
             self._write_input(slot_id, image, 0)
-            submit_req_id, result = await self._submit_and_wait(
+            # Assign BEFORE awaiting: if _submit_and_wait raises (timeout /
+            # disconnect) after T_SUBMIT went out, the finally block must see
+            # the submit id and cancel — not free a slot the worker still holds.
+            submit_req_id = _new_req_id()
+            result = await self._submit_and_wait(
+                submit_req_id,
                 slot_id,
                 model_id,
                 instance,
@@ -453,6 +458,7 @@ class MMPClient:
 
     async def _submit_and_wait(
         self,
+        req_id: int,
         slot_id: int,
         model_id: str,
         instance: str,
@@ -460,7 +466,6 @@ class MMPClient:
         params: dict,
         request: Optional[Request] = None,
     ) -> tuple:
-        req_id = _new_req_id()
         mid = _routing_key(model_id, instance).encode()
         header = struct.pack(">QIIH", req_id, slot_id, input_sz, len(mid)) + mid
         params_json = json.dumps(params).encode() if params else b"{}"
@@ -468,8 +473,8 @@ class MMPClient:
         await self._sock.send_multipart([T_SUBMIT, header, params_json])
         try:
             if request is not None:
-                return req_id, await self._wait_with_disconnect(fut, request)
-            return req_id, await asyncio.wait_for(fut, timeout=self.infer_timeout_s)
+                return await self._wait_with_disconnect(fut, request)
+            return await asyncio.wait_for(fut, timeout=self.infer_timeout_s)
         except asyncio.TimeoutError:
             self._drop_future(req_id)
             raise
