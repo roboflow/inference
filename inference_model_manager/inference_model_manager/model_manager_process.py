@@ -655,6 +655,7 @@ class ModelManagerProcess:
             return
 
         self._pool.mark_allocated(slot_id, req_id)
+        logger.info("DBG MMP alloc: slot=%d req_id=%d", slot_id, req_id)  # DEBUGLOG
         await self._send(identity, T_ALLOC_OK, struct.pack(">QI", req_id, slot_id))
 
     # ------------------------------------------------------------------
@@ -702,6 +703,12 @@ class ModelManagerProcess:
         if not data or len(data[0]) < 8:
             return
         req_id = struct.unpack_from(">Q", data[0])[0]
+        if req_id in self._pending:  # DEBUGLOG
+            logger.info(  # DEBUGLOG
+                "DBG MMP cancel: req_id=%d slot=%d (slot retained for worker)",  # DEBUGLOG
+                req_id,  # DEBUGLOG
+                self._pending[req_id][1],  # DEBUGLOG
+            )  # DEBUGLOG
         self._pending.pop(req_id, None)
 
     # ------------------------------------------------------------------
@@ -928,6 +935,11 @@ class ModelManagerProcess:
         """Must be called on the event loop thread."""
         pending = self._pending.pop(req_id, None)
         if pending is None:
+            logger.info(  # DEBUGLOG
+                "DBG MMP late result: req_id=%d slot=%d — freeing (cancelled/reaped earlier)",  # DEBUGLOG
+                req_id,  # DEBUGLOG
+                slot_id,  # DEBUGLOG
+            )  # DEBUGLOG
             # Stale reaper already freed this, or duplicate callback — free slot
             self._pool.free_slot(slot_id)
             return
