@@ -135,7 +135,7 @@ def _worker_main(
     input_mb: float,
     batch_max_size: int,
     batch_max_wait_ms: float,
-    use_nvjpeg: bool,
+    decoder: Decoder,
     model_kwargs: dict,
 ) -> None:
     """Worker subprocess entry point.
@@ -163,7 +163,7 @@ def _worker_main(
             gpu_device if (use_gpu and gpu_device) else ("cuda:0" if use_gpu else "cpu")
         )
         _log.info("Worker(%s): loading on %s", model_id, device)
-        if get_boolean_from_env(cfg.DEBUG_BENCHMARK_MODE_ENV, default=False):
+        if get_boolean_from_env(cfg.DEBUG_PASSTHROUGH_MODEL_ENV, default=False):
             from inference_model_manager.backends.passthrough_model import (
                 PassthroughModel,
             )
@@ -176,7 +176,7 @@ def _worker_main(
             )
             _log.info("Worker(%s): model ready (%s)", model_id, type(model).__name__)
 
-        batch_decode_fn = make_batch_decoder(device, use_nvjpeg=use_nvjpeg)
+        batch_decode_fn = make_batch_decoder(device, decoder=decoder)
         pool = SHMPool.attach(shm_pool_name, n_slots=n_slots, input_mb=input_mb)
 
         from inference_model_manager.backends.base import detect_max_batch_size
@@ -783,8 +783,18 @@ class SubprocessBackend(Backend):
     ) -> None:
         import zmq  # noqa: PLC0415
 
+        from inference_model_manager.backends.decode import Decoder  # noqa: PLC0415
+
         self._model_id = model_id
         self._state_value: str = "loading"
+
+        self._decoder = Decoder(decoder)
+        if self._decoder == Decoder.PASSTHROUGH and not get_boolean_from_env(
+            cfg.DEBUG_PASSTHROUGH_MODEL_ENV, default=False
+        ):
+            raise ValueError(
+                "decoder='passthrough' requires DEBUG_PASSTHROUGH_MODEL (debugging only)"
+            )
 
         # ── Device resolution ────────────────────────────────────────
         if device is not None and device.startswith("cuda"):
@@ -855,7 +865,7 @@ class SubprocessBackend(Backend):
                 input_mb=input_mb,
                 batch_max_size=batch_max_size,
                 batch_max_wait_ms=batch_max_delay_ms,
-                use_nvjpeg=(decoder == "nvjpeg"),
+                decoder=self._decoder,
                 model_kwargs=kwargs,
             ),
             daemon=True,

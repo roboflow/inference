@@ -78,7 +78,7 @@ _AUTH_SKIP_PATHS = frozenset(
     }
 )
 
-_DEBUG_BENCHMARK_MODE = _cfg.DEBUG_BENCHMARK_MODE
+_DEBUG_PASSTHROUGH_MODEL = _cfg.DEBUG_PASSTHROUGH_MODEL
 
 
 class _AuthMiddleware:
@@ -102,7 +102,7 @@ class _AuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        if _DEBUG_BENCHMARK_MODE:
+        if _DEBUG_PASSTHROUGH_MODEL:
             await self.app(scope, receive, send)
             return
 

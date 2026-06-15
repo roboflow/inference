@@ -18,11 +18,18 @@ from __future__ import annotations
 
 import io
 import logging
+from enum import Enum
 from typing import Any, Callable, List
 
 import imagecodecs
 import numpy as np
 from PIL import Image
+
+
+class Decoder(str, Enum):
+    IMAGECODECS = "imagecodecs"
+    NVJPEG = "nvjpeg"
+    PASSTHROUGH = "passthrough"  # debugging only — skips decode, returns dummy tensors
 
 
 try:
@@ -230,7 +237,7 @@ def make_decoder(name: str, device: str = "cuda:0") -> Callable[[bytes], Any]:
 def make_batch_decoder(
     device: str,
     *,
-    use_nvjpeg: bool = False,
+    decoder: Decoder = Decoder.IMAGECODECS,
 ) -> Callable[[List[memoryview]], List[Any]]:
     """Create a batch image decoder.
 
@@ -241,12 +248,12 @@ def make_batch_decoder(
             that index only.
 
     Args:
-        device:     Target device for output tensors (e.g. ``"cuda:0"``, ``"cpu"``).
-        use_nvjpeg: When ``True``, JPEG images are decoded via
-                    ``torchvision.io.decode_jpeg(batch, device)`` — one GPU call for
-                    the whole JPEG batch (nvjpeg on CUDA, libjpeg-turbo on CPU).
-                    Non-JPEG images always fall back to imagecodecs.
-                    When ``False`` (default), imagecodecs handles all formats.
+        device:  Target device for output tensors (e.g. ``"cuda:0"``, ``"cpu"``).
+        decoder: ``Decoder.IMAGECODECS`` (default, CPU, all formats),
+                 ``Decoder.NVJPEG`` (JPEG via torchvision.io.decode_jpeg batch GPU
+                 call, imagecodecs fallback for non-JPEG), or
+                 ``Decoder.PASSTHROUGH`` (debugging only — skips decode, returns
+                 dummy tensors to isolate non-decode pipeline cost).
     """
     import numpy as np  # noqa: PLC0415
     import torch  # noqa: PLC0415
@@ -254,7 +261,15 @@ def make_batch_decoder(
     torch_device = torch.device(device)
     _JPEG_MAGIC = b"\xff\xd8"
 
-    if use_nvjpeg:
+    if decoder == Decoder.PASSTHROUGH:
+        dummy = torch.zeros((3, 1, 1), dtype=torch.uint8, device=torch_device)
+
+        def _batch_decode_passthrough(mvs: List[memoryview]) -> List[Any]:
+            return [dummy] * len(mvs)
+
+        return _batch_decode_passthrough
+
+    if decoder == Decoder.NVJPEG:
         import torchvision.io as _tvio  # noqa: PLC0415
 
         def _batch_decode_nvjpeg(mvs: List[memoryview]) -> List[Any]:

@@ -95,4 +95,4 @@ curl -X POST "http://localhost:8000/infer?model_id=yolov8n-640&format=json" \
 | `INFERENCE_BATCH_MAX_SIZE` | `0` | Max batch size (`0` = model default) |
 | `INFERENCE_BATCH_MAX_WAIT_MS` | `5.0` | Batch window in ms |
 | `API_BASE_URL` | `https://api.roboflow.com` | Roboflow API for auth |
-| `DEBUG_BENCHMARK_MODE` | | Set to `1` to skip auth. **Testing only — never use in production.** |
+| `DEBUG_PASSTHROUGH_MODEL` | | Set to `1` to skip model infer. **Testing only — never use in production.** |
