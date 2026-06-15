@@ -699,7 +699,6 @@ class ModelManagerProcess:
                 )
                 return
 
-        _ta = time.perf_counter()  # DEBUGLOG
         try:
             slot_id = self._pool.alloc_slot(timeout=0)
         except TimeoutError:
@@ -709,9 +708,7 @@ class ModelManagerProcess:
             return
 
         self._pool.mark_allocated(slot_id, req_id)
-        _tm = time.perf_counter()  # DEBUGLOG
         await self._send(identity, T_ALLOC_OK, struct.pack(">QI", req_id, slot_id))
-        logger.info("DEBUGLOG MMP_ALLOC full=0 alloc_us=%d send_us=%d", int((_tm - _ta) * 1e6), int((time.perf_counter() - _tm) * 1e6))  # DEBUGLOG
 
     # ------------------------------------------------------------------
     # T_SUBMIT  (no reply — result delivered via on_result callback)
@@ -741,11 +738,9 @@ class ModelManagerProcess:
             )
             return
 
-        _ts = time.perf_counter()  # DEBUGLOG
         self._pending[req_id] = (identity, slot_id, model_id)
         self._pool.mark_written(slot_id, input_sz)
         self._forward_to_backend(model_id, slot_id, req_id, params_bytes)
-        logger.info("DEBUGLOG MMP_SUBMIT us=%d", int((time.perf_counter() - _ts) * 1e6))  # DEBUGLOG
 
     # ------------------------------------------------------------------
     # T_FREE
@@ -1035,14 +1030,12 @@ class ModelManagerProcess:
             )
             self._pool.free_slot(slot_id, request_id=req_id)
             return
-        _tr = time.perf_counter()  # DEBUGLOG
         self._pool.mark_done(slot_id, result_sz)
         sent = await self._send(
             identity,
             T_RESULT_READY,
             struct.pack(">QII", req_id, slot_id, result_sz),
         )
-        logger.info("DEBUGLOG MMP_REPLY us=%d", int((time.perf_counter() - _tr) * 1e6))  # DEBUGLOG
         if not sent:
             # Peer disconnected — result will never be read; free slot now
             # (backend already finished; we just drop the result silently)

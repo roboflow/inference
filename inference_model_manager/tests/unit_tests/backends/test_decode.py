@@ -11,6 +11,7 @@ import pytest
 import torch
 
 from inference_model_manager.backends.decode import (
+    Decoder,
     _decode_ic,
     _select_codec,
     make_batch_decoder,
@@ -192,13 +193,13 @@ class TestMakeDecoder:
 
 
 # ---------------------------------------------------------------------------
-# make_batch_decoder — use_nvjpeg=False (imagecodecs path)
+# make_batch_decoder — decoder=Decoder.IMAGECODECS (imagecodecs path)
 # ---------------------------------------------------------------------------
 
 
 class TestMakeBatchDecoderImagecodecs:
     def test_jpeg_batch_shape(self, jpeg_bytes):
-        decode = make_batch_decoder("cpu", use_nvjpeg=False)
+        decode = make_batch_decoder("cpu", decoder=Decoder.IMAGECODECS)
         results = decode([memoryview(jpeg_bytes), memoryview(jpeg_bytes)])
         assert len(results) == 2
         for t in results:
@@ -207,35 +208,35 @@ class TestMakeBatchDecoderImagecodecs:
             assert t.shape[0] == 3  # CHW
 
     def test_png_batch_shape(self, png_bytes):
-        decode = make_batch_decoder("cpu", use_nvjpeg=False)
+        decode = make_batch_decoder("cpu", decoder=Decoder.IMAGECODECS)
         results = decode([memoryview(png_bytes)])
         assert len(results) == 1
         assert results[0].shape[0] == 3
 
     def test_mixed_batch_length_preserved(self, jpeg_bytes, png_bytes):
-        decode = make_batch_decoder("cpu", use_nvjpeg=False)
+        decode = make_batch_decoder("cpu", decoder=Decoder.IMAGECODECS)
         mvs = [memoryview(jpeg_bytes), memoryview(png_bytes), memoryview(jpeg_bytes)]
         results = decode(mvs)
         assert len(results) == 3
 
     def test_output_uint8(self, jpeg_bytes):
-        decode = make_batch_decoder("cpu", use_nvjpeg=False)
+        decode = make_batch_decoder("cpu", decoder=Decoder.IMAGECODECS)
         results = decode([memoryview(jpeg_bytes)])
         assert results[0].dtype == torch.uint8
 
     def test_output_cpu_tensor(self, jpeg_bytes):
-        decode = make_batch_decoder("cpu", use_nvjpeg=False)
+        decode = make_batch_decoder("cpu", decoder=Decoder.IMAGECODECS)
         results = decode([memoryview(jpeg_bytes)])
         assert results[0].device.type == "cpu"
 
     def test_gray_jpeg_returns_3_channels(self, gray_jpeg_bytes):
-        decode = make_batch_decoder("cpu", use_nvjpeg=False)
+        decode = make_batch_decoder("cpu", decoder=Decoder.IMAGECODECS)
         results = decode([memoryview(gray_jpeg_bytes)])
         assert results[0].shape[0] == 3
 
     def test_single_image_matches_make_decoder(self, jpeg_bytes):
         """Batch decoder with one JPEG should produce same CHW shape as single decoder."""
-        batch_decode = make_batch_decoder("cpu", use_nvjpeg=False)
+        batch_decode = make_batch_decoder("cpu", decoder=Decoder.IMAGECODECS)
         single_decode = make_decoder("imagecodecs")
         single_result = single_decode(jpeg_bytes)  # HWC numpy
         batch_result = batch_decode([memoryview(jpeg_bytes)])[0]  # CHW tensor
@@ -246,13 +247,13 @@ class TestMakeBatchDecoderImagecodecs:
 
 
 # ---------------------------------------------------------------------------
-# make_batch_decoder — use_nvjpeg=True
+# make_batch_decoder — decoder=Decoder.NVJPEG
 # ---------------------------------------------------------------------------
 
 
 class TestMakeBatchDecoderNvjpeg:
     def test_jpeg_batch_shape(self, jpeg_bytes):
-        decode = make_batch_decoder("cpu", use_nvjpeg=True)
+        decode = make_batch_decoder("cpu", decoder=Decoder.NVJPEG)
         results = decode([memoryview(jpeg_bytes), memoryview(jpeg_bytes)])
         assert len(results) == 2
         for t in results:
@@ -261,20 +262,20 @@ class TestMakeBatchDecoderNvjpeg:
             assert t.shape[0] == 3
 
     def test_jpeg_uint8(self, jpeg_bytes):
-        decode = make_batch_decoder("cpu", use_nvjpeg=True)
+        decode = make_batch_decoder("cpu", decoder=Decoder.NVJPEG)
         results = decode([memoryview(jpeg_bytes)])
         assert results[0].dtype == torch.uint8
 
     def test_non_jpeg_falls_back_to_imagecodecs(self, png_bytes):
-        """use_nvjpeg=True must still handle non-JPEG via imagecodecs."""
-        decode = make_batch_decoder("cpu", use_nvjpeg=True)
+        """decoder=Decoder.NVJPEG must still handle non-JPEG via imagecodecs."""
+        decode = make_batch_decoder("cpu", decoder=Decoder.NVJPEG)
         results = decode([memoryview(png_bytes)])
         assert len(results) == 1
         assert results[0].shape[0] == 3
 
     def test_mixed_batch_order_preserved(self, jpeg_bytes, png_bytes):
         """JPEG and non-JPEG items must appear at their original indices."""
-        decode = make_batch_decoder("cpu", use_nvjpeg=True)
+        decode = make_batch_decoder("cpu", decoder=Decoder.NVJPEG)
         # index 0=JPEG, 1=PNG, 2=JPEG
         mvs = [memoryview(jpeg_bytes), memoryview(png_bytes), memoryview(jpeg_bytes)]
         results = decode(mvs)
@@ -284,7 +285,7 @@ class TestMakeBatchDecoderNvjpeg:
 
     def test_mixed_batch_spatial_dims_consistent(self, jpeg_bytes, png_bytes):
         """All outputs in a mixed batch should have same H, W (same source image)."""
-        decode = make_batch_decoder("cpu", use_nvjpeg=True)
+        decode = make_batch_decoder("cpu", decoder=Decoder.NVJPEG)
         results = decode([memoryview(jpeg_bytes), memoryview(png_bytes)])
         # Both encoded from the same 8x8 image
         assert results[0].shape[1:] == results[1].shape[1:]
@@ -308,7 +309,7 @@ class TestMakeBatchDecoderNvjpeg:
         )
         # Patch imagecodecs inside the closure by creating a fresh decoder
         # and verifying no fallback is triggered for JPEG-only input.
-        decode = make_batch_decoder("cpu", use_nvjpeg=True)
+        decode = make_batch_decoder("cpu", decoder=Decoder.NVJPEG)
 
         # Wrap the actual imagecodecs in the already-closed-over module ref
         import imagecodecs as ic_module
@@ -323,7 +324,7 @@ class TestMakeBatchDecoderNvjpeg:
         assert not called, "imagecodecs.imread should not be called for JPEG-only batch"
 
     def test_gray_jpeg_returns_3_channels(self, gray_jpeg_bytes):
-        decode = make_batch_decoder("cpu", use_nvjpeg=True)
+        decode = make_batch_decoder("cpu", decoder=Decoder.NVJPEG)
         results = decode([memoryview(gray_jpeg_bytes)])
         assert results[0].shape[0] == 3
 
@@ -338,7 +339,7 @@ class TestMakeBatchDecoderNvjpeg:
             raise RuntimeError("simulated nvjpeg failure")
 
         monkeypatch.setattr(torchvision.io, "decode_jpeg", _raise)
-        decode = make_batch_decoder("cpu", use_nvjpeg=True)
+        decode = make_batch_decoder("cpu", decoder=Decoder.NVJPEG)
         results = decode([memoryview(gray_jpeg_bytes)])
         assert results[0] is not None
         assert isinstance(results[0], torch.Tensor)
@@ -346,13 +347,13 @@ class TestMakeBatchDecoderNvjpeg:
 
     @pytest.mark.cuda
     def test_cuda_output_device(self, jpeg_bytes):
-        decode = make_batch_decoder("cuda:0", use_nvjpeg=True)
+        decode = make_batch_decoder("cuda:0", decoder=Decoder.NVJPEG)
         results = decode([memoryview(jpeg_bytes)])
         assert results[0].device.type == "cuda"
         assert results[0].shape[0] == 3
 
     @pytest.mark.cuda
     def test_cuda_non_jpeg_on_device(self, png_bytes):
-        decode = make_batch_decoder("cuda:0", use_nvjpeg=True)
+        decode = make_batch_decoder("cuda:0", decoder=Decoder.NVJPEG)
         results = decode([memoryview(png_bytes)])
         assert results[0].device.type == "cuda"

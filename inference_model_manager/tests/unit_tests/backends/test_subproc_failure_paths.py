@@ -160,6 +160,9 @@ def _stats() -> dict:
         "batch_count": 0,
         "latencies": deque(maxlen=10),
         "batch_sizes": deque(maxlen=10),
+        "decode_ms": deque(maxlen=10),
+        "infer_ms": deque(maxlen=10),
+        "write_ms": deque(maxlen=10),
         "start_ts": time.monotonic(),
     }
 

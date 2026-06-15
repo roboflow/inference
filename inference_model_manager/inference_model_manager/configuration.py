@@ -115,7 +115,7 @@ INFERENCE_VRAM_RECENT_WINDOW_S = get_float_from_env(
 # Read inside the forked worker — names exposed here.
 ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV = "ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND"
 ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_DEFAULT = "False"
-DEBUG_BENCHMARK_MODE_ENV = "DEBUG_BENCHMARK_MODE"
+DEBUG_PASSTHROUGH_MODEL_ENV = "DEBUG_PASSTHROUGH_MODEL"
 
 # ── ZMQ transport (backends/utils/transport.py) ────────────────────────────
 # Re-read each call to allow per-call overrides.

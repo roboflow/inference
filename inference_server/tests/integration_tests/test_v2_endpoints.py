@@ -55,7 +55,7 @@ async def client(mmp_harness):
     """Async httpx client with an MMPClient attached to app.state."""
     import inference_server.app as app_mod
 
-    app_mod._DEBUG_BENCHMARK_MODE = True
+    app_mod._DEBUG_PASSTHROUGH_MODEL = True
 
     proxy = MMPClient(
         mmp_addr=mmp_harness.addr,
