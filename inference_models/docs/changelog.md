@@ -1,6 +1,16 @@
 # Changelog
 
 
+## `0.29.3`
+
+### Fixed
+
+- Fixed GLM-OCR dtype mismatch on Jetson by casting HuggingFace processor floating-point
+inputs to the model dtype resolved for the target device (bfloat16 on supported CUDA hardware,
+otherwise float16).
+
+---
+
 ## `0.29.2`
 
 ### Fixed
