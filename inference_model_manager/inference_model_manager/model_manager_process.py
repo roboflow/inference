@@ -859,11 +859,15 @@ class ModelManagerProcess:
         )
         # Start from cached monitoring snapshot (includes psutil/GPU from last poll)
         snapshot: dict[str, Any] = dict(self._stats_snapshot)
-        # Overlay with manager stats (skip 'models' — mmp_models is the source of truth)
+        # Overlay with manager stats, but keep the device-level GPU view from
+        # _collect_gpu_stats (NVML). manager.stats()['gpus'] is torch-based and
+        # process-local — empty in MMP, which holds no CUDA context — so it must
+        # not clobber the NVML snapshot. 'models' likewise: mmp_models is truth.
         if self._manager is not None:
             try:
                 mgr_stats = self._manager.stats()
                 mgr_stats.pop("models", None)
+                mgr_stats.pop("gpus", None)
                 snapshot.update(mgr_stats)
             except Exception:
                 pass
