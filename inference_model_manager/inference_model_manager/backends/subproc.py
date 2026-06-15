@@ -279,6 +279,9 @@ def _worker_loop(
         "batch_count": 0,
         "latencies": deque(maxlen=1000),  # end-to-end per-batch (seconds)
         "batch_sizes": deque(maxlen=1000),
+        "decode_s": 0.0,  # cumulative per-phase wall time (seconds)
+        "infer_s": 0.0,
+        "write_s": 0.0,
         "start_ts": time.monotonic(),
     }
 
@@ -346,8 +349,15 @@ def _worker_loop(
         ):
             # Heartbeat at batch start — parent's busy-timeout clock runs from
             # the last recv, and the loop cannot heartbeat during inference.
+            # Under sustained load `pending` is never empty, so the idle-branch
+            # stats heartbeat never fires; carry the stats payload here when due
+            # (rate-limited) so /stats does not freeze at startup values.
             try:
-                sock.send_multipart([_MSG_HEARTBEAT, b""])
+                if now - last_heartbeat >= _HEARTBEAT_INTERVAL_S:
+                    payload = _build_worker_stats_payload(worker_stats)
+                else:
+                    payload = b""
+                sock.send_multipart([_MSG_HEARTBEAT, payload])
                 last_heartbeat = now
             except zmq.ZMQError:
                 pass
@@ -400,16 +410,24 @@ def _build_worker_stats_payload(worker_stats: dict) -> bytes:
         idx = min(int(len(lats) * p / 100), len(lats) - 1)
         return lats[idx] * 1000
 
+    bc = worker_stats["batch_count"]
+
+    def _avg_ms(key: str) -> float:
+        return worker_stats[key] / bc * 1000 if bc else 0.0
+
     return json.dumps(
         {
             "inference_count": infer_count,
             "error_count": worker_stats["error_count"],
-            "batch_count": worker_stats["batch_count"],
+            "batch_count": bc,
             "throughput_fps": infer_count / max(uptime, 1e-6),
             "latency_p50_ms": _pct(50),
             "latency_p95_ms": _pct(95),
             "latency_p99_ms": _pct(99),
             "avg_batch_size": sum(bs) / len(bs) if bs else 0.0,
+            "avg_decode_ms": _avg_ms("decode_s"),
+            "avg_infer_ms": _avg_ms("infer_s"),
+            "avg_write_ms": _avg_ms("write_s"),
             "uptime_s": round(uptime, 1),
         }
     ).encode()
@@ -572,6 +590,8 @@ def _process_slots(
         except Exception:
             pass
 
+    t_decoded = time.monotonic()
+
     # Short-circuit slots that failed to decode — send error without calling infer
     error_indices = {i for i, err in enumerate(decode_errors) if err}
     if error_indices:
@@ -627,6 +647,7 @@ def _process_slots(
             for i in indices:
                 results[i] = _InferenceError(str(exc))
 
+    t_infer = time.monotonic()
 
     n_ok = 0
     n_err = len(error_indices) if error_indices else 0
@@ -716,12 +737,15 @@ def _process_slots(
 
 
     # Update worker stats
-    elapsed = time.monotonic() - t0
+    end = time.monotonic()
     worker_stats["inference_count"] += n_ok
     worker_stats["error_count"] += n_err
     worker_stats["batch_count"] += 1
-    worker_stats["latencies"].append(elapsed)
+    worker_stats["latencies"].append(end - t0)
     worker_stats["batch_sizes"].append(len(batch))
+    worker_stats["decode_s"] += t_decoded - t0
+    worker_stats["infer_s"] += t_infer - t_decoded
+    worker_stats["write_s"] += end - t_infer
 
 
 # ---------------------------------------------------------------------------
@@ -1248,6 +1272,9 @@ class SubprocessBackend(Backend):
             "error_count": ws.get("error_count", 0),
             "batch_count": ws.get("batch_count", 0),
             "avg_batch_size": ws.get("avg_batch_size", 0.0),
+            "avg_decode_ms": ws.get("avg_decode_ms", 0.0),
+            "avg_infer_ms": ws.get("avg_infer_ms", 0.0),
+            "avg_write_ms": ws.get("avg_write_ms", 0.0),
             "worker_uptime_s": ws.get("uptime_s", 0.0),
             "worker_alive": self._worker.is_alive(),
             "shm_pool_name": self._pool.name,
