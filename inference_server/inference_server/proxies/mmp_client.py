@@ -324,11 +324,14 @@ class MMPClient:
             effective_params.setdefault("task", task)
 
         req_id = _new_req_id()
+        _t0 = time.perf_counter()  # DEBUGLOG
         slot_id = await self._alloc_slot(req_id, model_id, instance)
+        _t_alloc = time.perf_counter()  # DEBUGLOG
         submitted = False
         done = False
         try:
             self._write_input(slot_id, image, 0)
+            _t_write = time.perf_counter()  # DEBUGLOG
             # Mark BEFORE awaiting: if _submit_and_wait raises (timeout /
             # disconnect) after T_SUBMIT went out, the finally block must
             # cancel — not free a slot the worker still holds.
@@ -342,6 +345,8 @@ class MMPClient:
                 effective_params,
                 request=request,
             )
+
+            _t_wait = time.perf_counter()  # DEBUGLOG
 
             if result[0] == "error":
                 raise RuntimeError("inference failed")
@@ -362,6 +367,15 @@ class MMPClient:
                 raise RuntimeError(err_msg)
 
             raw = self._read_result(result_slot_id, result_sz)
+            _t_read = time.perf_counter()  # DEBUGLOG
+            logger.info(  # DEBUGLOG
+                "DEBUGLOG CLIENT alloc_us=%d write_us=%d wait_us=%d read_us=%d total_us=%d",
+                int((_t_alloc - _t0) * 1e6),
+                int((_t_write - _t_alloc) * 1e6),
+                int((_t_wait - _t_write) * 1e6),
+                int((_t_read - _t_wait) * 1e6),
+                int((_t_read - _t0) * 1e6),
+            )
             if raw_pickle:
                 return raw
             try:
