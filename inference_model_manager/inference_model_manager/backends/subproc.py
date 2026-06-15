@@ -279,9 +279,9 @@ def _worker_loop(
         "batch_count": 0,
         "latencies": deque(maxlen=1000),  # end-to-end per-batch (seconds)
         "batch_sizes": deque(maxlen=1000),
-        "decode_s": 0.0,
-        "infer_s": 0.0,
-        "write_s": 0.0,
+        "decode_ms": deque(maxlen=1000),
+        "infer_ms": deque(maxlen=1000),
+        "write_ms": deque(maxlen=1000),
         "start_ts": time.monotonic(),
     }
 
@@ -409,7 +409,8 @@ def _build_worker_stats_payload(worker_stats: dict) -> bytes:
     bc = worker_stats["batch_count"]
 
     def _avg_ms(key: str) -> float:
-        return worker_stats[key] / bc * 1000 if bc else 0.0
+        vals = worker_stats[key]
+        return sum(vals) / len(vals) if vals else 0.0
 
     return json.dumps(
         {
@@ -421,9 +422,9 @@ def _build_worker_stats_payload(worker_stats: dict) -> bytes:
             "latency_p95_ms": _pct(95),
             "latency_p99_ms": _pct(99),
             "avg_batch_size": sum(bs) / len(bs) if bs else 0.0,
-            "avg_decode_ms": _avg_ms("decode_s"),
-            "avg_infer_ms": _avg_ms("infer_s"),
-            "avg_write_ms": _avg_ms("write_s"),
+            "avg_decode_ms": _avg_ms("decode_ms"),
+            "avg_infer_ms": _avg_ms("infer_ms"),
+            "avg_write_ms": _avg_ms("write_ms"),
             "uptime_s": round(uptime, 1),
         }
     ).encode()
@@ -739,9 +740,9 @@ def _process_slots(
     worker_stats["batch_count"] += 1
     worker_stats["latencies"].append(end - t0)
     worker_stats["batch_sizes"].append(len(batch))
-    worker_stats["decode_s"] += t_decoded - t0
-    worker_stats["infer_s"] += t_infer - t_decoded
-    worker_stats["write_s"] += end - t_infer
+    worker_stats["decode_ms"].append((t_decoded - t0) * 1000)
+    worker_stats["infer_ms"].append((t_infer - t_decoded) * 1000)
+    worker_stats["write_ms"].append((end - t_infer) * 1000)
 
 
 # ---------------------------------------------------------------------------
