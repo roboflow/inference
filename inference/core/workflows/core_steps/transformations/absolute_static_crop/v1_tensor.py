@@ -151,7 +151,7 @@ def take_static_crop(
     y_min = round(y_center - height / 2)
     x_max = round(x_min + width)
     y_max = round(y_min + height)
-    cropped_tensor_image = image.tensor_image[y_min:y_max, x_min:x_max, :]
+    cropped_tensor_image = image.tensor_image[:, y_min:y_max, x_min:x_max]
     if cropped_tensor_image.numel() == 0:
         return None
     return WorkflowImageData.create_crop_from_tensor(

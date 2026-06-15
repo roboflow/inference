@@ -22,7 +22,10 @@ import torch
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, Literal
 
-from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
+)
 from inference.core.utils.image_utils import (
     attempt_loading_image_from_string,
     encode_image_to_jpeg_bytes,
@@ -293,7 +296,11 @@ class WorkflowImageData:
         self._image_reference = image_reference
         self._base64_image = base64_image
         self._numpy_image = numpy_image
-        self._tensor_image = tensor_image
+        self._tensor_image = (
+            tensor_image.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+            if tensor_image is not None
+            else None
+        )
         self._video_metadata = video_metadata
 
     @classmethod
@@ -484,9 +491,10 @@ class WorkflowImageData:
         if self._numpy_image is not None:
             return self._numpy_image.shape[0], self._numpy_image.shape[1]
         if self._tensor_image is not None:
+            # tensor_image is CHW -> H=shape[1], W=shape[2]
             return (
-                int(self._tensor_image.shape[0]),
                 int(self._tensor_image.shape[1]),
+                int(self._tensor_image.shape[2]),
             )
         np_img = self.numpy_image
         return np_img.shape[0], np_img.shape[1]
@@ -495,12 +503,13 @@ class WorkflowImageData:
     def numpy_image(self) -> np.ndarray:
         # Layout contract:
         #   numpy_image: HWC uint8 BGR  (cv2 native)
-        #   tensor_image: HWC uint8 RGB  (inference-models / torch convention)
+        #   tensor_image: CHW uint8 RGB  (inference-models / torch convention)
         if self._numpy_image is not None:
             return self._numpy_image
         if self._tensor_image is not None:
-            rgb_np = self._tensor_image.detach().to("cpu").numpy()
-            self._numpy_image = rgb_np[:, :, ::-1].copy()
+            # CHW RGB -> HWC (permute on-device before host transfer) -> BGR
+            hwc_rgb = self._tensor_image.detach().permute(1, 2, 0).to("cpu").numpy()
+            self._numpy_image = hwc_rgb[:, :, ::-1].copy()
             return self._numpy_image
         if self._base64_image:
             self._numpy_image = attempt_loading_image_from_string(self._base64_image)[0]
@@ -519,7 +528,14 @@ class WorkflowImageData:
             return self._tensor_image
         bgr_np = self.numpy_image
         rgb_np = bgr_np[:, :, ::-1].copy()
-        self._tensor_image = torch.from_numpy(rgb_np)
+        # HWC RGB -> CHW RGB; contiguous so model ingestion gets a dense buffer;
+        # allocated on the globally configured WORKFLOWS_IMAGE_TENSOR_DEVICE.
+        self._tensor_image = (
+            torch.from_numpy(rgb_np)
+            .permute(2, 0, 1)
+            .contiguous()
+            .to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+        )
         return self._tensor_image
 
     @property

@@ -1131,10 +1131,16 @@ def test_parent_origin_validation_rejects_negative_height() -> None:
 
 import torch  # noqa: E402  (kept low to avoid touching the existing import block)
 
+from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE  # noqa: E402
+
 
 def test_init_workflow_image_data_from_tensor_only() -> None:
     # given
-    tensor = torch.zeros((10, 20, 3), dtype=torch.uint8)
+    # Allocated on the configured device so the no-copy identity below holds even
+    # when WORKFLOWS_IMAGE_TENSOR_DEVICE is cuda.
+    tensor = torch.zeros(
+        (3, 10, 20), dtype=torch.uint8, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+    )
 
     # when
     image = WorkflowImageData(
@@ -1144,16 +1150,17 @@ def test_init_workflow_image_data_from_tensor_only() -> None:
 
     # then
     assert image.tensor_image is tensor
+    assert image.tensor_image.device == WORKFLOWS_IMAGE_TENSOR_DEVICE
 
 
 def test_workflow_image_data_numpy_fallback_does_rgb_to_bgr() -> None:
     # given
-    # Tensor is HWC uint8 RGB by convention. Bake distinct R/G/B values so
+    # Tensor is CHW uint8 RGB by convention. Bake distinct R/G/B values so
     # the channel order is asserted, not just the shape.
-    tensor = torch.zeros((2, 2, 3), dtype=torch.uint8)
-    tensor[..., 0] = 10  # R
-    tensor[..., 1] = 20  # G
-    tensor[..., 2] = 30  # B
+    tensor = torch.zeros((3, 2, 2), dtype=torch.uint8)
+    tensor[0] = 10  # R
+    tensor[1] = 20  # G
+    tensor[2] = 30  # B
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
         tensor_image=tensor,
@@ -1187,12 +1194,39 @@ def test_workflow_image_data_tensor_fallback_does_bgr_to_rgb() -> None:
     tensor = image.tensor_image
 
     # then
-    # tensor is HWC uint8 RGB.
-    assert tuple(tensor.shape) == (2, 2, 3)
+    # tensor is CHW uint8 RGB, contiguous.
+    assert tuple(tensor.shape) == (3, 2, 2)
     assert tensor.dtype == torch.uint8
-    assert torch.all(tensor[..., 0] == 10)
-    assert torch.all(tensor[..., 1] == 20)
-    assert torch.all(tensor[..., 2] == 30)
+    assert tensor.is_contiguous()
+    assert torch.all(tensor[0] == 10)
+    assert torch.all(tensor[1] == 20)
+    assert torch.all(tensor[2] == 30)
+
+
+def test_workflow_image_data_chw_round_trip_is_pixel_exact_and_non_square() -> None:
+    # given a non-square BGR image so an H<->W transpose would be detectable
+    numpy_image = np.zeros((4, 6, 3), dtype=np.uint8)
+    numpy_image[..., 0] = 30  # B
+    numpy_image[..., 1] = 20  # G
+    numpy_image[..., 2] = 10  # R
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=numpy_image,
+    )
+
+    # when
+    tensor = image.tensor_image  # CHW RGB
+    round_tripped = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        tensor_image=tensor,
+    ).numpy_image  # back to HWC BGR
+
+    # then
+    assert tuple(tensor.shape) == (3, 4, 6)  # C, H, W
+    assert tensor.is_contiguous()
+    assert image._read_shape_without_materialization() == (4, 6)  # H, W
+    assert round_tripped.shape == (4, 6, 3)
+    assert np.array_equal(round_tripped, numpy_image)
 
 
 def test_workflow_image_data_numpy_fallback_caches() -> None:
@@ -1230,7 +1264,7 @@ def test_workflow_image_data_parent_metadata_without_forcing_materialization() -
     # given
     # Tensor-only construction. Reading parent_metadata must populate
     # origin coordinates without going through numpy materialization.
-    tensor = torch.zeros((7, 11, 3), dtype=torch.uint8)
+    tensor = torch.zeros((3, 7, 11), dtype=torch.uint8)
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
         tensor_image=tensor,
@@ -1255,9 +1289,13 @@ def test_workflow_image_create_crop_from_tensor() -> None:
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
         workflow_root_ancestor_metadata=ImageParentMetadata(parent_id="root"),
-        tensor_image=torch.zeros((192, 168, 3), dtype=torch.uint8),
+        tensor_image=torch.zeros(
+            (3, 192, 168), dtype=torch.uint8, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
     )
-    cropped = torch.zeros((64, 60, 3), dtype=torch.uint8)
+    cropped = torch.zeros(
+        (3, 64, 60), dtype=torch.uint8, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+    )
 
     # when
     result = WorkflowImageData.create_crop_from_tensor(
@@ -1293,7 +1331,9 @@ def test_workflow_image_copy_and_replace_preserves_tensor() -> None:
     # given
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
-        tensor_image=torch.zeros((3, 4, 3), dtype=torch.uint8),
+        tensor_image=torch.zeros(
+            (3, 4, 3), dtype=torch.uint8, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
     )
 
     # when
