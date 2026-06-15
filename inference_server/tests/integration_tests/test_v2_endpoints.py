@@ -22,6 +22,7 @@ _TIMEOUT_S = 5.0
 
 class _MMPHarness:
     def __init__(self, n_slots: int = 8):
+        self.n_slots = n_slots
         self._ready = threading.Event()
         self.mmp = ModelManagerProcess(
             n_slots=n_slots,
@@ -61,6 +62,7 @@ async def client(mmp_harness):
         mmp_addr=mmp_harness.addr,
         shm_name=mmp_harness.shm_name,
         shm_data_size=int(_TEST_INPUT_MB * 1024 * 1024),
+        n_slots=mmp_harness.n_slots,
     )
     await proxy.start()
     app_mod.app.state.model_manager = proxy
