@@ -47,7 +47,6 @@ from typing import Any, Optional, Protocol
 import zmq
 import zmq.asyncio
 
-from inference_model_manager.backends import _debuglog as _dbg  # DEBUGLOG
 from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_model_manager import configuration as cfg
@@ -584,7 +583,6 @@ class ModelManagerProcess:
             except Exception:
                 pass
             try:
-                _dbg.slot_freed("shutdown-drain", slot_id, req_id)  # DEBUGLOG
                 self._pool.free_slot(slot_id)
             except Exception:
                 pass
@@ -710,7 +708,6 @@ class ModelManagerProcess:
             return
 
         self._pool.mark_allocated(slot_id, req_id)
-        logger.info("DBG MMP alloc: slot=%d req_id=%d", slot_id, req_id)  # DEBUGLOG
         await self._send(identity, T_ALLOC_OK, struct.pack(">QI", req_id, slot_id))
 
     # ------------------------------------------------------------------
@@ -755,7 +752,6 @@ class ModelManagerProcess:
             return
         req_id, slot_id = struct.unpack_from(">QI", data[0])
         try:
-            _dbg.slot_freed("client-T_FREE", slot_id, req_id)  # DEBUGLOG
             self._pool.free_slot(slot_id, request_id=req_id)
         except Exception:
             pass
@@ -774,12 +770,6 @@ class ModelManagerProcess:
         if not data or len(data[0]) < 8:
             return
         req_id = struct.unpack_from(">Q", data[0])[0]
-        if req_id in self._pending:  # DEBUGLOG
-            logger.info(  # DEBUGLOG
-                "DBG MMP cancel: req_id=%d slot=%d (slot retained for worker)",  # DEBUGLOG
-                req_id,  # DEBUGLOG
-                self._pending[req_id][1],  # DEBUGLOG
-            )  # DEBUGLOG
         self._pending.pop(req_id, None)
 
     # ------------------------------------------------------------------
@@ -1013,15 +1003,9 @@ class ModelManagerProcess:
         self._inflight.pop(slot_id, None)
         pending = self._pending.pop(req_id, None)
         if pending is None:
-            logger.info(  # DEBUGLOG
-                "DBG MMP late result: req_id=%d slot=%d — freeing (cancelled/reaped earlier)",  # DEBUGLOG
-                req_id,  # DEBUGLOG
-                slot_id,  # DEBUGLOG
-            )  # DEBUGLOG
             # Stale reaper already freed this, or duplicate callback — free
             # slot only if it is still bound to this request (it may have been
             # re-allocated since).
-            _dbg.slot_freed("late-result", slot_id, req_id)  # DEBUGLOG
             self._pool.free_slot(slot_id, request_id=req_id)
             return
         identity, _, _ = pending
@@ -1041,7 +1025,6 @@ class ModelManagerProcess:
             await self._send(
                 identity, T_ERROR, struct.pack(">QB", req_id, _ERR_BACKEND)
             )
-            _dbg.slot_freed("backend-error", slot_id, req_id)  # DEBUGLOG
             self._pool.free_slot(slot_id, request_id=req_id)
             return
         self._pool.mark_done(slot_id, result_sz)
@@ -1058,7 +1041,6 @@ class ModelManagerProcess:
                 req_id,
                 slot_id,
             )
-            _dbg.slot_freed("peer-gone", slot_id, req_id)  # DEBUGLOG
             self._pool.free_slot(slot_id, request_id=req_id)
 
     # ------------------------------------------------------------------
@@ -1328,7 +1310,6 @@ class ModelManagerProcess:
                             identity, T_ERROR, struct.pack(">QB", req_id, _ERR_STALE)
                         )
                     )
-            _dbg.slot_freed("reaper", slot_id, req_id)  # DEBUGLOG
             # Free under the request the header was bound to when sampled — if
             # the request completed (and the slot was rebound) between
             # stale_slots() and here, the free is a no-op.

@@ -29,7 +29,6 @@ from typing import Any, Optional
 import zmq.asyncio
 from fastapi import Request
 
-from inference_model_manager.backends import _debuglog as _dbg  # DEBUGLOG
 from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
@@ -37,7 +36,6 @@ from inference_server.proxies.base import ClientDisconnected
 
 logger = logging.getLogger(__name__)
 
-_dbg_infer_count = 0  # DEBUGLOG
 
 # ---------------------------------------------------------------------------
 # Wire protocol constants (match model_manager_process.py)

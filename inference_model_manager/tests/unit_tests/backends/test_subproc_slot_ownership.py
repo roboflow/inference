@@ -24,20 +24,6 @@ class _FakeSock:
         self.sent.append(frames)
 
 
-class _NoopDbg:
-    def capture_slots(self, *a, **k):
-        return None
-
-    def check_slots(self, *a, **k):
-        pass
-
-    def stage(self, *a, **k):
-        pass
-
-    def batch_done(self, *a, **k):
-        pass
-
-
 class _Log:
     def error(self, *a, **k):
         pass
@@ -68,11 +54,6 @@ def pool():
     p = SHMPool.create(n_slots=2, input_mb=0.5)
     yield p
     p.close()
-
-
-@pytest.fixture(autouse=True)
-def _quiet_dbg(monkeypatch):
-    monkeypatch.setattr(subproc, "_dbg", _NoopDbg())
 
 
 def _write_npy_input(pool: SHMPool, slot_id: int, req_id: int) -> None:

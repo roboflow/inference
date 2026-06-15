@@ -42,7 +42,6 @@ from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 
-from inference_model_manager.backends import _debuglog as _dbg  # DEBUGLOG
 from inference_model_manager.backends.base import Backend
 from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 from inference_model_manager.backends.utils.transport import default_transport
@@ -536,7 +535,6 @@ def _process_slots(
             log.error("Worker: slot %d has 0 bytes — skipping", batch[i][0])
             decode_errors[i] = True
 
-    _dbg_state = _dbg.capture_slots(pool, batch, mvs)  # DEBUGLOG
 
     # .npy slots — standalone mode (numpy arrays serialised via np.save)
     for i, (mv, npy) in enumerate(zip(mvs, is_npy)):
@@ -565,8 +563,6 @@ def _process_slots(
             for i in raw_indices:
                 decode_errors[i] = True
 
-    _dbg.stage("post-decode")  # DEBUGLOG
-    _dbg.check_slots(pool, batch, mvs, _dbg_state)  # DEBUGLOG
 
     # Release memoryviews
     for mv in mvs:
@@ -630,7 +626,6 @@ def _process_slots(
             for i in indices:
                 results[i] = _InferenceError(str(exc))
 
-    _dbg.stage("post-infer")  # DEBUGLOG
 
     n_ok = 0
     n_err = len(error_indices) if error_indices else 0
@@ -718,7 +713,6 @@ def _process_slots(
             return
         n_ok += 1
 
-    _dbg.batch_done(len(batch), t0)  # DEBUGLOG
 
     # Update worker stats
     elapsed = time.monotonic() - t0
