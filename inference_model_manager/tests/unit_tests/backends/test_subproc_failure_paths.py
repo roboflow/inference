@@ -135,20 +135,6 @@ class _FakeSock:
         self.sent.append(frames)
 
 
-class _NoopDbg:
-    def capture_slots(self, *a, **k):
-        return None
-
-    def check_slots(self, *a, **k):
-        pass
-
-    def stage(self, *a, **k):
-        pass
-
-    def batch_done(self, *a, **k):
-        pass
-
-
 class _Log:
     def error(self, *a, **k):
         pass
@@ -192,7 +178,6 @@ def _write_npy_input(pool: SHMPool, slot_id: int, req_id: int) -> None:
 def test_unpicklable_result_errors_slot_without_killing_batch(monkeypatch):
     pool = SHMPool.create(n_slots=2, input_mb=0.5)
     try:
-        monkeypatch.setattr(subproc, "_dbg", _NoopDbg())
         sock = _FakeSock()
         s0 = pool.alloc_slot()
         s1 = pool.alloc_slot()
