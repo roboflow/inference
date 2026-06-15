@@ -921,6 +921,7 @@ class ModelManagerProcess:
                     entry["model_class_name"] = getattr(
                         backend, "_model_class_name", None
                     )
+                    entry = {**backend.stats(), **entry}
                 except Exception:
                     pass
             if self._manager is not None:
