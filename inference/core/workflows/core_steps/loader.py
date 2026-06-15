@@ -385,12 +385,22 @@ else:
     from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1_tensor import (
         EasyOCRBlockV1,
     )
-from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
-    Florence2BlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
-    Florence2BlockV2,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
+        Florence2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v1_tensor import (
+        Florence2BlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
+        Florence2BlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v2_tensor import (
+        Florence2BlockV2,
+    )
 from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 from inference.core.workflows.core_steps.models.foundation.glm_ocr.v1 import (
     GLMOCRBlockV1,
