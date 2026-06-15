@@ -147,7 +147,9 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+        # Requires per-key execution branches for dict step selectors, added in
+        # Execution Engine v1.11.0.
+        return ">=1.11.0,<2.0.0"
 
 
 class SwitchCaseBlockV1(WorkflowBlock):
