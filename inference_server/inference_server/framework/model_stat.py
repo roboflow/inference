@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from collections import OrderedDict
 from typing import Optional
@@ -13,10 +12,11 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
 )
 from inference_models.weights_providers.roboflow import get_one_page_of_model_metadata
+from inference_server import configuration
 from inference_server.framework.entities import CommonRequestParams
 
-_CACHE_MAXSIZE = int(os.environ.get("INFERENCE_MODEL_STAT_CACHE_SIZE", "1024"))
-_CACHE_TTL_S = float(os.environ.get("INFERENCE_MODEL_STAT_CACHE_TTL_S", "300"))
+_CACHE_MAXSIZE = configuration.MODEL_STAT_CACHE_SIZE
+_CACHE_TTL_S = configuration.MODEL_STAT_CACHE_TTL_S
 
 
 class _TtlLruCache:

@@ -47,6 +47,7 @@ from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 from inference_model_manager.backends.utils.transport import default_transport
 from inference_model_manager import configuration as cfg
 from inference_model_manager.dispatch import invoke_task
+from inference_models.utils.environment import get_boolean_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,7 @@ def _worker_main(
             gpu_device if (use_gpu and gpu_device) else ("cuda:0" if use_gpu else "cpu")
         )
         _log.info("Worker(%s): loading on %s", model_id, device)
-        if os.environ.get(cfg.DEBUG_BENCHMARK_MODE_ENV):
+        if get_boolean_from_env(cfg.DEBUG_BENCHMARK_MODE_ENV, default=False):
             from inference_model_manager.backends.passthrough_model import (
                 PassthroughModel,
             )
