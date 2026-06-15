@@ -168,6 +168,7 @@ class MMPClient:
         mmp_addr: Optional[str] = None,
         shm_name: Optional[str] = None,
         shm_data_size: Optional[int] = None,
+        n_slots: Optional[int] = None,
         load_wait_s: Optional[float] = None,
         infer_timeout_s: Optional[float] = None,
         alloc_timeout_s: Optional[float] = None,
@@ -190,6 +191,7 @@ class MMPClient:
             )
         )
         self.slot_total = HEADER_SIZE + self.shm_data_size
+        self.n_slots = n_slots if n_slots is not None else cfg.SERVER_N_SLOTS
         self.load_wait_s = load_wait_s if load_wait_s is not None else cfg.LOAD_WAIT_S
         self.infer_timeout_s = (
             infer_timeout_s if infer_timeout_s is not None else cfg.INFER_TIMEOUT_S
@@ -229,12 +231,18 @@ class MMPClient:
         self._sock.connect(self.mmp_addr)
 
         self._shm = SharedMemory(name=self.shm_name, create=False)
-        if len(self._shm.buf) % self.slot_total != 0:
+        # OS rounds the mmap up to a page boundary, so the buffer holds n_slots
+        # slots plus < 1 slot of trailing padding. Anything outside that range
+        # means slot_total disagrees with the pool — writes would corrupt slots.
+        expected = self.n_slots * self.slot_total
+        buf_size = len(self._shm.buf)
+        if not (expected <= buf_size < expected + self.slot_total):
             raise RuntimeError(
-                f"SHM geometry mismatch: pool size {len(self._shm.buf)} is not "
-                f"divisible by slot_total {self.slot_total} — "
-                "INFERENCE_SHM_DATA_SIZE disagrees with the MMP that created "
-                "the pool; writes would corrupt neighboring slots"
+                f"SHM geometry mismatch: pool size {buf_size} does not hold "
+                f"{self.n_slots} slots of slot_total {self.slot_total} "
+                f"(expected {expected}..{expected + self.slot_total}) — "
+                "INFERENCE_SHM_DATA_SIZE / INFERENCE_N_SLOTS disagree with the "
+                "MMP that created the pool; writes would corrupt neighboring slots"
             )
         self._recv_task = asyncio.create_task(self._recv_loop(), name="zmq-recv")
         self.pipeline.start()
