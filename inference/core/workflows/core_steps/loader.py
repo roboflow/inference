@@ -520,9 +520,14 @@ from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
 from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
     SegPreviewBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
-    SegmentAnything2BlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+        SegmentAnything2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1_tensor import (
+        SegmentAnything2BlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
     SegmentAnything2VideoBlockV1,
 )
@@ -544,9 +549,14 @@ if SAM3_3D_OBJECTS_ENABLED:
         SegmentAnything3_3D_ObjectsBlockV1,
     )
 
-from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
-    SmolVLM2BlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
+        SmolVLM2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.smolvlm.v1_tensor import (
+        SmolVLM2BlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
     StabilityAIImageGenBlockV1,
 )
