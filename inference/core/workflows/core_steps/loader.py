@@ -484,18 +484,33 @@ else:
 from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
     Qwen35OpenRouterBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
-    Qwen35VLBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
-    Qwen35VLBlockV2,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
+        Qwen35VLBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1_tensor import (
+        Qwen35VLBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
+        Qwen35VLBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2_tensor import (
+        Qwen35VLBlockV2,
+    )
 from inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
     Qwen36OpenRouterBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
-    Qwen3VLBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
+        Qwen3VLBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1_tensor import (
+        Qwen3VLBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
