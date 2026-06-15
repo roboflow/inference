@@ -12,7 +12,11 @@ the ``os.environ.get`` so the read happens at the right moment.
 
 import os
 
-from inference_models.utils.environment import get_float_from_env, get_integer_from_env
+from inference_models.utils.environment import (
+    get_boolean_from_env,
+    get_float_from_env,
+    get_integer_from_env,
+)
 
 # ── State timeouts (state.py module-level) ────────────────────────────────
 LOAD_WAIT_S = get_float_from_env("INFERENCE_LOAD_WAIT_S", default=10.0)
@@ -38,8 +42,16 @@ AUTH_CACHE_TTL_S = get_integer_from_env("AUTH_CACHE_TTL_S", default=3600)
 AUTH_CACHE_FAIL_TTL_S = get_integer_from_env("AUTH_CACHE_FAIL_TTL_S", default=60)
 AUTH_CACHE_MAX_SIZE = get_integer_from_env("AUTH_CACHE_MAX_SIZE", default=10000)
 
+# ── Model-stat TTL-LRU cache (framework/model_stat.py) ────────────────────
+MODEL_STAT_CACHE_SIZE = get_integer_from_env(
+    "INFERENCE_MODEL_STAT_CACHE_SIZE", default=1024
+)
+MODEL_STAT_CACHE_TTL_S = get_float_from_env(
+    "INFERENCE_MODEL_STAT_CACHE_TTL_S", default=300.0
+)
+
 # ── Server / MMP launch (server.main) ─────────────────────────────────────
-NVIDIA_MPS_ENV = "NVIDIA_MPS"  # truthy check against literal "1"
+NVIDIA_MPS = get_boolean_from_env("NVIDIA_MPS", default=False)
 SERVER_N_SLOTS = get_integer_from_env("INFERENCE_N_SLOTS", default=32)
 SERVER_INPUT_MB = get_float_from_env("INFERENCE_INPUT_MB", default=25.0)
 SERVER_DECODER = os.environ.get("INFERENCE_DECODER", "imagecodecs")
@@ -65,7 +77,7 @@ LOG_LEVEL = os.environ.get("LOG_LEVEL", "warning").lower()
 
 # ── App lifespan (app.py) ─────────────────────────────────────────────────
 MULTIPART_SPOOL_MB = get_integer_from_env("INFERENCE_MULTIPART_SPOOL_MB", default=32)
-DEBUG_BENCHMARK_MODE = os.environ.get("DEBUG_BENCHMARK_MODE", "").strip() == "1"
+DEBUG_BENCHMARK_MODE = get_boolean_from_env("DEBUG_BENCHMARK_MODE", default=False)
 
 # ── Preload / readiness (server.main, routers/v2_server) ──────────────────
 INFERENCE_PRELOAD_MODELS_ENV = "INFERENCE_PRELOAD_MODELS"

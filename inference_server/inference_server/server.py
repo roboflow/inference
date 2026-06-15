@@ -177,7 +177,7 @@ def main() -> None:
     from inference_server.launcher import launch_orchestrated
 
     # ── MPS ────────────────────────────────────────────────────────────────
-    if os.environ.get(configuration.NVIDIA_MPS_ENV, "").strip() == "1":
+    if configuration.NVIDIA_MPS:
         _start_mps()
 
     # ── MMP config ─────────────────────────────────────────────────────────
