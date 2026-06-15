@@ -279,7 +279,7 @@ def _worker_loop(
         "batch_count": 0,
         "latencies": deque(maxlen=1000),  # end-to-end per-batch (seconds)
         "batch_sizes": deque(maxlen=1000),
-        "decode_s": 0.0,  # cumulative per-phase wall time (seconds)
+        "decode_s": 0.0,
         "infer_s": 0.0,
         "write_s": 0.0,
         "start_ts": time.monotonic(),
@@ -347,18 +347,14 @@ def _worker_loop(
         if pending and (
             len(pending) >= batch_max_size or (now - batch_start) >= batch_max_wait_s
         ):
-            # Heartbeat at batch start — parent's busy-timeout clock runs from
-            # the last recv, and the loop cannot heartbeat during inference.
-            # Under sustained load `pending` is never empty, so the idle-branch
-            # stats heartbeat never fires; carry the stats payload here when due
-            # (rate-limited) so /stats does not freeze at startup values.
             try:
                 if now - last_heartbeat >= _HEARTBEAT_INTERVAL_S:
-                    payload = _build_worker_stats_payload(worker_stats)
+                    sock.send_multipart(
+                        [_MSG_HEARTBEAT, _build_worker_stats_payload(worker_stats)]
+                    )
+                    last_heartbeat = now
                 else:
-                    payload = b""
-                sock.send_multipart([_MSG_HEARTBEAT, payload])
-                last_heartbeat = now
+                    sock.send_multipart([_MSG_HEARTBEAT, b""])
             except zmq.ZMQError:
                 pass
             decode_max_bytes = decode_budget_fn() if decode_budget_fn else 0
