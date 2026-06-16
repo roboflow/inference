@@ -83,12 +83,6 @@ FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
     "Please use a workflow or self-host the server."
 )
 
-CLASSIFICATION_TASK_TYPES = {
-    "classification",
-    "multi-class-classification",
-    "multi-label-classification",
-}
-
 
 class RoboflowModelRegistry(ModelRegistry):
     """A Roboflow-specific model registry which gets the model type using the model id,
@@ -218,13 +212,12 @@ def get_model_type(
     )
 
     if cached_metadata is not None:
-        cached_project_task_type = _normalize_project_task_type(cached_metadata[0])
         _ensure_model_supported_on_this_deployment(
             model_id=model_id,
-            project_task_type=cached_project_task_type,
+            project_task_type=cached_metadata[0],
             model_type=cached_metadata[1],
         )
-        return cached_project_task_type, cached_metadata[1]
+        return cached_metadata[0], cached_metadata[1]
     if version_id == STUB_VERSION_ID:
         if api_key is None:
             raise MissingApiKeyError(
@@ -272,8 +265,6 @@ def get_model_type(
     if api_data is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
 
-    project_task_type = _normalize_project_task_type(project_task_type)
-
     # some older projects do not have type field - hence defaulting
     model_type = api_data.get("modelType")
     if model_type is None or model_type == "ort":
@@ -298,14 +289,6 @@ def get_model_type(
     return project_task_type, model_type
 
 
-def _normalize_project_task_type(
-    project_task_type: Optional[TaskType],
-) -> Optional[TaskType]:
-    if project_task_type in CLASSIFICATION_TASK_TYPES:
-        return "classification"
-    return project_task_type
-
-
 def _ensure_model_supported_on_this_deployment(
     model_id: ModelID,
     project_task_type: TaskType,
@@ -313,7 +296,7 @@ def _ensure_model_supported_on_this_deployment(
 ) -> None:
     if SAM3_FINE_TUNED_MODELS_ENABLED:
         return None
-    if model_type != "sam3-large":
+    if model_type not in {"sam3", "sam3-large"}:
         return None
     if project_task_type != "instance-segmentation":
         return None
