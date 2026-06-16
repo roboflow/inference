@@ -282,6 +282,9 @@ def _worker_loop(
         "decode_ms": deque(maxlen=1000),
         "infer_ms": deque(maxlen=1000),
         "write_ms": deque(maxlen=1000),
+        "fire_size": 0,  # DEBUGLOG
+        "fire_wait": 0,  # DEBUGLOG
+        "fire_split": 0,  # DEBUGLOG
         "start_ts": time.monotonic(),
     }
 
@@ -347,6 +350,10 @@ def _worker_loop(
         if pending and (
             len(pending) >= batch_max_size or (now - batch_start) >= batch_max_wait_s
         ):
+            if len(pending) >= batch_max_size:  # DEBUGLOG
+                worker_stats["fire_size"] += 1  # DEBUGLOG
+            else:  # DEBUGLOG
+                worker_stats["fire_wait"] += 1  # DEBUGLOG
             try:
                 if now - last_heartbeat >= _HEARTBEAT_INTERVAL_S:
                     sock.send_multipart(
@@ -358,9 +365,12 @@ def _worker_loop(
             except zmq.ZMQError:
                 pass
             decode_max_bytes = decode_budget_fn() if decode_budget_fn else 0
-            for chunk in _split_batch_by_decoded_bytes(
-                pool, pending, decode_max_bytes
-            ):
+            _chunks = list(  # DEBUGLOG
+                _split_batch_by_decoded_bytes(pool, pending, decode_max_bytes)
+            )
+            if len(_chunks) > 1:  # DEBUGLOG
+                worker_stats["fire_split"] += 1  # DEBUGLOG
+            for chunk in _chunks:
                 if len(chunk) < len(pending):
                     log.info(
                         "Worker: decoded-bytes cap split batch of %d — "
@@ -425,6 +435,9 @@ def _build_worker_stats_payload(worker_stats: dict) -> bytes:
             "avg_decode_ms": _avg_ms("decode_ms"),
             "avg_infer_ms": _avg_ms("infer_ms"),
             "avg_write_ms": _avg_ms("write_ms"),
+            "fire_size": worker_stats["fire_size"],  # DEBUGLOG
+            "fire_wait": worker_stats["fire_wait"],  # DEBUGLOG
+            "fire_split": worker_stats["fire_split"],  # DEBUGLOG
             "uptime_s": round(uptime, 1),
         }
     ).encode()
@@ -1282,6 +1295,9 @@ class SubprocessBackend(Backend):
             "avg_decode_ms": ws.get("avg_decode_ms", 0.0),
             "avg_infer_ms": ws.get("avg_infer_ms", 0.0),
             "avg_write_ms": ws.get("avg_write_ms", 0.0),
+            "fire_size": ws.get("fire_size", 0),  # DEBUGLOG
+            "fire_wait": ws.get("fire_wait", 0),  # DEBUGLOG
+            "fire_split": ws.get("fire_split", 0),  # DEBUGLOG
             "worker_uptime_s": ws.get("uptime_s", 0.0),
             "worker_alive": self._worker.is_alive(),
             "shm_pool_name": self._pool.name,
