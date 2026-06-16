@@ -517,9 +517,14 @@ from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
 from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
     QwenVlmBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
-    SegPreviewBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
+        SegPreviewBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.seg_preview.v1_tensor import (
+        SegPreviewBlockV1,
+    )
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
         SegmentAnything2BlockV1,
@@ -560,9 +565,14 @@ else:
 from inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
     StabilityAIImageGenBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1 import (
-    StabilityAIInpaintingBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1 import (
+        StabilityAIInpaintingBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1_tensor import (
+        StabilityAIInpaintingBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.stability_ai.outpainting.v1 import (
     StabilityAIOutpaintingBlockV1,
 )
