@@ -30,8 +30,10 @@ from inference.core.roboflow_api import ModelEndpointType
 @pytest.fixture(autouse=True)
 def clear_in_process_metadata_cache():
     _in_process_metadata_cache.cache.clear()
+    roboflow._check_if_api_key_has_access_to_model.cache_clear()
     yield
     _in_process_metadata_cache.cache.clear()
+    roboflow._check_if_api_key_has_access_to_model.cache_clear()
 
 
 @pytest.mark.parametrize("is_lambda", [False, True])
@@ -298,7 +300,7 @@ def test_get_model_type_when_classification_subtype_is_cached(
     result = get_model_type(model_id="some/1", api_key="my_api_key")
 
     # then
-    assert result == ("classification", "vit")
+    assert result == ("multi-label-classification", "vit")
 
 
 @mock.patch.object(roboflow, "SAM3_FINE_TUNED_MODELS_ENABLED", False)
@@ -346,6 +348,33 @@ def test_get_model_type_when_generic_model_is_utilised(
     assert result == expected_result
 
 
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+def test_check_api_key_for_yolo_world_core_model_uses_legacy_core_model_endpoint(
+    get_roboflow_model_data_mock: MagicMock,
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+) -> None:
+    # when
+    result = roboflow._check_if_api_key_has_access_to_model(
+        api_key="my_api_key",
+        model_id="yolo_world/l",
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
+
+    # then
+    assert result is True
+    get_model_metadata_from_inference_models_registry_mock.assert_not_called()
+    get_roboflow_model_data_mock.assert_called_once_with(
+        api_key="my_api_key",
+        model_id="yolo_world/l",
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+        device_id=GLOBAL_DEVICE_ID,
+        countinference=None,
+        service_secret=None,
+    )
+
+
 @mock.patch.object(roboflow, "SAM3_FINE_TUNED_MODELS_ENABLED", False)
 @mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
 @mock.patch.object(roboflow, "get_roboflow_model_data")
@@ -381,6 +410,40 @@ def test_get_model_type_when_fine_tuned_sam3_is_requested_and_disabled(
         service_secret=None,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+    )
+
+
+@mock.patch.object(roboflow, "SAM3_FINE_TUNED_MODELS_ENABLED", False)
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+def test_get_model_type_when_sam3_from_new_model_registry_is_requested_and_disabled(
+    construct_model_type_cache_path_mock: MagicMock,
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_model_metadata_from_inference_models_registry_mock.return_value = {
+        "modelType": "sam3",
+        "taskType": "instance-segmentation",
+    }
+
+    # when / then
+    with pytest.raises(ModelDeploymentNotSupportedError) as error:
+        get_model_type(
+            model_id="workspace/123",
+            api_key="my_api_key",
+        )
+
+    assert str(error.value) == FINE_TUNED_SAM3_DEPLOYMENT_ERROR
+    assert not os.path.exists(metadata_path)
+    get_model_metadata_from_inference_models_registry_mock.assert_called_once_with(
+        api_key="my_api_key",
+        model_id="workspace/123",
+        countinference=None,
+        service_secret=None,
     )
 
 
@@ -523,11 +586,11 @@ def test_get_model_type_when_new_model_registry_returns_classification_subtype(
     )
 
     # then
-    assert result == ("classification", "vit")
+    assert result == ("multi-label-classification", "vit")
     with open(metadata_path) as f:
         persisted_metadata = json.load(f)
     assert persisted_metadata["model_type"] == "vit"
-    assert persisted_metadata["project_task_type"] == "classification"
+    assert persisted_metadata["project_task_type"] == "multi-label-classification"
 
 
 @mock.patch.object(roboflow, "get_roboflow_model_data")
