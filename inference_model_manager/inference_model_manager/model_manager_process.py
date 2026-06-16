@@ -346,6 +346,8 @@ class ModelManagerProcess:
         self._pending: dict[int, tuple[bytes, int, str]] = {}
 
         self._rejects_pool_full = 0
+        self._result_sched = 0  # DEBUGLOG
+        self._result_ran = 0  # DEBUGLOG
 
         # slot_id → flavor for slots signalled to a worker and not yet
         # resulted. The reaper must never free these: the worker may be
@@ -430,6 +432,7 @@ class ModelManagerProcess:
         Thread-safe. ``result_sz == 0`` signals inference error.
         """
         if self._loop is not None:
+            self._result_sched += 1  # DEBUGLOG
             self._loop.call_soon_threadsafe(
                 self._on_result_on_loop, req_id, slot_id, result_sz
             )
@@ -950,6 +953,7 @@ class ModelManagerProcess:
                 "mmp_total_slots": self._n_slots,
                 "mmp_pending": len(self._pending),
                 "mmp_rejects_pool_full": self._rejects_pool_full,
+                "mmp_result_q": self._result_sched - self._result_ran,  # DEBUGLOG
                 "mmp_cache_hits": self._cache_hits,
                 "mmp_cache_misses": self._cache_misses,
                 "mmp_idle_timeout_s": self._idle_timeout_s,
@@ -1008,6 +1012,7 @@ class ModelManagerProcess:
 
     def _on_result_on_loop(self, req_id: int, slot_id: int, result_sz: int) -> None:
         """Must be called on the event loop thread."""
+        self._result_ran += 1  # DEBUGLOG
         self._inflight.pop(slot_id, None)
         pending = self._pending.pop(req_id, None)
         if pending is None:

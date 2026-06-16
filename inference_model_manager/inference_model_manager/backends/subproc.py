@@ -282,6 +282,8 @@ def _worker_loop(
         "decode_ms": deque(maxlen=1000),
         "infer_ms": deque(maxlen=1000),
         "write_ms": deque(maxlen=1000),
+        "fire_size": 0,  # DEBUGLOG
+        "fire_wait": 0,  # DEBUGLOG
         "start_ts": time.monotonic(),
     }
 
@@ -347,6 +349,10 @@ def _worker_loop(
         if pending and (
             len(pending) >= batch_max_size or (now - batch_start) >= batch_max_wait_s
         ):
+            if len(pending) >= batch_max_size:  # DEBUGLOG
+                worker_stats["fire_size"] += 1  # DEBUGLOG
+            else:  # DEBUGLOG
+                worker_stats["fire_wait"] += 1  # DEBUGLOG
             try:
                 if now - last_heartbeat >= _HEARTBEAT_INTERVAL_S:
                     sock.send_multipart(
@@ -425,6 +431,8 @@ def _build_worker_stats_payload(worker_stats: dict) -> bytes:
             "avg_decode_ms": _avg_ms("decode_ms"),
             "avg_infer_ms": _avg_ms("infer_ms"),
             "avg_write_ms": _avg_ms("write_ms"),
+            "fire_size": worker_stats["fire_size"],  # DEBUGLOG
+            "fire_wait": worker_stats["fire_wait"],  # DEBUGLOG
             "uptime_s": round(uptime, 1),
         }
     ).encode()
@@ -1270,6 +1278,8 @@ class SubprocessBackend(Backend):
             "state": self.state,
             "is_accepting": self.is_accepting,
             "queue_depth": self.queue_depth,
+            "outstanding": self._outstanding,  # DEBUGLOG
+            "outbound_qsize": self._outbound.qsize(),  # DEBUGLOG
             "max_batch_size": self.max_batch_size,
             "throughput_fps": ws.get("throughput_fps", 0.0),
             "latency_p50_ms": ws.get("latency_p50_ms", 0.0),
@@ -1282,6 +1292,8 @@ class SubprocessBackend(Backend):
             "avg_decode_ms": ws.get("avg_decode_ms", 0.0),
             "avg_infer_ms": ws.get("avg_infer_ms", 0.0),
             "avg_write_ms": ws.get("avg_write_ms", 0.0),
+            "fire_size": ws.get("fire_size", 0),  # DEBUGLOG
+            "fire_wait": ws.get("fire_wait", 0),  # DEBUGLOG
             "worker_uptime_s": ws.get("uptime_s", 0.0),
             "worker_alive": self._worker.is_alive(),
             "shm_pool_name": self._pool.name,
