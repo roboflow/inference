@@ -15,10 +15,12 @@ per-frame shape is identical:
   processor's ``add_text_prompt`` / ``add_inputs_to_inference_session``
   methods.
 
-``HFStreamingVideoBase`` encapsulates all of this.  Concrete subclasses
-(``SAM2Video`` today, plus any future HF video tracker) just declare
-which transformers classes to load and which prompt types they accept;
-they inherit the streaming ``prompt`` / ``track`` methods unchanged.
+``HFVideoModelBase`` holds the plumbing common to every HF video
+tracker (construction, session init, locking).  ``HFStreamingVideoBase``
+adds the SAM2-shaped visually prompted ``prompt`` / ``track`` contract
+on top; SAM3's concept tracker (``sam3_video.SAM3Video``) builds its own
+per-frame API on the plumbing layer instead, because its prompts are
+session-wide concepts rather than per-frame box seeds.
 """
 
 from threading import RLock
@@ -35,27 +37,30 @@ from inference_models.errors import ModelRuntimeError
 SESSION_KEY = "_video_inference_session"
 
 
-class HFStreamingVideoBase:
-    """Frame-by-frame SAM-family video tracker built on transformers.
+class HFVideoModelBase:
+    """Construction & session plumbing shared by HF video trackers.
 
-    Concrete subclasses set class-level ``_transformers_model_cls`` and
-    ``_transformers_processor_cls`` (lazy-initialised, typically in
-    ``from_pretrained``) so this base can call them generically.
+    Holds the transformers model + processor pair, the device/dtype
+    configuration, a re-entrant lock serialising frame processing, and
+    the ``init_video_session`` bookkeeping.  It makes no assumption
+    about the prompt vocabulary or per-frame call signature — concrete
+    families layer their own ``prompt`` / ``track`` on top:
+
+    - ``HFStreamingVideoBase`` — the SAM2-shaped visually prompted
+      tracker contract (``(masks, obj_ids, state_dict)`` tuples).
+    - ``SAM3Video`` — SAM3's concept tracker, whose per-frame results
+      additionally carry detection scores and the prompt→objects map.
 
     State management
     ----------------
     Callers keep the opaque ``state_dict`` returned from ``prompt`` /
-    ``track`` and pass it back on the next call.  Unlike SAM2's
-    PyTorch state dict (a serialisable ``{str: Tensor}`` map), the HF
-    inference session is a live Python object with GPU tensor
-    references — it is **not serialisable across processes**.
+    ``track`` and pass it back on the next call.  The HF inference
+    session inside is a live Python object with GPU tensor references —
+    it is **not serialisable across processes**.
     """
 
     _transformers_model_cls: Any = None
     _transformers_processor_cls: Any = None
-    #: Whether ``prompt`` should accept ``text=...`` prompts.  SAM3
-    #: supports them; SAM2 does not.
-    _supports_text_prompts: bool = False
 
     def __init__(
         self,
@@ -117,6 +122,40 @@ class HFStreamingVideoBase:
                 f"_resolve_transformers_classes)."
             )
         return cls._transformers_model_cls, cls._transformers_processor_cls
+
+    # ------------------------------------------------------------------
+    # Session plumbing
+    # ------------------------------------------------------------------
+
+    def _resolve_session(self, state_dict: Optional[dict], reset: bool) -> Any:
+        if reset:
+            return self._new_session()
+        if state_dict is not None:
+            session = state_dict.get(SESSION_KEY)
+            if session is not None:
+                return session
+        return self._new_session()
+
+    def _new_session(self) -> Any:
+        return self._processor.init_video_session(
+            inference_device=self._device,
+            processing_device="cpu",
+            video_storage_device="cpu",
+            dtype=self._dtype,
+        )
+
+
+class HFStreamingVideoBase(HFVideoModelBase):
+    """SAM2-shaped visually prompted streaming tracker contract.
+
+    ``prompt`` seeds a session with box (and, where supported, text)
+    prompts attached to a specific frame; ``track`` propagates the
+    resulting tracks.  Both return ``(masks, obj_ids, state_dict)``.
+    """
+
+    #: Whether ``prompt`` should accept ``text=...`` prompts alongside
+    #: boxes.  SAM2 does not support them.
+    _supports_text_prompts: bool = False
 
     # ------------------------------------------------------------------
     # Streaming API — matches SAM2ForStream's shape so the two can be
@@ -236,23 +275,6 @@ class HFStreamingVideoBase:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
-
-    def _resolve_session(self, state_dict: Optional[dict], reset: bool) -> Any:
-        if reset:
-            return self._new_session()
-        if state_dict is not None:
-            session = state_dict.get(SESSION_KEY)
-            if session is not None:
-                return session
-        return self._new_session()
-
-    def _new_session(self) -> Any:
-        return self._processor.init_video_session(
-            inference_device=self._device,
-            processing_device="cpu",
-            video_storage_device="cpu",
-            dtype=self._dtype,
-        )
 
     def _extract_masks_and_ids(
         self,
