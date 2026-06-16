@@ -515,7 +515,7 @@ async def test_get_serverless_usage_check_async_when_workspace_is_billing_restri
 
         assert result == ServerlessUsageCheckResponse(
             status_code=402,
-            workspace_id="my-workspace",
+            workspace_id="workspace-db-id",
             under_cap=False,
             error="Workspace billing is restricted.",
         )
@@ -540,7 +540,7 @@ async def test_get_serverless_usage_check_async_when_response_is_valid() -> None
 
         assert result == ServerlessUsageCheckResponse(
             status_code=200,
-            workspace_id="my_workspace",
+            workspace_id="workspace-db-id",
             under_cap=True,
         )
         registered_requests = request_mock.requests[
@@ -3606,7 +3606,7 @@ async def test_get_serverless_usage_check_async_routes_through_secure_gateway() 
         result = await get_serverless_usage_check_async(api_key="my_api_key")
 
         assert result.status_code == 200
-        assert result.workspace_id == "my-workspace"
+        assert result.workspace_id == "ws-id"
         called_urls = [str(k[1]) for k in request_mock.requests.keys()]
         assert any(
             PROXY_PREFIX in u for u in called_urls
