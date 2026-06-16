@@ -656,12 +656,20 @@ from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v
 from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2 import (
     RoboflowSemanticSegmentationModelBlockV2,
 )
-from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
-    BarcodeDetectorBlockV1,
-)
-from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
-    QRCodeDetectorBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
+        BarcodeDetectorBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
+        QRCodeDetectorBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1_tensor import (
+        BarcodeDetectorBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1_tensor import (
+        QRCodeDetectorBlockV1,
+    )
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.sampling.identify_changes.v1 import (
         IdentifyChangesBlockV1,

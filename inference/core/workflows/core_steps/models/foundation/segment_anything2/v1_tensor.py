@@ -9,6 +9,7 @@ from inference.core.env import (
     GCP_SERVERLESS,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_TARGET, CORE_MODEL_SAM2_ENABLED,
 )
 from inference.core.managers.base import ModelManager
@@ -443,10 +444,16 @@ def _assemble_instance_detections(
         mask = binary
 
     detections = InstanceDetections(
-        xyxy=xyxy,
-        class_id=class_id,
-        confidence=confidence.to(torch.float32).reshape(-1),
-        mask=mask,
+        xyxy=xyxy.to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
+        class_id=class_id.to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
+        confidence=confidence.to(torch.float32).reshape(-1).to(
+            WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
+        mask=(
+            mask
+            if isinstance(mask, InstancesRLEMasks)
+            else mask.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+        ),
     )
     detections.image_metadata = build_native_image_metadata(
         image=image,

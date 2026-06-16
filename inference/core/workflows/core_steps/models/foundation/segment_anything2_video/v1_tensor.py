@@ -27,7 +27,7 @@ import numpy as np
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.env import GCP_SERVERLESS
+from inference.core.env import GCP_SERVERLESS, WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
@@ -439,7 +439,14 @@ def _masks_to_instance_detections(
             mask = torch.from_numpy(np.stack(kept_masks, axis=0))
 
     detections = InstanceDetections(
-        xyxy=xyxy_t, class_id=class_id_t, confidence=confidence_t, mask=mask
+        xyxy=xyxy_t.to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
+        class_id=class_id_t.to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
+        confidence=confidence_t.to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
+        mask=(
+            mask
+            if isinstance(mask, InstancesRLEMasks)
+            else mask.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+        ),
     )
     detections.image_metadata = build_native_image_metadata(
         image=image,
