@@ -26,7 +26,10 @@ jobs:
     runs-on:
       labels: depot-ubuntu-24.04-4
       group: public-depot
-    timeout-minutes: 360
+    # 480: the layer-cache chain rebuilds fully when early builder steps change
+    # (BuildKit cache mounts still soften the PyTorch/ORT/OpenCV compiles), and
+    # flash-attn (no cache mount) takes hours alone at MAX_JOBS=4.
+    timeout-minutes: 480
     permissions:
       id-token: write
       contents: read

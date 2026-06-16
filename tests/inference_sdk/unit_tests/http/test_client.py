@@ -3674,6 +3674,33 @@ def test_infer_lmm_when_generation_parameters_given(
     }
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_depth_estimation_when_model_id_in_path(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/infer/depth-estimation/depth-anything-v3/small",
+        json={"normalized_depth": [[0.0]], "image": "depth-image"},
+    )
+
+    result = http_client.depth_estimation(
+        inference_input="/some/image.jpg",
+        model_id="depth-anything-v3/small",
+        model_id_in_path=True,
+    )
+
+    assert result == {"normalized_depth": [[0.0]], "image": "depth-image"}
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+        "model_id": "depth-anything-v3/small",
+    }
+
+
 @mock.patch.object(client, "load_nested_batches_of_inference_input")
 @pytest.mark.parametrize(
     "legacy_endpoints, endpoint_to_use, parameter_name",

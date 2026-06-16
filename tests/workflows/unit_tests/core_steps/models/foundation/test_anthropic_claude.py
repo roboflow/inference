@@ -11,6 +11,10 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 i
     BlockManifest,
     execute_claude_request,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
+    EXACT_MODEL_VERSIONS as EXACT_MODEL_VERSIONS_V3,
+    MAX_OUTPUT_TOKENS as MAX_OUTPUT_TOKENS_V3,
+)
 
 
 def test_claude_step_validation_when_input_is_valid() -> None:
@@ -74,6 +78,7 @@ def test_claude_step_validation_when_prompt_is_given_directly() -> None:
 @pytest.mark.parametrize(
     "model_version",
     [
+        "claude-fable-5",
         "claude-opus-4-7",
         "claude-sonnet-4-5",
         "claude-haiku-4-5",
@@ -337,6 +342,7 @@ def test_claude_step_validation_with_structured_answering() -> None:
 
 def test_max_output_tokens_mapping() -> None:
     # then - verify all models have max_output_tokens defined
+    assert MAX_OUTPUT_TOKENS["claude-fable-5"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-opus-4-7"] == 128000
     assert MAX_OUTPUT_TOKENS["claude-sonnet-4-5"] == 64000
     assert MAX_OUTPUT_TOKENS["claude-haiku-4-5"] == 64000
@@ -349,6 +355,7 @@ def test_max_output_tokens_mapping() -> None:
 
 def test_exact_model_versions_mapping() -> None:
     # then - verify all models have exact versions defined
+    assert EXACT_MODEL_VERSIONS["claude-fable-5"] == "claude-fable-5"
     assert EXACT_MODEL_VERSIONS["claude-opus-4-7"] == "claude-opus-4-7"
     assert EXACT_MODEL_VERSIONS["claude-sonnet-4-5"] == "claude-sonnet-4-5-20250929"
     assert EXACT_MODEL_VERSIONS["claude-haiku-4-5"] == "claude-haiku-4-5-20251001"
@@ -356,6 +363,12 @@ def test_exact_model_versions_mapping() -> None:
     assert EXACT_MODEL_VERSIONS["claude-sonnet-4"] == "claude-sonnet-4-20250514"
     assert EXACT_MODEL_VERSIONS["claude-opus-4-1"] == "claude-opus-4-1-20250805"
     assert EXACT_MODEL_VERSIONS["claude-opus-4"] == "claude-opus-4-20250514"
+
+
+def test_v3_claude_fable_model_metadata() -> None:
+    # then
+    assert MAX_OUTPUT_TOKENS_V3["claude-fable-5"] == 128000
+    assert EXACT_MODEL_VERSIONS_V3["claude-fable-5"] == "claude-fable-5"
 
 
 @patch(
