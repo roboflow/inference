@@ -204,6 +204,9 @@ class MMPClient:
         self.ensure_cache_ttl_s = cfg.ENSURE_CACHE_TTL_S
         self._loaded_cache: dict[str, float] = {}
         self.shm_admission = cfg.SHM_ADMISSION
+        self._adm_skip_full = 0  # DEBUGLOG: admission skipped T_ALLOC (free_count==0)
+        self._adm_passed_rejected = 0  # DEBUGLOG: passed admission but MMP still rejected
+        self._local_busy = 0  # DEBUGLOG: total ServerBusyError from _alloc_slot
 
         self._ctx: Optional[zmq.asyncio.Context] = None
         self._sock: Optional[zmq.asyncio.Socket] = None
@@ -250,15 +253,32 @@ class MMPClient:
                 "MMP that created the pool; writes would corrupt neighboring slots"
             )
         self._recv_task = asyncio.create_task(self._recv_loop(), name="zmq-recv")
+        self._adm_task = asyncio.create_task(  # DEBUGLOG
+            self._admission_reporter(), name="adm-report"
+        )
         self.pipeline.start()
 
+    async def _admission_reporter(self) -> None:  # DEBUGLOG
+        last = (0, 0, 0)
+        while True:
+            await asyncio.sleep(5.0)
+            cur = (self._adm_skip_full, self._adm_passed_rejected, self._local_busy)
+            d = tuple(c - p for c, p in zip(cur, last))
+            last = cur
+            if d[2]:
+                logger.warning(
+                    "MMPClient/5s pid=%d: admission_skip_full=%d passed_then_rejected=%d local_503=%d",
+                    os.getpid(), d[0], d[1], d[2],
+                )
+
     async def shutdown(self) -> None:
-        if self._recv_task is not None:
-            self._recv_task.cancel()
-            try:
-                await self._recv_task
-            except asyncio.CancelledError:
-                pass
+        for t in (self._recv_task, getattr(self, "_adm_task", None)):  # DEBUGLOG _adm_task
+            if t is not None:
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
         if self._sock is not None:
             self._sock.close()
         if self._ctx is not None:
@@ -347,15 +367,19 @@ class MMPClient:
             effective_params.setdefault("task", task)
 
         req_id = _new_req_id()
+        _t0 = time.monotonic()  # DEBUGLOG
         slot_id = await self._alloc_slot(req_id, model_id, instance)
+        _t_alloc = time.monotonic()  # DEBUGLOG
         submitted = False
         done = False
         try:
             self._write_input(slot_id, image, 0)
+            _t_write = time.monotonic()  # DEBUGLOG
             # Mark BEFORE awaiting: if _submit_and_wait raises (timeout /
             # disconnect) after T_SUBMIT went out, the finally block must
             # cancel — not free a slot the worker still holds.
             submitted = True
+            _timing = {} if self.pipeline.enabled else None  # DEBUGLOG
             result = await self._submit_and_wait(
                 req_id,
                 slot_id,
@@ -364,6 +388,7 @@ class MMPClient:
                 len(image),
                 effective_params,
                 request=request,
+                timing=_timing,
             )
 
             if result[0] == "error":
@@ -374,6 +399,7 @@ class MMPClient:
             # Got a real result: the worker has finished writing this slot and
             # will not touch it again, so the client now owns the free.
             done = True
+            _t_ready = time.monotonic()  # DEBUGLOG: result-ready arrived
             _, result_slot_id, result_sz = result
             hdr = self._read_slot_header(result_slot_id)
             if hdr is not None and hdr.status == SLOT_STATUS_ERROR:
@@ -385,12 +411,37 @@ class MMPClient:
                 raise RuntimeError(err_msg)
 
             raw = self._read_result(result_slot_id, result_sz)
+            _t_read = time.monotonic()  # DEBUGLOG
             if raw_pickle:
-                return raw
-            try:
-                return pickle.loads(raw)
-            except Exception as exc:
-                raise RuntimeError("result deserialization failed") from exc
+                out = raw
+            else:
+                try:
+                    out = pickle.loads(raw)
+                except Exception as exc:
+                    raise RuntimeError("result deserialization failed") from exc
+            if self.pipeline.enabled:  # DEBUGLOG: record only after full success
+                _t_end = time.monotonic()
+                self.pipeline.record(
+                    {
+                        "timestamp": time.time(),
+                        "worker_pid": os.getpid(),
+                        "endpoint": "infer",
+                        "payload_bytes": len(image),
+                        "status": "ok",
+                        "zmq_alloc_ms": round((_t_alloc - _t0) * 1000, 3),
+                        "shm_write_ms": round((_t_write - _t_alloc) * 1000, 3),
+                        "zmq_submit_ms": round(
+                            (_timing.get("submit_sent", _t_write) - _t_write) * 1000, 3
+                        ),
+                        "zmq_result_wait_ms": round(
+                            (_t_ready - _timing.get("submit_sent", _t_write)) * 1000, 3
+                        ),
+                        "result_read_ms": round((_t_read - _t_ready) * 1000, 3),
+                        "serialize_ms": round((_t_end - _t_read) * 1000, 3),
+                        "total_ms": round((_t_end - _t0) * 1000, 3),
+                    }
+                )
+            return out
         finally:
             if done:
                 # Worker finished, we read the result → safe to free.
@@ -484,6 +535,8 @@ class MMPClient:
         if self.shm_admission and self._shm is not None:
             free = read_free_count(self._shm.buf, self.n_slots, self.slot_total)
             if free == 0:
+                self._adm_skip_full += 1  # DEBUGLOG
+                self._local_busy += 1  # DEBUGLOG
                 raise ServerBusyError("no capacity (admission: pool full)")
 
         mid = _routing_key(model_id, instance).encode()
@@ -496,6 +549,7 @@ class MMPClient:
             # MMP unresponsive / pool stalled — a capacity condition, not an
             # inference timeout (504).
             self._drop_future(req_id)
+            self._local_busy += 1  # DEBUGLOG
             raise ServerBusyError("slot allocation timed out") from None
         except asyncio.CancelledError:
             # Handler task cancelled (client disconnect) while T_ALLOC may be in
@@ -505,6 +559,8 @@ class MMPClient:
             raise
         if result[0] == "error":
             # Alloc-time T_ERROR is pool-full / per-model cap — retryable.
+            self._adm_passed_rejected += 1  # DEBUGLOG
+            self._local_busy += 1  # DEBUGLOG
             raise ServerBusyError(f"no capacity (code={result[1]})")
         return result[1]
 
@@ -517,12 +573,15 @@ class MMPClient:
         input_sz: int,
         params: dict,
         request: Optional[Request] = None,
+        timing: Optional[dict] = None,  # DEBUGLOG: filled with submit-send stamp
     ) -> tuple:
         mid = _routing_key(model_id, instance).encode()
         header = struct.pack(">QIIH", req_id, slot_id, input_sz, len(mid)) + mid
         params_json = json.dumps(params).encode() if params else b"{}"
         fut = self._make_future(req_id)
         await self._sock.send_multipart([T_SUBMIT, header, params_json])
+        if timing is not None:  # DEBUGLOG
+            timing["submit_sent"] = time.monotonic()
         try:
             if request is not None:
                 return await self._wait_with_disconnect(fut, request)
