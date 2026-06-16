@@ -22,6 +22,7 @@ from inference_models.utils.environment import (
 LOAD_WAIT_S = get_float_from_env("INFERENCE_LOAD_WAIT_S", default=10.0)
 INFER_TIMEOUT_S = get_float_from_env("INFERENCE_INFER_TIMEOUT_S", default=30.0)
 ALLOC_TIMEOUT_S = get_float_from_env("INFERENCE_ALLOC_TIMEOUT_S", default=2.0)
+ENSURE_CACHE_TTL_S = get_float_from_env("INFERENCE_ENSURE_CACHE_TTL_S", default=5.0)
 
 # ── MMP connection (state.init_from_env, re-read per worker) ──────────────
 INFERENCE_MMP_ADDR_ENV = "INFERENCE_MMP_ADDR"
