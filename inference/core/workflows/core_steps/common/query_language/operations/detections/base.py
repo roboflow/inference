@@ -7,6 +7,7 @@ import torch
 from supervision import Position
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.types import InstancesRLEMasks
 
@@ -454,6 +455,44 @@ def _is_point_within_box(point: np.ndarray, box: np.ndarray) -> bool:
 
 TensorNativeDetections = Union[Detections, InstanceDetections]
 TENSOR_NATIVE_DETECTIONS_TYPES = (Detections, InstanceDetections)
+# A keypoint-detection prediction kind is carried as a 2-tuple
+# (KeyPoints, Optional[Detections]); the bounding-box component is operated on by
+# the UQL detections ops and the KeyPoints component is sliced / shifted to match.
+KeyPointPrediction = tuple
+TensorNativePrediction = Union[Detections, InstanceDetections, "KeyPointPrediction"]
+
+
+def _is_key_point_prediction(value: Any) -> bool:
+    """True for the keypoint-detection tuple ``(KeyPoints, Optional[Detections])``."""
+    return (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], KeyPoints)
+        and (value[1] is None or isinstance(value[1], TENSOR_NATIVE_DETECTIONS_TYPES))
+    )
+
+
+def _split_key_point_prediction(
+    value: tuple,
+    operation_name: str,
+    execution_context: Optional[str] = None,
+) -> tuple:
+    """Return ``(key_points, detections)`` from a keypoint-detection tuple, raising
+    if the bbox component is missing (the UQL ops operate on bounding boxes)."""
+    key_points, detections = value
+    if detections is None:
+        context = "step_execution | roboflow_query_language_evaluation"
+        in_context = ""
+        if execution_context is not None:
+            context = f"{context} | {execution_context}"
+            in_context = f" in context {execution_context}"
+        raise InvalidInputTypeError(
+            public_message=f"Executing {operation_name}(...){in_context}, the keypoint "
+            f"prediction is missing the bounding-box `inference_models.Detections` "
+            f"component required by this operation.",
+            context=context,
+        )
+    return key_points, detections
 
 
 def _ensure_tensor_native_detections(
@@ -461,7 +500,9 @@ def _ensure_tensor_native_detections(
     operation_name: str,
     execution_context: Optional[str] = None,
 ) -> None:
-    if isinstance(value, TENSOR_NATIVE_DETECTIONS_TYPES):
+    if isinstance(value, TENSOR_NATIVE_DETECTIONS_TYPES) or _is_key_point_prediction(
+        value
+    ):
         return
     value_as_str = safe_stringify(value=value)
     context = "step_execution | roboflow_query_language_evaluation"
@@ -471,9 +512,28 @@ def _ensure_tensor_native_detections(
         in_context = f" in context {execution_context}"
     raise InvalidInputTypeError(
         public_message=f"Executing {operation_name}(...){in_context}, expected "
-        f"`inference_models.Detections` or `inference_models.InstanceDetections` object "
-        f"as value, got {value_as_str} of type {type(value)}",
+        f"`inference_models.Detections`, `inference_models.InstanceDetections` or a "
+        f"keypoint-detection `(KeyPoints, Detections)` tuple as value, got "
+        f"{value_as_str} of type {type(value)}",
         context=context,
+    )
+
+
+def _take_key_points(key_points: KeyPoints, indices: List[int]) -> KeyPoints:
+    """Slice a ``KeyPoints`` along the instance dimension by index list, carrying
+    per-instance ``key_points_metadata`` and sharing ``image_metadata`` as-is."""
+    index_tensor = torch.as_tensor(
+        indices, dtype=torch.long, device=key_points.xy.device
+    )
+    key_points_metadata = None
+    if key_points.key_points_metadata is not None:
+        key_points_metadata = [key_points.key_points_metadata[i] for i in indices]
+    return KeyPoints(
+        xy=key_points.xy[index_tensor],
+        class_id=key_points.class_id[index_tensor],
+        confidence=key_points.confidence[index_tensor],
+        image_metadata=key_points.image_metadata,
+        key_points_metadata=key_points_metadata,
     )
 
 
@@ -699,6 +759,14 @@ def _extract_detections_property_tensor_native(
         operation_name="extract_detections_property",
         execution_context=execution_context,
     )
+    if _is_key_point_prediction(detections):
+        # Property extraction reads the bounding-box component (mirrors the numpy
+        # path where keypoints ride alongside boxes in the same sv.Detections).
+        _, detections = _split_key_point_prediction(
+            detections,
+            operation_name="extract_detections_property",
+            execution_context=execution_context,
+        )
     if property_name not in PROPERTIES_EXTRACTORS_TENSOR_NATIVE:
         bboxes_metadata = _bboxes_metadata_list(detections)
         if any(property_name.value in data for data in bboxes_metadata):
@@ -712,26 +780,44 @@ def _extract_detections_property_tensor_native(
     return PROPERTIES_EXTRACTORS_TENSOR_NATIVE[property_name](detections)
 
 
-def _filter_detections_tensor_native(
-    detections: Any,
+def _filter_detections_indices_tensor_native(
+    detections: TensorNativeDetections,
     filtering_fun: Callable[[Dict[str, Any]], bool],
     global_parameters: Dict[str, Any],
-) -> TensorNativeDetections:
-    _ensure_tensor_native_detections(detections, operation_name="filter_detections")
+) -> List[int]:
     local_parameters = copy(global_parameters)
     indices_to_keep = []
     for index, detection in enumerate(detections):
         local_parameters[DEFAULT_OPERAND_NAME] = detection
         if filtering_fun(local_parameters):
             indices_to_keep.append(index)
-    return _take_detections(detections, indices_to_keep)
+    return indices_to_keep
 
 
-def _offset_detections_tensor_native(
-    value: Any, offset_x: int, offset_y: int, **kwargs
+def _filter_detections_tensor_native(
+    detections: Any,
+    filtering_fun: Callable[[Dict[str, Any]], bool],
+    global_parameters: Dict[str, Any],
+) -> TensorNativePrediction:
+    _ensure_tensor_native_detections(detections, operation_name="filter_detections")
+    if _is_key_point_prediction(detections):
+        key_points, bboxes = _split_key_point_prediction(
+            detections, operation_name="filter_detections"
+        )
+        indices = _filter_detections_indices_tensor_native(
+            bboxes, filtering_fun=filtering_fun, global_parameters=global_parameters
+        )
+        return _take_key_points(key_points, indices), _take_detections(bboxes, indices)
+    indices = _filter_detections_indices_tensor_native(
+        detections, filtering_fun=filtering_fun, global_parameters=global_parameters
+    )
+    return _take_detections(detections, indices)
+
+
+def _offset_detections_impl_tensor_native(
+    detections: TensorNativeDetections, offset_x: int, offset_y: int
 ) -> TensorNativeDetections:
-    _ensure_tensor_native_detections(value, operation_name="offset_detections")
-    detections_copy = _copy_detections(value)
+    detections_copy = _copy_detections(detections)
     detections_copy.xyxy = detections_copy.xyxy + torch.tensor(
         [-offset_x / 2, -offset_y / 2, offset_x / 2, offset_y / 2],
         dtype=detections_copy.xyxy.dtype,
@@ -740,11 +826,28 @@ def _offset_detections_tensor_native(
     return detections_copy
 
 
-def _shift_detections_tensor_native(
-    value: Any, shift_x: int, shift_y: int, **kwargs
+def _offset_detections_tensor_native(
+    value: Any, offset_x: int, offset_y: int, **kwargs
+) -> TensorNativePrediction:
+    _ensure_tensor_native_detections(value, operation_name="offset_detections")
+    # Mirrors the numpy path: only bbox `xyxy` is offset; the keypoint `xy`
+    # coordinates (carried in sv `.data` in numpy mode) are left untouched.
+    if _is_key_point_prediction(value):
+        key_points, bboxes = _split_key_point_prediction(
+            value, operation_name="offset_detections"
+        )
+        return key_points, _offset_detections_impl_tensor_native(
+            bboxes, offset_x=offset_x, offset_y=offset_y
+        )
+    return _offset_detections_impl_tensor_native(
+        value, offset_x=offset_x, offset_y=offset_y
+    )
+
+
+def _shift_detections_impl_tensor_native(
+    detections: TensorNativeDetections, shift_x: int, shift_y: int
 ) -> TensorNativeDetections:
-    _ensure_tensor_native_detections(value, operation_name="shift_detections")
-    detections_copy = _copy_detections(value)
+    detections_copy = _copy_detections(detections)
     detections_copy.xyxy = detections_copy.xyxy + torch.tensor(
         [shift_x, shift_y, shift_x, shift_y],
         dtype=detections_copy.xyxy.dtype,
@@ -753,50 +856,110 @@ def _shift_detections_tensor_native(
     return detections_copy
 
 
+def _shift_detections_tensor_native(
+    value: Any, shift_x: int, shift_y: int, **kwargs
+) -> TensorNativePrediction:
+    _ensure_tensor_native_detections(value, operation_name="shift_detections")
+    # Mirrors the numpy path: only bbox `xyxy` is shifted; the keypoint `xy`
+    # coordinates (carried in sv `.data` in numpy mode) are left untouched.
+    if _is_key_point_prediction(value):
+        key_points, bboxes = _split_key_point_prediction(
+            value, operation_name="shift_detections"
+        )
+        return key_points, _shift_detections_impl_tensor_native(
+            bboxes, shift_x=shift_x, shift_y=shift_y
+        )
+    return _shift_detections_impl_tensor_native(
+        value, shift_x=shift_x, shift_y=shift_y
+    )
+
+
+def _select_top_confidence_index_tensor_native(
+    detections: TensorNativeDetections,
+) -> Optional[int]:
+    if _detections_count(detections) == 0:
+        return None
+    return int(torch.argmax(detections.confidence))
+
+
+def _select_leftmost_index_tensor_native(
+    detections: TensorNativeDetections,
+) -> Optional[int]:
+    if _detections_count(detections) == 0:
+        return None
+    centers_x = (detections.xyxy[:, 0] + detections.xyxy[:, 2]) * 0.5
+    return int(torch.argmin(centers_x))
+
+
+def _select_rightmost_index_tensor_native(
+    detections: TensorNativeDetections,
+) -> Optional[int]:
+    if _detections_count(detections) == 0:
+        return None
+    centers_x = (detections.xyxy[:, 0] + detections.xyxy[:, 2]) * 0.5
+    return int(torch.argmax(centers_x))
+
+
+def _select_first_index_tensor_native(
+    detections: TensorNativeDetections,
+) -> Optional[int]:
+    if _detections_count(detections) == 0:
+        return None
+    return 0
+
+
+def _select_last_index_tensor_native(
+    detections: TensorNativeDetections,
+) -> Optional[int]:
+    count = _detections_count(detections)
+    if count == 0:
+        return None
+    return count - 1
+
+
 def _select_top_confidence_detection_tensor_native(
     detections: TensorNativeDetections,
 ) -> TensorNativeDetections:
-    if _detections_count(detections) == 0:
+    index = _select_top_confidence_index_tensor_native(detections)
+    if index is None:
         return _copy_detections(detections)
-    index = int(torch.argmax(detections.confidence))
     return _take_detections(detections, [index])
 
 
 def _select_leftmost_detection_tensor_native(
     detections: TensorNativeDetections,
 ) -> TensorNativeDetections:
-    if _detections_count(detections) == 0:
+    index = _select_leftmost_index_tensor_native(detections)
+    if index is None:
         return detections
-    centers_x = (detections.xyxy[:, 0] + detections.xyxy[:, 2]) * 0.5
-    index = int(torch.argmin(centers_x))
     return _take_detections(detections, [index])
 
 
 def _select_rightmost_detection_tensor_native(
     detections: TensorNativeDetections,
 ) -> TensorNativeDetections:
-    if _detections_count(detections) == 0:
+    index = _select_rightmost_index_tensor_native(detections)
+    if index is None:
         return detections
-    centers_x = (detections.xyxy[:, 0] + detections.xyxy[:, 2]) * 0.5
-    index = int(torch.argmax(centers_x))
     return _take_detections(detections, [index])
 
 
 def _select_first_detection_tensor_native(
     detections: TensorNativeDetections,
 ) -> TensorNativeDetections:
-    if _detections_count(detections) == 0:
+    index = _select_first_index_tensor_native(detections)
+    if index is None:
         return _copy_detections(detections)
-    return _take_detections(detections, [0])
+    return _take_detections(detections, [index])
 
 
 def _select_last_detection_tensor_native(
     detections: TensorNativeDetections,
 ) -> TensorNativeDetections:
-    count = _detections_count(detections)
-    if count == 0:
+    index = _select_last_index_tensor_native(detections)
+    if index is None:
         return _copy_detections(detections)
-    return _take_detections(detections, [count - 1])
+    return _take_detections(detections, [index])
 
 
 DETECTIONS_SELECTORS_TENSOR_NATIVE = {
@@ -807,10 +970,18 @@ DETECTIONS_SELECTORS_TENSOR_NATIVE = {
     DetectionsSelectionMode.TOP_CONFIDENCE: _select_top_confidence_detection_tensor_native,
 }
 
+DETECTIONS_SELECTOR_INDICES_TENSOR_NATIVE = {
+    DetectionsSelectionMode.FIRST: _select_first_index_tensor_native,
+    DetectionsSelectionMode.LAST: _select_last_index_tensor_native,
+    DetectionsSelectionMode.LEFT_MOST: _select_leftmost_index_tensor_native,
+    DetectionsSelectionMode.RIGHT_MOST: _select_rightmost_index_tensor_native,
+    DetectionsSelectionMode.TOP_CONFIDENCE: _select_top_confidence_index_tensor_native,
+}
+
 
 def _select_detections_tensor_native(
     value: Any, mode: DetectionsSelectionMode, **kwargs
-) -> TensorNativeDetections:
+) -> TensorNativePrediction:
     _ensure_tensor_native_detections(value, operation_name="select_detections")
     if mode not in DETECTIONS_SELECTORS_TENSOR_NATIVE:
         raise InvalidInputTypeError(
@@ -818,6 +989,13 @@ def _select_detections_tensor_native(
             f"of {list(DETECTIONS_SELECTORS_TENSOR_NATIVE.keys())}, got {mode}.",
             context="step_execution | roboflow_query_language_evaluation",
         )
+    if _is_key_point_prediction(value):
+        key_points, bboxes = _split_key_point_prediction(
+            value, operation_name="select_detections"
+        )
+        index = DETECTIONS_SELECTOR_INDICES_TENSOR_NATIVE[mode](bboxes)
+        indices = [] if index is None else [index]
+        return _take_key_points(key_points, indices), _take_detections(bboxes, indices)
     return DETECTIONS_SELECTORS_TENSOR_NATIVE[mode](value)
 
 
@@ -840,9 +1018,19 @@ SORT_PROPERTIES_EXTRACT_TENSOR_NATIVE = {
 }
 
 
+def _sort_detections_indices_tensor_native(
+    detections: TensorNativeDetections,
+    mode: DetectionsSortProperties,
+    ascending: bool,
+) -> List[int]:
+    extracted_property = SORT_PROPERTIES_EXTRACT_TENSOR_NATIVE[mode](detections)
+    sorted_indices = torch.argsort(extracted_property, descending=not ascending)
+    return [int(index) for index in sorted_indices.tolist()]
+
+
 def _sort_detections_tensor_native(
     value: Any, mode: DetectionsSortProperties, ascending: bool, **kwargs
-) -> TensorNativeDetections:
+) -> TensorNativePrediction:
     _ensure_tensor_native_detections(value, operation_name="sort_detections")
     if mode not in SORT_PROPERTIES_EXTRACT_TENSOR_NATIVE:
         raise InvalidInputTypeError(
@@ -850,11 +1038,22 @@ def _sort_detections_tensor_native(
             f"{list(SORT_PROPERTIES_EXTRACT_TENSOR_NATIVE.keys())}, got {mode}.",
             context="step_execution | roboflow_query_language_evaluation",
         )
+    if _is_key_point_prediction(value):
+        key_points, bboxes = _split_key_point_prediction(
+            value, operation_name="sort_detections"
+        )
+        if _detections_count(bboxes) == 0:
+            return value
+        indices = _sort_detections_indices_tensor_native(
+            bboxes, mode=mode, ascending=ascending
+        )
+        return _take_key_points(key_points, indices), _take_detections(bboxes, indices)
     if _detections_count(value) == 0:
         return value
-    extracted_property = SORT_PROPERTIES_EXTRACT_TENSOR_NATIVE[mode](value)
-    sorted_indices = torch.argsort(extracted_property, descending=not ascending)
-    return _take_detections(value, [int(index) for index in sorted_indices.tolist()])
+    indices = _sort_detections_indices_tensor_native(
+        value, mode=mode, ascending=ascending
+    )
+    return _take_detections(value, indices)
 
 
 def _rename_detections_tensor_native(
@@ -864,8 +1063,24 @@ def _rename_detections_tensor_native(
     new_classes_id_offset: int,
     global_parameters: Dict[str, Any],
     **kwargs,
-) -> TensorNativeDetections:
+) -> TensorNativePrediction:
     _ensure_tensor_native_detections(detections, operation_name="rename_detections")
+    # Rename only affects the bounding-box `Detections` class ids / names (mirrors
+    # the numpy path, which touches `data["class_name"]` / `class_id`). The
+    # keypoint component is preserved unchanged in the re-wrapped tuple.
+    if _is_key_point_prediction(detections):
+        key_points, bboxes = _split_key_point_prediction(
+            detections, operation_name="rename_detections"
+        )
+        renamed_bboxes = _rename_detections_tensor_native(
+            detections=bboxes,
+            class_map=class_map,
+            strict=strict,
+            new_classes_id_offset=new_classes_id_offset,
+            global_parameters=global_parameters,
+            **kwargs,
+        )
+        return key_points, renamed_bboxes
     if isinstance(class_map, str):
         if class_map not in global_parameters:
             raise UndeclaredSymbolError(
@@ -949,6 +1164,15 @@ def _detections_to_dictionary_tensor_native(
         operation_name="detections_to_dictionary",
         execution_context=execution_context,
     )
+    if _is_key_point_prediction(detections):
+        # The op-level numpy path serialises the (box-carrying) sv.Detections; here
+        # we serialise the bounding-box component (keypoint details are not part of
+        # this dict-serialisation, matching the established kind serialisation).
+        _, detections = _split_key_point_prediction(
+            detections,
+            operation_name="detections_to_dictionary",
+            execution_context=execution_context,
+        )
     try:
         return serialise_tensor_native_detections(detections=detections)
     except Exception as error:
@@ -965,13 +1189,26 @@ def _pick_detections_by_parent_class_tensor_native(
     parent_class: str,
     execution_context: str,
     **kwargs,
-) -> TensorNativeDetections:
+) -> TensorNativePrediction:
     _ensure_tensor_native_detections(
         detections,
         operation_name="pick_detections_by_parent_class",
         execution_context=execution_context,
     )
     try:
+        if _is_key_point_prediction(detections):
+            key_points, bboxes = _split_key_point_prediction(
+                detections,
+                operation_name="pick_detections_by_parent_class",
+                execution_context=execution_context,
+            )
+            indices = _pick_detections_by_parent_class_indices_tensor_native(
+                detections=bboxes, parent_class=parent_class
+            )
+            return (
+                _take_key_points(key_points, indices),
+                _take_detections(bboxes, indices),
+            )
         return _pick_detections_by_parent_class_tensor_native_impl(
             detections=detections, parent_class=parent_class
         )
@@ -982,6 +1219,53 @@ def _pick_detections_by_parent_class_tensor_native(
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=error,
         )
+
+
+def _pick_detections_by_parent_class_indices_tensor_native(
+    detections: TensorNativeDetections,
+    parent_class: str,
+) -> List[int]:
+    """Absolute index order produced by ``pick_detections_by_parent_class``: every
+    parent detection first (in original order), then the dependent detections whose
+    center lies inside any parent (mirrors the ``_concatenate_detections`` ordering
+    in the impl). Returned so the keypoint component can be sliced consistently."""
+    if _detections_count(detections) == 0:
+        return []
+    class_names = _resolve_class_names(
+        detections, operation_name="pick_detections_by_parent_class"
+    )
+    parent_indices = [
+        index for index, name in enumerate(class_names) if name == parent_class
+    ]
+    if not parent_indices:
+        return []
+    dependent_indices = [
+        index for index, name in enumerate(class_names) if name != parent_class
+    ]
+    dependent_detections = _take_detections(detections, dependent_indices)
+    parent_detections = _take_detections(detections, parent_indices)
+    centers_x = (
+        (dependent_detections.xyxy[:, 0] + dependent_detections.xyxy[:, 2]) * 0.5
+    ).unsqueeze(1)
+    centers_y = (
+        (dependent_detections.xyxy[:, 1] + dependent_detections.xyxy[:, 3]) * 0.5
+    ).unsqueeze(1)
+    parents_x1 = parent_detections.xyxy[:, 0].unsqueeze(0)
+    parents_y1 = parent_detections.xyxy[:, 1].unsqueeze(0)
+    parents_x2 = parent_detections.xyxy[:, 2].unsqueeze(0)
+    parents_y2 = parent_detections.xyxy[:, 3].unsqueeze(0)
+    inside_any_parent = (
+        (centers_x >= parents_x1)
+        & (centers_x <= parents_x2)
+        & (centers_y >= parents_y1)
+        & (centers_y <= parents_y2)
+    ).any(dim=1)
+    kept_dependent_indices = [
+        dependent_indices[position]
+        for position, keep in enumerate(inside_any_parent.tolist())
+        if keep
+    ]
+    return parent_indices + kept_dependent_indices
 
 
 def _pick_detections_by_parent_class_tensor_native_impl(

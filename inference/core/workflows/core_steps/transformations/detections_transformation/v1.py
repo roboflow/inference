@@ -4,6 +4,11 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
+
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     DEFAULT_OPERAND_NAME,
     AllOperationsType,
@@ -227,7 +232,7 @@ def execute_transformation(
             detections,
             global_parameters=single_evaluation_parameters,
         )
-        if not isinstance(transformed_detections, sv.Detections):
+        if not _is_valid_transformation_output(transformed_detections):
             raise ValueError(
                 "Definition of operation chain provided to `DetectionsTransformation` block "
                 f"transforms sv.Detections into different type: {type(transformed_detections)} "
@@ -235,3 +240,30 @@ def execute_transformation(
             )
         results.append({"predictions": transformed_detections})
     return results
+
+
+def _is_native_key_point_prediction(value: Any) -> bool:
+    """True for the tensor-native keypoint-detection kind, carried as a 2-tuple
+    ``(KeyPoints, Optional[Detections])``."""
+    return (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], KeyPoints)
+        and (value[1] is None or isinstance(value[1], (Detections, InstanceDetections)))
+    )
+
+
+def _is_valid_transformation_output(value: Any) -> bool:
+    """The operation chain must preserve the detection representation. With the
+    numpy representation that means ``sv.Detections``; under
+    ``ENABLE_TENSOR_DATA_REPRESENTATION`` the tensor-native dataclasses
+    (``Detections`` / ``InstanceDetections`` / a ``(KeyPoints, Detections)`` tuple)
+    are accepted as well. The numpy-only behaviour is preserved byte-for-byte when
+    the flag is off."""
+    if isinstance(value, sv.Detections):
+        return True
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        return isinstance(
+            value, (Detections, InstanceDetections)
+        ) or _is_native_key_point_prediction(value)
+    return False
