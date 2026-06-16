@@ -52,7 +52,6 @@ from inference.core.env import (
     ROBOFLOW_API_EXTRA_HEADERS,
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_API_VERIFY_SSL,
-    ROBOFLOW_ASSUME_IDENTITY_AUTHORISED_WORKSPACE,
     ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
@@ -656,10 +655,7 @@ def get_model_metadata_from_inference_models_registry(
 def _add_assume_identity_headers(headers: Dict[str, str]) -> None:
     if not ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN:
         return
-    authorised_workspace = (
-        assume_identity_authorised_workspace_id.get()
-        or ROBOFLOW_ASSUME_IDENTITY_AUTHORISED_WORKSPACE
-    )
+    authorised_workspace = assume_identity_authorised_workspace_id.get()
     if not authorised_workspace:
         return
     headers[ASSUME_IDENTITY_ACCESS_TOKEN_HEADER] = (
