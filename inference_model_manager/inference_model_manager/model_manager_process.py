@@ -345,6 +345,8 @@ class ModelManagerProcess:
         # req_id → (uvicorn_identity, slot_id, flavor)
         self._pending: dict[int, tuple[bytes, int, str]] = {}
 
+        self._result_pending = 0  # DEBUGLOG: state-4 result-return replies in flight on loop
+
         # slot_id → flavor for slots signalled to a worker and not yet
         # resulted. The reaper must never free these: the worker may be
         # mid-batch on them, and freeing allows re-allocation (torn slot).
@@ -915,7 +917,7 @@ class ModelManagerProcess:
                 "is_cold": idle_s is not None and idle_s > self._idle_timeout_s,
                 "request_rate_60s": len(req_times),
             }
-            entry["queue_depth"] = pending_per_model.get(f, 0)
+            entry["mmp_queue_depth"] = pending_per_model.get(f, 0)  # DEBUGLOG: was queue_depth, clobbered backend _outstanding
             if backend is not None:
                 try:
                     entry["worker_alive"] = backend.is_healthy
@@ -945,6 +947,7 @@ class ModelManagerProcess:
                 "mmp_free_slots": self._pool.free_count if self._pool else 0,
                 "mmp_total_slots": self._n_slots,
                 "mmp_pending": len(self._pending),
+                "mmp_result_pending": self._result_pending,  # DEBUGLOG
                 "mmp_cache_hits": self._cache_hits,
                 "mmp_cache_misses": self._cache_misses,
                 "mmp_idle_timeout_s": self._idle_timeout_s,
@@ -1012,6 +1015,7 @@ class ModelManagerProcess:
             self._pool.free_slot(slot_id, request_id=req_id)
             return
         identity, _, _ = pending
+        self._result_pending += 1  # DEBUGLOG
         asyncio.create_task(
             self._reply_result(identity, req_id, slot_id, result_sz),
             name=f"mmp-reply-{req_id}",
@@ -1024,27 +1028,30 @@ class ModelManagerProcess:
         slot_id: int,
         result_sz: int,
     ) -> None:
-        if result_sz == 0:
-            await self._send(
-                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_BACKEND)
+        try:  # DEBUGLOG
+            if result_sz == 0:
+                await self._send(
+                    identity, T_ERROR, struct.pack(">QB", req_id, _ERR_BACKEND)
+                )
+                self._pool.free_slot(slot_id, request_id=req_id)
+                return
+            self._pool.mark_done(slot_id, result_sz)
+            sent = await self._send(
+                identity,
+                T_RESULT_READY,
+                struct.pack(">QII", req_id, slot_id, result_sz),
             )
-            self._pool.free_slot(slot_id, request_id=req_id)
-            return
-        self._pool.mark_done(slot_id, result_sz)
-        sent = await self._send(
-            identity,
-            T_RESULT_READY,
-            struct.pack(">QII", req_id, slot_id, result_sz),
-        )
-        if not sent:
-            # Peer disconnected — result will never be read; free slot now
-            # (backend already finished; we just drop the result silently)
-            logger.debug(
-                "MMP: peer gone for req_id=%d slot=%d — freeing slot",
-                req_id,
-                slot_id,
-            )
-            self._pool.free_slot(slot_id, request_id=req_id)
+            if not sent:
+                # Peer disconnected — result will never be read; free slot now
+                # (backend already finished; we just drop the result silently)
+                logger.debug(
+                    "MMP: peer gone for req_id=%d slot=%d — freeing slot",
+                    req_id,
+                    slot_id,
+                )
+                self._pool.free_slot(slot_id, request_id=req_id)
+        finally:  # DEBUGLOG
+            self._result_pending -= 1  # DEBUGLOG
 
     # ------------------------------------------------------------------
     # Cold path — load
