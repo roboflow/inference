@@ -264,12 +264,22 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         keypoints_class_name = detections.data["keypoints_class_name"]
         class_id = detections.class_id
 
-        keypoints = sv.KeyPoints(
-            xy=np.array(keypoints_xy, dtype=np.float32),
-            confidence=np.array(keypoints_confidence, dtype=np.float32),
-            class_id=np.array(class_id, dtype=int),
-            data={"class_name": np.array(keypoints_class_name, dtype=object)},
+        keypoints_kwargs = {
+            "xy": np.array(keypoints_xy, dtype=np.float32),
+            "class_id": np.array(class_id, dtype=int),
+            "data": {"class_name": np.array(keypoints_class_name, dtype=object)},
+        }
+        keypoints_confidence_field = (
+            "keypoint_confidence"
+            if "keypoint_confidence"
+            in getattr(sv.KeyPoints, "__dataclass_fields__", {})
+            else "confidence"
         )
+        keypoints_kwargs[keypoints_confidence_field] = np.array(
+            keypoints_confidence, dtype=np.float32
+        )
+
+        keypoints = sv.KeyPoints(**keypoints_kwargs)
         return keypoints
 
     def run(
