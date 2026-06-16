@@ -276,6 +276,31 @@ def test_get_model_type_when_cache_is_utilised(
     assert result == ("object-detection", "yolov8n")
 
 
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+def test_get_model_type_when_classification_subtype_is_cached(
+    construct_model_type_cache_path_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    with open(metadata_path, "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "project_task_type": "multi-label-classification",
+                    "model_type": "vit",
+                }
+            )
+        )
+
+    # when
+    result = get_model_type(model_id="some/1", api_key="my_api_key")
+
+    # then
+    assert result == ("classification", "vit")
+
+
 @mock.patch.object(roboflow, "SAM3_FINE_TUNED_MODELS_ENABLED", False)
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_type_when_fine_tuned_sam3_is_cached_but_disabled(
@@ -473,6 +498,36 @@ def test_get_model_type_when_roboflow_api_is_called_for_model_from_new_model_reg
         countinference=None,
         service_secret=None,
     )
+
+
+@mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+def test_get_model_type_when_new_model_registry_returns_classification_subtype(
+    construct_model_type_cache_path_mock: MagicMock,
+    get_model_metadata_from_inference_models_registry_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_model_metadata_from_inference_models_registry_mock.return_value = {
+        "modelType": "vit",
+        "taskType": "multi-label-classification",
+    }
+
+    # when
+    result = get_model_type(
+        model_id="animal-classification-9lufm/1",
+        api_key="my_api_key",
+    )
+
+    # then
+    assert result == ("classification", "vit")
+    with open(metadata_path) as f:
+        persisted_metadata = json.load(f)
+    assert persisted_metadata["model_type"] == "vit"
+    assert persisted_metadata["project_task_type"] == "classification"
 
 
 @mock.patch.object(roboflow, "get_roboflow_model_data")
