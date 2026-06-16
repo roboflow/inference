@@ -65,7 +65,7 @@ def _format_timestamp(
     timezone_name: Optional[Union[str, DatetimeTzInfo]] = None,
 ) -> tuple[str, str]:
     tz = _resolve_timestamp_tz(timezone_name)
-    label = timezone_name if isinstance(timezone_name, str) else "UTC"
+    label = getattr(tz, "key", None) or str(tz)
     return datetime.now(tz).isoformat(), label
 
 
