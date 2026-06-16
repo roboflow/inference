@@ -90,17 +90,6 @@ _ERR_LOAD_FAILED = 5
 _ERR_NOT_LOADED = 6
 _ERR_SERVER_FULL = 7
 
-_MSG_PROF_NAMES = {  # DEBUGLOG: msg_type -> loop-profiler op name
-    T_ALLOC: "msg_alloc",
-    T_SUBMIT: "msg_submit",
-    T_FREE: "msg_free",
-    T_CANCEL: "msg_cancel",
-    T_ENSURE_LOADED: "msg_ensure",
-    T_LOAD: "msg_load",
-    T_UNLOAD: "msg_unload",
-    T_STATS: "msg_stats",
-}
-
 
 # ---------------------------------------------------------------------------
 # GPU memory helper (module level — no dependency on MMP instance)
@@ -356,13 +345,7 @@ class ModelManagerProcess:
         # req_id → (uvicorn_identity, slot_id, flavor)
         self._pending: dict[int, tuple[bytes, int, str]] = {}
 
-        self._result_pending = 0  # DEBUGLOG: state-4 result-return replies in flight on loop
-        self._result_sched = 0  # DEBUGLOG: state-3.5, inc by recv thread before call_soon_threadsafe
-        self._result_ran = 0  # DEBUGLOG: state-3.5, inc by loop thread at _on_result_on_loop entry
-        # depth = _result_sched - _result_ran = completions queued on loop, not yet run (single-writer each, lock-free)
-        # NOTE: undercounts if _forward_to_backend's error paths call _on_result_on_loop directly
-        # (ran++ with no sched++). Dead under healthy passthrough; balance those sites if errors matter.
-        self._loop_prof: dict[str, list[int]] = {}  # DEBUGLOG: op -> [count, total_ns], cumulative
+        self._rejects_pool_full = 0
 
         # slot_id → flavor for slots signalled to a worker and not yet
         # resulted. The reaper must never free these: the worker may be
@@ -447,7 +430,6 @@ class ModelManagerProcess:
         Thread-safe. ``result_sz == 0`` signals inference error.
         """
         if self._loop is not None:
-            self._result_sched += 1  # DEBUGLOG: state-3.5 (recv thread, sole writer)
             self._loop.call_soon_threadsafe(
                 self._on_result_on_loop, req_id, slot_id, result_sz
             )
@@ -570,21 +552,11 @@ class ModelManagerProcess:
     # Recv loop
     # ------------------------------------------------------------------
 
-    def _prof(self, op: str, ns: int) -> None:  # DEBUGLOG: accumulate loop op time
-        e = self._loop_prof.get(op)
-        if e is None:
-            self._loop_prof[op] = [1, ns]
-        else:
-            e[0] += 1
-            e[1] += ns
-
     async def _recv_loop(self) -> None:
         """Receive ZMQ frames and dispatch. Runs as asyncio task."""
         while True:
             try:
-                _t = time.perf_counter_ns()  # DEBUGLOG
                 frames = await self._router.recv_multipart()
-                self._prof("idle_recv", time.perf_counter_ns() - _t)  # DEBUGLOG
                 await self._dispatch(frames)
             except asyncio.CancelledError:
                 break
@@ -630,7 +602,6 @@ class ModelManagerProcess:
         msg_type = frames[1]
         data = frames[2:]
 
-        _t = time.perf_counter_ns()  # DEBUGLOG
         try:
             if msg_type == T_ENSURE_LOADED:
                 await self._handle_ensure_loaded(identity, data)
@@ -652,8 +623,6 @@ class ModelManagerProcess:
                 logger.debug("MMP: unknown msg_type=%r from %r", msg_type, identity)
         except Exception:
             logger.exception("MMP: unhandled error dispatching %r", msg_type)
-        finally:
-            self._prof(_MSG_PROF_NAMES.get(msg_type, "msg_other"), time.perf_counter_ns() - _t)  # DEBUGLOG
 
     # ------------------------------------------------------------------
     # T_ENSURE_LOADED  →  T_MODEL_READY | T_LOAD_TIMEOUT
@@ -727,6 +696,7 @@ class ModelManagerProcess:
         if cap > 0:
             inflight = sum(1 for _, _, m in self._pending.values() if m == model_id)
             if inflight >= cap:
+                self._rejects_pool_full += 1
                 await self._send(
                     identity, T_ERROR, struct.pack(">QB", req_id, _ERR_POOL_FULL)
                 )
@@ -735,6 +705,7 @@ class ModelManagerProcess:
         try:
             slot_id = self._pool.alloc_slot(timeout=0)
         except TimeoutError:
+            self._rejects_pool_full += 1
             await self._send(
                 identity, T_ERROR, struct.pack(">QB", req_id, _ERR_POOL_FULL)
             )
@@ -948,7 +919,7 @@ class ModelManagerProcess:
                 "is_cold": idle_s is not None and idle_s > self._idle_timeout_s,
                 "request_rate_60s": len(req_times),
             }
-            entry["mmp_queue_depth"] = pending_per_model.get(f, 0)  # DEBUGLOG: was queue_depth, clobbered backend _outstanding
+            entry["queue_depth"] = pending_per_model.get(f, 0)
             if backend is not None:
                 try:
                     entry["worker_alive"] = backend.is_healthy
@@ -978,11 +949,7 @@ class ModelManagerProcess:
                 "mmp_free_slots": self._pool.free_count if self._pool else 0,
                 "mmp_total_slots": self._n_slots,
                 "mmp_pending": len(self._pending),
-                "mmp_result_pending": self._result_pending,  # DEBUGLOG
-                "mmp_result_q": self._result_sched - self._result_ran,  # DEBUGLOG: state-3.5 loop ready-queue depth
-                "mmp_loop_prof": {  # DEBUGLOG: op -> {n: count, ns: total_ns}, cumulative
-                    op: {"n": c, "ns": ns} for op, (c, ns) in self._loop_prof.items()
-                },
+                "mmp_rejects_pool_full": self._rejects_pool_full,
                 "mmp_cache_hits": self._cache_hits,
                 "mmp_cache_misses": self._cache_misses,
                 "mmp_idle_timeout_s": self._idle_timeout_s,
@@ -1041,25 +1008,19 @@ class ModelManagerProcess:
 
     def _on_result_on_loop(self, req_id: int, slot_id: int, result_sz: int) -> None:
         """Must be called on the event loop thread."""
-        self._result_ran += 1  # DEBUGLOG: state-3.5 (loop thread, sole writer)
-        _t = time.perf_counter_ns()  # DEBUGLOG: sync fn, clean CPU (incl create_task cost)
-        try:
-            self._inflight.pop(slot_id, None)
-            pending = self._pending.pop(req_id, None)
-            if pending is None:
-                # Stale reaper already freed this, or duplicate callback — free
-                # slot only if it is still bound to this request (it may have been
-                # re-allocated since).
-                self._pool.free_slot(slot_id, request_id=req_id)
-                return
-            identity, _, _ = pending
-            self._result_pending += 1  # DEBUGLOG
-            asyncio.create_task(
-                self._reply_result(identity, req_id, slot_id, result_sz),
-                name=f"mmp-reply-{req_id}",
-            )
-        finally:
-            self._prof("result_oncb", time.perf_counter_ns() - _t)  # DEBUGLOG
+        self._inflight.pop(slot_id, None)
+        pending = self._pending.pop(req_id, None)
+        if pending is None:
+            # Stale reaper already freed this, or duplicate callback — free
+            # slot only if it is still bound to this request (it may have been
+            # re-allocated since).
+            self._pool.free_slot(slot_id, request_id=req_id)
+            return
+        identity, _, _ = pending
+        asyncio.create_task(
+            self._reply_result(identity, req_id, slot_id, result_sz),
+            name=f"mmp-reply-{req_id}",
+        )
 
     async def _reply_result(
         self,
@@ -1068,32 +1029,27 @@ class ModelManagerProcess:
         slot_id: int,
         result_sz: int,
     ) -> None:
-        _t = time.perf_counter_ns()  # DEBUGLOG: async, wall incl _send await (ranking only)
-        try:  # DEBUGLOG
-            if result_sz == 0:
-                await self._send(
-                    identity, T_ERROR, struct.pack(">QB", req_id, _ERR_BACKEND)
-                )
-                self._pool.free_slot(slot_id, request_id=req_id)
-                return
-            self._pool.mark_done(slot_id, result_sz)
-            sent = await self._send(
-                identity,
-                T_RESULT_READY,
-                struct.pack(">QII", req_id, slot_id, result_sz),
+        if result_sz == 0:
+            await self._send(
+                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_BACKEND)
             )
-            if not sent:
-                # Peer disconnected — result will never be read; free slot now
-                # (backend already finished; we just drop the result silently)
-                logger.debug(
-                    "MMP: peer gone for req_id=%d slot=%d — freeing slot",
-                    req_id,
-                    slot_id,
-                )
-                self._pool.free_slot(slot_id, request_id=req_id)
-        finally:  # DEBUGLOG
-            self._result_pending -= 1  # DEBUGLOG
-            self._prof("reply_result", time.perf_counter_ns() - _t)  # DEBUGLOG
+            self._pool.free_slot(slot_id, request_id=req_id)
+            return
+        self._pool.mark_done(slot_id, result_sz)
+        sent = await self._send(
+            identity,
+            T_RESULT_READY,
+            struct.pack(">QII", req_id, slot_id, result_sz),
+        )
+        if not sent:
+            # Peer disconnected — result will never be read; free slot now
+            # (backend already finished; we just drop the result silently)
+            logger.debug(
+                "MMP: peer gone for req_id=%d slot=%d — freeing slot",
+                req_id,
+                slot_id,
+            )
+            self._pool.free_slot(slot_id, request_id=req_id)
 
     # ------------------------------------------------------------------
     # Cold path — load
