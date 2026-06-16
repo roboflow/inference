@@ -5,7 +5,8 @@ editor's Debug Mode) depend on:
 - `debug=True` + printing block -> 200 with `python_blocks_output_streams` populated,
 - `debug=True` + block using `debug_traces.append()` -> 200 with `python_blocks_debug_traces` populated,
 - `debug=True` + failing block  -> 400 with `python_blocks_output_streams` (logs of the
-  steps executed before the failure, plus the failing step itself) and
+  steps executed before the failure, plus the failing step itself),
+  `python_blocks_debug_traces` (entries appended before the failure) and
   `block_traceback` carrying the failing step's streams,
 - no `debug` flag               -> `python_blocks_output_streams` is null,
 - `debug=True` + silent block   -> `python_blocks_output_streams` is null.
@@ -76,6 +77,7 @@ def run(self, value) -> BlockResult:
 
 FAILING_BLOCK_CODE = """
 def run(self, value) -> BlockResult:
+    debug_traces.append({"about_to_fail": value})
     print("printed right before failure")
     raise RuntimeError("boom")
 """
@@ -254,6 +256,15 @@ def test_workflow_run_failure_with_debug_returns_partial_logs_in_error_response(
     # the failing step's streams also keep riding the block traceback
     block_error = body["blocks_errors"][0]
     assert "printed right before failure" in block_error["block_traceback"]["stdout"]
+    # partial debug_traces appended before the failure must also survive on the
+    # error response - this guards the exception-identity propagation (http_api
+    # sets error.python_blocks_debug_traces; error_handlers reads it via getattr).
+    # A future change that re-wraps the exception would silently drop these.
+    traces = body["python_blocks_debug_traces"]
+    assert any(
+        entry["step"] == "failing_step" and entry["value"] == {"about_to_fail": 7}
+        for entry in traces
+    )
 
 
 def test_workflow_run_without_debug_returns_null_python_blocks_output_streams(
