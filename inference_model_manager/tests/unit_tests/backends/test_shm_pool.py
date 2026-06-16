@@ -456,3 +456,62 @@ class TestTimestampRefresh:
             assert pool.stale_slots(30.0) == []
         finally:
             pool.close()
+
+
+# ---------------------------------------------------------------------------
+# Metadata block — advisory free-count for admission control
+# ---------------------------------------------------------------------------
+
+from inference_model_manager.backends.utils.shm_pool import (  # noqa: E402
+    _META_FMT,
+    _META_MAGIC,
+    SHMPool as _SHMPool,
+    read_free_count,
+)
+
+
+def test_free_count_starts_at_n_slots():
+    pool = _make_pool(n_slots=4)
+    try:
+        assert read_free_count(pool._shm.buf, 4, pool.slot_bytes) == 4
+    finally:
+        pool.close()
+
+
+def test_free_count_tracks_alloc_and_free():
+    pool = _make_pool(n_slots=4)
+    try:
+        buf, sb = pool._shm.buf, pool.slot_bytes
+        a = pool.alloc_slot(timeout=0)
+        b = pool.alloc_slot(timeout=0)
+        assert read_free_count(buf, 4, sb) == 2
+        pool.free_slot(a)
+        assert read_free_count(buf, 4, sb) == 3
+        pool.free_slot(b)
+        assert read_free_count(buf, 4, sb) == 4
+    finally:
+        pool.close()
+
+
+def test_attached_reader_sees_owner_updates():
+    pool = _make_pool(n_slots=4)
+    attached = _SHMPool.attach(pool.name, n_slots=4, input_mb=1.0)
+    try:
+        pool.alloc_slot(timeout=0)
+        assert read_free_count(attached._shm.buf, 4, attached.slot_bytes) == 3
+    finally:
+        attached.close()
+        pool.close()
+
+
+def test_no_meta_buffer_returns_none():
+    n_slots, slot_bytes = 4, 1088
+    buf = bytearray(n_slots * slot_bytes + 64)  # zeros, no magic
+    assert read_free_count(buf, n_slots, slot_bytes) is None
+
+
+def test_bad_version_returns_none():
+    n_slots, slot_bytes = 4, 1088
+    buf = bytearray(n_slots * slot_bytes + 64)
+    struct.pack_into(_META_FMT, buf, n_slots * slot_bytes, _META_MAGIC, 999, 2)
+    assert read_free_count(buf, n_slots, slot_bytes) is None

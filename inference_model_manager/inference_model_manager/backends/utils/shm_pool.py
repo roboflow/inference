@@ -53,6 +53,28 @@ _OFF_REQ_ID = 16
 _OFF_TS_NS = 24
 _OFF_OWNER_PID = 32
 
+# Dedicated 64-byte metadata block appended after the last slot (one header-sized
+# unit — pool granularity, no data area). Holds an advisory free-slot count the
+# owner updates and attached readers poll lock-free for admission control.
+# magic gates version skew; the rest of the 64 bytes is reserved for future fields.
+_META_BLOCK = _HEADER_SIZE
+_META_FMT = "<QII"  # magic(8) version(4) free_count(4); remaining bytes reserved
+_META_MAGIC = 0x5348_4D46_5245_4500
+_META_VERSION = 1
+
+
+def read_free_count(buf, n_slots: int, slot_bytes: int) -> Optional[int]:
+    """Read the advisory free-slot count from the pool's metadata block. Returns
+    None if the block is absent/unrecognized (old pool, geometry mismatch) —
+    callers MUST treat None as 'unknown, do not gate' (fail open)."""
+    off = n_slots * slot_bytes
+    if off + struct.calcsize(_META_FMT) > len(buf):
+        return None
+    magic, version, count = struct.unpack_from(_META_FMT, buf, off)
+    if magic != _META_MAGIC or version != _META_VERSION:
+        return None
+    return count
+
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -141,11 +163,11 @@ class SHMPool:
     ) -> "SHMPool":
         """Create a new SHM pool. Caller is the owner and must call close()."""
         data_bytes = int(input_mb * 1024 * 1024)
-        total_bytes = n_slots * (_HEADER_SIZE + data_bytes)
+        slot_bytes = _HEADER_SIZE + data_bytes
+        total_bytes = n_slots * slot_bytes + _META_BLOCK
 
         shm = SharedMemory(name=name, create=True, size=total_bytes)
         # Zero only the headers (64B × n_slots) so status=FREE everywhere.
-        slot_bytes = _HEADER_SIZE + data_bytes
         for i in range(n_slots):
             shm.buf[i * slot_bytes : i * slot_bytes + _HEADER_SIZE] = (
                 b"\x00" * _HEADER_SIZE
@@ -155,6 +177,12 @@ class SHMPool:
         # oversized pool then fails here at startup instead of SIGBUS/OOM under load.
         for off in range(0, total_bytes, 4096):
             shm.buf[off] = 0
+
+        # Pack metadata LAST — after the pre-fault page-touch, which would
+        # otherwise zero a byte inside the meta block on some geometries.
+        struct.pack_into(
+            _META_FMT, shm.buf, n_slots * slot_bytes, _META_MAGIC, _META_VERSION, n_slots
+        )
 
         return cls(shm, n_slots, data_bytes, owner=True)
 
@@ -201,6 +229,17 @@ class SHMPool:
     def free_count(self) -> int:
         return len(self._free)
 
+    def _publish_free_count(self) -> None:
+        """Write the live free count into the metadata block (owner, under lock)."""
+        struct.pack_into(
+            _META_FMT,
+            self._shm.buf,
+            self._n_slots * self._slot_bytes,
+            _META_MAGIC,
+            _META_VERSION,
+            len(self._free),
+        )
+
     # ------------------------------------------------------------------
     # Slot allocation (owner only)
     # ------------------------------------------------------------------
@@ -227,6 +266,7 @@ class SHMPool:
                     raise TimeoutError(f"No free SHM slots (pool size={self._n_slots})")
             slot_id = self._free.popleft()
             self._allocated.add(slot_id)
+            self._publish_free_count()
             return slot_id
 
     def free_slot(self, slot_id: int, request_id: Optional[int] = None) -> None:
@@ -258,6 +298,7 @@ class SHMPool:
                 _HEADER_FMT, self._shm.buf, off, SlotStatus.FREE, 0, 0, 0, 0, 0, 0
             )
             self._free.append(slot_id)
+            self._publish_free_count()
             self._cond.notify()
 
     # ------------------------------------------------------------------
