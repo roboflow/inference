@@ -14,20 +14,20 @@ Paths:
   `{"masks": (N,1,H,W) bool ndarray, "scores": [...]}` (PostProcessImage leaves a
   channel dim from mask.unsqueeze(1); squeezed to (N,H,W) on ingestion). Masks are
   already binary (sigmoid>0.5) and threshold-filtered; built into InstanceDetections here.
-- REMOTE / proxy: the server returns polygon predictions; rasterised to masks
-  (cv2.fillPoly) then built into InstanceDetections — parity with v1.
+- REMOTE / proxy: the server returns polygon predictions; streamed straight to
+  compact COCO RLE via pycocotools.frPyObjects (no dense mask) then built into
+  InstanceDetections — parity with v1.
 """
 
 import uuid
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
-import cv2
 import numpy as np
 import requests
 import torch
+from pycocotools import mask as mask_utils
 from pydantic import ConfigDict, Field
 
-from inference.core import logger
 from inference.core.env import (
     API_BASE_URL,
     CORE_MODEL_SAM3_ENABLED,
@@ -37,6 +37,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     SAM3_EXEC_MODE,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -363,17 +364,13 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         threshold: float,
         mask_representation: str,
     ) -> dict:
-        height, width = image._read_shape_without_materialization()
-        items = _collect_from_polygons(
-            prompt_results=resp_json.get("prompt_results", []),
-            class_names=class_names,
-            height=height,
-            width=width,
-            threshold=threshold,
-        )
         return {
-            "predictions": _build_instance_detections(
-                items=items, image=image, mask_representation=mask_representation
+            "predictions": _build_instance_detections_from_polygons(
+                prompt_results=resp_json.get("prompt_results", []),
+                class_names=class_names,
+                image=image,
+                threshold=threshold,
+                mask_representation=mask_representation,
             )
         }
 
@@ -428,43 +425,13 @@ def _collect_from_native(
     return items
 
 
-def _collect_from_polygons(
-    prompt_results: List[dict],
-    class_names: List[Optional[str]],
-    height: int,
-    width: int,
-    threshold: float,
-) -> List[Item]:
-    items: List[Item] = []
-    for prompt_result in prompt_results:
-        idx = prompt_result.get("prompt_index", 0)
-        class_name = class_names[idx] if idx < len(class_names) else None
-        for prediction in prompt_result.get("predictions", []):
-            confidence = float(prediction.get("confidence", 0.0))
-            if confidence < threshold:
-                continue
-            for polygon in prediction.get("masks", []):
-                if len(polygon) < 3:
-                    continue
-                mask = _polygon_to_mask(polygon, height, width)
-                items.append((mask, confidence, idx, class_name or "foreground"))
-    return items
-
-
-def _polygon_to_mask(polygon, height: int, width: int) -> np.ndarray:
-    mask = np.zeros((height, width), dtype=np.uint8)
-    pts = np.array(
-        [[int(round(p[0])), int(round(p[1]))] for p in polygon], dtype=np.int32
-    )
-    cv2.fillPoly(mask, [pts], 1)
-    return mask.astype(bool)
-
-
 def _build_instance_detections(
     items: List[Item],
     image: WorkflowImageData,
     mask_representation: str,
 ) -> InstanceDetections:
+    """Build InstanceDetections from items that already carry dense binary masks
+    (the LOCAL native path: SAM3 returns dense masks, so dense is inherent here)."""
     height, width = image._read_shape_without_materialization()
     xyxy: List[List[float]] = []
     confidences: List[float] = []
@@ -486,30 +453,151 @@ def _build_instance_detections(
         )
         kept_masks.append(mask)
 
-    n = len(kept_masks)
-    if n == 0:
-        xyxy_t = torch.zeros((0, 4), dtype=torch.float32)
-        class_id_t = torch.zeros((0,), dtype=torch.int64)
-        confidence_t = torch.zeros((0,), dtype=torch.float32)
-        mask = (
-            InstancesRLEMasks(image_size=(height, width), masks=[])
-            if mask_representation == "rle"
-            else torch.zeros((0, height, width), dtype=torch.bool)
+    if mask_representation == "rle":
+        mask = InstancesRLEMasks.from_coco_rle_masks(
+            image_size=(height, width),
+            masks=[torch_mask_to_coco_rle(torch.from_numpy(m)) for m in kept_masks],
+        )
+    elif kept_masks:
+        mask = torch.from_numpy(np.stack(kept_masks, axis=0)).to(
+            WORKFLOWS_IMAGE_TENSOR_DEVICE
         )
     else:
-        xyxy_t = torch.tensor(xyxy, dtype=torch.float32)
-        class_id_t = torch.tensor(class_ids, dtype=torch.int64)
-        confidence_t = torch.tensor(confidences, dtype=torch.float32)
-        if mask_representation == "rle":
-            rle_dicts = [
-                torch_mask_to_coco_rle(torch.from_numpy(m)) for m in kept_masks
-            ]
-            mask = InstancesRLEMasks.from_coco_rle_masks(
-                image_size=(height, width), masks=rle_dicts
-            )
-        else:
-            mask = torch.from_numpy(np.stack(kept_masks, axis=0))
+        mask = torch.zeros(
+            (0, height, width), dtype=torch.bool, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        )
+    return _assemble_detections(
+        image=image,
+        xyxy=xyxy,
+        confidences=confidences,
+        class_ids=class_ids,
+        class_names_map=class_names_map,
+        bboxes_metadata=bboxes_metadata,
+        mask=mask,
+    )
 
+
+def _build_instance_detections_from_polygons(
+    prompt_results: List[dict],
+    class_names: List[Optional[str]],
+    image: WorkflowImageData,
+    threshold: float,
+    mask_representation: str,
+    class_mapping: Optional[Dict[str, str]] = None,
+) -> InstanceDetections:
+    """Stream the proxy's polygon point-lists into masks one instance at a time.
+
+    For the default ``rle`` carrier each polygon is converted straight to a compact
+    COCO RLE via ``pycocotools.frPyObjects`` (in C, no dense ``H x W`` array), so
+    peak memory is the sum of the run-length strings rather than ``N x H x W`` bools
+    — the same fix applied to ``seg_preview/v1_tensor.py``. The ``dense`` carrier
+    inherently needs a full mask, so the RLE is decoded back per instance. Bbox is
+    taken from the polygon point min/max, matching the numpy SAM3 block.
+    """
+    height, width = image._read_shape_without_materialization()
+    xyxy: List[List[float]] = []
+    confidences: List[float] = []
+    class_ids: List[int] = []
+    class_names_map: Dict[int, str] = {}
+    bboxes_metadata: List[dict] = []
+    rle_dicts: List[dict] = []
+    dense_masks: List[np.ndarray] = []
+
+    for prompt_result in prompt_results:
+        idx = prompt_result.get("prompt_index", 0)
+        class_name = class_names[idx] if idx < len(class_names) else None
+        class_name = class_name or "foreground"
+        if class_mapping:
+            class_name = class_mapping.get(class_name, class_name)
+        for prediction in prompt_result.get("predictions", []):
+            confidence = float(prediction.get("confidence", 0.0))
+            if confidence < threshold:
+                continue
+            for polygon in prediction.get("masks", []):
+                if polygon is None or len(polygon) < 3:
+                    continue
+                xs = [float(point[0]) for point in polygon]
+                ys = [float(point[1]) for point in polygon]
+                x_min, y_min, x_max, y_max = min(xs), min(ys), max(xs), max(ys)
+                if x_max <= x_min or y_max <= y_min:
+                    continue
+                flat_polygon = [
+                    coord
+                    for point in polygon
+                    for coord in (float(point[0]), float(point[1]))
+                ]
+                # polygon -> compact COCO RLE entirely in C; no dense mask is built.
+                rle = mask_utils.frPyObjects([flat_polygon], height, width)[0]
+                if mask_representation == "rle":
+                    rle_dicts.append(rle)
+                else:
+                    dense = mask_utils.decode(rle)
+                    if dense.ndim == 3:
+                        dense = dense[:, :, 0]
+                    dense_masks.append(dense.astype(bool))
+                xyxy.append([x_min, y_min, x_max, y_max])
+                confidences.append(confidence)
+                class_ids.append(idx)
+                class_names_map[idx] = class_name
+                bboxes_metadata.append(
+                    {DETECTION_ID_KEY: str(uuid.uuid4()), CLASS_NAME_KEY: class_name}
+                )
+
+    if mask_representation == "rle":
+        mask = InstancesRLEMasks.from_coco_rle_masks(
+            image_size=(height, width), masks=rle_dicts
+        )
+    elif dense_masks:
+        mask = torch.from_numpy(np.stack(dense_masks, axis=0)).to(
+            WORKFLOWS_IMAGE_TENSOR_DEVICE
+        )
+    else:
+        mask = torch.zeros(
+            (0, height, width), dtype=torch.bool, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        )
+    return _assemble_detections(
+        image=image,
+        xyxy=xyxy,
+        confidences=confidences,
+        class_ids=class_ids,
+        class_names_map=class_names_map,
+        bboxes_metadata=bboxes_metadata,
+        mask=mask,
+    )
+
+
+def _assemble_detections(
+    image: WorkflowImageData,
+    xyxy: List[List[float]],
+    confidences: List[float],
+    class_ids: List[int],
+    class_names_map: Dict[int, str],
+    bboxes_metadata: List[dict],
+    mask,
+) -> InstanceDetections:
+    """Pack the collected rows into an InstanceDetections, with every prediction
+    tensor allocated on ``WORKFLOWS_IMAGE_TENSOR_DEVICE``."""
+    n = len(xyxy)
+    if n == 0:
+        xyxy_t = torch.zeros(
+            (0, 4), dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        )
+        class_id_t = torch.zeros(
+            (0,), dtype=torch.int64, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        )
+        confidence_t = torch.zeros(
+            (0,), dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        )
+    else:
+        xyxy_t = torch.tensor(
+            xyxy, dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        )
+        class_id_t = torch.tensor(
+            class_ids, dtype=torch.int64, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        )
+        confidence_t = torch.tensor(
+            confidences, dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        )
     detections = InstanceDetections(
         xyxy=xyxy_t, class_id=class_id_t, confidence=confidence_t, mask=mask
     )

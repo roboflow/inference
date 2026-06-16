@@ -68,7 +68,7 @@ from inference_sdk import InferenceHTTPClient
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
     Item,
     _build_instance_detections,
-    _collect_from_polygons,
+    _build_instance_detections_from_polygons,
     _normalize_class_names,
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2_tensor import (
@@ -456,18 +456,14 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         confidence: float,
         mask_representation: str,
     ) -> dict:
-        height, width = image._read_shape_without_materialization()
-        items = _collect_from_polygons(
-            prompt_results=resp_json.get("prompt_results", []),
-            class_names=class_names,
-            height=height,
-            width=width,
-            threshold=confidence,
-        )
-        items = _apply_class_mapping_to_items(items, class_mapping)
         return {
-            "predictions": _build_instance_detections(
-                items=items, image=image, mask_representation=mask_representation
+            "predictions": _build_instance_detections_from_polygons(
+                prompt_results=resp_json.get("prompt_results", []),
+                class_names=class_names,
+                image=image,
+                threshold=confidence,
+                mask_representation=mask_representation,
+                class_mapping=class_mapping,
             )
         }
 
