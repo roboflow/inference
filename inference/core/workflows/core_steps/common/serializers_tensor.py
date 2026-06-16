@@ -1,10 +1,15 @@
-from typing import Any, Optional, Union
+from typing import Any, Optional, Tuple, Union
 
 import numpy as np
 import supervision as sv
 import torch
 
+from inference_models.models.base.classification import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
+)
 from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
@@ -37,6 +42,7 @@ from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
     IMAGE_DIMENSIONS_KEY,
+    INFERENCE_ID_KEY,
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
@@ -51,6 +57,7 @@ from inference.core.workflows.execution_engine.constants import (
     POLYGON_KEY,
     POLYGON_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    PREDICTION_TYPE_KEY,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
@@ -298,3 +305,122 @@ def _to_plain_list(value: Any) -> list:
     if hasattr(value, "tolist"):
         return value.tolist()
     return list(value)
+
+
+def serialise_native_classification(
+    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction],
+) -> dict:
+    """Serialise a native single-label ``ClassificationPrediction`` (single-row,
+    bs=1) or a native ``MultiLabelClassificationPrediction`` into the same output
+    dict shape the numpy classification blocks produce.
+
+    The ``class_id -> name`` map is read from the prediction's metadata
+    (``image_metadata[CLASS_NAMES_KEY]``). Single-label carries PLURAL
+    ``images_metadata`` (list, [0] used); multi-label carries SINGULAR
+    ``image_metadata`` (dict).
+    """
+    if isinstance(prediction, ClassificationPrediction):
+        metadata_list = prediction.images_metadata or [{}]
+        image_metadata = metadata_list[0] or {}
+    elif isinstance(prediction, MultiLabelClassificationPrediction):
+        image_metadata = prediction.image_metadata or {}
+    else:
+        raise ValueError(
+            f"serialise_native_classification(...) expected "
+            f"`inference_models.ClassificationPrediction` or "
+            f"`inference_models.MultiLabelClassificationPrediction`, "
+            f"got {type(prediction)}."
+        )
+
+    class_names_mapping = image_metadata.get(CLASS_NAMES_KEY)
+    if class_names_mapping is None:
+        raise ValueError(
+            f"Serialising tensor-native classification, but "
+            f"`image_metadata['{CLASS_NAMES_KEY}']` is missing - the producer "
+            f"block must attach the class_id -> name mapping."
+        )
+
+    serialized_image_metadata = {"width": None, "height": None}
+    image_dimensions = image_metadata.get(IMAGE_DIMENSIONS_KEY)
+    if image_dimensions is not None:
+        serialized_image_metadata = {
+            "width": int(image_dimensions[1]),
+            "height": int(image_dimensions[0]),
+        }
+
+    result: dict = {"image": serialized_image_metadata}
+
+    if isinstance(prediction, ClassificationPrediction):
+        # confidence: (1, num_classes) full softmax; class_id: (1,)
+        confidence_vector = prediction.confidence.detach().cpu().reshape(-1).tolist()
+        individual_classes_predictions = [
+            {
+                "class_id": class_id,
+                "class": str(class_names_mapping.get(class_id, class_id)),
+                "confidence": round(float(score), 4),
+            }
+            for class_id, score in enumerate(confidence_vector)
+        ]
+        individual_classes_predictions = sorted(
+            individual_classes_predictions,
+            key=lambda item: item["confidence"],
+            reverse=True,
+        )
+        result["predictions"] = individual_classes_predictions
+        result["top"] = (
+            individual_classes_predictions[0]["class"]
+            if individual_classes_predictions
+            else ""
+        )
+        result["confidence"] = (
+            individual_classes_predictions[0]["confidence"]
+            if individual_classes_predictions
+            else 0.0
+        )
+    else:
+        # MultiLabel: confidence (num_classes,) sigmoid; class_ids = predicted ids
+        confidence_vector = prediction.confidence.detach().cpu().reshape(-1).tolist()
+        predictions_dict = {
+            str(class_names_mapping.get(class_id, class_id)): {
+                "confidence": float(score),
+                "class_id": class_id,
+            }
+            for class_id, score in enumerate(confidence_vector)
+        }
+        predicted_classes = [
+            str(class_names_mapping.get(int(class_id), int(class_id)))
+            for class_id in prediction.class_ids.detach().cpu().tolist()
+        ]
+        result["predictions"] = predictions_dict
+        result["predicted_classes"] = predicted_classes
+
+    for source_key in (
+        PREDICTION_TYPE_KEY,
+        INFERENCE_ID_KEY,
+        PARENT_ID_KEY,
+        ROOT_PARENT_ID_KEY,
+    ):
+        if image_metadata.get(source_key) is not None:
+            result[source_key] = image_metadata[source_key]
+    return result
+
+
+def serialise_native_keypoint_detection(
+    prediction: Tuple[KeyPoints, Optional[Detections]],
+) -> dict:
+    """Tuple-aware serialiser for the keypoint-detection kind. The native prediction
+    is a ``(KeyPoints, Detections)`` tuple; the per-instance keypoint payload is
+    carried on the bbox ``Detections`` ``bboxes_metadata``, so unwrap and defer to
+    ``serialise_sv_detections``."""
+    if not isinstance(prediction, tuple) or len(prediction) != 2:
+        raise ValueError(
+            f"serialise_native_keypoint_detection(...) expected a "
+            f"Tuple[KeyPoints, Detections], got {type(prediction)}."
+        )
+    _, detections = prediction
+    if detections is None:
+        raise ValueError(
+            "Keypoint prediction is missing the bounding-box component required for "
+            "serialisation."
+        )
+    return serialise_sv_detections(detections)

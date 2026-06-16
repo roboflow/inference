@@ -1,4 +1,4 @@
-"""Tensor-native sibling of `roboflow_core/roboflow_object_detection_model@v3`.
+"""Tensor-native sibling of `roboflow_core/roboflow_object_detection_model@v2`.
 
 Under ENABLE_TENSOR_DATA_REPRESENTATION this block emits a native
 ``inference_models.Detections`` (torch tensors on ``WORKFLOWS_IMAGE_TENSOR_DEVICE``)
@@ -11,12 +11,16 @@ under ``TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND`` instead of ``sv.Detecti
   ``detection_id``) the tensor serialiser requires, via ``attach_native_detection_metadata``.
 - REMOTE: standard inference prediction dicts are rebuilt into a native ``Detections``
   via ``native_detections_from_inference_predictions`` (never ``sv.Detections``).
+
+Manifest (type@version, class name, params, validators, compatibility) mirrors the
+numpy v2 sibling exactly; only the ``predictions`` output kind and the run bodies
+differ. v2 declares ``inference_id``/``predictions``/``model_id`` outputs.
 """
 
 import uuid
 from typing import Dict, List, Literal, Optional, Type, Union
 
-from pydantic import ConfigDict, Field, PositiveInt, model_validator
+from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.env import (
     HOSTED_DETECT_URL,
@@ -51,7 +55,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
-    STRING_KIND,
     FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
@@ -84,7 +87,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Object Detection Model",
-            "version": "v3",
+            "version": "v2",
             "short_description": "Predict the location of objects with bounding boxes.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -100,45 +103,16 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/roboflow_object_detection_model@v3"]
+    type: Literal["roboflow_core/roboflow_object_detection_model@v2"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
-    confidence_mode: Union[
-        Literal["best", "default", "custom"],
-        Selector(kind=[STRING_KIND]),
-    ] = Field(
-        default="best",
-        description="How confidence thresholds are determined.",
-        json_schema_extra={
-            "always_visible": True,
-            "values_metadata": {
-                "best": {
-                    "name": "Best (Recommended)",
-                    "description": "Use F1-optimal thresholds from model evaluation.",
-                },
-                "default": {
-                    "name": "Default",
-                    "description": "Use the model's built-in default threshold.",
-                },
-                "custom": {
-                    "name": "Custom",
-                    "description": "Specify a custom confidence threshold.",
-                },
-            },
-        },
-    )
-    custom_confidence: Union[
-        Optional[FloatZeroToOne],
+    confidence: Union[
+        FloatZeroToOne,
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Custom confidence threshold for predictions.",
+        description="Confidence threshold for predictions.",
         examples=[0.3, "$inputs.confidence_threshold"],
-        json_schema_extra={
-            "relevant_for": {
-                "confidence_mode": {"values": ["custom"], "required": True},
-            },
-        },
     )
     class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (
         Field(
@@ -183,14 +157,6 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["my_project", "$inputs.al_target_project"],
     )
 
-    @model_validator(mode="after")
-    def validate(self) -> "BlockManifest":
-        if self.confidence_mode == "custom" and self.custom_confidence is None:
-            raise ValueError(
-                "`custom_confidence` is required when `confidence_mode` is 'custom'"
-            )
-        return self
-
     @classmethod
     def get_compatible_task_types(cls) -> Optional[List[str]]:
         return ["object-detection"]
@@ -215,7 +181,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
+class RoboflowObjectDetectionModelBlockV2(WorkflowBlock):
 
     def __init__(
         self,
@@ -239,19 +205,15 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
-        confidence_mode: str,
-        custom_confidence: Optional[float],
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
+        confidence: Optional[float],
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
-        confidence = (
-            custom_confidence if confidence_mode == "custom" else confidence_mode
-        )
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
                 images=images,
@@ -289,7 +251,7 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
-        confidence: Union[None, float, Literal["best", "default"]],
+        confidence: Optional[float],
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],
@@ -342,7 +304,7 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
-        confidence: Union[None, float, Literal["best", "default"]],
+        confidence: Optional[float],
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],

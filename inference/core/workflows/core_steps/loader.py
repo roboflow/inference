@@ -209,6 +209,8 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
         deserialize_rle_detections_kind,
     )
     from inference.core.workflows.core_steps.common.serializers_tensor import (
+        serialise_native_classification,
+        serialise_native_keypoint_detection,
         serialise_rle_sv_detections,
         serialise_sv_detections,
     )
@@ -556,9 +558,14 @@ else:
     from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3_tensor import (
         SegmentAnything3BlockV3,
     )
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
-    RoboflowInstanceSegmentationModelBlockV4,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4_tensor import (
+        RoboflowInstanceSegmentationModelBlockV4,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
+        RoboflowInstanceSegmentationModelBlockV4,
+    )
 
 if SAM3_3D_OBJECTS_ENABLED:
     if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -600,48 +607,118 @@ else:
     from inference.core.workflows.core_steps.models.foundation.yolo_world.v1_tensor import (
         YoloWorldModelBlockV1,
     )
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
-    RoboflowInstanceSegmentationModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
-    RoboflowInstanceSegmentationModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
-    RoboflowInstanceSegmentationModelBlockV3,
-)
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
-    RoboflowKeypointDetectionModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2 import (
-    RoboflowKeypointDetectionModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3 import (
-    RoboflowKeypointDetectionModelBlockV3,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1 import (
-    RoboflowClassificationModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2 import (
-    RoboflowClassificationModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3 import (
-    RoboflowClassificationModelBlockV3,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
-    RoboflowMultiLabelClassificationModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
-    RoboflowMultiLabelClassificationModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
-    RoboflowMultiLabelClassificationModelBlockV3,
-)
-from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 import (
-    RoboflowObjectDetectionModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
-    RoboflowObjectDetectionModelBlockV2,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1_tensor import (
+        RoboflowInstanceSegmentationModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
+        RoboflowInstanceSegmentationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2_tensor import (
+        RoboflowInstanceSegmentationModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
+        RoboflowInstanceSegmentationModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3_tensor import (
+        RoboflowInstanceSegmentationModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
+        RoboflowInstanceSegmentationModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1_tensor import (
+        RoboflowKeypointDetectionModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
+        RoboflowKeypointDetectionModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2_tensor import (
+        RoboflowKeypointDetectionModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2 import (
+        RoboflowKeypointDetectionModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3_tensor import (
+        RoboflowKeypointDetectionModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3 import (
+        RoboflowKeypointDetectionModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1_tensor import (
+        RoboflowClassificationModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1 import (
+        RoboflowClassificationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2_tensor import (
+        RoboflowClassificationModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2 import (
+        RoboflowClassificationModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3_tensor import (
+        RoboflowClassificationModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3 import (
+        RoboflowClassificationModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
+        RoboflowMultiLabelClassificationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
+        RoboflowMultiLabelClassificationModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
+        RoboflowMultiLabelClassificationModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v1_tensor import (
+        RoboflowObjectDetectionModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 import (
+        RoboflowObjectDetectionModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v2_tensor import (
+        RoboflowObjectDetectionModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
+        RoboflowObjectDetectionModelBlockV2,
+    )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.roboflow.object_detection.v3_tensor import (
         RoboflowObjectDetectionModelBlockV3,
@@ -650,12 +727,22 @@ else:
     from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 import (
         RoboflowObjectDetectionModelBlockV3,
     )
-from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
-    RoboflowSemanticSegmentationModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2 import (
-    RoboflowSemanticSegmentationModelBlockV2,
-)
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1_tensor import (
+        RoboflowSemanticSegmentationModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
+        RoboflowSemanticSegmentationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2_tensor import (
+        RoboflowSemanticSegmentationModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2 import (
+        RoboflowSemanticSegmentationModelBlockV2,
+    )
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
         BarcodeDetectorBlockV1,
@@ -1143,6 +1230,26 @@ KINDS_SERIALIZERS = {
     WILDCARD_KIND.name: serialize_wildcard_kind,
     TIMESTAMP_KIND.name: serialize_timestamp,
 }
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    # Tensor-native producers emit native dataclasses for these kinds, which the
+    # numpy serialisers cannot handle. Classification has no numpy serialiser at all;
+    # keypoint produces a (KeyPoints, Detections) tuple; semantic-seg uses the
+    # per-class RLE InstanceDetections carrier (Option B).
+    KINDS_SERIALIZERS[CLASSIFICATION_PREDICTION_KIND.name] = (
+        serialise_native_classification
+    )
+    KINDS_SERIALIZERS[KEYPOINT_DETECTION_PREDICTION_KIND.name] = (
+        serialise_native_keypoint_detection
+    )
+    KINDS_SERIALIZERS[SEMANTIC_SEGMENTATION_PREDICTION_KIND.name] = (
+        serialise_sv_detections
+    )
+    # instance-seg blocks declare the RLE kind too; the numpy `serialise_rle_sv_detections`
+    # cannot handle a native InstanceDetections, so route it to the tensor serialiser
+    # (which handles RLE masks via `_resolve_instance_polygon`).
+    KINDS_SERIALIZERS[RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name] = (
+        serialise_sv_detections
+    )
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,

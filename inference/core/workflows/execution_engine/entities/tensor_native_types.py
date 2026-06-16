@@ -604,7 +604,7 @@ Execution Engine behind API will serialise underlying data once selector of this
 Workflow output - serialisation will be executed such that `sv.Detections.from_inference(...)`
 can decode the output. Entity details: [ObjectDetectionInferenceResponse](https://detect.roboflow.com/docs)
 """
-TENSOR_NATIVE_CODE_DETECTION_KIND = Kind(
+TENSOR_NATIVE_BAR_CODE_DETECTION_KIND = Kind(
     name="bar_code_detection",
     description="Prediction with barcode detection",
     docs=TENSOR_NATIVE_BAR_CODE_DETECTION_KIND_DOCS,

@@ -511,6 +511,19 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
+        # Keypoint class names per object class (List[List[str]]); reached on the
+        # tensor path via `model_manager[model_id].key_points_classes`.
+        self.key_points_classes = list(self._model.key_points_classes)
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
