@@ -9,8 +9,10 @@ from pydantic import ConfigDict, Field
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
-from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 
+from inference.core.workflows.core_steps.common.tensor_native import (
+    instance_mask_to_numpy,
+)
 from inference.core.workflows.execution_engine.constants import (
     BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
@@ -132,24 +134,25 @@ def calculate_minimum_bounding_rectangle(
     return box, width, height, angle
 
 
-def _materialize_masks(pred: InstanceDetections) -> np.ndarray:
-    """Return a dense (n, H, W) bool numpy array for cv2 / sv processing,
-    regardless of whether `pred.mask` arrived as a torch tensor or an
-    InstancesRLEMasks."""
-    if isinstance(pred.mask, torch.Tensor):
-        return pred.mask.detach().to("cpu").numpy().astype(bool)
-    return coco_rle_masks_to_numpy_mask(pred.mask).astype(bool)
+def _mask_resolution(
+    mask: Union[torch.Tensor, InstancesRLEMasks],
+) -> Tuple[int, int]:
+    """Return the mask `(H, W)` resolution without materialising the whole
+    stack — `image_size` for RLE, the trailing dims for a dense tensor."""
+    if isinstance(mask, InstancesRLEMasks):
+        return int(mask.image_size[0]), int(mask.image_size[1])
+    return int(mask.shape[1]), int(mask.shape[2])
 
 
 def _repackage_masks(
-    new_dense_masks: np.ndarray,
+    new_dense_masks: List[np.ndarray],
     original_mask: Union[torch.Tensor, InstancesRLEMasks],
 ) -> Union[torch.Tensor, InstancesRLEMasks]:
     """Match the output mask representation to the input — dense in,
     dense out; RLE in, RLE out — so the rest of the tensor pipeline
     keeps the same storage shape it had upstream."""
     if isinstance(original_mask, torch.Tensor):
-        return torch.from_numpy(new_dense_masks).to(
+        return torch.from_numpy(np.stack(new_dense_masks, axis=0)).to(
             device=original_mask.device, dtype=original_mask.dtype
         )
     rles = [
@@ -174,23 +177,41 @@ class BoundingRectBlockV1(WorkflowBlock):
             raise ValueError(
                 "Mask missing. This block operates on output from segmentation model."
             )
-        dense_masks = _materialize_masks(predictions)
-        n, mask_h, mask_w = dense_masks.shape
+        n = len(predictions)
+        if n == 0:
+            return {
+                OUTPUT_KEY: InstanceDetections(
+                    xyxy=predictions.xyxy,
+                    class_id=predictions.class_id,
+                    confidence=predictions.confidence,
+                    mask=predictions.mask,
+                    image_metadata=predictions.image_metadata,
+                    bboxes_metadata=None,
+                )
+            }
+        mask_h, mask_w = _mask_resolution(predictions.mask)
 
-        new_dense_masks = np.empty_like(dense_masks)
+        new_dense_masks: List[np.ndarray] = []
         new_xyxy_rows: List[np.ndarray] = []
         new_bboxes_metadata: List[dict] = []
         existing_meta = predictions.bboxes_metadata or [{} for _ in range(n)]
 
         for i in range(n):
+            # Decode one instance at a time (RLE row decoded on demand, dense
+            # row pulled to host individually) instead of holding two full
+            # (n, H, W) bool stacks — the same streaming convention as the
+            # serialiser / instance_mask_to_numpy.
+            instance_mask = instance_mask_to_numpy(predictions, i).astype(bool)
             rect, width, height, angle = calculate_minimum_bounding_rectangle(
-                dense_masks[i]
+                instance_mask
             )
             rect_polygon = np.around(rect).astype(np.int32)
-            new_dense_masks[i] = sv.polygon_to_mask(
-                polygon=rect_polygon,
-                resolution_wh=(mask_w, mask_h),
-            ).astype(bool)
+            new_dense_masks.append(
+                sv.polygon_to_mask(
+                    polygon=rect_polygon,
+                    resolution_wh=(mask_w, mask_h),
+                ).astype(bool)
+            )
             new_xyxy_rows.append(sv.polygon_to_xyxy(polygon=rect_polygon))
 
             per_box_meta = {

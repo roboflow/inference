@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import List, Literal, Optional, Tuple, Type, Union
 
-import numpy as np
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 

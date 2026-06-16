@@ -3,7 +3,7 @@ from typing import List, Literal, Optional, Type, Union
 
 import numpy as np
 import torch
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (

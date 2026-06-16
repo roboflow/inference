@@ -1,7 +1,7 @@
 """Tensor-native sibling of `roboflow_core/segment_anything_2_video@v1`.
 
-SCRATCH — first pass for review. SAM2 Video Tracker is a STATEFUL, LOCAL-only
-streaming instance-segmentation producer. It differs from the SAM2 image block:
+SAM2 Video Tracker is a STATEFUL, LOCAL-only streaming instance-segmentation
+producer. It differs from the SAM2 image block:
 
 - No remote path (per-video session state cannot be shipped per-frame).
 - The model is loaded directly via AutoModel (inference_models). Its HF
@@ -284,9 +284,27 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
                 session.obj_id_metadata = {}
                 session.frames_since_prompt = 0
 
-            # Tensor-native CHW RGB frame; the model permutes CHW->HWC internally
-            # (_ensure_numpy_image) so the HF processor receives correct RGB.
+            # CROSS-REPO CONTRACT (intentional divergence from the numpy sibling):
+            #   - This block forwards the tensor-native CHW *RGB* frame.
+            #   - inference_models hf_streaming_video._ensure_numpy_image is
+            #     contracted to permute CHW->HWC WITHOUT reinterpreting channel
+            #     order, so the HF Sam2VideoProcessor receives HWC RGB.
+            #   - The numpy v1 sibling fed HWC *BGR* (numpy_image); the HF
+            #     processor expects RGB, so the tensor path is the correct one.
+            # This correctness now hinges on _ensure_numpy_image NOT swapping
+            # channels: a regression there silently corrupts every mask. The
+            # `frame.dim() == 3` guard below catches a layout regression (a
+            # non-CHW frame) early instead of letting a malformed tensor reach
+            # the model. Channel-order parity itself is pinned by a focused test
+            # in inference_models (see hf_streaming_video tests); it cannot be
+            # asserted from a workflow block without materialising the frame.
             frame = single_image.tensor_image
+            if frame.dim() != 3:
+                raise ValueError(
+                    "SAM2 video tracker expects a CHW (3-D) RGB frame tensor; got "
+                    f"a tensor with {frame.dim()} dim(s). The model's "
+                    "_ensure_numpy_image permutes CHW->HWC and assumes this layout."
+                )
 
             if should_prompt:
                 boxes_xyxy, per_box_meta = _extract_box_prompts_tensor(boxes_for_image)

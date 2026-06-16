@@ -239,6 +239,13 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
             # built `class_ids`, and `confidence` is the FULL sigmoid vector. We do
             # NOT re-threshold / re-softmax / rebuild `class_ids` — only attach the
             # (SINGULAR) image_metadata the tensor serialiser requires.
+            # Pin the prediction tensors to WORKFLOWS_IMAGE_TENSOR_DEVICE so LOCAL
+            # output matches the single-label sibling and this block's REMOTE path
+            # (which builds them on-device via torch.as_tensor).
+            prediction.class_ids = prediction.class_ids.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+            prediction.confidence = prediction.confidence.to(
+                WORKFLOWS_IMAGE_TENSOR_DEVICE
+            )
             prediction.image_metadata = _build_native_classification_metadata(
                 image=image,
                 class_names=class_names,

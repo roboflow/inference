@@ -244,10 +244,6 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         mask_representation: Literal["rle", "dense"],
         collapse_to_most_confident: bool,
     ) -> BlockResult:
-        # VERIFY: model-id + registration for the tensor path. Mirroring the OCR sibling
-        # (add_model + run_tensor_native_inference). The numpy block uses
-        # load_core_model(core_model="sam2"); confirm the id "sam2/<version>" dispatches
-        # to InferenceModelsSAM2Adapter under USE_INFERENCE_MODELS.
         sam_model_id = f"sam2/{version}"
         self._model_manager.add_model(
             sam_model_id, self._api_key, endpoint_type=ModelEndpointType.CORE_MODEL
@@ -468,14 +464,18 @@ def _assemble_instance_detections(
 
 
 def _mask_to_xyxy(mask: torch.Tensor) -> torch.Tensor:
-    """Tight xyxy bbox of a 2-D boolean mask, on the mask's device."""
+    """Tight xyxy bbox of a 2-D boolean mask, on the mask's device.
+
+    Uses inclusive min/max with NO +1, matching the numpy SAM2 sibling's
+    polygon-derived bbox (``np.min``/``np.max`` on the contour points) and the
+    other SAM tensor siblings (``segment_anything2_video``, ``segment_anything3``,
+    ``seg_preview``), so masks/areas/IoU stay numpy-faithful across the family.
+    """
     nonzero = torch.nonzero(mask, as_tuple=False)
     if nonzero.numel() == 0:
         return torch.zeros((4,), dtype=torch.float32, device=mask.device)
     ys, xs = nonzero[:, 0], nonzero[:, 1]
-    return torch.stack([xs.min(), ys.min(), xs.max() + 1, ys.max() + 1]).to(
-        torch.float32
-    )
+    return torch.stack([xs.min(), ys.min(), xs.max(), ys.max()]).to(torch.float32)
 
 
 def _prompted(prompt_detections) -> bool:
@@ -557,6 +557,19 @@ def _rle_response_to_instance_detections(
     if isinstance(response, list):
         response = response[0]
     predictions = response.get("predictions", []) or []
+    # Class identity is forwarded from the prompt by RESPONSE ROW POSITION
+    # (source_indices index into prompt_detections after the score filter). That is
+    # only sound if the SAM2 server returns exactly one prediction per prompt in
+    # prompt order. Guard the positional contract before forwarding classes: if the
+    # server ever drops/reorders a prompt's prediction the indices would silently
+    # pull the wrong class_id/detection_id for every subsequent instance.
+    if _prompted(prompt_detections) and len(predictions) != len(prompt_detections):
+        raise ValueError(
+            "SAM2 remote response returned "
+            f"{len(predictions)} prediction(s) for {len(prompt_detections)} box "
+            "prompt(s); positional class forwarding requires one prediction per "
+            "prompt in prompt order."
+        )
     height, width = image._read_shape_without_materialization()
 
     counts: List[bytes] = []

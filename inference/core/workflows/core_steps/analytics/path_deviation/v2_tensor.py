@@ -1,3 +1,4 @@
+from dataclasses import replace as dataclass_replace
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -229,8 +230,14 @@ class PathDeviationAnalyticsBlockV2(WorkflowBlock):
             box_metadata[PATH_DEVIATION_KEY_IN_SV_DETECTIONS] = float(frechet_distance)
             new_bboxes_metadata.append(box_metadata)
 
-        detections.bboxes_metadata = new_bboxes_metadata
-        return {OUTPUT_KEY: detections}
+        # Copy-on-write: do not mutate the caller's native object (numpy sibling
+        # built a fresh object via sv.Detections.merge). dataclasses.replace keeps
+        # the tensors/masks shared by reference and only swaps the bboxes_metadata
+        # list.
+        result_detections = dataclass_replace(
+            detections, bboxes_metadata=new_bboxes_metadata
+        )
+        return {OUTPUT_KEY: result_detections}
 
     def _calculate_frechet_distance(
         self, path1: np.ndarray, path2: np.ndarray

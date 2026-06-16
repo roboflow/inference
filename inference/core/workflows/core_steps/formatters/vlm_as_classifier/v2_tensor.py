@@ -12,6 +12,7 @@ from inference_models.models.base.classification import (
     MultiLabelClassificationPrediction,
 )
 
+from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -249,7 +250,7 @@ def try_parse_json(content: str) -> Tuple[bool, dict]:
         return False, json.loads(content)
     except Exception as error:
         logging.warning(
-            f"Could not parse JSON to dict in `roboflow_core/vlm_as_classifier@v1` block. "
+            f"Could not parse JSON to dict in `roboflow_core/vlm_as_classifier@v2` block. "
             f"Error type: {error.__class__.__name__}. Details: {error}"
         )
         return True, {}
@@ -290,8 +291,16 @@ def parse_multi_class_classification_results(
             PARENT_ID_KEY: image.parent_metadata.parent_id,
         }
         parsed_prediction = ClassificationPrediction(
-            class_id=torch.tensor([top_class_id], dtype=torch.long),
-            confidence=torch.tensor([confidence_vector], dtype=torch.float32),
+            class_id=torch.tensor(
+                [top_class_id],
+                dtype=torch.long,
+                device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+            ),
+            confidence=torch.tensor(
+                [confidence_vector],
+                dtype=torch.float32,
+                device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+            ),
             images_metadata=[image_metadata],
         )
         return {
@@ -301,7 +310,7 @@ def parse_multi_class_classification_results(
         }
     except Exception as error:
         logging.warning(
-            f"Could not parse multi-class classification results in `roboflow_core/vlm_as_classifier@v1` block. "
+            f"Could not parse multi-class classification results in `roboflow_core/vlm_as_classifier@v2` block. "
             f"Error type: {error.__class__.__name__}. Details: {error}"
         )
         return {"error_status": True, "predictions": None, "inference_id": inference_id}
@@ -359,8 +368,16 @@ def parse_multi_label_classification_results(
             PARENT_ID_KEY: image.parent_metadata.parent_id,
         }
         parsed_prediction = MultiLabelClassificationPrediction(
-            class_ids=torch.tensor(predicted_class_ids, dtype=torch.long),
-            confidence=torch.tensor(confidence_vector, dtype=torch.float32),
+            class_ids=torch.tensor(
+                predicted_class_ids,
+                dtype=torch.long,
+                device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+            ),
+            confidence=torch.tensor(
+                confidence_vector,
+                dtype=torch.float32,
+                device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+            ),
             image_metadata=image_metadata,
         )
         return {
@@ -370,7 +387,7 @@ def parse_multi_label_classification_results(
         }
     except Exception as error:
         logging.warning(
-            f"Could not parse multi-label classification results in `roboflow_core/vlm_as_classifier@v1` block. "
+            f"Could not parse multi-label classification results in `roboflow_core/vlm_as_classifier@v2` block. "
             f"Error type: {error.__class__.__name__}. Details: {error}"
         )
         return {"error_status": True, "predictions": None, "inference_id": inference_id}

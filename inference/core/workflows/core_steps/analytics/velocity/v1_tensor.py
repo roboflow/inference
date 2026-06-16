@@ -1,7 +1,6 @@
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import supervision as sv
 import torch
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type

@@ -18,6 +18,7 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
+    IMAGE_DIMENSIONS_KEY,
     PARENT_ID_KEY,
     PREDICTION_TYPE_KEY,
     ROOT_PARENT_ID_KEY,
@@ -262,12 +263,13 @@ class ClipComparisonBlockV2(WorkflowBlock):
         results = []
         for prediction, image in zip(predictions, images):
             similarities = prediction["similarity"]
-            max_similarity = np.max(similarities)
+            max_similarity = float(np.max(similarities))
             max_similarity_id = np.argmax(similarities)
-            min_similarity = np.min(similarities)
+            min_similarity = float(np.min(similarities))
             min_similarity_id = np.argmin(similarities)
             most_similar_class_name = classes[max_similarity_id]
             least_similar_class_name = classes[min_similarity_id]
+            image_height, image_width = image._read_shape_without_materialization()
             # Tensor-native classification prediction: per-class cosine scores
             # become the confidence distribution; class names live in metadata.
             classification_predictions = ClassificationPrediction(
@@ -281,6 +283,7 @@ class ClipComparisonBlockV2(WorkflowBlock):
                         },
                         PREDICTION_TYPE_KEY: "classification",
                         PARENT_ID_KEY: image.parent_metadata.parent_id,
+                        IMAGE_DIMENSIONS_KEY: [image_height, image_width],
                     }
                 ],
             )

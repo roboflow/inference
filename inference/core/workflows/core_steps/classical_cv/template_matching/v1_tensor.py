@@ -9,17 +9,12 @@ from pydantic import AliasChoices, ConfigDict, Field
 
 from inference_models.models.base.object_detection import Detections
 
+from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
+from inference.core.workflows.core_steps.common.tensor_native import (
+    build_native_image_metadata,
+)
 from inference.core.workflows.execution_engine.constants import (
-    CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
-    IMAGE_DIMENSIONS_KEY,
-    PARENT_COORDINATES_KEY,
-    PARENT_DIMENSIONS_KEY,
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-    ROOT_PARENT_COORDINATES_KEY,
-    ROOT_PARENT_DIMENSIONS_KEY,
-    ROOT_PARENT_ID_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -214,14 +209,11 @@ def apply_template_matching(
         top_left = pt
         bottom_right = (pt[0] + w, pt[1] + h)
         xyxy.append(top_left + bottom_right)
-    image_height, image_width = image.numpy_image.shape[:2]
     if len(xyxy) == 0:
         return _native_detections_from_boxes(
             xyxy=np.zeros((0, 4), dtype=np.int32),
             confidence=np.zeros((0,), dtype=float),
             image=image,
-            image_height=image_height,
-            image_width=image_width,
         )
     xyxy = np.array(xyxy).astype(np.int32)
     confidence = np.ones(len(xyxy), dtype=float)
@@ -240,8 +232,6 @@ def apply_template_matching(
         xyxy=xyxy,
         confidence=confidence,
         image=image,
-        image_height=image_height,
-        image_width=image_width,
     )
 
 
@@ -249,46 +239,34 @@ def _native_detections_from_boxes(
     xyxy: np.ndarray,
     confidence: np.ndarray,
     image: WorkflowImageData,
-    image_height: int,
-    image_width: int,
 ) -> Detections:
     number_of_detections = len(xyxy)
-    parent = image.parent_metadata
-    root = image.workflow_root_ancestor_metadata
-    parent_coordinates = parent.origin_coordinates
-    root_coordinates = root.origin_coordinates
-    image_metadata = {
-        CLASS_NAMES_KEY: {0: "template_match"},
-        PREDICTION_TYPE_KEY: "object-detection",
-        IMAGE_DIMENSIONS_KEY: [image_height, image_width],
-        PARENT_ID_KEY: parent.parent_id,
-        PARENT_COORDINATES_KEY: [
-            parent_coordinates.left_top_x,
-            parent_coordinates.left_top_y,
-        ],
-        PARENT_DIMENSIONS_KEY: [
-            parent_coordinates.origin_height,
-            parent_coordinates.origin_width,
-        ],
-        ROOT_PARENT_ID_KEY: root.parent_id,
-        ROOT_PARENT_COORDINATES_KEY: [
-            root_coordinates.left_top_x,
-            root_coordinates.left_top_y,
-        ],
-        ROOT_PARENT_DIMENSIONS_KEY: [
-            root_coordinates.origin_height,
-            root_coordinates.origin_width,
-        ],
-    }
+    image_metadata = build_native_image_metadata(
+        image=image,
+        class_names={0: "template_match"},
+        prediction_type="object-detection",
+    )
     bboxes_metadata = (
         [{DETECTION_ID_KEY: str(uuid4())} for _ in range(number_of_detections)]
         if number_of_detections > 0
         else None
     )
     return Detections(
-        xyxy=torch.as_tensor(np.asarray(xyxy), dtype=torch.float32).reshape(-1, 4),
-        class_id=torch.zeros((number_of_detections,), dtype=torch.long),
-        confidence=torch.as_tensor(np.asarray(confidence), dtype=torch.float32),
+        xyxy=torch.as_tensor(
+            np.asarray(xyxy),
+            dtype=torch.float32,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+        ).reshape(-1, 4),
+        class_id=torch.zeros(
+            (number_of_detections,),
+            dtype=torch.long,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+        ),
+        confidence=torch.as_tensor(
+            np.asarray(confidence),
+            dtype=torch.float32,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+        ),
         image_metadata=image_metadata,
         bboxes_metadata=bboxes_metadata,
     )

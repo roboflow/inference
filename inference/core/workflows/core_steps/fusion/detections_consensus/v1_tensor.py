@@ -360,12 +360,24 @@ def _concat_metadata(
 ]:
     # Concatenate xyxy / class_id / confidence / bboxes_metadata of several
     # predictions (masks handled separately). image_metadata is shared within one
-    # image so the first non-empty one is carried over.
+    # image so the first non-empty one is carried over as the base, BUT the
+    # class_names map is unioned across all sources: each consensus row supplies
+    # its own {class_id: class_name} pair, so taking only the first row's map
+    # would lose names for every other class in a multi-class consensus output.
     image_metadata = None
+    merged_class_names: dict = {}
     for d in detections_list:
-        if d.image_metadata is not None:
+        if d.image_metadata is None:
+            continue
+        if image_metadata is None:
             image_metadata = d.image_metadata
-            break
+        source_class_names = d.image_metadata.get(CLASS_NAMES_KEY)
+        if source_class_names:
+            for class_id_key, class_name in source_class_names.items():
+                merged_class_names[int(class_id_key)] = class_name
+    if image_metadata is not None and merged_class_names:
+        image_metadata = dict(image_metadata)
+        image_metadata[CLASS_NAMES_KEY] = merged_class_names
     bboxes_metadata: Optional[List[dict]] = None
     if any(d.bboxes_metadata is not None for d in detections_list):
         bboxes_metadata = []

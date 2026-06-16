@@ -495,6 +495,34 @@ def _split_key_point_prediction(
     return key_points, detections
 
 
+def _apply_index_op_on_prediction(
+    value: TensorNativePrediction,
+    operation_name: str,
+    index_fn: Callable[[TensorNativeDetections], List[int]],
+    execution_context: Optional[str] = None,
+) -> TensorNativePrediction:
+    """Apply an index-producing op over the bounding-box component of a prediction,
+    handling the keypoint-tuple vs plain-``Detections`` split/re-wrap in one place.
+
+    ``index_fn`` receives the bounding-box ``Detections``/``InstanceDetections`` and
+    returns the absolute index list to keep. For a keypoint-detection tuple
+    ``(KeyPoints, Detections)`` the same index list slices both components and the
+    result is re-wrapped as a tuple; for a plain detections object only the boxes are
+    sliced. Centralising this prevents a future index-based op from silently dropping
+    the tuple branch (the numpy path never had this branch).
+    """
+    if _is_key_point_prediction(value):
+        key_points, bboxes = _split_key_point_prediction(
+            value,
+            operation_name=operation_name,
+            execution_context=execution_context,
+        )
+        indices = index_fn(bboxes)
+        return _take_key_points(key_points, indices), _take_detections(bboxes, indices)
+    indices = index_fn(value)
+    return _take_detections(value, indices)
+
+
 def _ensure_tensor_native_detections(
     value: Any,
     operation_name: str,
@@ -562,6 +590,29 @@ def _class_names_lookup(
     return class_names
 
 
+def _extract_class_names_property_tensor_native(
+    detections: TensorNativeDetections,
+) -> List[str]:
+    """Numpy-parity ``class_name`` extractor for ``extract_detections_property``.
+
+    The numpy sibling reads ``detections.data.get("class_name", [])`` and therefore
+    yields ``[]`` for a producer that never attached class names (no ``data["class_name"]``)
+    instead of raising. Mirror that here: when the class_id -> name mapping is absent
+    from ``image_metadata[CLASS_NAMES_KEY]`` we return ``[]`` rather than failing the
+    whole extraction. A *present-but-incomplete* mapping is still treated as a producer
+    contract violation by ``_resolve_class_names`` (a class_id without a name is a real
+    inconsistency, not an "absent property" case).
+    """
+    if _detections_count(detections) == 0:
+        return []
+    image_metadata = detections.image_metadata or {}
+    if image_metadata.get(CLASS_NAMES_KEY) is None:
+        return []
+    return _resolve_class_names(
+        detections, operation_name="extract_detections_property"
+    )
+
+
 def _resolve_class_names(
     detections: TensorNativeDetections, operation_name: str
 ) -> List[str]:
@@ -594,6 +645,22 @@ def _take_mask(
     return mask[torch.as_tensor(indices, dtype=torch.long, device=mask.device)]
 
 
+def _take_tensor_field(
+    field: Optional[torch.Tensor], index_tensor: torch.Tensor
+) -> Optional[torch.Tensor]:
+    """Index an optional per-box tensor field, tolerating ``None``.
+
+    ``inference_models.Detections`` types declare ``class_id``/``confidence`` as
+    non-optional, but the numpy sibling path slices through
+    ``sv.Detections.__getitem__`` which silently passes ``None`` optional fields
+    through unindexed. Guard the same way so a producer that ever emits a native
+    object without confidence/class_id does not crash here where numpy would not.
+    """
+    if field is None:
+        return None
+    return field[index_tensor]
+
+
 def _take_detections(
     detections: TensorNativeDetections, indices: List[int]
 ) -> TensorNativeDetections:
@@ -606,16 +673,16 @@ def _take_detections(
     if isinstance(detections, InstanceDetections):
         return InstanceDetections(
             xyxy=detections.xyxy[index_tensor],
-            class_id=detections.class_id[index_tensor],
-            confidence=detections.confidence[index_tensor],
+            class_id=_take_tensor_field(detections.class_id, index_tensor),
+            confidence=_take_tensor_field(detections.confidence, index_tensor),
             mask=_take_mask(detections.mask, indices),
             image_metadata=detections.image_metadata,
             bboxes_metadata=bboxes_metadata,
         )
     return Detections(
         xyxy=detections.xyxy[index_tensor],
-        class_id=detections.class_id[index_tensor],
-        confidence=detections.confidence[index_tensor],
+        class_id=_take_tensor_field(detections.class_id, index_tensor),
+        confidence=_take_tensor_field(detections.confidence, index_tensor),
         image_metadata=detections.image_metadata,
         bboxes_metadata=bboxes_metadata,
     )
@@ -706,8 +773,8 @@ def _detections_anchor_coordinates_tensor_native(
 
 PROPERTIES_EXTRACTORS_TENSOR_NATIVE = {
     DetectionsProperty.CONFIDENCE: lambda detections: detections.confidence.tolist(),
-    DetectionsProperty.CLASS_NAME: lambda detections: _resolve_class_names(
-        detections, operation_name="extract_detections_property"
+    DetectionsProperty.CLASS_NAME: lambda detections: _extract_class_names_property_tensor_native(
+        detections
     ),
     DetectionsProperty.X_MIN: lambda detections: detections.xyxy[:, 0].tolist(),
     DetectionsProperty.Y_MIN: lambda detections: detections.xyxy[:, 1].tolist(),
@@ -800,18 +867,13 @@ def _filter_detections_tensor_native(
     global_parameters: Dict[str, Any],
 ) -> TensorNativePrediction:
     _ensure_tensor_native_detections(detections, operation_name="filter_detections")
-    if _is_key_point_prediction(detections):
-        key_points, bboxes = _split_key_point_prediction(
-            detections, operation_name="filter_detections"
-        )
-        indices = _filter_detections_indices_tensor_native(
+    return _apply_index_op_on_prediction(
+        detections,
+        operation_name="filter_detections",
+        index_fn=lambda bboxes: _filter_detections_indices_tensor_native(
             bboxes, filtering_fun=filtering_fun, global_parameters=global_parameters
-        )
-        return _take_key_points(key_points, indices), _take_detections(bboxes, indices)
-    indices = _filter_detections_indices_tensor_native(
-        detections, filtering_fun=filtering_fun, global_parameters=global_parameters
+        ),
     )
-    return _take_detections(detections, indices)
 
 
 def _offset_detections_impl_tensor_native(
@@ -931,7 +993,10 @@ def _select_leftmost_detection_tensor_native(
 ) -> TensorNativeDetections:
     index = _select_leftmost_index_tensor_native(detections)
     if index is None:
-        return detections
+        # Return a copy on empty for consistency with the other tensor-native
+        # selectors (first/last/top-confidence) so no selector aliases the caller's
+        # object. Still parity-faithful: numpy's leftmost returns an empty object.
+        return _copy_detections(detections)
     return _take_detections(detections, [index])
 
 
@@ -940,7 +1005,9 @@ def _select_rightmost_detection_tensor_native(
 ) -> TensorNativeDetections:
     index = _select_rightmost_index_tensor_native(detections)
     if index is None:
-        return detections
+        # See _select_leftmost_detection_tensor_native: copy on empty for selector
+        # consistency (no caller-object aliasing).
+        return _copy_detections(detections)
     return _take_detections(detections, [index])
 
 
@@ -1038,22 +1105,21 @@ def _sort_detections_tensor_native(
             f"{list(SORT_PROPERTIES_EXTRACT_TENSOR_NATIVE.keys())}, got {mode}.",
             context="step_execution | roboflow_query_language_evaluation",
         )
+    bboxes_for_count = value
     if _is_key_point_prediction(value):
-        key_points, bboxes = _split_key_point_prediction(
+        _, bboxes_for_count = _split_key_point_prediction(
             value, operation_name="sort_detections"
         )
-        if _detections_count(bboxes) == 0:
-            return value
-        indices = _sort_detections_indices_tensor_native(
-            bboxes, mode=mode, ascending=ascending
-        )
-        return _take_key_points(key_points, indices), _take_detections(bboxes, indices)
-    if _detections_count(value) == 0:
+    # Parity with the numpy sibling: return the input object unchanged on empty.
+    if _detections_count(bboxes_for_count) == 0:
         return value
-    indices = _sort_detections_indices_tensor_native(
-        value, mode=mode, ascending=ascending
+    return _apply_index_op_on_prediction(
+        value,
+        operation_name="sort_detections",
+        index_fn=lambda bboxes: _sort_detections_indices_tensor_native(
+            bboxes, mode=mode, ascending=ascending
+        ),
     )
-    return _take_detections(value, indices)
 
 
 def _rename_detections_tensor_native(
@@ -1197,17 +1263,13 @@ def _pick_detections_by_parent_class_tensor_native(
     )
     try:
         if _is_key_point_prediction(detections):
-            key_points, bboxes = _split_key_point_prediction(
+            return _apply_index_op_on_prediction(
                 detections,
                 operation_name="pick_detections_by_parent_class",
+                index_fn=lambda bboxes: _pick_detections_by_parent_class_indices_tensor_native(
+                    detections=bboxes, parent_class=parent_class
+                ),
                 execution_context=execution_context,
-            )
-            indices = _pick_detections_by_parent_class_indices_tensor_native(
-                detections=bboxes, parent_class=parent_class
-            )
-            return (
-                _take_key_points(key_points, indices),
-                _take_detections(bboxes, indices),
             )
         return _pick_detections_by_parent_class_tensor_native_impl(
             detections=detections, parent_class=parent_class

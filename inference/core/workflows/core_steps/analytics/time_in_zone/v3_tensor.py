@@ -359,7 +359,7 @@ def ensure_zone_is_list_of_polygons(
     nesting_depth = calculate_nesting_depth(zone=zone, max_depth=3)
     if nesting_depth > 3:
         raise ValueError(
-            "roboflow_core/time_in_zone@v2 block requires `zone` input to be list of points, but "
+            "roboflow_core/time_in_zone@v3 block requires `zone` input to be list of points, but "
             "input with excessive nesting depth found. If you created the `zone` input manually, verify it's "
             "correctness. If the input is constructed by another Workflow block - raise an issue: "
             "https://github.com/roboflow/inference/issues"

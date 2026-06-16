@@ -1,8 +1,6 @@
 from functools import lru_cache
 from typing import List, Optional, Union
 
-import numpy as np
-import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 

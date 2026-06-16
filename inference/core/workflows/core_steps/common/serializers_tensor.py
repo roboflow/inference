@@ -1,7 +1,6 @@
-from typing import Any, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
-import supervision as sv
 import torch
 
 from inference_models.models.base.classification import (
@@ -17,9 +16,6 @@ from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mas
 from inference.core.workflows.core_steps.common.serializers import (
     _attach_parent_metadata_to_detection_dict,
     mask_to_polygon,
-)
-from inference.core.workflows.core_steps.common.serializers import (
-    serialise_rle_sv_detections as _serialise_rle_sv_detections_numpy,
 )
 from inference.core.workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
@@ -58,6 +54,7 @@ from inference.core.workflows.execution_engine.constants import (
     POLYGON_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY_IN_SV_DETECTIONS,
     PREDICTION_TYPE_KEY,
+    RLE_MASK_KEY_IN_INFERENCE_RESPONSE,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
@@ -78,14 +75,34 @@ from inference.core.workflows.execution_engine.constants import (
     Y_KEY,
 )
 
-serialise_rle_sv_detections = _serialise_rle_sv_detections_numpy
-
 TensorNativeDetections = Union[Detections, InstanceDetections]
 
 
 def serialise_sv_detections(
     detections: TensorNativeDetections,
 ) -> dict:
+    """Serialise native ``inference_models.Detections`` / ``InstanceDetections`` into
+    the response dict shape produced by the numpy ``serialise_sv_detections``.
+
+    The name is retained for loader symbol-swap compatibility (it is load-bearing) -
+    despite the ``sv`` prefix it now consumes native tensor objects, not
+    ``sv.Detections``.
+    """
+    serialized_image_metadata, serialized_detections, _ = _serialise_sv_detections(
+        detections=detections
+    )
+    return {"image": serialized_image_metadata, "predictions": serialized_detections}
+
+
+def _serialise_sv_detections(
+    detections: TensorNativeDetections,
+) -> Tuple[dict, List[dict], List[int]]:
+    """Shared core for the detection serialisers.
+
+    Returns the serialised image metadata, the per-box prediction dicts (after the
+    polygon-None skip) and the ORIGINAL row index of each surviving prediction so
+    downstream serialisers (e.g. RLE) can re-align masks despite skipped instances.
+    """
     if not isinstance(detections, (Detections, InstanceDetections)):
         raise ValueError(
             f"serialise_sv_detections(...) expected `inference_models.Detections`, "
@@ -110,6 +127,7 @@ def serialise_sv_detections(
     confidences = detections.confidence.detach().cpu().tolist()
     class_ids = [int(value) for value in detections.class_id.detach().cpu().tolist()]
     serialized_detections = []
+    kept_indices: List[int] = []
     for index in range(detections_number):
         data = bboxes_metadata[index]
         detection_dict = {}
@@ -137,9 +155,14 @@ def serialise_sv_detections(
                 )
         if data.get("tracker_id") is not None:
             detection_dict[TRACKER_ID_KEY] = int(data["tracker_id"])
-        detection_dict[CLASS_NAME_KEY] = _resolve_class_name(
-            class_id=class_ids[index], class_names_mapping=class_names_mapping
-        )
+        # C1: a producer may carry an arbitrary per-box label on the box metadata;
+        # prefer it, otherwise fall back to the class_id -> name mapping.
+        if CLASS_NAME_KEY in data:
+            detection_dict[CLASS_NAME_KEY] = str(data[CLASS_NAME_KEY])
+        else:
+            detection_dict[CLASS_NAME_KEY] = _resolve_class_name(
+                class_id=class_ids[index], class_names_mapping=class_names_mapping
+            )
         if DETECTION_ID_KEY not in data:
             raise ValueError(
                 f"Serialising tensor-native detections, but "
@@ -260,6 +283,7 @@ def serialise_sv_detections(
                 data[AREA_CONVERTED_KEY_IN_SV_DETECTIONS]
             )
         serialized_detections.append(detection_dict)
+        kept_indices.append(index)
     serialized_image_metadata = {
         "width": None,
         "height": None,
@@ -270,7 +294,45 @@ def serialise_sv_detections(
             "width": int(image_dimensions[1]),
             "height": int(image_dimensions[0]),
         }
+    return serialized_image_metadata, serialized_detections, kept_indices
+
+
+def serialise_native_rle_detections(detections: InstanceDetections) -> dict:
+    """C3 native RLE serialiser for the rle-instance-seg and semantic-seg kinds.
+
+    Emits the same per-box prediction dicts as ``serialise_sv_detections`` (re-using
+    its class-name / detection_id / image_metadata logic) but replaces the per-box
+    ``polygon`` with the COCO RLE pulled straight from the carried
+    ``InstancesRLEMasks`` (no polygon collapse). Masks are attached by ORIGINAL row
+    index so they stay aligned after polygon-None skips.
+    """
+    if not isinstance(detections, InstanceDetections):
+        raise ValueError(
+            f"serialise_native_rle_detections(...) expected "
+            f"`inference_models.InstanceDetections`, got {type(detections)}."
+        )
+    if not isinstance(detections.mask, InstancesRLEMasks):
+        raise ValueError(
+            "serialise_native_rle_detections(...) requires the instance masks to be "
+            f"carried as `InstancesRLEMasks`, got {type(detections.mask)}."
+        )
+    serialized_image_metadata, serialized_detections, kept_indices = (
+        _serialise_sv_detections(detections=detections)
+    )
+    rle_masks = detections.mask.to_coco_rle_masks()
+    for detection_dict, original_index in zip(serialized_detections, kept_indices):
+        detection_dict.pop(POLYGON_KEY, None)
+        rle = rle_masks[original_index]
+        counts = rle.get("counts")
+        if isinstance(counts, bytes):
+            rle = {"size": rle["size"], "counts": counts.decode("utf-8")}
+        detection_dict[RLE_MASK_KEY_IN_INFERENCE_RESPONSE] = rle
     return {"image": serialized_image_metadata, "predictions": serialized_detections}
+
+
+# Exported under the legacy numpy name so existing loader/imports keep working; now
+# points at the native implementation rather than the numpy alias.
+serialise_rle_sv_detections = serialise_native_rle_detections
 
 
 def _resolve_instance_polygon(
@@ -353,14 +415,28 @@ def serialise_native_classification(
     if isinstance(prediction, ClassificationPrediction):
         # confidence: (1, num_classes) full softmax; class_id: (1,)
         confidence_vector = prediction.confidence.detach().cpu().reshape(-1).tolist()
-        individual_classes_predictions = [
-            {
-                "class_id": class_id,
-                "class": str(class_names_mapping.get(class_id, class_id)),
-                "confidence": round(float(score), 4),
-            }
-            for class_id, score in enumerate(confidence_vector)
-        ]
+        # C2: mirror the numpy `prepare_classification_response` cutoff - drop classes
+        # whose (raw) score is below the resolved threshold when the producer attached
+        # it; otherwise keep the full softmax. Rounding/sort match the numpy
+        # `ClassificationInferenceResponse` (round(score, 4); sort desc by confidence).
+        confidence_threshold = image_metadata.get(
+            "classification_confidence_threshold"
+        )
+        individual_classes_predictions = []
+        for class_id, score in enumerate(confidence_vector):
+            class_score = float(score)
+            if (
+                confidence_threshold is not None
+                and class_score < confidence_threshold
+            ):
+                continue
+            individual_classes_predictions.append(
+                {
+                    "class_id": class_id,
+                    "class": str(class_names_mapping.get(class_id, class_id)),
+                    "confidence": round(class_score, 4),
+                }
+            )
         individual_classes_predictions = sorted(
             individual_classes_predictions,
             key=lambda item: item["confidence"],
@@ -424,3 +500,16 @@ def serialise_native_keypoint_detection(
             "serialisation."
         )
     return serialise_sv_detections(detections)
+
+
+def serialise_native_embedding(value: torch.Tensor) -> list:
+    """C4 serialiser for the embedding kind. The native CLIP/PE embedding is a
+    (possibly CUDA) ``torch.Tensor``; emit the numpy-faithful ``List[float]``."""
+    return value.detach().cpu().tolist()
+
+
+def serialise_native_tensor(value: torch.Tensor) -> list:
+    """C4 serialiser for the tensor kind (e.g. depth-estimation normalized depth,
+    raw model tensors). The native value is a (possibly CUDA/MPS) ``torch.Tensor``;
+    emit a JSON-serialisable nested list."""
+    return value.detach().cpu().tolist()

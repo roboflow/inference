@@ -79,6 +79,20 @@ from inference_models.models.base.classification import ClassificationPrediction
 
 PREDICTION_TYPE = "classification"
 
+# Numpy parity: the adapter `postprocess` (inference_models_adapters.py) drops
+# classes whose score < confidence_threshold, falling back to 0.5 when the
+# resolved confidence is non-numeric (e.g. the string "default"). The native
+# LOCAL path bypasses `postprocess`, so we carry the resolved float in
+# `image_metadata` for `serialise_native_classification` to apply the same cutoff.
+_DEFAULT_CONFIDENCE_THRESHOLD = 0.5
+CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY = "classification_confidence_threshold"
+
+
+def _resolve_confidence_threshold(confidence: Optional[Union[float, str]]) -> float:
+    if isinstance(confidence, (int, float)):
+        return float(confidence)
+    return _DEFAULT_CONFIDENCE_THRESHOLD
+
 LONG_DESCRIPTION = """
 Run inference on a multi-class classification model hosted on or uploaded to Roboflow.
 
@@ -231,6 +245,7 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
             )
         )
         class_names = _class_names_map(self._model_manager.get_class_names(model_id))
+        confidence_threshold = _resolve_confidence_threshold(confidence)
         results: List[dict] = []
         for index, image in enumerate(images):
             inference_id = str(uuid.uuid4())
@@ -243,6 +258,7 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
                 image=image,
                 class_names=class_names,
                 inference_id=inference_id,
+                confidence_threshold=confidence_threshold,
             )
             results.append(
                 {
@@ -288,6 +304,7 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
         )
         if not isinstance(predictions, list):
             predictions = [predictions]
+        confidence_threshold = _resolve_confidence_threshold(confidence)
         results: List[dict] = []
         for image, response in zip(images, predictions):
             inference_id = response.get(INFERENCE_ID_KEY) or str(uuid.uuid4())
@@ -295,6 +312,7 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
                 image=image,
                 response=response,
                 inference_id=inference_id,
+                confidence_threshold=confidence_threshold,
             )
             results.append(
                 {
@@ -314,6 +332,7 @@ def _build_image_metadata(
     image: WorkflowImageData,
     class_names: Dict[int, str],
     inference_id: str,
+    confidence_threshold: float,
 ) -> dict:
     height, width = image._read_shape_without_materialization()
     return {
@@ -323,6 +342,9 @@ def _build_image_metadata(
         INFERENCE_ID_KEY: inference_id,
         PARENT_ID_KEY: image.parent_metadata.parent_id,
         ROOT_PARENT_ID_KEY: image.workflow_root_ancestor_metadata.parent_id,
+        # C2: resolved float threshold so `serialise_native_classification`
+        # drops sub-threshold classes from `predictions`, matching numpy.
+        CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY: confidence_threshold,
     }
 
 
@@ -332,11 +354,13 @@ def _single_row_prediction(
     image: WorkflowImageData,
     class_names: Dict[int, str],
     inference_id: str,
+    confidence_threshold: float,
 ) -> ClassificationPrediction:
     image_metadata = _build_image_metadata(
         image=image,
         class_names=class_names,
         inference_id=inference_id,
+        confidence_threshold=confidence_threshold,
     )
     # Slice (not index) to keep the leading batch dim: class_id -> (1,),
     # confidence -> (1, num_classes). The confidence row stays the FULL softmax.
@@ -355,6 +379,7 @@ def _native_classification_from_inference_response(
     image: WorkflowImageData,
     response: dict,
     inference_id: str,
+    confidence_threshold: float,
 ) -> ClassificationPrediction:
     """Rebuild a native single-row ``ClassificationPrediction`` from a standard
     inference classification response dict.
@@ -387,6 +412,7 @@ def _native_classification_from_inference_response(
         image=image,
         class_names=class_names,
         inference_id=inference_id,
+        confidence_threshold=confidence_threshold,
     )
     return ClassificationPrediction(
         class_id=torch.tensor(

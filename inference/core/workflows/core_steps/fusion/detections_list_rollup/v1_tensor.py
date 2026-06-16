@@ -410,12 +410,14 @@ def merge_crop_predictions(
 
     # Merge the class_id -> name maps across all children so the rolled-up
     # native prediction can carry a single image_metadata["class_names"] map
-    # (numpy stored class_name per detection instead).
+    # (numpy stored class_name per detection instead). Keys are normalized to
+    # python int so map lookups never miss on a numpy-scalar class_id.
     merged_class_names: dict = {}
     for image_metadata in child_image_metadata:
         child_class_names = image_metadata.get(CLASS_NAMES_KEY)
         if child_class_names:
-            merged_class_names.update(child_class_names)
+            for class_id_key, class_name in child_class_names.items():
+                merged_class_names[int(class_id_key)] = class_name
 
     # Build crop zones list - one zone per crop/child prediction
     crop_zones = []
@@ -450,14 +452,11 @@ def merge_crop_predictions(
             break
 
     for image_metadata in child_image_metadata:
-        # Check for keypoint detection
+        # Check for keypoint detection. Native image_metadata stores
+        # prediction_type as a scalar string (build_native_image_metadata),
+        # so no np.ndarray legacy form is possible here.
         if PREDICTION_TYPE_KEY in image_metadata:
-            pred_type = image_metadata[PREDICTION_TYPE_KEY]
-            if isinstance(pred_type, np.ndarray):
-                if len(pred_type) > 0 and pred_type[0] == "keypoint-detection":
-                    is_keypoint_detection = True
-                    break
-            elif pred_type == "keypoint-detection":
+            if image_metadata[PREDICTION_TYPE_KEY] == "keypoint-detection":
                 is_keypoint_detection = True
                 break
 
@@ -829,8 +828,18 @@ def merge_crop_predictions(
     # are resolved from class_id via image_metadata["class_names"].
     number_of_detections = len(merged_confidences)
     image_metadata: dict = {}
-    if merged_class_names:
-        image_metadata[CLASS_NAMES_KEY] = merged_class_names
+    # Always carry a class_names map covering every merged class_id so the
+    # serializer's per-row class_id lookup never fails (e.g. the OCR / map-less
+    # rollup path, where children never declared a class_names map). Names come
+    # from the unioned child maps; any class_id without an entry falls back to
+    # f"class_{id}". Keys are normalized to python int to match map lookups.
+    output_class_names: dict = {}
+    for class_id_value in merged_class_ids:
+        class_id_int = int(class_id_value)
+        output_class_names[class_id_int] = merged_class_names.get(
+            class_id_int, f"class_{class_id_int}"
+        )
+    image_metadata[CLASS_NAMES_KEY] = output_class_names
     bboxes_metadata: List[dict] = [{} for _ in range(number_of_detections)]
 
     for key, values in merged_data.items():
@@ -880,14 +889,15 @@ def _coerce_metadata_value(key: str, value: Any) -> Any:
     if value is None:
         return value
     if key in [
-        "class_name",
         "prediction_type",
         "detection_id",
         "parent_id",
         "inference_id",
         "root_parent_id",
     ]:
-        # String fields
+        # String fields. class_name is intentionally omitted: names are never
+        # stored per-detection natively (resolved from class_id via the
+        # image_metadata["class_names"] map).
         return str(value)
     if key in [
         "root_parent_dimensions",

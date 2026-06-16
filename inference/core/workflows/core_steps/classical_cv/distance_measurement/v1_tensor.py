@@ -5,7 +5,10 @@ from pydantic import ConfigDict, Field
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.object_detection import Detections
 
-from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
+from inference.core.workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
+    CLASS_NAMES_KEY,
+)
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -292,16 +295,26 @@ def _iter_boxes_with_class_names(
     ``zip(detections.xyxy.round().astype(int), detections.data["class_name"])``.
 
     Bounding boxes are materialised host-side and rounded to ``int`` (matching the
-    numpy block's ``xyxy.round().astype(int)``); per-box class names are resolved
-    via ``class_id`` indexed into ``image_metadata[CLASS_NAMES_KEY]``.
+    numpy block's ``xyxy.round().astype(int)``); per-box class names mirror the
+    numpy block's ``detections.data["class_name"]`` by preferring an explicit
+    per-box label (``bboxes_metadata[i][CLASS_NAME_KEY]``, set by producers such as
+    vlm_as_detector / google_vision_ocr) and falling back to ``class_id`` indexed
+    into ``image_metadata[CLASS_NAMES_KEY]``.
     """
     xyxy = detections.xyxy.detach().to("cpu").numpy().round().astype(dtype=int)
     class_ids = detections.class_id.detach().to("cpu").numpy()
     class_names_map = (detections.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
+    bboxes_metadata = detections.bboxes_metadata or []
     pairs: List[Tuple[Tuple[int, int, int, int], str]] = []
-    for box, class_id in zip(xyxy, class_ids):
+    for index, (box, class_id) in enumerate(zip(xyxy, class_ids)):
         x_min, y_min, x_max, y_max = (int(box[0]), int(box[1]), int(box[2]), int(box[3]))
-        class_name = class_names_map.get(int(class_id), f"class_{int(class_id)}")
+        per_box_name = None
+        if index < len(bboxes_metadata):
+            per_box_name = bboxes_metadata[index].get(CLASS_NAME_KEY)
+        if per_box_name is not None:
+            class_name = str(per_box_name)
+        else:
+            class_name = class_names_map.get(int(class_id), f"class_{int(class_id)}")
         pairs.append(((x_min, y_min, x_max, y_max), class_name))
     return pairs
 

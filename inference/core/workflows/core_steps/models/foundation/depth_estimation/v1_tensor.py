@@ -9,6 +9,7 @@ from inference.core.env import (
     DEPTH_ESTIMATION_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -279,6 +280,10 @@ class DepthEstimationBlockV1(WorkflowBlock):
                 raise ValueError("Depth map has no variation (min equals max)")
             # Normalise to [0, 1] in torch - this stays the block's output.
             normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
+            # Pin the output tensor to the agreed workflow tensor device so the
+            # LOCAL path matches the REMOTE path's device contract (the remote
+            # path builds a CPU tensor; here we follow WORKFLOWS_IMAGE_TENSOR_DEVICE).
+            normalized_depth = normalized_depth.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
             image_output = _depth_to_visualization(
                 origin_image=single_image,
                 normalized_depth=normalized_depth,

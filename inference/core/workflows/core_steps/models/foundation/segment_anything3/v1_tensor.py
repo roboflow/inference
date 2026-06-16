@@ -1,6 +1,6 @@
 """Tensor-native sibling of `roboflow_core/sam3@v1`.
 
-SCRATCH — first pass for review. SAM3 v1 is a TEXT-prompted open-vocabulary
+SAM3 v1 is a TEXT-prompted open-vocabulary
 instance-segmentation producer (one text prompt per `class_names` entry; SAM3
 returns N masks per prompt with per-mask scores). Output is tensor-native
 `inference_models.InstanceDetections` (RLE masks by default), combining all
@@ -138,6 +138,11 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
+        # INTENTIONAL CORRECTION vs the numpy sibling (v1.py), which returns
+        # ["images", "boxes"] while declaring no `boxes` field — a manifest bug
+        # (it advertises a non-existent param as batched). SAM3 v1 has only the
+        # batched `images` input, so the correct value is ["images"]. The
+        # numpy-side discrepancy should be backported separately.
         return ["images"]
 
     @classmethod
@@ -419,9 +424,15 @@ def _collect_from_native(
             score = float(scores[i]) if i < len(scores) else 1.0
             if score < threshold:
                 continue
-            items.append(
-                (masks[i].astype(bool), score, idx, class_name or "foreground")
-            )
+            mask = masks[i].astype(bool)
+            # Drop empty masks HERE (not in the packer) so _build_instance_detections
+            # is a pure packer: every emitted Item is guaranteed non-empty, keeping
+            # masks/xyxy/confidence/class rows in lockstep. `mask.any()` is the
+            # tensor-native equivalent of the previous `np.where(...).size == 0`
+            # skip that lived in the builder.
+            if not mask.any():
+                continue
+            items.append((mask, score, idx, class_name or "foreground"))
     return items
 
 
@@ -431,7 +442,12 @@ def _build_instance_detections(
     mask_representation: str,
 ) -> InstanceDetections:
     """Build InstanceDetections from items that already carry dense binary masks
-    (the LOCAL native path: SAM3 returns dense masks, so dense is inherent here)."""
+    (the LOCAL native path: SAM3 returns dense masks, so dense is inherent here).
+
+    Pure packer: empty masks are dropped upstream in `_collect_from_native`, so
+    every Item here is non-empty and every list below grows by exactly one row per
+    item — masks/xyxy/confidence/class can never desync.
+    """
     height, width = image._read_shape_without_materialization()
     xyxy: List[List[float]] = []
     confidences: List[float] = []
@@ -442,8 +458,6 @@ def _build_instance_detections(
 
     for mask, score, class_id, class_name in items:
         ys, xs = np.where(mask)
-        if xs.size == 0:
-            continue
         xyxy.append([float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())])
         confidences.append(score)
         class_ids.append(class_id)

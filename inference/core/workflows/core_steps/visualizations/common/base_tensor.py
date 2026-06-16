@@ -78,8 +78,15 @@ def to_supervision_for_annotation(
     (the keypoint annotators take an ``sv.KeyPoints`` from the native
     ``KeyPoints`` component via its own ``.to_supervision()``, separately).
     """
-    if isinstance(prediction, (tuple, KeyPoints)):
+    if isinstance(prediction, tuple):
         _, detections = split_key_point_prediction(prediction)
+    elif isinstance(prediction, KeyPoints):
+        raise ValueError(
+            "A bare `KeyPoints` prediction (without its bounding-box component) "
+            "cannot be visualised by this block: the supervision annotators "
+            "require the bounding-box `Detections`. Provide the keypoint-detection "
+            "tuple `(KeyPoints, Detections)` instead."
+        )
     else:
         detections = prediction
     image_metadata = detections.image_metadata or {}

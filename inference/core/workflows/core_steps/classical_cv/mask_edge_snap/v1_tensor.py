@@ -1,18 +1,19 @@
-from typing import Annotated, List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union
+from uuid import uuid4
 
 import cv2
 import numpy as np
-import supervision as sv
 import torch
-from pydantic import AliasChoices, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import AliasChoices, ConfigDict, Field, field_validator
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
 
+from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.tensor_native import (
+    build_native_image_metadata,
     instance_mask_to_numpy,
 )
 from inference.core.workflows.execution_engine.constants import (
-    CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -503,28 +504,46 @@ def refine_masks(
     snap_region = edge_filtered > 0
 
     # Build edges detection output (native — single synthetic "edges" instance)
+    edges_image_metadata = build_native_image_metadata(
+        image=image,
+        class_names={0: "edges"},
+        prediction_type="object-detection",
+    )
     if snap_region.any():
         ys, xs = np.where(snap_region)
-        import uuid
-
         edges_detections = InstanceDetections(
             xyxy=torch.tensor(
                 [[xs.min(), ys.min(), xs.max() + 1, ys.max() + 1]],
                 dtype=torch.float32,
+                device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
             ),
-            class_id=torch.zeros((1,), dtype=torch.long),
-            confidence=torch.ones((1,), dtype=torch.float32),
-            mask=torch.from_numpy(snap_region[None, :, :]).to(torch.bool),
-            image_metadata={CLASS_NAMES_KEY: {0: "edges"}},
-            bboxes_metadata=[{DETECTION_ID_KEY: str(uuid.uuid4())}],
+            class_id=torch.zeros(
+                (1,), dtype=torch.long, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+            ),
+            confidence=torch.ones(
+                (1,), dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+            ),
+            mask=torch.from_numpy(snap_region[None, :, :]).to(
+                device=WORKFLOWS_IMAGE_TENSOR_DEVICE, dtype=torch.bool
+            ),
+            image_metadata=edges_image_metadata,
+            bboxes_metadata=[{DETECTION_ID_KEY: str(uuid4())}],
         )
     else:
         edges_detections = InstanceDetections(
-            xyxy=torch.zeros((0, 4), dtype=torch.float32),
-            class_id=torch.zeros((0,), dtype=torch.long),
-            confidence=torch.zeros((0,), dtype=torch.float32),
-            mask=torch.zeros((0, H, W), dtype=torch.bool),
-            image_metadata=None,
+            xyxy=torch.zeros(
+                (0, 4), dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+            ),
+            class_id=torch.zeros(
+                (0,), dtype=torch.long, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+            ),
+            confidence=torch.zeros(
+                (0,), dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+            ),
+            mask=torch.zeros(
+                (0, H, W), dtype=torch.bool, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+            ),
+            image_metadata=edges_image_metadata,
             bboxes_metadata=None,
         )
 
@@ -599,7 +618,9 @@ def refine_masks(
         xyxy=segmentation.xyxy,
         class_id=segmentation.class_id,
         confidence=segmentation.confidence,
-        mask=torch.from_numpy(refined_masks_np).to(bool),
+        mask=torch.from_numpy(refined_masks_np).to(
+            device=segmentation.xyxy.device, dtype=torch.bool
+        ),
         image_metadata=segmentation.image_metadata,
         bboxes_metadata=segmentation.bboxes_metadata,
     )

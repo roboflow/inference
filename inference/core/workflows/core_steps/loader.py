@@ -220,7 +220,10 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
     )
     from inference.core.workflows.core_steps.common.serializers_tensor import (
         serialise_native_classification,
+        serialise_native_embedding,
         serialise_native_keypoint_detection,
+        serialise_native_rle_detections,
+        serialise_native_tensor,
         serialise_rle_sv_detections,
         serialise_sv_detections,
     )
@@ -1326,15 +1329,20 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
     KINDS_SERIALIZERS[KEYPOINT_DETECTION_PREDICTION_KIND.name] = (
         serialise_native_keypoint_detection
     )
+    # semantic-seg uses the per-class RLE InstanceDetections carrier (Option B); emit
+    # the native COCO RLE per box (no polygon collapse) via the native RLE serialiser.
     KINDS_SERIALIZERS[SEMANTIC_SEGMENTATION_PREDICTION_KIND.name] = (
-        serialise_sv_detections
+        serialise_native_rle_detections
     )
     # instance-seg blocks declare the RLE kind too; the numpy `serialise_rle_sv_detections`
-    # cannot handle a native InstanceDetections, so route it to the tensor serialiser
-    # (which handles RLE masks via `_resolve_instance_polygon`).
+    # cannot handle a native InstanceDetections, so route it to the native RLE serialiser
+    # (which emits the COCO RLE from InstancesRLEMasks, original-index aligned).
     KINDS_SERIALIZERS[RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name] = (
-        serialise_sv_detections
+        serialise_native_rle_detections
     )
+    # Tensor-native embedding/tensor kinds serialise to plain Python lists.
+    KINDS_SERIALIZERS[EMBEDDING_KIND.name] = serialise_native_embedding
+    KINDS_SERIALIZERS[TENSOR_KIND.name] = serialise_native_tensor
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,

@@ -388,7 +388,7 @@ def to_legacy_classification_prediction(
         image_metadata = (prediction.images_metadata or [{}])[0] or {}
         height, width = _resolve_image_dimensions(image_metadata)
         class_names_mapping = image_metadata.get(CLASS_NAMES_KEY) or {}
-        confidence = prediction.confidence[0].detach().cpu().numpy()
+        confidence = prediction.confidence.detach().cpu().reshape(-1).numpy()
         predictions = [
             {
                 "class": _resolve_class_name(class_id, class_names_mapping),

@@ -194,14 +194,26 @@ def _combine_masks(
     device: torch.device,
 ) -> Union[torch.Tensor, InstancesRLEMasks]:
     """Combine the two instance masks, keeping the storage shape when it agrees:
-    RLE + RLE stays RLE (byte lists concatenated); anything else is materialised to
-    a dense ``(n, H, W)`` torch tensor (mirroring bounding_rect's RLE-in/RLE-out,
-    dense-in/dense-out convention but for two inputs)."""
-    both_rle = isinstance(prediction_one.mask, InstancesRLEMasks) and isinstance(
-        prediction_two.mask, InstancesRLEMasks
+    RLE + RLE stays RLE (byte lists concatenated); dense + dense is concatenated
+    on-device with ``torch.cat`` (no host round-trip); any remaining RLE/dense mix
+    is materialised to a dense ``(n, H, W)`` torch tensor (mirroring bounding_rect's
+    RLE-in/RLE-out, dense-in/dense-out convention but for two inputs)."""
+    mask_one = prediction_one.mask
+    mask_two = prediction_two.mask
+    both_rle = isinstance(mask_one, InstancesRLEMasks) and isinstance(
+        mask_two, InstancesRLEMasks
     )
     if both_rle:
         return _combine_rle_masks(prediction_one, prediction_two)
+    both_dense = isinstance(mask_one, torch.Tensor) and isinstance(
+        mask_two, torch.Tensor
+    )
+    if both_dense:
+        # Fast path: keep dense masks on-device, no device->host->device hop.
+        return torch.cat(
+            [mask_one.to(device), mask_two.to(device)], dim=0
+        )
+    # RLE/dense mix: fall back to the per-row numpy materialise path.
     return _combine_dense_masks(prediction_one, prediction_two, device=device)
 
 
@@ -291,9 +303,19 @@ class DetectionsCombineBlockV1(WorkflowBlock):
             prediction_two=prediction_two,
         )
 
-        has_masks = isinstance(prediction_one, InstanceDetections) and isinstance(
-            prediction_two, InstanceDetections
-        )
+        one_has_masks = isinstance(prediction_one, InstanceDetections)
+        two_has_masks = isinstance(prediction_two, InstanceDetections)
+        if one_has_masks != two_has_masks:
+            # Match numpy sv.Detections.merge: stack_or_none("mask") raises when
+            # some-but-not-all inputs carry masks ("All or none of the 'mask'
+            # fields must be None"). Mirror that here instead of silently dropping
+            # the instance-segmentation input's masks down the OD output path.
+            raise ValueError(
+                "Cannot combine an object-detection prediction with an "
+                "instance-segmentation prediction: all or none of the combined "
+                "predictions must carry masks (matching sv.Detections.merge)."
+            )
+        has_masks = one_has_masks and two_has_masks
         if has_masks:
             mask = _combine_masks(
                 prediction_one=prediction_one,

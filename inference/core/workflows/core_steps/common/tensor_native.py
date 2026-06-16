@@ -26,6 +26,7 @@ from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 
+from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_ID_KEY,
     CLASS_NAME_KEY,
@@ -69,14 +70,20 @@ def take_detections_by_indices(
 
     Per-detection state (``bboxes_metadata``) and masks (dense torch or RLE) are
     carried over for the surviving rows; ``image_metadata`` is shared as-is.
+
+    The surviving ``bboxes_metadata`` dicts are COPIED (not shared by reference)
+    so a downstream block that mutates a selected box's metadata (e.g. assigns a
+    ``tracker_id``) cannot leak the mutation back into the source prediction. The
+    index tensor is built on CPU and left to advanced indexing to move (avoiding a
+    per-call host->device sync of a small Python list); an identity selection
+    skips the gather entirely.
     """
     indices = list(indices)
-    index_tensor = torch.as_tensor(
-        indices, dtype=torch.long, device=detections.xyxy.device
-    )
+    is_identity = indices == list(range(int(detections.xyxy.shape[0])))
+    index_tensor = torch.as_tensor(indices, dtype=torch.long)
     bboxes_metadata = None
     if detections.bboxes_metadata is not None:
-        bboxes_metadata = [detections.bboxes_metadata[i] for i in indices]
+        bboxes_metadata = [dict(detections.bboxes_metadata[i]) for i in indices]
     if isinstance(detections, InstanceDetections):
         mask_field = detections.mask
         if isinstance(mask_field, InstancesRLEMasks):
@@ -84,20 +91,36 @@ def take_detections_by_indices(
                 image_size=mask_field.image_size,
                 masks=[mask_field.masks[i] for i in indices],
             )
+        elif is_identity:
+            new_mask = mask_field
         else:
             new_mask = mask_field[index_tensor]
         return InstanceDetections(
-            xyxy=detections.xyxy[index_tensor],
-            class_id=detections.class_id[index_tensor],
-            confidence=detections.confidence[index_tensor],
+            xyxy=detections.xyxy if is_identity else detections.xyxy[index_tensor],
+            class_id=(
+                detections.class_id
+                if is_identity
+                else detections.class_id[index_tensor]
+            ),
+            confidence=(
+                detections.confidence
+                if is_identity
+                else detections.confidence[index_tensor]
+            ),
             mask=new_mask,
             image_metadata=detections.image_metadata,
             bboxes_metadata=bboxes_metadata,
         )
     return Detections(
-        xyxy=detections.xyxy[index_tensor],
-        class_id=detections.class_id[index_tensor],
-        confidence=detections.confidence[index_tensor],
+        xyxy=detections.xyxy if is_identity else detections.xyxy[index_tensor],
+        class_id=(
+            detections.class_id if is_identity else detections.class_id[index_tensor]
+        ),
+        confidence=(
+            detections.confidence
+            if is_identity
+            else detections.confidence[index_tensor]
+        ),
         image_metadata=detections.image_metadata,
         bboxes_metadata=bboxes_metadata,
     )
@@ -108,18 +131,31 @@ def take_key_points_by_indices(
     indices: Sequence[int],
 ) -> KeyPoints:
     """Select instances of a ``KeyPoints`` by index list (slices along the
-    instance dimension; per-instance ``key_points_metadata`` carried over)."""
+    instance dimension; per-instance ``key_points_metadata`` carried over).
+
+    The surviving ``key_points_metadata`` dicts are COPIED (not shared by
+    reference) so downstream mutation cannot leak back into the source. The index
+    tensor is built on CPU and left to advanced indexing to move (avoiding a
+    per-call host->device sync); an identity selection skips the gather entirely.
+    """
     indices = list(indices)
-    index_tensor = torch.as_tensor(
-        indices, dtype=torch.long, device=key_points.xy.device
-    )
+    is_identity = indices == list(range(int(key_points.xy.shape[0])))
+    index_tensor = torch.as_tensor(indices, dtype=torch.long)
     key_points_metadata = None
     if key_points.key_points_metadata is not None:
-        key_points_metadata = [key_points.key_points_metadata[i] for i in indices]
+        key_points_metadata = [
+            dict(key_points.key_points_metadata[i]) for i in indices
+        ]
     return KeyPoints(
-        xy=key_points.xy[index_tensor],
-        class_id=key_points.class_id[index_tensor],
-        confidence=key_points.confidence[index_tensor],
+        xy=key_points.xy if is_identity else key_points.xy[index_tensor],
+        class_id=(
+            key_points.class_id if is_identity else key_points.class_id[index_tensor]
+        ),
+        confidence=(
+            key_points.confidence
+            if is_identity
+            else key_points.confidence[index_tensor]
+        ),
         image_metadata=key_points.image_metadata,
         key_points_metadata=key_points_metadata,
     )
@@ -183,13 +219,19 @@ def instance_mask_to_numpy(
 ) -> np.ndarray:
     """Materialise a single instance's mask as a 2-D ``np.ndarray`` of bool
     ``(H, W)``. RLE masks are decoded one instance at a time so the full stack
-    is never materialised at once (the same convention as the serialiser)."""
+    is never materialised at once (the same convention as the serialiser).
+
+    The dense seg-adapter mask is already ``torch.bool`` (binarised via
+    ``.gt_(threshold).to(dtype=torch.bool)`` in the post-processing path), so no
+    ``.astype(bool)`` is applied — the serialiser's dense branch makes the same
+    assumption.
+    """
     mask = detections.mask
     if isinstance(mask, InstancesRLEMasks):
         return coco_rle_masks_to_numpy_mask(
             InstancesRLEMasks(image_size=mask.image_size, masks=[mask.masks[index]])
         )[0]
-    return mask[index].detach().to("cpu").numpy().astype(bool)
+    return mask[index].detach().to("cpu").numpy()
 
 
 def build_native_image_metadata(
@@ -297,8 +339,13 @@ def native_detections_from_inference_predictions(
     Boxes are converted from center form to corner ``xyxy``. When ``class_names``
     is not supplied it is derived from the predictions' own ``class_id``/``class``
     pairs so the serialiser can resolve every id. A ``detection_id`` is preserved
-    when present, otherwise generated.
+    when present, otherwise generated. When ``device`` is not supplied the output
+    tensors are pinned to ``WORKFLOWS_IMAGE_TENSOR_DEVICE`` (so a REMOTE/HTTP
+    detection result lands on the same device as the LOCAL-path siblings rather
+    than silently staying on CPU).
     """
+    if device is None:
+        device = WORKFLOWS_IMAGE_TENSOR_DEVICE
     xyxy: List[List[float]] = []
     class_id: List[int] = []
     confidence: List[float] = []

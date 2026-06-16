@@ -13,6 +13,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from inference_models.models.base.object_detection import Detections
 
+from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
     create_classes_index,
@@ -22,6 +23,7 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detec
     scale_confidence,
 )
 from inference.core.workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -314,7 +316,7 @@ class VLMAsDetectorBlockV2(WorkflowBlock):
         except Exception as error:
             logging.warning(
                 f"Could not parse VLM prediction for model {model_type} and task {task_type} "
-                f"in `roboflow_core/vlm_as_detector@v1` block. "
+                f"in `roboflow_core/vlm_as_detector@v2` block. "
                 f"Error type: {error.__class__.__name__}. Details: {error}"
             )
             return {
@@ -346,7 +348,7 @@ def try_parse_json(content: str) -> Tuple[bool, Union[dict, list]]:
         return True, {}
     except Exception as error:
         logging.warning(
-            f"Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v1` block. "
+            f"Could not parse JSON to dict in `roboflow_core/vlm_as_detector@v2` block. "
             f"Error type: {error.__class__.__name__}. Details: {error}"
         )
         return True, {}
@@ -418,16 +420,37 @@ def native_detections_from_parsed(
         inference_id=inference_id,
         class_names=class_names,
     )
+    # Carry the per-box VLM label string directly on bboxes_metadata[i]["class"]
+    # so distinct unmapped labels (all sharing class_id == -1) survive: the
+    # serialiser prefers this per-box label over the class_id -> name map,
+    # matching numpy's per-detection class_name parity. Critical for the new
+    # openai/claude open-set paths which routinely emit multiple distinct -1s.
     bboxes_metadata = (
-        [{DETECTION_ID_KEY: str(uuid4())} for _ in range(number_of_detections)]
+        [
+            {
+                DETECTION_ID_KEY: str(uuid4()),
+                CLASS_NAME_KEY: str(detection_class_name),
+            }
+            for detection_class_name in class_name
+        ]
         if number_of_detections > 0
         else None
     )
     return Detections(
-        xyxy=torch.as_tensor(np.asarray(xyxy), dtype=torch.float32).reshape(-1, 4),
-        class_id=torch.as_tensor(np.asarray(class_id), dtype=torch.long).reshape(-1),
+        xyxy=torch.as_tensor(
+            np.asarray(xyxy),
+            dtype=torch.float32,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+        ).reshape(-1, 4),
+        class_id=torch.as_tensor(
+            np.asarray(class_id),
+            dtype=torch.long,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+        ).reshape(-1),
         confidence=torch.as_tensor(
-            np.asarray(confidence), dtype=torch.float32
+            np.asarray(confidence),
+            dtype=torch.float32,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
         ).reshape(-1),
         image_metadata=image_metadata,
         bboxes_metadata=bboxes_metadata,
@@ -449,9 +472,15 @@ def empty_native_detections(
         class_names=class_names,
     )
     return Detections(
-        xyxy=torch.zeros((0, 4), dtype=torch.float32),
-        class_id=torch.zeros((0,), dtype=torch.long),
-        confidence=torch.zeros((0,), dtype=torch.float32),
+        xyxy=torch.zeros(
+            (0, 4), dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
+        class_id=torch.zeros(
+            (0,), dtype=torch.long, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
+        confidence=torch.zeros(
+            (0,), dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
         image_metadata=image_metadata,
         bboxes_metadata=None,
     )
@@ -514,7 +543,12 @@ def parse_llm_object_detection_response(
 ) -> Detections:
     class_name2id = create_classes_index(classes=classes)
     image_height, image_width = image.numpy_image.shape[:2]
-    if len(parsed_data["detections"]) == 0:
+    # Mirror the gemini path's tolerance: accept a bare list root or a dict with
+    # a `detections` key, and raise a clear ValueError on any other shape instead
+    # of a KeyError on a missing key. Keeps openai/claude robust to real-world
+    # response wrapping (a list root, or `{}`).
+    detections = extract_gemini_detection_entries(parsed_data=parsed_data)
+    if len(detections) == 0:
         return empty_native_detections(
             image=image,
             image_height=image_height,
@@ -525,7 +559,7 @@ def parse_llm_object_detection_response(
             },
         )
     xyxy, class_id, class_name, confidence = [], [], [], []
-    for detection in parsed_data["detections"]:
+    for detection in detections:
         xyxy.append(
             [
                 detection["x_min"] * image_width,
@@ -589,7 +623,7 @@ def parse_florence2_object_detection_response(
             for name in detections.data.get("class_name", ["unknown"] * len(detections))
         ]
         detections.class_id = np.array(class_ids)
-    if florence_task_type in "<OPEN_VOCABULARY_DETECTION>":
+    if florence_task_type == "<OPEN_VOCABULARY_DETECTION>":
         class_name_to_id = {name: idx for idx, name in enumerate(classes)}
         class_ids = [
             class_name_to_id.get(name, -1)

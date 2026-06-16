@@ -8,6 +8,7 @@ from inference.core.cache.lru_cache import LRUCache
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -168,7 +169,9 @@ class ClipModelBlockV1(WorkflowBlock):
 
             cached_value = text_cache.get(hash_key)
             if cached_value is not None:
-                return {"embedding": cached_value}
+                # Cache holds a CPU tensor (so the process-wide LRU never pins GPU
+                # memory); honour the embedding device policy on read.
+                return {"embedding": cached_value.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)}
 
             embeddings = self._model_manager.run_tensor_native_inference(
                 clip_model_id,
@@ -177,9 +180,9 @@ class ClipModelBlockV1(WorkflowBlock):
             )
             embedding = embeddings[0]
 
-            text_cache.set(hash_key, embedding)
+            text_cache.set(hash_key, embedding.detach().cpu())
 
-            return {"embedding": embedding}
+            return {"embedding": embedding.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)}
         else:
             embeddings = self._model_manager.run_tensor_native_inference(
                 clip_model_id,
@@ -187,7 +190,7 @@ class ClipModelBlockV1(WorkflowBlock):
                 images=[data.tensor_image],
                 input_color_format="rgb",
             )
-            return {"embedding": embeddings[0]}
+            return {"embedding": embeddings[0].to(WORKFLOWS_IMAGE_TENSOR_DEVICE)}
 
     def run_remotely(
         self,
@@ -218,5 +221,11 @@ class ClipModelBlockV1(WorkflowBlock):
             )
 
         # Remote returns a JSON embedding (List[float]); convert to the
-        # tensor-native embedding representation (torch.Tensor).
-        return {"embedding": torch.tensor(result["embeddings"][0])}
+        # tensor-native embedding representation (torch.Tensor) on the pinned
+        # embedding device so LOCAL/REMOTE outputs share a device for downstream
+        # cosine math.
+        return {
+            "embedding": torch.tensor(
+                result["embeddings"][0], device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+            )
+        }

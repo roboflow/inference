@@ -387,7 +387,13 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
             # The adapter/model does NOT honour class_filter on the native path, so
             # filter here (the only place it is applied for LOCAL execution).
             detections = _filter_classes_native(detections, class_filter, class_names)
-            inference_id = str(uuid.uuid4())
+            # Reuse the adapter-provided inference id when present (numpy parity:
+            # numpy v4 surfaces ``p.get(INFERENCE_ID_KEY)`` off the model dump);
+            # the tensor-native adapter normally attaches none, so fall back to a
+            # freshly minted uuid that is then shared with ``image_metadata``.
+            inference_id = getattr(detections, "inference_id", None) or str(
+                uuid.uuid4()
+            )
             detections = attach_native_detection_metadata(
                 detections=detections,
                 image=image,
@@ -468,6 +474,12 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
         class_filter: Optional[List[str]],
         model_id: str,
     ) -> BlockResult:
+        # Fallback class_id -> name map from the model, used to name boxes whose
+        # remote prediction dict lacks a `class` key (otherwise the tensor
+        # serialiser hard-raises "class_id missing from mapping").
+        model_class_names = _class_names_map(
+            self._model_manager.get_class_names(model_id)
+        )
         results: List[dict] = []
         for image, response in zip(images, predictions):
             inference_id = response.get(INFERENCE_ID_KEY) or str(uuid.uuid4())
@@ -483,6 +495,7 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
                 prediction_type=PREDICTION_TYPE,
                 inference_id=inference_id,
                 device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+                model_class_names=model_class_names,
             )
             results.append(
                 {
@@ -506,10 +519,18 @@ def _filter_classes_native(
     if not class_filter:
         return detections
     accepted = set(class_filter)
-    keep = [
-        class_names.get(int(class_id)) in accepted
-        for class_id in detections.class_id.tolist()
-    ]
+    accepted_ids = sorted(
+        class_id for class_id, name in class_names.items() if name in accepted
+    )
+    if not accepted_ids:
+        return take_prediction_by_mask(
+            detections,
+            torch.zeros_like(detections.class_id, dtype=torch.bool),
+        )
+    accepted_tensor = torch.as_tensor(
+        accepted_ids, device=detections.class_id.device
+    )
+    keep = torch.isin(detections.class_id, accepted_tensor)
     return take_prediction_by_mask(detections, keep)
 
 
@@ -529,6 +550,7 @@ def _native_instance_detections_from_inference_predictions(
     prediction_type: str,
     inference_id: Optional[str] = None,
     device: Optional[torch.device] = None,
+    model_class_names: Optional[Dict[int, str]] = None,
 ) -> InstanceDetections:
     """REMOTE-path converter: build a native ``InstanceDetections`` from standard
     inference instance-segmentation prediction dicts.
@@ -541,6 +563,10 @@ def _native_instance_detections_from_inference_predictions(
     expect). Boxes are converted from center form to corner ``xyxy``. The
     ``class_id -> name`` map (required by the tensor serialiser) and per-box
     ``detection_id`` are built here too.
+
+    When a prediction omits its ``class`` key, the class name is backfilled from
+    ``model_class_names`` (the model's ``get_class_names`` map) so the tensor
+    serialiser does not hard-raise on an unmapped ``class_id``.
     """
     height, width = image._read_shape_without_materialization()
     xyxy: List[List[float]] = []
@@ -567,6 +593,13 @@ def _native_instance_detections_from_inference_predictions(
         confidence.append(float(prediction.get(CONFIDENCE_KEY, 1.0)))
         if CLASS_NAME_KEY in prediction:
             derived_class_names[prediction_class_id] = str(prediction[CLASS_NAME_KEY])
+        elif (
+            model_class_names is not None
+            and prediction_class_id in model_class_names
+        ):
+            derived_class_names[prediction_class_id] = model_class_names[
+                prediction_class_id
+            ]
         mask = _extract_rle_mask(prediction)
         if mask is None:
             raise ValueError(

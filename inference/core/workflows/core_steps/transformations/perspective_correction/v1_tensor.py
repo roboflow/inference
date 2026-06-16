@@ -56,6 +56,7 @@ from inference.core.workflows.core_steps.common.tensor_native import (
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
+    IMAGE_DIMENSIONS_KEY,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     PREDICTION_TYPE_KEY,
 )
@@ -965,6 +966,15 @@ def _correct_native_detections(
         class_names=class_names,
         prediction_type=prediction_type,
     )
+    # The corrected boxes/masks live in the destination (warped) frame, not the
+    # source image. ``attach_native_detection_metadata`` reports the source image
+    # dimensions, so override IMAGE_DIMENSIONS_KEY with the destination rect size
+    # [height, width] (parent/root lineage intentionally left as the source frame).
+    if corrected.image_metadata is not None:
+        corrected.image_metadata[IMAGE_DIMENSIONS_KEY] = [
+            int(round(transformed_rect_height)),
+            int(round(transformed_rect_width)),
+        ]
     return corrected
 
 

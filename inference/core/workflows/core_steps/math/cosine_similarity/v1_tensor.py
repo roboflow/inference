@@ -122,11 +122,15 @@ class CosineSimilarityBlockV1(WorkflowBlock):
     ) -> BlockResult:
         # Tensor-native embeddings stay on-device: compute cosine similarity in
         # torch (a·b / (||a||·||b||)) and only extract the final scalar.
-        if len(embedding_1) != len(embedding_2):
+        # Validate the vector dimension via shape[-1] and flatten to 1-D so both
+        # 1-D `(D,)` and batched `(1, D)` embeddings work with torch.dot.
+        if embedding_1.shape[-1] != embedding_2.shape[-1]:
             raise RuntimeError(
                 f"roboflow_core/cosine_similarity@v1 block feed with different shape of embeddings. "
-                f"`embedding_1`: (N, {len(embedding_1)}), `embedding_2`: (N, {len(embedding_2)})"
+                f"`embedding_1`: (N, {embedding_1.shape[-1]}), `embedding_2`: (N, {embedding_2.shape[-1]})"
             )
+        embedding_1 = embedding_1.reshape(-1)
+        embedding_2 = embedding_2.reshape(-1)
         similarity = torch.dot(embedding_1, embedding_2) / torch.sqrt(
             torch.dot(embedding_1, embedding_1) * torch.dot(embedding_2, embedding_2)
         )

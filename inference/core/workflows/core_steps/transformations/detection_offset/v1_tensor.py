@@ -186,11 +186,20 @@ def _read_image_dimensions(detections: TensorNativeDetections) -> tuple:
     The numpy block read a per-detection ``data["image_dimensions"]`` table, but
     natively a single ``[height, width]`` pair lives on ``image_metadata`` and is
     shared across every box of the prediction (all boxes belong to one image).
+
+    Raises when ``IMAGE_DIMENSIONS_KEY`` is absent — the numpy sibling indexed
+    ``detections.data["image_dimensions"]`` and would ``KeyError`` in that case,
+    so this raises for strict numpy parity (rather than degrading to an
+    un-clamped offset).
     """
     image_metadata = detections.image_metadata or {}
     image_dimensions = image_metadata.get(IMAGE_DIMENSIONS_KEY)
     if image_dimensions is None:
-        return None, None
+        raise ValueError(
+            "Detection Offset block requires image dimensions to clamp the "
+            f"offset boxes, but `{IMAGE_DIMENSIONS_KEY}` is missing from the "
+            "prediction's image_metadata."
+        )
     return int(image_dimensions[0]), int(image_dimensions[1])
 
 

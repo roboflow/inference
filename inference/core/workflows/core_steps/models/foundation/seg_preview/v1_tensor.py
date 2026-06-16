@@ -115,7 +115,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
-        return ["images", "boxes"]
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

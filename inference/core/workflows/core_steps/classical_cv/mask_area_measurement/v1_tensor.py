@@ -2,7 +2,6 @@ from typing import List, Literal, Optional, Type, Union
 
 import cv2 as cv
 import numpy as np
-import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference_models.models.base.instance_segmentation import InstanceDetections

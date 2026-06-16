@@ -1,9 +1,8 @@
 import heapq
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-import numpy as np
 from pydantic import ConfigDict, Field
 
 from inference_models.models.base.instance_segmentation import InstanceDetections

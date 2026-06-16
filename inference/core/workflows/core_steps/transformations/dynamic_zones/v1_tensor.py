@@ -1,4 +1,5 @@
 from typing import List, Literal, Optional, Tuple, Type, Union
+from uuid import uuid4
 
 import cv2 as cv
 import numpy as np
@@ -14,6 +15,7 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
 )
 from inference.core.workflows.execution_engine.constants import (
+    DETECTION_ID_KEY,
     POLYGON_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -361,6 +363,28 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 )
                 continue
             number_of_detections = int(detections.xyxy.shape[0])
+            if number_of_detections == 0:
+                # Empty-but-typed instance-segmentation input (0 rows, mask
+                # present as an empty (0, H, W) dense tensor or empty-RLE carrier)
+                # is a legitimate upstream output. The per-instance loop would
+                # never run and ``np.stack([])`` would raise; return an empty
+                # InstanceDetections that preserves image_metadata + the original
+                # mask carrier, with convergence reported as True.
+                result.append(
+                    {
+                        OUTPUT_KEY: [],
+                        OUTPUT_KEY_DETECTIONS: InstanceDetections(
+                            xyxy=detections.xyxy,
+                            class_id=detections.class_id,
+                            confidence=detections.confidence,
+                            mask=detections.mask,
+                            image_metadata=detections.image_metadata,
+                            bboxes_metadata=None,
+                        ),
+                        OUTPUT_KEY_SIMPLIFICATION_CONVERGED: True,
+                    }
+                )
+                continue
             simplified_polygons = []
             new_dense_masks: List[np.ndarray] = []
             existing_meta = detections.bboxes_metadata or [
@@ -402,6 +426,10 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     **(existing_meta[i] or {}),
                     POLYGON_KEY_IN_SV_DETECTIONS: np.array([simplified_polygon]),
                 }
+                # Backfill detection_id so output rows always satisfy the
+                # per-box detection_id producer contract even when upstream
+                # omitted it (preserves any existing id).
+                per_box_meta.setdefault(DETECTION_ID_KEY, str(uuid4()))
                 new_bboxes_metadata.append(per_box_meta)
                 simplified_polygon = scale_polygon(
                     polygon=simplified_polygon,

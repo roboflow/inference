@@ -6,6 +6,7 @@ from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     MOONDREAM2_ENABLED,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -213,6 +214,7 @@ class Moondream2BlockV1(WorkflowBlock):
                 predictions=result.get("predictions", []),
                 prediction_type="object-detection",
                 class_names=class_names,
+                device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
             )
             predictions.append({"predictions": detections})
         return predictions

@@ -34,9 +34,8 @@ tensor serialiser already handles native ``Detections`` / ``InstanceDetections``
 """
 
 from copy import deepcopy
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-import cv2
 import numpy as np
 import torch
 from pydantic import AliasChoices, ConfigDict, Field
@@ -257,7 +256,7 @@ def crop_image(
     mask_opacity: float,
     background_color: Union[str, Tuple[int, int, int]],
     detection_id_key: str = DETECTION_ID_KEY,
-) -> List[Dict[str, any]]:
+) -> List[Dict[str, Any]]:
     bbox_detections = _bbox_carrier(predictions)
     if bbox_detections is None or len(bbox_detections) == 0:
         return []
@@ -271,9 +270,19 @@ def crop_image(
         )
     # Round to int with torch, then materialise the (n, 4) corner ints to host once.
     xyxy_int = bbox_detections.xyxy.round().to(torch.int64).detach().to("cpu").numpy()
-    crops: List[Dict[str, any]] = []
+    # tensor_image is CHW; clamp box corners to the image bounds so a box that
+    # extends past an edge does not slice with a negative index (torch, like numpy,
+    # would treat a negative start as "from the end") and so the (-x_min, -y_min)
+    # translation offset stays consistent with the actually-cropped region.
+    image_height = int(image.tensor_image.shape[1])
+    image_width = int(image.tensor_image.shape[2])
+    crops: List[Dict[str, Any]] = []
     for idx in range(len(bbox_detections)):
         x_min, y_min, x_max, y_max = (int(v) for v in xyxy_int[idx])
+        x_min = max(0, min(x_min, image_width))
+        y_min = max(0, min(y_min, image_height))
+        x_max = max(0, min(x_max, image_width))
+        y_max = max(0, min(y_max, image_height))
         detection_id = bboxes_metadata[idx][detection_id_key]
         # tensor_image is CHW; crop on-device and skip empties (out-of-bounds boxes).
         cropped_tensor_image = image.tensor_image[:, y_min:y_max, x_min:x_max]
@@ -288,8 +297,10 @@ def crop_image(
         ):
             cropped_tensor_image = _overlay_tensor_crop_with_mask(
                 crop=cropped_tensor_image,
-                detection_mask_2d=_instance_mask_bool(
-                    detections=bbox_detections, index=idx
+                detection_mask_2d=_instance_mask_bool_tensor(
+                    detections=bbox_detections,
+                    index=idx,
+                    device=cropped_tensor_image.device,
                 )[y_min:y_max, x_min:x_max],
                 mask_opacity=mask_opacity,
                 background_color=background_color,
@@ -415,14 +426,21 @@ def _subtract_offset(
 ) -> Union[List, np.ndarray]:
     """Subtract ``offset_xy`` ([x, y]) from a coordinate container, preserving whether
     the caller stored a python list (keypoints flattened by the keypoint producer) or a
-    numpy array (sv-origin OBB / polygon)."""
+    numpy array (sv-origin OBB / polygon). Integer coordinates stay integers after the
+    shift (the flattened ``keypoints_xy`` entries should not silently become floats)."""
     if value is None:
         return value
     was_list = isinstance(value, list)
-    array = np.asarray(value, dtype=float)
+    array = np.asarray(value)
     if array.size == 0:
         return value
-    shifted = array - offset_xy
+    # Preserve integer coordinates (e.g. keypoints stored as ints) so the shift
+    # does not coerce them to float; non-integer inputs keep float precision.
+    is_integer = np.issubdtype(array.dtype, np.integer)
+    if is_integer:
+        shifted = array.astype(np.int64) - offset_xy.astype(np.int64)
+    else:
+        shifted = array.astype(float) - offset_xy
     return shifted.tolist() if was_list else shifted
 
 
@@ -454,50 +472,50 @@ def _crop_native_mask(
     return mask[:, y_min:y_max, x_min:x_max].contiguous()
 
 
-def _instance_mask_bool(
+def _instance_mask_bool_tensor(
     detections: InstanceDetections,
     index: int,
-) -> np.ndarray:
-    """Materialise a single instance's full-image mask as a 2-D bool ``np.ndarray``
-    ``(H, W)`` for the background-removal overlay. RLE is decoded one instance at a
-    time (same convention as the serialiser / tensor_native helpers)."""
+    device: torch.device,
+) -> torch.Tensor:
+    """Materialise a single instance's full-image mask as a 2-D bool ``torch.Tensor``
+    ``(H, W)`` on ``device`` for the background-removal overlay. A dense torch mask
+    stays on-device (no host round trip); RLE is decoded one instance at a time and
+    moved to ``device`` (the RLE codec is numpy-only)."""
     mask = detections.mask
     if isinstance(mask, InstancesRLEMasks):
-        return coco_rle_masks_to_numpy_mask(
+        single = coco_rle_masks_to_numpy_mask(
             InstancesRLEMasks(image_size=mask.image_size, masks=[mask.masks[index]])
         )[0].astype(bool)
-    return mask[index].detach().to("cpu").numpy().astype(bool)
+        return torch.as_tensor(single, dtype=torch.bool, device=device)
+    return mask[index].to(device=device, dtype=torch.bool)
 
 
 def _overlay_tensor_crop_with_mask(
     crop: torch.Tensor,
-    detection_mask_2d: np.ndarray,
+    detection_mask_2d: torch.Tensor,
     mask_opacity: float,
     background_color: Union[str, Tuple[int, int, int]],
 ) -> torch.Tensor:
-    """Background-removal overlay for tensor crops. The blend is identical to the numpy
-    block (``cv2.addWeighted`` on a BGR HWC uint8 crop), but the input/output are CHW
-    RGB uint8 torch tensors on the crop's device.
+    """Background-removal overlay for tensor crops, computed entirely on the crop's
+    device. Equivalent to the numpy block's ``cv2.addWeighted`` blend, but expressed
+    as a ``torch.where`` + lerp so a GPU pipeline never pays a per-crop host round trip.
 
-    NOTE: this matches the numpy block by going through cv2 (no native equivalent of
-    ``cv2.addWeighted`` is used elsewhere in the tensor siblings); the only device round
-    trip happens here, and only when background removal is requested."""
+    Inside the instance mask the crop is kept verbatim; outside it the pixel is faded
+    toward ``background_color`` by ``mask_opacity`` (``mask_opacity * bg +
+    (1 - mask_opacity) * crop``), matching the numpy result for both regions.
+
+    ``crop`` is CHW RGB uint8; ``detection_mask_2d`` is a (H, W) bool tensor already
+    sliced to the crop box, both on the same device."""
     device = crop.device
-    # CHW RGB -> HWC BGR uint8 (cv2 / numpy block convention).
-    hwc_rgb = crop.detach().permute(1, 2, 0).to("cpu").numpy()
-    crop_bgr = hwc_rgb[:, :, ::-1].copy()
-    mask_3c = np.stack([detection_mask_2d] * 3, axis=-1)
+    # convert_color_to_bgr_tuple yields BGR; the crop tensor is RGB, so reverse it.
     bgr_color = convert_color_to_bgr_tuple(color=background_color)
-    background = (np.ones_like(crop_bgr) * bgr_color).astype(np.uint8)
-    blended_crop = np.where(mask_3c > 0, crop_bgr, background)
-    overlaid_bgr = cv2.addWeighted(
-        blended_crop, mask_opacity, crop_bgr, 1.0 - mask_opacity, 0
-    )
-    # HWC BGR -> CHW RGB uint8 tensor back on the crop's device.
-    overlaid_rgb = overlaid_bgr[:, :, ::-1].copy()
-    return (
-        torch.from_numpy(overlaid_rgb).permute(2, 0, 1).contiguous().to(device)
-    )
+    rgb_color = tuple(bgr_color[::-1])
+    bg = torch.tensor(rgb_color, dtype=torch.float32, device=device).reshape(3, 1, 1)
+    crop_float = crop.to(dtype=torch.float32)
+    faded = mask_opacity * bg + (1.0 - mask_opacity) * crop_float
+    mask_3c = detection_mask_2d.to(device=device, dtype=torch.bool).unsqueeze(0)
+    overlaid = torch.where(mask_3c, crop_float, faded)
+    return overlaid.round().clamp_(0, 255).to(dtype=crop.dtype).contiguous()
 
 
 def convert_color_to_bgr_tuple(

@@ -185,6 +185,13 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         self._batch_of_last_known_detections: Dict[
             str, Dict[Union[int, str], NativeDetections]
         ] = {}
+        # Parallel cache of each cached slice's xyxy as a small (4,) numpy array,
+        # so the numpy Kalman / smoothing loops don't re-issue a device->host
+        # ``.to("cpu")`` per cached detection every frame (mirrors the slices in
+        # ``_batch_of_last_known_detections`` and is updated in lockstep).
+        self._batch_of_last_known_xyxy: Dict[
+            str, Dict[Union[int, str], np.ndarray]
+        ] = {}
         self._batch_of_kalman_filters: Dict[Union[int, str], VelocityKalmanFilter] = {}
 
     @classmethod
@@ -222,6 +229,9 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         cached_detections = self._batch_of_last_known_detections.setdefault(
             metadata.video_identifier, {}
         )
+        cached_xyxy = self._batch_of_last_known_xyxy.setdefault(
+            metadata.video_identifier, {}
+        )
         kalman_filter = self._batch_of_kalman_filters.setdefault(
             metadata.video_identifier,
             VelocityKalmanFilter(smoothing_window_size=smoothing_window_size),
@@ -233,7 +243,7 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
                 continue
             x1, y1, x2, y2 = xyxy_rows[i]
             this_frame_center_xy = [x1 + abs(x2 - x1), y1 + abs(y2 - y1)]
-            px1, py1, px2, py2 = _row_xyxy(cached_detections[tracker_id])
+            px1, py1, px2, py2 = cached_xyxy[tracker_id]
             prev_frame_center_xy = [px1 + abs(px2 - px1), py1 + abs(py2 - py1)]
             measured_velocities[tracker_id] = (
                 this_frame_center_xy[0] - prev_frame_center_xy[0],
@@ -247,7 +257,7 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         for i, tracker_id in enumerate(tracker_ids):
             curr_frame_detection = take_detections_by_indices(detections, [i])
             if tracker_id in cached_detections:
-                prev_frame_xyxy = np.asarray(_row_xyxy(cached_detections[tracker_id]))
+                prev_frame_xyxy = np.asarray(cached_xyxy[tracker_id])
                 curr_frame_xyxy = xyxy_rows[i]
                 smoothed = smooth_xyxy(
                     prev_xyxy=prev_frame_xyxy,
@@ -261,12 +271,15 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
             # Cache the unsmoothed current detection for next frame's velocity /
             # gap-fill measurements (mirrors the numpy block caching detections[i]).
             cached_detections[tracker_id] = take_detections_by_indices(detections, [i])
+            cached_xyxy[tracker_id] = np.asarray(xyxy_rows[i], dtype=float).reshape(-1)[
+                :4
+            ]
 
         for tracker_id, predicted_velocity in predicted_velocities.items():
             if tracker_id in predicted_detections:
                 continue
             prev_frame_detection = cached_detections[tracker_id]
-            prev_frame_xyxy = np.asarray(_row_xyxy(prev_frame_detection))
+            prev_frame_xyxy = np.asarray(cached_xyxy[tracker_id])
             curr_frame_xyxy = np.array(
                 [
                     prev_frame_xyxy
@@ -280,6 +293,10 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
             )
             _set_row_xyxy(prev_frame_detection, smoothed, device=device)
             predicted_detections[tracker_id] = prev_frame_detection
+            # The cached slice was mutated in place to the smoothed/predicted box;
+            # keep the numpy xyxy cache in lockstep so next frame reads the same
+            # box without another device->host copy.
+            cached_xyxy[tracker_id] = np.asarray(smoothed, dtype=float).reshape(-1)[:4]
 
         for tracker_id in list(cached_detections.keys()):
             if (
@@ -287,6 +304,7 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
                 and tracker_id not in predicted_detections
             ):
                 del cached_detections[tracker_id]
+                cached_xyxy.pop(tracker_id, None)
 
         merged_detections = _merge_native_detections(
             list(predicted_detections.values()),

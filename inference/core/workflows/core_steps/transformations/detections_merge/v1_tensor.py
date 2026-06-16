@@ -227,7 +227,11 @@ class DetectionsMergeBlockV1(WorkflowBlock):
         ):
             return {OUTPUT_KEY: _empty_detections(class_name=class_name)}
 
-        device = detections.xyxy.device
+        # Single device policy for the merged output: pin to
+        # WORKFLOWS_IMAGE_TENSOR_DEVICE so the non-empty path matches
+        # ``_empty_detections`` and the producer contract, instead of inheriting
+        # the (possibly divergent) input prediction device.
+        device = WORKFLOWS_IMAGE_TENSOR_DEVICE
 
         # Union bounding box: leftmost/topmost via torch.min over column 0/1, and
         # rightmost/bottommost via torch.max over column 2/3 of the xyxy rows.

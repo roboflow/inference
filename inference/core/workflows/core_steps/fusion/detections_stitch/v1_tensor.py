@@ -243,9 +243,9 @@ def retrieve_crop_offset(detections: TensorNativeDetections) -> Optional[np.ndar
     image_metadata = detections.image_metadata or {}
     if PARENT_COORDINATES_KEY not in image_metadata:
         raise RuntimeError(
-            f"Offset for crops is expected to be saved in data key {PARENT_COORDINATES_KEY} "
-            f"of sv.Detections, but could not be found. Probably block producing sv.Detections "
-            f"lack this part of implementation or has a bug."
+            f"Offset for crops is expected to be saved in image_metadata key {PARENT_COORDINATES_KEY} "
+            f"of the tensor-native detections, but could not be found. Probably block producing the "
+            f"detections lack this part of implementation or has a bug."
         )
     return np.asarray(image_metadata[PARENT_COORDINATES_KEY][:2]).copy()
 
@@ -476,6 +476,22 @@ def _merge_image_metadata(
     return merged
 
 
+def _ensure_class_names_map(image_metadata: dict, class_id: torch.Tensor) -> dict:
+    """Guarantee image_metadata carries a class_names map covering every output
+    class_id so the serializer's per-row class_id lookup never fails when the
+    merged metadata was None/map-less. Existing names are preserved; any
+    surviving class_id without an entry falls back to f"class_{id}"."""
+    image_metadata = dict(image_metadata)
+    class_names = dict(image_metadata.get(CLASS_NAMES_KEY) or {})
+    class_names = {int(key): value for key, value in class_names.items()}
+    for class_id_value in class_id.detach().to("cpu").tolist():
+        class_id_int = int(class_id_value)
+        if class_id_int not in class_names:
+            class_names[class_id_int] = f"class_{class_id_int}"
+    image_metadata[CLASS_NAMES_KEY] = class_names
+    return image_metadata
+
+
 def _merge_masks(
     detections_list: List[InstanceDetections],
 ) -> Union[torch.Tensor, InstancesRLEMasks]:
@@ -521,9 +537,15 @@ def with_nms(
         data={"__row_index__": np.arange(number_of_detections)},
     ).with_nms(threshold=threshold)
     surviving_indices = nms_input.data["__row_index__"].astype(int).tolist()
-    return take_prediction_by_indices(
+    survivors = take_prediction_by_indices(
         prediction=detections, indices=surviving_indices
     )
+    # Guarantee a class_names map covering the surviving class_ids so a non-empty
+    # NMS result never trips the serializer when the merged metadata is map-less.
+    survivors.image_metadata = _ensure_class_names_map(
+        survivors.image_metadata or {}, survivors.class_id
+    )
+    return survivors
 
 
 def with_nmm(
@@ -566,6 +588,9 @@ def with_nmm(
     confidence = torch.as_tensor(
         np.asarray(nmm_output.confidence), dtype=torch.float32, device=device
     )
+    # Guarantee a class_names map covering the output class_ids so a non-empty
+    # NMM result never trips the serializer when the input metadata is None/map-less.
+    image_metadata = _ensure_class_names_map(image_metadata, class_id)
     if is_instance_segmentation:
         if nmm_output.mask is not None:
             mask = torch.as_tensor(

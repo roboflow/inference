@@ -1,24 +1,32 @@
 """Tensor-native sibling of `roboflow_core/sam3@v2`.
 
-SCRATCH — first pass for review. Builds on the v1_tensor SAM3 conversion, adding
-per-class confidence thresholds + cross-prompt NMS. Because
-`run_tensor_native_inference` is a THIN forward to `segment_with_text_prompts`
-(it applies only a single global threshold floor), this block must replicate the
-adapter's per-class-threshold + cross-prompt-NMS orchestration itself — reusing
-the adapter helpers `_collect_masks_with_per_prompt_threshold` and
-`_apply_nms_cross_prompt` on the raw native masks, then building one
-`inference_models.InstanceDetections` per image (RLE-default).
+Builds on the v1_tensor SAM3 conversion, adding per-class confidence thresholds +
+cross-prompt NMS. Because `run_tensor_native_inference` is a THIN forward to
+`segment_with_text_prompts` (it applies only a single global threshold floor),
+this block must replicate the adapter's per-class-threshold + cross-prompt-NMS
+orchestration itself. Rather than reach across the package boundary into the
+private `inference.models.sam3` adapter internals (the previous, fragile design),
+this block keeps LOCAL COPIES of those helpers (see the TODO(sam3-public-adapter)
+note below); they run the per-class threshold + cross-prompt NMS on the raw
+native masks, then build one `inference_models.InstanceDetections` per image
+(RLE-default).
+
+When NMS runs against the RLE carrier, the COCO RLEs that NMS already encodes for
+IoU are reused to build the output `InstancesRLEMasks` directly, instead of
+re-encoding the kept dense masks a second time in `_build_instance_detections`.
 
 Output is tensor-native. REMOTE/proxy paths forward per-class thresholds +
 nms_iou_threshold to the server (which applies them, matching the numpy block) and
 rasterise the returned polygon response via the v1_tensor polygon path.
 """
 
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+import uuid
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import requests
-from pydantic import ConfigDict, Field, model_validator, validator
+from pycocotools import mask as mask_utils
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.entities.requests.sam3 import Sam3Prompt
 from inference.core.env import (
@@ -30,6 +38,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     SAM3_EXEC_MODE,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
@@ -62,20 +71,39 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
+    DETECTION_ID_KEY,
+)
 from inference_sdk import InferenceHTTPClient
 
-from inference.models.sam3.segment_anything3_inference_models import (
-    _apply_nms_cross_prompt,
-    _collect_masks_with_per_prompt_threshold,
-)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.types import InstancesRLEMasks
 
 # Reuse the v1_tensor SAM3 conversion machinery verbatim.
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
     Item,
+    _assemble_detections,
     _build_instance_detections,
     _build_instance_detections_from_polygons,
     _normalize_class_names,
 )
+
+# TODO(sam3-public-adapter): these per-class-threshold + cross-prompt-NMS helpers
+# are LOCAL COPIES of the private `inference.models.sam3.
+# segment_anything3_inference_models` internals
+# (`_to_numpy_masks`, `_collect_masks_with_per_prompt_threshold`,
+# `_apply_nms_cross_prompt`, `_nms_greedy_pycocotools`). They were previously
+# imported across the package boundary from those underscore-prefixed adapter
+# internals, which carry no API-stability guarantee and forced this workflow
+# block to track the adapter by hand. We copy them here (decoupling the block
+# from adapter refactors) until inference_models exposes a PUBLIC,
+# tested entrypoint that performs per-class threshold + cross-prompt NMS
+# adapter-side (e.g. a `run_tensor_native_inference` mode that returns
+# post-NMS, post-per-class-threshold native masks). When that lands, delete
+# these copies and consume the public result directly. Keep this logic in
+# byte-for-byte parity with the adapter so numpy/tensor behaviour stays defined
+# in one place until the public API exists.
 
 LONG_DESCRIPTION = """
 Run Segment Anything 3 (zero-shot, text-prompted) with per-class confidence
@@ -150,7 +178,8 @@ class BlockManifest(WorkflowBlockManifest):
         "'rle' on GCP_SERVERLESS regardless of this value.",
     )
 
-    @validator("nms_iou_threshold")
+    @field_validator("nms_iou_threshold")
+    @classmethod
     def _validate_nms_iou_threshold(cls, v):
         if isinstance(v, (int, float)) and (v < 0.0 or v > 1.0):
             raise ValueError("nms_iou_threshold must be between 0.0 and 1.0")
@@ -324,18 +353,18 @@ class SegmentAnything3BlockV2(WorkflowBlock):
                 prompts=native_prompts,
                 output_prob_thresh=float(floor),
             )
-            items = _collect_from_native_with_nms(
-                per_prompt_results=per_image[0],
-                class_names=class_names,
-                prompts=sam3_prompts,
-                global_confidence=confidence,
-                apply_nms=apply_nms,
-                nms_iou_threshold=nms_iou_threshold,
-            )
+            # When NMS runs against the RLE carrier, _collect_and_build reuses the
+            # COCO RLEs NMS already encoded for IoU (no second encode); otherwise it
+            # falls back to the dense packer (_build_instance_detections).
             results.append(
                 {
-                    "predictions": _build_instance_detections(
-                        items=items,
+                    "predictions": _collect_and_build(
+                        per_prompt_results=per_image[0],
+                        class_names=class_names,
+                        prompts=sam3_prompts,
+                        global_confidence=confidence,
+                        apply_nms=apply_nms,
+                        nms_iou_threshold=nms_iou_threshold,
                         image=single_image,
                         mask_representation=mask_representation,
                     )
@@ -486,21 +515,115 @@ def _min_floor(
     return confidence
 
 
-def _collect_from_native_with_nms(
+# --------------------------------------------------------------------------- #
+# LOCAL COPIES of the SAM3 adapter per-class-threshold + cross-prompt-NMS
+# helpers. See TODO(sam3-public-adapter) at the top of this module. Keep these
+# in byte-for-byte parity with
+# inference.models.sam3.segment_anything3_inference_models until a public
+# adapter entrypoint exists.
+# --------------------------------------------------------------------------- #
+def _to_numpy_masks(masks_any) -> np.ndarray:
+    if masks_any is None:
+        return np.zeros((0, 0, 0), dtype=np.uint8)
+    if hasattr(masks_any, "detach"):
+        masks_np = masks_any.detach().cpu().numpy().astype(np.uint8)
+    else:
+        arrs = []
+        for m in masks_any:
+            if hasattr(m, "detach"):
+                arrs.append(m.detach().cpu().numpy().astype(np.uint8))
+            else:
+                arrs.append(np.asarray(m, dtype=np.uint8))
+        if not arrs:
+            return np.zeros((0, 0, 0), dtype=np.uint8)
+        masks_np = np.stack(arrs, axis=0)
+    if masks_np.ndim == 4 and masks_np.shape[1] == 1:
+        masks_np = masks_np[:, 0, ...]
+    elif masks_np.ndim == 2:
+        masks_np = masks_np[None, ...]
+    return masks_np
+
+
+def _collect_masks_with_per_prompt_threshold(
+    processed: Dict[int, Dict[str, Any]],
+    prompts: List[Sam3Prompt],
+    default_threshold: float,
+) -> List[Tuple[int, np.ndarray, float]]:
+    all_masks: List[Tuple[int, np.ndarray, float]] = []
+    for idx, p in enumerate(prompts):
+        prompt_thresh = getattr(p, "output_prob_thresh", None)
+        if prompt_thresh is None:
+            prompt_thresh = default_threshold
+        masks_np = _to_numpy_masks(processed[idx]["masks"])
+        scores = processed[idx]["scores"]
+        if masks_np.ndim != 3 or 0 in masks_np.shape:
+            continue
+        for mask, score in zip(masks_np, scores):
+            if score >= prompt_thresh:
+                all_masks.append((idx, mask, float(score)))
+    return all_masks
+
+
+def _nms_greedy_pycocotools(
+    rles: List[dict],
+    confidences: np.ndarray,
+    iou_threshold: float = 0.5,
+) -> np.ndarray:
+    num_detections = len(rles)
+    if num_detections == 0:
+        return np.array([], dtype=bool)
+    sort_index = np.argsort(confidences)[::-1]
+    sorted_rles = [rles[i] for i in sort_index]
+    ious = mask_utils.iou(sorted_rles, sorted_rles, [0] * num_detections)
+    keep = np.ones(num_detections, dtype=bool)
+    for i in range(num_detections):
+        if keep[i]:
+            condition = ious[i, :] > iou_threshold
+            keep[i + 1 :] = np.where(condition[i + 1 :], False, keep[i + 1 :])
+    return keep[np.argsort(sort_index)]
+
+
+def _encode_mask_to_rle(mask_np: np.ndarray) -> dict:
+    """COCO-RLE-encode a single (H,W) mask, returning the pycocotools dict
+    ({"size": [...], "counts": <bytes>}) — the exact shape
+    InstancesRLEMasks.from_coco_rle_masks consumes."""
+    mb = (mask_np > 0).astype(np.uint8)
+    return mask_utils.encode(np.asfortranarray(mb))
+
+
+def _apply_nms_cross_prompt_with_rles(
+    all_masks: List[Tuple[int, np.ndarray, float]],
+    iou_threshold: float,
+) -> Tuple[List[Tuple[int, np.ndarray, float]], List[dict]]:
+    """Cross-prompt greedy NMS (local copy of the adapter's
+    `_apply_nms_cross_prompt`) that ALSO returns the per-kept-mask COCO RLEs it
+    already computed for IoU. Reusing these downstream avoids encoding the kept
+    masks to RLE a second time when building the RLE output carrier.
+    """
+    if not all_masks:
+        return all_masks, []
+    rles = [_encode_mask_to_rle(mask_np) for _, mask_np, _ in all_masks]
+    confidences = np.array([score for _, _, score in all_masks])
+    keep = _nms_greedy_pycocotools(rles, confidences, iou_threshold)
+    kept_masks = [all_masks[i] for i in range(len(all_masks)) if keep[i]]
+    kept_rles = [rles[i] for i in range(len(all_masks)) if keep[i]]
+    return kept_masks, kept_rles
+
+
+def _threshold_and_nms(
     per_prompt_results: List[dict],
-    class_names: List[Optional[str]],
     prompts: List[Sam3Prompt],
     global_confidence: float,
     apply_nms: bool,
     nms_iou_threshold: float,
-) -> List[Item]:
-    """Replicate the adapter's per-class-threshold + cross-prompt NMS on the raw
-    native masks, then flatten to Items for _build_instance_detections.
+) -> Tuple[List[Tuple[int, np.ndarray, float]], Optional[List[dict]]]:
+    """Run per-class threshold + (optional) cross-prompt NMS on the raw native
+    masks. Returns the kept (prompt_idx, mask(H,W), score) rows and, when NMS
+    actually ran, the matching COCO RLEs (else None).
 
     The adapter helpers key `processed` by enumerate(prompts) order, so we key the
     native results by prompt_index (pre-seeding all idx) to keep them aligned, and
-    pass raw (N,1,H,W) masks straight through — `_to_numpy_masks` inside squeezes
-    and casts.
+    pass raw (N,1,H,W) masks straight through — `_to_numpy_masks` squeezes/casts.
     """
     processed: Dict[int, Dict[str, Any]] = {
         idx: {"masks": None, "scores": []} for idx in range(len(prompts))
@@ -514,15 +637,38 @@ def _collect_from_native_with_nms(
             "scores": list(result.get("scores", [])),
         }
 
-    # Per-class (or global-fallback) threshold; returns List[(prompt_idx, mask(H,W), score)].
     all_masks = _collect_masks_with_per_prompt_threshold(
         processed=processed,
         prompts=prompts,
         default_threshold=global_confidence,
     )
+    kept_rles: Optional[List[dict]] = None
     if apply_nms and nms_iou_threshold is not None and len(all_masks) > 0:
-        all_masks = _apply_nms_cross_prompt(all_masks, nms_iou_threshold)
+        all_masks, kept_rles = _apply_nms_cross_prompt_with_rles(
+            all_masks, nms_iou_threshold
+        )
+    return all_masks, kept_rles
 
+
+def _collect_from_native_with_nms(
+    per_prompt_results: List[dict],
+    class_names: List[Optional[str]],
+    prompts: List[Sam3Prompt],
+    global_confidence: float,
+    apply_nms: bool,
+    nms_iou_threshold: float,
+) -> List[Item]:
+    """Per-class-threshold + cross-prompt NMS on the raw native masks, flattened to
+    Items for `_build_instance_detections` (dense-mask packer). Used by v3_tensor
+    and by the v2 `dense` carrier path.
+    """
+    all_masks, _ = _threshold_and_nms(
+        per_prompt_results=per_prompt_results,
+        prompts=prompts,
+        global_confidence=global_confidence,
+        apply_nms=apply_nms,
+        nms_iou_threshold=nms_iou_threshold,
+    )
     items: List[Item] = []
     for prompt_idx, mask, score in all_masks:
         class_name = class_names[prompt_idx] if prompt_idx < len(class_names) else None
@@ -530,3 +676,91 @@ def _collect_from_native_with_nms(
             (mask.astype(bool), float(score), prompt_idx, class_name or "foreground")
         )
     return items
+
+
+def _build_instance_detections_reusing_nms_rles(
+    all_masks: List[Tuple[int, np.ndarray, float]],
+    kept_rles: List[dict],
+    class_names: List[Optional[str]],
+    image: WorkflowImageData,
+) -> InstanceDetections:
+    """RLE-carrier assembler that REUSES the COCO RLEs NMS already encoded, so the
+    kept masks are not re-encoded a second time. Bbox is derived from each kept
+    dense mask via np.where (cheap, no encode). Rows stay in lockstep because
+    `all_masks` and `kept_rles` are produced together by
+    `_apply_nms_cross_prompt_with_rles`.
+    """
+    height, width = image._read_shape_without_materialization()
+    xyxy: List[List[float]] = []
+    confidences: List[float] = []
+    class_ids: List[int] = []
+    class_names_map: Dict[int, str] = {}
+    bboxes_metadata: List[dict] = []
+    rle_dicts: List[dict] = []
+
+    for (prompt_idx, mask_np, score), rle in zip(all_masks, kept_rles):
+        ys, xs = np.where(mask_np > 0)
+        if xs.size == 0:
+            continue
+        class_name = (
+            class_names[prompt_idx] if prompt_idx < len(class_names) else None
+        ) or "foreground"
+        xyxy.append([float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())])
+        confidences.append(float(score))
+        class_ids.append(prompt_idx)
+        class_names_map[prompt_idx] = class_name
+        bboxes_metadata.append(
+            {DETECTION_ID_KEY: str(uuid.uuid4()), CLASS_NAME_KEY: class_name}
+        )
+        rle_dicts.append(rle)
+
+    mask = InstancesRLEMasks.from_coco_rle_masks(
+        image_size=(height, width), masks=rle_dicts
+    )
+    return _assemble_detections(
+        image=image,
+        xyxy=xyxy,
+        confidences=confidences,
+        class_ids=class_ids,
+        class_names_map=class_names_map,
+        bboxes_metadata=bboxes_metadata,
+        mask=mask,
+    )
+
+
+def _collect_and_build(
+    per_prompt_results: List[dict],
+    class_names: List[Optional[str]],
+    prompts: List[Sam3Prompt],
+    global_confidence: float,
+    apply_nms: bool,
+    nms_iou_threshold: float,
+    image: WorkflowImageData,
+    mask_representation: str,
+) -> InstanceDetections:
+    """LOCAL-path builder. When NMS runs against the RLE carrier, reuse the COCO
+    RLEs NMS already computed (avoids the double encode). Otherwise fall back to
+    the v1 dense packer (`_build_instance_detections`)."""
+    all_masks, kept_rles = _threshold_and_nms(
+        per_prompt_results=per_prompt_results,
+        prompts=prompts,
+        global_confidence=global_confidence,
+        apply_nms=apply_nms,
+        nms_iou_threshold=nms_iou_threshold,
+    )
+    if mask_representation == "rle" and kept_rles is not None:
+        return _build_instance_detections_reusing_nms_rles(
+            all_masks=all_masks,
+            kept_rles=kept_rles,
+            class_names=class_names,
+            image=image,
+        )
+    items: List[Item] = []
+    for prompt_idx, mask, score in all_masks:
+        class_name = class_names[prompt_idx] if prompt_idx < len(class_names) else None
+        items.append(
+            (mask.astype(bool), float(score), prompt_idx, class_name or "foreground")
+        )
+    return _build_instance_detections(
+        items=items, image=image, mask_representation=mask_representation
+    )

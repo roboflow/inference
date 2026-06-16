@@ -11,17 +11,11 @@ from shapely.geometry import Polygon
 from inference_models.models.base.object_detection import Detections
 
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
+from inference.core.workflows.core_steps.common.tensor_native import (
+    build_native_image_metadata,
+)
 from inference.core.workflows.execution_engine.constants import (
-    CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
-    IMAGE_DIMENSIONS_KEY,
-    PARENT_COORDINATES_KEY,
-    PARENT_DIMENSIONS_KEY,
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-    ROOT_PARENT_COORDINATES_KEY,
-    ROOT_PARENT_DIMENSIONS_KEY,
-    ROOT_PARENT_ID_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -332,34 +326,11 @@ def _native_detections_from_boxes(
     image: WorkflowImageData,
 ) -> Detections:
     number_of_detections = len(xyxy_boxes)
-    image_height, image_width = image.numpy_image.shape[:2]
-    parent = image.parent_metadata
-    root = image.workflow_root_ancestor_metadata
-    parent_coordinates = parent.origin_coordinates
-    root_coordinates = root.origin_coordinates
-    image_metadata = {
-        CLASS_NAMES_KEY: {0: "motion"},
-        PREDICTION_TYPE_KEY: "object-detection",
-        IMAGE_DIMENSIONS_KEY: [image_height, image_width],
-        PARENT_ID_KEY: parent.parent_id,
-        PARENT_COORDINATES_KEY: [
-            parent_coordinates.left_top_x,
-            parent_coordinates.left_top_y,
-        ],
-        PARENT_DIMENSIONS_KEY: [
-            parent_coordinates.origin_height,
-            parent_coordinates.origin_width,
-        ],
-        ROOT_PARENT_ID_KEY: root.parent_id,
-        ROOT_PARENT_COORDINATES_KEY: [
-            root_coordinates.left_top_x,
-            root_coordinates.left_top_y,
-        ],
-        ROOT_PARENT_DIMENSIONS_KEY: [
-            root_coordinates.origin_height,
-            root_coordinates.origin_width,
-        ],
-    }
+    image_metadata = build_native_image_metadata(
+        image=image,
+        class_names={0: "motion"},
+        prediction_type="object-detection",
+    )
     bboxes_metadata = (
         [{DETECTION_ID_KEY: str(uuid4())} for _ in range(number_of_detections)]
         if number_of_detections > 0

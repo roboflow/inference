@@ -63,10 +63,24 @@ TENSOR_NATIVE_DETECTION_KIND_DOCS = """
 This kind represents single detection in prediction from a model that detects multiple elements
 (like object detection or instance segmentation model). It is represented as a tuple
 that is created from `inference_models.Detections(...)` object while iterating over its content. `workflows`
-utilises `bboxes_metadata` as well as `image_metadata` property of `inference_models.Detections(...)` to keep 
-additional metadata which will be available in the tuple. Some properties may not always be present. Take a look at 
+utilises `bboxes_metadata` as well as `image_metadata` property of `inference_models.Detections(...)` to keep
+additional metadata which will be available in the tuple. Some properties may not always be present. Take a look at
 documentation of `object_detection_prediction`, `instance_segmentation_prediction`, `keypoint_detection_prediction`
 kinds to discover which additional metadata are available.
+
+**Per-box metadata keys** (read from `bboxes_metadata[i]`, the entry for the i-th box):
+
+* `class` - per-box class label string. When present it overrides the class name resolved from
+`image_metadata[CLASS_NAMES_KEY]` keyed by `class_id` (so producers may carry an arbitrary
+per-box label, e.g. VLM-as-detector labels or recognised OCR text). When absent, the class name
+is resolved from `image_metadata[CLASS_NAMES_KEY][class_id]`.
+
+* `tracker_id` - per-box tracker identifier (present once a tracking block has run).
+
+* `detection_id` - per-box unique identifier (see `object_detection_prediction` for details).
+
+* `text` - per-box recognised text (used by OCR producers); note that the serialised
+representation surfaces recognised text under the `class` key, not `text`.
 """
 
 TENSOR_NATIVE_DETECTION_KIND = Kind(
@@ -171,10 +185,10 @@ inference_models.InstanceDetections(
        [        194,          82,         996,         726],
        [        460,         333,         704,         389]]
     ), 
-    mask=None, 
-    confidence=torch.Tensor([    0.84955,     0.74344,     0.45636,     0.86537]), 
-    class_id=torch.Tensor([2, 7, 2, 0]), 
-    tracker_id=InstancesRLEMasks(...), 
+    mask=InstancesRLEMasks(...),
+    confidence=torch.Tensor([    0.84955,     0.74344,     0.45636,     0.86537]),
+    class_id=torch.Tensor([2, 7, 2, 0]),
+    tracker_id=None,
     image_metadata={
         "class_names": {0: "car", 1: "truck"},
         "image_dimensions": [425, 640],
@@ -306,7 +320,7 @@ Example:
 ```
 (
     inference_models.KeyPoints(
-        xy= xyxy=torch.Tensor([
+        xy=torch.Tensor([
             [[10, 20], [10, 20], [10, 20], [10, 20]],
             [[10, 20], [10, 20], [10, 20], [10, 20]],
             [[10, 20], [10, 20], [10, 20], [10, 20]],
@@ -424,7 +438,7 @@ JSON field is parsed. Entity details: [KeypointsDetectionInferenceResponse](http
 """
 TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
     name="keypoint_detection_prediction",
-    description="Prediction with detected bounding boxes and detected keypoints in form of sv.Detections(...) object",
+    description="Prediction with detected bounding boxes and detected keypoints in form of a `(inference_models.KeyPoints, Optional[inference_models.Detections])` tuple",
     docs=TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND_DOCS,
     serialised_data_type="dict",
     internal_data_type="Tuple[inference_models.KeyPoints, Optional[inference_models.Detections]]",
@@ -538,11 +552,11 @@ inference_models.Detections(
     class_id=torch.Tensor([2, 7, 2, 0]), 
     tracker_id=None, 
     image_metadata={
-        "class_names": {0: "qr-code"},
+        "class_names": {0: "barcode"},
         "image_dimensions": [425, 640],
         "parent_id": "image.[0]",
         "inference_id": "51dfa8d5-261c-4dcb-ab30-9aafe9b52379",
-        "prediction_type": "qrcode-detection",
+        "prediction_type": "barcode-detection",
         "root_parent_id": "image.[0]",
         "root_parent_coordinates": [0, 0],
         "root_parent_dimensions": [425, 640],
@@ -614,9 +628,9 @@ TENSOR_NATIVE_BAR_CODE_DETECTION_KIND = Kind(
 
 
 TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS = """
-This kind represents a single semantic segmentation prediction as an `inference_models.SemanticSegmentationResult`
-with one detection per predicted class. Each detection carries an RLE-encoded mask
-covering all pixels assigned to that class.
+This kind represents a single semantic segmentation prediction in form of an
+`inference_models.InstanceDetections` object with one detection per predicted class. Each
+detection carries an RLE-encoded mask covering all pixels assigned to that class.
 
 **Why RLE and not polygons:**
 
@@ -628,12 +642,49 @@ irreversible data loss for non-contiguous masks. RLE (Run-Length Encoding, COCO 
 is a pixel-level encoding that represents the complete mask regardless of spatial topology,
 making it the only correct serialization format for semantic segmentation masks.
 
-**Internal representation:** `sv.Detections` with:
-- `xyxy` — tight bounding box enclosing all pixels of the class
-- `class_id` — integer class ID
-- `confidence` — mean confidence over all pixels of the class
-- `data["class_name"]` — class label string
-- `data["rle_mask"]` — numpy object array of COCO RLE dicts `{"size": [H, W], "counts": "..."}`
+**Internal representation:** an `inference_models.InstanceDetections` carrier (the same
+per-class RLE carrier used by `rle_instance_segmentation_prediction`), with one row per
+predicted class:
+- `xyxy` — `torch.Tensor` of tight bounding boxes enclosing all pixels of each class
+- `mask` — `inference_models.models.base.types.InstancesRLEMasks` holding one COCO RLE
+  entry per class (NOT a dense `torch.Tensor`, NO polygon collapse)
+- `class_id` — `torch.Tensor` of integer class IDs
+- `confidence` — `torch.Tensor` of mean confidence over all pixels of each class
+- `image_metadata[CLASS_NAMES_KEY]` — class-id -> class-name mapping for the prediction
+- `bboxes_metadata` — same per-box metadata conventions as `instance_segmentation_prediction`
+  (e.g. `detection_id`); see that kind for the full key list.
+
+Example:
+```
+inference_models.InstanceDetections(
+    xyxy=torch.Tensor([
+       [          0,           0,         640,         480],
+       [        100,         120,         400,         360]]
+    ),
+    mask=InstancesRLEMasks(image_size=(480, 640), masks=[...]),
+    confidence=torch.Tensor([    0.97,     0.92]),
+    class_id=torch.Tensor([0, 1]),
+    image_metadata={
+        "class_names": {0: "background", 1: "person"},
+        "image_dimensions": [480, 640],
+        "parent_id": "image.[0]",
+        "inference_id": "51dfa8d5-261c-4dcb-ab30-9aafe9b52379",
+        "prediction_type": "semantic-segmentation",
+        "root_parent_id": "image.[0]",
+        "root_parent_coordinates": [0, 0],
+        "root_parent_dimensions": [480, 640],
+        "parent_coordinates": [0, 0],
+        "parent_dimensions": [480, 640],
+        "scaling_relative_to_parent": 1.0,
+        "scaling_relative_to_root_parent": 1.0,
+    }
+    bboxes_metadata={
+        'detection_id': [
+            '51dfa8d5-261c-4dcb-ab30-9aafe9b52379', 'c0c684d1-1e30-4880-aedd-29e67e417264'
+        ],
+    }
+)
+```
 
 **Serialised format** (one entry per class in `predictions`):
 
@@ -668,7 +719,7 @@ TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND = Kind(
     description="Prediction with per-pixel class label and confidence for semantic segmentation",
     docs=TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND_DOCS,
     serialised_data_type="dict",
-    internal_data_type="inference_models.SemanticSegmentationResult",
+    internal_data_type="inference_models.InstanceDetections",
 )
 
 

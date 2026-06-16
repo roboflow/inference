@@ -1,14 +1,32 @@
 """Tensor-native sibling of `roboflow_core/sam3@v3`.
 
-SCRATCH — first pass for review. v3 = v2 (per-class thresholds + cross-prompt NMS)
-plus `class_mapping` (rename predicted class names after inference). The numpy v3's
-`output_format` (rle/polygons response-wire knob) has no LOCAL-tensor analog —
+v3 = v2 (per-class thresholds + cross-prompt NMS) plus `class_mapping` (rename
+predicted class names after inference). The numpy v3's `output_format`
+(rle/polygons response-wire knob) has no LOCAL-tensor analog —
 `run_tensor_native_inference` always returns raw binary masks — so it is replaced by
 the tensor `mask_representation` carrier (rle/dense), whose default "rle" matches v3's
 default `output_format="rle"`.
 
-Output is the tensor-native InstanceDetections kind (not the numpy v3 dual SV-RLE
-kinds). `class_mapping` is applied on the flat `items` list before building
+Output kinds: the numpy v3 declares DUAL kinds
+(RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND + INSTANCE_SEGMENTATION_PREDICTION_KIND).
+The tensor world has the matching pair
+(TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND +
+TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND), so `describe_outputs` declares
+BOTH (RLE first) — matching the roboflow instance_segmentation tensor producers and
+the established convention. At runtime there is still ONE `InstanceDetections`
+carrier (rle or dense per `mask_representation`); the dual kind is purely a
+wiring/advertisement concern. Downstream tensor consumers (mask/polygon/halo/icon
+visualizers, trackers, fusion blocks) accept both kinds, so no graph is broken by
+the carrier choice.
+
+Private adapter coupling: the per-class-threshold + cross-prompt-NMS orchestration
+is reused from `v2_tensor` (`_collect_from_native_with_nms`, `_min_floor`,
+`_per_class_threshold`, `_build_http_prompts`). v2_tensor now holds LOCAL COPIES of
+those adapter helpers (see its TODO(sam3-public-adapter) note) instead of importing
+the private `inference.models.sam3` internals, so v3 no longer transitively depends
+on that private cross-package surface.
+
+`class_mapping` is applied on the flat `items` list before building
 `InstanceDetections`, so both image_metadata's class-names map and per-instance
 bboxes_metadata inherit the mapped names (v3's sv-based `_apply_class_mapping` is a
 no-op on InstanceDetections and cannot be reused).
@@ -17,7 +35,7 @@ no-op on InstanceDetections and cannot be reused).
 from typing import Dict, List, Literal, Optional, Type, Union
 
 import requests
-from pydantic import ConfigDict, Field, model_validator, validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.entities.requests.sam3 import Sam3Prompt
 from inference.core.env import (
@@ -42,6 +60,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -158,7 +177,8 @@ class BlockManifest(WorkflowBlockManifest):
         "'rle' on GCP_SERVERLESS regardless of this value. (Replaces v3 output_format.)",
     )
 
-    @validator("nms_iou_threshold")
+    @field_validator("nms_iou_threshold")
+    @classmethod
     def _validate_nms_iou_threshold(cls, v):
         if isinstance(v, (int, float)) and (v < 0.0 or v > 1.0):
             raise ValueError("nms_iou_threshold must be between 0.0 and 1.0")
@@ -187,10 +207,27 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
+        # Declare BOTH the RLE and the plain tensor instance-seg kinds (RLE first,
+        # mirroring the default `mask_representation="rle"`). This restores the
+        # dual-kind shape the numpy v3 sibling declares
+        # (RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND +
+        # INSTANCE_SEGMENTATION_PREDICTION_KIND) and matches the established tensor
+        # convention used by the roboflow instance_segmentation tensor producers
+        # (v1-v4) and accepted by every tensor instance-seg consumer (mask/polygon/
+        # halo/icon visualizers, trackers, fusion blocks). The runtime carrier is
+        # still ONE InstanceDetections (rle or dense per `mask_representation`); the
+        # two kinds are advertised purely so downstream wiring that selects either
+        # the rle-tensor or the plain-tensor kind resolves against this producer.
+        # Audit: no tensor consumer requires the rle-tensor kind EXCLUSIVELY, so
+        # the previous single-kind output was wiring-compatible too, but it diverged
+        # from the dual-kind convention; this aligns it.
         return [
             OutputDefinition(
                 name="predictions",
-                kind=[TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND],
+                kind=[
+                    TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
             ),
         ]
 

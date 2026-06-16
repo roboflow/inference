@@ -1,10 +1,11 @@
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Dict, List, Literal, Optional, Tuple, Type
 
 from pydantic import ConfigDict, Field
 
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -291,6 +292,7 @@ class EasyOCRBlockV1(WorkflowBlock):
                 predictions=raw_predictions,
                 prediction_type=PREDICTION_TYPE,
                 class_names=CLASS_NAMES,
+                device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
             )
             results.append(
                 {

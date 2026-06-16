@@ -20,6 +20,7 @@ differ. v2 declares ``inference_id``/``predictions``/``model_id`` outputs.
 import uuid
 from typing import Dict, List, Literal, Optional, Type, Union
 
+import torch
 from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.env import (
@@ -281,7 +282,13 @@ class RoboflowObjectDetectionModelBlockV2(WorkflowBlock):
             # The adapter/model does NOT honour class_filter on the native path, so
             # filter here (the only place it is applied for LOCAL execution).
             detections = _filter_classes_native(detections, class_filter, class_names)
-            inference_id = str(uuid.uuid4())
+            # Reuse the adapter-provided inference id when present (numpy parity:
+            # numpy v2 surfaces ``p.get(INFERENCE_ID_KEY)`` off the model dump);
+            # the tensor-native adapter normally attaches none, so fall back to a
+            # freshly minted uuid that is then shared with ``image_metadata``.
+            inference_id = getattr(detections, "inference_id", None) or str(
+                uuid.uuid4()
+            )
             detections = attach_native_detection_metadata(
                 detections=detections,
                 image=image,
@@ -394,8 +401,16 @@ def _filter_classes_native(
     if not class_filter:
         return detections
     accepted = set(class_filter)
-    keep = [
-        class_names.get(int(class_id)) in accepted
-        for class_id in detections.class_id.tolist()
-    ]
+    accepted_ids = sorted(
+        class_id for class_id, name in class_names.items() if name in accepted
+    )
+    if not accepted_ids:
+        return take_prediction_by_mask(
+            detections,
+            torch.zeros_like(detections.class_id, dtype=torch.bool),
+        )
+    accepted_tensor = torch.as_tensor(
+        accepted_ids, device=detections.class_id.device
+    )
+    keep = torch.isin(detections.class_id, accepted_tensor)
     return take_prediction_by_mask(detections, keep)

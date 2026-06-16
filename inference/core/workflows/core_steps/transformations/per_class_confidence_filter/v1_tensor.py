@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.tensor_native import (
+    TensorNativeDetections,
     TensorNativePrediction,
     take_prediction_by_mask,
 )
@@ -184,7 +185,9 @@ def filter_detections_by_class_confidence(
     return take_prediction_by_mask(prediction, keep)
 
 
-def _resolve_class_names(detections) -> List[Optional[str]]:
+def _resolve_class_names(
+    detections: TensorNativeDetections,
+) -> List[Optional[str]]:
     """Per-box class NAME for each detection, preferring the canonical
     ``image_metadata[CLASS_NAMES_KEY]`` (class_id -> name) map and falling back
     to ``bboxes_metadata[i]["class"]`` when the map is absent or lacks the id."""

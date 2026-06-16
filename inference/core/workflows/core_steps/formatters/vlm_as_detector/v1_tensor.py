@@ -13,6 +13,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from inference_models.models.base.object_detection import Detections
 
+from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
     create_classes_index,
@@ -22,6 +23,7 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detec
     scale_confidence,
 )
 from inference.core.workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -398,16 +400,36 @@ def native_detections_from_parsed(
         inference_id=inference_id,
         class_names=class_names,
     )
+    # Carry the per-box VLM label string directly on bboxes_metadata[i]["class"]
+    # so distinct unmapped labels (all sharing class_id == -1) survive: the
+    # serialiser prefers this per-box label over the class_id -> name map,
+    # matching numpy's per-detection class_name parity.
     bboxes_metadata = (
-        [{DETECTION_ID_KEY: str(uuid4())} for _ in range(number_of_detections)]
+        [
+            {
+                DETECTION_ID_KEY: str(uuid4()),
+                CLASS_NAME_KEY: str(detection_class_name),
+            }
+            for detection_class_name in class_name
+        ]
         if number_of_detections > 0
         else None
     )
     return Detections(
-        xyxy=torch.as_tensor(np.asarray(xyxy), dtype=torch.float32).reshape(-1, 4),
-        class_id=torch.as_tensor(np.asarray(class_id), dtype=torch.long).reshape(-1),
+        xyxy=torch.as_tensor(
+            np.asarray(xyxy),
+            dtype=torch.float32,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+        ).reshape(-1, 4),
+        class_id=torch.as_tensor(
+            np.asarray(class_id),
+            dtype=torch.long,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+        ).reshape(-1),
         confidence=torch.as_tensor(
-            np.asarray(confidence), dtype=torch.float32
+            np.asarray(confidence),
+            dtype=torch.float32,
+            device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
         ).reshape(-1),
         image_metadata=image_metadata,
         bboxes_metadata=bboxes_metadata,
@@ -429,9 +451,15 @@ def empty_native_detections(
         class_names=class_names,
     )
     return Detections(
-        xyxy=torch.zeros((0, 4), dtype=torch.float32),
-        class_id=torch.zeros((0,), dtype=torch.long),
-        confidence=torch.zeros((0,), dtype=torch.float32),
+        xyxy=torch.zeros(
+            (0, 4), dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
+        class_id=torch.zeros(
+            (0,), dtype=torch.long, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
+        confidence=torch.zeros(
+            (0,), dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
         image_metadata=image_metadata,
         bboxes_metadata=None,
     )
