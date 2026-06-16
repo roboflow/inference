@@ -22,6 +22,7 @@ from inference_server.proxies.mmp_client import (
     T_CANCEL,
     T_ERROR,
     T_FREE,
+    T_MODEL_READY,
     T_RESULT_READY,
     T_SUBMIT,
     MMPClient,
@@ -285,5 +286,22 @@ def test_stats_error_reply_raises_instead_of_empty_dict():
         client._dispatch(T_ERROR, [struct.pack(">QB", req_id, 4)])
         with pytest.raises(RuntimeError, match="stats"):
             await task
+
+    asyncio.run(_run())
+
+
+def test_ensure_loaded_caches_and_skips_second_send():
+    async def _run():
+        client, sock = _make_client()
+        client.ensure_cache_ttl_s = 60.0
+        task = asyncio.create_task(client.ensure_loaded("m"))
+        await asyncio.sleep(0)
+        req_id = struct.unpack_from(">Q", sock.sent[0][1])[0]
+        client._dispatch(T_MODEL_READY, [struct.pack(">Q", req_id)])
+        assert (await task)[0] == "model_ready"
+        assert len(sock.sent) == 1
+
+        assert (await client.ensure_loaded("m"))[0] == "model_ready"
+        assert len(sock.sent) == 1, "warm cache must skip the T_ENSURE_LOADED round-trip"
 
     asyncio.run(_run())
