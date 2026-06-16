@@ -10,7 +10,7 @@
 
 import logging
 import math
-from typing import List, Sequence, Tuple, Union
+from typing import List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -221,8 +221,10 @@ class DinoVisionTransformer(nn.Module):
         return pos, pos_nodiff
 
     def _get_intermediate_layers_not_chunked(
-        self, x, n=1, export_feat_layers=[], **kwargs
+        self, x, n=1, export_feat_layers=None, **kwargs
     ):
+        if export_feat_layers is None:
+            export_feat_layers = []
         B, S, _, H, W = x.shape
         x = self.prepare_tokens_with_masks(x)
         output, total_block_len, aux_output = [], len(self.blocks), []
@@ -294,9 +296,11 @@ class DinoVisionTransformer(nn.Module):
         self,
         x: torch.Tensor,
         n: Union[int, Sequence] = 1,
-        export_feat_layers: List[int] = [],
+        export_feat_layers: Optional[List[int]] = None,
         **kwargs,
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor]]]:
+        if export_feat_layers is None:
+            export_feat_layers = []
         outputs, aux_outputs = self._get_intermediate_layers_not_chunked(
             x, n, export_feat_layers=export_feat_layers, **kwargs
         )

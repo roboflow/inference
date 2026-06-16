@@ -1,12 +1,13 @@
 """Shared helpers for SAM2/SAM3 streaming video tracker workflow blocks.
 
-Both blocks multiplex a single ``inference_models``-backed streaming
+The blocks multiplex a single ``inference_models``-backed streaming
 model across many videos by keying ``state_dict``s on
-``video_identifier``.  They follow the same decision logic on every
-frame: reset a session if the source stream restarted, and re-prompt
-only on the frames requested by ``prompt_mode``.  Everything that is
-independent of "SAM2 vs SAM3" lives here so each concrete block is just
-a thin wrapper around ``inference_models.AutoModel``.
+``video_identifier``, and reset a session whenever the source stream
+restarts.  The SAM2 block additionally re-prompts on the frames
+requested by ``prompt_mode``; the SAM3 concept block prompts once per
+session (the model re-detects continuously on its own).  Everything
+that is independent of the concrete model lives here so each block is
+just a thin wrapper around ``inference_models.AutoModel``.
 """
 
 from dataclasses import dataclass, field
@@ -230,3 +231,83 @@ def normalise_class_names(
     if isinstance(class_names, str):
         return [c.strip() for c in class_names.split(",") if c.strip()]
     return [c for c in class_names if c]
+
+
+def concept_frame_to_sv_detections(
+    masks: np.ndarray,
+    object_ids: np.ndarray,
+    scores: np.ndarray,
+    boxes: np.ndarray,
+    prompt_to_object_ids: Dict[str, List[int]],
+    class_names: List[str],
+    image: WorkflowImageData,
+    threshold: float,
+) -> sv.Detections:
+    """Assemble ``sv.Detections`` from one SAM3 concept-tracker frame.
+
+    Unlike the box-prompted path (where class metadata is frozen at
+    prompt time), the concept tracker reports per frame which prompt
+    each object belongs to and a per-object detection score — class
+    labels and confidences are rebuilt from those every frame, so
+    objects detected mid-stream are labelled correctly.
+
+    ``class_id`` is the prompt's position in ``class_names`` (the exact
+    texts sent to the model), so ids are stable for a given prompt set.
+    """
+    h, w = image.numpy_image.shape[:2]
+    if masks.shape[0] == 0:
+        return _empty_detections(h, w)
+
+    object_id_to_prompt = {
+        int(obj_id): prompt
+        for prompt, obj_ids in prompt_to_object_ids.items()
+        for obj_id in obj_ids
+    }
+
+    xyxy: List[List[float]] = []
+    confidences: List[float] = []
+    class_ids: List[int] = []
+    kept_class_names: List[str] = []
+    tracker_ids: List[int] = []
+    detection_ids: List[str] = []
+    kept_masks: List[np.ndarray] = []
+
+    for mask, obj_id, score, box in zip(
+        masks, object_ids.tolist(), scores.tolist(), boxes.tolist()
+    ):
+        if score < threshold:
+            continue
+        if not mask.any():
+            continue
+        prompt = object_id_to_prompt.get(int(obj_id), "foreground")
+        try:
+            class_id = class_names.index(prompt)
+        except ValueError:
+            class_id = 0
+        xyxy.append([float(v) for v in box[:4]])
+        confidences.append(float(score))
+        class_ids.append(class_id)
+        kept_class_names.append(prompt)
+        tracker_ids.append(int(obj_id))
+        detection_ids.append(str(uuid4()))
+        kept_masks.append(mask.astype(bool))
+
+    if not kept_masks:
+        return _empty_detections(h, w)
+
+    detections = sv.Detections(
+        xyxy=np.asarray(xyxy, dtype=np.float32),
+        mask=np.stack(kept_masks, axis=0),
+        confidence=np.asarray(confidences, dtype=np.float32),
+        class_id=np.asarray(class_ids, dtype=int),
+        tracker_id=np.asarray(tracker_ids, dtype=int),
+    )
+    detections.data[DETECTIONS_CLASS_NAME_FIELD] = np.asarray(
+        kept_class_names, dtype=object
+    )
+    detections[DETECTION_ID_KEY] = np.asarray(detection_ids, dtype=object)
+    detections[PARENT_ID_KEY] = np.asarray(
+        [image.parent_metadata.parent_id] * len(detection_ids), dtype=object
+    )
+    detections[IMAGE_DIMENSIONS_KEY] = np.asarray([[h, w]] * len(detections), dtype=int)
+    return detections

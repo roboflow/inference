@@ -210,11 +210,10 @@ The response contains the single highest-confidence mask for the prompt: `multim
 
 ## Workflow Integration
 
-SAM 3 is fully integrated into [Inference Workflows](https://inference.roboflow.com/workflows/core_steps/). You can use the **SAM 3** block to add zero-shot instance segmentation to your pipeline.
+SAM 3 is fully integrated into [Inference Workflows](https://inference.roboflow.com/workflows/core_steps/). Two blocks are available:
 
-The Workflow block allows you to:
-- Use **Text Prompts** to segment objects by class name.
-- Use **Box Prompts** from other detection models (like YOLO) to generate precise masks for detected objects.
+- The **SAM 3** block runs concept segmentation: use **Text Prompts** to segment all instances of a class by name.
+- The **SAM 3 Interactive** block runs promptable visual segmentation (PVS): use **Point Prompts** (positive/negative clicks) and/or **Box Prompts** from other detection models (like YOLO) to segment specific objects.
 
 ### Example: Text Prompting in Workflows
 
@@ -222,6 +221,81 @@ The Workflow block allows you to:
 2. Connect an image input.
 3. In the `class_names` field, enter the classes you want to segment (e.g., `["person", "vehicle"]`).
 4. The block will output instance segmentation predictions compatible with other workflow steps.
+
+### Example: Point Prompting in Workflows
+
+1. Add a **SAM 3 Interactive** block to your workflow.
+2. Connect an image input.
+3. In the `points` field, provide labeled points (or connect a workflow input of kind `labeled_points`), e.g. `[{"x": 320, "y": 240, "positive": true}, {"x": 100, "y": 100, "positive": false}]`. Positive points mark the object to segment; negative points exclude regions to refine the mask.
+4. Optionally connect detections from another model to the `boxes` field - each box becomes a separate prompt and its class name is forwarded to the predicted mask.
+
+## Video Tracking in Workflows
+
+The **SAM3 Video Tracker** workflow block (`roboflow_core/sam3_video@v1`) runs
+SAM3's streaming *concept tracker* frame by frame: you provide the concepts to
+track as text in `class_names`, and the model runs fused detection and
+tracking on every frame. Objects matching a concept keep a stable
+`tracker_id` across frames, and — unlike detector-seeded tracking — objects
+that enter the scene mid-stream are picked up automatically, with no
+re-prompting and no upstream detection model required. Each emitted mask
+carries the concept it matched as its class name and the model's detection
+score as its confidence (filter with `threshold`, default `0.5`).
+
+Key properties:
+
+- **Stateful and local-only.** The block keeps one tracking session per
+  `video_metadata.video_identifier` and requires
+  `WORKFLOWS_STEP_EXECUTION_MODE=local`; drive it with `InferencePipeline`,
+  which delivers frames one at a time with video metadata attached. A GPU is
+  required.
+- **No prompt scheduling.** Concept prompts are registered on the session
+  once; the session is only re-seeded when the stream restarts or
+  `class_names` changes. For detector-driven (box-prompted) video tracking,
+  use the SAM2 Video Tracker block instead (see the
+  [SAM 2 documentation](sam2.md)) — it also accepts `sam3trackervideo` as
+  `model_id` to run SAM3's visually prompted tracker, which shares the
+  `sam3video` weights package.
+- **Model.** `model_id` defaults to `sam3video`, the HuggingFace transformers
+  port of SAM3 video, which exposes the frame-by-frame streaming interface
+  (the native `sam3` package's video predictor requires the whole video
+  upfront and cannot be used for live streams).
+
+### Example
+
+```python
+from inference import InferencePipeline
+from inference.core.interfaces.stream.sinks import render_boxes
+
+WORKFLOW = {
+    "version": "1.0",
+    "inputs": [{"type": "InferenceImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "roboflow_core/sam3_video@v1",
+            "name": "tracker",
+            "images": "$inputs.image",
+            "class_names": ["person", "forklift"],
+            "threshold": 0.5,
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.tracker.predictions",
+        }
+    ],
+}
+
+pipeline = InferencePipeline.init_with_workflow(
+    video_reference="path/to/video.mp4",  # or an RTSP URL / camera id
+    workflow_specification=WORKFLOW,
+    on_prediction=render_boxes,
+    api_key="<YOUR-API-KEY>",
+)
+pipeline.start()
+pipeline.join()
+```
 
 ## Capabilities & Features
 

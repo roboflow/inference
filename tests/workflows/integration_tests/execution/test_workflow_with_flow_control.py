@@ -1232,3 +1232,102 @@ def test_workflow_with_stacked_flow_control(
     assert result[0]["output"] == "a, c"
     assert result[1]["output"] == None
     assert result[2]["output"] == "a, c"
+
+
+WORKFLOW_WITH_NON_SIMD_CONTINUE_IF_AND_MULTIPLE_NEXT_STEPS = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowParameter", "name": "some"}],
+    "steps": [
+        {
+            "type": "ContinueIf",
+            "name": "gate",
+            "condition_statement": {
+                "type": "StatementGroup",
+                "statements": [
+                    {
+                        "type": "BinaryStatement",
+                        "left_operand": {
+                            "type": "DynamicOperand",
+                            "operand_name": "left",
+                        },
+                        "comparator": {"type": "(Number) =="},
+                        "right_operand": {"type": "StaticOperand", "value": 1},
+                    }
+                ],
+            },
+            "evaluation_parameters": {"left": "$inputs.some"},
+            "next_steps": ["$steps.first_expression", "$steps.second_expression"],
+        },
+        {
+            "type": "Expression",
+            "name": "first_expression",
+            "data": {"value": "$inputs.some"},
+            "switch": {
+                "type": "CasesDefinition",
+                "cases": [],
+                "default": {"type": "StaticCaseResult", "value": "EXECUTED FIRST!"},
+            },
+        },
+        {
+            "type": "Expression",
+            "name": "second_expression",
+            "data": {"value": "$inputs.some"},
+            "switch": {
+                "type": "CasesDefinition",
+                "cases": [],
+                "default": {"type": "StaticCaseResult", "value": "EXECUTED SECOND!"},
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "first_expression",
+            "selector": "$steps.first_expression.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "second_expression",
+            "selector": "$steps.second_expression.output",
+        },
+    ],
+}
+
+
+@pytest.mark.parametrize(
+    "some, expected_first, expected_second",
+    [
+        (1, "EXECUTED FIRST!", "EXECUTED SECOND!"),
+        (0, None, None),
+    ],
+    ids=["condition_met_executes_both_next_steps", "condition_not_met_terminates_both"],
+)
+def test_non_simd_continue_if_with_multiple_next_steps(
+    some: int,
+    expected_first,
+    expected_second,
+) -> None:
+    """
+    Regression test: a non-SIMD flow-control step with more than one selector in
+    `next_steps` used to crash with "Attempted to re-register maks for execution
+    branch" - all selectors of a list property share a single execution branch and
+    the mask was registered once per selector instead of once per branch.
+    """
+    # given
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_SIMD_CONTINUE_IF_AND_MULTIPLE_NEXT_STEPS,
+        init_parameters={
+            "workflows_core.model_manager": None,
+            "workflows_core.api_key": None,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={"some": some})
+
+    # then
+    assert result == [
+        {"first_expression": expected_first, "second_expression": expected_second}
+    ]

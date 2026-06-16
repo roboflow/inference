@@ -388,7 +388,14 @@ def establish_control_flow_edge(
             f"that situation creates ambiguity in selecting execution branch.",
             context="workflow_compilation | execution_graph_construction",
         )
-    execution_branch_name = f"Branch[{source_step_selector} -> {target_step_parsed_selector.definition.property_name}]"
+    # Selectors held in dict properties (e.g. switch-case mappings) each spawn their own
+    # execution branch, so flow-control blocks can select targets independently. Selectors
+    # in list properties (e.g. `next_steps`) share a single branch - they are selected
+    # together or not at all.
+    property_name = target_step_parsed_selector.definition.property_name
+    if target_step_parsed_selector.key is not None:
+        property_name = f"{property_name}[{target_step_parsed_selector.key}]"
+    execution_branch_name = f"Branch[{source_step_selector} -> {property_name}]"
     source_compilation_data.child_execution_branches[target_step_selector] = (
         execution_branch_name
     )

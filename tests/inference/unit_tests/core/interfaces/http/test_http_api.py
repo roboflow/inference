@@ -29,6 +29,25 @@ class _DummyResponse(BaseModel):
     ok: bool = True
 
 
+class _DummyArray:
+    def __init__(self, value):
+        self._value = value
+
+    def tolist(self):
+        return self._value
+
+
+class _DummyImage:
+    base64_image = "depth-image"
+
+
+class _DummyDepthResponse:
+    response = {
+        "normalized_depth": _DummyArray([[0.0]]),
+        "image": _DummyImage(),
+    }
+
+
 def _make_inference_request() -> dict:
     return {
         "model_id": "florence-2-base",
@@ -38,6 +57,10 @@ def _make_inference_request() -> dict:
         },
         "prompt": "caption",
     }
+
+
+def _route_paths(interface):
+    return {route.path for route in interface.app.routes}
 
 
 def _build_serverless_interface(
@@ -123,6 +146,69 @@ def _build_dedicated_deployment_interface(
     return interface, model_manager, workspace_lookup_mock
 
 
+def test_serverless_registers_sam3_routes_when_model_flags_are_enabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_SAM3_ENABLED", True)
+    monkeypatch.setattr(http_api, "SAM3_3D_OBJECTS_ENABLED", True)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/sam3/embed_image" in paths
+    assert "/sam3_3d/infer" in paths
+
+
+def test_serverless_sam3_3d_route_only_depends_on_sam3_3d_flag(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_SAM3_ENABLED", False)
+    monkeypatch.setattr(http_api, "SAM3_3D_OBJECTS_ENABLED", True)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/sam3/embed_image" not in paths
+    assert "/sam3_3d/infer" in paths
+
+
+def test_serverless_does_not_register_sam3_3d_route_when_sam3_3d_flag_is_disabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_SAM3_ENABLED", True)
+    monkeypatch.setattr(http_api, "SAM3_3D_OBJECTS_ENABLED", False)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/sam3/embed_image" in paths
+    assert "/sam3_3d/infer" not in paths
+
+
 def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
@@ -168,6 +254,135 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     inference_request = model_manager.infer_from_request_sync.call_args.args[1]
     assert inference_request.model_id == "florence-2-base"
     assert inference_request.api_key == "query-api-key"
+
+
+def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyDepthResponse()
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/depth-estimation",
+            params={"api_key": "query-api-key"},
+            json={
+                "model_id": "depth-anything-v3/small",
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"normalized_depth": [[0.0]], "image": "depth-image"}
+    model_manager.add_model.assert_called_once_with(
+        "depth-anything-v3/small",
+        "query-api-key",
+        countinference=None,
+        service_secret=None,
+    )
+    model_manager.infer_from_request_sync.assert_called_once()
+    inference_request = model_manager.infer_from_request_sync.call_args.args[1]
+    assert inference_request.model_id == "depth-anything-v3/small"
+    assert inference_request.api_key == "query-api-key"
+
+def test_depth_estimation_with_model_id_path_sets_request_model_id(monkeypatch) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.infer_from_request_sync.return_value = _DummyDepthResponse()
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/depth-estimation/depth-anything-v3/small",
+            params={"api_key": "query-api-key"},
+            json={
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"normalized_depth": [[0.0]], "image": "depth-image"}
+    model_manager.add_model.assert_called_once_with(
+        "depth-anything-v3/small",
+        "query-api-key",
+        countinference=None,
+        service_secret=None,
+    )
+    model_manager.infer_from_request_sync.assert_called_once()
+    inference_request = model_manager.infer_from_request_sync.call_args.args[1]
+    assert inference_request.model_id == "depth-anything-v3/small"
+    assert inference_request.api_key == "query-api-key"
+
+
+def test_depth_estimation_with_model_id_path_rejects_body_mismatch(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEPTH_ESTIMATION_ENABLED", True)
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/depth-estimation/depth-anything-v3/small",
+            params={"api_key": "query-api-key"},
+            json={
+                "model_id": "depth-anything-v3/base",
+                "image": {
+                    "type": "url",
+                    "value": "https://example.com/test.jpg",
+                },
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == (
+        "Model ID mismatch: path specifies 'depth-anything-v3/small' "
+        "but request body specifies 'depth-anything-v3/base'"
+    )
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
 
 
 def test_serverless_auth_middleware_logs_request_received_with_execution_id(
