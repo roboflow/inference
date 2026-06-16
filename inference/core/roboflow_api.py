@@ -102,9 +102,9 @@ ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER = "x-enforce-internal-artefacts-urls"
 ASSUME_IDENTITY_ACCESS_TOKEN_HEADER = "x-assume-identity-access-token"
 ASSUME_IDENTITY_AUTHORISED_WORKSPACE_HEADER = "x-assume-identity-authorised-workspace"
 
-assume_identity_authorised_workspace_id: contextvars.ContextVar[
+assume_identity_authorised_workspace_db_id: contextvars.ContextVar[
     Optional[WorkspaceID]
-] = contextvars.ContextVar("assume_identity_authorised_workspace_id", default=None)
+] = contextvars.ContextVar("assume_identity_authorised_workspace_db_id", default=None)
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
@@ -129,7 +129,7 @@ API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
 class ServerlessUsageCheckResponse:
     status_code: int
     workspace_id: Optional[WorkspaceID] = None
-    assume_identity_workspace_id: Optional[WorkspaceID] = None
+    workspace_db_id: Optional[WorkspaceID] = None
     under_cap: Optional[bool] = None
     error: Optional[str] = None
 
@@ -376,13 +376,10 @@ async def get_serverless_usage_check_async(
                     workspace = response_payload.get(
                         "workspace"
                     ) or response_payload.get("workspaceId")
-                    assume_identity_workspace = (
-                        response_payload.get("workspaceId") or workspace
-                    )
                     return ServerlessUsageCheckResponse(
                         status_code=402,
                         workspace_id=workspace,
-                        assume_identity_workspace_id=assume_identity_workspace,
+                        workspace_db_id=response_payload.get("workspaceId"),
                         under_cap=response_payload.get("underCap"),
                         error=response_payload.get("error"),
                     )
@@ -402,13 +399,10 @@ async def get_serverless_usage_check_async(
                     raise WorkspaceLoadError(
                         "Unexpected serverless usage-check response received from Roboflow API."
                     )
-                assume_identity_workspace_id = (
-                    response_payload.get("workspaceId") or workspace_id
-                )
                 return ServerlessUsageCheckResponse(
                     status_code=200,
                     workspace_id=workspace_id,
-                    assume_identity_workspace_id=assume_identity_workspace_id,
+                    workspace_db_id=response_payload.get("workspaceId"),
                     under_cap=True,
                 )
     except (aiohttp.ClientConnectionError, ConnectionError) as error:
@@ -664,7 +658,7 @@ def get_model_metadata_from_inference_models_registry(
 def _add_assume_identity_headers(headers: Dict[str, str]) -> None:
     if not ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN:
         return
-    authorised_workspace = assume_identity_authorised_workspace_id.get()
+    authorised_workspace = assume_identity_authorised_workspace_db_id.get()
     if not authorised_workspace:
         return
     headers[ASSUME_IDENTITY_ACCESS_TOKEN_HEADER] = (

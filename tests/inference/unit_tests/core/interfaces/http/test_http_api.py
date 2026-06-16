@@ -527,7 +527,7 @@ def test_serverless_auth_middleware_allows_authorized_key_and_caches(
     assert usage_check_mock.await_count == 1
 
 
-def test_serverless_auth_middleware_sets_assume_identity_workspace_context(
+def test_serverless_auth_middleware_sets_assume_identity_workspace_db_id_context(
     monkeypatch,
 ) -> None:
     import inference.core.roboflow_api as roboflow_api
@@ -538,14 +538,14 @@ def test_serverless_auth_middleware_sets_assume_identity_workspace_context(
         usage_check_result=ServerlessUsageCheckResponse(
             status_code=200,
             workspace_id="rf-inference-benchmark",
-            assume_identity_workspace_id="workspace-db-id",
+            workspace_db_id="workspace-db-id",
             under_cap=True,
         ),
     )
 
     def _capture_context(*args, **kwargs):
         context_values.append(
-            roboflow_api.assume_identity_authorised_workspace_id.get()
+            roboflow_api.assume_identity_authorised_workspace_db_id.get()
         )
         return _DummyResponse()
 
@@ -561,7 +561,68 @@ def test_serverless_auth_middleware_sets_assume_identity_workspace_context(
     assert response.status_code == 200
     assert context_values == ["workspace-db-id"]
     assert response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
-    assert roboflow_api.assume_identity_authorised_workspace_id.get() is None
+    assert roboflow_api.assume_identity_authorised_workspace_db_id.get() is None
+
+
+def test_serverless_auth_middleware_refreshes_cached_entry_missing_workspace_db_id(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+    import inference.core.roboflow_api as roboflow_api
+
+    context_values = []
+    interface, model_manager, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+    monkeypatch.setattr(
+        http_api, "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN", "assume-token"
+    )
+    usage_check_mock.side_effect = [
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+        ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            workspace_db_id="workspace-db-id",
+            under_cap=True,
+        ),
+    ]
+
+    def _capture_context(*args, **kwargs):
+        context_values.append(
+            roboflow_api.assume_identity_authorised_workspace_db_id.get()
+        )
+        return _DummyResponse()
+
+    model_manager.infer_from_request_sync.side_effect = _capture_context
+
+    with TestClient(interface.app) as client:
+        first_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        second_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert first_response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
+    assert second_response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
+    assert context_values == [None, "workspace-db-id"]
+    assert usage_check_mock.await_count == 2
+    assert roboflow_api.assume_identity_authorised_workspace_db_id.get() is None
 
 
 def test_serverless_auth_middleware_caches_unauthorized_response(monkeypatch) -> None:

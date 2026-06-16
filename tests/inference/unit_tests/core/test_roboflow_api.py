@@ -516,7 +516,7 @@ async def test_get_serverless_usage_check_async_when_workspace_is_billing_restri
         assert result == ServerlessUsageCheckResponse(
             status_code=402,
             workspace_id="my-workspace",
-            assume_identity_workspace_id="workspace-db-id",
+            workspace_db_id="workspace-db-id",
             under_cap=False,
             error="Workspace billing is restricted.",
         )
@@ -542,7 +542,7 @@ async def test_get_serverless_usage_check_async_when_response_is_valid() -> None
         assert result == ServerlessUsageCheckResponse(
             status_code=200,
             workspace_id="my_workspace",
-            assume_identity_workspace_id="workspace-db-id",
+            workspace_db_id="workspace-db-id",
             under_cap=True,
         )
         registered_requests = request_mock.requests[
@@ -1246,7 +1246,7 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 @mock.patch.object(
     roboflow_api, "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN", "assume-token"
 )
-def test_get_model_metadata_from_inference_models_registry_uses_request_assume_identity_workspace(
+def test_get_model_metadata_from_inference_models_registry_uses_request_workspace_db_id(
     requests_mock: Mocker,
 ) -> None:
     # given
@@ -1264,7 +1264,9 @@ def test_get_model_metadata_from_inference_models_registry_uses_request_assume_i
         url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         json=expected_response,
     )
-    token = roboflow_api.assume_identity_authorised_workspace_id.set("workspace-id")
+    token = roboflow_api.assume_identity_authorised_workspace_db_id.set(
+        "workspace-db-id"
+    )
 
     try:
         # when
@@ -1273,7 +1275,7 @@ def test_get_model_metadata_from_inference_models_registry_uses_request_assume_i
             model_id="coins_detection/1",
         )
     finally:
-        roboflow_api.assume_identity_authorised_workspace_id.reset(token)
+        roboflow_api.assume_identity_authorised_workspace_db_id.reset(token)
 
     # then
     assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
@@ -1283,7 +1285,7 @@ def test_get_model_metadata_from_inference_models_registry_uses_request_assume_i
     )
     assert (
         requests_mock.last_request.headers["x-assume-identity-authorised-workspace"]
-        == "workspace-id"
+        == "workspace-db-id"
     )
     assert result == {
         "modelType": "yolov8",
@@ -3609,7 +3611,7 @@ async def test_get_serverless_usage_check_async_routes_through_secure_gateway() 
 
         assert result.status_code == 200
         assert result.workspace_id == "my-workspace"
-        assert result.assume_identity_workspace_id == "ws-id"
+        assert result.workspace_db_id == "ws-id"
         called_urls = [str(k[1]) for k in request_mock.requests.keys()]
         assert any(
             PROXY_PREFIX in u for u in called_urls
