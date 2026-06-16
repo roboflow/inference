@@ -536,23 +536,39 @@ else:
 from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
     SegmentAnything2VideoBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
-    SegmentAnything3BlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 import (
-    SegmentAnything3BlockV2,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
-    SegmentAnything3BlockV3,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
+        SegmentAnything3BlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 import (
+        SegmentAnything3BlockV2,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
+        SegmentAnything3BlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
+        SegmentAnything3BlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2_tensor import (
+        SegmentAnything3BlockV2,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3_tensor import (
+        SegmentAnything3BlockV3,
+    )
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
     RoboflowInstanceSegmentationModelBlockV4,
 )
 
 if SAM3_3D_OBJECTS_ENABLED:
-    from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
-        SegmentAnything3_3D_ObjectsBlockV1,
-    )
+    if not ENABLE_TENSOR_DATA_REPRESENTATION:
+        from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
+            SegmentAnything3_3D_ObjectsBlockV1,
+        )
+    else:
+        from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1_tensor import (
+            SegmentAnything3_3D_ObjectsBlockV1,
+        )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
@@ -576,9 +592,14 @@ else:
 from inference.core.workflows.core_steps.models.foundation.stability_ai.outpainting.v1 import (
     StabilityAIOutpaintingBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
-    YoloWorldModelBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
+        YoloWorldModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.yolo_world.v1_tensor import (
+        YoloWorldModelBlockV1,
+    )
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
     RoboflowInstanceSegmentationModelBlockV1,
 )
