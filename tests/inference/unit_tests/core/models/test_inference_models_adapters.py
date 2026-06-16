@@ -60,11 +60,21 @@ class _FakePipelineModel:
     def __init__(self, futures: list[_FakePipelineFuture], ops: list[str]):
         self._futures = deque(futures)
         self._ops = ops
+        self.forward_calls = []
+        self.post_process_calls = []
+
+    def forward(self, img_in, **kwargs):
+        self.forward_calls.append((img_in, kwargs))
+        return "sync-raw"
 
     def forward_async(self, _img_in, _meta, **_kwargs):
         future = self._futures.popleft()
         self._ops.append(f"forward:{future.name}")
         return future
+
+    def post_process(self, predictions, meta, **kwargs):
+        self.post_process_calls.append((predictions, meta, kwargs))
+        return ["sync-detections"]
 
 
 def _make_meta(tag: str):
@@ -123,6 +133,42 @@ def test_pipeline_depth_honors_requested_depth_for_supported_models(
     adapter._model = SimpleNamespace(supports_stream_pipeline=True)
 
     assert adapter._resolve_pipeline_depth() == 3
+
+
+def test_pipeline_uses_sync_forward_for_batched_requests() -> None:
+    ops: list[str] = []
+    future = _FakePipelineFuture(name="f1", ops=ops)
+    adapter = _make_pipeline_adapter(
+        futures=[future],
+        ops=ops,
+        pipeline_depth=2,
+    )
+    img_in = SimpleNamespace(_pre_processing_meta=[object(), object()])
+
+    result = adapter.predict(img_in, response_mask_format="dense")
+
+    assert result == "sync-raw"
+    assert ops == []
+    assert len(adapter._model.forward_calls) == 1
+
+
+def test_pipeline_postprocess_uses_sync_path_for_non_future_predictions() -> None:
+    ops: list[str] = []
+    adapter = _make_pipeline_adapter(
+        futures=[],
+        ops=ops,
+        pipeline_depth=2,
+    )
+
+    responses = adapter.postprocess(
+        "sync-raw",
+        _make_meta("meta-1"),
+        response_mask_format="dense",
+    )
+
+    assert responses == ["meta-1"]
+    assert len(adapter._model.post_process_calls) == 1
+    assert adapter._model.post_process_calls[0][0] == "sync-raw"
 
 
 def test_workflow_response_fast_dataclass_path_is_disabled_at_depth_one() -> None:
