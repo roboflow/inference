@@ -348,6 +348,10 @@ class ModelManagerProcess:
         self._rejects_pool_full = 0
         self._result_sched = 0  # DEBUGLOG
         self._result_ran = 0  # DEBUGLOG
+        self._result_q_max = 0  # DEBUGLOG: max loop ready-queue depth since last stats poll
+        self._cpu_t0 = (time.process_time(), time.monotonic())  # DEBUGLOG: CPU-frac baseline
+        self._dwell_max = 0.0  # DEBUGLOG: max result-dwell since last summary (accumulated, not logged per-event)
+        self._dwell_over = 0  # DEBUGLOG: count of result-dwell >100ms since last summary
 
         # slot_id → flavor for slots signalled to a worker and not yet
         # resulted. The reaper must never free these: the worker may be
@@ -433,8 +437,11 @@ class ModelManagerProcess:
         """
         if self._loop is not None:
             self._result_sched += 1  # DEBUGLOG
+            depth = self._result_sched - self._result_ran  # DEBUGLOG
+            if depth > self._result_q_max:  # DEBUGLOG
+                self._result_q_max = depth  # DEBUGLOG
             self._loop.call_soon_threadsafe(
-                self._on_result_on_loop, req_id, slot_id, result_sz
+                self._on_result_on_loop, req_id, slot_id, result_sz, time.monotonic()
             )
 
     def _on_backend_death(self, model_id: str) -> None:
@@ -523,6 +530,7 @@ class ModelManagerProcess:
             asyncio.create_task(self._stale_reaper_loop(), name="mmp-stale-reaper"),
             asyncio.create_task(self._eviction_loop(), name="mmp-evictor"),
             asyncio.create_task(self._monitoring_loop(), name="mmp-monitor"),
+            asyncio.create_task(self._loop_lag_watchdog(), name="mmp-lag-watchdog"),  # DEBUGLOG
         ]
 
         try:
@@ -554,6 +562,31 @@ class ModelManagerProcess:
     # ------------------------------------------------------------------
     # Recv loop
     # ------------------------------------------------------------------
+
+    async def _loop_lag_watchdog(self) -> None:  # DEBUGLOG
+        interval = 0.05  # DEBUGLOG
+        report_every = 5.0  # DEBUGLOG
+        lag_max = 0.0  # DEBUGLOG
+        last_report = time.monotonic()  # DEBUGLOG
+        while True:  # DEBUGLOG
+            t = time.monotonic()  # DEBUGLOG
+            await asyncio.sleep(interval)  # DEBUGLOG
+            lag = time.monotonic() - t - interval  # DEBUGLOG
+            if lag > lag_max:  # DEBUGLOG
+                lag_max = lag  # DEBUGLOG
+            now = time.monotonic()  # DEBUGLOG
+            if now - last_report >= report_every:  # DEBUGLOG
+                if lag_max > 0.1 or self._dwell_over > 0:  # DEBUGLOG
+                    logger.warning(  # DEBUGLOG
+                        "MMP/5s: loop_lag_max=%.0fms result_dwell_max=%.0fms dwell_over_100ms=%d",  # DEBUGLOG
+                        lag_max * 1000,  # DEBUGLOG
+                        self._dwell_max * 1000,  # DEBUGLOG
+                        self._dwell_over,  # DEBUGLOG
+                    )  # DEBUGLOG
+                lag_max = 0.0  # DEBUGLOG
+                self._dwell_max = 0.0  # DEBUGLOG
+                self._dwell_over = 0  # DEBUGLOG
+                last_report = now  # DEBUGLOG
 
     async def _recv_loop(self) -> None:
         """Receive ZMQ frames and dispatch. Runs as asyncio task."""
@@ -947,6 +980,13 @@ class ModelManagerProcess:
                     )
             model_stats[f] = entry
 
+        _pt, _w = time.process_time(), time.monotonic()  # DEBUGLOG
+        _pt0, _w0 = self._cpu_t0  # DEBUGLOG
+        _cpu_frac = (_pt - _pt0) / (_w - _w0) if _w > _w0 else 0.0  # DEBUGLOG
+        self._cpu_t0 = (_pt, _w)  # DEBUGLOG
+        _rq_max = self._result_q_max  # DEBUGLOG
+        self._result_q_max = self._result_sched - self._result_ran  # DEBUGLOG
+
         snapshot.update(
             {
                 "mmp_free_slots": self._pool.free_count if self._pool else 0,
@@ -954,6 +994,8 @@ class ModelManagerProcess:
                 "mmp_pending": len(self._pending),
                 "mmp_rejects_pool_full": self._rejects_pool_full,
                 "mmp_result_q": self._result_sched - self._result_ran,  # DEBUGLOG
+                "mmp_result_q_max": _rq_max,  # DEBUGLOG
+                "mmp_cpu_frac": round(_cpu_frac, 3),  # DEBUGLOG
                 "mmp_cache_hits": self._cache_hits,
                 "mmp_cache_misses": self._cache_misses,
                 "mmp_idle_timeout_s": self._idle_timeout_s,
@@ -1010,9 +1052,17 @@ class ModelManagerProcess:
     # on_result — event-loop side
     # ------------------------------------------------------------------
 
-    def _on_result_on_loop(self, req_id: int, slot_id: int, result_sz: int) -> None:
+    def _on_result_on_loop(
+        self, req_id: int, slot_id: int, result_sz: int, sched_ts: float = None
+    ) -> None:
         """Must be called on the event loop thread."""
         self._result_ran += 1  # DEBUGLOG
+        if sched_ts is not None:  # DEBUGLOG
+            _dwell = time.monotonic() - sched_ts  # DEBUGLOG
+            if _dwell > self._dwell_max:  # DEBUGLOG
+                self._dwell_max = _dwell  # DEBUGLOG
+            if _dwell > 0.1:  # DEBUGLOG
+                self._dwell_over += 1  # DEBUGLOG
         self._inflight.pop(slot_id, None)
         pending = self._pending.pop(req_id, None)
         if pending is None:
