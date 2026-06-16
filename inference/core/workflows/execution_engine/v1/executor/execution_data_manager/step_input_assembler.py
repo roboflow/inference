@@ -1,3 +1,4 @@
+from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple, TypeVar, Union
 
@@ -38,6 +39,43 @@ class BatchModeSIMDStepInput:
 class NonBatchModeSIMDStepInput:
     index: DynamicBatchIndex
     parameters: Dict[str, Any]
+
+
+def _resolve_step_output_futures(value: Any) -> Any:
+    if isinstance(value, Future):
+        return _resolve_step_output_futures(value.result())
+    if isinstance(value, Batch):
+        return Batch.init(
+            content=[_resolve_step_output_futures(element) for element in value],
+            indices=value.indices,
+        )
+    if isinstance(value, list):
+        return [_resolve_step_output_futures(element) for element in value]
+    if isinstance(value, tuple):
+        return tuple(_resolve_step_output_futures(element) for element in value)
+    if isinstance(value, dict):
+        return {
+            key: _resolve_step_output_futures(element) for key, element in value.items()
+        }
+    return value
+
+
+def _step_output_contains_future(value: Any) -> bool:
+    if isinstance(value, Future):
+        return True
+    if isinstance(value, Batch):
+        return any(_step_output_contains_future(element) for element in value)
+    if isinstance(value, list) or isinstance(value, tuple):
+        return any(_step_output_contains_future(element) for element in value)
+    if isinstance(value, dict):
+        return any(_step_output_contains_future(element) for element in value.values())
+    return False
+
+
+def _maybe_resolve_step_output_futures(value: Any) -> Any:
+    if not _step_output_contains_future(value):
+        return value
+    return _resolve_step_output_futures(value)
 
 
 def construct_non_simd_step_input(
@@ -210,6 +248,7 @@ def construct_non_simd_step_non_compound_input(
         step_output = execution_cache.get_non_batch_output(
             selector=parameter_spec.selector
         )
+        step_output = _maybe_resolve_step_output_futures(step_output)
         return step_output, step_output is None
     parameter_spec: StaticStepInputDefinition = parameter_spec  # type: ignore
     return parameter_spec.value, False
@@ -635,6 +674,7 @@ def get_non_compound_parameter_value(
             value = execution_cache.get_non_batch_output(
                 selector=input_parameter.selector
             )
+            value = _maybe_resolve_step_output_futures(value)
             if not requested_as_batch:
                 return value, None, value is None
             else:
@@ -713,6 +753,7 @@ def get_non_compound_parameter_value(
             batch_elements_indices=lineage_indices,
             mask=mask_for_dimension,
         )
+        batch_input = _maybe_resolve_step_output_futures(batch_input)
     if step_execution_dimensionality == parameter_dimensionality:
         return Batch(batch_input, lineage_indices), lineage_indices, False
     if step_execution_dimensionality > parameter_dimensionality:
