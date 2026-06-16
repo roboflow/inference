@@ -322,6 +322,7 @@ def test_get_model_type_when_generic_model_is_utilised(
 
 
 @mock.patch.object(roboflow, "SAM3_FINE_TUNED_MODELS_ENABLED", False)
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
 @mock.patch.object(roboflow, "get_roboflow_model_data")
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_type_when_fine_tuned_sam3_is_requested_and_disabled(
@@ -358,6 +359,7 @@ def test_get_model_type_when_fine_tuned_sam3_is_requested_and_disabled(
     )
 
 
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
 @mock.patch.object(roboflow, "get_roboflow_model_data")
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model(
@@ -397,6 +399,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model(
     )
 
 
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
 @mock.patch.object(roboflow, "get_roboflow_model_data")
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model_type_specified_as_ort(
@@ -507,6 +510,7 @@ def test_get_model_type_when_versioned_model_from_new_model_registry_is_requeste
     get_roboflow_model_data_mock.assert_not_called()
 
 
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
 @mock.patch.object(roboflow, "get_roboflow_model_data")
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model_type_not_specified(
@@ -545,6 +549,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model
     )
 
 
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
 @mock.patch.object(roboflow, "get_roboflow_model_data")
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_project_type_not_specified(
@@ -579,6 +584,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_proje
     )
 
 
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False)
 @mock.patch.object(roboflow, "get_roboflow_model_data")
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model_without_api_key_for_public_model(
