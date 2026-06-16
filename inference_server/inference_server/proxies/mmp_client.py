@@ -29,6 +29,7 @@ from typing import Any, Optional
 import zmq.asyncio
 from fastapi import Request
 
+from inference_model_manager.backends.utils.shm_pool import read_free_count
 from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
@@ -202,6 +203,7 @@ class MMPClient:
 
         self.ensure_cache_ttl_s = cfg.ENSURE_CACHE_TTL_S
         self._loaded_cache: dict[str, float] = {}
+        self.shm_admission = cfg.SHM_ADMISSION
 
         self._ctx: Optional[zmq.asyncio.Context] = None
         self._sock: Optional[zmq.asyncio.Socket] = None
@@ -479,6 +481,11 @@ class MMPClient:
         self._pending.pop(req_id, None)
 
     async def _alloc_slot(self, req_id: int, model_id: str, instance: str = "") -> int:
+        if self.shm_admission and self._shm is not None:
+            free = read_free_count(self._shm.buf, self.n_slots, self.slot_total)
+            if free == 0:
+                raise ServerBusyError("no capacity (admission: pool full)")
+
         mid = _routing_key(model_id, instance).encode()
         payload = struct.pack(">QH", req_id, len(mid)) + mid
         fut = self._make_future(req_id)

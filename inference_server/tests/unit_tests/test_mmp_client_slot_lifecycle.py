@@ -305,3 +305,36 @@ def test_ensure_loaded_caches_and_skips_second_send():
         assert len(sock.sent) == 1, "warm cache must skip the T_ENSURE_LOADED round-trip"
 
     asyncio.run(_run())
+
+
+def test_shm_admission_skips_alloc_when_pool_full():
+    from inference_server.errors import ServerBusyError
+    from inference_model_manager.backends.utils.shm_pool import SHMPool
+
+    async def _run():
+        pool = SHMPool.create(n_slots=4, input_mb=0.001)
+        try:
+            client, sock = _make_client()
+            client.shm_admission = True
+            client._shm = pool._shm
+            client.n_slots = 4
+            client.slot_total = pool.slot_bytes
+
+            # Free slots present → admission allows the send.
+            task = asyncio.create_task(client._alloc_slot(1, "m"))
+            await asyncio.sleep(0)
+            assert any(f[0] == T_ALLOC for f in sock.sent), "should send when free>0"
+            client._dispatch(T_ALLOC_OK, [struct.pack(">QI", 1, 0)])
+            assert await task == 0
+
+            # Drain the pool → free_count published as 0 in the meta block.
+            for _ in range(4):
+                pool.alloc_slot(timeout=0)
+            sock.sent.clear()
+            with pytest.raises(ServerBusyError):
+                await client._alloc_slot(2, "m")
+            assert not sock.sent, "must NOT send T_ALLOC when pool full"
+        finally:
+            pool.close()
+
+    asyncio.run(_run())
