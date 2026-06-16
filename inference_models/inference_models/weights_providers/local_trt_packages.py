@@ -1,10 +1,8 @@
 """Discover locally installed TRT packages under INFERENCE_HOME/models-cache."""
 
-import hashlib
 import json
 import logging
 import os
-import re
 from typing import List, Optional
 
 from inference_models.models.auto_loaders.entities import BackendType
@@ -16,32 +14,31 @@ from inference_models.weights_providers.entities import (
     ServerEnvironmentRequirements,
     TRTPackageDetails,
 )
+from inference_models.weights_providers.local_trt_constants import (
+    ALLOWED_LOCAL_TRT_FILE_HANDLES,
+    LOCAL_TRT_MANIFEST_FILE,
+    LOCAL_TRT_PACKAGE_PREFIX,
+)
 
 logger = logging.getLogger(__name__)
 
-LOCAL_TRT_PACKAGE_PREFIX = "localtrt"
-LOCAL_TRT_MANIFEST_FILE = "local_trt_package_manifest.json"
-
-
-def _slugify_model_id(model_id: str) -> str:
-    model_id_slug = re.sub(r"[^A-Za-z0-9_-]+", "-", model_id)
-    model_id_slug = re.sub(r"[_-]{2,}", "-", model_id_slug)
-    if not model_id_slug:
-        model_id_slug = "special-char-only-model-id"
-    if len(model_id_slug) > 48:
-        model_id_slug = model_id_slug[:48]
-    digest = hashlib.blake2s(model_id.encode("utf-8"), digest_size=4).hexdigest()
-    return f"{model_id_slug}-{digest}"
+LOCAL_PACKAGE_DOWNLOAD_PLACEHOLDER = "https://local.invalid/roboflow-local-trt-package"
 
 
 def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
-    model_slug = _slugify_model_id(model_id=model_id)
+    from inference_models.models.auto_loaders.core import (
+        generate_shared_blobs_path,
+        slugify_model_id_to_os_safe_format,
+    )
+
+    model_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
     cache_root = os.path.join(
         os.environ.get("INFERENCE_HOME", "/tmp/cache"), "models-cache", model_slug
     )
     if not os.path.isdir(cache_root):
         return []
 
+    shared_blobs_dir = generate_shared_blobs_path()
     discovered: List[ModelPackageMetadata] = []
     for package_id in sorted(os.listdir(cache_root)):
         if not package_id.startswith(LOCAL_TRT_PACKAGE_PREFIX):
@@ -51,6 +48,7 @@ def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
             model_id=model_id,
             package_id=package_id,
             package_dir=package_dir,
+            shared_blobs_dir=shared_blobs_dir,
         )
         if metadata is not None:
             discovered.append(metadata)
@@ -64,10 +62,19 @@ def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
     return discovered
 
 
+def _is_safe_local_trt_file_handle(handle: str) -> bool:
+    if handle not in ALLOWED_LOCAL_TRT_FILE_HANDLES:
+        return False
+    if handle != os.path.basename(handle):
+        return False
+    return True
+
+
 def _parse_local_trt_package(
     model_id: str,
     package_id: str,
     package_dir: str,
+    shared_blobs_dir: str,
 ) -> Optional[ModelPackageMetadata]:
     manifest_path = os.path.join(package_dir, LOCAL_TRT_MANIFEST_FILE)
     engine_path = os.path.join(package_dir, "engine.plan")
@@ -77,12 +84,7 @@ def _parse_local_trt_package(
     try:
         with open(manifest_path, encoding="utf-8") as manifest_file:
             manifest_data = json.load(manifest_file)
-        from inference_models.weights_providers.roboflow import (
-            GPUServerSpecsV1,
-            JetsonMachineSpecsV1,
-            TrtModelPackageV1,
-            as_version,
-        )
+        from inference_models.weights_providers.roboflow import TrtModelPackageV1
 
         parsed_manifest = TrtModelPackageV1.model_validate(manifest_data["packageManifest"])
         file_md5 = manifest_data["files"]
@@ -101,10 +103,19 @@ def _parse_local_trt_package(
 
     package_artefacts = []
     for handle, md5_hash in file_md5.items():
-        file_path = os.path.join(package_dir, handle)
-        if not os.path.isfile(file_path):
+        if not _is_safe_local_trt_file_handle(handle=handle):
             logger.warning(
-                "Local TRT package missing file model_id=%s package_id=%s handle=%s",
+                "Local TRT package has disallowed file handle model_id=%s package_id=%s handle=%s",
+                model_id,
+                package_id,
+                handle,
+            )
+            return None
+        package_file_path = os.path.join(package_dir, handle)
+        shared_blob_path = os.path.join(shared_blobs_dir, md5_hash)
+        if not os.path.isfile(package_file_path) or not os.path.isfile(shared_blob_path):
+            logger.warning(
+                "Local TRT package missing artefact model_id=%s package_id=%s handle=%s",
                 model_id,
                 package_id,
                 handle,
@@ -112,7 +123,7 @@ def _parse_local_trt_package(
             return None
         package_artefacts.append(
             FileDownloadSpecs(
-                download_url=f"file://{file_path}",
+                download_url=LOCAL_PACKAGE_DOWNLOAD_PLACEHOLDER,
                 file_handle=handle,
                 md5_hash=md5_hash,
             )

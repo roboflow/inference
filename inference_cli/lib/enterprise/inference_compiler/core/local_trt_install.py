@@ -20,10 +20,12 @@ from inference_cli.lib.enterprise.inference_compiler.utils.file_system import (
     dump_json,
 )
 
-logger = logging.getLogger("inference_cli.inference_compiler")
+from inference_models.weights_providers.local_trt_constants import (
+    LOCAL_TRT_MANIFEST_FILE,
+    LOCAL_TRT_PACKAGE_PREFIX,
+)
 
-LOCAL_TRT_PACKAGE_PREFIX = "localtrt"
-LOCAL_TRT_MANIFEST_FILE = "local_trt_package_manifest.json"
+logger = logging.getLogger("inference_cli.inference_compiler")
 
 
 def local_package_id_for_manifest(package_manifest: TRTModelPackageV1) -> str:

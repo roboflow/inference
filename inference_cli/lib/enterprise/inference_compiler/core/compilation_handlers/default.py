@@ -34,6 +34,7 @@ from inference_cli.lib.enterprise.inference_compiler.core.entities import (
 )
 from inference_cli.lib.enterprise.inference_compiler.core.local_trt_install import (
     install_compiled_trt_package,
+    local_package_id_for_manifest,
 )
 from inference_cli.lib.enterprise.inference_compiler.errors import (
     AlreadyCompiledError,
@@ -249,13 +250,29 @@ def compile_and_register_default_model_trt_variant(
             reason="already compiled on platform",
         )
     except Exception as error:
-        logger.exception("TRT compilation failed for %s", model_metadata.model_id)
-        return CompilationPipelineResult(
-            model_id=model_metadata.model_id,
-            model_architecture=model_metadata.model_architecture,
-            compile_error=str(error),
-            backend="onnx_cuda",
-            reason=f"compilation failed: {error}",
+        if platform_policy == PlatformRegistrationPolicy.OPTIONAL:
+            logger.exception("TRT compilation failed for %s", model_metadata.model_id)
+            return CompilationPipelineResult(
+                model_id=model_metadata.model_id,
+                model_architecture=model_metadata.model_architecture,
+                compile_error=str(error),
+                backend="onnx_cuda",
+                reason=f"compilation failed: {error}",
+            )
+        raise
+
+    pending_local_package_id = local_package_id_for_manifest(package_manifest)
+    if verify_model is not None:
+        print_to_console(message="Verifying compiled artefacts...", console=console)
+        verify_model_package(
+            model_metadata=model_metadata,
+            model_package_id=pending_local_package_id,
+            trt_config=trt_config,
+            inference_config_path=local_files[INFERENCE_CONFIG_FILE],
+            class_names_path=local_files[CLASS_NAMES_FILE],
+            engine_path=engine_path,
+            verify_model=verify_model,
+            keypoints_metadata_path=local_files.get(KEYPOINTS_METADATA_FILE),
         )
 
     local_package_id, local_install_path = install_compiled_trt_package(
@@ -295,18 +312,6 @@ def compile_and_register_default_model_trt_variant(
         )
         return pipeline_result
 
-    if verify_model is not None:
-        print_to_console(message="Verifying compiled artefacts...", console=console)
-        verify_model_package(
-            model_metadata=model_metadata,
-            model_package_id=registration_response.model_package_id,
-            trt_config=trt_config,
-            inference_config_path=local_files[INFERENCE_CONFIG_FILE],
-            class_names_path=local_files[CLASS_NAMES_FILE],
-            engine_path=engine_path,
-            verify_model=verify_model,
-            keypoints_metadata_path=local_files.get(KEYPOINTS_METADATA_FILE),
-        )
     uploaded = register_default_model_package_artefacts(
         registration_response=registration_response,
         trt_config=trt_config,
