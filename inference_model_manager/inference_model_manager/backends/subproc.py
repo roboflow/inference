@@ -1283,6 +1283,7 @@ class SubprocessBackend(Backend):
             "state": self.state,
             "is_accepting": self.is_accepting,
             "queue_depth": self.queue_depth,
+            "outbound_qsize": self._outbound.qsize(),  # DEBUGLOG
             "max_batch_size": self.max_batch_size,
             "throughput_fps": ws.get("throughput_fps", 0.0),
             "latency_p50_ms": ws.get("latency_p50_ms", 0.0),
