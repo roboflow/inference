@@ -1240,6 +1240,145 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     }
 
 
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
+@mock.patch.object(
+    roboflow_api, "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN", "assume-token"
+)
+@mock.patch.object(roboflow_api, "ROBOFLOW_ASSUME_IDENTITY_AUTHORISED_WORKSPACE", None)
+def test_get_model_metadata_from_inference_models_registry_uses_request_assume_identity_workspace(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    expected_response = {
+        "status": "ok",
+        "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coins_detection/1",
+            "modelArchitecture": "yolov8",
+            "modelVariant": None,
+            "taskType": "object-detection",
+        },
+    }
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
+        json=expected_response,
+    )
+    token = roboflow_api.assume_identity_authorised_workspace_id.set("workspace-id")
+
+    try:
+        # when
+        result = get_model_metadata_from_inference_models_registry(
+            api_key="my_api_key",
+            model_id="coins_detection/1",
+        )
+    finally:
+        roboflow_api.assume_identity_authorised_workspace_id.reset(token)
+
+    # then
+    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
+    assert (
+        requests_mock.last_request.headers["x-assume-identity-access-token"]
+        == "assume-token"
+    )
+    assert (
+        requests_mock.last_request.headers["x-assume-identity-authorised-workspace"]
+        == "workspace-id"
+    )
+    assert result == {
+        "modelType": "yolov8",
+        "taskType": "object-detection",
+    }
+
+
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
+@mock.patch.object(
+    roboflow_api, "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN", "assume-token"
+)
+@mock.patch.object(
+    roboflow_api, "ROBOFLOW_ASSUME_IDENTITY_AUTHORISED_WORKSPACE", "workspace-from-env"
+)
+def test_get_model_metadata_from_inference_models_registry_uses_env_assume_identity_workspace(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    expected_response = {
+        "status": "ok",
+        "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coins_detection/1",
+            "modelArchitecture": "yolov8",
+            "modelVariant": None,
+            "taskType": "object-detection",
+        },
+    }
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
+        json=expected_response,
+    )
+
+    # when
+    result = get_model_metadata_from_inference_models_registry(
+        api_key="my_api_key",
+        model_id="coins_detection/1",
+    )
+
+    # then
+    assert (
+        requests_mock.last_request.headers["x-assume-identity-access-token"]
+        == "assume-token"
+    )
+    assert (
+        requests_mock.last_request.headers["x-assume-identity-authorised-workspace"]
+        == "workspace-from-env"
+    )
+    assert result == {
+        "modelType": "yolov8",
+        "taskType": "object-detection",
+    }
+
+
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
+@mock.patch.object(
+    roboflow_api, "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN", "assume-token"
+)
+@mock.patch.object(roboflow_api, "ROBOFLOW_ASSUME_IDENTITY_AUTHORISED_WORKSPACE", None)
+def test_get_model_metadata_from_inference_models_registry_does_not_send_token_without_workspace(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    expected_response = {
+        "status": "ok",
+        "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coins_detection/1",
+            "modelArchitecture": "yolov8",
+            "modelVariant": None,
+            "taskType": "object-detection",
+        },
+    }
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
+        json=expected_response,
+    )
+
+    # when
+    result = get_model_metadata_from_inference_models_registry(
+        api_key="my_api_key",
+        model_id="coins_detection/1",
+    )
+
+    # then
+    assert "x-assume-identity-access-token" not in requests_mock.last_request.headers
+    assert (
+        "x-assume-identity-authorised-workspace"
+        not in requests_mock.last_request.headers
+    )
+    assert result == {
+        "modelType": "yolov8",
+        "taskType": "object-detection",
+    }
+
+
 @mock.patch.object(roboflow_api, "GCP_SERVERLESS", True)
 @mock.patch.object(roboflow_api, "ENFORCE_CREDITS_VERIFICATION", True)
 @mock.patch.object(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "dummy-secret")

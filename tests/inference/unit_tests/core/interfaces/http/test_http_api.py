@@ -300,6 +300,7 @@ def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> N
     assert inference_request.model_id == "depth-anything-v3/small"
     assert inference_request.api_key == "query-api-key"
 
+
 def test_depth_estimation_with_model_id_path_sets_request_model_id(monkeypatch) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
@@ -524,6 +525,41 @@ def test_serverless_auth_middleware_allows_authorized_key_and_caches(
     assert first_response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
     assert second_response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
     assert usage_check_mock.await_count == 1
+
+
+def test_serverless_auth_middleware_sets_assume_identity_workspace_context(
+    monkeypatch,
+) -> None:
+    import inference.core.roboflow_api as roboflow_api
+
+    context_values = []
+    interface, model_manager, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    def _capture_context(*args, **kwargs):
+        context_values.append(
+            roboflow_api.assume_identity_authorised_workspace_id.get()
+        )
+        return _DummyResponse()
+
+    model_manager.infer_from_request_sync.side_effect = _capture_context
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert response.status_code == 200
+    assert context_values == ["rf-inference-benchmark"]
+    assert roboflow_api.assume_identity_authorised_workspace_id.get() is None
 
 
 def test_serverless_auth_middleware_caches_unauthorized_response(monkeypatch) -> None:

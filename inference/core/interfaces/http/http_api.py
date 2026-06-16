@@ -282,6 +282,7 @@ from inference.core.managers.model_load_collector import (
 )
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
+    assume_identity_authorised_workspace_id,
     build_roboflow_api_headers,
     get_roboflow_workspace,
     get_roboflow_workspace_async,
@@ -478,6 +479,18 @@ def _attach_observability_headers_to_early_response(
     trace_id = get_trace_id()
     if trace_id is not None:
         response.headers[TRACE_ID_HEADER] = trace_id
+
+
+async def _call_next_with_assume_identity_authorised_workspace(
+    request: Request, call_next, workspace_id: Optional[str]
+) -> Response:
+    if not workspace_id:
+        return await call_next(request)
+    token = assume_identity_authorised_workspace_id.set(workspace_id)
+    try:
+        return await call_next(request)
+    finally:
+        assume_identity_authorised_workspace_id.reset(token)
 
 
 def _log_serverless_authorization_denial(
@@ -991,7 +1004,11 @@ class HttpInterface(BaseInterface):
                     record_error(error)
                     raise
 
-                response = await call_next(request)
+                response = await _call_next_with_assume_identity_authorised_workspace(
+                    request=request,
+                    call_next=call_next,
+                    workspace_id=workspace_id,
+                )
                 if workspace_id:
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
@@ -1086,7 +1103,11 @@ class HttpInterface(BaseInterface):
                     except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
-                response = await call_next(request)
+                response = await _call_next_with_assume_identity_authorised_workspace(
+                    request=request,
+                    call_next=call_next,
+                    workspace_id=workspace_id,
+                )
                 if workspace_id:
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response

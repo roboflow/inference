@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import contextvars
 import hashlib
 import json
 import os
@@ -51,6 +52,8 @@ from inference.core.env import (
     ROBOFLOW_API_EXTRA_HEADERS,
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_API_VERIFY_SSL,
+    ROBOFLOW_ASSUME_IDENTITY_AUTHORISED_WORKSPACE,
+    ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
     SINGLE_TENANT_WORKFLOW_CACHE,
@@ -97,6 +100,12 @@ _EPHEMERAL_CACHE_UNAVAILABLE_EXCEPTIONS = (
 
 ENFORCE_CREDITS_VERIFICATION_HEADER = "x-enforce-credits-verification"
 ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER = "x-enforce-internal-artefacts-urls"
+ASSUME_IDENTITY_ACCESS_TOKEN_HEADER = "x-assume-identity-access-token"
+ASSUME_IDENTITY_AUTHORISED_WORKSPACE_HEADER = "x-assume-identity-authorised-workspace"
+
+assume_identity_authorised_workspace_id: contextvars.ContextVar[
+    Optional[WorkspaceID]
+] = contextvars.ContextVar("assume_identity_authorised_workspace_id", default=None)
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
@@ -621,6 +630,7 @@ def get_model_metadata_from_inference_models_registry(
             headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
     if ROBOFLOW_INTERNAL_SERVICE_SECRET:
         headers["X-Roboflow-Internal-Service-Secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
+    _add_assume_identity_headers(headers=headers)
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/models/v1/external/stat",
         params=query,
@@ -641,6 +651,21 @@ def get_model_metadata_from_inference_models_registry(
         f"and saved to cache with key: {api_data_cache_key}."
     )
     return api_data
+
+
+def _add_assume_identity_headers(headers: Dict[str, str]) -> None:
+    if not ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN:
+        return
+    authorised_workspace = (
+        assume_identity_authorised_workspace_id.get()
+        or ROBOFLOW_ASSUME_IDENTITY_AUTHORISED_WORKSPACE
+    )
+    if not authorised_workspace:
+        return
+    headers[ASSUME_IDENTITY_ACCESS_TOKEN_HEADER] = (
+        ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN
+    )
+    headers[ASSUME_IDENTITY_AUTHORISED_WORKSPACE_HEADER] = authorised_workspace
 
 
 @wrap_roboflow_api_errors()
