@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import inspect
 from typing import Generic, List, Optional, Tuple, Union
 
 import numpy as np
@@ -71,11 +72,16 @@ class KeyPoints:
         See Also:
             - Supervision documentation: https://supervision.roboflow.com
         """
-        return sv.KeyPoints(
-            xy=self.xy.cpu().numpy(),
-            class_id=self.class_id.cpu().numpy(),
-            confidence=self.confidence.cpu().numpy(),
-        )
+        confidence_array = self.confidence.cpu().numpy()
+        kwargs = {
+            "xy": self.xy.cpu().numpy(),
+            "class_id": self.class_id.cpu().numpy(),
+        }
+        if "keypoint_confidence" in inspect.signature(sv.KeyPoints.__init__).parameters:
+            kwargs["keypoint_confidence"] = confidence_array
+        else:
+            kwargs["confidence"] = confidence_array
+        return sv.KeyPoints(**kwargs)
 
 
 class KeyPointsDetectionModel(

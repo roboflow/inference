@@ -9,7 +9,10 @@ from inference.core.workflows.core_steps.visualizations.common.base import (
     VisualizationBlock,
     VisualizationManifest,
 )
-from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
+from inference.core.workflows.core_steps.visualizations.common.utils import (
+    build_supervision_keypoints,
+    str_to_color,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
@@ -264,7 +267,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         keypoints_class_name = detections.data["keypoints_class_name"]
         class_id = detections.class_id
 
-        keypoints = sv.KeyPoints(
+        keypoints = build_supervision_keypoints(
             xy=np.array(keypoints_xy, dtype=np.float32),
             confidence=np.array(keypoints_confidence, dtype=np.float32),
             class_id=np.array(class_id, dtype=int),

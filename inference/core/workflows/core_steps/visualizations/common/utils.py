@@ -1,4 +1,25 @@
+import inspect
+
+import numpy as np
 import supervision as sv
+
+
+def build_supervision_keypoints(
+    *,
+    xy: np.ndarray,
+    confidence: np.ndarray,
+    class_id: np.ndarray,
+    data: dict | None = None,
+) -> sv.KeyPoints:
+    kwargs = {"xy": xy, "class_id": class_id}
+    if data is not None:
+        kwargs["data"] = data
+    confidence_array = np.asarray(confidence, dtype=np.float32)
+    if "keypoint_confidence" in inspect.signature(sv.KeyPoints.__init__).parameters:
+        kwargs["keypoint_confidence"] = confidence_array
+    else:
+        kwargs["confidence"] = confidence_array
+    return sv.KeyPoints(**kwargs)
 
 
 def str_to_color(color: str) -> sv.Color:
