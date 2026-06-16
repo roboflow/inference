@@ -129,6 +129,7 @@ API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
 class ServerlessUsageCheckResponse:
     status_code: int
     workspace_id: Optional[WorkspaceID] = None
+    assume_identity_workspace_id: Optional[WorkspaceID] = None
     under_cap: Optional[bool] = None
     error: Optional[str] = None
 
@@ -373,11 +374,15 @@ async def get_serverless_usage_check_async(
                 if response.status == 402:
                     response_payload = await response.json()
                     workspace = response_payload.get(
-                        "workspaceId"
-                    ) or response_payload.get("workspace")
+                        "workspace"
+                    ) or response_payload.get("workspaceId")
+                    assume_identity_workspace = (
+                        response_payload.get("workspaceId") or workspace
+                    )
                     return ServerlessUsageCheckResponse(
                         status_code=402,
                         workspace_id=workspace,
+                        assume_identity_workspace_id=assume_identity_workspace,
                         under_cap=response_payload.get("underCap"),
                         error=response_payload.get("error"),
                     )
@@ -391,15 +396,19 @@ async def get_serverless_usage_check_async(
                     raise error
                 response_payload = await response.json()
                 workspace_id = response_payload.get(
-                    "workspaceId"
-                ) or response_payload.get("workspace")
+                    "workspace"
+                ) or response_payload.get("workspaceId")
                 if workspace_id is None or response_payload.get("underCap") is not True:
                     raise WorkspaceLoadError(
                         "Unexpected serverless usage-check response received from Roboflow API."
                     )
+                assume_identity_workspace_id = (
+                    response_payload.get("workspaceId") or workspace_id
+                )
                 return ServerlessUsageCheckResponse(
                     status_code=200,
                     workspace_id=workspace_id,
+                    assume_identity_workspace_id=assume_identity_workspace_id,
                     under_cap=True,
                 )
     except (aiohttp.ClientConnectionError, ConnectionError) as error:

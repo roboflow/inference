@@ -538,6 +538,7 @@ def test_serverless_auth_middleware_sets_assume_identity_workspace_context(
         usage_check_result=ServerlessUsageCheckResponse(
             status_code=200,
             workspace_id="rf-inference-benchmark",
+            assume_identity_workspace_id="workspace-db-id",
             under_cap=True,
         ),
     )
@@ -558,7 +559,8 @@ def test_serverless_auth_middleware_sets_assume_identity_workspace_context(
         )
 
     assert response.status_code == 200
-    assert context_values == ["rf-inference-benchmark"]
+    assert context_values == ["workspace-db-id"]
+    assert response.headers[WORKSPACE_ID_HEADER] == "rf-inference-benchmark"
     assert roboflow_api.assume_identity_authorised_workspace_id.get() is None
 
 

@@ -374,6 +374,7 @@ if ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
 class AuthorizationCacheEntry:
     expires_at: float
     workspace_id: Optional[str]
+    assume_identity_workspace_id: Optional[str] = None
     status_code: int = 200
     message: Optional[str] = None
 
@@ -864,6 +865,7 @@ class HttpInterface(BaseInterface):
                         cache_key = (api_key, enforce_credits_verification)
                         cache_entry = cached_api_keys.get(cache_key)
                         workspace_id = None
+                        assume_identity_workspace_id = None
                         if auth_span is not None:
                             auth_span.set_attribute(
                                 "auth.enforce_credits_verification",
@@ -887,6 +889,9 @@ class HttpInterface(BaseInterface):
                                     cache_hit=True,
                                 )
                             workspace_id = cache_entry.workspace_id
+                            assume_identity_workspace_id = (
+                                cache_entry.assume_identity_workspace_id
+                            )
                         else:
                             if auth_span is not None:
                                 auth_span.set_attribute("auth.cache_hit", False)
@@ -933,11 +938,15 @@ class HttpInterface(BaseInterface):
                                 )
                                 if usage_check_result.status_code == 200:
                                     workspace_id = usage_check_result.workspace_id
+                                    assume_identity_workspace_id = (
+                                        usage_check_result.assume_identity_workspace_id
+                                    )
                                     cached_api_keys[cache_key] = (
                                         AuthorizationCacheEntry(
                                             expires_at=time.time()
                                             + AUTH_CACHE_TTL_SECONDS,
                                             workspace_id=workspace_id,
+                                            assume_identity_workspace_id=assume_identity_workspace_id,
                                         )
                                     )
                                 elif usage_check_result.status_code == 401:
@@ -978,6 +987,7 @@ class HttpInterface(BaseInterface):
                                             expires_at=time.time()
                                             + SHORT_AUTH_CACHE_TTL_SECONDS,
                                             workspace_id=usage_check_result.workspace_id,
+                                            assume_identity_workspace_id=usage_check_result.assume_identity_workspace_id,
                                             status_code=402,
                                             message=message,
                                         )
@@ -1007,7 +1017,7 @@ class HttpInterface(BaseInterface):
                 response = await _call_next_with_assume_identity_authorised_workspace(
                     request=request,
                     call_next=call_next,
-                    workspace_id=workspace_id,
+                    workspace_id=assume_identity_workspace_id or workspace_id,
                 )
                 if workspace_id:
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
