@@ -35,7 +35,6 @@ from inference.core.models.stubs import (
 )
 from inference.core.registries.roboflow import get_model_type
 from inference.core.warnings import InferenceModelsStackMissing, ModelDependencyMissing
-from inference.models.vllm_proxy import VLLM_PROXY_ENABLED
 from inference.models import (
     YOLACT,
     DeepLabV3PlusSemanticSegmentation,
@@ -61,6 +60,7 @@ from inference.models import (
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
 )
+from inference.models.vllm_proxy import VLLM_PROXY_ENABLED
 from inference.models.yolo26.yolo26_keypoints_detection import YOLO26KeypointsDetection
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 from inference.models.yolov11.yolov11_keypoints_detection import (

@@ -181,8 +181,10 @@ class AdapterManager:
             api_key=api_key,
             weights_provider_extra_headers=weights_provider_extra_headers,
         )
-        if not (metadata.model_architecture or "").lower().startswith(
-            SUPPORTED_MODEL_ARCHITECTURES
+        if (
+            not (metadata.model_architecture or "")
+            .lower()
+            .startswith(SUPPORTED_MODEL_ARCHITECTURES)
         ):
             raise NotServableOnVLLMError(
                 f"Model {model_id} has architecture "
