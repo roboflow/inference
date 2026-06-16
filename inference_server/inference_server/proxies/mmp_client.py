@@ -200,6 +200,9 @@ class MMPClient:
             alloc_timeout_s if alloc_timeout_s is not None else cfg.ALLOC_TIMEOUT_S
         )
 
+        self.ensure_cache_ttl_s = cfg.ENSURE_CACHE_TTL_S
+        self._loaded_cache: dict[str, float] = {}
+
         self._ctx: Optional[zmq.asyncio.Context] = None
         self._sock: Optional[zmq.asyncio.Socket] = None
         self._shm: Optional[SharedMemory] = None
@@ -272,8 +275,13 @@ class MMPClient:
         api_key: str = "",
         device: str = "",
     ) -> tuple:
+        routing_key = _routing_key(model_id, instance)
+        exp = self._loaded_cache.get(routing_key)
+        if exp is not None and exp > time.monotonic():
+            return ("model_ready",)
+
         req_id = _new_req_id()
-        mid_bytes = _routing_key(model_id, instance).encode()
+        mid_bytes = routing_key.encode()
         key_bytes = api_key.encode()
         dev_bytes = device.encode()
         wait_ms = int(self.load_wait_s * 1000)
@@ -288,7 +296,12 @@ class MMPClient:
         fut = self._make_future(req_id)
         await self._sock.send_multipart([T_ENSURE_LOADED, payload])
         try:
-            return await asyncio.wait_for(fut, timeout=self.load_wait_s + 1.0)
+            result = await asyncio.wait_for(fut, timeout=self.load_wait_s + 1.0)
+            if result[0] == "model_ready" and self.ensure_cache_ttl_s > 0:
+                self._loaded_cache[routing_key] = (
+                    time.monotonic() + self.ensure_cache_ttl_s
+                )
+            return result
         except asyncio.TimeoutError:
             self._drop_future(req_id)
             return ("load_timeout", int(self.load_wait_s))
