@@ -126,6 +126,13 @@ def get_roboflow_model(
         if parsed_model_package is None:
             continue
         parsed_model_packages.append(parsed_model_package)
+    from inference_models.weights_providers.local_trt_packages import discover_local_trt_packages
+
+    platform_package_ids = {package.package_id for package in parsed_model_packages}
+    for local_package in discover_local_trt_packages(model_id=model_id):
+        if local_package.package_id not in platform_package_ids:
+            parsed_model_packages.append(local_package)
+            platform_package_ids.add(local_package.package_id)
     model_dependencies = None
     if model_metadata.model_dependencies:
         model_dependencies = []

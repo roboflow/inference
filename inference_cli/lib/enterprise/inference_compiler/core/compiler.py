@@ -13,6 +13,8 @@ from inference_cli.lib.enterprise.inference_compiler.core.compilation_handlers.d
 )
 from inference_cli.lib.enterprise.inference_compiler.core.entities import (
     CompilationConfig,
+    CompilationPipelineResult,
+    PlatformRegistrationPolicy,
 )
 from inference_cli.lib.enterprise.inference_compiler.core.model_checks.default import (
     verify_auto_model,
@@ -28,6 +30,10 @@ from inference_models.weights_providers.core import get_model_from_provider
 from inference_models.weights_providers.entities import ModelMetadata
 
 logger = logging.getLogger("inference_cli.inference_compiler")
+
+
+def _compilation_directory_context(model_id: str):
+    return tempfile.TemporaryDirectory()
 
 REGISTERED_COMPILATION_HANDLERS = {
     "yolov8": partial(
@@ -117,7 +123,8 @@ def compile_model(
     trt_forward_compatible: bool = False,
     trt_same_cc_compatible: bool = False,
     console: Optional[Console] = None,
-) -> None:
+    platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
+) -> CompilationPipelineResult:
     print_to_console(
         message="Inference Compiler",
         justify="center",
@@ -142,12 +149,13 @@ def compile_model(
         model_metadata=model_metadata,
         console=console,
     )
-    compile_and_register(
+    return compile_and_register(
         model_metadata=model_metadata,
         models_service_client=models_service_client,
         trt_forward_compatible=trt_forward_compatible,
         trt_same_cc_compatible=trt_same_cc_compatible,
         console=console,
+        platform_registration=platform_registration,
     )
 
 
@@ -157,18 +165,26 @@ def compile_and_register(
     trt_forward_compatible: bool,
     trt_same_cc_compatible: bool,
     console: Optional[Console] = None,
-) -> None:
+    platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
+) -> CompilationPipelineResult:
     print_to_console(message="Model compilation in progress...", console=console)
     if model_metadata.model_architecture not in REGISTERED_COMPILATION_HANDLERS:
         raise ModelArchitectureNotSupportedError(
             f"Model architecture {model_metadata.model_architecture} not supported for compilation."
         )
-    with tempfile.TemporaryDirectory() as compilation_directory:
-        REGISTERED_COMPILATION_HANDLERS[model_metadata.model_architecture](
+    with _compilation_directory_context(model_metadata.model_id) as compilation_directory:
+        return REGISTERED_COMPILATION_HANDLERS[model_metadata.model_architecture](
             model_metadata,
             models_service_client,
             compilation_directory,
             trt_forward_compatible,
             trt_same_cc_compatible,
             console,
+            platform_registration=platform_registration,
+        ) or CompilationPipelineResult(
+            model_id=model_metadata.model_id,
+            model_architecture=model_metadata.model_architecture,
+            compiled=True,
+            backend="trt",
+            reason="compilation handler completed",
         )

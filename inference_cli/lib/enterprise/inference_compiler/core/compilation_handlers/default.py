@@ -28,7 +28,12 @@ from inference_cli.lib.enterprise.inference_compiler.core.compilation_handlers.u
 )
 from inference_cli.lib.enterprise.inference_compiler.core.entities import (
     CompilationConfig,
+    CompilationPipelineResult,
+    PlatformRegistrationPolicy,
     TRTConfig,
+)
+from inference_cli.lib.enterprise.inference_compiler.core.local_trt_install import (
+    install_compiled_trt_package,
 )
 from inference_cli.lib.enterprise.inference_compiler.errors import (
     AlreadyCompiledError,
@@ -56,7 +61,8 @@ def compile_and_register_default_model(
     trt_same_cc_compatible: bool,
     console: Optional[Console],
     compilation_config: CompilationConfig,
-) -> None:
+    platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
+) -> Optional[CompilationPipelineResult]:
     (
         package_with_static_batch_size,
         package_with_dynamic_batch_size,
@@ -100,11 +106,12 @@ def compile_and_register_default_model(
     )
     compilation_output_dir = os.path.join(compilation_directory, "compilation_output")
     os.makedirs(compilation_output_dir, exist_ok=True)
+    last_result: Optional[CompilationPipelineResult] = None
     if package_with_dynamic_batch_size is None:
         static_bs_fp32_engine_directory = os.path.join(
             compilation_output_dir, "static_bs_fp32"
         )
-        compile_and_register_default_model_trt_variant(
+        last_result = compile_and_register_default_model_trt_variant(
             models_service_client=models_service_client,
             model_metadata=model_metadata,
             compilation_directory=static_bs_fp32_engine_directory,
@@ -116,11 +123,12 @@ def compile_and_register_default_model(
             same_compute_compatibility=trt_same_cc_compatible,
             verify_model=compilation_config.verify_model,
             console=console,
+            platform_registration=platform_registration,
         )
         static_bs_fp16_engine_directory = os.path.join(
             compilation_output_dir, "static_bs_fp16"
         )
-        compile_and_register_default_model_trt_variant(
+        last_result = compile_and_register_default_model_trt_variant(
             models_service_client=models_service_client,
             model_metadata=model_metadata,
             compilation_directory=static_bs_fp16_engine_directory,
@@ -132,12 +140,13 @@ def compile_and_register_default_model(
             same_compute_compatibility=trt_same_cc_compatible,
             verify_model=compilation_config.verify_model,
             console=console,
+            platform_registration=platform_registration,
         )
-        return None
+        return last_result
     dynamic_bs_fp32_engine_directory = os.path.join(
         compilation_output_dir, "dynamic_bs_fp32"
     )
-    compile_and_register_default_model_trt_variant(
+    last_result = compile_and_register_default_model_trt_variant(
         models_service_client=models_service_client,
         model_metadata=model_metadata,
         compilation_directory=dynamic_bs_fp32_engine_directory,
@@ -152,11 +161,12 @@ def compile_and_register_default_model(
         same_compute_compatibility=trt_same_cc_compatible,
         verify_model=compilation_config.verify_model,
         console=console,
+        platform_registration=platform_registration,
     )
     dynamic_bs_fp16_engine_directory = os.path.join(
         compilation_output_dir, "dynamic_bs_fp16"
     )
-    compile_and_register_default_model_trt_variant(
+    last_result = compile_and_register_default_model_trt_variant(
         models_service_client=models_service_client,
         model_metadata=model_metadata,
         compilation_directory=dynamic_bs_fp16_engine_directory,
@@ -171,7 +181,9 @@ def compile_and_register_default_model(
         same_compute_compatibility=trt_same_cc_compatible,
         verify_model=compilation_config.verify_model,
         console=console,
+        platform_registration=platform_registration,
     )
+    return last_result
 
 
 def compile_and_register_default_model_trt_variant(
@@ -189,7 +201,9 @@ def compile_and_register_default_model_trt_variant(
     same_compute_compatibility: bool = False,
     verify_model: Optional[Callable[[str], None]] = None,
     console: Optional[Console] = None,
-) -> None:
+    platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
+) -> Optional[CompilationPipelineResult]:
+    platform_policy = platform_registration
     print_to_console(
         message=f"Building TRT engine - precision={precision}", console=console
     )
@@ -203,7 +217,7 @@ def compile_and_register_default_model_trt_variant(
         if KEYPOINTS_METADATA_FILE in local_files:
             file_handles_to_register.append(KEYPOINTS_METADATA_FILE)
 
-        engine_path, trt_config, registration_response = execute_compilation(
+        engine_path, trt_config, package_manifest, registration_response = execute_compilation(
             models_service_client=models_service_client,
             model_id=model_metadata.model_id,
             model_architecture=model_metadata.model_architecture,
@@ -221,12 +235,66 @@ def compile_and_register_default_model_trt_variant(
             trt_version_compatible=trt_forward_compatible,
             same_compute_compatibility=same_compute_compatibility,
             console=console,
+            platform_registration=platform_registration,
         )
     except AlreadyCompiledError:
         print_to_console(
             message="Model package already registered - skipping", console=console
         )
-        return None
+        return CompilationPipelineResult(
+            model_id=model_metadata.model_id,
+            model_architecture=model_metadata.model_architecture,
+            registered_platform=True,
+            backend="trt",
+            reason="already compiled on platform",
+        )
+    except Exception as error:
+        logger.exception("TRT compilation failed for %s", model_metadata.model_id)
+        return CompilationPipelineResult(
+            model_id=model_metadata.model_id,
+            model_architecture=model_metadata.model_architecture,
+            compile_error=str(error),
+            backend="onnx_cuda",
+            reason=f"compilation failed: {error}",
+        )
+
+    local_package_id, local_install_path = install_compiled_trt_package(
+        model_id=model_metadata.model_id,
+        model_architecture=model_metadata.model_architecture,
+        task_type=model_metadata.task_type,
+        package_manifest=package_manifest,
+        trt_config=trt_config,
+        engine_path=engine_path,
+        inference_config_path=local_files[INFERENCE_CONFIG_FILE],
+        class_names_path=local_files[CLASS_NAMES_FILE],
+        compilation_directory=compilation_directory,
+        keypoints_metadata_path=local_files.get(KEYPOINTS_METADATA_FILE),
+    )
+
+    pipeline_result = CompilationPipelineResult(
+        model_id=model_metadata.model_id,
+        model_architecture=model_metadata.model_architecture,
+        compiled=True,
+        installed_local=True,
+        local_package_id=local_package_id,
+        local_install_path=local_install_path,
+        backend="trt",
+        reason="compiled and installed locally",
+    )
+
+    if registration_response is None:
+        logger.info(
+            "TRT pipeline complete for %s precision=%s compiled=true installed_local=true "
+            "registered_platform=false uploaded_sealed=false",
+            model_metadata.model_id,
+            precision,
+        )
+        print_to_console(
+            message="Compiled TRT engine locally; platform registration skipped or failed",
+            console=console,
+        )
+        return pipeline_result
+
     if verify_model is not None:
         print_to_console(message="Verifying compiled artefacts...", console=console)
         verify_model_package(
@@ -239,7 +307,7 @@ def compile_and_register_default_model_trt_variant(
             verify_model=verify_model,
             keypoints_metadata_path=local_files.get(KEYPOINTS_METADATA_FILE),
         )
-    register_default_model_package_artefacts(
+    uploaded = register_default_model_package_artefacts(
         registration_response=registration_response,
         trt_config=trt_config,
         inference_config_path=local_files[INFERENCE_CONFIG_FILE],
@@ -248,10 +316,26 @@ def compile_and_register_default_model_trt_variant(
         engine_path=engine_path,
         compilation_directory=compilation_directory,
         models_service_client=models_service_client,
+        platform_registration=platform_policy,
+    )
+    pipeline_result.registered_platform = True
+    pipeline_result.uploaded_sealed = uploaded
+    if not uploaded:
+        pipeline_result.register_error = "platform upload or seal failed"
+        pipeline_result.reason = "compiled locally; platform upload failed"
+    else:
+        pipeline_result.reason = "compiled, installed locally, and registered on platform"
+    logger.info(
+        "TRT pipeline complete for %s precision=%s %s",
+        model_metadata.model_id,
+        precision,
+        pipeline_result.as_log_metadata(),
     )
     print_to_console(
-        message="Successfully compiled and registered model package", console=console
+        message="Successfully compiled TRT engine",
+        console=console,
     )
+    return pipeline_result
 
 
 def verify_model_package(
@@ -311,7 +395,8 @@ def register_default_model_package_artefacts(
     engine_path: str,
     compilation_directory: str,
     models_service_client: ModelsServiceClient,
-) -> None:
+    platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
+) -> bool:
     try:
         adjusted_inference_config_path = os.path.join(
             compilation_directory, "adjusted_inference_config.json"
@@ -347,16 +432,19 @@ def register_default_model_package_artefacts(
             )
     except Exception as error:
         logger.exception(
-            "Could not register artefacts for package %s",
+            "Could not prepare artefacts for package %s",
             registration_response.model_package_id,
         )
+        if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
+            return False
         raise CompiledPackageRegistrationError(
             f"Could not register artefacts for package {registration_response.model_package_id}"
         ) from error
-    register_model_package_artefacts(
+    return register_model_package_artefacts(
         registration_response=registration_response,
         local_files_mapping=local_files_mapping,
         models_service_client=models_service_client,
+        platform_registration=platform_registration,
     )
 
 

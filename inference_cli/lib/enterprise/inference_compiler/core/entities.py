@@ -164,3 +164,59 @@ class TRTConfig(BaseModel):
     dynamic_batch_size_min: Optional[int] = Field(default=None)
     dynamic_batch_size_opt: Optional[int] = Field(default=None)
     dynamic_batch_size_max: Optional[int] = Field(default=None)
+
+
+class PlatformRegistrationPolicy(str, Enum):
+    """Whether platform register/upload must succeed for the pipeline to fail."""
+
+    REQUIRED = "required"
+    OPTIONAL = "optional"
+
+
+class CompilationPipelineResult:
+    """Outcome of compile → install → register/upload."""
+
+    def __init__(
+        self,
+        model_id: str,
+        model_architecture: str,
+        *,
+        compiled: bool = False,
+        installed_local: bool = False,
+        local_package_id: Optional[str] = None,
+        local_install_path: Optional[str] = None,
+        registered_platform: bool = False,
+        uploaded_sealed: bool = False,
+        compile_error: Optional[str] = None,
+        register_error: Optional[str] = None,
+        backend: str = "onnx_cuda",
+        reason: str = "",
+    ):
+        self.model_id = model_id
+        self.model_architecture = model_architecture
+        self.compiled = compiled
+        self.installed_local = installed_local
+        self.local_package_id = local_package_id
+        self.local_install_path = local_install_path
+        self.registered_platform = registered_platform
+        self.uploaded_sealed = uploaded_sealed
+        self.compile_error = compile_error
+        self.register_error = register_error
+        self.backend = backend
+        self.reason = reason
+
+    def as_log_metadata(self) -> dict:
+        return {
+            "model_id": self.model_id,
+            "model_architecture": self.model_architecture,
+            "compiled": self.compiled,
+            "installed_local": self.installed_local,
+            "local_package_id": self.local_package_id,
+            "local_install_path": self.local_install_path,
+            "registered_platform": self.registered_platform,
+            "uploaded_sealed": self.uploaded_sealed,
+            "compile_error": self.compile_error,
+            "register_error": self.register_error,
+            "backend": self.backend,
+            "reason": self.reason,
+        }
