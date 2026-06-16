@@ -11,6 +11,8 @@ from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
     DEFAULT_NATIVE_MODEL_VERSION,
     FINE_TUNED_NATIVE_LABEL,
     MODEL_VARIANTS,
+    NATIVE_SUPPORTED_VARIANTS,
+    NATIVE_VARIANT_LABELS,
     BlockManifest,
     QwenVlmBlockV1,
     _build_native_prompt,
@@ -164,6 +166,16 @@ def test_all_variants_have_valid_backend():
     for label, info in MODEL_VARIANTS.items():
         assert info["backend"] in ("native", "openrouter"), label
         assert info["model_id"], label
+
+
+def test_native_variants_only_advertise_serverless_supported_models():
+    assert "Qwen 2.5 VL 7B" not in NATIVE_VARIANT_LABELS
+    assert "qwen25-vl-7b" not in NATIVE_SUPPORTED_VARIANTS
+    assert "Qwen 3.5 VL 4B" not in NATIVE_VARIANT_LABELS
+    assert "qwen3_5-4b" not in NATIVE_SUPPORTED_VARIANTS
+    assert {"qwen3vl-2b-instruct", "qwen3_5-0.8b", "qwen3_5-2b"}.issubset(
+        set(NATIVE_SUPPORTED_VARIANTS)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -333,7 +345,7 @@ def test_run_local_native_enable_thinking_silently_ignored_on_unsupported_model(
     )
     block.run(
         **_base_run_kwargs(
-            model_version="Qwen 2.5 VL 7B",
+            model_version="Qwen 3 VL 2B",
             task_type="unconstrained",
             prompt="hi",
             enable_thinking=True,

@@ -56,7 +56,7 @@ class BlockManifest(WorkflowBlockManifest):
             "name": "Qwen2.5-VL",
             "version": "v1",
             "deprecated": True,
-            "deprecation_message": "Use the unified Qwen-VL block (`roboflow_core/qwen_vlm@v1`), which exposes Qwen 2.5 VL alongside other Qwen variants and the OpenRouter passthrough.",
+            "deprecation_message": "Use the unified Qwen-VL block (`roboflow_core/qwen_vlm@v1`) for currently available native Qwen variants and the OpenRouter passthrough.",
             "short_description": "Run Qwen2.5-VL on an image.",
             "long_description": (
                 "This workflow block runs Qwen2.5-VL—a vision language model that accepts an image "
@@ -131,6 +131,21 @@ class BlockManifest(WorkflowBlockManifest):
                         "QWEN_2_5_ENABLED=False on Roboflow Hosted Serverless: "
                         "the Qwen 2.5 VL endpoint is not registered, so "
                         "run_remotely() returns 404."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+                )
+            )
+        else:
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.HARD,
+                    note=(
+                        "Qwen 2.5 VL 7B is currently unavailable on Roboflow "
+                        "Hosted Serverless: the endpoint is registered, but "
+                        "model package loading fails because a required model "
+                        "artifact is missing. Use the unified Qwen-VL block "
+                        "with Qwen 3 or Qwen 3.5 native variants instead."
                     ),
                     applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
                     applies_to_step_execution_modes=[StepExecutionMode.REMOTE],

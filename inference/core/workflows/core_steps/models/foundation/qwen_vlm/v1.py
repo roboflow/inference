@@ -1,7 +1,7 @@
 """Unified Qwen-VL workflow block.
 
-Subsumes the older per-version Qwen blocks (`qwen25vl@v1`, `qwen3vl@v1`,
-`qwen3_5vl@v1`, `qwen3_5_openrouter@v1`, `qwen3_6_openrouter@v1`) into a
+Subsumes the active per-version Qwen blocks (`qwen3vl@v1`, `qwen3_5vl@v1`,
+`qwen3_5_openrouter@v1`, `qwen3_6_openrouter@v1`) into a
 single block where the user picks:
 
 * a ``backend`` — "Native (Roboflow)" or "OpenRouter"
@@ -82,10 +82,6 @@ from inference_sdk import InferenceHTTPClient
 
 MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
     # Native — small models that run on Roboflow infrastructure.
-    "Qwen 2.5 VL 7B": {
-        "backend": "native",
-        "model_id": "qwen25-vl-7b",
-    },
     "Qwen 3 VL 2B": {
         "backend": "native",
         "model_id": "qwen3vl-2b-instruct",
@@ -139,10 +135,14 @@ MODEL_VARIANTS: Dict[str, Dict[str, str]] = {
         "backend": "openrouter",
         "model_id": "qwen/qwen3.6-plus",
     },
-    # Note: Qwen 3.6 Max Preview is intentionally excluded — it's a text-only
+    # Note: Qwen 2.5 VL 7B and Qwen 3.5 VL 4B both have native Roboflow
+    # endpoints, but are intentionally excluded from this unified picker until
+    # hosted serverless package loading is reliable for those variants.
+    #
+    # Qwen 3.6 Max Preview is also intentionally excluded — it's a text-only
     # model on OpenRouter (no image-input endpoints), so it can't satisfy a
-    # VLM block. If/when OpenRouter ships a vision-capable Max variant, add
-    # it back here.
+    # VLM block. If/when OpenRouter ships a vision-capable Max variant, add it
+    # back here.
 }
 
 ModelVersion = Literal[tuple(MODEL_VARIANTS.keys())]
@@ -360,7 +360,7 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 #### 🛠️ Backend selection
 
-* **Native (Roboflow)** — small Qwen-VL models (0.8B–7B) run on the same infrastructure as
+* **Native (Roboflow)** — small Qwen-VL models run on the same infrastructure as
   your other Roboflow models. Lower latency. Recommended for tasks
   like OCR, captioning, and visual question answering.
 

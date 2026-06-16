@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
+import inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 as sam3_3d
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
     BlockManifest,
@@ -58,6 +59,24 @@ def test_manifest_parsing_valid():
     }
     result = BlockManifest.model_validate(data)
     assert result.type == "roboflow_core/segment_anything3_3d_objects@v1"
+
+
+def test_get_restrictions_marks_hosted_serverless_unavailable_when_enabled(
+    monkeypatch,
+):
+    monkeypatch.setattr(sam3_3d, "SAM3_3D_OBJECTS_ENABLED", True)
+
+    restrictions = [
+        restriction.to_dict() for restriction in BlockManifest.get_restrictions()
+    ]
+
+    assert any(
+        restriction["severity"] == "hard"
+        and restriction.get("applies_to_runtimes") == ["hosted_serverless"]
+        and restriction.get("applies_to_step_execution_modes") == ["remote"]
+        and "route is enabled" in restriction["note"]
+        for restriction in restrictions
+    )
 
 
 def test_run_locally(mock_model_manager, mock_workflow_image_data, mock_mask_input):

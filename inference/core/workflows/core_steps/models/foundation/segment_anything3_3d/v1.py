@@ -137,6 +137,21 @@ class BlockManifest(WorkflowBlockManifest):
                     applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
                 )
             )
+        else:
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.HARD,
+                    note=(
+                        "SAM3 3D is currently unavailable on Roboflow Hosted "
+                        "Serverless: the route is enabled, but requests fail "
+                        "at the hosted edge/origin before reaching the "
+                        "inference application. Use a dedicated or self-hosted "
+                        "GPU runtime while serverless support is being debugged."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+                )
+            )
         return restrictions
 
 
