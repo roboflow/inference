@@ -324,6 +324,9 @@ from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
 from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
     QwenVlmBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen_image_edit.v1 import (
+    QwenImageEditBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
     SegPreviewBlockV1,
 )
@@ -997,6 +1000,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Qwen35OpenRouterBlockV1,
         Qwen36OpenRouterBlockV1,
         QwenVlmBlockV1,
+        QwenImageEditBlockV1,
         OpenAICompatibleBlockV1,
         KimiOpenRouterBlockV1,
         KimiOpenrouterBlockV2,
