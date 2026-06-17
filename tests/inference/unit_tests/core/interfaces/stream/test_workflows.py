@@ -55,6 +55,7 @@ class _FakeExecutionEngine:
         serialize_results,
         _is_preview,
         defer_stream_pipeline_flush=False,
+        resolve_output_futures=True,
     ):
         frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
         self.calls.append(
@@ -64,6 +65,7 @@ class _FakeExecutionEngine:
                 "serialize_results": serialize_results,
                 "is_preview": _is_preview,
                 "defer_stream_pipeline_flush": defer_stream_pipeline_flush,
+                "resolve_output_futures": resolve_output_futures,
             }
         )
         prediction_frame = frame_number - self._stream_buffer_depth
@@ -120,6 +122,7 @@ class _FakeLateActivatingExecutionEngine:
         serialize_results,
         _is_preview,
         defer_stream_pipeline_flush=False,
+        resolve_output_futures=True,
     ):
         frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
         # Real RF-DETR workflow steps only know whether stream pipelining is
@@ -156,12 +159,14 @@ class _FakeDownstreamPipelinedExecutionEngine:
         serialize_results,
         _is_preview,
         defer_stream_pipeline_flush=False,
+        resolve_output_futures=True,
     ):
         frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
         self.calls.append(
             {
                 "frame_number": frame_number,
                 "defer_stream_pipeline_flush": defer_stream_pipeline_flush,
+                "resolve_output_futures": resolve_output_futures,
             }
         )
         if defer_stream_pipeline_flush:
@@ -295,6 +300,7 @@ def test_workflow_runner_without_stream_buffering_returns_current_frame() -> Non
             "serialize_results": True,
             "is_preview": True,
             "defer_stream_pipeline_flush": False,
+            "resolve_output_futures": True,
         }
     ]
 
@@ -355,6 +361,7 @@ def test_workflow_runner_buffers_frames_until_delayed_prediction_arrives() -> No
             "serialize_results": False,
             "is_preview": False,
             "defer_stream_pipeline_flush": True,
+            "resolve_output_futures": False,
         },
         {
             "frame_number": 2,
@@ -362,6 +369,7 @@ def test_workflow_runner_buffers_frames_until_delayed_prediction_arrives() -> No
             "serialize_results": False,
             "is_preview": False,
             "defer_stream_pipeline_flush": True,
+            "resolve_output_futures": False,
         },
     ]
 
@@ -431,8 +439,16 @@ def test_pipelined_workflow_runner_preserves_frame_alignment_for_downstream_step
     assert flushed_results[0].predictions == [{"result": "downstream-frame-2"}]
     assert flushed_results[0].video_frames == [frame_2]
     assert engine.calls == [
-        {"frame_number": 1, "defer_stream_pipeline_flush": True},
-        {"frame_number": 2, "defer_stream_pipeline_flush": True},
+        {
+            "frame_number": 1,
+            "defer_stream_pipeline_flush": True,
+            "resolve_output_futures": False,
+        },
+        {
+            "frame_number": 2,
+            "defer_stream_pipeline_flush": True,
+            "resolve_output_futures": False,
+        },
     ]
     assert engine.flush_calls == [2]
 
