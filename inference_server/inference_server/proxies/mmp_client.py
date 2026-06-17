@@ -29,6 +29,7 @@ from typing import Any, Optional
 import zmq.asyncio
 from fastapi import Request
 
+from inference_model_manager.backends.utils.image_headers import image_pixels
 from inference_model_manager.backends.utils.shm_pool import read_free_count
 from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_server import configuration
@@ -36,6 +37,13 @@ from inference_server.errors import PayloadTooLargeError, ServerBusyError
 from inference_server.proxies.base import ClientDisconnected
 
 logger = logging.getLogger(__name__)
+
+# Optional resolution reject gate: max decoded pixels per image (0 = off).
+_MAX_DECODED_PIXELS = (
+    int(configuration.MAX_DECODED_MEGAPIXELS * 1_000_000)
+    if configuration.MAX_DECODED_MEGAPIXELS > 0
+    else 0
+)
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +370,13 @@ class MMPClient:
             raise PayloadTooLargeError(
                 f"image exceeds slot size ({len(image)} > {self.shm_data_size})"
             )
+        if _MAX_DECODED_PIXELS:
+            px = image_pixels(image)
+            if px and px > _MAX_DECODED_PIXELS:
+                raise PayloadTooLargeError(
+                    f"image {px / 1e6:.1f}MP exceeds max "
+                    f"{_MAX_DECODED_PIXELS / 1e6:.0f}MP"
+                )
         effective_params = dict(params) if params else {}
         if task:
             effective_params.setdefault("task", task)

@@ -92,6 +92,14 @@ INFERENCE_DECODE_VRAM_SCRATCH_FACTOR = get_float_from_env(
     "INFERENCE_DECODE_VRAM_SCRATCH_FACTOR", default=2.0
 )
 
+# Optional per-image resolution reject gate (subproc worker). When >0, images
+# whose header dims (JPEG SOF / PNG IHDR, read without decode) exceed this
+# megapixel cap are rejected before decode — guards the GPU from giant-image
+# decode cost. 0 = disabled (never reject on resolution).
+INFERENCE_MAX_DECODED_MEGAPIXELS = get_float_from_env(
+    "INFERENCE_MAX_DECODED_MEGAPIXELS", default=0.0
+)
+
 # ── VRAM-aware admission control (model_manager_process.py) ─────────────────
 INFERENCE_VRAM_ADMISSION_CONTROL = get_boolean_from_env(
     "INFERENCE_VRAM_ADMISSION_CONTROL", default=False
