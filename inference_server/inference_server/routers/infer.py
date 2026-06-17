@@ -91,6 +91,7 @@ async def infer(
                 first_checked = True
             chunks.append(chunk)
         image_bytes = b"".join(chunks)
+        del chunks  # drop the per-chunk copies; the joined buffer is enough
     except ClientDisconnect:
         logger.debug("[infer] client disconnected during body stream")
         return Response(status_code=499)
