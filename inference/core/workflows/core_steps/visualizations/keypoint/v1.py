@@ -1,3 +1,4 @@
+import inspect
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
@@ -22,6 +23,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/keypoint_visualization@v1"
+KEYPOINTS_ACCEPTS_CONFIDENCE = (
+    "confidence" in inspect.signature(sv.KeyPoints).parameters
+)
 SHORT_DESCRIPTION = "Draw keypoints on detected objects in an image."
 LONG_DESCRIPTION = """
 Visualize keypoints (landmark points) detected on objects by drawing point markers, connecting edges, or labeled vertices, providing pose estimation visualization for anatomical points, structural landmarks, or object key features.
@@ -264,13 +268,16 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         keypoints_class_name = detections.data["keypoints_class_name"]
         class_id = detections.class_id
 
-        keypoints = sv.KeyPoints(
-            xy=np.array(keypoints_xy, dtype=np.float32),
-            confidence=np.array(keypoints_confidence, dtype=np.float32),
-            class_id=np.array(class_id, dtype=int),
-            data={"class_name": np.array(keypoints_class_name, dtype=object)},
-        )
-        return keypoints
+        keypoints_kwargs = {
+            "xy": np.array(keypoints_xy, dtype=np.float32),
+            "class_id": np.array(class_id, dtype=int),
+            "data": {"class_name": np.array(keypoints_class_name, dtype=object)},
+        }
+        if KEYPOINTS_ACCEPTS_CONFIDENCE:
+            keypoints_kwargs["confidence"] = np.array(
+                keypoints_confidence, dtype=np.float32
+            )
+        return sv.KeyPoints(**keypoints_kwargs)
 
     def run(
         self,
