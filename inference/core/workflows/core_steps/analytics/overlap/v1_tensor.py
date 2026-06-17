@@ -4,9 +4,6 @@ from typing import List, Optional, Union
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_indices,
 )
@@ -16,14 +13,14 @@ from inference.core.workflows.execution_engine.entities.tensor_native_types impo
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
 )
-from inference.core.workflows.execution_engine.entities.types import (
-    Selector,
-)
+from inference.core.workflows.execution_engine.entities.types import Selector
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 OUTPUT_KEY: str = "overlaps"
 SHORT_DESCRIPTION = "Filter objects overlapping some other class"

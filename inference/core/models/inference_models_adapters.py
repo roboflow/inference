@@ -61,7 +61,9 @@ from inference_models import (
     PreProcessingOverrides,
     SemanticSegmentationModel,
 )
-from inference_models.models.base.semantic_segmentation import SemanticSegmentationResult
+from inference_models.models.base.semantic_segmentation import (
+    SemanticSegmentationResult,
+)
 from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 
@@ -125,7 +127,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
     def run_tensor_native_inference(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> List[Detections]:
         caller_color_format = kwargs.pop("input_color_format", None)
         kwargs = self.map_inference_kwargs(kwargs)
@@ -287,7 +289,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
     def run_tensor_native_inference(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> List[InstanceDetections]:
         # On the tensor path this method is the single authority for the mask
         # representation actually returned to the block. `map_inference_kwargs`
@@ -780,7 +782,7 @@ class InferenceModelsClassificationAdapter(Model):
     def run_tensor_native_inference(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> Union[ClassificationPrediction, List[MultiLabelClassificationPrediction]]:
         caller_color_format = kwargs.pop("input_color_format", None)
         kwargs = self.map_inference_kwargs(kwargs)
@@ -1128,7 +1130,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
     def run_tensor_native_inference(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> List[SemanticSegmentationResult]:
         caller_color_format = kwargs.pop("input_color_format", None)
         kwargs = self.map_inference_kwargs(kwargs)

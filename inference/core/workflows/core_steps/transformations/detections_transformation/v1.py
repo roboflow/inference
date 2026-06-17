@@ -4,10 +4,6 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     DEFAULT_OPERAND_NAME,
@@ -36,6 +32,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
 
 LONG_DESCRIPTION = """
 Apply customizable transformations to detection predictions using UQL (Query Language) operation chains, enabling flexible modification of bounding boxes, filtering detections, extracting properties, resizing boxes, and other detection manipulations through configurable operation sequences for advanced detection processing workflows.

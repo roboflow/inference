@@ -1,5 +1,5 @@
 from time import perf_counter
-from typing import Any, Dict, List, Tuple, Union, Literal
+from typing import Any, Dict, List, Literal, Tuple, Union
 
 import numpy as np
 import torch
@@ -233,11 +233,8 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
         response = PerceptionEncoderEmbeddingResponse(embeddings=embeddings.tolist())
         return response
 
-
     def run_tensor_native_inference(
-        self,
-        action: Literal["compare", "embed-image", "embed-text"],
-        **kwargs
+        self, action: Literal["compare", "embed-image", "embed-text"], **kwargs
     ) -> torch.Tensor:
         if action == "embed-image":
             return self._model.embed_images(**kwargs)
@@ -246,11 +243,17 @@ class InferenceModelsPerceptionEncoderAdapter(Model):
         subject_type = kwargs.get("subject_type", "image")
         prompt_type = kwargs.get("prompt_type", "text")
         if subject_type == "image":
-            subject_embeddings = self._model.embed_images(images=kwargs["subject"], **kwargs)
+            subject_embeddings = self._model.embed_images(
+                images=kwargs["subject"], **kwargs
+            )
         else:
-            subject_embeddings = self._model.embed_text(text=kwargs["subject"], **kwargs)
+            subject_embeddings = self._model.embed_text(
+                text=kwargs["subject"], **kwargs
+            )
         if prompt_type == "image":
-            prompt_embeddings = self._model.embed_images(images=kwargs["prompt"], **kwargs)
+            prompt_embeddings = self._model.embed_images(
+                images=kwargs["prompt"], **kwargs
+            )
         else:
             prompt_embeddings = self._model.embed_text(text=kwargs["prompt"], **kwargs)
         subject_embeddings_norm = F.normalize(subject_embeddings, dim=1)

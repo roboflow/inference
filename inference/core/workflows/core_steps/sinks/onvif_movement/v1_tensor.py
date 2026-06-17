@@ -14,9 +14,6 @@ from onvif import ONVIFCamera, ONVIFService
 from pydantic import ConfigDict, Field, PositiveInt
 from simple_pid import PID
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core import logger
 from inference.core.utils.function import experimental
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -50,6 +47,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 # max number of seconds to switch to zoom only (no xy movement)
 ZOOM_MODE_SECONDS = 2

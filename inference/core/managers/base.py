@@ -1,7 +1,7 @@
 import time
 from contextlib import contextmanager
 from threading import Lock
-from typing import Dict, Generator, List, Optional, Tuple, Union, Any
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder

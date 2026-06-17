@@ -76,11 +76,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceHTTPClient
-
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
+from inference_sdk import InferenceHTTPClient
 
 PREDICTION_TYPE = "instance-segmentation"
 
@@ -335,9 +334,13 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             }
             headers = {"Content-Type": "application/json"}
             if ROBOFLOW_INTERNAL_SERVICE_NAME:
-                headers["X-Roboflow-Internal-Service-Name"] = ROBOFLOW_INTERNAL_SERVICE_NAME
+                headers["X-Roboflow-Internal-Service-Name"] = (
+                    ROBOFLOW_INTERNAL_SERVICE_NAME
+                )
             if ROBOFLOW_INTERNAL_SERVICE_SECRET:
-                headers["X-Roboflow-Internal-Service-Secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
+                headers["X-Roboflow-Internal-Service-Secret"] = (
+                    ROBOFLOW_INTERNAL_SERVICE_SECRET
+                )
             headers = build_roboflow_api_headers(explicit_headers=headers)
             try:
                 response = requests.post(
@@ -458,7 +461,9 @@ def _build_instance_detections(
 
     for mask, score, class_id, class_name in items:
         ys, xs = np.where(mask)
-        xyxy.append([float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())])
+        xyxy.append(
+            [float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())]
+        )
         confidences.append(score)
         class_ids.append(class_id)
         class_names_map[class_id] = class_name

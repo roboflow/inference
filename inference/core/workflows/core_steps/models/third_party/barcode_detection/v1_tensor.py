@@ -43,7 +43,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
 from inference_models.models.base.object_detection import Detections
 
 PREDICTION_TYPE = "barcode-detection"

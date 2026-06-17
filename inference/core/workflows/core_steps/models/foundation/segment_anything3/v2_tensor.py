@@ -45,6 +45,19 @@ from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+
+# Reuse the v1_tensor SAM3 conversion machinery verbatim.
+from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
+    Item,
+    _assemble_detections,
+    _build_instance_detections,
+    _build_instance_detections_from_polygons,
+    _normalize_class_names,
+)
+from inference.core.workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
+    DETECTION_ID_KEY,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -71,23 +84,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference.core.workflows.execution_engine.constants import (
-    CLASS_NAME_KEY,
-    DETECTION_ID_KEY,
-)
-from inference_sdk import InferenceHTTPClient
-
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
-
-# Reuse the v1_tensor SAM3 conversion machinery verbatim.
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
-    Item,
-    _assemble_detections,
-    _build_instance_detections,
-    _build_instance_detections_from_polygons,
-    _normalize_class_names,
-)
+from inference_sdk import InferenceHTTPClient
 
 # TODO(sam3-public-adapter): these per-class-threshold + cross-prompt-NMS helpers
 # are LOCAL COPIES of the private `inference.models.sam3.
@@ -436,9 +435,13 @@ class SegmentAnything3BlockV2(WorkflowBlock):
             }
             headers = {"Content-Type": "application/json"}
             if ROBOFLOW_INTERNAL_SERVICE_NAME:
-                headers["X-Roboflow-Internal-Service-Name"] = ROBOFLOW_INTERNAL_SERVICE_NAME
+                headers["X-Roboflow-Internal-Service-Name"] = (
+                    ROBOFLOW_INTERNAL_SERVICE_NAME
+                )
             if ROBOFLOW_INTERNAL_SERVICE_SECRET:
-                headers["X-Roboflow-Internal-Service-Secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
+                headers["X-Roboflow-Internal-Service-Secret"] = (
+                    ROBOFLOW_INTERNAL_SERVICE_SECRET
+                )
             headers = build_roboflow_api_headers(explicit_headers=headers)
             try:
                 response = requests.post(
@@ -505,13 +508,9 @@ def _per_class_threshold(
     return None
 
 
-def _min_floor(
-    confidence: float, per_class_confidence: Optional[List[float]]
-) -> float:
+def _min_floor(confidence: float, per_class_confidence: Optional[List[float]]) -> float:
     if per_class_confidence:
-        return min(
-            [confidence, *[t for t in per_class_confidence if t is not None]]
-        )
+        return min([confidence, *[t for t in per_class_confidence if t is not None]])
     return confidence
 
 
@@ -705,7 +704,9 @@ def _build_instance_detections_reusing_nms_rles(
         class_name = (
             class_names[prompt_idx] if prompt_idx < len(class_names) else None
         ) or "foreground"
-        xyxy.append([float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())])
+        xyxy.append(
+            [float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())]
+        )
         confidences.append(float(score))
         class_ids.append(prompt_idx)
         class_names_map[prompt_idx] = class_name

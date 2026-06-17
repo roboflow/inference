@@ -180,9 +180,7 @@ class ClipComparisonBlockV1(WorkflowBlock):
                 dim=1,
             )
             similarities = (image_embedding @ text_embeddings.T)[0]
-            predictions.append(
-                {"similarity": similarities.detach().to("cpu").tolist()}
-            )
+            predictions.append({"similarity": similarities.detach().to("cpu").tolist()})
         return self._post_process_result(
             images=images,
             predictions=predictions,

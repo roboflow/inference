@@ -7,9 +7,6 @@ import supervision as sv
 import torch
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.types import InstancesRLEMasks
-
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
 )
@@ -29,6 +26,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.types import InstancesRLEMasks
 
 OUTPUT_KEY: str = "detections_with_rect"
 
@@ -216,7 +215,9 @@ class BoundingRectBlockV1(WorkflowBlock):
 
             per_box_meta = {
                 **(existing_meta[i] or {}),
-                BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS: rect.astype(np.float16).tolist(),
+                BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS: rect.astype(
+                    np.float16
+                ).tolist(),
                 BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS: float(width),
                 BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS: float(height),
                 BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS: float(angle),

@@ -3,9 +3,6 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
     OUTPUT_IMAGE_KEY,
     VisualizationBlock,
@@ -24,6 +21,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
 
 TYPE: str = "roboflow_core/keypoint_visualization@v1"
 SHORT_DESCRIPTION = "Draw keypoints on detected objects in an image."

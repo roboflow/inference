@@ -53,6 +53,20 @@ from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+
+# Reuse the v1_tensor conversion machinery + the v2_tensor per-class/NMS collector.
+from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
+    Item,
+    _build_instance_detections,
+    _build_instance_detections_from_polygons,
+    _normalize_class_names,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2_tensor import (
+    _build_http_prompts,
+    _collect_from_native_with_nms,
+    _min_floor,
+    _per_class_threshold,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -82,20 +96,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceHTTPClient
-
-# Reuse the v1_tensor conversion machinery + the v2_tensor per-class/NMS collector.
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
-    Item,
-    _build_instance_detections,
-    _build_instance_detections_from_polygons,
-    _normalize_class_names,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2_tensor import (
-    _build_http_prompts,
-    _collect_from_native_with_nms,
-    _min_floor,
-    _per_class_threshold,
-)
 
 LONG_DESCRIPTION = """
 Run Segment Anything 3 (zero-shot, text-prompted) with per-class confidence
@@ -139,12 +139,14 @@ class BlockManifest(WorkflowBlockManifest):
         description="List of classes to recognise",
         examples=[["car", "person"], "$inputs.classes"],
     )
-    class_mapping: Optional[Union[Dict[str, str], Selector(kind=[DICTIONARY_KIND])]] = Field(
-        default=None,
-        title="Class Mapping",
-        description="Maps class names in predictions to different output names. Applied "
-        "after inference, e.g. {'cat': 'gato'} renames 'cat' predictions to 'gato'.",
-        examples=[{"cat": "gato", "dog": "perro"}],
+    class_mapping: Optional[Union[Dict[str, str], Selector(kind=[DICTIONARY_KIND])]] = (
+        Field(
+            default=None,
+            title="Class Mapping",
+            description="Maps class names in predictions to different output names. Applied "
+            "after inference, e.g. {'cat': 'gato'} renames 'cat' predictions to 'gato'.",
+            examples=[{"cat": "gato", "dog": "perro"}],
+        )
     )
     confidence: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5,
@@ -457,9 +459,13 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             }
             headers = {"Content-Type": "application/json"}
             if ROBOFLOW_INTERNAL_SERVICE_NAME:
-                headers["X-Roboflow-Internal-Service-Name"] = ROBOFLOW_INTERNAL_SERVICE_NAME
+                headers["X-Roboflow-Internal-Service-Name"] = (
+                    ROBOFLOW_INTERNAL_SERVICE_NAME
+                )
             if ROBOFLOW_INTERNAL_SERVICE_SECRET:
-                headers["X-Roboflow-Internal-Service-Secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
+                headers["X-Roboflow-Internal-Service-Secret"] = (
+                    ROBOFLOW_INTERNAL_SERVICE_SECRET
+                )
             headers = build_roboflow_api_headers(explicit_headers=headers)
             try:
                 response = requests.post(

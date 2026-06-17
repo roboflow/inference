@@ -5,11 +5,6 @@ from uuid import uuid4
 import torch
 from pydantic import ConfigDict, Field
 
-from inference_models import (
-    ClassificationPrediction,
-    MultiLabelClassificationPrediction,
-)
-
 from inference.core import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
@@ -42,6 +37,10 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
+)
+from inference_models import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
 )
 
 LONG_DESCRIPTION = """
@@ -537,9 +536,7 @@ def extract_leading_class_from_prediction(
         confidence = float(prediction.confidence[0, class_id])
         return class_name, class_id, confidence
     predicted_classes = (
-        prediction.class_ids.tolist()
-        if prediction.class_ids is not None
-        else []
+        prediction.class_ids.tolist() if prediction.class_ids is not None else []
     )
     if not predicted_classes:
         return None

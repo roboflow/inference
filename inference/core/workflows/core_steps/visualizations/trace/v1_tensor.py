@@ -9,13 +9,13 @@ from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
 )
-from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
-    OUTPUT_IMAGE_KEY,
-    to_supervision_for_annotation,
-)
 from inference.core.workflows.core_steps.visualizations.common.base_colorable_tensor import (
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
+)
+from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
+    OUTPUT_IMAGE_KEY,
+    to_supervision_for_annotation,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (

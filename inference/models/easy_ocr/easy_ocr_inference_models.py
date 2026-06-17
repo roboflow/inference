@@ -67,7 +67,7 @@ class InferenceModelsEasyOCRAdapter(Model):
     def run_tensor_native_inference(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> Tuple[List[str], List[Detections]]:
         return self._model.infer(images=images, **kwargs)
 

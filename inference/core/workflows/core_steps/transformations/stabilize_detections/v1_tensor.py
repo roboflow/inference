@@ -5,10 +5,6 @@ import numpy as np
 import torch
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
-
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.tensor_native import (
     take_detections_by_indices,
@@ -36,6 +32,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
 
 OUTPUT_KEY: str = "tracked_detections"
 LONG_DESCRIPTION = """
@@ -189,9 +188,9 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         # so the numpy Kalman / smoothing loops don't re-issue a device->host
         # ``.to("cpu")`` per cached detection every frame (mirrors the slices in
         # ``_batch_of_last_known_detections`` and is updated in lockstep).
-        self._batch_of_last_known_xyxy: Dict[
-            str, Dict[Union[int, str], np.ndarray]
-        ] = {}
+        self._batch_of_last_known_xyxy: Dict[str, Dict[Union[int, str], np.ndarray]] = (
+            {}
+        )
         self._batch_of_kalman_filters: Dict[Union[int, str], VelocityKalmanFilter] = {}
 
     @classmethod
@@ -209,14 +208,14 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         num_detections = int(detections.xyxy.shape[0])
         bboxes_metadata = detections.bboxes_metadata
         tracker_ids = [
-            (bboxes_metadata[i] or {}).get("tracker_id")
-            if bboxes_metadata is not None
-            else None
+            (
+                (bboxes_metadata[i] or {}).get("tracker_id")
+                if bboxes_metadata is not None
+                else None
+            )
             for i in range(num_detections)
         ]
-        if num_detections > 0 and any(
-            tracker_id is None for tracker_id in tracker_ids
-        ):
+        if num_detections > 0 and any(tracker_id is None for tracker_id in tracker_ids):
             raise ValueError(
                 f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
             )

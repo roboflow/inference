@@ -1,16 +1,20 @@
 from typing import Any, List, Union
 
 from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
-from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
-from inference_models import ClassificationPrediction, MultiLabelClassificationPrediction
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     ClassificationProperty,
 )
 from inference.core.workflows.core_steps.common.query_language.errors import (
-    InvalidInputTypeError, OperationError,
+    InvalidInputTypeError,
+    OperationError,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.utils import (
     safe_stringify,
+)
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
+from inference_models import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
 )
 
 
@@ -21,7 +25,7 @@ def extract_top_class(prediction: dict) -> Union[str, List[str]]:
 
 
 def extract_top_class_tensor_native(
-    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction]
+    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction],
 ) -> Union[str, List[str]]:
     if isinstance(prediction, ClassificationPrediction):
         if prediction.images_metadata is None:
@@ -129,7 +133,7 @@ def extract_top_class_confidence(prediction: dict) -> Union[float, List[float]]:
 
 
 def extract_top_class_confidence_tensor_native(
-    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction]
+    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction],
 ) -> Union[float, List[float]]:
     if isinstance(prediction, ClassificationPrediction):
         if prediction.class_id.shape[0] != 1:
@@ -145,10 +149,7 @@ def extract_top_class_confidence_tensor_native(
         class_id = int(prediction.class_id[0])
         return float(prediction.confidence[0, class_id])
     if isinstance(prediction, MultiLabelClassificationPrediction):
-        return [
-            float(c)
-            for c in prediction.confidence[prediction.class_ids].tolist()
-        ]
+        return [float(c) for c in prediction.confidence[prediction.class_ids].tolist()]
     raise InvalidInputTypeError(
         public_message=(
             "While executing extract_top_class_confidence_tensor_native(...) operation "
@@ -174,7 +175,7 @@ def extract_top_class_confidence_single(prediction: dict) -> Union[float, List[f
 
 
 def extract_top_class_confidence_single_tensor_native(
-    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction]
+    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction],
 ) -> float:
     if isinstance(prediction, ClassificationPrediction):
         if prediction.class_id.shape[0] != 1:
@@ -216,7 +217,7 @@ def extract_all_class_names(prediction: dict) -> List[str]:
 
 
 def extract_all_class_names_tensor_native(
-    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction]
+    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction],
 ) -> List[str]:
     if isinstance(prediction, ClassificationPrediction):
         if prediction.images_metadata is None:
@@ -288,7 +289,7 @@ def extract_all_classes_confidence(prediction: dict) -> List[float]:
 
 
 def extract_all_classes_confidence_tensor_native(
-    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction]
+    prediction: Union[ClassificationPrediction, MultiLabelClassificationPrediction],
 ) -> List[float]:
     if isinstance(prediction, ClassificationPrediction):
         if prediction.confidence.shape[0] != 1:
@@ -316,11 +317,31 @@ def extract_all_classes_confidence_tensor_native(
 
 
 CLASSIFICATION_PROPERTY_EXTRACTORS = {
-    ClassificationProperty.TOP_CLASS: extract_top_class if not ENABLE_TENSOR_DATA_REPRESENTATION else extract_top_class_tensor_native,
-    ClassificationProperty.TOP_CLASS_CONFIDENCE: extract_top_class_confidence if not ENABLE_TENSOR_DATA_REPRESENTATION else extract_top_class_confidence_tensor_native,
-    ClassificationProperty.TOP_CLASS_CONFIDENCE_SINGLE: extract_top_class_confidence_single if not ENABLE_TENSOR_DATA_REPRESENTATION else extract_top_class_confidence_single_tensor_native,
-    ClassificationProperty.ALL_CLASSES: extract_all_class_names if not ENABLE_TENSOR_DATA_REPRESENTATION else extract_all_class_names_tensor_native,
-    ClassificationProperty.ALL_CONFIDENCES: extract_all_classes_confidence if not ENABLE_TENSOR_DATA_REPRESENTATION else extract_all_classes_confidence_tensor_native,
+    ClassificationProperty.TOP_CLASS: (
+        extract_top_class
+        if not ENABLE_TENSOR_DATA_REPRESENTATION
+        else extract_top_class_tensor_native
+    ),
+    ClassificationProperty.TOP_CLASS_CONFIDENCE: (
+        extract_top_class_confidence
+        if not ENABLE_TENSOR_DATA_REPRESENTATION
+        else extract_top_class_confidence_tensor_native
+    ),
+    ClassificationProperty.TOP_CLASS_CONFIDENCE_SINGLE: (
+        extract_top_class_confidence_single
+        if not ENABLE_TENSOR_DATA_REPRESENTATION
+        else extract_top_class_confidence_single_tensor_native
+    ),
+    ClassificationProperty.ALL_CLASSES: (
+        extract_all_class_names
+        if not ENABLE_TENSOR_DATA_REPRESENTATION
+        else extract_all_class_names_tensor_native
+    ),
+    ClassificationProperty.ALL_CONFIDENCES: (
+        extract_all_classes_confidence
+        if not ENABLE_TENSOR_DATA_REPRESENTATION
+        else extract_all_classes_confidence_tensor_native
+    ),
 }
 
 

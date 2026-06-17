@@ -66,9 +66,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceConfiguration, InferenceHTTPClient
-
 from inference_models.models.base.object_detection import Detections
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 PREDICTION_TYPE = "object-detection"
 
@@ -409,8 +408,6 @@ def _filter_classes_native(
             detections,
             torch.zeros_like(detections.class_id, dtype=torch.bool),
         )
-    accepted_tensor = torch.as_tensor(
-        accepted_ids, device=detections.class_id.device
-    )
+    accepted_tensor = torch.as_tensor(accepted_ids, device=detections.class_id.device)
     keep = torch.isin(detections.class_id, accepted_tensor)
     return take_prediction_by_mask(detections, keep)

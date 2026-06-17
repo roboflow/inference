@@ -11,9 +11,6 @@ import supervision as sv
 import torch
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
     take_prediction_by_indices,
@@ -55,6 +52,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 # Tensor-native detections handled by this block. The consensus pipeline only
 # ever needs the bounding-box component, so keypoint predictions (which arrive
@@ -506,9 +505,8 @@ def get_detections_from_different_sources_with_max_overlap(
     ):
         if _resolve_detection_id(other_detection) in detections_already_considered:
             continue
-        if (
-            class_aware
-            and _resolve_class_name(detection) != _resolve_class_name(other_detection)
+        if class_aware and _resolve_class_name(detection) != _resolve_class_name(
+            other_detection
         ):
             continue
         iou_value = calculate_iou(
@@ -625,7 +623,10 @@ def get_consensus_for_single_detection(
     detections_merge_mask_aggregation: MaskAggregationMode,
     detections_already_considered: Set[str],
 ) -> Tuple[List[TensorNativeDetections], Set[str]]:
-    if len(detection) and _resolve_detection_id(detection) in detections_already_considered:
+    if (
+        len(detection)
+        and _resolve_detection_id(detection) in detections_already_considered
+    ):
         return [], detections_already_considered
     consensus_detections = []
     detections_with_max_overlap = (
@@ -670,7 +671,8 @@ def get_consensus_for_single_detection(
         matched_value[0] for matched_value in detections_with_max_overlap.values()
     ]
     group_masks = (
-        [detection_mask] + [overlap_masks[other_source] for other_source in detections_with_max_overlap]
+        [detection_mask]
+        + [overlap_masks[other_source] for other_source in detections_with_max_overlap]
         if detection_mask is not None
         else None
     )
@@ -788,7 +790,9 @@ def merge_detections(
         output_mask = torch.from_numpy(aggregated_mask.astype(bool))
     else:
         output_mask = None
-        x1, y1, x2, y2 = AGGREGATION_MODE2BOXES_AGGREGATOR[boxes_aggregation_mode](group)
+        x1, y1, x2, y2 = AGGREGATION_MODE2BOXES_AGGREGATOR[boxes_aggregation_mode](
+            group
+        )
     # Per-image state is carried in image_metadata; the merged consensus row is a
     # fresh detection so it gets a new detection_id in bboxes_metadata while the
     # class_names map carries the chosen class. The source image_metadata supplies
@@ -861,7 +865,9 @@ def get_majority_class(detections: TensorNativeDetections) -> Tuple[str, int]:
 def get_class_of_most_confident_detection(
     detections: TensorNativeDetections,
 ) -> Tuple[str, int]:
-    confidences: List[float] = detections.confidence.detach().to("cpu").numpy().astype(float).tolist()
+    confidences: List[float] = (
+        detections.confidence.detach().to("cpu").numpy().astype(float).tolist()
+    )
     max_confidence_index = confidences.index(max(confidences))
     return (
         _resolve_class_name(detections, max_confidence_index),
@@ -872,7 +878,9 @@ def get_class_of_most_confident_detection(
 def get_class_of_least_confident_detection(
     detections: TensorNativeDetections,
 ) -> Tuple[str, int]:
-    confidences: List[float] = detections.confidence.detach().to("cpu").numpy().astype(float).tolist()
+    confidences: List[float] = (
+        detections.confidence.detach().to("cpu").numpy().astype(float).tolist()
+    )
     min_confidence_index = confidences.index(min(confidences))
     return (
         _resolve_class_name(detections, min_confidence_index),

@@ -8,9 +8,6 @@ import supervision as sv
 import torch
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.types import InstancesRLEMasks
-
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
 )
@@ -38,6 +35,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.types import InstancesRLEMasks
 
 OUTPUT_KEY: str = "zones"
 OUTPUT_KEY_DETECTIONS: str = "predictions"

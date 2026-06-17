@@ -76,7 +76,7 @@ class InferenceModelsDepthAnythingV3Adapter(Model):
     def run_tensor_native_inference(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> List[torch.Tensor]:
         return self._model(images, **kwargs)
 

@@ -9,13 +9,6 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from fastapi import BackgroundTasks
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from inference_models.models.base.classification import (
-    ClassificationPrediction,
-    MultiLabelClassificationPrediction,
-)
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.cache.base import BaseCache
 from inference.core.env import DEVICE_ID
 from inference.core.managers.metrics import get_system_info
@@ -58,6 +51,12 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.classification import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 TensorNativePrediction = Union[
     Detections,
@@ -512,16 +511,20 @@ def format_predictions_for_model_monitoring(
             class_names = image_metadata.get(CLASS_NAMES_KEY) or {}
             inference_id = image_metadata.get(INFERENCE_ID_KEY, "")
             prediction_type = image_metadata.get(PREDICTION_TYPE_KEY, "")
-            for _xyxy, _mask, class_id, confidence, _tracker_id, _data, _meta in (
-                detections
-            ):
+            for (
+                _xyxy,
+                _mask,
+                class_id,
+                confidence,
+                _tracker_id,
+                _data,
+                _meta,
+            ) in detections:
                 class_id_int = int(class_id)
                 class_name = class_names.get(class_id_int, "")
                 prediction = ParsedPrediction(
                     class_name=class_name,
-                    confidence=(
-                        float(confidence) if confidence is not None else 0.0
-                    ),
+                    confidence=(float(confidence) if confidence is not None else 0.0),
                     inference_id=inference_id,
                     model_type=prediction_type,
                     model_id=model_id,

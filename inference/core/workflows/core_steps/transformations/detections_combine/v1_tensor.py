@@ -5,10 +5,6 @@ import numpy as np
 import torch
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
-
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
@@ -28,6 +24,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
 
 LONG_DESCRIPTION = """
 Combine two sets of detection predictions into a single unified set of detections by merging both detection sets together, preserving all detections from both inputs for multi-source detection aggregation, combining results from multiple models, and consolidating detection sets from different processing stages into one workflow output.
@@ -210,9 +209,7 @@ def _combine_masks(
     )
     if both_dense:
         # Fast path: keep dense masks on-device, no device->host->device hop.
-        return torch.cat(
-            [mask_one.to(device), mask_two.to(device)], dim=0
-        )
+        return torch.cat([mask_one.to(device), mask_two.to(device)], dim=0)
     # RLE/dense mix: fall back to the per-row numpy materialise path.
     return _combine_dense_masks(prediction_one, prediction_two, device=device)
 
@@ -225,7 +222,10 @@ def _combine_bboxes_metadata(
     ``detection_id``. A missing list is padded with empty dicts so the result lines
     up row-for-row with the combined tensors; a per-box ``detection_id`` is filled
     in when absent (the tensor-native serialiser requires one per row)."""
-    if prediction_one.bboxes_metadata is None and prediction_two.bboxes_metadata is None:
+    if (
+        prediction_one.bboxes_metadata is None
+        and prediction_two.bboxes_metadata is None
+    ):
         return None
     combined: List[dict] = []
     for prediction in (prediction_one, prediction_two):

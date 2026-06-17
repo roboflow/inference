@@ -43,12 +43,6 @@ import torch
 from pydantic import AliasChoices, ConfigDict, Field
 from typing_extensions import Literal, Type
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
-from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
-
 from inference.core.workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
     instance_mask_to_numpy,
@@ -82,6 +76,11 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
+from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 
 OUTPUT_DETECTIONS_KEY: str = "corrected_coordinates"
 OUTPUT_IMAGE_KEY: str = "warped_image"
@@ -841,7 +840,8 @@ def _correct_keypoints_in_metadata(
 ) -> None:
     """Warp the per-box keypoint coordinates that the tensor serialiser reads
     (``bboxes_metadata[i]["keypoints_xy"]``). Mirrors the numpy block warping
-    ``detection.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]``. Mutates ``entry`` in place."""
+    ``detection.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]``. Mutates ``entry`` in place.
+    """
     keypoints = entry.get(KEYPOINTS_XY_KEY_IN_SV_DETECTIONS)
     if keypoints is None:
         return
@@ -986,12 +986,13 @@ def _repackage_masks(
     destination_width: int,
 ) -> Union[torch.Tensor, InstancesRLEMasks]:
     """Match the output mask representation to the input - dense torch in -> dense out,
-    RLE in -> RLE out - so the rest of the tensor pipeline keeps the same storage shape."""
+    RLE in -> RLE out - so the rest of the tensor pipeline keeps the same storage shape.
+    """
     if input_is_rle:
         rle_masks = [
-            torch_mask_to_coco_rle(
-                torch.as_tensor(single_mask, dtype=torch.bool)
-            )["counts"]
+            torch_mask_to_coco_rle(torch.as_tensor(single_mask, dtype=torch.bool))[
+                "counts"
+            ]
             for single_mask in dense_masks
         ]
         return InstancesRLEMasks(
@@ -1020,7 +1021,9 @@ def _warp_key_points_tensor(
     device = key_points.xy.device
     dtype = key_points.xy.dtype
     instances, num_key_points, _ = key_points.xy.shape
-    xy_numpy = key_points.xy.detach().to("cpu").numpy().reshape(-1, 2).astype(np.float32)
+    xy_numpy = (
+        key_points.xy.detach().to("cpu").numpy().reshape(-1, 2).astype(np.float32)
+    )
     warped = cv.perspectiveTransform(
         src=np.array([xy_numpy], dtype=np.float32),
         m=perspective_transformer,

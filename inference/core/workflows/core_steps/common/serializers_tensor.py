@@ -3,16 +3,6 @@ from typing import Any, List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models.models.base.classification import (
-    ClassificationPrediction,
-    MultiLabelClassificationPrediction,
-)
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
-from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
-
 from inference.core.workflows.core_steps.common.serializers import (
     _attach_parent_metadata_to_detection_dict,
     mask_to_polygon,
@@ -74,6 +64,15 @@ from inference.core.workflows.execution_engine.constants import (
     X_KEY,
     Y_KEY,
 )
+from inference_models.models.base.classification import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
+from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 
 TensorNativeDetections = Union[Detections, InstanceDetections]
 
@@ -220,9 +219,7 @@ def _serialise_sv_detections(
                 dimensions_key=PARENT_DIMENSIONS_KEY,
                 origin_key=PARENT_ORIGIN_KEY,
             )
-            detection_dict[ROOT_PARENT_ID_KEY] = str(
-                image_metadata[ROOT_PARENT_ID_KEY]
-            )
+            detection_dict[ROOT_PARENT_ID_KEY] = str(image_metadata[ROOT_PARENT_ID_KEY])
             _attach_parent_metadata_to_detection_dict(
                 detection_dict=detection_dict,
                 data=image_metadata,
@@ -419,16 +416,11 @@ def serialise_native_classification(
         # whose (raw) score is below the resolved threshold when the producer attached
         # it; otherwise keep the full softmax. Rounding/sort match the numpy
         # `ClassificationInferenceResponse` (round(score, 4); sort desc by confidence).
-        confidence_threshold = image_metadata.get(
-            "classification_confidence_threshold"
-        )
+        confidence_threshold = image_metadata.get("classification_confidence_threshold")
         individual_classes_predictions = []
         for class_id, score in enumerate(confidence_vector):
             class_score = float(score)
-            if (
-                confidence_threshold is not None
-                and class_score < confidence_threshold
-            ):
+            if confidence_threshold is not None and class_score < confidence_threshold:
                 continue
             individual_classes_predictions.append(
                 {

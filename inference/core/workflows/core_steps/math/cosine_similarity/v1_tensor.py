@@ -4,12 +4,12 @@ import torch
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.tensor_native_types import (
+    TENSOR_NATIVE_EMBEDDING_KIND,
+)
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     Selector,
-)
-from inference.core.workflows.execution_engine.entities.tensor_native_types import (
-    TENSOR_NATIVE_EMBEDDING_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -117,9 +117,7 @@ class CosineSimilarityBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    def run(
-        self, embedding_1: torch.Tensor, embedding_2: torch.Tensor
-    ) -> BlockResult:
+    def run(self, embedding_1: torch.Tensor, embedding_2: torch.Tensor) -> BlockResult:
         # Tensor-native embeddings stay on-device: compute cosine similarity in
         # torch (a·b / (||a||·||b||)) and only extract the final scalar.
         # Validate the vector dimension via shape[-1] and flatten to 1-D so both

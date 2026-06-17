@@ -31,10 +31,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     WorkflowImageData,
 )
-from inference.core.workflows.prototypes.block import (
-    BlockResult,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 from inference_sdk import InferenceHTTPClient
 
 

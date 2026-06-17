@@ -50,7 +50,7 @@ class InferenceModelsQwen35VLAdapter(Model):
     def run_tensor_native_inference(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> List[str]:
         kwargs = self.map_inference_kwargs(kwargs)
         return self._model.prompt(images=images, **kwargs)

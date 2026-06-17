@@ -96,10 +96,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceConfiguration, InferenceHTTPClient
-
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 PREDICTION_TYPE = "keypoint-detection"
 
@@ -511,7 +510,9 @@ def _attach_keypoints_to_bboxes_metadata(
         return
     xy = key_points.xy.detach().cpu().tolist()
     confidence = key_points.confidence.detach().cpu().tolist()
-    object_class_ids = [int(value) for value in key_points.class_id.detach().cpu().tolist()]
+    object_class_ids = [
+        int(value) for value in key_points.class_id.detach().cpu().tolist()
+    ]
     for index, entry in enumerate(bboxes_metadata):
         instance_xy = xy[index]
         instance_confidence = confidence[index]

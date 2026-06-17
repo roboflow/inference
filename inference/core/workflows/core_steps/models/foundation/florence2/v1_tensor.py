@@ -33,6 +33,17 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.tensor_native import (
     split_key_point_prediction,
 )
+
+# Unchanged from v1 — verbatim manifest, literals and pure loc-encoding maths.
+from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
+    TASK_TYPE_TO_FLORENCE_TASK,
+    TASKS_REQUIRING_DETECTION_GROUNDING,
+    TASKS_TO_EXTRACT_LABELS_AS_CLASSES,
+    BlockManifest,
+    GroundingSelectionMode,
+    TaskType,
+    _coordinate_to_loc,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     WorkflowImageData,
@@ -44,21 +55,10 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceHTTPClient
 
-# Unchanged from v1 — verbatim manifest, literals and pure loc-encoding maths.
-from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
-    BlockManifest,
-    GroundingSelectionMode,
-    TaskType,
-    TASKS_REQUIRING_DETECTION_GROUNDING,
-    TASKS_TO_EXTRACT_LABELS_AS_CLASSES,
-    TASK_TYPE_TO_FLORENCE_TASK,
-    _coordinate_to_loc,
-)
-
 # inference_models native prediction shapes accepted on the grounding input.
 TensorNativeGrounding = Union[
-    "Detections",            # OD
-    "InstanceDetections",    # IS
+    "Detections",  # OD
+    "InstanceDetections",  # IS
     Tuple["KeyPoints", Optional["Detections"]],  # KP dual representation
 ]
 
@@ -290,7 +290,9 @@ def prepare_detection_grounding_prompts(
 ) -> List[Optional[str]]:
     if isinstance(grounding_detection, list):
         return [
-            _location_prompt_from_static_box(image=image, bounding_box=grounding_detection)
+            _location_prompt_from_static_box(
+                image=image, bounding_box=grounding_detection
+            )
             for image in images
         ]
     return [
@@ -331,7 +333,9 @@ def _select_box(detections, mode: GroundingSelectionMode) -> List[float]:
     elif mode == "last":
         index = len(detections) - 1  # FIX vs v1: 'last' returned xyxy[0] there
     elif mode in ("biggest", "smallest"):
-        area = (xyxy[:, 2] - xyxy[:, 0]) * (xyxy[:, 3] - xyxy[:, 1])  # no .area on inference_models
+        area = (xyxy[:, 2] - xyxy[:, 0]) * (
+            xyxy[:, 3] - xyxy[:, 1]
+        )  # no .area on inference_models
         index = int(torch.argmax(area) if mode == "biggest" else torch.argmin(area))
     elif mode in ("most-confident", "least-confident"):
         confidence = detections.confidence

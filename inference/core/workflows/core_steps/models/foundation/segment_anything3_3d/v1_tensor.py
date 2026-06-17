@@ -61,9 +61,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceHTTPClient
-
 from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_sdk import InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Generate 3D meshes and Gaussian splatting from 2D images with mask prompts.

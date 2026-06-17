@@ -7,13 +7,6 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.classification import (
-    ClassificationPrediction,
-    MultiLabelClassificationPrediction,
-)
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import add_custom_metadata, get_roboflow_workspace
 from inference.core.workflows.core_steps.common.tensor_native import (
@@ -39,6 +32,12 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.classification import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 SHORT_DESCRIPTION = "Add custom metadata to the Roboflow Model Monitoring dashboard."
 

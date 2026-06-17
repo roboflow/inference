@@ -6,11 +6,6 @@ import supervision as sv
 import torch
 from supervision import Position
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
-
 from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
@@ -35,6 +30,10 @@ from inference.core.workflows.core_steps.common.serializers_tensor import (
     serialise_sv_detections as serialise_tensor_native_detections,
 )
 from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
 
 
 def detections_anchor_coordinates(
@@ -131,7 +130,9 @@ def _offset_detections(
     return detections_copy
 
 
-def _shift_detections(value: Any, shift_x: int, shift_y: int, **kwargs) -> sv.Detections:
+def _shift_detections(
+    value: Any, shift_x: int, shift_y: int, **kwargs
+) -> sv.Detections:
     if not isinstance(value, sv.Detections):
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(
@@ -692,9 +693,7 @@ def _copy_detections(detections: TensorNativeDetections) -> TensorNativeDetectio
     if isinstance(detections, InstanceDetections):
         mask = detections.mask
         if isinstance(mask, InstancesRLEMasks):
-            mask = InstancesRLEMasks(
-                image_size=mask.image_size, masks=list(mask.masks)
-            )
+            mask = InstancesRLEMasks(image_size=mask.image_size, masks=list(mask.masks))
         else:
             mask = mask.clone()
         return InstanceDetections(
@@ -931,9 +930,7 @@ def _shift_detections_tensor_native(
         return key_points, _shift_detections_impl_tensor_native(
             bboxes, shift_x=shift_x, shift_y=shift_y
         )
-    return _shift_detections_impl_tensor_native(
-        value, shift_x=shift_x, shift_y=shift_y
-    )
+    return _shift_detections_impl_tensor_native(value, shift_x=shift_x, shift_y=shift_y)
 
 
 def _select_top_confidence_index_tensor_native(
@@ -1420,7 +1417,9 @@ def offset_detections(
         return _offset_detections_tensor_native(
             value=value, offset_x=offset_x, offset_y=offset_y, **kwargs
         )
-    return _offset_detections(value=value, offset_x=offset_x, offset_y=offset_y, **kwargs)
+    return _offset_detections(
+        value=value, offset_x=offset_x, offset_y=offset_y, **kwargs
+    )
 
 
 def shift_detections(

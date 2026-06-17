@@ -3,7 +3,7 @@ import hashlib
 from io import BytesIO
 from threading import RLock
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, TypeVar, Union, Literal
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict, TypeVar, Union
 
 import numpy as np
 import sam2.utils.misc
@@ -126,9 +126,7 @@ class InferenceModelsSAM2Adapter(Model):
         )
 
     def run_tensor_native_inference(
-        self,
-        action: Literal["embed", "segment"],
-        **kwargs
+        self, action: Literal["embed", "segment"], **kwargs
     ) -> List[Union[SAM2ImageEmbeddings, SAM2Prediction]]:
         if action == "embed":
             self._model.embed_images(**kwargs)

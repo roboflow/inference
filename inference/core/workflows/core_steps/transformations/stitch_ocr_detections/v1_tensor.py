@@ -28,8 +28,6 @@ from typing import Dict, List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field, field_validator
 
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -47,6 +45,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.object_detection import Detections
 
 TEXT_KEY = "text"
 
@@ -227,9 +226,7 @@ class BlockManifest(WorkflowBlockManifest):
 def _native_xyxy_int(detections: Detections) -> np.ndarray:
     """Native equivalent of ``detections.xyxy.round().astype(int)`` for a torch
     xyxy tensor: pull to CPU numpy, round, cast to int."""
-    return (
-        detections.xyxy.detach().to("cpu").numpy().round().astype(dtype=int)
-    )
+    return detections.xyxy.detach().to("cpu").numpy().round().astype(dtype=int)
 
 
 def _native_class_names(detections: Detections) -> np.ndarray:

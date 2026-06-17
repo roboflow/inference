@@ -1,7 +1,7 @@
 import base64
 from io import BytesIO
 from time import perf_counter
-from typing import Any, List, Optional, Tuple, Union, Literal
+from typing import Any, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import rasterio
@@ -90,15 +90,12 @@ class InferenceModelsSAMAdapter(Model):
         return kwargs
 
     def run_tensor_native_inference(
-        self,
-        action: Literal["embed", "segment"],
-        **kwargs
+        self, action: Literal["embed", "segment"], **kwargs
     ) -> List[Union[SAMImageEmbeddings, SAMPrediction]]:
         kwargs = self.map_inference_kwargs(kwargs)
         if action == "embed":
             self._model.embed_images(**kwargs)
         return self._model.segment_images(**kwargs)
-
 
     def infer_from_request(self, request: SamInferenceRequest):
         t1 = perf_counter()

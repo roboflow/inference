@@ -24,10 +24,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     WorkflowImageData,
 )
-from inference.core.workflows.prototypes.block import (
-    BlockResult,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 
 class Florence2BlockV2(Florence2BlockV1):

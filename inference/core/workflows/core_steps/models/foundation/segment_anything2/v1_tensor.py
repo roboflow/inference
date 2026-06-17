@@ -2,15 +2,16 @@ import uuid
 from typing import Dict, List, Optional, Tuple, Union
 
 import torch
-from pydantic import Field, ConfigDict
+from pydantic import ConfigDict, Field
 from typing_extensions import Literal
 
 from inference.core.env import (
+    CORE_MODEL_SAM2_ENABLED,
     GCP_SERVERLESS,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
-    WORKFLOWS_REMOTE_API_TARGET, CORE_MODEL_SAM2_ENABLED,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import ModelEndpointType
@@ -25,27 +26,37 @@ from inference.core.workflows.execution_engine.constants import (
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
-    WorkflowImageData, OutputDefinition,
+    OutputDefinition,
+    WorkflowImageData,
 )
-from inference.core.workflows.execution_engine.entities.tensor_native_types import \
-    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND, TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND, \
-    TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND
-from inference.core.workflows.execution_engine.entities.types import Selector, IMAGE_KIND, ImageInputField, STRING_KIND, \
-    FLOAT_KIND, BOOLEAN_KIND
+from inference.core.workflows.execution_engine.entities.tensor_native_types import (
+    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
+    TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+)
+from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
+    FLOAT_KIND,
+    IMAGE_KIND,
+    STRING_KIND,
+    ImageInputField,
+    Selector,
+)
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
-    WorkflowBlockManifest, RuntimeRestriction, Severity, Runtime,
+    WorkflowBlockManifest,
 )
-from inference_sdk import InferenceHTTPClient
-
-
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import (
     coco_rle_masks_to_numpy_mask,
     torch_mask_to_coco_rle,
 )
+from inference_sdk import InferenceHTTPClient
 
 LONG_DESCRIPTION = """
 Run Segment Anything 2, a zero-shot instance segmentation model, on an image.
@@ -58,6 +69,7 @@ If you pass in box detections from another model, the class names of the boxes w
 
 
 PREDICTION_TYPE = "instance-segmentation"
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -126,7 +138,6 @@ class BlockManifest(WorkflowBlockManifest):
         "mask per prompt.",
     )
 
-
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images", "boxes"]
@@ -178,6 +189,7 @@ class BlockManifest(WorkflowBlockManifest):
             "sam2/hiera_tiny",
             "sam2/hiera_b_plus",
         ]
+
 
 class SegmentAnything2BlockV1(WorkflowBlock):
 
@@ -252,7 +264,9 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         boxes_iter = boxes if boxes is not None else [None] * len(images)
         results: List[dict] = []
         for image, boxes_for_image in zip(images, boxes_iter):
-            prompt_detections = _prompt_detections(boxes_for_image)  # raises if KP-no-bbox
+            prompt_detections = _prompt_detections(
+                boxes_for_image
+            )  # raises if KP-no-bbox
             box_tensor = (
                 prompt_detections.xyxy if prompt_detections is not None else None
             )
@@ -406,10 +420,14 @@ def _sam2_prediction_to_instance_detections(
     )
 
 
-def _score_filter(scores: torch.Tensor, threshold: float) -> Tuple[List[int], torch.Tensor]:
+def _score_filter(
+    scores: torch.Tensor, threshold: float
+) -> Tuple[List[int], torch.Tensor]:
     """Confidence filter — mirrors the numpy block's `if confidence < threshold:
     continue`. Returns (surviving source indices, index tensor for tensor selection)."""
-    source_indices = [i for i, keep in enumerate((scores >= threshold).tolist()) if keep]
+    source_indices = [
+        i for i, keep in enumerate((scores >= threshold).tolist()) if keep
+    ]
     return source_indices, torch.tensor(source_indices, dtype=torch.long)
 
 
@@ -442,9 +460,9 @@ def _assemble_instance_detections(
     detections = InstanceDetections(
         xyxy=xyxy.to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
         class_id=class_id.to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
-        confidence=confidence.to(torch.float32).reshape(-1).to(
-            WORKFLOWS_IMAGE_TENSOR_DEVICE
-        ),
+        confidence=confidence.to(torch.float32)
+        .reshape(-1)
+        .to(WORKFLOWS_IMAGE_TENSOR_DEVICE),
         mask=(
             mask
             if isinstance(mask, InstancesRLEMasks)
@@ -495,7 +513,9 @@ def _class_names_map(prompt_detections, source_indices: List[int]) -> Dict[int, 
     # class_id -> name map carried on image_metadata (used by the serializer).
     names: Dict[int, str] = {}
     for src in source_indices:
-        class_id = int(prompt_detections.class_id[src]) if _prompted(prompt_detections) else 0
+        class_id = (
+            int(prompt_detections.class_id[src]) if _prompted(prompt_detections) else 0
+        )
         names[class_id] = _instance_class_name(prompt_detections, src)
     return names
 
@@ -533,7 +553,9 @@ def _box_prompts_payload(prompt_detections) -> Optional[List[dict]]:
     for i in range(len(prompt_detections)):
         x1, y1, x2, y2 = prompt_detections.xyxy[i].tolist()
         w, h = x2 - x1, y2 - y1
-        prompts.append({"box": {"x": x1 + w / 2, "y": y1 + h / 2, "width": w, "height": h}})
+        prompts.append(
+            {"box": {"x": x1 + w / 2, "y": y1 + h / 2, "width": w, "height": h}}
+        )
     return prompts
 
 

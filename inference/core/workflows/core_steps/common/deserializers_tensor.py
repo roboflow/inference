@@ -11,14 +11,14 @@ from typing import Any, List, Optional, Tuple
 
 import torch
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
-
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.deserializers import (
     _parse_optional_parent_metadata,
+)
+from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_image_kind as _deserialize_image_kind_numpy,
+)
+from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_video_metadata_kind,
 )
 from inference.core.workflows.core_steps.common.tensor_native import (
@@ -37,6 +37,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
 
 DEFAULT_OBJECT_DETECTION_PREDICTION_TYPE = "object-detection"
 DEFAULT_INSTANCE_SEGMENTATION_PREDICTION_TYPE = "instance-segmentation"
@@ -99,9 +102,7 @@ def _parse_image_metadata_fields(parameter: str, image: Any):
         parent_origin=parent_origin,
     )
     root_parent_id = image.get(ROOT_PARENT_ID_KEY) if is_image_dict else None
-    root_parent_origin = (
-        image.get(ROOT_PARENT_ORIGIN_KEY) if is_image_dict else None
-    )
+    root_parent_origin = image.get(ROOT_PARENT_ORIGIN_KEY) if is_image_dict else None
     workflow_root_ancestor_metadata = _parse_optional_parent_metadata(
         parameter=parameter,
         parent_id=root_parent_id,

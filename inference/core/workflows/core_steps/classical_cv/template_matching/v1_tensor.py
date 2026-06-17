@@ -7,15 +7,11 @@ import supervision as sv
 import torch
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
 )
-from inference.core.workflows.execution_engine.constants import (
-    DETECTION_ID_KEY,
-)
+from inference.core.workflows.execution_engine.constants import DETECTION_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -37,6 +33,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.object_detection import Detections
 
 SHORT_DESCRIPTION: str = (
     "Locate instances of a given template within a specified image."

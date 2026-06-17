@@ -83,9 +83,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(name="embedding", kind=[TENSOR_NATIVE_EMBEDDING_KIND])
-        ]
+        return [OutputDefinition(name="embedding", kind=[TENSOR_NATIVE_EMBEDDING_KIND])]
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:

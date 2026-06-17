@@ -5,9 +5,6 @@ import numpy as np
 import torch
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.core_steps.common.tensor_native import (
     instance_mask_to_numpy,
     split_key_point_prediction,
@@ -45,6 +42,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 LONG_DESCRIPTION = """
 Rolls up dimensionality from children to parent detections

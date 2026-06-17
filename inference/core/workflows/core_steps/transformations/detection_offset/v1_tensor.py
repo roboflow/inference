@@ -4,9 +4,6 @@ from uuid import uuid4
 import torch
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
@@ -34,6 +31,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 LONG_DESCRIPTION = """
 Expand or contract detection bounding boxes by applying fixed offsets to their width and height, adding padding around detections to include more context, adjust bounding box sizes for downstream processing, or compensate for tight detections, supporting both pixel-based and percentage-based offset units for flexible bounding box adjustment.

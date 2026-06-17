@@ -3,10 +3,6 @@ from typing import Any, List, Literal, Optional, Tuple, Type, Union
 from pydantic import ConfigDict, Field
 from trackers import ByteTrackTracker
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.core_steps.trackers._base_tensor import (
     TRACKER_PREDICTION_KINDS,
     TrackerBlockBase,
@@ -29,6 +25,9 @@ from inference.core.workflows.prototypes.block import (
     RuntimeRestriction,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
 
 DEFAULT_LOST_TRACK_BUFFER = 30
 DEFAULT_TRACK_ACTIVATION_THRESHOLD = 0.7

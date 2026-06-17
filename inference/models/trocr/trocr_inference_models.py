@@ -1,5 +1,5 @@
 from time import perf_counter
-from typing import Any, Tuple, Union, List
+from typing import Any, List, Tuple, Union
 
 import numpy as np
 import torch
@@ -52,7 +52,7 @@ class InferenceModelsTrOCRAdapter(Model):
     def run_tensor_native_inference(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> List[str]:
         return self._model(images=images, **kwargs)
 

@@ -124,12 +124,13 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceConfiguration, InferenceHTTPClient
-
 from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.semantic_segmentation import SemanticSegmentationResult
+from inference_models.models.base.semantic_segmentation import (
+    SemanticSegmentationResult,
+)
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 PREDICTION_TYPE = "semantic-segmentation"
 

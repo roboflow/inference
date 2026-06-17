@@ -4,17 +4,12 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.classification import (
-    ClassificationPrediction,
-    MultiLabelClassificationPrediction,
-)
-
-from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
-    OUTPUT_IMAGE_KEY,
-)
 from inference.core.workflows.core_steps.visualizations.common.base_colorable_tensor import (
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
+)
+from inference.core.workflows.core_steps.visualizations.common.base_tensor import (
+    OUTPUT_IMAGE_KEY,
 )
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.constants import (
@@ -33,6 +28,10 @@ from inference.core.workflows.execution_engine.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference_models.models.base.classification import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
+)
 
 SHORT_DESCRIPTION = "Visualize both single-label and multi-label classification predictions with customizable display options."
 

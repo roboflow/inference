@@ -5,9 +5,6 @@ import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
@@ -40,6 +37,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
 
 OUTPUT_IMAGE_KEY: str = "image"
 
@@ -126,7 +125,10 @@ def _materialise_mask(
     if detections_number == 0:
         return None
     return np.stack(
-        [instance_mask_to_numpy(detections, index) for index in range(detections_number)]
+        [
+            instance_mask_to_numpy(detections, index)
+            for index in range(detections_number)
+        ]
     )
 
 
@@ -263,6 +265,6 @@ class PredictionsVisualizationBlock(VisualizationBlock, ABC):
         predictions: Union[TensorNativePrediction, TensorNativeDetections],
         copy_image: bool,
         *args,
-        **kwargs
+        **kwargs,
     ) -> BlockResult:
         pass

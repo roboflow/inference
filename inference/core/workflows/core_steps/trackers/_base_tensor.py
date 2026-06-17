@@ -35,10 +35,6 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union
 import numpy as np
 import supervision as sv
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
-
 from inference.core import logger
 from inference.core.workflows.core_steps.common.tensor_native import (
     split_key_point_prediction,
@@ -59,6 +55,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
 
 OUTPUT_KEY: str = "tracked_detections"
 
@@ -226,9 +225,7 @@ class TrackerBlockBase(WorkflowBlock):
             and len(tracked_sv) > 0
         ):
             surviving = (
-                np.asarray(tracked_sv.data[_TRACKER_ROW_INDEX_KEY])
-                .astype(int)
-                .tolist()
+                np.asarray(tracked_sv.data[_TRACKER_ROW_INDEX_KEY]).astype(int).tolist()
             )
             tracker_ids = [int(t) for t in tracked_sv.tracker_id.tolist()]
         else:

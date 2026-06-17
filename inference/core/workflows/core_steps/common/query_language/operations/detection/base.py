@@ -160,14 +160,10 @@ DETECTION_PROPERTY_EXTRACTION_TENSOR_NATIVE = {
     DetectionsProperty.Y_MIN: lambda x: float(x[0][1]),
     DetectionsProperty.X_MAX: lambda x: float(x[0][2]),
     DetectionsProperty.Y_MAX: lambda x: float(x[0][3]),
-    DetectionsProperty.CONFIDENCE: lambda x: (
-        None if x[3] is None else float(x[3])
-    ),
+    DetectionsProperty.CONFIDENCE: lambda x: (None if x[3] is None else float(x[3])),
     DetectionsProperty.CLASS_ID: lambda x: None if x[2] is None else int(x[2]),
     DetectionsProperty.CLASS_NAME: _extract_class_name_tensor_native,
-    DetectionsProperty.SIZE: lambda x: float(
-        (x[0][3] - x[0][1]) * (x[0][2] - x[0][0])
-    ),
+    DetectionsProperty.SIZE: lambda x: float((x[0][3] - x[0][1]) * (x[0][2] - x[0][0])),
     DetectionsProperty.CENTER: lambda x: (
         float(x[0][0] + (x[0][2] - x[0][0]) / 2),
         float(x[0][1] + (x[0][3] - x[0][1]) / 2),

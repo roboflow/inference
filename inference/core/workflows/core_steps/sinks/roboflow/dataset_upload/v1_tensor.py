@@ -31,15 +31,6 @@ import torch
 from fastapi import BackgroundTasks
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference_models.models.base.classification import (
-    ClassificationPrediction,
-    MultiLabelClassificationPrediction,
-)
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
-
 from inference.core.active_learning.cache_operations import (
     return_strategy_credit,
     use_credit_of_matching_strategy,
@@ -102,6 +93,14 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.classification import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
 
 # A tensor-native prediction may be a classification result, a detection-shaped
 # prediction (object detection / instance segmentation), or a keypoint tuple.

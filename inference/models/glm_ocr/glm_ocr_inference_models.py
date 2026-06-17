@@ -54,7 +54,7 @@ class InferenceModelsGLMOCRAdapter(Model):
     def run_tensor_native_inference(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> List[str]:
         return self._model.prompt(images=images, **kwargs)
 

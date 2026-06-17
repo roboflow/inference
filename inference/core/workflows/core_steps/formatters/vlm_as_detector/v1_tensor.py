@@ -11,8 +11,6 @@ import supervision as sv
 import torch
 from pydantic import ConfigDict, Field, model_validator
 
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.gemini_detection_parsing import (
@@ -56,6 +54,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.object_detection import Detections
 
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
 
@@ -480,9 +479,7 @@ def parse_gemini_object_detection_response(
             image_height=image_height,
             image_width=image_width,
             inference_id=inference_id,
-            class_names={
-                idx: class_name for class_name, idx in class_name2id.items()
-            },
+            class_names={idx: class_name for class_name, idx in class_name2id.items()},
         )
 
     xyxy, class_id, class_name, confidence = [], [], [], []
@@ -551,9 +548,7 @@ def parse_florence2_object_detection_response(
         ]
         detections.class_id = np.array(class_ids)
     detections.confidence = np.array([1.0 for _ in detections])
-    class_name = list(
-        detections.data.get("class_name", ["unknown"] * len(detections))
-    )
+    class_name = list(detections.data.get("class_name", ["unknown"] * len(detections)))
     return native_detections_from_parsed(
         image=image,
         image_height=image_height,

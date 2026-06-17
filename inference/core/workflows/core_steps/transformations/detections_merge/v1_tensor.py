@@ -4,10 +4,6 @@ from uuid import uuid4
 import torch
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
@@ -35,6 +31,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
 
 OUTPUT_KEY: str = "predictions"
 
@@ -244,8 +243,10 @@ class DetectionsMergeBlockV1(WorkflowBlock):
         # Conservative confidence: the lowest-confidence input row's score.
         if detections.confidence is not None:
             lowest_conf_idx = int(torch.argmin(detections.confidence))
-            confidence = detections.confidence[lowest_conf_idx].reshape(1).to(
-                device=device, dtype=torch.float32
+            confidence = (
+                detections.confidence[lowest_conf_idx]
+                .reshape(1)
+                .to(device=device, dtype=torch.float32)
             )
         else:
             confidence = None

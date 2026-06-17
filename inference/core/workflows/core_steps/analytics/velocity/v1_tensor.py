@@ -5,10 +5,6 @@ import torch
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.core_steps.common.tensor_native import (
     split_key_point_prediction,
 )
@@ -41,6 +37,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
 
 OUTPUT_KEY: str = "velocity_detections"
 SHORT_DESCRIPTION = "Calculate the velocity and speed of tracked objects with smoothing and unit conversion."
@@ -222,9 +221,7 @@ class VelocityBlockV1(WorkflowBlock):
         tracker_ids = [
             box_metadata.get("tracker_id") for box_metadata in bboxes_metadata
         ]
-        if num_detections > 0 and any(
-            tracker_id is None for tracker_id in tracker_ids
-        ):
+        if num_detections > 0 and any(tracker_id is None for tracker_id in tracker_ids):
             raise ValueError(
                 "tracker_id not initialized, VelocityBlock requires detections to be tracked"
             )
@@ -245,7 +242,9 @@ class VelocityBlockV1(WorkflowBlock):
         smoothed_velocities = self._smoothed_velocities.setdefault(video_id, {})
 
         # Compute current positions (center of bounding boxes)
-        bbox_xyxy = detections.xyxy.detach().to("cpu").numpy().astype(float)  # Shape (num_detections, 4)
+        bbox_xyxy = (
+            detections.xyxy.detach().to("cpu").numpy().astype(float)
+        )  # Shape (num_detections, 4)
         x_centers = (bbox_xyxy[:, 0] + bbox_xyxy[:, 2]) / 2
         y_centers = (bbox_xyxy[:, 1] + bbox_xyxy[:, 3]) / 2
         current_positions = np.stack(

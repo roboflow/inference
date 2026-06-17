@@ -76,11 +76,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceConfiguration, InferenceHTTPClient
-
 from inference_models.models.base.classification import (
     MultiLabelClassificationPrediction,
 )
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 PREDICTION_TYPE = "classification"
 
@@ -245,7 +244,9 @@ class RoboflowMultiLabelClassificationModelBlockV1(WorkflowBlock):
             # Pin the prediction tensors to WORKFLOWS_IMAGE_TENSOR_DEVICE so LOCAL
             # output matches the single-label sibling and this block's REMOTE path
             # (which builds them on-device via torch.as_tensor).
-            prediction.class_ids = prediction.class_ids.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
+            prediction.class_ids = prediction.class_ids.to(
+                WORKFLOWS_IMAGE_TENSOR_DEVICE
+            )
             prediction.confidence = prediction.confidence.to(
                 WORKFLOWS_IMAGE_TENSOR_DEVICE
             )

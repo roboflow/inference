@@ -10,13 +10,6 @@ import requests
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.classification import (
-    ClassificationPrediction,
-    MultiLabelClassificationPrediction,
-)
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.env import API_BASE_URL
 from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
@@ -56,6 +49,12 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.classification import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 # Tensor-native prediction union the block accepts. Detection predictions arrive
 # as `inference_models` dataclasses (or the keypoint `(KeyPoints, Detections)`
@@ -863,9 +862,15 @@ def _convert_native_detections_to_vision_events_format(
     # map (numpy stored it per-detection in `sv.Detections.data["class_name"]`).
     class_names_map = (detections.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
 
-    for index, (xyxy, _mask, class_id, confidence, _tracker_id, data, _meta) in enumerate(
-        detections
-    ):
+    for index, (
+        xyxy,
+        _mask,
+        class_id,
+        confidence,
+        _tracker_id,
+        data,
+        _meta,
+    ) in enumerate(detections):
         xyxy = xyxy.detach().to("cpu").numpy().astype(float).tolist()
         x1, y1, x2, y2 = xyxy
         w = abs(x2 - x1)

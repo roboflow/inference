@@ -6,17 +6,8 @@ from fastapi import BackgroundTasks
 from pydantic import AliasChoices, ConfigDict, Field
 from typing_extensions import Annotated
 
-from inference_models.models.base.classification import (
-    ClassificationPrediction,
-    MultiLabelClassificationPrediction,
-)
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.cache.base import BaseCache
-from inference.core.workflows.core_steps.common.tensor_native import (
-    KeyPointPrediction,
-)
+from inference.core.workflows.core_steps.common.tensor_native import KeyPointPrediction
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
     register_datapoint_at_roboflow,
 )
@@ -46,6 +37,12 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.classification import (
+    ClassificationPrediction,
+    MultiLabelClassificationPrediction,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 # A tensor-native prediction may be a classification result, a detection-shaped
 # prediction (object detection / instance segmentation), or a keypoint tuple.

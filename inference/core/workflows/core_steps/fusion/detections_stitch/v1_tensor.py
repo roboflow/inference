@@ -9,14 +9,6 @@ from pydantic import ConfigDict, Field
 from supervision import OverlapFilter, move_boxes, move_masks
 from supervision.config import ORIENTED_BOX_COORDINATES
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
-from inference_models.models.common.rle_utils import (
-    coco_rle_masks_to_numpy_mask,
-    torch_mask_to_coco_rle,
-)
-
 from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_indices,
 )
@@ -52,6 +44,13 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
+)
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
+from inference_models.models.common.rle_utils import (
+    coco_rle_masks_to_numpy_mask,
+    torch_mask_to_coco_rle,
 )
 
 TensorNativeDetections = Union[Detections, InstanceDetections]
@@ -378,9 +377,9 @@ def _move_native_masks(
     if is_rle:
         target_height, target_width = resolution_wh[1], resolution_wh[0]
         rle_masks = [
-            torch_mask_to_coco_rle(
-                torch.as_tensor(single_mask, dtype=torch.bool)
-            )["counts"]
+            torch_mask_to_coco_rle(torch.as_tensor(single_mask, dtype=torch.bool))[
+                "counts"
+            ]
             for single_mask in moved_masks
         ]
         return InstancesRLEMasks(
@@ -427,9 +426,7 @@ def merge_detections(
         )
     xyxy = torch.cat([detections.xyxy for detections in non_empty], dim=0)
     class_id = torch.cat([detections.class_id for detections in non_empty], dim=0)
-    confidence = torch.cat(
-        [detections.confidence for detections in non_empty], dim=0
-    )
+    confidence = torch.cat([detections.confidence for detections in non_empty], dim=0)
     bboxes_metadata: List[dict] = []
     for detections in non_empty:
         per_detection = detections.bboxes_metadata
@@ -496,8 +493,7 @@ def _merge_masks(
     detections_list: List[InstanceDetections],
 ) -> Union[torch.Tensor, InstancesRLEMasks]:
     any_rle = any(
-        isinstance(detections.mask, InstancesRLEMasks)
-        for detections in detections_list
+        isinstance(detections.mask, InstancesRLEMasks) for detections in detections_list
     )
     if any_rle:
         image_size = None

@@ -73,9 +73,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceConfiguration, InferenceHTTPClient
-
 from inference_models.models.base.classification import ClassificationPrediction
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 PREDICTION_TYPE = "classification"
 
@@ -92,6 +91,7 @@ def _resolve_confidence_threshold(confidence: Optional[Union[float, str]]) -> fl
     if isinstance(confidence, (int, float)):
         return float(confidence)
     return _DEFAULT_CONFIDENCE_THRESHOLD
+
 
 LONG_DESCRIPTION = """
 Run inference on a multi-class classification model hosted on or uploaded to Roboflow.

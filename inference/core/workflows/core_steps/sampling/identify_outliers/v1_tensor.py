@@ -4,14 +4,14 @@ import torch
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.tensor_native_types import (
+    TENSOR_NATIVE_EMBEDDING_KIND,
+)
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
     Selector,
-)
-from inference.core.workflows.execution_engine.entities.tensor_native_types import (
-    TENSOR_NATIVE_EMBEDDING_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,

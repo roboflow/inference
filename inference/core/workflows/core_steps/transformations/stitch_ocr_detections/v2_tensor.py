@@ -31,8 +31,6 @@ from typing import Dict, List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field, field_validator
 
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -51,6 +49,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.object_detection import Detections
 
 TEXT_KEY = "text"
 
@@ -879,9 +878,7 @@ def collimate_word_grouping(
     class_names = _native_class_names(detections)
 
     # Convert to CollimateDetection objects
-    coll_detections = [
-        CollimateDetection(xyxy[i], class_names[i], i) for i in range(n)
-    ]
+    coll_detections = [CollimateDetection(xyxy[i], class_names[i], i) for i in range(n)]
 
     # Sort by primary reading coordinate
     coll_detections = _sort_detections_for_collimate(coll_detections, reading_direction)

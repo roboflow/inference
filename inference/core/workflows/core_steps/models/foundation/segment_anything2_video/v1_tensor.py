@@ -73,7 +73,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
@@ -101,7 +100,13 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
-            "search_keywords": ["SAM2", "segment anything", "video", "tracking", "META"],
+            "search_keywords": [
+                "SAM2",
+                "segment anything",
+                "video",
+                "tracking",
+                "META",
+            ],
             "ui_manifest": {
                 "section": "video",
                 "icon": "fa-brands fa-meta",
@@ -421,7 +426,9 @@ def _masks_to_instance_detections(
             continue
         class_id = int(meta.class_id) if meta is not None else 0
         class_name = meta.class_name if meta is not None else "foreground"
-        xyxy.append([float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())])
+        xyxy.append(
+            [float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())]
+        )
         confidences.append(float(confidence))
         class_ids.append(class_id)
         class_names_map[class_id] = class_name
@@ -449,7 +456,9 @@ def _masks_to_instance_detections(
         class_id_t = torch.tensor(class_ids, dtype=torch.int64)
         confidence_t = torch.tensor(confidences, dtype=torch.float32)
         if mask_representation == "rle":
-            rle_dicts = [torch_mask_to_coco_rle(torch.from_numpy(m)) for m in kept_masks]
+            rle_dicts = [
+                torch_mask_to_coco_rle(torch.from_numpy(m)) for m in kept_masks
+            ]
             mask = InstancesRLEMasks.from_coco_rle_masks(
                 image_size=(height, width), masks=rle_dicts
             )

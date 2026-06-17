@@ -20,12 +20,6 @@ from uuid import uuid4
 import numpy as np
 import torch
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.keypoints_detection import KeyPoints
-from inference_models.models.base.object_detection import Detections
-from inference_models.models.base.types import InstancesRLEMasks
-from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
-
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
     CLASS_ID_KEY,
@@ -48,10 +42,17 @@ from inference.core.workflows.execution_engine.constants import (
     Y_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.object_detection import Detections
+from inference_models.models.base.types import InstancesRLEMasks
+from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 
 TensorNativeDetections = Union[Detections, InstanceDetections]
 KeyPointPrediction = Tuple[KeyPoints, Optional[Detections]]
-TensorNativePrediction = Union[Detections, InstanceDetections, KeyPoints, KeyPointPrediction]
+TensorNativePrediction = Union[
+    Detections, InstanceDetections, KeyPoints, KeyPointPrediction
+]
 
 
 def mask_to_indices(mask: Union[np.ndarray, Sequence[bool]]) -> List[int]:
@@ -143,9 +144,7 @@ def take_key_points_by_indices(
     index_tensor = torch.as_tensor(indices, dtype=torch.long)
     key_points_metadata = None
     if key_points.key_points_metadata is not None:
-        key_points_metadata = [
-            dict(key_points.key_points_metadata[i]) for i in indices
-        ]
+        key_points_metadata = [dict(key_points.key_points_metadata[i]) for i in indices]
     return KeyPoints(
         xy=key_points.xy if is_identity else key_points.xy[index_tensor],
         class_id=(
@@ -384,9 +383,7 @@ def native_detections_from_inference_predictions(
     )
     return Detections(
         xyxy=torch.as_tensor(xyxy, dtype=torch.float32, device=device).reshape(-1, 4),
-        class_id=torch.as_tensor(class_id, dtype=torch.long, device=device).reshape(
-            -1
-        ),
+        class_id=torch.as_tensor(class_id, dtype=torch.long, device=device).reshape(-1),
         confidence=torch.as_tensor(
             confidence, dtype=torch.float32, device=device
         ).reshape(-1),

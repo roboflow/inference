@@ -2,9 +2,6 @@ from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
@@ -25,6 +22,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 SHORT_DESCRIPTION = "Calculate the distance between two bounding boxes on a 2D plane."
 
@@ -307,7 +306,12 @@ def _iter_boxes_with_class_names(
     bboxes_metadata = detections.bboxes_metadata or []
     pairs: List[Tuple[Tuple[int, int, int, int], str]] = []
     for index, (box, class_id) in enumerate(zip(xyxy, class_ids)):
-        x_min, y_min, x_max, y_max = (int(box[0]), int(box[1]), int(box[2]), int(box[3]))
+        x_min, y_min, x_max, y_max = (
+            int(box[0]),
+            int(box[1]),
+            int(box[2]),
+            int(box[3]),
+        )
         per_box_name = None
         if index < len(bboxes_metadata):
             per_box_name = bboxes_metadata[index].get(CLASS_NAME_KEY)

@@ -32,6 +32,7 @@ kinds.
 import uuid
 from typing import Dict, List, Literal, Optional, Type, Union
 
+import torch
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 
 from inference.core.env import (
@@ -89,12 +90,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceConfiguration, InferenceHTTPClient
-
-import torch
-
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.types import InstancesRLEMasks
+from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 PREDICTION_TYPE = "instance-segmentation"
 
@@ -527,9 +525,7 @@ def _filter_classes_native(
             detections,
             torch.zeros_like(detections.class_id, dtype=torch.bool),
         )
-    accepted_tensor = torch.as_tensor(
-        accepted_ids, device=detections.class_id.device
-    )
+    accepted_tensor = torch.as_tensor(accepted_ids, device=detections.class_id.device)
     keep = torch.isin(detections.class_id, accepted_tensor)
     return take_prediction_by_mask(detections, keep)
 
@@ -593,10 +589,7 @@ def _native_instance_detections_from_inference_predictions(
         confidence.append(float(prediction.get(CONFIDENCE_KEY, 1.0)))
         if CLASS_NAME_KEY in prediction:
             derived_class_names[prediction_class_id] = str(prediction[CLASS_NAME_KEY])
-        elif (
-            model_class_names is not None
-            and prediction_class_id in model_class_names
-        ):
+        elif model_class_names is not None and prediction_class_id in model_class_names:
             derived_class_names[prediction_class_id] = model_class_names[
                 prediction_class_id
             ]

@@ -7,9 +7,6 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.core_steps.common.tensor_native import (
     take_prediction_by_mask,
 )
@@ -39,6 +36,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 PolygonAsNestedList = List[List[int]]
 PolygonAsArray = np.ndarray
@@ -249,7 +248,9 @@ class TimeInZoneBlockV3(WorkflowBlock):
     ) -> BlockResult:
         n = int(detections.xyxy.shape[0])
         bboxes_metadata = detections.bboxes_metadata or [{} for _ in range(n)]
-        tracker_ids = [box_metadata.get("tracker_id") for box_metadata in bboxes_metadata]
+        tracker_ids = [
+            box_metadata.get("tracker_id") for box_metadata in bboxes_metadata
+        ]
         if n > 0 and any(tracker_id is None for tracker_id in tracker_ids):
             raise ValueError(
                 f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
@@ -302,7 +303,9 @@ class TimeInZoneBlockV3(WorkflowBlock):
         # It's not optimal and next versions should run this fully tensor-native.
         sv_input = sv.Detections(
             xyxy=detections.xyxy.detach().to("cpu").numpy().astype(float),
-            tracker_id=np.array([int(tracker_id) for tracker_id in tracker_ids], dtype=int),
+            tracker_id=np.array(
+                [int(tracker_id) for tracker_id in tracker_ids], dtype=int
+            ),
         )
 
         # get trigger for all zones. It is a matrix of shape (len(zones), len(detections))

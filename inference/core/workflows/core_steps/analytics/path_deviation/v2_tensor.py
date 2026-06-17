@@ -6,9 +6,6 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
-from inference_models.models.base.instance_segmentation import InstanceDetections
-from inference_models.models.base.object_detection import Detections
-
 from inference.core.workflows.execution_engine.constants import (
     PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
 )
@@ -34,6 +31,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.object_detection import Detections
 
 OUTPUT_KEY: str = "path_deviation_detections"
 SHORT_DESCRIPTION = "Calculate Fréchet distance of object from the reference path."
@@ -197,7 +196,9 @@ class PathDeviationAnalyticsBlockV2(WorkflowBlock):
     ) -> BlockResult:
         n = int(detections.xyxy.shape[0])
         bboxes_metadata = detections.bboxes_metadata or [{} for _ in range(n)]
-        tracker_ids = [box_metadata.get("tracker_id") for box_metadata in bboxes_metadata]
+        tracker_ids = [
+            box_metadata.get("tracker_id") for box_metadata in bboxes_metadata
+        ]
         if n > 0 and any(tracker_id is None for tracker_id in tracker_ids):
             raise ValueError(
                 f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"

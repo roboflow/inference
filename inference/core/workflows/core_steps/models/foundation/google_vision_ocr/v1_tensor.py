@@ -56,7 +56,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
 from inference_models.models.base.object_detection import Detections
 
 # Google Vision returns blocks of recognized text. To preserve numpy parity for the
