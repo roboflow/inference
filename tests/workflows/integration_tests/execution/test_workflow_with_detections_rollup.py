@@ -6,12 +6,30 @@ keypoint detection, and instance segmentation rollup from dynamic crops.
 import numpy as np
 import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference_models.models.base.keypoints_detection import KeyPoints
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
+)
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the keypoint rollup emits a native
+# (KeyPoints, Detections) tuple (the keypoint kind's runtime shape) instead of an
+# sv.Detections carrying keypoints in .data. The numpy-shaped assertions run only with
+# the flag off; the *_tensor_native twin asserts the same facts on the native tuple.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="sv.Detections output; native under ENABLE_TENSOR_DATA_REPRESENTATION "
+    "— see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 # Full workflow with object detection, keypoint, and segmentation rollup
@@ -598,6 +616,7 @@ def test_dimension_rollup_with_object_detection_only(
     ), "Visualization should match image dimensions"
 
 
+@_NUMPY_ONLY
 @add_to_workflows_gallery(
     category="Fusion Workflows",
     use_case_title="Dimension Rollup with Keypoint Detection",
@@ -648,6 +667,60 @@ def test_dimension_rollup_with_keypoint_detection_only(
     assert (
         "keypoints_xy" in rolled_up.data or len(rolled_up) == 0
     ), "Rolled up keypoint detections should have keypoint data in data dict"
+
+    # Validate visualization
+    assert (
+        result[0]["keypoint_visualization"].numpy_image.shape[:2]
+        == crowd_image.shape[:2]
+    ), "Visualization should match image dimensions"
+
+
+@_TENSOR_ONLY
+def test_dimension_rollup_with_keypoint_detection_only_tensor_native(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    """Tensor-native parity of test_dimension_rollup_with_keypoint_detection_only."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=KEYPOINT_ROLLUP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": crowd_image,
+        }
+    )
+
+    # then
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert set(result[0].keys()) == {
+        "rolled_up_detections",
+        "keypoint_visualization",
+    }
+
+    # The keypoint kind's runtime payload is a (KeyPoints, Detections) tuple; the
+    # KeyPoints component carries the rolled-up keypoint data that lived in
+    # sv.Detections.data["keypoints_xy"] on the numpy path.
+    rolled_up = result[0]["rolled_up_detections"]
+    assert isinstance(rolled_up, tuple), "Keypoint rollup output is a tuple"
+    key_points, detections = rolled_up
+    assert isinstance(key_points, KeyPoints)
+    assert hasattr(detections, "xyxy"), "Bbox component should have xyxy"
+    # One skeleton instance per bounding box; each instance carries (K, 2) keypoints
+    # (or there are no instances at all, mirroring the numpy len==0 fallback).
+    assert key_points.xy.shape[0] == detections.xyxy.shape[0]
+    assert key_points.xy.shape[0] == 0 or key_points.xy.shape[-1] == 2
 
     # Validate visualization
     assert (

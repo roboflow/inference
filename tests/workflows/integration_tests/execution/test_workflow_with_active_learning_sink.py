@@ -1,12 +1,32 @@
 import numpy as np
 import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference_models.models.base.classification import ClassificationPrediction
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
+)
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the classification block emits native
+# inference_models.ClassificationPrediction objects instead of the sv-shaped
+# classification dicts (with a string "top" key). The numpy-shaped assertions below
+# run only with the flag off; an equivalent *_tensor_native test asserts the same
+# facts against the native carrier with the flag on.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="classification dict output; native ClassificationPrediction under "
+    "ENABLE_TENSOR_DATA_REPRESENTATION — see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 ACTIVE_LEARNING_WORKFLOW = {
@@ -86,6 +106,7 @@ ACTIVE_LEARNING_WORKFLOW = {
 }
 
 
+@_NUMPY_ONLY
 @add_to_workflows_gallery(
     category="Workflows enhanced by Roboflow Platform",
     use_case_title="Data Collection for Active Learning",
@@ -133,6 +154,63 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
         len(result[0]["predictions"]) == 2
     ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
     assert [result[0]["predictions"][0]["top"], result[0]["predictions"][1]["top"]] == [
+        "116.Parson_russell_terrier",
+        "131.Wirehaired_pointing_griffon",
+    ], "Expected predictions to be as measured in reference run"
+    assert (
+        result[0]["registration_message"]
+        == ["Registration skipped due to sampling settings"] * 2
+    ), "Expected data not registered due to sampling"
+
+
+@_TENSOR_ONLY
+def test_detection_plus_classification_workflow_when_minimal_valid_input_provided_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=ACTIVE_LEARNING_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": dogs_image,
+            "data_percentage": 0.0,
+        }
+    )
+
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "predictions",
+        "registration_message",
+    }, "Expected all declared outputs to be delivered"
+    assert (
+        len(result[0]["predictions"]) == 2
+    ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
+    # Under ENABLE_TENSOR_DATA_REPRESENTATION each per-crop prediction is a native
+    # inference_models.ClassificationPrediction. The top-class STRING the numpy test
+    # reads at predictions[i]["top"] is recovered here from the native carrier:
+    # top class id = int(class_id.reshape(-1)[0]); the class_id -> name mapping lives
+    # in images_metadata[0][CLASS_NAMES_KEY] (PLURAL, indexed [0]).
+    top_class_names = []
+    for prediction in result[0]["predictions"]:
+        assert isinstance(
+            prediction, ClassificationPrediction
+        ), "Expected native inference_models.ClassificationPrediction"
+        top_id = int(prediction.class_id.reshape(-1)[0])
+        names = prediction.images_metadata[0][CLASS_NAMES_KEY]
+        top_class_names.append(names[top_id])
+    assert top_class_names == [
         "116.Parson_russell_terrier",
         "131.Wirehaired_pointing_griffon",
     ], "Expected predictions to be as measured in reference run"
