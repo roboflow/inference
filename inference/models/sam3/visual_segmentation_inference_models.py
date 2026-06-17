@@ -26,6 +26,8 @@ from inference.core.env import (
     DEVICE,
     DISABLE_SAM3_LOGITS_CACHE,
     DISABLED_INFERENCE_MODELS_BACKENDS,
+    SAM3_EMBEDDING_CACHE_OFFLOAD_TO_CPU,
+    SAM3_LOGITS_CACHE_OFFLOAD_TO_CPU,
     SAM3_MAX_EMBEDDING_CACHE_SIZE,
     SAM3_MAX_LOGITS_CACHE_SIZE,
     VALID_INFERENCE_MODELS_BACKENDS,
@@ -73,11 +75,11 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
 
         sam3_image_embeddings_cache = Sam3ImageEmbeddingsInMemoryCache.init(
             size_limit=embedding_cache_size,
-            send_to_cpu=True,
+            send_to_cpu=SAM3_EMBEDDING_CACHE_OFFLOAD_TO_CPU,
         )
         sam3_low_resolution_masks_cache = Sam3LowResolutionMasksInMemoryCache.init(
             size_limit=low_res_logits_cache_size,
-            send_to_cpu=True,
+            send_to_cpu=SAM3_LOGITS_CACHE_OFFLOAD_TO_CPU,
         )
         extra_weights_provider_headers = get_extra_weights_provider_headers(
             countinference=kwargs.get("countinference"),

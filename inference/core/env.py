@@ -553,6 +553,17 @@ SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
 SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_MAX_EMBEDDING_CACHE_SIZE", 100))
 SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM3_MAX_LOGITS_CACHE_SIZE", 1000))
 DISABLE_SAM3_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM3_LOGITS_CACHE", False))
+# When True, cached SAM3 image embeddings / low-res masks are offloaded to CPU RAM,
+# which saves GPU memory but forces a host->device copy on every cache hit (i.e. on
+# each interactive click for the same image). Set to False to keep them resident on
+# the GPU and avoid that per-click transfer, at the cost of higher VRAM usage.
+# Defaults to True to preserve existing behavior.
+SAM3_EMBEDDING_CACHE_OFFLOAD_TO_CPU = str2bool(
+    os.getenv("SAM3_EMBEDDING_CACHE_OFFLOAD_TO_CPU", True)
+)
+SAM3_LOGITS_CACHE_OFFLOAD_TO_CPU = str2bool(
+    os.getenv("SAM3_LOGITS_CACHE_OFFLOAD_TO_CPU", True)
+)
 
 # EasyOCR version ID, default is "english_g2"
 EASYOCR_VERSION_ID = os.getenv("EASYOCR_VERSION_ID", "english_g2")
