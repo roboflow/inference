@@ -1,6 +1,6 @@
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-import inspect
 from typing import Generic, List, Optional, Tuple, Union
 
 import numpy as np
@@ -14,6 +14,9 @@ from inference_models.models.base.types import (
     RawPrediction,
 )
 
+_KEYPOINTS_ACCEPTS_CONFIDENCE = (
+    "confidence" in inspect.signature(sv.KeyPoints).parameters
+)
 
 @dataclass
 class KeyPoints:
@@ -77,10 +80,10 @@ class KeyPoints:
             "xy": self.xy.cpu().numpy(),
             "class_id": self.class_id.cpu().numpy(),
         }
-        if "keypoint_confidence" in inspect.signature(sv.KeyPoints.__init__).parameters:
-            kwargs["keypoint_confidence"] = confidence_array
-        else:
+        if _KEYPOINTS_ACCEPTS_CONFIDENCE:
             kwargs["confidence"] = confidence_array
+        else:
+            kwargs["keypoint_confidence"] = confidence_array
         return sv.KeyPoints(**kwargs)
 
 

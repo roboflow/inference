@@ -32,9 +32,6 @@ from inference_models.weights_providers.entities import ModelMetadata
 logger = logging.getLogger("inference_cli.inference_compiler")
 
 
-def _compilation_directory_context(model_id: str):
-    return tempfile.TemporaryDirectory()
-
 REGISTERED_COMPILATION_HANDLERS = {
     "yolov8": partial(
         compile_and_register_default_model,
@@ -172,7 +169,7 @@ def compile_and_register(
         raise ModelArchitectureNotSupportedError(
             f"Model architecture {model_metadata.model_architecture} not supported for compilation."
         )
-    with _compilation_directory_context(model_metadata.model_id) as compilation_directory:
+    with tempfile.TemporaryDirectory() as compilation_directory:
         return REGISTERED_COMPILATION_HANDLERS[model_metadata.model_architecture](
             model_metadata,
             models_service_client,
@@ -181,10 +178,4 @@ def compile_and_register(
             trt_same_cc_compatible,
             console,
             platform_registration=platform_registration,
-        ) or CompilationPipelineResult(
-            model_id=model_metadata.model_id,
-            model_architecture=model_metadata.model_architecture,
-            compiled=True,
-            backend="trt",
-            reason="compilation handler completed",
         )

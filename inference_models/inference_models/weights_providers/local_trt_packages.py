@@ -3,13 +3,15 @@
 import json
 import logging
 import os
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.weights_providers.entities import (
-    FileDownloadSpecs,
     JetsonEnvironmentRequirements,
+    LocalFileArtefactSpecs,
     ModelPackageMetadata,
+    PackageSourceType,
+    PackageArtefactSpec,
     Quantization,
     ServerEnvironmentRequirements,
     TRTPackageDetails,
@@ -22,19 +24,15 @@ from inference_models.weights_providers.local_trt_constants import (
 
 logger = logging.getLogger(__name__)
 
-LOCAL_PACKAGE_DOWNLOAD_PLACEHOLDER = "https://local.invalid/roboflow-local-trt-package"
-
 
 def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
     from inference_models.models.auto_loaders.core import (
+        generate_model_cache_root_for_model_id,
+        generate_model_package_cache_path,
         generate_shared_blobs_path,
-        slugify_model_id_to_os_safe_format,
     )
 
-    model_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
-    cache_root = os.path.join(
-        os.environ.get("INFERENCE_HOME", "/tmp/cache"), "models-cache", model_slug
-    )
+    cache_root = generate_model_cache_root_for_model_id(model_id=model_id)
     if not os.path.isdir(cache_root):
         return []
 
@@ -43,7 +41,9 @@ def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
     for package_id in sorted(os.listdir(cache_root)):
         if not package_id.startswith(LOCAL_TRT_PACKAGE_PREFIX):
             continue
-        package_dir = os.path.join(cache_root, package_id)
+        package_dir = generate_model_package_cache_path(
+            model_id=model_id, package_id=package_id
+        )
         metadata = _parse_local_trt_package(
             model_id=model_id,
             package_id=package_id,
@@ -57,7 +57,7 @@ def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
             "Discovered %s local TRT package(s) for model_id=%s package_ids=%s",
             len(discovered),
             model_id,
-            [p.package_id for p in discovered],
+            [package.package_id for package in discovered],
         )
     return discovered
 
@@ -101,7 +101,7 @@ def _parse_local_trt_package(
     if environment_requirements is None:
         return None
 
-    package_artefacts = []
+    package_artefacts: List[PackageArtefactSpec] = []
     for handle, md5_hash in file_md5.items():
         if not _is_safe_local_trt_file_handle(handle=handle):
             logger.warning(
@@ -112,8 +112,7 @@ def _parse_local_trt_package(
             )
             return None
         package_file_path = os.path.join(package_dir, handle)
-        shared_blob_path = os.path.join(shared_blobs_dir, md5_hash)
-        if not os.path.isfile(package_file_path) or not os.path.isfile(shared_blob_path):
+        if not os.path.isfile(package_file_path):
             logger.warning(
                 "Local TRT package missing artefact model_id=%s package_id=%s handle=%s",
                 model_id,
@@ -121,12 +120,17 @@ def _parse_local_trt_package(
                 handle,
             )
             return None
-        package_artefacts.append(
-            FileDownloadSpecs(
-                download_url=LOCAL_PACKAGE_DOWNLOAD_PLACEHOLDER,
-                file_handle=handle,
-                md5_hash=md5_hash,
+        shared_blob_path = os.path.join(shared_blobs_dir, md5_hash)
+        if not os.path.isfile(shared_blob_path):
+            logger.warning(
+                "Local TRT package missing shared blob model_id=%s package_id=%s handle=%s",
+                model_id,
+                package_id,
+                handle,
             )
+            return None
+        package_artefacts.append(
+            LocalFileArtefactSpecs(file_handle=handle, md5_hash=md5_hash)
         )
 
     trt_package_details = TRTPackageDetails(
@@ -145,6 +149,7 @@ def _parse_local_trt_package(
         dynamic_batch_size_supported=parsed_manifest.dynamic_batch_size,
         static_batch_size=parsed_manifest.static_batch_size,
         package_artefacts=package_artefacts,
+        package_source=PackageSourceType.LOCAL_CACHE,
         environment_requirements=environment_requirements,
         trt_package_details=trt_package_details,
         trusted_source=True,
@@ -153,13 +158,18 @@ def _parse_local_trt_package(
     )
 
 
-def _environment_requirements_from_manifest(parsed_manifest):
+def _environment_requirements_from_manifest(
+    parsed_manifest,
+) -> Optional[Union[ServerEnvironmentRequirements, JetsonEnvironmentRequirements]]:
     from inference_models.weights_providers.roboflow import (
         GPUServerSpecsV1,
         JetsonMachineSpecsV1,
+        TrtModelPackageV1,
         as_version,
     )
 
+    if not isinstance(parsed_manifest, TrtModelPackageV1):
+        return None
     if parsed_manifest.machine_type == "gpu-server":
         if not isinstance(parsed_manifest.machine_specs, GPUServerSpecsV1):
             return None

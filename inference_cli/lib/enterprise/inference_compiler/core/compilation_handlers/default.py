@@ -1,7 +1,7 @@
 import logging
 import os.path
 import tempfile
-from typing import Callable, Dict, Literal, Optional, Tuple
+from typing import Callable, Dict, List, Literal, Optional, Tuple
 
 from rich.console import Console
 
@@ -29,8 +29,10 @@ from inference_cli.lib.enterprise.inference_compiler.core.compilation_handlers.u
 from inference_cli.lib.enterprise.inference_compiler.core.entities import (
     CompilationConfig,
     CompilationPipelineResult,
+    CompilationVariantOutcome,
     PlatformRegistrationPolicy,
     TRTConfig,
+    aggregate_compilation_variant_outcomes,
 )
 from inference_cli.lib.enterprise.inference_compiler.core.local_trt_install import (
     install_compiled_trt_package,
@@ -54,6 +56,27 @@ from inference_models.weights_providers.entities import ModelMetadata
 logger = logging.getLogger("inference_cli.inference_compiler")
 
 
+def _variant_outcome_from_result(
+    *,
+    precision: str,
+    dynamic_batch: bool,
+    result: CompilationPipelineResult,
+) -> CompilationVariantOutcome:
+    return CompilationVariantOutcome(
+        precision=precision,
+        dynamic_batch=dynamic_batch,
+        compiled=result.compiled,
+        installed_local=result.installed_local,
+        local_package_id=result.local_package_id,
+        registered_platform=result.registered_platform,
+        uploaded_sealed=result.uploaded_sealed,
+        compile_error=result.compile_error,
+        register_error=result.register_error,
+        backend=result.backend,
+        reason=result.reason,
+    )
+
+
 def compile_and_register_default_model(
     model_metadata: ModelMetadata,
     models_service_client: ModelsServiceClient,
@@ -63,7 +86,7 @@ def compile_and_register_default_model(
     console: Optional[Console],
     compilation_config: CompilationConfig,
     platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
-) -> Optional[CompilationPipelineResult]:
+) -> CompilationPipelineResult:
     (
         package_with_static_batch_size,
         package_with_dynamic_batch_size,
@@ -107,84 +130,116 @@ def compile_and_register_default_model(
     )
     compilation_output_dir = os.path.join(compilation_directory, "compilation_output")
     os.makedirs(compilation_output_dir, exist_ok=True)
-    last_result: Optional[CompilationPipelineResult] = None
+    variant_outcomes: List[CompilationVariantOutcome] = []
     if package_with_dynamic_batch_size is None:
         static_bs_fp32_engine_directory = os.path.join(
             compilation_output_dir, "static_bs_fp32"
         )
-        last_result = compile_and_register_default_model_trt_variant(
-            models_service_client=models_service_client,
-            model_metadata=model_metadata,
-            compilation_directory=static_bs_fp32_engine_directory,
-            local_files=package_files,
-            training_size=training_size,
-            precision="fp32",
-            workspace_size_gb=compilation_config.workspace_size_gb,
-            trt_forward_compatible=trt_forward_compatible,
-            same_compute_compatibility=trt_same_cc_compatible,
-            verify_model=compilation_config.verify_model,
-            console=console,
-            platform_registration=platform_registration,
+        variant_outcomes.append(
+            _variant_outcome_from_result(
+                precision="fp32",
+                dynamic_batch=False,
+                result=compile_and_register_default_model_trt_variant(
+                    models_service_client=models_service_client,
+                    model_metadata=model_metadata,
+                    compilation_directory=static_bs_fp32_engine_directory,
+                    local_files=package_files,
+                    training_size=training_size,
+                    precision="fp32",
+                    workspace_size_gb=compilation_config.workspace_size_gb,
+                    trt_forward_compatible=trt_forward_compatible,
+                    same_compute_compatibility=trt_same_cc_compatible,
+                    verify_model=compilation_config.verify_model,
+                    console=console,
+                    platform_registration=platform_registration,
+                ),
+            )
         )
         static_bs_fp16_engine_directory = os.path.join(
             compilation_output_dir, "static_bs_fp16"
         )
-        last_result = compile_and_register_default_model_trt_variant(
-            models_service_client=models_service_client,
-            model_metadata=model_metadata,
-            compilation_directory=static_bs_fp16_engine_directory,
-            local_files=package_files,
-            training_size=training_size,
-            precision="fp16",
-            workspace_size_gb=compilation_config.workspace_size_gb,
-            trt_forward_compatible=trt_forward_compatible,
-            same_compute_compatibility=trt_same_cc_compatible,
-            verify_model=compilation_config.verify_model,
-            console=console,
-            platform_registration=platform_registration,
+        variant_outcomes.append(
+            _variant_outcome_from_result(
+                precision="fp16",
+                dynamic_batch=False,
+                result=compile_and_register_default_model_trt_variant(
+                    models_service_client=models_service_client,
+                    model_metadata=model_metadata,
+                    compilation_directory=static_bs_fp16_engine_directory,
+                    local_files=package_files,
+                    training_size=training_size,
+                    precision="fp16",
+                    workspace_size_gb=compilation_config.workspace_size_gb,
+                    trt_forward_compatible=trt_forward_compatible,
+                    same_compute_compatibility=trt_same_cc_compatible,
+                    verify_model=compilation_config.verify_model,
+                    console=console,
+                    platform_registration=platform_registration,
+                ),
+            )
         )
-        return last_result
+        return aggregate_compilation_variant_outcomes(
+            model_id=model_metadata.model_id,
+            model_architecture=model_metadata.model_architecture,
+            variant_outcomes=variant_outcomes,
+        )
     dynamic_bs_fp32_engine_directory = os.path.join(
         compilation_output_dir, "dynamic_bs_fp32"
     )
-    last_result = compile_and_register_default_model_trt_variant(
-        models_service_client=models_service_client,
-        model_metadata=model_metadata,
-        compilation_directory=dynamic_bs_fp32_engine_directory,
-        local_files=package_files,
-        training_size=training_size,
-        precision="fp32",
-        workspace_size_gb=compilation_config.workspace_size_gb,
-        min_batch_size=compilation_config.min_batch_size,
-        opt_batch_size=compilation_config.opt_batch_size,
-        max_batch_size=compilation_config.max_batch_size,
-        trt_forward_compatible=trt_forward_compatible,
-        same_compute_compatibility=trt_same_cc_compatible,
-        verify_model=compilation_config.verify_model,
-        console=console,
-        platform_registration=platform_registration,
+    variant_outcomes.append(
+        _variant_outcome_from_result(
+            precision="fp32",
+            dynamic_batch=True,
+            result=compile_and_register_default_model_trt_variant(
+                models_service_client=models_service_client,
+                model_metadata=model_metadata,
+                compilation_directory=dynamic_bs_fp32_engine_directory,
+                local_files=package_files,
+                training_size=training_size,
+                precision="fp32",
+                workspace_size_gb=compilation_config.workspace_size_gb,
+                min_batch_size=compilation_config.min_batch_size,
+                opt_batch_size=compilation_config.opt_batch_size,
+                max_batch_size=compilation_config.max_batch_size,
+                trt_forward_compatible=trt_forward_compatible,
+                same_compute_compatibility=trt_same_cc_compatible,
+                verify_model=compilation_config.verify_model,
+                console=console,
+                platform_registration=platform_registration,
+            ),
+        )
     )
     dynamic_bs_fp16_engine_directory = os.path.join(
         compilation_output_dir, "dynamic_bs_fp16"
     )
-    last_result = compile_and_register_default_model_trt_variant(
-        models_service_client=models_service_client,
-        model_metadata=model_metadata,
-        compilation_directory=dynamic_bs_fp16_engine_directory,
-        local_files=package_files,
-        training_size=training_size,
-        precision="fp16",
-        workspace_size_gb=compilation_config.workspace_size_gb,
-        min_batch_size=compilation_config.min_batch_size,
-        opt_batch_size=compilation_config.opt_batch_size,
-        max_batch_size=compilation_config.max_batch_size,
-        trt_forward_compatible=trt_forward_compatible,
-        same_compute_compatibility=trt_same_cc_compatible,
-        verify_model=compilation_config.verify_model,
-        console=console,
-        platform_registration=platform_registration,
+    variant_outcomes.append(
+        _variant_outcome_from_result(
+            precision="fp16",
+            dynamic_batch=True,
+            result=compile_and_register_default_model_trt_variant(
+                models_service_client=models_service_client,
+                model_metadata=model_metadata,
+                compilation_directory=dynamic_bs_fp16_engine_directory,
+                local_files=package_files,
+                training_size=training_size,
+                precision="fp16",
+                workspace_size_gb=compilation_config.workspace_size_gb,
+                min_batch_size=compilation_config.min_batch_size,
+                opt_batch_size=compilation_config.opt_batch_size,
+                max_batch_size=compilation_config.max_batch_size,
+                trt_forward_compatible=trt_forward_compatible,
+                same_compute_compatibility=trt_same_cc_compatible,
+                verify_model=compilation_config.verify_model,
+                console=console,
+                platform_registration=platform_registration,
+            ),
+        )
     )
-    return last_result
+    return aggregate_compilation_variant_outcomes(
+        model_id=model_metadata.model_id,
+        model_architecture=model_metadata.model_architecture,
+        variant_outcomes=variant_outcomes,
+    )
 
 
 def compile_and_register_default_model_trt_variant(
@@ -203,8 +258,7 @@ def compile_and_register_default_model_trt_variant(
     verify_model: Optional[Callable[[str], None]] = None,
     console: Optional[Console] = None,
     platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
-) -> Optional[CompilationPipelineResult]:
-    platform_policy = platform_registration
+) -> CompilationPipelineResult:
     print_to_console(
         message=f"Building TRT engine - precision={precision}", console=console
     )
@@ -250,7 +304,7 @@ def compile_and_register_default_model_trt_variant(
             reason="already compiled on platform",
         )
     except Exception as error:
-        if platform_policy == PlatformRegistrationPolicy.OPTIONAL:
+        if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
             logger.exception("TRT compilation failed for %s", model_metadata.model_id)
             return CompilationPipelineResult(
                 model_id=model_metadata.model_id,
@@ -321,7 +375,7 @@ def compile_and_register_default_model_trt_variant(
         engine_path=engine_path,
         compilation_directory=compilation_directory,
         models_service_client=models_service_client,
-        platform_registration=platform_policy,
+        platform_registration=platform_registration,
     )
     pipeline_result.registered_platform = True
     pipeline_result.uploaded_sealed = uploaded

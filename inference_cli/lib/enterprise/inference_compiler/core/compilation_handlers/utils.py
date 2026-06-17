@@ -278,55 +278,42 @@ def execute_compilation(
         machine_specs=machine_specs,
     )
     skip_platform_registration = False
-    if platform_policy == PlatformRegistrationPolicy.REQUIRED:
-        try:
-            _ = models_service_client.register_model_package(
-                model_id=model_id,
-                package_manifest=package_manifest.model_dump(
-                    by_alias=True, mode="json", exclude_none=True
-                ),
-                file_handles=file_handles_to_register,
-                model_features=registered_model_features,
-            )
-        except RequestError as error:
-            if error.status_code == 409:
-                raise AlreadyCompiledError("Model package already compiled.")
+    try:
+        _ = models_service_client.register_model_package(
+            model_id=model_id,
+            package_manifest=package_manifest.model_dump(
+                by_alias=True, mode="json", exclude_none=True
+            ),
+            file_handles=file_handles_to_register,
+            model_features=registered_model_features,
+        )
+    except RequestError as error:
+        if error.status_code == 409:
+            raise AlreadyCompiledError("Model package already compiled.")
+        if platform_policy == PlatformRegistrationPolicy.REQUIRED:
             logger.exception("Could not pre-register model package")
             raise CompiledPackageRegistrationError(
                 f"Could not register model package: {error}"
             ) from error
-        except Exception as error:
+        logger.warning(
+            "Pre-register failed for %s (status %s); continuing with local compile/install: %s",
+            model_id,
+            error.status_code,
+            error,
+        )
+        skip_platform_registration = True
+    except Exception as error:
+        if platform_policy == PlatformRegistrationPolicy.REQUIRED:
             logger.exception("Error while registering model package")
             raise CompiledPackageRegistrationError(
                 f"Could not register model package: {error}"
             ) from error
-    else:
-        try:
-            _ = models_service_client.register_model_package(
-                model_id=model_id,
-                package_manifest=package_manifest.model_dump(
-                    by_alias=True, mode="json", exclude_none=True
-                ),
-                file_handles=file_handles_to_register,
-                model_features=registered_model_features,
-            )
-        except RequestError as error:
-            if error.status_code == 409:
-                raise AlreadyCompiledError("Model package already compiled.")
-            logger.warning(
-                "Pre-register failed for %s (status %s); continuing with local compile/install: %s",
-                model_id,
-                error.status_code,
-                error,
-            )
-            skip_platform_registration = True
-        except Exception as error:
-            logger.warning(
-                "Pre-register failed for %s; continuing with local compile/install: %s",
-                model_id,
-                error,
-            )
-            skip_platform_registration = True
+        logger.warning(
+            "Pre-register failed for %s; continuing with local compile/install: %s",
+            model_id,
+            error,
+        )
+        skip_platform_registration = True
     compilation_features = {
         "modelArchitecture": model_architecture,
         "taskType": task_type,

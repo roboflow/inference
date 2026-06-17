@@ -1,5 +1,6 @@
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Literal, Optional, Union
+from typing import Callable, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -173,6 +174,21 @@ class PlatformRegistrationPolicy(str, Enum):
     OPTIONAL = "optional"
 
 
+@dataclass
+class CompilationVariantOutcome:
+    precision: str
+    dynamic_batch: bool
+    compiled: bool = False
+    installed_local: bool = False
+    local_package_id: Optional[str] = None
+    registered_platform: bool = False
+    uploaded_sealed: bool = False
+    compile_error: Optional[str] = None
+    register_error: Optional[str] = None
+    backend: str = "onnx_cuda"
+    reason: str = ""
+
+
 class CompilationPipelineResult:
     """Outcome of compile → install → register/upload."""
 
@@ -191,6 +207,7 @@ class CompilationPipelineResult:
         register_error: Optional[str] = None,
         backend: str = "onnx_cuda",
         reason: str = "",
+        variant_outcomes: Optional[List[CompilationVariantOutcome]] = None,
     ):
         self.model_id = model_id
         self.model_architecture = model_architecture
@@ -204,6 +221,7 @@ class CompilationPipelineResult:
         self.register_error = register_error
         self.backend = backend
         self.reason = reason
+        self.variant_outcomes = variant_outcomes or []
 
     def as_log_metadata(self) -> dict:
         return {
@@ -219,4 +237,58 @@ class CompilationPipelineResult:
             "register_error": self.register_error,
             "backend": self.backend,
             "reason": self.reason,
+            "variant_outcomes": [
+                {
+                    "precision": variant.precision,
+                    "dynamic_batch": variant.dynamic_batch,
+                    "compiled": variant.compiled,
+                    "installed_local": variant.installed_local,
+                    "local_package_id": variant.local_package_id,
+                    "registered_platform": variant.registered_platform,
+                    "uploaded_sealed": variant.uploaded_sealed,
+                    "compile_error": variant.compile_error,
+                    "register_error": variant.register_error,
+                    "backend": variant.backend,
+                    "reason": variant.reason,
+                }
+                for variant in self.variant_outcomes
+            ],
         }
+
+
+def aggregate_compilation_variant_outcomes(
+    model_id: str,
+    model_architecture: str,
+    variant_outcomes: List[CompilationVariantOutcome],
+) -> CompilationPipelineResult:
+    preferred = next(
+        (
+            variant
+            for variant in reversed(variant_outcomes)
+            if variant.installed_local and variant.backend == "trt"
+        ),
+        None,
+    )
+    if preferred is None:
+        preferred = variant_outcomes[-1] if variant_outcomes else None
+    if preferred is None:
+        return CompilationPipelineResult(
+            model_id=model_id,
+            model_architecture=model_architecture,
+            reason="no compilation variants attempted",
+            variant_outcomes=variant_outcomes,
+        )
+    return CompilationPipelineResult(
+        model_id=model_id,
+        model_architecture=model_architecture,
+        compiled=preferred.compiled,
+        installed_local=preferred.installed_local,
+        local_package_id=preferred.local_package_id,
+        registered_platform=preferred.registered_platform,
+        uploaded_sealed=preferred.uploaded_sealed,
+        compile_error=preferred.compile_error,
+        register_error=preferred.register_error,
+        backend=preferred.backend,
+        reason=preferred.reason,
+        variant_outcomes=variant_outcomes,
+    )

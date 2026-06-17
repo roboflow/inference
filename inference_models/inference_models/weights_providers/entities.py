@@ -9,6 +9,11 @@ from pydantic.alias_generators import to_camel
 from inference_models.models.auto_loaders.entities import BackendType
 
 
+class PackageSourceType(str, Enum):
+    PLATFORM = "platform"
+    LOCAL_CACHE = "local_cache"
+
+
 class Quantization(str, Enum):
     FP32 = "fp32"
     FP16 = "fp16"
@@ -22,6 +27,15 @@ class FileDownloadSpecs:
     download_url: str
     file_handle: str
     md5_hash: Optional[str] = field(default=None)
+
+
+@dataclass(frozen=True)
+class LocalFileArtefactSpecs:
+    file_handle: str
+    md5_hash: str
+
+
+PackageArtefactSpec = Union[FileDownloadSpecs, LocalFileArtefactSpecs]
 
 
 @dataclass(frozen=True)
@@ -117,7 +131,8 @@ class RecommendedParameters(BaseModel):
 class ModelPackageMetadata:
     package_id: str
     backend: BackendType
-    package_artefacts: List[FileDownloadSpecs]
+    package_artefacts: List[PackageArtefactSpec]
+    package_source: PackageSourceType = field(default=PackageSourceType.PLATFORM)
     quantization: Optional[Quantization] = field(default=None)
     dynamic_batch_size_supported: Optional[bool] = field(default=None)
     static_batch_size: Optional[int] = field(default=None)

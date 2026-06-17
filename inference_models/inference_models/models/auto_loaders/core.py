@@ -78,8 +78,11 @@ from inference_models.utils.file_system import dump_json, read_json
 from inference_models.utils.hashing import hash_dict_content
 from inference_models.weights_providers.core import get_model_from_provider
 from inference_models.weights_providers.entities import (
+    FileDownloadSpecs,
+    LocalFileArtefactSpecs,
     ModelDependency,
     ModelPackageMetadata,
+    PackageSourceType,
     Quantization,
     RecommendedParameters,
 )
@@ -1273,44 +1276,56 @@ def initialize_model(
                 f"us to solve the problem.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-    files_specs = [
-        (a.file_handle, a.download_url, a.md5_hash)
-        for a in model_package.package_artefacts
-    ]
-    file_specs_with_hash = [f for f in files_specs if f[2] is not None]
-    file_specs_without_hash = [f for f in files_specs if f[2] is None]
-    shared_blobs_dir = generate_shared_blobs_path()
     model_package_cache_dir = generate_model_package_cache_path(
         model_id=model_id,
         package_id=model_package.package_id,
     )
     os.makedirs(model_package_cache_dir, exist_ok=True)
-    shared_files_mapping = download_files_to_directory(
-        target_dir=shared_blobs_dir,
-        files_specs=file_specs_with_hash,
-        file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-        verify_hash_while_download=verify_hash_while_download,
-        download_files_without_hash=download_files_without_hash,
-        name_after="md5_hash",
-        on_file_created=on_file_created,
-        on_file_renamed=on_file_renamed,
-    )
-    model_specific_files_mapping = download_files_to_directory(
-        target_dir=model_package_cache_dir,
-        files_specs=file_specs_without_hash,
-        file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-        verify_hash_while_download=verify_hash_while_download,
-        download_files_without_hash=download_files_without_hash,
-        on_file_created=on_file_created,
-        on_file_renamed=on_file_renamed,
-    )
-    symlinks_mapping = create_symlinks_to_shared_blobs(
-        model_dir=model_package_cache_dir,
-        shared_files_mapping=shared_files_mapping,
-        model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-        on_symlink_created=on_symlink_created,
-        on_symlink_deleted=on_symlink_deleted,
-    )
+    if model_package.package_source == PackageSourceType.LOCAL_CACHE:
+        shared_files_mapping = _resolve_local_cache_package_files(
+            model_package_cache_dir=model_package_cache_dir,
+            package_artefacts=model_package.package_artefacts,
+        )
+        model_specific_files_mapping: Dict[str, str] = {}
+        symlinks_mapping = {
+            handle: os.path.join(model_package_cache_dir, handle)
+            for handle in shared_files_mapping
+        }
+    else:
+        files_specs = [
+            (artefact.file_handle, artefact.download_url, artefact.md5_hash)
+            for artefact in model_package.package_artefacts
+            if isinstance(artefact, FileDownloadSpecs)
+        ]
+        file_specs_with_hash = [spec for spec in files_specs if spec[2] is not None]
+        file_specs_without_hash = [spec for spec in files_specs if spec[2] is None]
+        shared_blobs_dir = generate_shared_blobs_path()
+        shared_files_mapping = download_files_to_directory(
+            target_dir=shared_blobs_dir,
+            files_specs=file_specs_with_hash,
+            file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+            verify_hash_while_download=verify_hash_while_download,
+            download_files_without_hash=download_files_without_hash,
+            name_after="md5_hash",
+            on_file_created=on_file_created,
+            on_file_renamed=on_file_renamed,
+        )
+        model_specific_files_mapping = download_files_to_directory(
+            target_dir=model_package_cache_dir,
+            files_specs=file_specs_without_hash,
+            file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+            verify_hash_while_download=verify_hash_while_download,
+            download_files_without_hash=download_files_without_hash,
+            on_file_created=on_file_created,
+            on_file_renamed=on_file_renamed,
+        )
+        symlinks_mapping = create_symlinks_to_shared_blobs(
+            model_dir=model_package_cache_dir,
+            shared_files_mapping=shared_files_mapping,
+            model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+            on_symlink_created=on_symlink_created,
+            on_symlink_deleted=on_symlink_deleted,
+        )
     config_path = os.path.join(model_package_cache_dir, MODEL_CONFIG_FILE_NAME)
     dump_model_config_for_offline_use(
         config_path=config_path,
@@ -1540,6 +1555,48 @@ def dump_auto_resolution_cache(
 
 def generate_shared_blobs_path() -> str:
     return os.path.abspath(os.path.join(INFERENCE_HOME, "shared-blobs"))
+
+
+def _resolve_local_cache_package_files(
+    model_package_cache_dir: str,
+    package_artefacts: List[LocalFileArtefactSpecs],
+) -> Dict[str, str]:
+    from inference_models.utils.download import verify_hash_sum_of_local_file
+
+    shared_blobs_dir = generate_shared_blobs_path()
+    shared_files_mapping: Dict[str, str] = {}
+    for artefact in package_artefacts:
+        if not isinstance(artefact, LocalFileArtefactSpecs):
+            raise CorruptedModelPackageError(
+                message=(
+                    "Local cache model package contains non-local artefact specs. "
+                    "All artefacts must be LocalFileArtefactSpecs."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+        package_file_path = os.path.join(model_package_cache_dir, artefact.file_handle)
+        if not os.path.isfile(package_file_path):
+            raise CorruptedModelPackageError(
+                message=(
+                    f"Local cache model package is missing artefact `{artefact.file_handle}` "
+                    f"at `{package_file_path}`."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+        verify_hash_sum_of_local_file(
+            url=f"local-cache://{artefact.file_handle}",
+            file_path=package_file_path,
+            expected_md5_hash=artefact.md5_hash,
+        )
+        shared_files_mapping[artefact.file_handle] = os.path.join(
+            shared_blobs_dir, artefact.md5_hash
+        )
+    return shared_files_mapping
+
+
+def generate_model_cache_root_for_model_id(model_id: str) -> str:
+    model_id_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+    return os.path.abspath(os.path.join(INFERENCE_HOME, "models-cache", model_id_slug))
 
 
 def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
