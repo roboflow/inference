@@ -38,12 +38,6 @@ INFERENCE_SHM_NAME_DEFAULT = "inference_pool"
 INFERENCE_SHM_DATA_SIZE_ENV = "INFERENCE_SHM_DATA_SIZE"
 INFERENCE_SHM_DATA_SIZE_DEFAULT = 25 * 1024 * 1024
 
-# ── Pipeline timing CSV (state.py) ────────────────────────────────────────
-PIPELINE_CSV = os.environ.get("INFERENCE_PIPELINE_CSV", "")
-PIPELINE_FLUSH_INTERVAL_S = get_float_from_env(
-    "INFERENCE_PIPELINE_FLUSH_S", default=5.0
-)
-
 # ── Auth (auth.py) ────────────────────────────────────────────────────────
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.roboflow.com")
 AUTH_CACHE_TTL_S = get_integer_from_env("AUTH_CACHE_TTL_S", default=3600)

@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import io
 import logging
-import os  # DEBUGLOG
-import time  # DEBUGLOG
 from enum import Enum
 from typing import Any, Callable, List
 
@@ -303,11 +301,7 @@ def make_batch_decoder(
     if decoder == Decoder.NVJPEG:
         import torchvision.io as _tvio  # noqa: PLC0415
 
-        _prof = os.getenv("INFERENCE_DECODE_PROFILE", "0") == "1"  # DEBUGLOG
-        _ps = {"prep": 0.0, "dec": 0.0, "sync": 0.0, "imgs": 0, "t0": time.monotonic()}  # DEBUGLOG
-
         def _batch_decode_nvjpeg(mvs: List[memoryview]) -> List[Any]:
-            _tp = time.monotonic() if _prof else 0.0  # DEBUGLOG
             jpeg_idx: list[int] = []
             jpeg_bufs: list[Any] = []
             other_idx: list[int] = []
@@ -327,10 +321,6 @@ def make_batch_decoder(
 
             out: list[Any] = [None] * len(mvs)
 
-            if _prof:  # DEBUGLOG
-                _td = time.monotonic()
-                _ps["prep"] += _td - _tp
-
             # One decode_jpeg call for all JPEGs in the batch
             if jpeg_bufs:
                 try:
@@ -339,23 +329,6 @@ def make_batch_decoder(
                         mode=_tvio.ImageReadMode.RGB,
                         device=torch_device,
                     )
-                    if _prof:  # DEBUGLOG
-                        _ts = time.monotonic()
-                        _ps["dec"] += _ts - _td
-                        torch.cuda.synchronize(torch_device)
-                        _now = time.monotonic()
-                        _ps["sync"] += _now - _ts
-                        _ps["imgs"] += len(jpeg_bufs)
-                        if _now - _ps["t0"] >= 5.0:
-                            n = max(_ps["imgs"], 1)
-                            log.warning(
-                                "DECODE_PROFILE imgs=%d prep=%.2fms/img dec=%.2fms/img sync=%.2fms/img",
-                                _ps["imgs"], _ps["prep"] / n * 1000,
-                                _ps["dec"] / n * 1000, _ps["sync"] / n * 1000,
-                            )
-                            _ps["prep"] = _ps["dec"] = _ps["sync"] = 0.0
-                            _ps["imgs"] = 0
-                            _ps["t0"] = _now
                     for i, t in zip(jpeg_idx, decoded):
                         out[i] = t
                 except Exception:

@@ -44,7 +44,6 @@ def _make_client() -> tuple[MMPClient, _RecordingSock]:
         shm_data_size=1024,
         infer_timeout_s=0.05,
         alloc_timeout_s=0.05,
-        pipeline_csv_path="",
     )
     sock = _RecordingSock()
     client._sock = sock
@@ -202,7 +201,6 @@ def test_start_rejects_shm_geometry_mismatch():
             mmp_addr="inproc://test",
             shm_name=shm.name,
             shm_data_size=2048,  # WRONG: MMP created 1024-byte slots
-            pipeline_csv_path="",
         )
 
         async def _run():
