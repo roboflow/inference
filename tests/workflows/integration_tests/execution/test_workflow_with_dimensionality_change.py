@@ -4,11 +4,40 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.constants import PARENT_ID_KEY
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
+
+# The dimensionality stub plugin follows the v1/v1_tensor parity pattern: under
+# ENABLE_TENSOR_DATA_REPRESENTATION the loader swaps in tensor-native siblings that
+# emit `inference_models.Detections` (per-box state in `bboxes_metadata`, no sv
+# `.data`/`__getitem__`). Tests whose assertions read sv-specific things get the
+# `_NUMPY_ONLY` original + a `_TENSOR_ONLY` `*_tensor_native` sibling asserting the
+# same semantics natively. Tests whose assertions are representation-agnostic
+# (image/tile shapes, `len()` which native supports) run under BOTH flags unsplit.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="sv.Detections output; the dimensionality stub emits native "
+    "`inference_models.Detections` under ENABLE_TENSOR_DATA_REPRESENTATION — see "
+    "the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
+
+
+def _native_parent_ids(detections) -> list:
+    """Read the per-box `parent_id` the tensor-native coordinates block writes into
+    `bboxes_metadata` (the native equivalent of sv `.data["parent_id"]`)."""
+    bboxes_metadata = detections.bboxes_metadata or []
+    return [entry.get(PARENT_ID_KEY) for entry in bboxes_metadata]
 
 DETECTIONS_TO_PARENT_COORDINATES_BATCH_VARIANT_WORKFLOW = {
     "version": "1.0",
@@ -64,6 +93,7 @@ DETECTIONS_TO_PARENT_COORDINATES_BATCH_VARIANT_WORKFLOW = {
 }
 
 
+@_NUMPY_ONLY
 @mock.patch.object(blocks_loader, "get_plugin_modules")
 def test_workflow_with_detections_coordinates_transformation_in_batch_variant(
     get_plugin_modules_mock: MagicMock,
@@ -156,6 +186,92 @@ def test_workflow_with_detections_coordinates_transformation_in_batch_variant(
         ), "Expected parent of each bounding box to point into original input image instead of crop ID"
 
 
+@_TENSOR_ONLY
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_detections_coordinates_transformation_in_batch_variant_tensor_native(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    """Tensor-native parity of
+    `test_workflow_with_detections_coordinates_transformation_in_batch_variant`.
+
+    Same scenario, but the stub emits native `inference_models.Detections`. The
+    `parent_id` the coordinates block writes lives per-box in `bboxes_metadata`
+    (the native equivalent of sv `.data["parent_id"]`), and `len()` works on the
+    native object via `__len__`. Asserts the SAME semantics natively.
+    """
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=DETECTIONS_TO_PARENT_COORDINATES_BATCH_VARIANT_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [crowd_image, crowd_image]}
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "Two images provided, so two output elements expected"
+    assert set(result[0].keys()) == {
+        "predictions_in_own_coordinates",
+        "predictions_in_original_coordinates",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "predictions_in_own_coordinates",
+        "predictions_in_original_coordinates",
+    }, "Expected all declared outputs to be delivered"
+    assert len(result[0]["predictions_in_own_coordinates"]) == len(
+        result[0]["predictions_in_original_coordinates"]
+    ), "Expected the same number of nested detections in both outputs for input image 0"
+    assert len(result[1]["predictions_in_own_coordinates"]) == len(
+        result[1]["predictions_in_original_coordinates"]
+    ), "Expected the same number of nested detections in both outputs for input image 1"
+    for own_coords_detection, original_coords_detection in zip(
+        result[0]["predictions_in_own_coordinates"],
+        result[0]["predictions_in_original_coordinates"],
+    ):
+        assert len(own_coords_detection) == len(
+            original_coords_detection
+        ), "Expected number of bounding boxes in nested Detections not to change"
+        own_parent_ids = _native_parent_ids(own_coords_detection)
+        original_parent_ids = _native_parent_ids(original_coords_detection)
+        assert all(
+            own != original
+            for own, original in zip(own_parent_ids, original_parent_ids)
+        ), "Expected parent_id to be modified"
+        assert original_parent_ids == ["image.[0]"] * len(
+            original_coords_detection
+        ), "Expected parent of each bounding box to point into original input image instead of crop ID"
+    for own_coords_detection, original_coords_detection in zip(
+        result[1]["predictions_in_own_coordinates"],
+        result[1]["predictions_in_original_coordinates"],
+    ):
+        assert len(own_coords_detection) == len(
+            original_coords_detection
+        ), "Expected number of bounding boxes in nested Detections not to change"
+        own_parent_ids = _native_parent_ids(own_coords_detection)
+        original_parent_ids = _native_parent_ids(original_coords_detection)
+        assert all(
+            own != original
+            for own, original in zip(own_parent_ids, original_parent_ids)
+        ), "Expected parent_id to be modified"
+        assert original_parent_ids == ["image.[1]"] * len(
+            original_coords_detection
+        ), "Expected parent of each bounding box to point into original input image instead of crop ID"
+
+
 DETECTIONS_TO_PARENT_COORDINATES_NON_BATCH_VARIANT_WORKFLOW = {
     "version": "1.0",
     "inputs": [{"type": "WorkflowImage", "name": "image"}],
@@ -210,6 +326,7 @@ DETECTIONS_TO_PARENT_COORDINATES_NON_BATCH_VARIANT_WORKFLOW = {
 }
 
 
+@_NUMPY_ONLY
 @mock.patch.object(blocks_loader, "get_plugin_modules")
 def test_workflow_with_detections_coordinates_transformation_in_non_batch_variant(
     get_plugin_modules_mock: MagicMock,
@@ -298,6 +415,90 @@ def test_workflow_with_detections_coordinates_transformation_in_non_batch_varian
             own_coords_detection["parent_id"] != original_coords_detection["parent_id"]
         ), "Expected parent_id to be modified"
         assert original_coords_detection["parent_id"].tolist() == ["image.[1]"] * len(
+            original_coords_detection
+        ), "Expected parent of each bounding box to point into original input image instead of crop ID"
+
+
+@_TENSOR_ONLY
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_detections_coordinates_transformation_in_non_batch_variant_tensor_native(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    """Tensor-native parity of
+    `test_workflow_with_detections_coordinates_transformation_in_non_batch_variant`.
+
+    Same scenario on native `inference_models.Detections`: `parent_id` is read
+    per-box from `bboxes_metadata`, `len()` via native `__len__`.
+    """
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.dimensionality_manipulation_plugin"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=DETECTIONS_TO_PARENT_COORDINATES_NON_BATCH_VARIANT_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [crowd_image, crowd_image]}
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "Two images provided, so two output elements expected"
+    assert set(result[0].keys()) == {
+        "predictions_in_own_coordinates",
+        "predictions_in_original_coordinates",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "predictions_in_own_coordinates",
+        "predictions_in_original_coordinates",
+    }, "Expected all declared outputs to be delivered"
+    assert len(result[0]["predictions_in_own_coordinates"]) == len(
+        result[0]["predictions_in_original_coordinates"]
+    ), "Expected the same number of nested detections in both outputs for input image 0"
+    assert len(result[1]["predictions_in_own_coordinates"]) == len(
+        result[1]["predictions_in_original_coordinates"]
+    ), "Expected the same number of nested detections in both outputs for input image 1"
+    for own_coords_detection, original_coords_detection in zip(
+        result[0]["predictions_in_own_coordinates"],
+        result[0]["predictions_in_original_coordinates"],
+    ):
+        assert len(own_coords_detection) == len(
+            original_coords_detection
+        ), "Expected number of bounding boxes in nested Detections not to change"
+        own_parent_ids = _native_parent_ids(own_coords_detection)
+        original_parent_ids = _native_parent_ids(original_coords_detection)
+        assert all(
+            own != original
+            for own, original in zip(own_parent_ids, original_parent_ids)
+        ), "Expected parent_id to be modified"
+        assert original_parent_ids == ["image.[0]"] * len(
+            original_coords_detection
+        ), "Expected parent of each bounding box to point into original input image instead of crop ID"
+    for own_coords_detection, original_coords_detection in zip(
+        result[1]["predictions_in_own_coordinates"],
+        result[1]["predictions_in_original_coordinates"],
+    ):
+        assert len(own_coords_detection) == len(
+            original_coords_detection
+        ), "Expected number of bounding boxes in nested Detections not to change"
+        own_parent_ids = _native_parent_ids(own_coords_detection)
+        original_parent_ids = _native_parent_ids(original_coords_detection)
+        assert all(
+            own != original
+            for own, original in zip(own_parent_ids, original_parent_ids)
+        ), "Expected parent_id to be modified"
+        assert original_parent_ids == ["image.[1]"] * len(
             original_coords_detection
         ), "Expected parent of each bounding box to point into original input image instead of crop ID"
 
@@ -478,7 +679,7 @@ DETECTIONS_STITCHING_NON_BATCH_VARIANT_WORKFLOW = {
 
 
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-def test_workflow_with_detections_stitching_in_batch_variant(
+def test_workflow_with_detections_stitching_in_non_batch_variant(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,

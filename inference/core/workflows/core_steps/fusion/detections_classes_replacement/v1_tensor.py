@@ -42,6 +42,7 @@ from inference_models import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
 )
+from inference_models.models.base.instance_segmentation import InstanceDetections
 
 LONG_DESCRIPTION = """
 Replace class labels of detection bounding boxes with classes predicted by a classification model applied to cropped regions, combining generic detection results with specialized classification predictions to enable two-stage detection workflows, fine-grained classification, and class refinement workflows where generic detections are refined with specific class labels from specialized classifiers.
@@ -419,6 +420,17 @@ def _select_native_prediction(
     selected_detections: TensorNativeDetections = (
         selected[1] if isinstance(selected, tuple) else selected
     )
+    # `take_detections_by_indices` aliases `xyxy` (and a dense mask) by reference
+    # on an identity selection (all rows kept in order). The numpy block always
+    # produces a fresh copy of the box array via sv boolean indexing, so its
+    # output never shares storage with the input. Clone the spatial tensors here
+    # to honour that copy-of-data contract: the returned prediction must not alias
+    # the input's `xyxy` (or dense mask), matching the numpy block byte-for-byte.
+    selected_detections.xyxy = selected_detections.xyxy.clone()
+    if isinstance(selected_detections, InstanceDetections) and isinstance(
+        selected_detections.mask, torch.Tensor
+    ):
+        selected_detections.mask = selected_detections.mask.clone()
     selected_detections.class_id = torch.as_tensor(
         new_class_ids,
         dtype=selected_detections.class_id.dtype,
