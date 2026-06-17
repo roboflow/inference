@@ -13,9 +13,14 @@ def main() -> None:
     try:
         while True:
             message, _ = udp_socket.recvfrom(BUFFER_SIZE)
-            decoded_message = message.decode("utf-8")
-            parsed_message = json.loads(decoded_message)
-            print(parsed_message)
+            if len(message) > BUFFER_SIZE:
+                continue
+            try:
+                decoded_message = message.decode("utf-8")
+                parsed_message = json.loads(decoded_message)
+                print(parsed_message)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
     finally:
         udp_socket.close()
 
