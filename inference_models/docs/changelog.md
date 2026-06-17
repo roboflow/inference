@@ -3,11 +3,23 @@
 
 ## `0.29.2`
 
+### Added
+
+- Opt-in Triton RF-DETR instance-segmentation RLE post-processing. Set
+  `INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED=True` to generate COCO RLE
+  masks directly from sparse interpolated mask regions on supported CUDA
+  inputs.
+- Opt-in Triton RF-DETR instance-segmentation preprocessing for the TensorRT
+  backend. Set `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=True` to run the
+  supported resize and normalize path on CUDA.
+- Opt-in Triton RF-DETR instance-segmentation pipelining. Set
+  `RFDETR_PIPELINE_DEPTH=2`.
+
 ### Fixed
 
 - Transitive dependency vulnerability patched - `idna>=3.15` required by the package
 
-
+---
 ## `0.29.1`
 
 ### Fixed

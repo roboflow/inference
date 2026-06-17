@@ -4,11 +4,13 @@ import torch
 from torchvision.transforms import functional
 
 from inference_models import Detections, InstanceDetections, InstancesRLEMasks, KeyPoints
+from inference_models.configuration import (
+    INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED,
+)
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
-    StaticCropOffset,
 )
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
@@ -17,7 +19,12 @@ from inference_models.models.common.roboflow.post_processing import (
 )
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 from inference_models.models.rfdetr.post_processor import select_topk_predictions
+from inference_models.models.rfdetr.triton_postprocess import (
+    post_process_single_instance_segmentation_result_to_rle_masks_triton,
+)
 from inference_models.utils.file_system import read_json
+
+_TRITON_POSTPROC_ENABLED = INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED
 
 
 def parse_model_type(config_path: str) -> str:
@@ -218,6 +225,140 @@ def post_process_instance_segmentation_results(
     return results
 
 
+def _post_process_single_instance_segmentation_result_to_rle_masks_with_triton(
+    image_bboxes: torch.Tensor,
+    image_logits: torch.Tensor,
+    image_masks: torch.Tensor,
+    image_meta: PreProcessingMetadata,
+    threshold: Union[float, torch.Tensor],
+    num_classes: int,
+    classes_re_mapping: Optional[ClassesReMapping],
+    defer_postprocess_sync: bool = False,
+) -> InstanceDetections:
+    triton_result = (
+        post_process_single_instance_segmentation_result_to_rle_masks_triton(
+            image_bboxes=image_bboxes,
+            image_scores=image_logits,
+            image_masks=image_masks,
+            image_meta=image_meta,
+            threshold=threshold,
+            classes_re_mapping=classes_re_mapping,
+            defer_postprocess_sync=defer_postprocess_sync,
+        )
+    )
+    if triton_result is not None:
+        return triton_result
+
+    return _post_process_single_instance_segmentation_result_to_rle_masks(
+        image_bboxes=image_bboxes,
+        image_logits=image_logits,
+        image_masks=image_masks,
+        image_meta=image_meta,
+        threshold=threshold,
+        num_classes=num_classes,
+        classes_re_mapping=classes_re_mapping,
+    )
+
+
+def _post_process_single_instance_segmentation_result_to_rle_masks(
+    image_bboxes: torch.Tensor,
+    image_logits: torch.Tensor,
+    image_masks: torch.Tensor,
+    image_meta: PreProcessingMetadata,
+    threshold: Union[float, torch.Tensor],
+    num_classes: int,
+    classes_re_mapping: Optional[ClassesReMapping],
+) -> InstanceDetections:
+    num_queries, num_logits_classes = image_logits.shape
+    flat_scores = image_logits.reshape(-1)
+    confidence, topk_indexes = torch.topk(flat_scores, num_queries)
+    query_indices = topk_indexes // num_logits_classes
+    top_classes = topk_indexes % num_logits_classes
+    if classes_re_mapping is not None:
+        if classes_re_mapping.class_mapping.shape[0] >= num_logits_classes:
+            top_classes = classes_re_mapping.class_mapping[top_classes]
+        else:
+            mapped_classes = torch.full_like(top_classes, -1)
+            mappable_classes = top_classes < classes_re_mapping.class_mapping.shape[0]
+            mapped_classes[mappable_classes] = classes_re_mapping.class_mapping[
+                top_classes[mappable_classes]
+            ]
+            top_classes = mapped_classes
+        remapping_mask = top_classes >= 0
+    else:
+        named = top_classes < num_classes
+        remapping_mask = named
+    confidence_mask = confidence > (
+        threshold[top_classes.clamp(min=0, max=threshold.shape[0] - 1).long()]
+        if isinstance(threshold, torch.Tensor)
+        else threshold
+    )
+    keep_mask = remapping_mask & confidence_mask
+    confidence = confidence[keep_mask]
+    top_classes = top_classes[keep_mask]
+    query_indices = query_indices[keep_mask]
+    confidence, sorted_indices = torch.sort(confidence, descending=True)
+    top_classes = top_classes[sorted_indices]
+    query_indices = query_indices[sorted_indices]
+    selected_boxes = image_bboxes[query_indices]
+    selected_masks = image_masks[query_indices]
+    cxcy = selected_boxes[:, :2]
+    wh = selected_boxes[:, 2:]
+    xy_min = cxcy - 0.5 * wh
+    xy_max = cxcy + 0.5 * wh
+    selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
+    denorm_size = image_meta.nonsquare_intermediate_size or image_meta.inference_size
+    denorm_size_whwh = torch.tensor(
+        [
+            denorm_size.width,
+            denorm_size.height,
+            denorm_size.width,
+            denorm_size.height,
+        ],
+        device=image_bboxes.device,
+    )
+    padding = (
+        image_meta.pad_left,
+        image_meta.pad_top,
+        image_meta.pad_right,
+        image_meta.pad_bottom,
+    )
+    selected_boxes_xyxy = selected_boxes_xyxy_pct * denorm_size_whwh
+    aligned_boxes, rle_masks = [], []
+    for bbox, mask in align_instance_segmentation_results_to_rle_masks(
+        image_bboxes=selected_boxes_xyxy,
+        masks=selected_masks,
+        padding=padding,
+        scale_height=image_meta.scale_height,
+        scale_width=image_meta.scale_width,
+        original_size=image_meta.original_size,
+        size_after_pre_processing=image_meta.size_after_pre_processing,
+        inference_size=denorm_size,
+        static_crop_offset=image_meta.static_crop_offset,
+    ):
+        aligned_boxes.append(bbox)
+        rle_masks.append(mask)
+    instances_masks = InstancesRLEMasks.from_coco_rle_masks(
+        image_size=(
+            image_meta.original_size.height,
+            image_meta.original_size.width,
+        ),
+        masks=rle_masks,
+    )
+    if len(aligned_boxes) > 0:
+        aligned_boxes_tensor = torch.stack(aligned_boxes, dim=0)
+    else:
+        aligned_boxes_tensor = torch.empty(
+            (0, 4), dtype=torch.int32, device=image_bboxes.device
+        )
+    return InstanceDetections(
+        xyxy=aligned_boxes_tensor.round().int(),
+        confidence=confidence,
+        class_id=top_classes.int(),
+        mask=instances_masks,
+    )
+
+
 def post_process_instance_segmentation_results_to_rle_masks(
     bboxes: torch.Tensor,
     logits: torch.Tensor,
@@ -226,115 +367,48 @@ def post_process_instance_segmentation_results_to_rle_masks(
     threshold: Union[float, torch.Tensor],
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
+    defer_postprocess_sync: bool = False,
 ) -> List[InstanceDetections]:
     logits_sigmoid = torch.nn.functional.sigmoid(logits)
-    final_results = []
     device = bboxes.device
     if isinstance(threshold, torch.Tensor):
         threshold = threshold.to(device=device, dtype=logits_sigmoid.dtype)
-    for image_bboxes, image_logits, image_masks, image_meta in zip(
-        bboxes, logits_sigmoid, masks, pre_processing_meta
-    ):
-        confidence, top_classes, image_bboxes, query_indices = select_topk_predictions(
-            logits_sigmoid=image_logits,
-            bboxes_cxcywh=image_bboxes,
-        )
-        image_masks = image_masks[query_indices]
-        if classes_re_mapping is not None:
-            remapping_mask = torch.isin(
-                top_classes, classes_re_mapping.remaining_class_ids
+    if _TRITON_POSTPROC_ENABLED:
+        return [
+            _post_process_single_instance_segmentation_result_to_rle_masks_with_triton(
+                image_bboxes=image_bboxes,
+                image_logits=image_logits,
+                image_masks=image_masks,
+                image_meta=image_meta,
+                threshold=threshold,
+                num_classes=num_classes,
+                classes_re_mapping=classes_re_mapping,
+                defer_postprocess_sync=defer_postprocess_sync,
             )
-            top_classes = classes_re_mapping.class_mapping[top_classes[remapping_mask]]
-            confidence = confidence[remapping_mask]
-            image_bboxes = image_bboxes[remapping_mask]
-            image_masks = image_masks[remapping_mask]
-        else:
-            # drop DETR no-object rows
-            named = top_classes < num_classes
-            confidence = confidence[named]
-            top_classes = top_classes[named]
-            image_bboxes = image_bboxes[named]
-            image_masks = image_masks[named]
-        confidence_mask = confidence > (
-            threshold[top_classes.long()]
-            if isinstance(threshold, torch.Tensor)
-            else threshold
-        )
-        confidence = confidence[confidence_mask]
-        top_classes = top_classes[confidence_mask]
-        selected_boxes = image_bboxes[confidence_mask]
-        selected_masks = image_masks[confidence_mask]
-        confidence, sorted_indices = torch.sort(confidence, descending=True)
-        top_classes = top_classes[sorted_indices]
-        selected_boxes = selected_boxes[sorted_indices]
-        selected_masks = selected_masks[sorted_indices]
-        cxcy = selected_boxes[:, :2]
-        wh = selected_boxes[:, 2:]
-        xy_min = cxcy - 0.5 * wh
-        xy_max = cxcy + 0.5 * wh
-        selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
-        denorm_size = (
-            image_meta.nonsquare_intermediate_size or image_meta.inference_size
-        )
-        denorm_size_whwh = torch.tensor(
-            [
-                denorm_size.width,
-                denorm_size.height,
-                denorm_size.width,
-                denorm_size.height,
-            ],
-            device=device,
-        )
-        padding = (
-            image_meta.pad_left,
-            image_meta.pad_top,
-            image_meta.pad_right,
-            image_meta.pad_bottom,
-        )
-        selected_boxes_xyxy = selected_boxes_xyxy_pct * denorm_size_whwh
-        aligned_boxes, rle_masks = [], []
-        for bbox, mask in align_instance_segmentation_results_to_rle_masks(
-            image_bboxes=selected_boxes_xyxy,
-            masks=selected_masks,
-            padding=padding,
-            scale_height=image_meta.scale_height,
-            scale_width=image_meta.scale_width,
-            original_size=image_meta.original_size,
-            size_after_pre_processing=image_meta.size_after_pre_processing,
-            inference_size=denorm_size,
-            static_crop_offset=image_meta.static_crop_offset,
-        ):
-            aligned_boxes.append(bbox)
-            rle_masks.append(mask)
-        instances_masks = InstancesRLEMasks.from_coco_rle_masks(
-            image_size=(
-                image_meta.original_size.height,
-                image_meta.original_size.width,
-            ),
-            masks=rle_masks,
-        )
-        if len(aligned_boxes) > 0:
-            aligned_boxes_tensor = torch.stack(aligned_boxes, dim=0)
-            final_results.append(
-                InstanceDetections(
-                    xyxy=aligned_boxes_tensor.round().int(),
-                    confidence=confidence,
-                    class_id=top_classes.int(),
-                    mask=instances_masks,
-                )
+            for image_bboxes, image_logits, image_masks, image_meta in zip(
+                bboxes,
+                logits_sigmoid,
+                masks,
+                pre_processing_meta,
             )
-        else:
-            final_results.append(
-                InstanceDetections(
-                    xyxy=torch.empty(
-                        (0, 4), dtype=torch.int32, device=image_bboxes.device
-                    ),
-                    class_id=top_classes.int(),
-                    confidence=confidence,
-                    mask=instances_masks,
-                )
-            )
-    return final_results
+        ]
+    return [
+        _post_process_single_instance_segmentation_result_to_rle_masks(
+            image_bboxes=image_bboxes,
+            image_logits=image_logits,
+            image_masks=image_masks,
+            image_meta=image_meta,
+            threshold=threshold,
+            num_classes=num_classes,
+            classes_re_mapping=classes_re_mapping,
+        )
+        for image_bboxes, image_logits, image_masks, image_meta in zip(
+            bboxes,
+            logits_sigmoid,
+            masks,
+            pre_processing_meta,
+        )
+    ]
 
 
 def cxcywh_to_xyxy(boxes):

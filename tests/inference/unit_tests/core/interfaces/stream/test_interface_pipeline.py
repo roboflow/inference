@@ -1,4 +1,5 @@
 from collections import defaultdict
+from concurrent.futures import Future
 from datetime import datetime
 from functools import partial
 from queue import Queue
@@ -28,8 +29,14 @@ from inference.core.interfaces.camera.video_source import (
     VideoSource,
     lock_state_transition,
 )
-from inference.core.interfaces.stream.entities import ModelConfig
-from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.stream.entities import (
+    InferenceHandlerResult,
+    ModelConfig,
+)
+from inference.core.interfaces.stream.inference_pipeline import (
+    InferencePipeline,
+    _resolve_prediction_futures,
+)
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
@@ -138,6 +145,84 @@ class ModelStub:
                 image=InferenceResponseImage(width=1920, height=1080),
             )
         ] * len(image)
+
+
+class _PredictionReadyWatchdog:
+    def __init__(self) -> None:
+        self.ready_frames = []
+
+    def on_model_prediction_ready(self, frames):
+        self.ready_frames.append(frames)
+
+
+class _FlushableInferenceHandler:
+    def __init__(self, results):
+        self.results = results
+        self.flush_calls = 0
+        self.close_calls = 0
+
+    def flush(self):
+        self.flush_calls += 1
+        return self.results
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+def test_inference_pipeline_drain_enqueues_flush_results_with_bound_frames() -> None:
+    frame_1 = VideoFrame(
+        image=np.zeros((8, 8, 3), dtype=np.uint8),
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+        source_id=0,
+    )
+    frame_2 = VideoFrame(
+        image=np.zeros((8, 8, 3), dtype=np.uint8),
+        frame_id=2,
+        frame_timestamp=datetime.now(),
+        source_id=0,
+    )
+    handler = _FlushableInferenceHandler(
+        results=[
+            InferenceHandlerResult(predictions=["p1"], video_frames=[frame_1]),
+            InferenceHandlerResult(predictions=["p2"], video_frames=[frame_2]),
+        ]
+    )
+    watchdog = _PredictionReadyWatchdog()
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._on_video_frame = handler
+    pipeline._watchdog = watchdog
+    pipeline._predictions_queue = Queue()
+    pipeline._status_update_handlers = []
+
+    pipeline._drain_inference_handler()
+
+    assert handler.flush_calls == 1
+    assert pipeline._predictions_queue.get_nowait() == (["p1"], [frame_1])
+    assert pipeline._predictions_queue.get_nowait() == (["p2"], [frame_2])
+    assert watchdog.ready_frames == [[frame_1], [frame_2]]
+
+
+def test_resolve_prediction_futures_recursively_resolves_nested_values() -> None:
+    inner = Future()
+    inner.set_result("resolved")
+    outer = Future()
+    outer.set_result({"detections": [inner]})
+
+    assert _resolve_prediction_futures((outer, {"raw": inner})) == (
+        {"detections": ["resolved"]},
+        {"raw": "resolved"},
+    )
+
+
+def test_inference_pipeline_close_calls_handler_close_hook() -> None:
+    handler = _FlushableInferenceHandler(results=[])
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._on_video_frame = handler
+
+    pipeline._close_inference_handler()
+
+    assert handler.close_calls == 1
 
 
 @pytest.mark.timeout(90)
