@@ -28,6 +28,10 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     StaticCropOffset,
 )
+from inference_models.models.rfdetr.triton_jit_fallback import (
+    is_triton_jit_failure,
+    warn_triton_jit_fallback,
+)
 
 try:
     from inference_models.models.rfdetr.triton_preprocess import (
@@ -221,6 +225,7 @@ class FastPreprocessRuntime:
         self._device = device
         self._state: Optional[FastPreprocessState] = None
         self._warned_reasons: set[str] = set()
+        self._jit_disabled = False
 
     def try_preprocess(
         self,
@@ -255,8 +260,9 @@ class FastPreprocessRuntime:
             outside the conservative fast-path contract. In that case the caller
             should run the reference preprocessing path.
         """
-        if not _FAST_PATH_ENABLED:
+        if not _FAST_PATH_ENABLED or self._jit_disabled:
             return None
+
         unsupported_reason = self._unsupported_reason(
             images=images,
             image_size=image_size,
@@ -304,28 +310,39 @@ class FastPreprocessRuntime:
             preproc_ready_event.synchronize()
         np.copyto(pinned_host.numpy(), candidate, casting="no")
 
-        with torch.cuda.stream(stream):
-            trt_consumed_event = getattr(out_buffer, "_trt_consumed_event", None)
-            if trt_consumed_event is not None:
-                stream.wait_event(trt_consumed_event)
-            src_gpu.copy_(pinned_host, non_blocking=True)
-            triton_preprocess_rfdetr_stretch_two_pass_preallocated(
-                src=src_gpu,
-                out=out_buffer,
-                tmp=tmp_buffer,
-                tables=state.tables,
-                target_h=target_h,
-                target_w=target_w,
-                means=means_t,
-                stds=stds_t,
-                swap_rb=swap_rb,
-                launch_config=state.launch_config,
+        try:
+            with torch.cuda.stream(stream):
+                trt_consumed_event = getattr(out_buffer, "_trt_consumed_event", None)
+                if trt_consumed_event is not None:
+                    stream.wait_event(trt_consumed_event)
+                src_gpu.copy_(pinned_host, non_blocking=True)
+                triton_preprocess_rfdetr_stretch_two_pass_preallocated(
+                    src=src_gpu,
+                    out=out_buffer,
+                    tmp=tmp_buffer,
+                    tables=state.tables,
+                    target_h=target_h,
+                    target_w=target_w,
+                    means=means_t,
+                    stds=stds_t,
+                    swap_rb=swap_rb,
+                    launch_config=state.launch_config,
+                )
+                ready_event = torch.cuda.Event()
+                ready_event.record(stream)
+                out_buffer._trt_ready_event = ready_event  # type: ignore[attr-defined]
+                pinned_host._preproc_ready_event = ready_event  # type: ignore[attr-defined]
+                out_buffer.record_stream(stream)
+        except Exception as exc:
+            if not is_triton_jit_failure(exc):
+                raise
+            self._jit_disabled = True
+            warn_triton_jit_fallback(
+                path="preprocess",
+                exc=exc,
+                warned_reasons=self._warned_reasons,
             )
-            ready_event = torch.cuda.Event()
-            ready_event.record(stream)
-            out_buffer._trt_ready_event = ready_event  # type: ignore[attr-defined]
-            pinned_host._preproc_ready_event = ready_event  # type: ignore[attr-defined]
-            out_buffer.record_stream(stream)
+            return None
 
         metadata = [
             PreProcessingMetadata(

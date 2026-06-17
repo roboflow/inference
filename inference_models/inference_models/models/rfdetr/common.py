@@ -19,12 +19,18 @@ from inference_models.models.common.roboflow.post_processing import (
 )
 from inference_models.models.rfdetr.class_remapping import ClassesReMapping
 from inference_models.models.rfdetr.post_processor import select_topk_predictions
+from inference_models.models.rfdetr.triton_jit_fallback import (
+    is_triton_jit_failure,
+    warn_triton_jit_fallback,
+)
 from inference_models.models.rfdetr.triton_postprocess import (
     post_process_single_instance_segmentation_result_to_rle_masks_triton,
 )
 from inference_models.utils.file_system import read_json
 
 _TRITON_POSTPROC_ENABLED = INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED
+_TRITON_POSTPROC_JIT_DISABLED = False
+_TRITON_POSTPROC_JIT_WARNED_REASONS: set[str] = set()
 
 
 def parse_model_type(config_path: str) -> str:
@@ -235,17 +241,34 @@ def _post_process_single_instance_segmentation_result_to_rle_masks_with_triton(
     classes_re_mapping: Optional[ClassesReMapping],
     defer_postprocess_sync: bool = False,
 ) -> InstanceDetections:
-    triton_result = (
-        post_process_single_instance_segmentation_result_to_rle_masks_triton(
-            image_bboxes=image_bboxes,
-            image_scores=image_logits,
-            image_masks=image_masks,
-            image_meta=image_meta,
-            threshold=threshold,
-            classes_re_mapping=classes_re_mapping,
-            defer_postprocess_sync=defer_postprocess_sync,
-        )
-    )
+    global _TRITON_POSTPROC_JIT_DISABLED
+
+    triton_result = None
+    if not _TRITON_POSTPROC_JIT_DISABLED:
+        try:
+            triton_result = (
+                post_process_single_instance_segmentation_result_to_rle_masks_triton(
+                    image_bboxes=image_bboxes,
+                    image_scores=image_logits,
+                    image_masks=image_masks,
+                    image_meta=image_meta,
+                    threshold=threshold,
+                    classes_re_mapping=classes_re_mapping,
+                    defer_postprocess_sync=defer_postprocess_sync,
+                )
+            )
+        except Exception as exc:
+            if not is_triton_jit_failure(exc):
+                raise
+            _TRITON_POSTPROC_JIT_DISABLED = True
+            warn_triton_jit_fallback(
+                path="postprocess",
+                exc=exc,
+                warned_reasons=_TRITON_POSTPROC_JIT_WARNED_REASONS,
+                stacklevel=3,
+            )
+            triton_result = None
+
     if triton_result is not None:
         return triton_result
 
