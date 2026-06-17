@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
     OperationError,
@@ -9,6 +11,45 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 from inference.core.workflows.core_steps.common.query_language.operations.detections.base import (
     rename_detections,
 )
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
+from inference_models.models.base.instance_segmentation import (
+    InstanceDetections as NativeInstanceDetections,
+)
+from inference_models.models.base.keypoints_detection import (
+    KeyPoints as NativeKeyPoints,
+)
+from inference_models.models.base.object_detection import Detections as NativeDetections
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION `rename_detections` is native-only: it rejects
+# sv.Detections. The sv-based tests below are skipped when the flag is on; each has a
+# `*_tensor_native` parity test (skipped when the flag is off) exercising the same
+# scenario with an `inference_models.Detections` input. Native renaming rewrites the
+# `class_id` tensor and the `image_metadata[CLASS_NAMES_KEY]` class_id -> name map
+# (there is no per-box `data["class_name"]`); the parity tests therefore resolve each
+# box's name through that map, the same way consumers do.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="sv.Detections input; rename_detections is native-only under "
+    "ENABLE_TENSOR_DATA_REPRESENTATION — see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
+
+
+def _native_detections() -> NativeDetections:
+    return NativeDetections(
+        xyxy=torch.tensor([[0, 1, 2, 3], [0, 1, 2, 3]], dtype=torch.float32),
+        class_id=torch.tensor([10, 11], dtype=torch.long),
+        confidence=torch.tensor([0.3, 0.4], dtype=torch.float32),
+        image_metadata={CLASS_NAMES_KEY: {10: "a", 11: "b"}},
+    )
+
+
+def _resolved_class_names(detections: NativeDetections) -> list:
+    class_names = detections.image_metadata[CLASS_NAMES_KEY]
+    return [class_names[int(class_id)] for class_id in detections.class_id.tolist()]
 
 
 def test_rename_detections_when_not_sv_detections_provided() -> None:
@@ -23,6 +64,7 @@ def test_rename_detections_when_not_sv_detections_provided() -> None:
         )
 
 
+@_NUMPY_ONLY
 def test_rename_detections_when_strict_mode_enabled_and_all_classes_present() -> None:
     # given
     detections = sv.Detections(
@@ -55,6 +97,7 @@ def test_rename_detections_when_strict_mode_enabled_and_all_classes_present() ->
     ], "Expected to change with mapping"
 
 
+@_NUMPY_ONLY
 def test_rename_detections_when_strict_mode_enabled_and_not_all_classes_present() -> (
     None
 ):
@@ -77,6 +120,7 @@ def test_rename_detections_when_strict_mode_enabled_and_not_all_classes_present(
         )
 
 
+@_NUMPY_ONLY
 def test_rename_detections_when_non_strict_mode_enabled_and_all_classes_present() -> (
     None
 ):
@@ -111,6 +155,7 @@ def test_rename_detections_when_non_strict_mode_enabled_and_all_classes_present(
     ], "Expected to change with mapping"
 
 
+@_NUMPY_ONLY
 def test_rename_detections_when_non_strict_mode_enabled_and_not_all_classes_present() -> (
     None
 ):
@@ -145,6 +190,7 @@ def test_rename_detections_when_non_strict_mode_enabled_and_not_all_classes_pres
     ], "Expected to change with mapping"
 
 
+@_NUMPY_ONLY
 def test_rename_detections_when_mapping_is_parametrised() -> None:
     # given
     detections = sv.Detections(
@@ -178,3 +224,267 @@ def test_rename_detections_when_mapping_is_parametrised() -> None:
         "A",
         "B",
     ], "Expected to change with mapping"
+
+
+@_TENSOR_ONLY
+def test_rename_detections_when_strict_mode_enabled_and_all_classes_present_tensor_native() -> (
+    None
+):
+    # given
+    detections = _native_detections()
+
+    # when
+    result = rename_detections(
+        detections=detections,
+        class_map={"a": "A", "b": "B"},
+        strict=True,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then
+    assert result.xyxy.tolist() == [[0, 1, 2, 3], [0, 1, 2, 3]], "Expected no to change"
+    assert torch.allclose(
+        result.confidence, torch.tensor([0.3, 0.4])
+    ), "Expected no to change"
+    assert result.class_id.tolist() == [
+        0,
+        1,
+    ], "Expected to change with mapping"
+    assert _resolved_class_names(result) == [
+        "A",
+        "B",
+    ], "Expected to change with mapping"
+
+
+@_TENSOR_ONLY
+def test_rename_detections_when_strict_mode_enabled_and_not_all_classes_present_tensor_native() -> (
+    None
+):
+    # given
+    detections = _native_detections()
+
+    # when
+    with pytest.raises(OperationError):
+        _ = rename_detections(
+            detections=detections,
+            class_map={"a": "A"},
+            strict=True,
+            new_classes_id_offset=1024,
+            global_parameters={},
+        )
+
+
+@_TENSOR_ONLY
+def test_rename_detections_when_non_strict_mode_enabled_and_all_classes_present_tensor_native() -> (
+    None
+):
+    # given
+    detections = _native_detections()
+
+    # when
+    result = rename_detections(
+        detections=detections,
+        class_map={"a": "A", "b": "B"},
+        strict=False,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then
+    assert result.xyxy.tolist() == [[0, 1, 2, 3], [0, 1, 2, 3]], "Expected no to change"
+    assert torch.allclose(
+        result.confidence, torch.tensor([0.3, 0.4])
+    ), "Expected no to change"
+    assert result.class_id.tolist() == [
+        1024,
+        1025,
+    ], "Expected to change with mapping"
+    assert _resolved_class_names(result) == [
+        "A",
+        "B",
+    ], "Expected to change with mapping"
+
+
+@_TENSOR_ONLY
+def test_rename_detections_when_non_strict_mode_enabled_and_not_all_classes_present_tensor_native() -> (
+    None
+):
+    # given
+    detections = _native_detections()
+
+    # when
+    result = rename_detections(
+        detections=detections,
+        class_map={"a": "A"},
+        strict=False,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then
+    assert result.xyxy.tolist() == [[0, 1, 2, 3], [0, 1, 2, 3]], "Expected no to change"
+    assert torch.allclose(
+        result.confidence, torch.tensor([0.3, 0.4])
+    ), "Expected no to change"
+    assert result.class_id.tolist() == [
+        1024,
+        11,
+    ], "Expected to change with mapping"
+    assert _resolved_class_names(result) == [
+        "A",
+        "b",
+    ], "Expected to change with mapping"
+
+
+@_TENSOR_ONLY
+def test_rename_detections_when_mapping_is_parametrised_tensor_native() -> None:
+    # given
+    detections = _native_detections()
+
+    # when
+    result = rename_detections(
+        detections=detections,
+        class_map="class_map_param",
+        strict="strict_param",
+        new_classes_id_offset=1024,
+        global_parameters={
+            "strict_param": True,
+            "class_map_param": {"a": "A", "b": "B"},
+        },
+    )
+
+    # then
+    assert result.xyxy.tolist() == [[0, 1, 2, 3], [0, 1, 2, 3]], "Expected no to change"
+    assert torch.allclose(
+        result.confidence, torch.tensor([0.3, 0.4])
+    ), "Expected no to change"
+    assert result.class_id.tolist() == [
+        0,
+        1,
+    ], "Expected to change with mapping"
+    assert _resolved_class_names(result) == [
+        "A",
+        "B",
+    ], "Expected to change with mapping"
+
+
+# ---------------------------------------------------------------------------
+# Parity for the other native detection representations: InstanceDetections
+# (rename carries the per-instance mask through unchanged) and the KeyPoints
+# prediction (a (KeyPoints, Detections) tuple; rename touches only the bbox
+# component's class ids / names, the KeyPoints component is preserved as-is).
+# The class-id / class-name rewrite logic itself is identical across reps and
+# is already covered by the plain-`Detections` cases above, so these focus on
+# the representation-specific carry-through.
+# ---------------------------------------------------------------------------
+
+
+def _native_instance_detections(mask: torch.Tensor) -> NativeInstanceDetections:
+    return NativeInstanceDetections(
+        xyxy=torch.tensor([[0, 1, 2, 3], [0, 1, 2, 3]], dtype=torch.float32),
+        class_id=torch.tensor([10, 11], dtype=torch.long),
+        confidence=torch.tensor([0.3, 0.4], dtype=torch.float32),
+        mask=mask,
+        image_metadata={CLASS_NAMES_KEY: {10: "a", 11: "b"}},
+    )
+
+
+@_TENSOR_ONLY
+def test_rename_detections_for_instance_segmentation_tensor_native() -> None:
+    # given - distinct per-instance pixel counts (3 / 5) so we can assert the masks
+    # ride through unchanged and in order.
+    mask = torch.zeros((2, 20, 20), dtype=torch.bool)
+    mask[0, 0, 0:3] = True  # 3 px
+    mask[1, 0, 0:5] = True  # 5 px
+    detections = _native_instance_detections(mask)
+
+    # when
+    result = rename_detections(
+        detections=detections,
+        class_map={"a": "A", "b": "B"},
+        strict=True,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then - same repr, class ids / names rewritten, mask carried through unchanged
+    assert isinstance(result, NativeInstanceDetections)
+    assert result.xyxy.tolist() == [[0, 1, 2, 3], [0, 1, 2, 3]], "Expected no to change"
+    assert result.class_id.tolist() == [0, 1], "Expected to change with mapping"
+    assert _resolved_class_names(result) == ["A", "B"], "Expected to change with mapping"
+    assert result.mask.sum(dim=(1, 2)).cpu().numpy().tolist() == [
+        3,
+        5,
+    ], "Expected mask to be carried through unchanged and in order"
+    assert torch.equal(result.mask, mask)
+
+
+@_TENSOR_ONLY
+def test_rename_detections_for_instance_segmentation_when_empty_tensor_native() -> None:
+    # given
+    detections = NativeInstanceDetections(
+        xyxy=torch.zeros((0, 4), dtype=torch.float32),
+        class_id=torch.zeros((0,), dtype=torch.long),
+        confidence=torch.zeros((0,), dtype=torch.float32),
+        mask=torch.zeros((0, 20, 20), dtype=torch.bool),
+        image_metadata={CLASS_NAMES_KEY: {}},
+    )
+
+    # when
+    result = rename_detections(
+        detections=detections,
+        class_map={"a": "A", "b": "B"},
+        strict=True,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then - empty object of the SAME repr
+    assert isinstance(result, NativeInstanceDetections)
+    assert result.xyxy.shape[0] == 0
+    assert result.mask.shape[0] == 0
+
+
+@_TENSOR_ONLY
+def test_rename_detections_for_keypoints_tensor_native() -> None:
+    # given - a keypoint prediction is a (KeyPoints, Detections) tuple. Rename rewrites
+    # the bbox component's class ids / names; the KeyPoints component is preserved.
+    key_points = NativeKeyPoints(
+        xy=torch.tensor(
+            [[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]
+        ),  # (instances, kpts, 2)
+        class_id=torch.tensor([10, 11], dtype=torch.long),
+        confidence=torch.tensor([[0.9, 0.8], [0.7, 0.6]]),  # (instances, kpts)
+        image_metadata={CLASS_NAMES_KEY: {10: "a", 11: "b"}},
+    )
+    bboxes = NativeDetections(
+        xyxy=torch.tensor([[0, 1, 2, 3], [0, 1, 2, 3]], dtype=torch.float32),
+        class_id=torch.tensor([10, 11], dtype=torch.long),
+        confidence=torch.tensor([0.3, 0.4], dtype=torch.float32),
+        image_metadata={CLASS_NAMES_KEY: {10: "a", 11: "b"}},
+    )
+    prediction = (key_points, bboxes)
+
+    # when
+    result = rename_detections(
+        detections=prediction,
+        class_map={"a": "A", "b": "B"},
+        strict=True,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then - a (KeyPoints, Detections) tuple; bbox renamed, keypoints carried through
+    assert isinstance(result, tuple) and len(result) == 2
+    result_key_points, result_bboxes = result
+    assert isinstance(result_key_points, NativeKeyPoints)
+    assert isinstance(result_bboxes, NativeDetections)
+    assert result_bboxes.class_id.tolist() == [0, 1], "Expected to change with mapping"
+    assert _resolved_class_names(result_bboxes) == [
+        "A",
+        "B",
+    ], "Expected to change with mapping"
+    # the KeyPoints component is unchanged
+    assert torch.equal(result_key_points.xy, key_points.xy)
+    assert torch.equal(result_key_points.class_id, key_points.class_id)

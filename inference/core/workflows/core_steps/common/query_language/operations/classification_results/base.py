@@ -348,7 +348,24 @@ CLASSIFICATION_PROPERTY_EXTRACTORS = {
 def extract_classification_property(
     value: Any, property_name: ClassificationProperty, **kwargs
 ) -> Union[str, float, list]:
-    if not isinstance(value, dict):
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        # Native-only under the flag: the *_tensor_native extractors operate on
+        # `inference_models` prediction dataclasses, not on serialised dicts.
+        if not isinstance(
+            value, (ClassificationPrediction, MultiLabelClassificationPrediction)
+        ):
+            value_as_str = safe_stringify(value=value)
+            raise InvalidInputTypeError(
+                public_message=(
+                    "Executing extract_classification_property(...) under "
+                    "ENABLE_TENSOR_DATA_REPRESENTATION, expected "
+                    "`inference_models.ClassificationPrediction` or "
+                    "`inference_models.MultiLabelClassificationPrediction`, got "
+                    f"{value_as_str} of type {type(value)}"
+                ),
+                context="step_execution | roboflow_query_language_evaluation",
+            )
+    elif not isinstance(value, dict):
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(
             public_message=f"Executing extract_classification_property(...), expected classification results object, "

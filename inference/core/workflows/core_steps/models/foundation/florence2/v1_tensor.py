@@ -51,15 +51,15 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
-    WorkflowBlockManifest,
 )
+from inference_models import Detections, InstanceDetections, KeyPoints
 from inference_sdk import InferenceHTTPClient
 
 # inference_models native prediction shapes accepted on the grounding input.
 TensorNativeGrounding = Union[
-    "Detections",  # OD
-    "InstanceDetections",  # IS
-    Tuple["KeyPoints", Optional["Detections"]],  # KP dual representation
+    Detections,  # OD
+    InstanceDetections,  # IS
+    Tuple[KeyPoints, Optional[Detections]],  # KP dual representation
 ]
 
 
