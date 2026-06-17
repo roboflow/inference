@@ -93,6 +93,13 @@ _SEND_TIMEOUT_MS = 5000  # parent PAIR sends must never block forever
 
 _BATCH_SIZE_FALLBACK = 8
 
+# Optional resolution reject gate: max decoded pixels per image (0 = off).
+_MAX_DECODED_PIXELS = (
+    int(cfg.INFERENCE_MAX_DECODED_MEGAPIXELS * 1_000_000)
+    if cfg.INFERENCE_MAX_DECODED_MEGAPIXELS > 0
+    else 0
+)
+
 
 # ---------------------------------------------------------------------------
 # Input serialisation helper (parent side)
@@ -578,6 +585,23 @@ def _process_slots(
         if len(mv) == 0:
             log.error("Worker: slot %d has 0 bytes — skipping", batch[i][0])
             decode_errors[i] = True
+
+    # Resolution reject gate — drop oversized images by header dims, no decode.
+    if _MAX_DECODED_PIXELS:
+        from inference_model_manager.backends.utils.image_headers import image_pixels
+
+        for i, mv in enumerate(mvs):
+            if decode_errors[i] or is_npy[i] or len(mv) == 0:
+                continue
+            px = image_pixels(mv)
+            if px and px > _MAX_DECODED_PIXELS:
+                decode_errors[i] = True
+                log.warning(
+                    "Worker: slot %d rejected — image %.1fMP exceeds max %.0fMP",
+                    batch[i][0],
+                    px / 1e6,
+                    _MAX_DECODED_PIXELS / 1e6,
+                )
 
 
     # .npy slots — standalone mode (numpy arrays serialised via np.save)
