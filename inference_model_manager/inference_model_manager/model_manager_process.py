@@ -346,16 +346,6 @@ class ModelManagerProcess:
         self._pending: dict[int, tuple[bytes, int, str]] = {}
 
         self._rejects_pool_full = 0
-        self._result_sched = 0  # DEBUGLOG
-        self._result_ran = 0  # DEBUGLOG
-        self._alloc_ok = 0  # DEBUGLOG: census — successful allocs
-        self._submits = 0  # DEBUGLOG: census — T_SUBMIT forwarded
-        self._result_ready_sends = 0  # DEBUGLOG: census — T_RESULT_READY sent
-        self._frees = 0  # DEBUGLOG: census — T_FREE handled
-        self._result_q_max = 0  # DEBUGLOG: max loop ready-queue depth since last stats poll
-        self._cpu_t0 = (time.process_time(), time.monotonic())  # DEBUGLOG: CPU-frac baseline
-        self._dwell_max = 0.0  # DEBUGLOG: max result-dwell since last summary (accumulated, not logged per-event)
-        self._dwell_over = 0  # DEBUGLOG: count of result-dwell >100ms since last summary
 
         # slot_id → flavor for slots signalled to a worker and not yet
         # resulted. The reaper must never free these: the worker may be
@@ -440,12 +430,8 @@ class ModelManagerProcess:
         Thread-safe. ``result_sz == 0`` signals inference error.
         """
         if self._loop is not None:
-            self._result_sched += 1  # DEBUGLOG
-            depth = self._result_sched - self._result_ran  # DEBUGLOG
-            if depth > self._result_q_max:  # DEBUGLOG
-                self._result_q_max = depth  # DEBUGLOG
             self._loop.call_soon_threadsafe(
-                self._on_result_on_loop, req_id, slot_id, result_sz, time.monotonic()
+                self._on_result_on_loop, req_id, slot_id, result_sz
             )
 
     def _on_backend_death(self, model_id: str) -> None:
@@ -534,7 +520,6 @@ class ModelManagerProcess:
             asyncio.create_task(self._stale_reaper_loop(), name="mmp-stale-reaper"),
             asyncio.create_task(self._eviction_loop(), name="mmp-evictor"),
             asyncio.create_task(self._monitoring_loop(), name="mmp-monitor"),
-            asyncio.create_task(self._loop_lag_watchdog(), name="mmp-lag-watchdog"),  # DEBUGLOG
         ]
 
         try:
@@ -566,31 +551,6 @@ class ModelManagerProcess:
     # ------------------------------------------------------------------
     # Recv loop
     # ------------------------------------------------------------------
-
-    async def _loop_lag_watchdog(self) -> None:  # DEBUGLOG
-        interval = 0.05  # DEBUGLOG
-        report_every = 5.0  # DEBUGLOG
-        lag_max = 0.0  # DEBUGLOG
-        last_report = time.monotonic()  # DEBUGLOG
-        while True:  # DEBUGLOG
-            t = time.monotonic()  # DEBUGLOG
-            await asyncio.sleep(interval)  # DEBUGLOG
-            lag = time.monotonic() - t - interval  # DEBUGLOG
-            if lag > lag_max:  # DEBUGLOG
-                lag_max = lag  # DEBUGLOG
-            now = time.monotonic()  # DEBUGLOG
-            if now - last_report >= report_every:  # DEBUGLOG
-                if lag_max > 0.1 or self._dwell_over > 0:  # DEBUGLOG
-                    logger.warning(  # DEBUGLOG
-                        "MMP/5s: loop_lag_max=%.0fms result_dwell_max=%.0fms dwell_over_100ms=%d",  # DEBUGLOG
-                        lag_max * 1000,  # DEBUGLOG
-                        self._dwell_max * 1000,  # DEBUGLOG
-                        self._dwell_over,  # DEBUGLOG
-                    )  # DEBUGLOG
-                lag_max = 0.0  # DEBUGLOG
-                self._dwell_max = 0.0  # DEBUGLOG
-                self._dwell_over = 0  # DEBUGLOG
-                last_report = now  # DEBUGLOG
 
     async def _recv_loop(self) -> None:
         """Receive ZMQ frames and dispatch. Runs as asyncio task."""
@@ -752,7 +712,6 @@ class ModelManagerProcess:
             return
 
         self._pool.mark_allocated(slot_id, req_id)
-        self._alloc_ok += 1  # DEBUGLOG
         await self._send(identity, T_ALLOC_OK, struct.pack(">QI", req_id, slot_id))
 
     # ------------------------------------------------------------------
@@ -785,7 +744,6 @@ class ModelManagerProcess:
 
         self._pending[req_id] = (identity, slot_id, model_id)
         self._pool.mark_written(slot_id, input_sz)
-        self._submits += 1  # DEBUGLOG
         self._forward_to_backend(model_id, slot_id, req_id, params_bytes)
 
     # ------------------------------------------------------------------
@@ -797,7 +755,6 @@ class ModelManagerProcess:
         if not data or len(data[0]) < 12:
             return
         req_id, slot_id = struct.unpack_from(">QI", data[0])
-        self._frees += 1  # DEBUGLOG
         try:
             self._pool.free_slot(slot_id, request_id=req_id)
         except Exception:
@@ -987,31 +944,12 @@ class ModelManagerProcess:
                     )
             model_stats[f] = entry
 
-        _pt, _w = time.process_time(), time.monotonic()  # DEBUGLOG
-        _pt0, _w0 = self._cpu_t0  # DEBUGLOG
-        _cpu_frac = (_pt - _pt0) / (_w - _w0) if _w > _w0 else 0.0  # DEBUGLOG
-        self._cpu_t0 = (_pt, _w)  # DEBUGLOG
-        _rq_max = self._result_q_max  # DEBUGLOG
-        self._result_q_max = self._result_sched - self._result_ran  # DEBUGLOG
-
         snapshot.update(
             {
                 "mmp_free_slots": self._pool.free_count if self._pool else 0,
                 "mmp_total_slots": self._n_slots,
                 "mmp_pending": len(self._pending),
                 "mmp_rejects_pool_full": self._rejects_pool_full,
-                "mmp_census": {  # DEBUGLOG: cumulative op counts — analyzer deltas per successful req
-                    "alloc_ok": self._alloc_ok,
-                    "rejects": self._rejects_pool_full,
-                    "submits": self._submits,
-                    "result_sched": self._result_sched,
-                    "result_ran": self._result_ran,
-                    "result_ready": self._result_ready_sends,
-                    "frees": self._frees,
-                },
-                "mmp_result_q": self._result_sched - self._result_ran,  # DEBUGLOG
-                "mmp_result_q_max": _rq_max,  # DEBUGLOG
-                "mmp_cpu_frac": round(_cpu_frac, 3),  # DEBUGLOG
                 "mmp_cache_hits": self._cache_hits,
                 "mmp_cache_misses": self._cache_misses,
                 "mmp_idle_timeout_s": self._idle_timeout_s,
@@ -1069,16 +1007,9 @@ class ModelManagerProcess:
     # ------------------------------------------------------------------
 
     def _on_result_on_loop(
-        self, req_id: int, slot_id: int, result_sz: int, sched_ts: float = None
+        self, req_id: int, slot_id: int, result_sz: int
     ) -> None:
         """Must be called on the event loop thread."""
-        self._result_ran += 1  # DEBUGLOG
-        if sched_ts is not None:  # DEBUGLOG
-            _dwell = time.monotonic() - sched_ts  # DEBUGLOG
-            if _dwell > self._dwell_max:  # DEBUGLOG
-                self._dwell_max = _dwell  # DEBUGLOG
-            if _dwell > 0.1:  # DEBUGLOG
-                self._dwell_over += 1  # DEBUGLOG
         self._inflight.pop(slot_id, None)
         pending = self._pending.pop(req_id, None)
         if pending is None:
@@ -1112,8 +1043,6 @@ class ModelManagerProcess:
             T_RESULT_READY,
             struct.pack(">QII", req_id, slot_id, result_sz),
         )
-        if sent:
-            self._result_ready_sends += 1  # DEBUGLOG
         if not sent:
             # Peer disconnected — result will never be read; free slot now
             # (backend already finished; we just drop the result silently)

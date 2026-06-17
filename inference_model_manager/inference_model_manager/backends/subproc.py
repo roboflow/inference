@@ -52,47 +52,6 @@ from inference_models.utils.environment import get_boolean_from_env
 
 logger = logging.getLogger(__name__)
 
-_DPROF = os.getenv("INFERENCE_DECODE_PROFILE", "0") == "1"  # DEBUGLOG
-_DP = {"wrap": 0.0, "call": 0.0, "rel": 0.0, "imgs": 0, "t0": time.monotonic()}  # DEBUGLOG
-
-_WPROF = os.getenv("INFERENCE_WRITE_PROFILE", "0") == "1"  # DEBUGLOG
-_WP = {"cpu": 0.0, "pkl": 0.0, "shm": 0.0, "snd": 0.0, "n": 0, "t0": time.monotonic()}  # DEBUGLOG
-
-
-def _wprof(w0, w1, w2, w3, w4, log):  # DEBUGLOG
-    _WP["cpu"] += w1 - w0
-    _WP["pkl"] += w2 - w1
-    _WP["shm"] += w3 - w2
-    _WP["snd"] += w4 - w3
-    _WP["n"] += 1
-    if w4 - _WP["t0"] >= 5.0:
-        n = max(_WP["n"], 1)
-        log.warning(
-            "WRITE_PROFILE n=%d cpu=%.3fms pkl=%.3fms shm=%.3fms snd=%.3fms /img",
-            _WP["n"], _WP["cpu"] / n * 1000, _WP["pkl"] / n * 1000,
-            _WP["shm"] / n * 1000, _WP["snd"] / n * 1000,
-        )
-        _WP["cpu"] = _WP["pkl"] = _WP["shm"] = _WP["snd"] = 0.0
-        _WP["n"] = 0
-        _WP["t0"] = w4
-
-
-def _dprof(t0, t_wrap, t_call, t_decoded, n, log):  # DEBUGLOG
-    _DP["wrap"] += t_wrap - t0
-    _DP["call"] += t_call - t_wrap
-    _DP["rel"] += t_decoded - t_call
-    _DP["imgs"] += n
-    if t_decoded - _DP["t0"] >= 5.0:
-        d = max(_DP["imgs"], 1)
-        log.warning(
-            "DECODE_PROFILE_SUBPROC imgs=%d wrap=%.2fms/img call=%.2fms/img rel=%.2fms/img",
-            _DP["imgs"], _DP["wrap"] / d * 1000,
-            _DP["call"] / d * 1000, _DP["rel"] / d * 1000,
-        )
-        _DP["wrap"] = _DP["call"] = _DP["rel"] = 0.0
-        _DP["imgs"] = 0
-        _DP["t0"] = t_decoded
-
 
 # ---------------------------------------------------------------------------
 # PAIR protocol constants (parent ↔ worker)
@@ -367,8 +326,6 @@ def _worker_loop(
         "decode_ms": deque(maxlen=1000),
         "infer_ms": deque(maxlen=1000),
         "write_ms": deque(maxlen=1000),
-        "fire_size": 0,  # DEBUGLOG
-        "fire_wait": 0,  # DEBUGLOG
         "start_ts": time.monotonic(),
     }
 
@@ -434,10 +391,6 @@ def _worker_loop(
         if pending and (
             len(pending) >= batch_max_size or (now - batch_start) >= batch_max_wait_s
         ):
-            if len(pending) >= batch_max_size:  # DEBUGLOG
-                worker_stats["fire_size"] += 1  # DEBUGLOG
-            else:  # DEBUGLOG
-                worker_stats["fire_wait"] += 1  # DEBUGLOG
             try:
                 if now - last_heartbeat >= _HEARTBEAT_INTERVAL_S:
                     sock.send_multipart(
@@ -516,8 +469,6 @@ def _build_worker_stats_payload(worker_stats: dict) -> bytes:
             "avg_decode_ms": _avg_ms("decode_ms"),
             "avg_infer_ms": _avg_ms("infer_ms"),
             "avg_write_ms": _avg_ms("write_ms"),
-            "fire_size": worker_stats["fire_size"],  # DEBUGLOG
-            "fire_wait": worker_stats["fire_wait"],  # DEBUGLOG
             "uptime_s": round(uptime, 1),
         }
     ).encode()
@@ -671,8 +622,6 @@ def _process_slots(
                 log.exception("Worker: failed to load .npy slot %d", batch[i][0])
                 decode_errors[i] = True
 
-    _t_wrap = time.monotonic() if _DPROF else 0.0  # DEBUGLOG
-
     # Raw image bytes (JPEG + non-JPEG) — single batch_decode_fn call
     raw_indices = [
         i for i, npy in enumerate(is_npy) if not npy and not decode_errors[i]
@@ -692,8 +641,6 @@ def _process_slots(
                 decode_errors[i] = True
 
 
-    _t_call = time.monotonic() if _DPROF else 0.0  # DEBUGLOG
-
     # Release memoryviews
     for mv in mvs:
         try:
@@ -702,8 +649,6 @@ def _process_slots(
             pass
 
     t_decoded = time.monotonic()
-    if _DPROF:  # DEBUGLOG
-        _dprof(t0, _t_wrap, _t_call, t_decoded, len(batch), log)
 
     # Short-circuit slots that failed to decode — send error without calling infer
     error_indices = {i for i, err in enumerate(decode_errors) if err}
@@ -792,12 +737,9 @@ def _process_slots(
 
         # Tensors → CPU numpy before pickle: numpy pickles ~10x faster than torch
         # tensors and keeps CUDA tensors off the wire (receiver needs no GPU).
-        _w0 = time.monotonic() if _WPROF else 0.0  # DEBUGLOG
         try:
             result = _tensors_to_numpy(result)
-            _w1 = time.monotonic() if _WPROF else 0.0  # DEBUGLOG
             data = pickle.dumps(result)
-            _w2 = time.monotonic() if _WPROF else 0.0  # DEBUGLOG
         except Exception as exc:
             # Unserializable result (numpy fields without .cpu(), unpicklable
             # objects) must error this slot, not kill the worker.
@@ -839,7 +781,6 @@ def _process_slots(
         mv[: len(data)] = data
         mv.release()
         pool.mark_done(slot_id, len(data))
-        _w3 = time.monotonic() if _WPROF else 0.0  # DEBUGLOG
         try:
             sock.send_multipart(
                 [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, len(data))]
@@ -847,8 +788,6 @@ def _process_slots(
         except zmq.ZMQError:
             return
         n_ok += 1
-        if _WPROF:  # DEBUGLOG
-            _wprof(_w0, _w1, _w2, _w3, time.monotonic(), log)
 
 
     # Update worker stats
@@ -1388,8 +1327,6 @@ class SubprocessBackend(Backend):
             "state": self.state,
             "is_accepting": self.is_accepting,
             "queue_depth": self.queue_depth,
-            "outstanding": self._outstanding,  # DEBUGLOG
-            "outbound_qsize": self._outbound.qsize(),  # DEBUGLOG
             "max_batch_size": self.max_batch_size,
             "throughput_fps": ws.get("throughput_fps", 0.0),
             "latency_p50_ms": ws.get("latency_p50_ms", 0.0),
@@ -1402,8 +1339,6 @@ class SubprocessBackend(Backend):
             "avg_decode_ms": ws.get("avg_decode_ms", 0.0),
             "avg_infer_ms": ws.get("avg_infer_ms", 0.0),
             "avg_write_ms": ws.get("avg_write_ms", 0.0),
-            "fire_size": ws.get("fire_size", 0),  # DEBUGLOG
-            "fire_wait": ws.get("fire_wait", 0),  # DEBUGLOG
             "worker_uptime_s": ws.get("uptime_s", 0.0),
             "worker_alive": self._worker.is_alive(),
             "shm_pool_name": self._pool.name,
