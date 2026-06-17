@@ -542,11 +542,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         preprocess_return_metadata: PreprocessingMetadata,
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
-<<<<<<< HEAD
-        if self._pipeline_depth <= 1:
-=======
         if self._pipeline_depth <= 1 or not isinstance(predictions, InferenceFuture):
->>>>>>> codeflash-rfdetr-seg-optimization
             return self._postprocess_sync(
                 predictions, preprocess_return_metadata, **kwargs
             )
