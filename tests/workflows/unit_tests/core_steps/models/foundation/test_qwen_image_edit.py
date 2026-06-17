@@ -52,7 +52,6 @@ def test_manifest_minimal_valid():
     assert manifest.model_id == DEFAULT_MODEL_ID
     assert manifest.num_inference_steps == 28
     assert manifest.guidance_scale == 5.0
-    assert manifest.strength == 0.85
     assert manifest.seed is None
 
 
@@ -88,13 +87,11 @@ def test_manifest_accepts_custom_params():
             "prompt": "remove background",
             "num_inference_steps": 50,
             "guidance_scale": 7.5,
-            "strength": 0.6,
             "seed": 42,
         }
     )
     assert manifest.num_inference_steps == 50
     assert manifest.guidance_scale == 7.5
-    assert manifest.strength == 0.6
     assert manifest.seed == 42
 
 
@@ -118,7 +115,7 @@ def _run(block, fake_model, **overrides):
         local_weights_path=None,
         num_inference_steps=28,
         guidance_scale=5.0,
-        strength=0.85,
+
         seed=None,
     )
     defaults.update(overrides)
@@ -144,13 +141,12 @@ def test_run_passes_params_to_model():
     fake_model.edit.return_value = _fake_pil_image()
 
     _run(block, fake_model, prompt="add a hat", num_inference_steps=10,
-         guidance_scale=3.5, strength=0.5, seed=7)
+         guidance_scale=3.5, seed=7)
 
     call_kwargs = fake_model.edit.call_args.kwargs
     assert call_kwargs["prompt"] == "add a hat"
     assert call_kwargs["num_inference_steps"] == 10
     assert call_kwargs["guidance_scale"] == 3.5
-    assert call_kwargs["strength"] == 0.5
     assert call_kwargs["seed"] == 7
 
 

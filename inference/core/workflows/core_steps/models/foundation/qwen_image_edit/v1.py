@@ -63,7 +63,6 @@ output.
 | `local_weights_path` | None | Absolute path to locally downloaded weights directory |
 | `num_inference_steps` | 28 | More steps → higher quality, slower |
 | `guidance_scale` | 5.0 | Higher → stronger prompt adherence |
-| `strength` | 0.85 | 0 = no change, 1 = ignore source image |
 | `seed` | None | Set for reproducible outputs |
 """
 
@@ -131,12 +130,6 @@ class BlockManifest(WorkflowBlockManifest):
         default=5.0,
         description="Classifier-free guidance scale. Higher values make the output adhere more strongly to the prompt.",
         examples=[5.0, 7.5],
-    )
-
-    strength: Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float] = Field(
-        default=0.85,
-        description="Edit strength — 0.0 leaves the source image unchanged, 1.0 ignores it entirely.",
-        examples=[0.85, 0.6],
     )
 
     seed: Optional[Union[Selector(kind=[INTEGER_KIND]), int]] = Field(
@@ -217,7 +210,6 @@ class QwenImageEditBlockV1(WorkflowBlock):
         local_weights_path: Optional[str],
         num_inference_steps: int,
         guidance_scale: float,
-        strength: float,
         seed: Optional[int],
     ) -> BlockResult:
         model = self._get_model(model_id=model_id, local_weights_path=local_weights_path)
@@ -228,7 +220,6 @@ class QwenImageEditBlockV1(WorkflowBlock):
                 prompt=prompt,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
-                strength=strength,
                 seed=seed,
             )
             edited_np = np.array(edited_pil)[:, :, ::-1]  # RGB → BGR

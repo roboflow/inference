@@ -70,36 +70,18 @@ class QwenImageEditHF:
         seed: Optional[int] = None,
         **kwargs,
     ) -> Image.Image:
-        """Run image editing and return a PIL Image.
-
-        Args:
-            image: Source image as a numpy array (H, W, 3 BGR or RGB) or PIL Image.
-            prompt: Text instruction describing the desired edit.
-            num_inference_steps: Diffusion denoising steps.
-            guidance_scale: Classifier-free guidance scale.
-            strength: How strongly to edit — 0.0 = no change, 1.0 = ignore source.
-            seed: Optional RNG seed for reproducibility.
-
-        Returns:
-            Edited image as a PIL Image (RGB).
-        """
         pil_image = _to_pil(image)
 
         generator = None
         if seed is not None:
             generator = torch.Generator(device=self._device).manual_seed(seed)
 
-        # TODO: verify the exact keyword arguments accepted by this pipeline.
-        # The call below follows the standard img2img diffusers interface.
-        # If Qwen-Image-Edit uses a different signature (e.g. `instruction=`
-        # instead of `prompt=`, or no `strength` parameter), adjust here.
         with self._lock, torch.inference_mode():
             result = self._pipeline(
                 prompt=prompt,
                 image=pil_image,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
-                strength=strength,
                 generator=generator,
             )
 
