@@ -543,7 +543,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
                 )
             results.append(
                 (
-                    stream_context.images.indices,
+                    _stream_context_indices(images=stream_context.images),
                     self._finalize_prediction_responses(
                         predictions=prediction_batch,
                         stream_context=stream_context,
@@ -658,3 +658,10 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             }
             for inference_id, prediction in zip(inference_ids, predictions)
         ]
+
+
+def _stream_context_indices(images: Batch[WorkflowImageData]) -> List[Tuple[int, ...]]:
+    indices = getattr(images, "indices", None)
+    if indices is not None:
+        return indices
+    return [(i,) for i in range(len(images))]

@@ -32,7 +32,37 @@ class WorkflowRunner:
     def __call__(self, video_frames: List[VideoFrame]) -> List[dict]:
         return self._run_workflow(video_frames=video_frames)
 
-    def _run_workflow(self, video_frames: List[VideoFrame]) -> List[dict]:
+    def _run_workflow(
+        self,
+        video_frames: List[VideoFrame],
+        defer_stream_pipeline_flush: bool = False,
+    ) -> List[dict]:
+        workflows_parameters, fps = self._build_workflows_parameters(
+            video_frames=video_frames
+        )
+        return self._execution_engine.run(
+            runtime_parameters=workflows_parameters,
+            fps=fps,
+            serialize_results=self._serialize_results,
+            _is_preview=self._is_preview,
+            defer_stream_pipeline_flush=defer_stream_pipeline_flush,
+        )
+
+    def _flush_stream_pipeline(self, video_frames: List[VideoFrame]) -> List[dict]:
+        workflows_parameters, fps = self._build_workflows_parameters(
+            video_frames=video_frames
+        )
+        return self._execution_engine.flush_stream_pipeline(
+            runtime_parameters=workflows_parameters,
+            fps=fps,
+            serialize_results=self._serialize_results,
+            _is_preview=self._is_preview,
+        )
+
+    def _build_workflows_parameters(
+        self,
+        video_frames: List[VideoFrame],
+    ) -> tuple[Dict[str, Any], float]:
         workflows_parameters: Dict[str, Any] = dict(self._workflows_parameters or {})
         # TODO: pass fps reflecting each stream to workflows_parameters
         fps = video_frames[0].fps
@@ -69,12 +99,7 @@ class WorkflowRunner:
         workflows_parameters[self._video_metadata_input_name] = (
             video_metadata_for_images
         )
-        return self._execution_engine.run(
-            runtime_parameters=workflows_parameters,
-            fps=fps,
-            serialize_results=self._serialize_results,
-            _is_preview=self._is_preview,
-        )
+        return workflows_parameters, fps
 
 
 class PipelinedWorkflowRunner:
@@ -90,7 +115,10 @@ class PipelinedWorkflowRunner:
     def __call__(
         self, video_frames: List[VideoFrame]
     ) -> Optional[InferenceHandlerResult]:
-        predictions = self._workflow_runner(video_frames=video_frames)
+        predictions = self._workflow_runner._run_workflow(
+            video_frames=video_frames,
+            defer_stream_pipeline_flush=True,
+        )
         stream_buffer_depth = self._stream_buffer_depth()
         if stream_buffer_depth <= 0:
             self._pending_video_frames.clear()
@@ -116,21 +144,11 @@ class PipelinedWorkflowRunner:
             return None
         if len(stream_steps) != 1:
             raise RuntimeError("Stream pipeline flushing supports one pipelined step")
-        flush_fn = getattr(stream_steps[0].step, "flush_stream_pipeline", None)
-        if not callable(flush_fn):
-            raise RuntimeError(
-                "Stream-pipelined workflow step must implement flush_stream_pipeline()"
-            )
-        predictions = flush_fn()
-        if predictions is None:
-            predictions = []
-        if len(predictions) != len(self._pending_video_frames):
-            raise RuntimeError(
-                "Stream pipeline flush returned a different number of prediction "
-                "batches than pending video-frame batches"
-            )
         results = []
-        for prediction in predictions:
+        for pending_video_frames in list(self._pending_video_frames):
+            prediction = self._workflow_runner._flush_stream_pipeline(
+                video_frames=pending_video_frames,
+            )
             emit_video_frames = self._pending_video_frames.pop(0)
             results.append(
                 InferenceHandlerResult(
