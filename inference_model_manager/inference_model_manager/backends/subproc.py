@@ -54,6 +54,27 @@ logger = logging.getLogger(__name__)
 _DPROF = os.getenv("INFERENCE_DECODE_PROFILE", "0") == "1"  # DEBUGLOG
 _DP = {"wrap": 0.0, "call": 0.0, "rel": 0.0, "imgs": 0, "t0": time.monotonic()}  # DEBUGLOG
 
+_WPROF = os.getenv("INFERENCE_WRITE_PROFILE", "0") == "1"  # DEBUGLOG
+_WP = {"cpu": 0.0, "pkl": 0.0, "shm": 0.0, "snd": 0.0, "n": 0, "t0": time.monotonic()}  # DEBUGLOG
+
+
+def _wprof(w0, w1, w2, w3, w4, log):  # DEBUGLOG
+    _WP["cpu"] += w1 - w0
+    _WP["pkl"] += w2 - w1
+    _WP["shm"] += w3 - w2
+    _WP["snd"] += w4 - w3
+    _WP["n"] += 1
+    if w4 - _WP["t0"] >= 5.0:
+        n = max(_WP["n"], 1)
+        log.warning(
+            "WRITE_PROFILE n=%d cpu=%.3fms pkl=%.3fms shm=%.3fms snd=%.3fms /img",
+            _WP["n"], _WP["cpu"] / n * 1000, _WP["pkl"] / n * 1000,
+            _WP["shm"] / n * 1000, _WP["snd"] / n * 1000,
+        )
+        _WP["cpu"] = _WP["pkl"] = _WP["shm"] = _WP["snd"] = 0.0
+        _WP["n"] = 0
+        _WP["t0"] = w4
+
 
 def _dprof(t0, t_wrap, t_call, t_decoded, n, log):  # DEBUGLOG
     _DP["wrap"] += t_wrap - t0
@@ -735,12 +756,15 @@ def _process_slots(
         # Move tensors to CPU before pickle — result travels through SHM (CPU
         # memory), so serialising with device='cuda' just forces the receiver
         # to have a GPU for no reason.
+        _w0 = time.monotonic() if _WPROF else 0.0  # DEBUGLOG
         try:
             if hasattr(result, "xyxy"):
                 result.xyxy = result.xyxy.cpu()
                 result.confidence = result.confidence.cpu()
                 result.class_id = result.class_id.cpu()
+            _w1 = time.monotonic() if _WPROF else 0.0  # DEBUGLOG
             data = pickle.dumps(result)
+            _w2 = time.monotonic() if _WPROF else 0.0  # DEBUGLOG
         except Exception as exc:
             # Unserializable result (numpy fields without .cpu(), unpicklable
             # objects) must error this slot, not kill the worker.
@@ -782,6 +806,7 @@ def _process_slots(
         mv[: len(data)] = data
         mv.release()
         pool.mark_done(slot_id, len(data))
+        _w3 = time.monotonic() if _WPROF else 0.0  # DEBUGLOG
         try:
             sock.send_multipart(
                 [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, len(data))]
@@ -789,6 +814,8 @@ def _process_slots(
         except zmq.ZMQError:
             return
         n_ok += 1
+        if _WPROF:  # DEBUGLOG
+            _wprof(_w0, _w1, _w2, _w3, time.monotonic(), log)
 
 
     # Update worker stats
