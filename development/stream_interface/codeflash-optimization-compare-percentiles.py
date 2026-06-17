@@ -91,7 +91,13 @@ def _summarize_frame_intervals(intervals: list[float]) -> tuple[dict, dict]:
     return latency_percentiles_ms, fps_percentiles
 
 
-def _emit_benchmark_result(
+def _write_json(path: str, payload: dict) -> None:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, indent=2))
+
+
+def _build_benchmark_result(
     *,
     profile: str,
     frame_count: int,
@@ -99,8 +105,8 @@ def _emit_benchmark_result(
     aggregate_fps: float,
     latency_percentiles_ms: dict[str, float | None],
     fps_percentiles: dict[str, float | None],
-    result_out: str | None,
-) -> None:
+    latency_reads_ms: list[float],
+) -> dict:
     result = {
         "profile": profile,
         "frames": frame_count,
@@ -109,26 +115,40 @@ def _emit_benchmark_result(
         "fps": aggregate_fps,
         "latency_ms": latency_percentiles_ms,
         "fps_percentiles": fps_percentiles,
+        "latency_reads_ms": latency_reads_ms,
         "flags": {
             key: _benchmark.os.environ.get(key)
             for key in _benchmark._OPTIMIZATION_FLAG_KEYS
         },
     }
+
+    return result
+
+
+def _emit_benchmark_result(
+    *,
+    result: dict,
+    result_out: str | None,
+) -> None:
     print(
-        f"[benchmark] profile={profile} frames={frame_count} "
-        f"elapsed={elapsed:.2f}s aggregate_fps={aggregate_fps:.2f}",
+        f"[benchmark] profile={result['profile']} frames={result['frames']} "
+        f"elapsed={result['elapsed']:.2f}s aggregate_fps={result['aggregate_fps']:.2f}",
         flush=True,
     )
     print(
-        f"[benchmark] latency_ms {_format_percentiles(latency_percentiles_ms)}",
+        f"[benchmark] latency_ms {_format_percentiles(result['latency_ms'])}",
         flush=True,
     )
     print(
-        f"[benchmark] fps_percentiles {_format_percentiles(fps_percentiles)}",
+        f"[benchmark] fps_percentiles {_format_percentiles(result['fps_percentiles'])}",
+        flush=True,
+    )
+    print(
+        f"[benchmark] latency_reads_ms count={len(result['latency_reads_ms'])}",
         flush=True,
     )
     if result_out is not None:
-        Path(result_out).write_text(json.dumps(result, indent=2))
+        _write_json(path=result_out, payload=result)
 
 
 def sink(predictions, _video_frames) -> None:
@@ -220,24 +240,20 @@ def do_run(
     latency_percentiles_ms, fps_percentiles = _summarize_frame_intervals(
         intervals=_benchmark.FRAME_INTERVALS,
     )
-    _emit_benchmark_result(
+    latency_reads_ms = [interval * 1000.0 for interval in _benchmark.FRAME_INTERVALS]
+    result = _build_benchmark_result(
         profile=benchmark_profile,
         frame_count=_benchmark.FRAME_COUNT,
         elapsed=elapsed,
         aggregate_fps=aggregate_fps,
         latency_percentiles_ms=latency_percentiles_ms,
         fps_percentiles=fps_percentiles,
+        latency_reads_ms=latency_reads_ms,
+    )
+    _emit_benchmark_result(
+        result=result,
         result_out=result_out,
     )
-    result = {
-        "profile": benchmark_profile,
-        "frames": _benchmark.FRAME_COUNT,
-        "elapsed": elapsed,
-        "aggregate_fps": aggregate_fps,
-        "fps": aggregate_fps,
-        "latency_ms": latency_percentiles_ms,
-        "fps_percentiles": fps_percentiles,
-    }
 
     return result
 
@@ -275,6 +291,7 @@ def do_compare(
     backend: str,
     model_package_id: str | None,
     local_package: str | None,
+    result_out: str | None = None,
 ) -> None:
     resolved_video_reference = _benchmark._resolve_video_reference(video_reference)
     with _benchmark.tempfile.TemporaryDirectory(
@@ -315,11 +332,97 @@ def do_compare(
     _print_compare_result(profile="optimized", result=optimized)
     print(f"  p50_fps_speedup {p50_speedup:.2f}x", flush=True)
 
+    if result_out is not None:
+        compare_result = {
+            "mode": "compare",
+            "baseline": baseline,
+            "optimized": optimized,
+            "p50_fps_speedup": p50_speedup,
+        }
+        _write_json(path=result_out, payload=compare_result)
+        print(f"[benchmark] wrote compare result: {result_out}", flush=True)
+
+
+def main() -> None:
+    parser = _benchmark.argparse.ArgumentParser()
+    parser.add_argument(
+        "--mode",
+        choices=("run", "compare"),
+        default="run",
+        help=(
+            "run: single benchmark in this process. "
+            "compare: baseline then optimized, each in a fresh child process."
+        ),
+    )
+    parser.add_argument("--video_reference", required=True)
+    parser.add_argument("--model_id", default=_benchmark._DEFAULT_MODEL_ID)
+    parser.add_argument("--confidence", type=float, default=0.4)
+    parser.add_argument(
+        "--backend",
+        choices=("trt", "onnx", "torch"),
+        default="trt",
+        help="inference-models backend.",
+    )
+    parser.add_argument(
+        "--local_package",
+        default=None,
+        help=(
+            "Path to an on-disk model package directory (must contain "
+            "model_config.json). Skips registry fetch and cwd TRT discovery."
+        ),
+    )
+    parser.add_argument(
+        "--model_package_id",
+        default=None,
+        help=(
+            "Registry package id to download and pin (via inference-models cache). "
+            "Overrides auto-negotiation and any cwd TRT package discovery."
+        ),
+    )
+    parser.add_argument(
+        "--benchmark-profile",
+        default="run",
+        help="Label for a single run (compare mode sets baseline/optimized in children).",
+    )
+    parser.add_argument(
+        "--result-out",
+        default=None,
+        help="Optional JSON path for the benchmark result.",
+    )
+    args = parser.parse_args()
+
+    if args.local_package is not None and args.model_package_id is not None:
+        parser.error("--local_package and --model_package_id are mutually exclusive")
+
+    if args.mode == "compare":
+        do_compare(
+            video_reference=args.video_reference,
+            model_id=args.model_id,
+            confidence=args.confidence,
+            backend=args.backend,
+            model_package_id=args.model_package_id,
+            local_package=args.local_package,
+            result_out=args.result_out,
+        )
+        return
+
+    do_run(
+        video_reference=args.video_reference,
+        model_id=args.model_id,
+        confidence=args.confidence,
+        backend=args.backend,
+        model_package_id=args.model_package_id,
+        local_package=args.local_package,
+        benchmark_profile=args.benchmark_profile,
+        result_out=args.result_out,
+    )
+
 
 _benchmark.sink = sink
 _benchmark.do_run = do_run
 _benchmark.do_compare = do_compare
+_benchmark.main = main
 
 
 if __name__ == "__main__":
-    _benchmark.main()
+    main()
