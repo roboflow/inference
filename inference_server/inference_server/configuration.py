@@ -10,6 +10,7 @@ or because two call sites use different defaults) are exposed as
 the ``os.environ.get`` so the read happens at the right moment.
 """
 
+import math
 import os
 
 from inference_models.utils.environment import (
@@ -73,6 +74,19 @@ SERVER_PORT_DEFAULT = 8000
 APP_PORT_DEFAULT = 8000
 PORT_ENV = "PORT"
 NUM_WORKERS = get_integer_from_env("NUM_WORKERS", default=4)
+# Per-worker uvicorn in-flight cap. Bodies are buffered before SHM admission, so
+# uncapped concurrency × payload size is what OOMs the server under load. Default
+# spreads the slot pool across workers (+25% slack); requests past it get an
+# immediate 503 before the body is read. Override with INFERENCE_LIMIT_CONCURRENCY.
+LIMIT_CONCURRENCY_ENV = "INFERENCE_LIMIT_CONCURRENCY"
+
+
+def limit_concurrency(n_slots: int, workers: int) -> int:
+    override = os.environ.get(LIMIT_CONCURRENCY_ENV)
+    if override:
+        return int(override)
+    # 125% of this worker's slot share (floored)
+    return max(1, math.ceil(n_slots / max(1, workers)) * 5 // 4)
 SSL_CERTFILE = os.environ.get("SSL_CERTFILE")
 SSL_KEYFILE = os.environ.get("SSL_KEYFILE")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "warning").lower()
