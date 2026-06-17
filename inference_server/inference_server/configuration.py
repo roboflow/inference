@@ -25,6 +25,11 @@ INFER_TIMEOUT_S = get_float_from_env("INFERENCE_INFER_TIMEOUT_S", default=30.0)
 ALLOC_TIMEOUT_S = get_float_from_env("INFERENCE_ALLOC_TIMEOUT_S", default=2.0)
 ENSURE_CACHE_TTL_S = get_float_from_env("INFERENCE_ENSURE_CACHE_TTL_S", default=5.0)
 SHM_ADMISSION = get_boolean_from_env("INFERENCE_SHM_ADMISSION", default=True)
+# Optional resolution reject gate: reject images whose header dims exceed this
+# megapixel cap before alloc/SHM-write/decode. 0 = disabled (never reject).
+MAX_DECODED_MEGAPIXELS = get_float_from_env(
+    "INFERENCE_MAX_DECODED_MEGAPIXELS", default=0.0
+)
 
 # ── MMP connection (state.init_from_env, re-read per worker) ──────────────
 INFERENCE_MMP_ADDR_ENV = "INFERENCE_MMP_ADDR"
