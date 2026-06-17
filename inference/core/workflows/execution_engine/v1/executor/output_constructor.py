@@ -1,5 +1,6 @@
 import traceback
 from collections import defaultdict
+from concurrent.futures import Future
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 import numpy as np
@@ -63,6 +64,7 @@ def construct_workflow_output(
         if output.name in batch_oriented_outputs:
             continue
         data_piece = execution_data_manager.get_non_batch_data(selector=output.selector)
+        data_piece = _maybe_resolve_output_futures(data_piece)
         if serialize_results:
             output_kind = kinds_of_output_nodes[output.name]
             data_piece = serialize_data_piece(
@@ -169,6 +171,7 @@ def create_outputs_for_input_induced_lineages(
             indices=indices,
         )
         for index, data_piece in zip(indices, data):
+            data_piece = _maybe_resolve_output_futures(data_piece)
             if (
                 name in outputs_requested_in_parent_coordinates
                 and data_contains_sv_detections(data=data_piece)
@@ -263,6 +266,7 @@ def create_outputs_for_generated_lineage_outputs(
             indices=indices,
         )
         for index, data_piece in zip(indices, data):
+            data_piece = _maybe_resolve_output_futures(data_piece)
             if (
                 name in outputs_requested_in_parent_coordinates
                 and data_contains_sv_detections(data=data_piece)
@@ -310,6 +314,34 @@ def create_outputs_for_generated_lineage_outputs(
                 element = array[i]
             results[name].append(element)
     return results
+
+
+def _resolve_output_futures(value: Any) -> Any:
+    if isinstance(value, Future):
+        return _resolve_output_futures(value.result())
+    if isinstance(value, list):
+        return [_resolve_output_futures(element) for element in value]
+    if isinstance(value, tuple):
+        return tuple(_resolve_output_futures(element) for element in value)
+    if isinstance(value, dict):
+        return {key: _resolve_output_futures(element) for key, element in value.items()}
+    return value
+
+
+def _output_contains_future(value: Any) -> bool:
+    if isinstance(value, Future):
+        return True
+    if isinstance(value, (list, tuple)):
+        return any(_output_contains_future(element) for element in value)
+    if isinstance(value, dict):
+        return any(_output_contains_future(element) for element in value.values())
+    return False
+
+
+def _maybe_resolve_output_futures(value: Any) -> Any:
+    if not _output_contains_future(value):
+        return value
+    return _resolve_output_futures(value)
 
 
 def create_array(indices: np.ndarray) -> Optional[list]:

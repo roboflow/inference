@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -56,10 +57,64 @@ CANDIDATE_FLAGS_ON = {
     "ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND": "true",
 }
 _VOLATILE_OUTPUT_KEYS = {"detection_id", "inference_id"}
-BASE_WORKFLOW_DEFINITION = {
-    "version": "1.0",
-    "inputs": [{"type": "WorkflowImage", "name": "image"}],
-    "steps": [
+
+
+@dataclass(frozen=True)
+class WorkflowParityCase:
+    workflow_definition: dict[str, Any]
+    image_count: int
+    image_size: int
+    pass_image_list: bool
+    description: str
+
+
+def _segmentation_step(
+    images_selector: str,
+    *,
+    custom_confidence: float = CONFIDENCE,
+    enforce_dense_masks_in_inference_models: bool = False,
+    class_filter: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    step = {
+        "type": "roboflow_core/roboflow_instance_segmentation_model@v3",
+        "name": "segmentation",
+        "images": images_selector,
+        "model_id": LOCAL_WORKFLOW_MODEL_ID,
+        "confidence_mode": "custom",
+        "custom_confidence": custom_confidence,
+        "iou_threshold": 0.3,
+        "max_detections": 300,
+        "max_candidates": 3000,
+        "class_agnostic_nms": False,
+        "mask_decode_mode": "accurate",
+        "tradeoff_factor": 0.0,
+        "disable_active_learning": True,
+        "enforce_dense_masks_in_inference_models": (
+            enforce_dense_masks_in_inference_models
+        ),
+    }
+    if class_filter is not None:
+        step["class_filter"] = class_filter
+    return step
+
+
+def _workflow_definition(steps: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowImage", "name": "image"}],
+        "steps": steps,
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "predictions",
+                "selector": "$steps.segmentation.predictions",
+            }
+        ],
+    }
+
+
+SLICED_WORKFLOW_DEFINITION = _workflow_definition(
+    steps=[
         {
             "type": "roboflow_core/image_slicer@v2",
             "name": "image_slicer",
@@ -69,30 +124,66 @@ BASE_WORKFLOW_DEFINITION = {
             "overlap_ratio_width": 0.0,
             "overlap_ratio_height": 0.0,
         },
-        {
-            "type": "roboflow_core/roboflow_instance_segmentation_model@v3",
-            "name": "segmentation",
-            "images": "$steps.image_slicer.slices",
-            "model_id": LOCAL_WORKFLOW_MODEL_ID,
-            "confidence_mode": "custom",
-            "custom_confidence": CONFIDENCE,
-            "iou_threshold": 0.3,
-            "max_detections": 300,
-            "max_candidates": 3000,
-            "class_agnostic_nms": False,
-            "mask_decode_mode": "accurate",
-            "tradeoff_factor": 0.0,
-            "disable_active_learning": True,
-            "enforce_dense_masks_in_inference_models": False,
-        },
-    ],
-    "outputs": [
-        {
-            "type": "JsonField",
-            "name": "predictions",
-            "selector": "$steps.segmentation.predictions",
-        }
-    ],
+        _segmentation_step(
+            images_selector="$steps.image_slicer.slices",
+            enforce_dense_masks_in_inference_models=False,
+        ),
+    ]
+)
+DIRECT_RLE_WORKFLOW_DEFINITION = _workflow_definition(
+    steps=[
+        _segmentation_step(
+            images_selector="$inputs.image",
+            enforce_dense_masks_in_inference_models=False,
+        )
+    ]
+)
+DIRECT_DENSE_WORKFLOW_DEFINITION = _workflow_definition(
+    steps=[
+        _segmentation_step(
+            images_selector="$inputs.image",
+            enforce_dense_masks_in_inference_models=True,
+        )
+    ]
+)
+DIRECT_CLASS_FILTER_WORKFLOW_DEFINITION = _workflow_definition(
+    steps=[
+        _segmentation_step(
+            images_selector="$inputs.image",
+            enforce_dense_masks_in_inference_models=False,
+            class_filter=["car", "truck", "bus"],
+        )
+    ]
+)
+WORKFLOW_PARITY_CASES = {
+    "sliced_rle_batch": WorkflowParityCase(
+        workflow_definition=SLICED_WORKFLOW_DEFINITION,
+        image_count=IMAGE_COUNT,
+        image_size=IMAGE_SIZE,
+        pass_image_list=True,
+        description="Sliced 4-image workflow; each image fans out to 640px slices.",
+    ),
+    "direct_rle_single": WorkflowParityCase(
+        workflow_definition=DIRECT_RLE_WORKFLOW_DEFINITION,
+        image_count=1,
+        image_size=IMAGE_SIZE,
+        pass_image_list=False,
+        description="Single-image instance segmentation with RLE masks.",
+    ),
+    "direct_dense_single": WorkflowParityCase(
+        workflow_definition=DIRECT_DENSE_WORKFLOW_DEFINITION,
+        image_count=1,
+        image_size=640,
+        pass_image_list=False,
+        description="Single-image instance segmentation with dense masks.",
+    ),
+    "direct_class_filter_single": WorkflowParityCase(
+        workflow_definition=DIRECT_CLASS_FILTER_WORKFLOW_DEFINITION,
+        image_count=1,
+        image_size=IMAGE_SIZE,
+        pass_image_list=False,
+        description="Single-image RLE instance segmentation with class filtering.",
+    ),
 }
 
 
@@ -319,9 +410,15 @@ def _load_video_frames_as_square_images(
     return images
 
 
-def _build_workflow(model_id: str) -> dict:
-    workflow_definition = copy.deepcopy(BASE_WORKFLOW_DEFINITION)
-    workflow_definition["steps"][1]["model_id"] = model_id
+def _build_workflow(model_id: str, workflow_case: str) -> dict:
+    case = WORKFLOW_PARITY_CASES[workflow_case]
+    workflow_definition = copy.deepcopy(case.workflow_definition)
+    for step in workflow_definition["steps"]:
+        if step.get("name") == "segmentation":
+            step["model_id"] = model_id
+            break
+    else:
+        raise ValueError(f"Workflow case {workflow_case!r} has no segmentation step")
     return workflow_definition
 
 
@@ -593,6 +690,7 @@ def do_run(
     out_path: str,
     repo_root: str,
     label: str,
+    workflow_case: str,
     video_reference: str,
     image_count: int,
     image_size: int,
@@ -607,6 +705,7 @@ def do_run(
     )
     model_id, cleanup_model_bundle = _prepare_local_workflow_model_bundle(repo_path)
     try:
+        case = WORKFLOW_PARITY_CASES[workflow_case]
         from inference.core.managers.base import ModelManager
         from inference.core.registries.roboflow import RoboflowModelRegistry
         from inference.core.workflows.core_steps.common.entities import (
@@ -615,7 +714,10 @@ def do_run(
         from inference.core.workflows.execution_engine.core import ExecutionEngine
         from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
-        workflow_definition = _build_workflow(model_id=model_id)
+        workflow_definition = _build_workflow(
+            model_id=model_id,
+            workflow_case=workflow_case,
+        )
         model_manager = ModelManager(
             model_registry=RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
         )
@@ -633,12 +735,15 @@ def do_run(
             image_count=image_count,
             image_size=image_size,
         )
+        workflow_image_input = images if case.pass_image_list else images[0]
         result = execution_engine.run(
-            runtime_parameters={"image": images},
+            runtime_parameters={"image": workflow_image_input},
             serialize_results=True,
         )
         payload = {
             "label": label,
+            "workflow_case": workflow_case,
+            "workflow_description": case.description,
             "repo_root": str(repo_path),
             "git_head": _safe_git_output(repo_path, "rev-parse", "--short", "HEAD"),
             "git_describe": _safe_git_output(
@@ -662,7 +767,8 @@ def do_run(
         print(
             "[run] "
             f"label={label} repo_root={repo_path} head={payload['git_head']} "
-            f"images={image_count} image_size={image_size} out={out_path}",
+            f"workflow_case={workflow_case} images={image_count} "
+            f"image_size={image_size} out={out_path}",
             flush=True,
         )
     finally:
@@ -712,9 +818,10 @@ def do_compare(
 
     print()
     print(
-        f"==== RF-DETR sliced workflow parity: {base_payload['label']} vs "
+        f"==== RF-DETR workflow parity: {base_payload['label']} vs "
         f"{candidate_payload['label']} ===="
     )
+    print(f"  workflow case                : {base_payload.get('workflow_case')}")
     print(f"  base repo                    : {base_payload['git_describe']}")
     print(f"  candidate repo               : {candidate_payload['git_describe']}")
     print(f"  prediction containers        : {stats['prediction_containers']}")
@@ -761,6 +868,7 @@ def _run_child(
     repo_root: Path,
     label: str,
     out_path: str,
+    workflow_case: str,
     video_reference: str,
     image_count: int,
     image_size: int,
@@ -783,6 +891,8 @@ def _run_child(
         label,
         "--out",
         out_path,
+        "--workflow-case",
+        workflow_case,
         "--video-reference",
         video_reference,
         "--image-count",
@@ -793,6 +903,7 @@ def _run_child(
     print(
         "\n---- child ----\n"
         f"  label={label}\n"
+        f"  workflow_case={workflow_case}\n"
         f"  repo_root={repo_root}\n"
         f"  out={out_path}\n"
         f"  flags={flags}",
@@ -806,6 +917,7 @@ def _run_driver(
     candidate_ref: str,
     base_out: str,
     candidate_out: str,
+    workflow_case: str,
     video_reference: str,
     image_count: int,
     image_size: int,
@@ -827,6 +939,7 @@ def _run_driver(
             repo_root=Path(base_target["repo_root"]),
             label=f"{base_target['label']} flags-off",
             out_path=base_out,
+            workflow_case=workflow_case,
             video_reference=video_reference,
             image_count=image_count,
             image_size=image_size,
@@ -836,6 +949,7 @@ def _run_driver(
             repo_root=Path(candidate_target["repo_root"]),
             label=f"{candidate_target['label']} flags-on",
             out_path=candidate_out,
+            workflow_case=workflow_case,
             video_reference=video_reference,
             image_count=image_count,
             image_size=image_size,
@@ -855,18 +969,43 @@ def _run_driver(
     )
 
 
+def _selected_workflow_cases() -> set[str]:
+    selected_cases = os.getenv("RFDETR_WORKFLOW_PARITY_CASES")
+    if not selected_cases:
+        return set(WORKFLOW_PARITY_CASES)
+    result = {case.strip() for case in selected_cases.split(",") if case.strip()}
+    unknown = result - set(WORKFLOW_PARITY_CASES)
+    if unknown:
+        raise ValueError(f"Unknown workflow parity cases: {sorted(unknown)}")
+    return result
+
+
 @pytest.mark.slow
 @pytest.mark.workflows
+@pytest.mark.parametrize("workflow_case", list(WORKFLOW_PARITY_CASES))
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_RFDETR_SLICED_WORKFLOW_MAIN_PARITY_TEST", True)),
-    reason="Skipping RF-DETR sliced workflow parity test",
+    reason="Skipping RF-DETR workflow parity test",
 )
-def test_rfdetr_sliced_workflow_optimized_flow_matches_main_branch() -> None:
+def test_rfdetr_workflow_optimized_flow_matches_main_branch(
+    workflow_case: str,
+) -> None:
+    if workflow_case not in _selected_workflow_cases():
+        pytest.skip(f"Workflow case {workflow_case!r} not selected")
+    case = WORKFLOW_PARITY_CASES[workflow_case]
+    image_count = int(
+        os.getenv("RFDETR_WORKFLOW_PARITY_IMAGE_COUNT", str(case.image_count))
+    )
+    if not case.pass_image_list:
+        image_count = 1
+    image_size = int(
+        os.getenv("RFDETR_WORKFLOW_PARITY_IMAGE_SIZE", str(case.image_size))
+    )
     base_out = Path(
-        tempfile.mkstemp(prefix="rfdetr-sliced-workflow-base-", suffix=".pkl")[1]
+        tempfile.mkstemp(prefix=f"rfdetr-{workflow_case}-base-", suffix=".pkl")[1]
     )
     candidate_out = Path(
-        tempfile.mkstemp(prefix="rfdetr-sliced-workflow-candidate-", suffix=".pkl")[1]
+        tempfile.mkstemp(prefix=f"rfdetr-{workflow_case}-candidate-", suffix=".pkl")[1]
     )
     try:
         _run_driver(
@@ -876,16 +1015,13 @@ def test_rfdetr_sliced_workflow_optimized_flow_matches_main_branch() -> None:
             ),
             base_out=str(base_out),
             candidate_out=str(candidate_out),
+            workflow_case=workflow_case,
             video_reference=os.getenv(
                 "RFDETR_WORKFLOW_PARITY_VIDEO_REFERENCE",
                 VIDEO_REFERENCE,
             ),
-            image_count=int(
-                os.getenv("RFDETR_WORKFLOW_PARITY_IMAGE_COUNT", str(IMAGE_COUNT))
-            ),
-            image_size=int(
-                os.getenv("RFDETR_WORKFLOW_PARITY_IMAGE_SIZE", str(IMAGE_SIZE))
-            ),
+            image_count=image_count,
+            image_size=image_size,
             float_atol=float(os.getenv("RFDETR_WORKFLOW_PARITY_FLOAT_ATOL", "1e-4")),
             min_box_iou=float(os.getenv("RFDETR_WORKFLOW_PARITY_MIN_BOX_IOU", "0.5")),
             max_score_delta=float(
@@ -917,15 +1053,27 @@ def main() -> None:
     parser.add_argument("--candidate", default=DEFAULT_CANDIDATE_OUT)
     parser.add_argument("--base-ref", default="main")
     parser.add_argument("--candidate-ref", default="working-tree")
+    parser.add_argument(
+        "--workflow-case",
+        choices=tuple(WORKFLOW_PARITY_CASES),
+        default="sliced_rle_batch",
+    )
     parser.add_argument("--video-reference", default=VIDEO_REFERENCE)
-    parser.add_argument("--image-count", type=int, default=IMAGE_COUNT)
-    parser.add_argument("--image-size", type=int, default=IMAGE_SIZE)
+    parser.add_argument("--image-count", type=int)
+    parser.add_argument("--image-size", type=int)
     parser.add_argument("--float-atol", type=float, default=1e-4)
     parser.add_argument("--min-box-iou", type=float, default=0.5)
     parser.add_argument("--max-score-delta", type=float, default=0.25)
     parser.add_argument("--min-mask-iou", type=float, default=0.95)
     parser.add_argument("--keep-worktrees", action="store_true")
     args = parser.parse_args()
+    case = WORKFLOW_PARITY_CASES[args.workflow_case]
+    if args.image_count is None:
+        args.image_count = case.image_count
+    if not case.pass_image_list:
+        args.image_count = 1
+    if args.image_size is None:
+        args.image_size = case.image_size
 
     if args.mode == "run":
         if not args.out:
@@ -934,6 +1082,7 @@ def main() -> None:
             out_path=args.out,
             repo_root=args.repo_root or str(SCRIPT_REPO_ROOT),
             label=args.label or "run",
+            workflow_case=args.workflow_case,
             video_reference=args.video_reference,
             image_count=args.image_count,
             image_size=args.image_size,
@@ -955,6 +1104,7 @@ def main() -> None:
         candidate_ref=args.candidate_ref,
         base_out=args.base,
         candidate_out=args.candidate,
+        workflow_case=args.workflow_case,
         video_reference=args.video_reference,
         image_count=args.image_count,
         image_size=args.image_size,

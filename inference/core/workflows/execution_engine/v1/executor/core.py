@@ -42,6 +42,7 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
 from inference.core.workflows.execution_engine.v1.compiler.utils import (
+    construct_step_selector,
     get_last_chunk_of_selector,
 )
 from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
@@ -130,29 +131,85 @@ def _run_workflow(
     execution_coordinator = ParallelStepExecutionCoordinator.init(
         execution_graph=workflow.execution_graph,
     )
-    next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
-    while next_steps is not None:
-        execute_steps(
-            next_steps=next_steps,
-            workflow=workflow,
-            execution_data_manager=execution_data_manager,
-            max_concurrent_steps=max_concurrent_steps,
-            profiler=profiler,
-            executor=executor,
-            step_error_handler=step_error_handler,
-        )
+    try:
         next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
-    with profiler.profile_execution_phase(
-        name="outputs_construction",
-        categories=["execution_engine_operation"],
-    ):
-        return construct_workflow_output(
-            workflow_outputs=workflow.workflow_definition.outputs,
-            execution_graph=workflow.execution_graph,
-            execution_data_manager=execution_data_manager,
-            serialize_results=serialize_results,
-            kinds_serializers=kinds_serializers,
-        )
+        while next_steps is not None:
+            execute_steps(
+                next_steps=next_steps,
+                workflow=workflow,
+                execution_data_manager=execution_data_manager,
+                max_concurrent_steps=max_concurrent_steps,
+                profiler=profiler,
+                executor=executor,
+                step_error_handler=step_error_handler,
+            )
+            next_steps = execution_coordinator.get_steps_to_execute_next(
+                profiler=profiler
+            )
+        with profiler.profile_execution_phase(
+            name="stream_pipeline_flush",
+            categories=["execution_engine_operation"],
+        ):
+            flush_stream_pipeline_outputs(
+                workflow=workflow,
+                execution_data_manager=execution_data_manager,
+            )
+        with profiler.profile_execution_phase(
+            name="outputs_construction",
+            categories=["execution_engine_operation"],
+        ):
+            return construct_workflow_output(
+                workflow_outputs=workflow.workflow_definition.outputs,
+                execution_graph=workflow.execution_graph,
+                execution_data_manager=execution_data_manager,
+                serialize_results=serialize_results,
+                kinds_serializers=kinds_serializers,
+            )
+    finally:
+        close_stream_pipelines(workflow=workflow)
+
+
+def flush_stream_pipeline_outputs(
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+) -> None:
+    for step_name, step in workflow.steps.items():
+        flush_fn = getattr(step.step, "flush_stream_pipeline_outputs", None)
+        if not callable(flush_fn):
+            continue
+        step_selector = construct_step_selector(step_name=step_name)
+        flushed_outputs = flush_fn()
+        for indices, outputs in flushed_outputs:
+            if not outputs:
+                continue
+            if execution_data_manager.is_step_simd(step_selector=step_selector):
+                execution_data_manager.register_simd_step_output(
+                    step_selector=step_selector,
+                    indices=indices,
+                    outputs=outputs,
+                )
+                continue
+            if len(outputs) != 1:
+                raise StepExecutionError(
+                    block_id=step_name,
+                    block_type=step.manifest.type,
+                    public_message=(
+                        f"Flushed stream pipeline for non-SIMD step {step_name} "
+                        f"returned {len(outputs)} outputs."
+                    ),
+                    context="workflow_execution | stream_pipeline_flush",
+                )
+            execution_data_manager.register_non_simd_step_output(
+                step_selector=step_selector,
+                output=outputs[0],
+            )
+
+
+def close_stream_pipelines(workflow: CompiledWorkflow) -> None:
+    for step in workflow.steps.values():
+        close_fn = getattr(step.step, "close_stream_pipeline", None)
+        if callable(close_fn):
+            close_fn()
 
 
 @execution_phase(
