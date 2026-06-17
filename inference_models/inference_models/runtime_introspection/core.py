@@ -220,12 +220,25 @@ def get_cuda_version() -> Optional[Version]:
         result = subprocess.run(
             "dpkg -l | grep cuda-cudart", shell=True, capture_output=True, text=True
         )
-        if result.returncode != 0:
-            return None
-        result_chunks = result.stdout.strip().split(os.linesep)[0].split()
-        return Version(result_chunks[2])
+        if result.returncode == 0:
+            result_chunks = result.stdout.strip().split(os.linesep)[0].split()
+            return Version(result_chunks[2])
     except Exception:
-        return None
+        pass
+    # Jetson/Tegra: CUDA is provided by the host BSP (mounted at runtime), not installed via
+    # dpkg, so `dpkg -l | grep cuda-cudart` finds nothing and the cudart probe above returns
+    # nothing. Fall back to the CUDA version PyTorch was built against, which is the effective
+    # CUDA runtime on these devices. Without this the x-ray reports cuda_version=None, which
+    # gets stamped into compiled TRT engine manifests as cudaVersion "None" -- an unparseable
+    # version that makes the engine undiscoverable, so the device silently serves ONNX.
+    try:
+        import torch
+
+        if torch.version.cuda:
+            return Version(torch.version.cuda)
+    except Exception:
+        pass
+    return None
 
 
 @cache
