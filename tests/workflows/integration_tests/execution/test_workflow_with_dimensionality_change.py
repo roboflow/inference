@@ -34,10 +34,18 @@ _TENSOR_ONLY = pytest.mark.skipif(
 
 
 def _native_parent_ids(detections) -> list:
-    """Read the per-box `parent_id` the tensor-native coordinates block writes into
-    `bboxes_metadata` (the native equivalent of sv `.data["parent_id"]`)."""
+    """Per-box `parent_id` for native detections, mirroring sv `.data["parent_id"]`.
+
+    The tensor-native coordinates block writes `parent_id` per-box into
+    `bboxes_metadata`; the raw native producer instead carries the crop's parent_id
+    once in per-image `image_metadata` (per-box holds only `detection_id`). So fall
+    back to the per-image value broadcast across boxes — this makes the own-side read
+    the real crop id (matching the numpy path) instead of a vacuous `None`."""
     bboxes_metadata = detections.bboxes_metadata or []
-    return [entry.get(PARENT_ID_KEY) for entry in bboxes_metadata]
+    image_parent_id = (detections.image_metadata or {}).get(PARENT_ID_KEY)
+    return [
+        entry.get(PARENT_ID_KEY) or image_parent_id for entry in bboxes_metadata
+    ]
 
 DETECTIONS_TO_PARENT_COORDINATES_BATCH_VARIANT_WORKFLOW = {
     "version": "1.0",
@@ -248,9 +256,9 @@ def test_workflow_with_detections_coordinates_transformation_in_batch_variant_te
         own_parent_ids = _native_parent_ids(own_coords_detection)
         original_parent_ids = _native_parent_ids(original_coords_detection)
         assert all(
-            own != original
+            own is not None and own != original
             for own, original in zip(own_parent_ids, original_parent_ids)
-        ), "Expected parent_id to be modified"
+        ), "Expected parent_id to be modified (own-side crop id present and differing)"
         assert original_parent_ids == ["image.[0]"] * len(
             original_coords_detection
         ), "Expected parent of each bounding box to point into original input image instead of crop ID"
@@ -264,9 +272,9 @@ def test_workflow_with_detections_coordinates_transformation_in_batch_variant_te
         own_parent_ids = _native_parent_ids(own_coords_detection)
         original_parent_ids = _native_parent_ids(original_coords_detection)
         assert all(
-            own != original
+            own is not None and own != original
             for own, original in zip(own_parent_ids, original_parent_ids)
-        ), "Expected parent_id to be modified"
+        ), "Expected parent_id to be modified (own-side crop id present and differing)"
         assert original_parent_ids == ["image.[1]"] * len(
             original_coords_detection
         ), "Expected parent of each bounding box to point into original input image instead of crop ID"
@@ -479,9 +487,9 @@ def test_workflow_with_detections_coordinates_transformation_in_non_batch_varian
         own_parent_ids = _native_parent_ids(own_coords_detection)
         original_parent_ids = _native_parent_ids(original_coords_detection)
         assert all(
-            own != original
+            own is not None and own != original
             for own, original in zip(own_parent_ids, original_parent_ids)
-        ), "Expected parent_id to be modified"
+        ), "Expected parent_id to be modified (own-side crop id present and differing)"
         assert original_parent_ids == ["image.[0]"] * len(
             original_coords_detection
         ), "Expected parent of each bounding box to point into original input image instead of crop ID"
@@ -495,9 +503,9 @@ def test_workflow_with_detections_coordinates_transformation_in_non_batch_varian
         own_parent_ids = _native_parent_ids(own_coords_detection)
         original_parent_ids = _native_parent_ids(original_coords_detection)
         assert all(
-            own != original
+            own is not None and own != original
             for own, original in zip(own_parent_ids, original_parent_ids)
-        ), "Expected parent_id to be modified"
+        ), "Expected parent_id to be modified (own-side crop id present and differing)"
         assert original_parent_ids == ["image.[1]"] * len(
             original_coords_detection
         ), "Expected parent of each bounding box to point into original input image instead of crop ID"
