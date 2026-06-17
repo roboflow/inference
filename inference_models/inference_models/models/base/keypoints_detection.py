@@ -84,11 +84,7 @@ class KeyPoints:
             kwargs["confidence"] = confidence_array
         else:
             kwargs["keypoint_confidence"] = confidence_array
-        return sv.KeyPoints(
-            xy=self.xy.cpu().numpy(),
-            class_id=self.class_id.cpu().numpy(),
-            confidence=self.confidence.cpu().numpy(),
-        )
+        return sv.KeyPoints(**kwargs)
 
 
 class KeyPointsDetectionModel(
