@@ -412,7 +412,10 @@ def test_rename_detections_for_instance_segmentation_tensor_native() -> None:
     assert isinstance(result, NativeInstanceDetections)
     assert result.xyxy.tolist() == [[0, 1, 2, 3], [0, 1, 2, 3]], "Expected no to change"
     assert result.class_id.tolist() == [0, 1], "Expected to change with mapping"
-    assert _resolved_class_names(result) == ["A", "B"], "Expected to change with mapping"
+    assert _resolved_class_names(result) == [
+        "A",
+        "B",
+    ], "Expected to change with mapping"
     assert result.mask.sum(dim=(1, 2)).cpu().numpy().tolist() == [
         3,
         5,

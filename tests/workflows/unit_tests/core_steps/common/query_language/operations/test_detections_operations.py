@@ -718,6 +718,4 @@ def test_picking_detections_by_parent_class_for_keypoints_tensor_native() -> Non
     # the KeyPoints component is reduced to the same instances, in the same order
     # (len() here is the KeyPoints.__len__ added alongside these tests).
     assert len(result_key_points) == 3
-    assert np.allclose(
-        result_key_points.xy[:, 0, 0].cpu().numpy(), [20.0, 10.0, 30.0]
-    )
+    assert np.allclose(result_key_points.xy[:, 0, 0].cpu().numpy(), [20.0, 10.0, 30.0])

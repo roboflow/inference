@@ -20,9 +20,7 @@ from inference.core.workflows.execution_engine.constants import (
     AREA_KEY_IN_SV_DETECTIONS,
     CLASS_NAMES_KEY,
 )
-from inference_models import (
-    ClassificationPrediction as NativeClassificationPrediction,
-)
+from inference_models import ClassificationPrediction as NativeClassificationPrediction
 from inference_models.models.base.object_detection import Detections as NativeDetections
 
 # PropertyDefinitionBlockV1 runs UQL operation chains internally, so under
@@ -308,9 +306,7 @@ def test_property_extraction_block_tensor_native() -> None:
 def _native_detections_for_property_extraction() -> NativeDetections:
     # mirrors the sv.Detections fixture used by the geometric parity tests
     return NativeDetections(
-        xyxy=torch.tensor(
-            [[10, 20, 30, 40], [30, 40, 50, 60]], dtype=torch.float32
-        ),
+        xyxy=torch.tensor([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=torch.float32),
         class_id=torch.tensor([0, 1], dtype=torch.long),
         confidence=torch.tensor([0.6, 0.4], dtype=torch.float32),
     )
@@ -321,7 +317,11 @@ def test_property_extraction_block_with_center_tensor_native() -> None:
     # given
     detections = _native_detections_for_property_extraction()
     operations = OperationsChain.model_validate(
-        {"operations": [{"type": "DetectionsPropertyExtract", "property_name": "center"}]}
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "center"}
+            ]
+        }
     ).operations
     step = PropertyDefinitionBlockV1()
 
@@ -337,7 +337,11 @@ def test_property_extraction_block_with_top_left_tensor_native() -> None:
     # given
     detections = _native_detections_for_property_extraction()
     operations = OperationsChain.model_validate(
-        {"operations": [{"type": "DetectionsPropertyExtract", "property_name": "top_left"}]}
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "top_left"}
+            ]
+        }
     ).operations
     step = PropertyDefinitionBlockV1()
 
@@ -353,7 +357,11 @@ def test_property_extraction_block_with_top_right_tensor_native() -> None:
     # given
     detections = _native_detections_for_property_extraction()
     operations = OperationsChain.model_validate(
-        {"operations": [{"type": "DetectionsPropertyExtract", "property_name": "top_right"}]}
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "top_right"}
+            ]
+        }
     ).operations
     step = PropertyDefinitionBlockV1()
 

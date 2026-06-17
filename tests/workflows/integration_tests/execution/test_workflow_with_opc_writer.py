@@ -25,10 +25,10 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.opc_writer.v1 import
     get_connection_manager,
     opc_connect_and_write_value,
 )
+from tests.workflows.integration_tests.execution.conftest import bool_env
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
-from tests.workflows.integration_tests.execution.conftest import bool_env
 
 WORKFLOW_OPC_WRITER = {
     "version": "1.0",

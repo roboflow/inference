@@ -16,8 +16,8 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
     execute_operations,
 )
 from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
+from inference_models import ClassificationPrediction as NativeClassificationPrediction
 from inference_models import (
-    ClassificationPrediction as NativeClassificationPrediction,
     MultiLabelClassificationPrediction as NativeMultiLabelClassificationPrediction,
 )
 
@@ -416,7 +416,9 @@ def test_classification_result_extraction_of_top_class_for_multi_class_classific
     None
 ):
     # given
-    operations = [{"type": "ClassificationPropertyExtract", "property_name": "top_class"}]
+    operations = [
+        {"type": "ClassificationPropertyExtract", "property_name": "top_class"}
+    ]
     prediction = NativeClassificationPrediction(
         class_id=torch.tensor([0], dtype=torch.long),
         confidence=torch.tensor([[0.6, 0.4]], dtype=torch.float32),
@@ -435,7 +437,9 @@ def test_classification_result_extraction_of_top_class_for_multi_label_classific
     None
 ):
     # given
-    operations = [{"type": "ClassificationPropertyExtract", "property_name": "top_class"}]
+    operations = [
+        {"type": "ClassificationPropertyExtract", "property_name": "top_class"}
+    ]
     prediction = NativeMultiLabelClassificationPrediction(
         class_ids=torch.tensor([0, 1], dtype=torch.long),
         confidence=torch.tensor([0.6, 0.4], dtype=torch.float32),
@@ -454,7 +458,9 @@ def test_classification_result_extraction_of_top_class_for_multi_label_classific
     None
 ):
     # given - no labels above threshold -> empty class_ids
-    operations = [{"type": "ClassificationPropertyExtract", "property_name": "top_class"}]
+    operations = [
+        {"type": "ClassificationPropertyExtract", "property_name": "top_class"}
+    ]
     prediction = NativeMultiLabelClassificationPrediction(
         class_ids=torch.tensor([], dtype=torch.long),
         confidence=torch.tensor([0.6, 0.4], dtype=torch.float32),
@@ -474,7 +480,10 @@ def test_classification_result_extraction_of_top_class_confidence_for_multi_clas
 ):
     # given - confidence is the full (bs, num_classes) softmax; top class is id 0
     operations = [
-        {"type": "ClassificationPropertyExtract", "property_name": "top_class_confidence"}
+        {
+            "type": "ClassificationPropertyExtract",
+            "property_name": "top_class_confidence",
+        }
     ]
     prediction = NativeClassificationPrediction(
         class_id=torch.tensor([0], dtype=torch.long),
@@ -494,7 +503,10 @@ def test_classification_result_extraction_of_top_class_confidence_for_multi_labe
 ):
     # given
     operations = [
-        {"type": "ClassificationPropertyExtract", "property_name": "top_class_confidence"}
+        {
+            "type": "ClassificationPropertyExtract",
+            "property_name": "top_class_confidence",
+        }
     ]
     prediction = NativeMultiLabelClassificationPrediction(
         class_ids=torch.tensor([], dtype=torch.long),
@@ -514,7 +526,10 @@ def test_classification_result_extraction_of_top_class_confidence_for_multi_labe
 ):
     # given - only label id 1 is above threshold
     operations = [
-        {"type": "ClassificationPropertyExtract", "property_name": "top_class_confidence"}
+        {
+            "type": "ClassificationPropertyExtract",
+            "property_name": "top_class_confidence",
+        }
     ]
     prediction = NativeMultiLabelClassificationPrediction(
         class_ids=torch.tensor([1], dtype=torch.long),
