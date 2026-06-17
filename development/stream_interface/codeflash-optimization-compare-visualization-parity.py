@@ -22,6 +22,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from threading import Lock
 from time import perf_counter
 from typing import Any
 
@@ -242,32 +243,43 @@ def _make_sink(
     records: list[dict],
     pipeline_holder: dict[str, Any],
 ):
+    records_lock = Lock()
+
     def sink(prediction, video_frame) -> None:
-        frame_id = getattr(video_frame, "frame_id", len(records) + 1)
-        prediction_payload = prediction if isinstance(prediction, dict) else {}
-        visual_value = prediction_payload.get("visualization")
-        visualization_path, missing_visualization = _save_visualization(
-            value=visual_value,
-            artifacts_dir=artifacts_dir,
-            frame_id=int(frame_id),
-            profile=profile,
-        )
-        records.append(
-            {
-                "frame_id": int(frame_id),
-                "predictions": _normalise_prediction_value(
-                    prediction_payload.get("predictions", prediction)
-                ),
-                "visualization_path": visualization_path,
-                "missing_visualization": missing_visualization,
-                "output_keys": (
-                    sorted(prediction_payload.keys())
-                    if isinstance(prediction_payload, dict)
-                    else []
-                ),
-            }
-        )
-        if len(records) >= max_frames:
+        with records_lock:
+            if len(records) >= max_frames:
+                pipeline = pipeline_holder.get("pipeline")
+                if pipeline is not None:
+                    pipeline.terminate()
+                return
+
+            frame_id = getattr(video_frame, "frame_id", len(records) + 1)
+            prediction_payload = prediction if isinstance(prediction, dict) else {}
+            visual_value = prediction_payload.get("visualization")
+            visualization_path, missing_visualization = _save_visualization(
+                value=visual_value,
+                artifacts_dir=artifacts_dir,
+                frame_id=int(frame_id),
+                profile=profile,
+            )
+            records.append(
+                {
+                    "frame_id": int(frame_id),
+                    "predictions": _normalise_prediction_value(
+                        prediction_payload.get("predictions", prediction)
+                    ),
+                    "visualization_path": visualization_path,
+                    "missing_visualization": missing_visualization,
+                    "output_keys": (
+                        sorted(prediction_payload.keys())
+                        if isinstance(prediction_payload, dict)
+                        else []
+                    ),
+                }
+            )
+            should_terminate = len(records) >= max_frames
+
+        if should_terminate:
             pipeline = pipeline_holder.get("pipeline")
             if pipeline is not None:
                 pipeline.terminate()
@@ -350,6 +362,7 @@ def do_run(
     pipeline.start()
     pipeline.join()
 
+    records = records[:max_frames]
     elapsed = perf_counter() - start_time if start_time is not None else 0.0
     fps = len(records) / elapsed if elapsed > 0 else 0.0
     result = {
