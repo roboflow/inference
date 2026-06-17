@@ -816,7 +816,15 @@ def _correct_mask_and_xyxy(
     polygons = sv.mask_to_polygons(mask)
     if not polygons:
         return None, np.zeros((4,), dtype=np.int32)
-    polygon = np.array(polygons, dtype=np.float32)
+    # ``sv.mask_to_polygons`` returns a list of contours; an instance mask with
+    # multiple disconnected components yields contours of differing point counts,
+    # so ``np.array(polygons, dtype=np.float32)`` would build a ragged
+    # (inhomogeneous) array and raise. Concatenate all contour points into a
+    # single ``(1, total_pts, 2)`` array — mirroring the single-contour shape
+    # the original ``np.array([single_poly])`` produced.
+    polygon = np.concatenate(
+        [np.asarray(p, dtype=np.float32) for p in polygons], axis=0
+    ).reshape(1, -1, 2)
     # https://docs.opencv.org/4.9.0/d2/de8/group__core__array.html#gad327659ac03e5fd6894b90025e6900a7
     corrected_polygon = cv.perspectiveTransform(
         src=polygon, m=perspective_transformer

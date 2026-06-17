@@ -1111,9 +1111,14 @@ else:
         StitchOCRDetectionsBlockV2,
     )
 
-from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
-    TrackClassLockBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
+        TrackClassLockBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.track_class_lock.v1_tensor import (
+        TrackClassLockBlockV1,
+    )
 
 # Visualizers
 if not ENABLE_TENSOR_DATA_REPRESENTATION:

@@ -212,6 +212,166 @@ def split_key_point_prediction(
     return None, prediction
 
 
+def _read_root_coordinates_shift(
+    image_metadata: Optional[dict],
+) -> Optional[Tuple[float, float]]:
+    """Return the ``(shift_x, shift_y)`` offset that maps this prediction's local
+    coordinates back to the root (workflow input) image, or ``None`` when no shift
+    is needed.
+
+    The offset is the crop origin recorded at
+    ``image_metadata[ROOT_PARENT_COORDINATES_KEY] = [left_top_x, left_top_y]`` by
+    ``build_native_image_metadata``. ``None`` is returned (a no-op) when the key is
+    absent or the shift is ``[0, 0]`` (the prediction is already root-anchored).
+    """
+    if not image_metadata:
+        return None
+    root_coordinates = image_metadata.get(ROOT_PARENT_COORDINATES_KEY)
+    if not root_coordinates:
+        return None
+    shift_x, shift_y = float(root_coordinates[0]), float(root_coordinates[1])
+    if shift_x == 0.0 and shift_y == 0.0:
+        return None
+    return shift_x, shift_y
+
+
+def _native_image_metadata_in_root_coordinates(image_metadata: dict) -> dict:
+    """Copy ``image_metadata`` and rewrite the lineage so it describes a
+    root-anchored prediction: the parent/root origin offsets collapse to ``[0, 0]``
+    and the reported image dimensions become the root-parent dimensions. Mirrors
+    the metadata rewrite that ``sv_detections_to_root_coordinates`` performs via
+    ``attach_parent_coordinates_to_detections`` (utils.py)."""
+    new_metadata = dict(image_metadata)
+    root_dimensions = new_metadata.get(ROOT_PARENT_DIMENSIONS_KEY)
+    if root_dimensions is not None:
+        new_metadata[IMAGE_DIMENSIONS_KEY] = list(root_dimensions)
+    new_metadata[PARENT_COORDINATES_KEY] = [0, 0]
+    new_metadata[ROOT_PARENT_COORDINATES_KEY] = [0, 0]
+    if ROOT_PARENT_ID_KEY in new_metadata:
+        new_metadata[PARENT_ID_KEY] = new_metadata[ROOT_PARENT_ID_KEY]
+    if root_dimensions is not None:
+        new_metadata[PARENT_DIMENSIONS_KEY] = list(root_dimensions)
+    return new_metadata
+
+
+def _shift_native_detections_to_root_coordinates(
+    detections: TensorNativeDetections,
+    shift_x: float,
+    shift_y: float,
+) -> TensorNativeDetections:
+    shift = torch.as_tensor(
+        [shift_x, shift_y, shift_x, shift_y],
+        dtype=detections.xyxy.dtype,
+        device=detections.xyxy.device,
+    )
+    shifted_xyxy = detections.xyxy + shift
+    image_metadata = (
+        _native_image_metadata_in_root_coordinates(detections.image_metadata)
+        if detections.image_metadata is not None
+        else None
+    )
+    bboxes_metadata = (
+        [dict(entry) for entry in detections.bboxes_metadata]
+        if detections.bboxes_metadata is not None
+        else None
+    )
+    if isinstance(detections, InstanceDetections):
+        return InstanceDetections(
+            xyxy=shifted_xyxy,
+            class_id=detections.class_id,
+            confidence=detections.confidence,
+            mask=detections.mask,
+            image_metadata=image_metadata,
+            bboxes_metadata=bboxes_metadata,
+        )
+    return Detections(
+        xyxy=shifted_xyxy,
+        class_id=detections.class_id,
+        confidence=detections.confidence,
+        image_metadata=image_metadata,
+        bboxes_metadata=bboxes_metadata,
+    )
+
+
+def _shift_native_key_points_to_root_coordinates(
+    key_points: KeyPoints,
+    shift_x: float,
+    shift_y: float,
+) -> KeyPoints:
+    shift = torch.as_tensor(
+        [shift_x, shift_y],
+        dtype=key_points.xy.dtype,
+        device=key_points.xy.device,
+    )
+    image_metadata = (
+        _native_image_metadata_in_root_coordinates(key_points.image_metadata)
+        if key_points.image_metadata is not None
+        else None
+    )
+    key_points_metadata = (
+        [dict(entry) for entry in key_points.key_points_metadata]
+        if key_points.key_points_metadata is not None
+        else None
+    )
+    return KeyPoints(
+        xy=key_points.xy + shift,
+        class_id=key_points.class_id,
+        confidence=key_points.confidence,
+        image_metadata=image_metadata,
+        key_points_metadata=key_points_metadata,
+    )
+
+
+def native_detections_to_root_coordinates(
+    prediction: TensorNativePrediction,
+) -> TensorNativePrediction:
+    """Shift a tensor-native prediction from its crop-local coordinates back to the
+    root (workflow input) image coordinates, returning a copy.
+
+    Reads the crop origin from
+    ``image_metadata[ROOT_PARENT_COORDINATES_KEY] = [shift_x, shift_y]`` and adds
+    ``[shift_x, shift_y, shift_x, shift_y]`` to ``xyxy`` (and ``[shift_x, shift_y]``
+    to keypoint ``xy``). The keypoint-detection tuple ``(KeyPoints, Detections)``
+    has both components shifted consistently. This is the tensor-native mirror of
+    ``sv_detections_to_root_coordinates`` (utils.py), used by the execution-engine
+    output constructor when an output is requested in PARENT coordinates.
+
+    No-op (the input is returned unchanged) when the prediction carries no root
+    offset — i.e. the key is absent or the shift is ``[0, 0]`` (already
+    root-anchored, e.g. a model run directly on the workflow input image).
+    """
+    if isinstance(prediction, tuple):
+        key_points, detections = prediction
+        shift = _read_root_coordinates_shift(
+            key_points.image_metadata if key_points is not None else None
+        )
+        if shift is None and detections is not None:
+            shift = _read_root_coordinates_shift(detections.image_metadata)
+        if shift is None:
+            return prediction
+        shift_x, shift_y = shift
+        shifted_key_points = (
+            _shift_native_key_points_to_root_coordinates(key_points, shift_x, shift_y)
+            if key_points is not None
+            else None
+        )
+        shifted_detections = (
+            _shift_native_detections_to_root_coordinates(detections, shift_x, shift_y)
+            if detections is not None
+            else None
+        )
+        return shifted_key_points, shifted_detections
+    if isinstance(prediction, KeyPoints):
+        shift = _read_root_coordinates_shift(prediction.image_metadata)
+        if shift is None:
+            return prediction
+        return _shift_native_key_points_to_root_coordinates(prediction, *shift)
+    shift = _read_root_coordinates_shift(prediction.image_metadata)
+    if shift is None:
+        return prediction
+    return _shift_native_detections_to_root_coordinates(prediction, *shift)
+
+
 def instance_mask_to_numpy(
     detections: InstanceDetections,
     index: int,
