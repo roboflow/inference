@@ -463,6 +463,11 @@ def sv_detections_to_root_coordinates(
         for keypoints in detections_copy[keypoints_key]:
             if len(keypoints):
                 keypoints += [shift_x, shift_y]
+    if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
+        polygon_shift = np.asarray([shift_x, shift_y])
+        detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] = (
+            detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] + polygon_shift
+        )
     if detections_copy.mask is not None:
         origin_mask_base = np.full((origin_height, origin_width), False)
         new_anchored_masks = np.array(
