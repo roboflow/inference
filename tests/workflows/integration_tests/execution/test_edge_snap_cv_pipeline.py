@@ -3,11 +3,34 @@ import copy
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference_models.models.base.instance_segmentation import (
+    InstanceDetections as NativeInstanceDetections,
+)
+
+# The edge-snap pipeline pipes a `segmentation` runtime input into `mask_edge_snap`.
+# Under ENABLE_TENSOR_DATA_REPRESENTATION that block accepts a tensor-native
+# `InstanceDetections`, not sv.Detections — so the two segmentation-feeding tests below
+# are split into `@_NUMPY_ONLY` (sv input) + `@_TENSOR_ONLY` (native input) parity pairs
+# asserting the same outputs. The preprocessing-only tests in this file feed no
+# segmentation and run unchanged in both modes.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="sv.Detections segmentation input; mask_edge_snap is native-only under "
+    "ENABLE_TENSOR_DATA_REPRESENTATION — see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
 
 WORKFLOW_WITH_CLASSICAL_CV_PREPROCESSING = {
     "version": "1.0",
@@ -359,6 +382,7 @@ def test_classical_cv_preprocessing_pipeline_all_intermediate_outputs(
     assert preprocessed.shape == original.shape
 
 
+@_NUMPY_ONLY
 def test_edge_snap_cv_pipeline_with_segmentation(
     model_manager: ModelManager,
 ) -> None:
@@ -421,6 +445,7 @@ def test_edge_snap_cv_pipeline_with_segmentation(
     assert refined_seg.mask is not None or len(refined_seg.mask) == 0
 
 
+@_NUMPY_ONLY
 def test_edge_snap_cv_pipeline_with_empty_segmentation(
     model_manager: ModelManager,
 ) -> None:
@@ -433,6 +458,115 @@ def test_edge_snap_cv_pipeline_with_empty_segmentation(
 
     # Create empty detections
     detections = sv.Detections.empty()
+
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_EDGE_SNAP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": test_image, "segmentation": detections},
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    assert "refined_segmentation" in result_dict
+    preprocessed = result_dict["preprocessed_image"].numpy_image
+
+    # Verify preprocessing still works
+    assert preprocessed.shape == test_image.shape
+    assert preprocessed.dtype == np.uint8
+
+
+# ---------------------------------------------------------------------------
+# Tensor-native parity variants (run only under ENABLE_TENSOR_DATA_REPRESENTATION):
+# same pipeline, but the segmentation runtime input is a native InstanceDetections.
+# ---------------------------------------------------------------------------
+
+
+@_TENSOR_ONLY
+def test_edge_snap_cv_pipeline_with_segmentation_tensor_native(
+    model_manager: ModelManager,
+) -> None:
+    """Edge snap pipeline with preprocessing + native InstanceDetections segmentation."""
+    # given - Create a test image with a synthetic object
+    test_image = np.ones((200, 200, 3), dtype=np.uint8) * 100
+    test_image[50:150, 50:150] = 150
+    np.random.seed(42)
+    noise = np.random.randint(-20, 20, (200, 200, 3), dtype=np.int16)
+    noisy_image = np.clip(test_image.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+
+    # Synthetic native segmentation with a single rectangular mask
+    mask = np.zeros((200, 200), dtype=np.uint8)
+    mask[50:150, 50:150] = 1
+
+    detections = NativeInstanceDetections(
+        xyxy=torch.tensor([[50, 50, 150, 150]], dtype=torch.float32),
+        confidence=torch.tensor([0.95], dtype=torch.float32),
+        class_id=torch.tensor([0], dtype=torch.long),
+        mask=torch.as_tensor(mask[np.newaxis, :, :], dtype=torch.bool),
+        image_metadata=None,
+    )
+
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_EDGE_SNAP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": noisy_image, "segmentation": detections},
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    assert "refined_segmentation" in result_dict
+    assert "preprocessed_image" in result_dict
+
+    refined_seg = result_dict["refined_segmentation"]
+    preprocessed = result_dict["preprocessed_image"].numpy_image
+
+    # Verify outputs
+    assert refined_seg is not None
+    assert preprocessed.shape == noisy_image.shape
+    assert preprocessed.dtype == np.uint8
+
+    # Verify that refined_segmentation has masks
+    assert hasattr(refined_seg, "mask")
+    assert refined_seg.mask is not None or len(refined_seg.mask) == 0
+
+
+@_TENSOR_ONLY
+def test_edge_snap_cv_pipeline_with_empty_segmentation_tensor_native(
+    model_manager: ModelManager,
+) -> None:
+    """Edge snap pipeline with empty native segmentation."""
+    # given - Create a simple test image
+    test_image = np.ones((150, 150, 3), dtype=np.uint8) * 120
+
+    # Empty native detections
+    detections = NativeInstanceDetections(
+        xyxy=torch.zeros((0, 4), dtype=torch.float32),
+        class_id=torch.zeros((0,), dtype=torch.long),
+        confidence=torch.zeros((0,), dtype=torch.float32),
+        mask=torch.zeros((0, 150, 150), dtype=torch.bool),
+        image_metadata=None,
+    )
 
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,

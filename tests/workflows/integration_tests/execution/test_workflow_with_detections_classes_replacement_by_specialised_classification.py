@@ -1,13 +1,43 @@
 import numpy as np
 import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the DetectionsClassesReplacement block and
+# the ObjectDetectionModel producer both emit a native inference_models.Detections (a
+# plain @dataclass of torch tensors) which has no sv `.data` / `__getitem__`, so the
+# sv-only `det["class_name"]` reads raise `'Detections' object is not subscriptable`.
+# The sv-shaped test below is skipped when the flag is on; the `*_tensor_native` parity
+# test (skipped when the flag is off) asserts the SAME semantic result by resolving
+# class names from `image_metadata[class_names]` keyed by each `class_id`.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason='det["class_name"] subscripting; output is native Detections under '
+    "ENABLE_TENSOR_DATA_REPRESENTATION — see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
+
+
+def _native_class_names(predictions) -> list:
+    """Resolve a native Detections' per-detection class names from its
+    `image_metadata[class_names]` map keyed by each `class_id` (the same resolution
+    the block performs on serialisation), mirroring sv `.data["class_name"]`."""
+    class_names_map = (predictions.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
+    class_id = predictions.class_id.detach().to("cpu").numpy()
+    return [class_names_map.get(int(cid), f"class_{int(cid)}") for cid in class_id]
 
 DETECTION_CLASSES_REPLACEMENT_WORKFLOW = {
     "version": "1.0",
@@ -77,6 +107,7 @@ object detection model.
     workflow_definition=DETECTION_CLASSES_REPLACEMENT_WORKFLOW,
     workflow_name_in_app="detections-classes-replacement",
 )
+@_NUMPY_ONLY
 def test_detection_plus_classification_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -152,6 +183,109 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
         "131.Wirehaired_pointing_griffon",
     ], "Expected classes to be changed"
     assert result[1]["original_predictions"]["class_name"].tolist() == [
+        "dog",
+        "dog",
+    ], "Expected classes not to be changed"
+    assert (
+        result[0]["predictions_with_replaced_classes"].xyxy
+        is not result[0]["original_predictions"].xyxy
+    ), "Expected copy of data to be created by step"
+    assert (
+        result[1]["predictions_with_replaced_classes"].xyxy
+        is not result[1]["original_predictions"].xyxy
+    ), "Expected copy of data to be created by step"
+    assert np.allclose(
+        result[0]["predictions_with_replaced_classes"].xyxy,
+        result[0]["original_predictions"].xyxy,
+    ), "Expected values of other fields in detections to be untouched"
+    assert np.allclose(
+        result[1]["predictions_with_replaced_classes"].xyxy,
+        result[1]["original_predictions"].xyxy,
+    ), "Expected values of other fields in detections to be untouched"
+
+
+@_TENSOR_ONLY
+def test_detection_plus_classification_workflow_when_minimal_valid_input_provided_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=DETECTION_CLASSES_REPLACEMENT_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image, dogs_image, crowd_image],
+        }
+    )
+
+    # then
+    # Under ENABLE_TENSOR_DATA_REPRESENTATION both `original_predictions` and
+    # `predictions_with_replaced_classes` are native inference_models.Detections
+    # (torch tensors, no sv `.data` / `__getitem__`). Per-box class names are
+    # resolved from `image_metadata[class_names]` keyed by `class_id`. Same
+    # semantic result as the sv `test_...minimal_valid_input_provided` above.
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 3, "Expected 3 element in the output for three input images"
+    assert set(result[0].keys()) == {
+        "original_predictions",
+        "predictions_with_replaced_classes",
+    }, "Expected all declared outputs to be delivered for first output"
+    assert set(result[1].keys()) == {
+        "original_predictions",
+        "predictions_with_replaced_classes",
+    }, "Expected all declared outputs to be delivered for second output"
+    assert set(result[2].keys()) == {
+        "original_predictions",
+        "predictions_with_replaced_classes",
+    }, "Expected all declared outputs to be delivered for third output"
+    assert (
+        len(result[0]["original_predictions"])
+        == len(result[0]["predictions_with_replaced_classes"])
+        == 2
+    ), "Expected 2 dogs detected for first image"
+    assert (
+        len(result[1]["original_predictions"])
+        == len(result[1]["predictions_with_replaced_classes"])
+        == 2
+    ), "Expected 2 dogs detected for second image"
+    assert (
+        len(result[2]["original_predictions"])
+        == len(result[2]["predictions_with_replaced_classes"])
+        == 0
+    ), "Expected 0 dogs detected for third image"
+    assert (
+        result[0]["predictions_with_replaced_classes"].confidence.tolist()
+        != result[0]["original_predictions"].confidence.tolist()
+    ), "Expected confidences to be altered"
+    assert (
+        result[0]["predictions_with_replaced_classes"].class_id.tolist()
+        != result[0]["original_predictions"].class_id.tolist()
+    ), "Expected class_id to be altered"
+    assert _native_class_names(result[0]["predictions_with_replaced_classes"]) == [
+        "116.Parson_russell_terrier",
+        "131.Wirehaired_pointing_griffon",
+    ], "Expected classes to be changed"
+    assert _native_class_names(result[0]["original_predictions"]) == [
+        "dog",
+        "dog",
+    ], "Expected classes not to be changed"
+    assert _native_class_names(result[1]["predictions_with_replaced_classes"]) == [
+        "116.Parson_russell_terrier",
+        "131.Wirehaired_pointing_griffon",
+    ], "Expected classes to be changed"
+    assert _native_class_names(result[1]["original_predictions"]) == [
         "dog",
         "dog",
     ], "Expected classes not to be changed"

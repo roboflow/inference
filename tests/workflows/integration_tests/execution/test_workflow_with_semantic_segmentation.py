@@ -2,15 +2,39 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference_models.models.base.instance_segmentation import (
+    InstanceDetections as NativeInstanceDetections,
+)
+from inference_models.models.base.types import InstancesRLEMasks
 
 SEMANTIC_SEGMENTATION_BLOCK_TYPES = [
     "roboflow_core/roboflow_semantic_segmentation_model@v1",
     "roboflow_core/roboflow_semantic_segmentation_model@v2",
 ]
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the loader swaps the numpy semantic
+# segmentation blocks for their `*_tensor` siblings, which emit a native
+# inference_models.InstanceDetections (per-class COCO RLE in InstancesRLEMasks)
+# instead of an sv.Detections with data["class_name"]/data["rle_mask"]. The
+# sv-based tests below are skipped when the flag is on; each has a
+# `*_tensor_native` parity test (skipped when the flag is off) that exercises the
+# same workflow and asserts the same semantic result on the native carrier.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="sv.Detections output; semantic-seg tensor sibling emits native "
+    "InstanceDetections — see *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
 
 
 def _build_semantic_segmentation_workflow(block_type: str) -> dict:
@@ -47,6 +71,7 @@ def _build_semantic_segmentation_workflow(block_type: str) -> dict:
     }
 
 
+@_NUMPY_ONLY
 @pytest.mark.parametrize("block_type", SEMANTIC_SEGMENTATION_BLOCK_TYPES)
 def test_semantic_segmentation_workflow_when_single_image_provided(
     model_manager: ModelManager,
@@ -98,6 +123,69 @@ def test_semantic_segmentation_workflow_when_single_image_provided(
     ), "Expected model_id output to match input"
 
 
+@_TENSOR_ONLY
+@pytest.mark.parametrize("block_type", SEMANTIC_SEGMENTATION_BLOCK_TYPES)
+def test_semantic_segmentation_workflow_when_single_image_provided_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+    block_type: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_semantic_segmentation_workflow(block_type),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": dogs_image},
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    assert set(result[0].keys()) == {
+        "predictions",
+        "model_id",
+    }, "Expected all declared outputs to be delivered"
+    detections = result[0]["predictions"]
+    assert isinstance(
+        detections, NativeInstanceDetections
+    ), "Expected predictions to be native InstanceDetections under tensor flag"
+    assert len(detections) > 0, "Expected at least one class detected"
+    assert (
+        detections.xyxy.shape[0] == len(detections)
+    ), "Expected one bounding box per detection"
+    assert detections.xyxy.shape[1] == 4, "Expected bounding boxes in xyxy format"
+    assert detections.class_id is not None, "Expected class IDs"
+    assert detections.confidence is not None, "Expected confidence scores"
+    assert isinstance(
+        detections.mask, InstancesRLEMasks
+    ), "Expected per-class RLE masks carrier for semantic segmentation"
+    rles = detections.mask.to_coco_rle_masks()
+    assert len(rles) == len(detections), "Expected one RLE mask per detection"
+    for rle in rles:
+        assert "size" in rle, "Expected 'size' key in RLE mask"
+        assert "counts" in rle, "Expected 'counts' key in RLE mask"
+    assert (
+        detections.bboxes_metadata is not None
+    ), "Expected per-box metadata carrying class names"
+    assert all(
+        "class" in m for m in detections.bboxes_metadata
+    ), "Expected class name under 'class' key in each box metadata"
+    assert (
+        result[0]["model_id"] == "deep-lab-v3-plus/2"
+    ), "Expected model_id output to match input"
+
+
+@_NUMPY_ONLY
 @pytest.mark.parametrize("block_type", SEMANTIC_SEGMENTATION_BLOCK_TYPES)
 def test_semantic_segmentation_workflow_when_batch_input_provided(
     model_manager: ModelManager,
@@ -136,6 +224,54 @@ def test_semantic_segmentation_workflow_when_batch_input_provided(
         assert (
             "rle_mask" in detections.data
         ), f"Expected rle_mask in detections data for image {i}"
+
+
+@_TENSOR_ONLY
+@pytest.mark.parametrize("block_type", SEMANTIC_SEGMENTATION_BLOCK_TYPES)
+def test_semantic_segmentation_workflow_when_batch_input_provided_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+    block_type: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_semantic_segmentation_workflow(block_type),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [dogs_image, dogs_image]},
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "Two images provided - two outputs expected"
+    for i in range(2):
+        detections = result[i]["predictions"]
+        assert isinstance(
+            detections, NativeInstanceDetections
+        ), f"Expected predictions for image {i} to be native InstanceDetections"
+        assert (
+            len(detections) > 0
+        ), f"Expected at least one class detected for image {i}"
+        assert isinstance(
+            detections.mask, InstancesRLEMasks
+        ), f"Expected per-class RLE masks carrier for image {i}"
+        rles = detections.mask.to_coco_rle_masks()
+        assert len(rles) == len(
+            detections
+        ), f"Expected one RLE mask per detection for image {i}"
+        for rle in rles:
+            assert "size" in rle, f"Expected 'size' key in RLE mask for image {i}"
+            assert "counts" in rle, f"Expected 'counts' key in RLE mask for image {i}"
 
 
 @pytest.mark.parametrize("block_type", SEMANTIC_SEGMENTATION_BLOCK_TYPES)
