@@ -1,5 +1,12 @@
 # Changelog
 
+## `0.29.3`
+
+### Fixed
+
+- Incompatibility with `supervision==0.29.0` due to init param in `sv.KeyPoints(...)`
+
+
 
 ## `0.29.2`
 
