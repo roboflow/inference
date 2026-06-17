@@ -1,11 +1,7 @@
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-<<<<<<< HEAD
-from typing import Deque, List, Literal, Optional, Type, Union
-=======
 from typing import Deque, List, Literal, Optional, Tuple, Type, Union
->>>>>>> codeflash-rfdetr-seg-optimization
 
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 
