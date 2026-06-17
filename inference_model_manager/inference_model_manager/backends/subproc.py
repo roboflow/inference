@@ -26,6 +26,7 @@ Input formats (both modes):
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import io
 import json
 import logging
@@ -164,6 +165,42 @@ def _to_bytes(raw_input: Any) -> bytes:
         np.save(buf, raw_input, allow_pickle=False)
         return buf.getvalue()
     return pickle.dumps(raw_input)
+
+
+# Resolved once on first result (in the worker); the parent stays torch-free.
+_torch = None
+
+
+def _tensors_to_numpy(result: Any) -> Any:
+    """Convert every torch.Tensor in a result to CPU numpy, in place.
+
+    Pickling numpy is ~10x faster than pickling torch tensors, and keeps CUDA
+    tensors off the wire so the receiver needs no GPU. Walks any result shape:
+    dataclass, list/tuple, dict, bare tensor; everything else passes through.
+    """
+    global _torch
+    if _torch is None:
+        import torch  # noqa: PLC0415
+
+        _torch = torch
+    Tensor = _torch.Tensor
+
+    def _walk(obj: Any) -> Any:
+        if isinstance(obj, Tensor):
+            return obj.detach().cpu().numpy()
+        if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+            for f in dataclasses.fields(obj):
+                setattr(obj, f.name, _walk(getattr(obj, f.name)))
+            return obj
+        if isinstance(obj, list):
+            return [_walk(x) for x in obj]
+        if isinstance(obj, tuple):
+            return tuple(_walk(x) for x in obj)
+        if isinstance(obj, dict):
+            return {k: _walk(v) for k, v in obj.items()}
+        return obj
+
+    return _walk(result)
 
 
 # ---------------------------------------------------------------------------
@@ -753,15 +790,11 @@ def _process_slots(
             n_err += 1
             continue
 
-        # Move tensors to CPU before pickle — result travels through SHM (CPU
-        # memory), so serialising with device='cuda' just forces the receiver
-        # to have a GPU for no reason.
+        # Tensors → CPU numpy before pickle: numpy pickles ~10x faster than torch
+        # tensors and keeps CUDA tensors off the wire (receiver needs no GPU).
         _w0 = time.monotonic() if _WPROF else 0.0  # DEBUGLOG
         try:
-            if hasattr(result, "xyxy"):
-                result.xyxy = result.xyxy.cpu()
-                result.confidence = result.confidence.cpu()
-                result.class_id = result.class_id.cpu()
+            result = _tensors_to_numpy(result)
             _w1 = time.monotonic() if _WPROF else 0.0  # DEBUGLOG
             data = pickle.dumps(result)
             _w2 = time.monotonic() if _WPROF else 0.0  # DEBUGLOG
