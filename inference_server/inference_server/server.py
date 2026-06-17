@@ -246,6 +246,7 @@ def main() -> None:
         host=host,
         port=port,
         workers=workers,
+        limit_concurrency=configuration.limit_concurrency(n_slots, workers),
         loop="uvloop",
         http="httptools",
         log_level=log_level,
