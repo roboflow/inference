@@ -1,3 +1,4 @@
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Generic, List, Optional, Tuple, Union
@@ -13,6 +14,9 @@ from inference_models.models.base.types import (
     RawPrediction,
 )
 
+_KEYPOINTS_ACCEPTS_CONFIDENCE = (
+    "confidence" in inspect.signature(sv.KeyPoints).parameters
+)
 
 @dataclass
 class KeyPoints:
@@ -71,11 +75,16 @@ class KeyPoints:
         See Also:
             - Supervision documentation: https://supervision.roboflow.com
         """
-        return sv.KeyPoints(
-            xy=self.xy.cpu().numpy(),
-            class_id=self.class_id.cpu().numpy(),
-            confidence=self.confidence.cpu().numpy(),
-        )
+        confidence_array = self.confidence.cpu().numpy()
+        kwargs = {
+            "xy": self.xy.cpu().numpy(),
+            "class_id": self.class_id.cpu().numpy(),
+        }
+        if _KEYPOINTS_ACCEPTS_CONFIDENCE:
+            kwargs["confidence"] = confidence_array
+        else:
+            kwargs["keypoint_confidence"] = confidence_array
+        return sv.KeyPoints(**kwargs)
 
 
 class KeyPointsDetectionModel(

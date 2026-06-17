@@ -277,6 +277,10 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
             keypoints_kwargs["confidence"] = np.array(
                 keypoints_confidence, dtype=np.float32
             )
+        else:
+            keypoints_kwargs["keypoint_confidence"] = np.array(
+                keypoints_confidence, dtype=np.float32
+            )
         return sv.KeyPoints(**keypoints_kwargs)
 
     def run(
