@@ -51,6 +51,26 @@ from inference_models.utils.environment import get_boolean_from_env
 
 logger = logging.getLogger(__name__)
 
+_DPROF = os.getenv("INFERENCE_DECODE_PROFILE", "0") == "1"  # DEBUGLOG
+_DP = {"wrap": 0.0, "call": 0.0, "rel": 0.0, "imgs": 0, "t0": time.monotonic()}  # DEBUGLOG
+
+
+def _dprof(t0, t_wrap, t_call, t_decoded, n, log):  # DEBUGLOG
+    _DP["wrap"] += t_wrap - t0
+    _DP["call"] += t_call - t_wrap
+    _DP["rel"] += t_decoded - t_call
+    _DP["imgs"] += n
+    if t_decoded - _DP["t0"] >= 5.0:
+        d = max(_DP["imgs"], 1)
+        log.warning(
+            "DECODE_PROFILE_SUBPROC imgs=%d wrap=%.2fms/img call=%.2fms/img rel=%.2fms/img",
+            _DP["imgs"], _DP["wrap"] / d * 1000,
+            _DP["call"] / d * 1000, _DP["rel"] / d * 1000,
+        )
+        _DP["wrap"] = _DP["call"] = _DP["rel"] = 0.0
+        _DP["imgs"] = 0
+        _DP["t0"] = t_decoded
+
 
 # ---------------------------------------------------------------------------
 # PAIR protocol constants (parent ↔ worker)
@@ -569,6 +589,8 @@ def _process_slots(
                 log.exception("Worker: failed to load .npy slot %d", batch[i][0])
                 decode_errors[i] = True
 
+    _t_wrap = time.monotonic() if _DPROF else 0.0  # DEBUGLOG
+
     # Raw image bytes (JPEG + non-JPEG) — single batch_decode_fn call
     raw_indices = [
         i for i, npy in enumerate(is_npy) if not npy and not decode_errors[i]
@@ -588,6 +610,8 @@ def _process_slots(
                 decode_errors[i] = True
 
 
+    _t_call = time.monotonic() if _DPROF else 0.0  # DEBUGLOG
+
     # Release memoryviews
     for mv in mvs:
         try:
@@ -596,6 +620,8 @@ def _process_slots(
             pass
 
     t_decoded = time.monotonic()
+    if _DPROF:  # DEBUGLOG
+        _dprof(t0, _t_wrap, _t_call, t_decoded, len(batch), log)
 
     # Short-circuit slots that failed to decode — send error without calling infer
     error_indices = {i for i, err in enumerate(decode_errors) if err}
