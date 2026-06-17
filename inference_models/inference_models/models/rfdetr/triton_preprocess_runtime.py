@@ -262,6 +262,7 @@ class FastPreprocessRuntime:
         """
         if not _FAST_PATH_ENABLED or self._jit_disabled:
             return None
+
         unsupported_reason = self._unsupported_reason(
             images=images,
             image_size=image_size,

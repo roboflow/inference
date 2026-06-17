@@ -1,7 +1,11 @@
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+<<<<<<< HEAD
 from typing import Deque, List, Literal, Optional, Type, Union
+=======
+from typing import Deque, List, Literal, Optional, Tuple, Type, Union
+>>>>>>> codeflash-rfdetr-seg-optimization
 
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 
@@ -345,7 +349,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             class_filter=class_filter,
             model_id=model_id,
         )
-        if self.stream_pipeline_depth() > 0:
+        if self.stream_pipeline_depth() > 0 and len(images) == 1:
             self._pending_stream_prediction_contexts.append(stream_context)
         request = InstanceSegmentationInferenceRequest(
             api_key=self._api_key,
@@ -512,7 +516,9 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         model = self._model_manager[self._last_model_id]
         return max(0, int(getattr(model, "_pipeline_depth", 1)) - 1)
 
-    def flush_stream_pipeline(self) -> List[BlockResult]:
+    def flush_stream_pipeline_outputs(
+        self,
+    ) -> List[Tuple[List[Tuple[int, ...]], BlockResult]]:
         if (
             self._last_model_id is None
             or self._last_model_id not in self._model_manager
@@ -540,9 +546,12 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
                     "Stream pipeline flush returned fewer predictions than expected"
                 )
             results.append(
-                self._finalize_prediction_responses(
-                    predictions=prediction_batch,
-                    stream_context=stream_context,
+                (
+                    _stream_context_indices(images=stream_context.images),
+                    self._finalize_prediction_responses(
+                        predictions=prediction_batch,
+                        stream_context=stream_context,
+                    ),
                 )
             )
         if offset != len(predictions):
@@ -550,6 +559,9 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
                 "Stream pipeline flush returned more predictions than expected"
             )
         return results
+
+    def flush_stream_pipeline(self) -> List[BlockResult]:
+        return [outputs for _, outputs in self.flush_stream_pipeline_outputs()]
 
     def close_stream_pipeline(self) -> None:
         if self._stream_response_executor is not None:
@@ -650,3 +662,10 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             }
             for inference_id, prediction in zip(inference_ids, predictions)
         ]
+
+
+def _stream_context_indices(images: Batch[WorkflowImageData]) -> List[Tuple[int, ...]]:
+    indices = getattr(images, "indices", None)
+    if indices is not None:
+        return indices
+    return [(i,) for i in range(len(images))]
