@@ -2,9 +2,6 @@ import os
 from typing import Any, Dict, Optional, Tuple, Union
 
 from cachetools.func import ttl_cache
-from inference_models.models.auto_loaders.core import parse_model_config
-from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
-
 
 from inference.core.cache import cache
 from inference.core.cache.lru_cache import LRUCache
@@ -51,6 +48,8 @@ from inference.core.roboflow_api import (
 from inference.core.utils.file_system import dump_json, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference_models.models.auto_loaders.core import parse_model_config
+from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
 
 # fallback model_type for local `inference_models` packages that do not declare
 # model_architecture in model_config.json.
