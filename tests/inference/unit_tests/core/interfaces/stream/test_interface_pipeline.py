@@ -36,6 +36,7 @@ from inference.core.interfaces.stream.entities import (
 )
 from inference.core.interfaces.stream.inference_pipeline import (
     InferencePipeline,
+    SinkMode,
     _apply_workflow_parent_coordinate_conversion,
     _resolve_prediction_futures,
     _workflow_parent_coordinate_output_names,
@@ -295,7 +296,7 @@ def test_dispatch_inference_results_applies_deferred_parent_coordinate_conversio
 ) -> None:
     detections = _detections_with_root_shift()
     prediction_future = Future()
-    prediction_future.set_result({"predictions": detections})
+    prediction_future.set_result(detections)
     frame = VideoFrame(
         image=np.zeros((8, 8, 3), dtype=np.uint8),
         frame_id=1,
@@ -310,6 +311,8 @@ def test_dispatch_inference_results_applies_deferred_parent_coordinate_conversio
     pipeline = object.__new__(InferencePipeline)
     pipeline._predictions_queue = Queue()
     pipeline._on_prediction = on_prediction
+    pipeline._sink_mode = SinkMode.SEQUENTIAL
+    pipeline._video_sources = []
     pipeline._workflow_parent_coordinate_outputs = frozenset({"predictions"})
     pipeline._workflow_defer_output_coordinate_conversion = True
     pipeline._handle_predictions_dispatching = InferencePipeline._handle_predictions_dispatching.__get__(
