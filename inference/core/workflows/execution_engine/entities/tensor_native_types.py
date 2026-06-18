@@ -121,12 +121,12 @@ inference_models.Detections(
         "scaling_relative_to_parent": 1.0,
         "scaling_relative_to_root_parent": 1.0,
     }
-    bboxes_metadata={
-        'detection_id': [
-            '51dfa8d5-261c-4dcb-ab30-9aafe9b52379', 'c0c684d1-1e30-4880-aedd-29e67e417264'
-            '8cfc543b-9cfe-493b-b5ad-77afed7bee83', 'c0c684d1-1e30-4880-aedd-38e67e441454'
-        ],
-    }
+    bboxes_metadata=[
+        {'detection_id': '51dfa8d5-261c-4dcb-ab30-9aafe9b52379'},
+        {'detection_id': 'c0c684d1-1e30-4880-aedd-29e67e417264'},
+        {'detection_id': '8cfc543b-9cfe-493b-b5ad-77afed7bee83'},
+        {'detection_id': 'c0c684d1-1e30-4880-aedd-38e67e441454'},
+    ],
 )
 ```   
 **Details of additional fields:**
@@ -203,12 +203,12 @@ inference_models.InstanceDetections(
         "scaling_relative_to_parent": 1.0,
         "scaling_relative_to_root_parent": 1.0,
     }
-    bboxes_metadata={
-        'detection_id': [
-            '51dfa8d5-261c-4dcb-ab30-9aafe9b52379', 'c0c684d1-1e30-4880-aedd-29e67e417264'
-            '8cfc543b-9cfe-493b-b5ad-77afed7bee83', 'c0c684d1-1e30-4880-aedd-38e67e441454'
-        ],
-    }
+    bboxes_metadata=[
+        {'detection_id': '51dfa8d5-261c-4dcb-ab30-9aafe9b52379'},
+        {'detection_id': 'c0c684d1-1e30-4880-aedd-29e67e417264'},
+        {'detection_id': '8cfc543b-9cfe-493b-b5ad-77afed7bee83'},
+        {'detection_id': 'c0c684d1-1e30-4880-aedd-38e67e441454'},
+    ],
 )
 ```
 **Details of additional fields:**

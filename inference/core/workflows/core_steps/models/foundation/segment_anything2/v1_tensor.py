@@ -22,6 +22,7 @@ from inference.core.workflows.core_steps.common.tensor_native import (
 )
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
+    CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -57,6 +58,11 @@ from inference_models.models.common.rle_utils import (
     torch_mask_to_coco_rle,
 )
 from inference_sdk import InferenceHTTPClient
+
+# SAM2 mask-binarisation threshold in logit space, mirroring the numpy adapter's
+# MASK_THRESHOLD (inference/models/sam2/segment_anything2_inference_models.py): a pixel
+# is foreground when its mask logit is >= 0.0 (equivalently sigmoid(logit) >= 0.5).
+MASK_THRESHOLD = 0.0
 
 LONG_DESCRIPTION = """
 Run Segment Anything 2, a zero-shot instance segmentation model, on an image.
@@ -277,6 +283,9 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                 boxes=[box_tensor] if box_tensor is not None else None,
                 multi_mask_output=multimask_output,
                 input_color_format="rgb",
+                # Return raw mask logits and binarise explicitly below (legacy style),
+                # rather than relying on segment_images' internal default threshold.
+                return_logits=True,
             )
             instance_detections = _sam2_prediction_to_instance_detections(
                 sam2_prediction=sam2_predictions[0],
@@ -407,8 +416,10 @@ def _sam2_prediction_to_instance_detections(
         )
     selected_masks, selected_scores = _choose_most_confident_torch(
         sam2_prediction.masks, sam2_prediction.scores
-    )  # (m, H, W), (m,)
-    binary = (selected_masks > 0.5).to(torch.bool)
+    )  # (m, H, W) mask logits, (m,)
+    # Binarise the mask logits at the SAM2 threshold, mirroring the numpy adapter's
+    # `masks >= MASK_THRESHOLD` (MASK_THRESHOLD == 0.0).
+    binary = (selected_masks >= MASK_THRESHOLD).to(torch.bool)
     source_indices, keep_index = _score_filter(selected_scores, threshold)
     return _assemble_instance_detections(
         binary=binary[keep_index],
@@ -516,12 +527,12 @@ def _class_names_map(prompt_detections, source_indices: List[int]) -> Dict[int, 
         class_id = (
             int(prompt_detections.class_id[src]) if _prompted(prompt_detections) else 0
         )
-        names[class_id] = _instance_class_name(prompt_detections, src)
+        names[class_id] = _resolve_prompt_class_name(prompt_detections, src)
     return names
 
 
 def _per_instance_metadata(prompt_detections, source_index: int) -> dict:
-    entry = {DETECTION_ID_KEY: str(uuid.uuid4()), CLASS_NAME_KEY: "foreground"}
+    entry = {DETECTION_ID_KEY: str(uuid.uuid4())}
     if (
         prompt_detections is not None
         and prompt_detections.bboxes_metadata is not None
@@ -530,20 +541,29 @@ def _per_instance_metadata(prompt_detections, source_index: int) -> dict:
         src = prompt_detections.bboxes_metadata[source_index]
         if DETECTION_ID_KEY in src:
             entry[DETECTION_ID_KEY] = src[DETECTION_ID_KEY]
-        entry[CLASS_NAME_KEY] = src.get(CLASS_NAME_KEY, "foreground")
+        # Forward a per-box class override only if the prompt explicitly carried one
+        # (vlm/ocr prompts); standard OD prompts resolve the name from the
+        # class_id -> name map on image_metadata, so no spurious per-box `class`.
+        if CLASS_NAME_KEY in src:
+            entry[CLASS_NAME_KEY] = src[CLASS_NAME_KEY]
     return entry
 
 
-def _instance_class_name(prompt_detections, source_index: int) -> str:
-    if (
-        prompt_detections is not None
-        and prompt_detections.bboxes_metadata is not None
-        and source_index < len(prompt_detections.bboxes_metadata)
+def _resolve_prompt_class_name(prompt_detections, source_index: int) -> str:
+    """Forward the prompt box's class name, mirroring the numpy block. Native OD
+    producers carry names in ``image_metadata['class_names']`` keyed by ``class_id``
+    (NOT a per-box field); a per-box ``class`` override (vlm/ocr prompts) wins if
+    present. Unprompted SAM (no boxes) -> ``foreground``."""
+    if not _prompted(prompt_detections):
+        return "foreground"
+    if prompt_detections.bboxes_metadata is not None and source_index < len(
+        prompt_detections.bboxes_metadata
     ):
-        return prompt_detections.bboxes_metadata[source_index].get(
-            CLASS_NAME_KEY, "foreground"
-        )
-    return "foreground"
+        override = prompt_detections.bboxes_metadata[source_index].get(CLASS_NAME_KEY)
+        if override is not None:
+            return str(override)
+    class_names = (prompt_detections.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
+    return class_names.get(int(prompt_detections.class_id[source_index]), "foreground")
 
 
 def _box_prompts_payload(prompt_detections) -> Optional[List[dict]]:

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS, ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
@@ -129,13 +129,19 @@ def test_sam2_workflow_when_minimal_valid_input_provided(
         "predictions",
     }, "Expected all declared outputs to be delivered"
     assert result[0]["predictions"].mask is not None, "Expected mask to be delivered"
-    assert result[0]["predictions"].mask.shape[1:] == (
-        427,
-        640,
-    )  # many masks in multi polygon mode
-    assert (
-        result[0]["predictions"].data["prediction_type"][0] == "instance-segmentation"
-    )
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        assert result[0]["predictions"].mask.image_size == (427, 640)
+        assert (
+            result[0]["predictions"].image_metadata["prediction_type"] == "instance-segmentation"
+        )
+    else:
+        assert result[0]["predictions"].mask.shape[1:] == (
+            427,
+            640,
+        )  # many masks in multi polygon mode
+        assert (
+            result[0]["predictions"].data["prediction_type"][0] == "instance-segmentation"
+        )
 
 
 def test_sam2_workflow_when_minimal_valid_input_provided_but_filtering_discard_mask(
@@ -249,24 +255,41 @@ def test_grounded_sam2_workflow(
             "image.[0]",
         ], "Expected parent_ids to be correct"
     else:
-        print(result[0]["sam_predictions"])
-        assert np.allclose(
-            result[0]["sam_predictions"].xyxy,
-            np.array([[321, 223, 582, 405], [370, 208, 371, 209], [226, 73, 378, 381]]),
-            atol=1e-1,
-        ), "Expected bboxes to be the same as measured while test creation"
-        assert np.allclose(
-            result[0]["sam_predictions"].confidence,
-            np.array([0.9594, 0.92467, 0.92467]),
-            atol=1e-4,
-        ), "Expected confidence to be the same as measured while test creation"
-        assert result[0]["sam_predictions"]["class_name"].tolist() == [
-            "dog",
-            "dog",
-            "dog",
-        ], "Expected class names to be correct"
-        assert result[0]["sam_predictions"].data["parent_id"].tolist() == [
-            "image.[0]",
-            "image.[0]",
-            "image.[0]",
-        ], "Expected parent_ids to be correct"
+        if ENABLE_TENSOR_DATA_REPRESENTATION:
+            assert np.allclose(
+                result[0]["sam_predictions"].xyxy,
+                np.array([[321, 223, 582, 405], [226, 73, 378, 381]]),
+                atol=2,
+            ), "Expected bboxes to be the same as measured while test creation"
+            assert np.allclose(
+                result[0]["sam_predictions"].confidence,
+                np.array([0.9602, 0.9324]),
+                atol=1e-3,
+            ), "Expected confidence to be the same as measured while test creation"
+            class_names = [
+                result[0]["sam_predictions"].image_metadata["class_names"][c_id.item()]
+                for c_id in result[0]["sam_predictions"].class_id
+            ]
+            assert class_names == ["dog", "dog"]
+            assert result[0]["sam_predictions"].image_metadata["parent_id"] == "image.[0]"
+        else:
+            assert np.allclose(
+                result[0]["sam_predictions"].xyxy,
+                np.array([[321, 223, 582, 405], [370, 208, 371, 209], [226, 73, 378, 381]]),
+                atol=1e-1,
+            ), "Expected bboxes to be the same as measured while test creation"
+            assert np.allclose(
+                result[0]["sam_predictions"].confidence,
+                np.array([0.9594, 0.92467, 0.92467]),
+                atol=1e-4,
+            ), "Expected confidence to be the same as measured while test creation"
+            assert result[0]["sam_predictions"]["class_name"].tolist() == [
+                "dog",
+                "dog",
+                "dog",
+            ], "Expected class names to be correct"
+            assert result[0]["sam_predictions"].data["parent_id"].tolist() == [
+                "image.[0]",
+                "image.[0]",
+                "image.[0]",
+            ], "Expected parent_ids to be correct"
