@@ -46,8 +46,9 @@ class QwenImageEditHF:
             model_name_or_path,
             torch_dtype=cls.default_dtype,
             local_files_only=local_files_only,
-            device_map=str(device),
+            low_cpu_mem_usage=False,
         )
+        pipe = pipe.to(device)
 
         return cls(pipeline=pipe, device=device)
 
