@@ -2,6 +2,9 @@ import os
 from typing import Any, Dict, Optional, Tuple, Union
 
 from cachetools.func import ttl_cache
+from inference_models.models.auto_loaders.core import parse_model_config
+from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
+
 
 from inference.core.cache import cache
 from inference.core.cache.lru_cache import LRUCache
@@ -182,8 +185,6 @@ def _get_local_model_type(model_id: str) -> Optional[Tuple[TaskType, ModelType]]
         and os.path.isdir(model_id)
     ):
         return None
-    from inference_models.models.auto_loaders.core import parse_model_config
-    from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
 
     model_config = parse_model_config(
         config_path=os.path.join(model_id, MODEL_CONFIG_FILE_NAME)
