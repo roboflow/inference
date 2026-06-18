@@ -538,6 +538,20 @@ class WorkflowImageData:
         )
         return self._tensor_image
 
+    def is_tensor_materialised(self) -> bool:
+        """Whether the CHW RGB tensor image already exists on device.
+
+        ``True`` only when a tensor representation is already present (the caller fed
+        one in, or something downstream already built it) — reading ``tensor_image`` is
+        then free. ``False`` means only the numpy (HWC BGR) representation is available,
+        so accessing ``tensor_image`` would trigger an eager numpy->device conversion.
+
+        Blocks use this to pick the representation that is already materialised instead
+        of forcing a conversion: ``tensor_image`` (RGB) when ``True``, ``numpy_image``
+        (BGR) otherwise. The check itself does no I/O and never materialises anything.
+        """
+        return self._tensor_image is not None
+
     @property
     def base64_image(self) -> str:
         if self._base64_image is not None:

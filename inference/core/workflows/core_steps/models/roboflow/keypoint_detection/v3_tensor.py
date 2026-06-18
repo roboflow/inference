@@ -337,15 +337,23 @@ class RoboflowKeypointDetectionModelBlockV3(WorkflowBlock):
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
-        tensor_inputs = [img.tensor_image for img in images]
+        # Feed the representation already materialised on the images to avoid forcing a
+        # numpy->device conversion: GPU tensors (RGB) only when every image in the batch
+        # already has one, otherwise the numpy frames (BGR) — matching the numpy block.
+        if all(image.is_tensor_materialised() for image in images):
+            model_inputs = [image.tensor_image for image in images]
+            image_color_format = "rgb"
+        else:
+            model_inputs = [image.numpy_image for image in images]
+            image_color_format = "bgr"
         self._model_manager.add_model(model_id=model_id, api_key=self._api_key)
         keypoints_batch: List[KeyPoints]
         detections_batch: Optional[List[Detections]]
         keypoints_batch, detections_batch = (
             self._model_manager.run_tensor_native_inference(
                 model_id=model_id,
-                images=tensor_inputs,
-                input_color_format="rgb",
+                images=model_inputs,
+                input_color_format=image_color_format,
                 confidence=confidence,
                 iou_threshold=iou_threshold,
                 class_agnostic_nms=class_agnostic_nms,

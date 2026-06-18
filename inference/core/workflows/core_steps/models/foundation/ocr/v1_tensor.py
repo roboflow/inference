@@ -166,10 +166,14 @@ class OCRModelBlockV1(WorkflowBlock):
         )
         predictions = []
         for single_image in images:
+            if single_image.is_tensor_materialised():
+                model_image, image_color_format = single_image.tensor_image, "rgb"
+            else:
+                model_image, image_color_format = single_image.numpy_image, "bgr"
             texts, detections_batch = self._model_manager.run_tensor_native_inference(
                 doctr_model_id,
-                images=[single_image.tensor_image],
-                input_color_format="rgb",
+                images=[model_image],
+                input_color_format=image_color_format,
             )
             detections = attach_native_detection_metadata(
                 detections=detections_batch[0],

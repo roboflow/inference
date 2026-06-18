@@ -268,10 +268,14 @@ class DepthEstimationBlockV1(WorkflowBlock):
             # Tensor-native local path: the depth adapter's
             # run_tensor_native_inference returns a list of raw depth maps as
             # torch.Tensor kept on-device (no numpy round-trip).
+            if single_image.is_tensor_materialised():
+                model_image, image_color_format = single_image.tensor_image, "rgb"
+            else:
+                model_image, image_color_format = single_image.numpy_image, "bgr"
             depth_maps = self._model_manager.run_tensor_native_inference(
                 model_version,
-                images=[single_image.tensor_image],
-                input_color_format="rgb",
+                images=[model_image],
+                input_color_format=image_color_format,
             )
             depth_map = depth_maps[0]
             depth_min = depth_map.min()

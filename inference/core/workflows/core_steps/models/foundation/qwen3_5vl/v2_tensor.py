@@ -136,10 +136,14 @@ class Qwen35VLBlockV2(Qwen35VLBlockV1):
             )
             if max_new_tokens is not None:
                 kwargs["max_new_tokens"] = max_new_tokens
+            if image.is_tensor_materialised():
+                model_image, image_color_format = image.tensor_image, "rgb"
+            else:
+                model_image, image_color_format = image.numpy_image, "bgr"
             result = self._model_manager.run_tensor_native_inference(
                 model_version,
-                images=[image.tensor_image],
-                input_color_format="rgb",
+                images=[model_image],
+                input_color_format=image_color_format,
                 **kwargs,
             )
             response_text = result[0]

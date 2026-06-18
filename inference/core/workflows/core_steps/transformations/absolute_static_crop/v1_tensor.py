@@ -151,13 +151,27 @@ def take_static_crop(
     y_min = round(y_center - height / 2)
     x_max = round(x_min + width)
     y_max = round(y_min + height)
-    cropped_tensor_image = image.tensor_image[:, y_min:y_max, x_min:x_max]
-    if cropped_tensor_image.numel() == 0:
+    if image.is_tensor_materialised():
+        cropped_tensor_image = image.tensor_image[:, y_min:y_max, x_min:x_max]
+        if cropped_tensor_image.numel() == 0:
+            return None
+        return WorkflowImageData.create_crop_from_tensor(
+            origin_image_data=image,
+            crop_identifier=f"absolute_static_crop.{uuid4()}",
+            cropped_tensor_image=cropped_tensor_image.contiguous(),
+            offset_x=x_min,
+            offset_y=y_min,
+            preserve_video_metadata=True,
+        )
+    # Only numpy is materialised — slice on the host and emit a numpy-backed crop
+    # (mirrors the numpy block) instead of forcing a full-image numpy->device conversion.
+    cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
+    if cropped_image.size == 0:
         return None
-    return WorkflowImageData.create_crop_from_tensor(
+    return WorkflowImageData.create_crop(
         origin_image_data=image,
         crop_identifier=f"absolute_static_crop.{uuid4()}",
-        cropped_tensor_image=cropped_tensor_image.contiguous(),
+        cropped_image=cropped_image,
         offset_x=x_min,
         offset_y=y_min,
         preserve_video_metadata=True,

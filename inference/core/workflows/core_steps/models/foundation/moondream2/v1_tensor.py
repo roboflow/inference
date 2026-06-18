@@ -239,10 +239,14 @@ class Moondream2BlockV1(WorkflowBlock):
             # image) straight from MoonDream2HF.detect; it tolerates the
             # `input_color_format` kwarg (forwarded to images_to_pillow) and
             # requires `classes` (the prompted object list).
+            if image.is_tensor_materialised():
+                model_image, image_color_format = image.tensor_image, "rgb"
+            else:
+                model_image, image_color_format = image.numpy_image, "bgr"
             dets = self._model_manager.run_tensor_native_inference(
                 model_id=model_version,
-                images=[image.tensor_image],
-                input_color_format="rgb",
+                images=[model_image],
+                input_color_format=image_color_format,
                 classes=[prompt],
             )
             detections = attach_native_detection_metadata(

@@ -149,10 +149,14 @@ class Qwen3VLBlockV1(WorkflowBlock):
             # Local exec goes through the inference_models adapter (CHW RGB tensor).
             # run_tensor_native_inference -> Qwen3VLHF.prompt returns List[str],
             # one entry per image; we pass one image at a time.
+            if image.is_tensor_materialised():
+                model_image, image_color_format = image.tensor_image, "rgb"
+            else:
+                model_image, image_color_format = image.numpy_image, "bgr"
             result = self._model_manager.run_tensor_native_inference(
                 model_version,
-                images=[image.tensor_image],
-                input_color_format="rgb",
+                images=[model_image],
+                input_color_format=image_color_format,
                 prompt=combined_prompt,
             )
             response_text = result[0]

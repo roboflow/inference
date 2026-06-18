@@ -157,10 +157,14 @@ class Florence2BlockV1(WorkflowBlock):
             # Local exec goes through the inference_models adapter (HWC RGB tensor).
             # Adapter derives the Florence task from the prompt string and returns
             # the post-processed generation, one entry per image.
+            if image.is_tensor_materialised():
+                model_image, image_color_format = image.tensor_image, "rgb"
+            else:
+                model_image, image_color_format = image.numpy_image, "bgr"
             result = self._model_manager.run_tensor_native_inference(
                 model_version,
-                images=[image.tensor_image],
-                input_color_format="rgb",
+                images=[model_image],
+                input_color_format=image_color_format,
                 prompt=final_prompt,
             )
             prediction_data = result[0]

@@ -273,8 +273,21 @@ def crop_image(
     # extends past an edge does not slice with a negative index (torch, like numpy,
     # would treat a negative start as "from the end") and so the (-x_min, -y_min)
     # translation offset stays consistent with the actually-cropped region.
-    image_height = int(image.tensor_image.shape[1])
-    image_width = int(image.tensor_image.shape[2])
+    # Use the representation already materialised on the image to avoid forcing a
+    # numpy->device conversion just to crop: slice the tensor (CHW) when present, else
+    # the numpy frame (HWC). Dimensions come from whichever rep is materialised.
+    use_tensor = image.is_tensor_materialised()
+    if use_tensor:
+        image_height = int(image.tensor_image.shape[1])
+        image_width = int(image.tensor_image.shape[2])
+    else:
+        image_height = int(image.numpy_image.shape[0])
+        image_width = int(image.numpy_image.shape[1])
+    want_overlay = (
+        mask_opacity > 0
+        and isinstance(bbox_detections, InstanceDetections)
+        and bbox_detections.mask is not None
+    )
     crops: List[Dict[str, Any]] = []
     for idx in range(len(bbox_detections)):
         x_min, y_min, x_max, y_max = (int(v) for v in xyxy_int[idx])
@@ -283,34 +296,20 @@ def crop_image(
         x_max = max(0, min(x_max, image_width))
         y_max = max(0, min(y_max, image_height))
         detection_id = bboxes_metadata[idx][detection_id_key]
-        # tensor_image is CHW; crop on-device and skip empties (out-of-bounds boxes).
-        cropped_tensor_image = image.tensor_image[:, y_min:y_max, x_min:x_max]
-        if cropped_tensor_image.numel() == 0:
+        cropped = _crop_region(
+            image=image,
+            use_tensor=use_tensor,
+            bbox_detections=bbox_detections,
+            index=idx,
+            detection_id=detection_id,
+            box=(x_min, y_min, x_max, y_max),
+            want_overlay=want_overlay,
+            mask_opacity=mask_opacity,
+            background_color=background_color,
+        )
+        if cropped is None:
             crops.append({"crops": None, "predictions": None})
             continue
-        cropped_tensor_image = cropped_tensor_image.contiguous()
-        if (
-            mask_opacity > 0
-            and isinstance(bbox_detections, InstanceDetections)
-            and bbox_detections.mask is not None
-        ):
-            cropped_tensor_image = _overlay_tensor_crop_with_mask(
-                crop=cropped_tensor_image,
-                detection_mask_2d=_instance_mask_bool_tensor(
-                    detections=bbox_detections,
-                    index=idx,
-                    device=cropped_tensor_image.device,
-                )[y_min:y_max, x_min:x_max],
-                mask_opacity=mask_opacity,
-                background_color=background_color,
-            )
-        result = WorkflowImageData.create_crop_from_tensor(
-            origin_image_data=image,
-            crop_identifier=detection_id,
-            cropped_tensor_image=cropped_tensor_image,
-            offset_x=x_min,
-            offset_y=y_min,
-        )
         translated_prediction = _translate_single_prediction(
             prediction=predictions,
             index=idx,
@@ -321,12 +320,77 @@ def crop_image(
         )
         crops.append(
             {
-                "crops": result,
+                "crops": cropped,
                 # preserve all masks, keypoints, and metadata if present
                 "predictions": translated_prediction,
             }
         )
     return crops
+
+
+def _crop_region(
+    *,
+    image: WorkflowImageData,
+    use_tensor: bool,
+    bbox_detections,
+    index: int,
+    detection_id: str,
+    box: Tuple[int, int, int, int],
+    want_overlay: bool,
+    mask_opacity: float,
+    background_color: Union[str, Tuple[int, int, int]],
+) -> Optional[WorkflowImageData]:
+    """Crop one detection's region from whichever image representation is materialised.
+
+    Tensor path: slice CHW on-device, optional on-device mask overlay, emit a
+    tensor-backed crop. Numpy path (no materialised tensor): slice HWC on the host,
+    optional numpy mask overlay, emit a numpy-backed crop — so no full-image
+    numpy->device conversion is forced. Returns None for an empty (out-of-bounds) box.
+    """
+    x_min, y_min, x_max, y_max = box
+    if use_tensor:
+        cropped_tensor_image = image.tensor_image[:, y_min:y_max, x_min:x_max]
+        if cropped_tensor_image.numel() == 0:
+            return None
+        cropped_tensor_image = cropped_tensor_image.contiguous()
+        if want_overlay:
+            cropped_tensor_image = _overlay_tensor_crop_with_mask(
+                crop=cropped_tensor_image,
+                detection_mask_2d=_instance_mask_bool_tensor(
+                    detections=bbox_detections,
+                    index=index,
+                    device=cropped_tensor_image.device,
+                )[y_min:y_max, x_min:x_max],
+                mask_opacity=mask_opacity,
+                background_color=background_color,
+            )
+        return WorkflowImageData.create_crop_from_tensor(
+            origin_image_data=image,
+            crop_identifier=detection_id,
+            cropped_tensor_image=cropped_tensor_image,
+            offset_x=x_min,
+            offset_y=y_min,
+        )
+    cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
+    if cropped_image.size == 0:
+        return None
+    if want_overlay:
+        cropped_image = _overlay_numpy_crop_with_mask(
+            crop=cropped_image,
+            detection_mask_2d=_instance_mask_bool_numpy(
+                detections=bbox_detections,
+                index=index,
+            )[y_min:y_max, x_min:x_max],
+            mask_opacity=mask_opacity,
+            background_color=background_color,
+        )
+    return WorkflowImageData.create_crop(
+        origin_image_data=image,
+        crop_identifier=detection_id,
+        cropped_image=cropped_image,
+        offset_x=x_min,
+        offset_y=y_min,
+    )
 
 
 def _bbox_carrier(
@@ -489,6 +553,20 @@ def _instance_mask_bool_tensor(
     return mask[index].to(device=device, dtype=torch.bool)
 
 
+def _instance_mask_bool_numpy(
+    detections: InstanceDetections,
+    index: int,
+) -> np.ndarray:
+    """Numpy counterpart of ``_instance_mask_bool_tensor``: a single instance's
+    full-image ``(H, W)`` bool mask on the host, for the numpy overlay path."""
+    mask = detections.mask
+    if isinstance(mask, InstancesRLEMasks):
+        return coco_rle_masks_to_numpy_mask(
+            InstancesRLEMasks(image_size=mask.image_size, masks=[mask.masks[index]])
+        )[0].astype(bool)
+    return mask[index].detach().to("cpu").numpy().astype(bool)
+
+
 def _overlay_tensor_crop_with_mask(
     crop: torch.Tensor,
     detection_mask_2d: torch.Tensor,
@@ -515,6 +593,29 @@ def _overlay_tensor_crop_with_mask(
     mask_3c = detection_mask_2d.to(device=device, dtype=torch.bool).unsqueeze(0)
     overlaid = torch.where(mask_3c, crop_float, faded)
     return overlaid.round().clamp_(0, 255).to(dtype=crop.dtype).contiguous()
+
+
+def _overlay_numpy_crop_with_mask(
+    crop: np.ndarray,
+    detection_mask_2d: np.ndarray,
+    mask_opacity: float,
+    background_color: Union[str, Tuple[int, int, int]],
+) -> np.ndarray:
+    """Numpy counterpart of ``_overlay_tensor_crop_with_mask`` for host crops.
+
+    Same blend: inside the instance mask the crop is kept verbatim; outside it the pixel
+    is faded toward ``background_color`` by ``mask_opacity``. ``crop`` is HWC BGR uint8
+    and ``convert_color_to_bgr_tuple`` already yields BGR, so the colour is used directly
+    (no channel reversal, unlike the RGB tensor path). ``detection_mask_2d`` is a (H, W)
+    bool array already sliced to the crop box."""
+    bgr_color = np.asarray(
+        convert_color_to_bgr_tuple(color=background_color), dtype=np.float32
+    )
+    crop_float = crop.astype(np.float32)
+    faded = mask_opacity * bgr_color + (1.0 - mask_opacity) * crop_float
+    mask_3c = np.asarray(detection_mask_2d, dtype=bool)[:, :, None]
+    overlaid = np.where(mask_3c, crop_float, faded)
+    return np.clip(np.round(overlaid), 0, 255).astype(crop.dtype)
 
 
 def convert_color_to_bgr_tuple(

@@ -224,10 +224,14 @@ class EasyOCRBlockV1(WorkflowBlock):
         )
         results = []
         for single_image in images:
+            if single_image.is_tensor_materialised():
+                model_image, image_color_format = single_image.tensor_image, "rgb"
+            else:
+                model_image, image_color_format = single_image.numpy_image, "bgr"
             texts, dets = self._model_manager.run_tensor_native_inference(
                 model_id,
-                images=[single_image.tensor_image],
-                input_color_format="rgb",
+                images=[model_image],
+                input_color_format=image_color_format,
                 confidence=0.0,  # align with old inference default
             )
             # EasyOCRTorch.pre_process honours input_color_format for tensor inputs

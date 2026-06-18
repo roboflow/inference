@@ -276,13 +276,17 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             box_tensor = (
                 prompt_detections.xyxy if prompt_detections is not None else None
             )
+            if image.is_tensor_materialised():
+                model_image, image_color_format = image.tensor_image, "rgb"
+            else:
+                model_image, image_color_format = image.numpy_image, "bgr"
             sam2_predictions = self._model_manager.run_tensor_native_inference(
                 sam_model_id,
                 action="segment",
-                images=[image.tensor_image],
+                images=[model_image],
                 boxes=[box_tensor] if box_tensor is not None else None,
                 multi_mask_output=multimask_output,
-                input_color_format="rgb",
+                input_color_format=image_color_format,
                 # Return raw mask logits and binarise explicitly below (legacy style),
                 # rather than relying on segment_images' internal default threshold.
                 return_logits=True,

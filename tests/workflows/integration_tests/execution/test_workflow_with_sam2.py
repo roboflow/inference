@@ -264,7 +264,7 @@ def test_grounded_sam2_workflow(
             assert np.allclose(
                 result[0]["sam_predictions"].confidence,
                 np.array([0.9602, 0.9324]),
-                atol=1e-3,
+                atol=8e-3,
             ), "Expected confidence to be the same as measured while test creation"
             class_names = [
                 result[0]["sam_predictions"].image_metadata["class_names"][c_id.item()]

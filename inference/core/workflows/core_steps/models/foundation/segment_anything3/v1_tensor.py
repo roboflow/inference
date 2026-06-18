@@ -256,9 +256,17 @@ class SegmentAnything3BlockV1(WorkflowBlock):
 
         results: List[dict] = []
         for single_image in images:
+            # SAM3 converts its input to numpy internally and is colour-agnostic
+            # (expects RGB, like the materialised tensor). Pass the tensor when it is
+            # already on device, otherwise an RGB host frame — avoiding a forced CHW
+            # transpose + H2D that SAM3 would immediately undo.
+            if single_image.is_tensor_materialised():
+                model_image = single_image.tensor_image
+            else:
+                model_image = np.ascontiguousarray(single_image.numpy_image[:, :, ::-1])
             per_image = self._model_manager.run_tensor_native_inference(
                 model_id,
-                images=[single_image.tensor_image],
+                images=[model_image],
                 prompts=prompts,
                 output_prob_thresh=threshold,
             )

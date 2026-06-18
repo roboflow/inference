@@ -199,12 +199,16 @@ class ClipComparisonBlockV2(WorkflowBlock):
         )
         predictions = []
         for single_image in images:
+            if single_image.is_tensor_materialised():
+                model_image, image_color_format = single_image.tensor_image, "rgb"
+            else:
+                model_image, image_color_format = single_image.numpy_image, "bgr"
             image_embedding = F.normalize(
                 self._model_manager.run_tensor_native_inference(
                     clip_model_id,
                     action="embed-image",
-                    images=[single_image.tensor_image],
-                    input_color_format="rgb",
+                    images=[model_image],
+                    input_color_format=image_color_format,
                 ),
                 dim=1,
             )

@@ -184,11 +184,15 @@ class ClipModelBlockV1(WorkflowBlock):
 
             return {"embedding": embedding.to(WORKFLOWS_IMAGE_TENSOR_DEVICE)}
         else:
+            if data.is_tensor_materialised():
+                model_image, image_color_format = data.tensor_image, "rgb"
+            else:
+                model_image, image_color_format = data.numpy_image, "bgr"
             embeddings = self._model_manager.run_tensor_native_inference(
                 clip_model_id,
                 action="embed-image",
-                images=[data.tensor_image],
-                input_color_format="rgb",
+                images=[model_image],
+                input_color_format=image_color_format,
             )
             return {"embedding": embeddings[0].to(WORKFLOWS_IMAGE_TENSOR_DEVICE)}
 

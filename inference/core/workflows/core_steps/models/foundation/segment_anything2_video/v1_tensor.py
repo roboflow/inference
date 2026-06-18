@@ -303,13 +303,20 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
             # the model. Channel-order parity itself is pinned by a focused test
             # in inference_models (see hf_streaming_video tests); it cannot be
             # asserted from a workflow block without materialising the frame.
-            frame = single_image.tensor_image
-            if frame.dim() != 3:
-                raise ValueError(
-                    "SAM2 video tracker expects a CHW (3-D) RGB frame tensor; got "
-                    f"a tensor with {frame.dim()} dim(s). The model's "
-                    "_ensure_numpy_image permutes CHW->HWC and assumes this layout."
-                )
+            # Use the tensor when already materialised, otherwise hand the model an RGB
+            # host frame: _ensure_numpy_image permutes CHW->HWC WITHOUT swapping channels
+            # and the HF processor expects RGB, so the BGR numpy frame is flipped here
+            # (avoids a forced CHW transpose + H2D the model would undo anyway).
+            if single_image.is_tensor_materialised():
+                frame = single_image.tensor_image
+                if frame.dim() != 3:
+                    raise ValueError(
+                        "SAM2 video tracker expects a CHW (3-D) RGB frame tensor; got "
+                        f"a tensor with {frame.dim()} dim(s). The model's "
+                        "_ensure_numpy_image permutes CHW->HWC and assumes this layout."
+                    )
+            else:
+                frame = np.ascontiguousarray(single_image.numpy_image[:, :, ::-1])
 
             if should_prompt:
                 boxes_xyxy, per_box_meta = _extract_box_prompts_tensor(boxes_for_image)

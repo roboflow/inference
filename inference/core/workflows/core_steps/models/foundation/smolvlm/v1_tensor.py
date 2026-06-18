@@ -129,10 +129,14 @@ class SmolVLM2BlockV1(WorkflowBlock):
             # Local exec goes through the inference_models adapter (CHW uint8 RGB
             # tensor straight off image.tensor_image). The adapter's
             # run_tensor_native_inference returns one generated string per image.
+            if image.is_tensor_materialised():
+                model_image, image_color_format = image.tensor_image, "rgb"
+            else:
+                model_image, image_color_format = image.numpy_image, "bgr"
             result = self._model_manager.run_tensor_native_inference(
                 model_version,
-                images=[image.tensor_image],
-                input_color_format="rgb",
+                images=[model_image],
+                input_color_format=image_color_format,
                 prompt=prompt,
             )
             response_text = result[0]
