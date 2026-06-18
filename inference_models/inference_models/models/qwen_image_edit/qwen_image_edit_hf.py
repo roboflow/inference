@@ -1,16 +1,12 @@
 """Qwen-Image-Edit HF backend.
 
-Wraps the Qwen/Qwen-Image-Edit-2511 diffusion pipeline so it satisfies the
+Wraps the Qwen/Qwen-Image-Edit diffusion pipeline so it satisfies the
 `from_pretrained(model_name_or_path)` contract expected by `inference_models.AutoModel`.
 
 The model takes a source image and a text editing instruction and returns an
 edited PIL Image.  It is a *diffusion* model (not an autoregressive LM), so
 the pipeline is loaded via `diffusers.DiffusionPipeline` and returns
 `pipe.images[0]` rather than text tokens.
-
-NOTE: Qwen/Qwen-Image-Edit-2511 was released after the August 2025 knowledge
-cutoff.  Before deploying, verify the exact class name and call signature on
-the HuggingFace model page and adjust the TODO sections below if needed.
 """
 
 from threading import Lock
@@ -50,8 +46,8 @@ class QwenImageEditHF:
             model_name_or_path,
             torch_dtype=cls.default_dtype,
             local_files_only=local_files_only,
+            device_map=str(device),
         )
-        pipe = pipe.to(device)
 
         return cls(pipeline=pipe, device=device)
 

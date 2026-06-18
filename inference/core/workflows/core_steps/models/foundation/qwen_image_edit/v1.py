@@ -3,7 +3,7 @@
 Takes an input image and a text editing instruction and returns an edited image.
 Runs locally on GPU only — no remote/hosted execution path.
 
-Model: Qwen/Qwen-Image-Edit-2511 (HuggingFace)
+Model: Qwen/Qwen-Image-Edit (HuggingFace)
 Architecture key: qwen-image-edit
 Task: image-editing
 """
@@ -41,7 +41,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Edit an image using a text instruction with **Qwen-Image-Edit-2511**, Alibaba's
+Edit an image using a text instruction with **Qwen-Image-Edit**, Alibaba's
 diffusion-based image editing model.
 
 Provide a source image and describe the change you want to make (e.g. *"change
@@ -74,7 +74,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Qwen-Image-Edit",
             "version": "v1",
-            "short_description": "Edit an image with a text instruction using Qwen-Image-Edit-2511.",
+            "short_description": "Edit an image with a text instruction using Qwen-Image-Edit.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
