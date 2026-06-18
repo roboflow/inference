@@ -38,6 +38,12 @@ from inference.core.workflows.prototypes.block import (
 
 CLAUDE_MODELS = [
     {
+        "id": "claude-fable-5",
+        "name": "Claude Fable 5",
+        "exact_version": "claude-fable-5",
+        "max_output_tokens": 128000,
+    },
+    {
         "id": "claude-opus-4-7",
         "name": "Claude Opus 4.7",
         "exact_version": "claude-opus-4-7",

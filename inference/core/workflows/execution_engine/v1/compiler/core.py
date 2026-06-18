@@ -117,8 +117,10 @@ def compile_workflow_graph(
     workflow_definition: dict,
     execution_engine_version: Optional[Version] = None,
     profiler: Optional[WorkflowsProfiler] = None,
-    init_parameters: Dict[str, Union[Any, Callable[[None], Any]]] = {},
+    init_parameters: Optional[Dict[str, Union[Any, Callable[[None], Any]]]] = None,
 ) -> GraphCompilationResult:
+    if init_parameters is None:
+        init_parameters = {}
     key = COMPILATION_CACHE.get_hash_key(
         workflow_definition=workflow_definition,
         execution_engine_version=execution_engine_version,

@@ -1,4 +1,5 @@
 import errno
+import hashlib
 import json
 import os.path
 import re
@@ -18,9 +19,14 @@ from inference.core.utils.file_system import (
     dump_json_atomic,
     dump_text_lines,
     dump_text_lines_atomic,
+    path_fits_os_limits,
     read_json,
     read_text_file,
 )
+
+MODEL_ID_CACHE_SLUG_PREFIX_LENGTH = 48
+MODEL_ID_CACHE_SLUG_HASH_BYTES = 4
+SPECIAL_CHAR_ONLY_MODEL_ID_SLUG = "special-char-only-model-id"
 
 
 def initialise_cache(model_id: Optional[str] = None) -> None:
@@ -232,7 +238,44 @@ def clear_cache(model_id: Optional[str] = None, delete_from_disk: bool = True) -
         )
 
 
-def get_cache_dir(model_id: Optional[str] = None) -> str:
+def get_cache_dir(
+    model_id: Optional[str] = None, cache_dir_root: Optional[str] = None
+) -> str:
+    cache_dir_root = cache_dir_root if cache_dir_root is not None else MODEL_CACHE_DIR
     if model_id is not None:
-        return os.path.join(MODEL_CACHE_DIR, model_id)
-    return MODEL_CACHE_DIR
+        model_cache_path = get_model_id_cache_path(
+            model_id=model_id, cache_dir_root=cache_dir_root
+        )
+        return os.path.join(cache_dir_root, model_cache_path)
+    return cache_dir_root
+
+
+def get_model_id_cache_path(model_id: str, cache_dir_root: str) -> str:
+    legacy_cache_path = os.path.join(cache_dir_root, model_id)
+    if cache_path_is_within_root(
+        path=legacy_cache_path, cache_dir_root=cache_dir_root
+    ) and path_fits_os_limits(path=legacy_cache_path):
+        return model_id
+    return slugify_model_id_to_cache_key(model_id=model_id)
+
+
+def cache_path_is_within_root(path: str, cache_dir_root: str) -> bool:
+    try:
+        root = os.path.abspath(cache_dir_root)
+        candidate = os.path.abspath(path)
+        return os.path.commonpath([root, candidate]) == root
+    except ValueError:
+        return False
+
+
+def slugify_model_id_to_cache_key(model_id: str) -> str:
+    model_id_slug = re.sub(r"[^A-Za-z0-9_-]+", "-", model_id)
+    model_id_slug = re.sub(r"[_-]{2,}", "-", model_id_slug)
+    if not model_id_slug:
+        model_id_slug = SPECIAL_CHAR_ONLY_MODEL_ID_SLUG
+    if len(model_id_slug) > MODEL_ID_CACHE_SLUG_PREFIX_LENGTH:
+        model_id_slug = model_id_slug[:MODEL_ID_CACHE_SLUG_PREFIX_LENGTH]
+    digest = hashlib.blake2s(
+        model_id.encode("utf-8"), digest_size=MODEL_ID_CACHE_SLUG_HASH_BYTES
+    ).hexdigest()
+    return f"{model_id_slug}-{digest}"

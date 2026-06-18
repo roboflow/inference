@@ -5,6 +5,7 @@ from cachetools.func import ttl_cache
 
 from inference.core.cache import cache
 from inference.core.cache.lru_cache import LRUCache
+from inference.core.cache.model_artifacts import get_cache_dir
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import (
     DatasetID,
@@ -16,7 +17,6 @@ from inference.core.entities.types import (
 from inference.core.env import (
     CACHE_METADATA_LOCK_TIMEOUT,
     LAMBDA,
-    MODEL_CACHE_DIR,
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
@@ -132,9 +132,19 @@ def _check_if_api_key_has_access_to_model(
     service_secret: Optional[str] = None,
 ) -> bool:
     model_id = resolve_roboflow_model_alias(model_id=model_id)
-    _, version_id = get_model_id_chunks(model_id=model_id)
+    dataset_id, version_id = get_model_id_chunks(model_id=model_id)
+    use_legacy_core_model_auth = (
+        endpoint_type == ModelEndpointType.CORE_MODEL and dataset_id == "yolo_world"
+    )
     try:
-        if version_id is not None:
+        if USE_INFERENCE_MODELS and not use_legacy_core_model_auth:
+            get_model_metadata_from_inference_models_registry(
+                api_key=api_key,
+                model_id=model_id,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
+        elif version_id is not None or use_legacy_core_model_auth:
             get_roboflow_model_data(
                 api_key=api_key,
                 model_id=model_id,
@@ -143,15 +153,8 @@ def _check_if_api_key_has_access_to_model(
                 countinference=countinference,
                 service_secret=service_secret,
             )
-        elif not USE_INFERENCE_MODELS:
-            get_roboflow_instant_model_data(
-                api_key=api_key,
-                model_id=model_id,
-                countinference=countinference,
-                service_secret=service_secret,
-            )
         else:
-            get_model_metadata_from_inference_models_registry(
+            get_roboflow_instant_model_data(
                 api_key=api_key,
                 model_id=model_id,
                 countinference=countinference,
@@ -236,7 +239,15 @@ def get_model_type(
         )
         return project_task_type, model_type
 
-    if version_id is not None:
+    if USE_INFERENCE_MODELS:
+        api_data = get_model_metadata_from_inference_models_registry(
+            api_key=api_key,
+            model_id=model_id,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
+        project_task_type = api_data.get("taskType", "object-detection")
+    elif version_id is not None:
         api_data = get_roboflow_model_data(
             api_key=api_key,
             model_id=model_id,
@@ -246,16 +257,8 @@ def get_model_type(
             device_id=GLOBAL_DEVICE_ID,
         ).get("ort")
         project_task_type = api_data.get("type", "object-detection")
-    elif not USE_INFERENCE_MODELS:
-        api_data = get_roboflow_instant_model_data(
-            api_key=api_key,
-            model_id=model_id,
-            countinference=countinference,
-            service_secret=service_secret,
-        )
-        project_task_type = api_data.get("taskType", "object-detection")
     else:
-        api_data = get_model_metadata_from_inference_models_registry(
+        api_data = get_roboflow_instant_model_data(
             api_key=api_key,
             model_id=model_id,
             countinference=countinference,
@@ -296,7 +299,7 @@ def _ensure_model_supported_on_this_deployment(
 ) -> None:
     if SAM3_FINE_TUNED_MODELS_ENABLED:
         return None
-    if model_type != "sam3-large":
+    if model_type not in {"sam3", "sam3-large"}:
         return None
     if project_task_type != "instance-segmentation":
         return None
@@ -415,7 +418,6 @@ def _save_model_metadata_in_cache(
 def construct_model_type_cache_path(
     dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
 ) -> str:
-    cache_dir = os.path.join(
-        MODEL_CACHE_DIR, dataset_id, version_id if version_id else ""
-    )
+    model_id = dataset_id if version_id is None else f"{dataset_id}/{version_id}"
+    cache_dir = get_cache_dir(model_id=model_id)
     return os.path.join(cache_dir, "model_type.json")

@@ -194,8 +194,8 @@ class SegmentAnything(RoboflowCoreModel):
         mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
         mask_input_format: Optional[str] = "json",
         orig_im_size: Optional[List[int]] = None,
-        point_coords: Optional[List[List[float]]] = [],
-        point_labels: Optional[List[int]] = [],
+        point_coords: Optional[List[List[float]]] = None,
+        point_labels: Optional[List[int]] = None,
         use_mask_input_cache: Optional[bool] = True,
         **kwargs,
     ):
@@ -213,8 +213,8 @@ class SegmentAnything(RoboflowCoreModel):
             mask_input (Optional[Union[np.ndarray, List[List[List[float]]]]]): Input mask for the image.
             mask_input_format (Optional[str]): Format of the provided mask input; either 'json' or 'binary'. Defaults to 'json'.
             orig_im_size (Optional[List[int]]): Original size of the image when providing embeddings directly.
-            point_coords (Optional[List[List[float]]]): Coordinates of points in the image. Defaults to an empty list.
-            point_labels (Optional[List[int]]): Labels associated with the provided points. Defaults to an empty list.
+            point_coords (Optional[List[List[float]]]): Coordinates of points in the image. Defaults to None (no points).
+            point_labels (Optional[List[int]]): Labels associated with the provided points. Defaults to None (no labels).
             use_mask_input_cache (Optional[bool]): Flag to determine if cached mask input should be used. Defaults to True.
             **kwargs: Additional keyword arguments.
 
@@ -254,7 +254,7 @@ class SegmentAnything(RoboflowCoreModel):
             elif embeddings_format == "binary":
                 embedding = np.load(BytesIO(embeddings))
 
-        point_coords = point_coords
+        point_coords = list(point_coords) if point_coords is not None else []
         point_coords.append([0, 0])
         point_coords = np.array(point_coords, dtype=np.float32)
         point_coords = np.expand_dims(point_coords, axis=0)
@@ -263,7 +263,7 @@ class SegmentAnything(RoboflowCoreModel):
             original_image_size,
         )
 
-        point_labels = point_labels
+        point_labels = list(point_labels) if point_labels is not None else []
         point_labels.append(-1)
         point_labels = np.array(point_labels, dtype=np.float32)
         point_labels = np.expand_dims(point_labels, axis=0)

@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from PIL import Image
 
+from inference.core.cache.model_artifacts import get_cache_file_path
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponse,
@@ -53,8 +54,8 @@ class EasyOCR(RoboflowCoreModel):
         self.recognizer = model_id.split("/")[1]
 
         shutil.copyfile(
-            f"{MODEL_CACHE_DIR}/{model_id}/weights.pt",
-            f"{MODEL_CACHE_DIR}/{model_id}/{self.recognizer}.pth",
+            get_cache_file_path(file="weights.pt", model_id=model_id),
+            get_cache_file_path(file=f"{self.recognizer}.pth", model_id=model_id),
         )
 
     def predict(self, image_in: np.ndarray, prompt="", history=None, **kwargs):

@@ -140,15 +140,20 @@ class BlockManifest(WorkflowBlockManifest):
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default="sam2video/small",
         description=(
-            "Streaming SAM2 model id resolved by `inference_models`.  "
+            "Streaming video tracker model id resolved by `inference_models`.  "
             "The `sam2video` family ships four Hiera backbone sizes; "
-            "`small` is the default trade-off between speed and quality."
+            "`small` is the default trade-off between speed and quality.  "
+            "`sam3trackervideo` is SAM3's visually prompted tracker — the "
+            "same prompt contract with a larger backbone, markedly better "
+            "at identity retention on long videos and crowded scenes, at "
+            "higher compute cost."
         ),
         examples=[
             "sam2video/tiny",
             "sam2video/small",
             "sam2video/base-plus",
             "sam2video/large",
+            "sam3trackervideo",
         ],
     )
     prompt_mode: Literal["first_frame", "every_n_frames", "every_frame"] = Field(
@@ -212,6 +217,7 @@ class BlockManifest(WorkflowBlockManifest):
             "sam2video/tiny",
             "sam2video/base-plus",
             "sam2video/large",
+            "sam3trackervideo",
         ]
 
 

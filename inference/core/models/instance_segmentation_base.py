@@ -1,4 +1,4 @@
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -221,7 +221,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         predictions: List[List[List[float]]],
         masks: List[List[List[float]]],
         img_dims: List[Tuple[int, int]],
-        class_filter: List[str] = [],
+        class_filter: Optional[List[str]] = None,
         **kwargs,
     ) -> Union[
         InstanceSegmentationInferenceResponse,
@@ -234,7 +234,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             predictions (List[List[List[float]]]): List of prediction data, one for each image.
             masks (List[List[List[float]]]): List of masks corresponding to the predictions.
             img_dims (List[Tuple[int, int]]): List of image dimensions corresponding to the processed images.
-            class_filter (List[str], optional): List of class names to filter predictions by. Defaults to an empty list (no filtering).
+            class_filter (Optional[List[str]]): List of class names to filter predictions by. Defaults to None (no filtering).
 
         Returns:
             Union[InstanceSegmentationInferenceResponse, List[InstanceSegmentationInferenceResponse]]: A single instance segmentation response or a list of instance segmentation responses based on the number of processed images.

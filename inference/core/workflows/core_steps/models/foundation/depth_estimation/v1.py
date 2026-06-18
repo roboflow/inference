@@ -214,6 +214,7 @@ class DepthEstimationBlockV1(WorkflowBlock):
             result = client.depth_estimation(
                 inference_input=single_image.base64_image,
                 model_id=model_version,
+                model_id_in_path=True,
             )
             # Convert the result back to the expected format
             # Remote returns: {"normalized_depth": [...], "image": hex_string}
