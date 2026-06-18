@@ -10,6 +10,9 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference_models.models.base.classification import ClassificationPrediction
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
@@ -124,6 +127,61 @@ def test_legacy_detection_plus_classification_workflow_when_minimal_valid_input_
     result = execution_engine.run(
         runtime_parameters={
             "image": dogs_image,
+        }
+    )
+
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    # Under the flag, predictions is a Python list of native ClassificationPrediction
+    # objects (one per crop); list length is unchanged.
+    predictions = result[0]["predictions"]
+    assert (
+        len(predictions) == 2
+    ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
+    for pred in predictions:
+        assert isinstance(
+            pred, ClassificationPrediction
+        ), "Each crop prediction must be a native ClassificationPrediction"
+    # Native equivalent of ['top']: class name at the top class id. Note images_metadata
+    # is PLURAL and indexed [0]; top class id comes from class_id.
+    top_names = [
+        pred.images_metadata[0][CLASS_NAMES_KEY][int(pred.class_id.reshape(-1)[0])]
+        for pred in predictions
+    ]
+    assert top_names == [
+        "116.Parson_russell_terrier",
+        "131.Wirehaired_pointing_griffon",
+    ], "Expected predictions to be as measured in reference run"
+
+
+@_TENSOR_ONLY
+def test_legacy_detection_plus_classification_workflow_when_minimal_valid_input_provided_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as the *_tensor_native test, but the image arrives ALREADY materialised as a CHW
+    # RGB device tensor (is_tensor_materialised() == True), so the OD block runs its on-device
+    # tensor path. Results must match the numpy-input variant.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=LEGACY_DETECTION_PLUS_CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
         }
     )
 
@@ -315,6 +373,68 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
     result = execution_engine.run(
         runtime_parameters={
             "image": dogs_image,
+        }
+    )
+
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    # Under the flag, predictions is a Python list of native ClassificationPrediction
+    # objects (one per crop); list length is unchanged.
+    predictions = result[0]["predictions"]
+    assert (
+        len(predictions) == 2
+    ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
+    for pred in predictions:
+        assert isinstance(
+            pred, ClassificationPrediction
+        ), "Each crop prediction must be a native ClassificationPrediction"
+    # Native equivalent of ['top']: class name at the top class id. Note images_metadata
+    # is PLURAL and indexed [0]; top class id comes from class_id.
+    top_names = [
+        pred.images_metadata[0][CLASS_NAMES_KEY][int(pred.class_id.reshape(-1)[0])]
+        for pred in predictions
+    ]
+    assert top_names == [
+        "116.Parson_russell_terrier",
+        "131.Wirehaired_pointing_griffon",
+    ], "Expected predictions to be as measured in reference run"
+
+
+@_TENSOR_ONLY
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
+def test_detection_plus_classification_workflow_when_minimal_valid_input_provided_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+    od_block_type: str,
+    cls_block_type: str,
+) -> None:
+    # Same as the *_tensor_native test, but the image arrives ALREADY materialised as a CHW
+    # RGB device tensor (is_tensor_materialised() == True), so the OD block runs its on-device
+    # tensor path. Results must match the numpy-input variant.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_detection_plus_classification_workflow(
+            od_block_type, cls_block_type
+        ),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
         }
     )
 

@@ -14,6 +14,9 @@ from inference.core.workflows.execution_engine.constants import (
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference_models.models.base.object_detection import Detections as NativeDetections
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
@@ -200,3 +203,59 @@ def test_detections_merge_workflow_tensor_native(
     box_height = merged_bbox[3] - merged_bbox[1]
     assert box_width > 100, "Merged box should be reasonably wide"
     assert box_height > 100, "Merged box should be reasonably tall"
+
+
+@_TENSOR_ONLY
+def test_detections_merge_workflow_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    # Same as test_detections_merge_workflow_tensor_native, but the image arrives ALREADY
+    # materialised as a CHW RGB device tensor (is_tensor_materialised() == True), so the OD
+    # block runs its on-device tensor path. Results must match the numpy-input variant.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=DETECTIONS_MERGE_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when — feed the fixture as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [numpy_image_as_tensor(dogs_image)],
+        }
+    )
+
+    # then
+    assert len(result) == 1, "One set of outputs expected"
+    assert "result" in result[0], "Output must contain key 'result'"
+    merged = result[0]["result"]
+    assert isinstance(
+        merged, NativeDetections
+    ), "Output must be instance of native inference_models.Detections"
+    assert merged.xyxy.shape[0] == 1, "Should have exactly one merged detection"
+    assert CLASS_NAMES_KEY in merged.image_metadata, "Should have class_names in metadata"
+    assert (
+        "merged_detection" in merged.image_metadata[CLASS_NAMES_KEY].values()
+    ), "Merged detection should carry the merged class name"
+    assert merged.bboxes_metadata is not None, "Should have per-box metadata"
+    assert (
+        DETECTION_ID_KEY in merged.bboxes_metadata[0]
+    ), "Should have detection_id in per-box metadata"
+
+    merged_bbox = merged.xyxy[0].tolist()
+    image_height, image_width = dogs_image.shape[:2]
+    assert 0 <= merged_bbox[0] <= image_width, "x1 should be within image bounds"
+    assert 0 <= merged_bbox[1] <= image_height, "y1 should be within image bounds"
+    assert 0 <= merged_bbox[2] <= image_width, "x2 should be within image bounds"
+    assert 0 <= merged_bbox[3] <= image_height, "y2 should be within image bounds"
+    assert merged_bbox[2] > merged_bbox[0], "x2 should be greater than x1"
+    assert merged_bbox[3] > merged_bbox[1], "y2 should be greater than y1"
+    assert merged_bbox[2] - merged_bbox[0] > 100, "Merged box should be reasonably wide"
+    assert merged_bbox[3] - merged_bbox[1] > 100, "Merged box should be reasonably tall"
