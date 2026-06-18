@@ -36,6 +36,7 @@ from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel
+from inference_models.errors import ModelInputError
 from inference_models.models.sam3.cache import (
     Sam3ImageEmbeddingsInMemoryCache,
     Sam3LowResolutionMasksInMemoryCache,
@@ -71,13 +72,15 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
         self.api_key = api_key if api_key else API_KEY
         self.task_type = "unsupervised-segmentation"
 
+        # Keep interactive embeddings/logits on GPU to match legacy click latency;
+        # make CPU spill configurable if memory pressure shows up.
         sam3_image_embeddings_cache = Sam3ImageEmbeddingsInMemoryCache.init(
             size_limit=embedding_cache_size,
-            send_to_cpu=True,
+            send_to_cpu=False,
         )
         sam3_low_resolution_masks_cache = Sam3LowResolutionMasksInMemoryCache.init(
             size_limit=low_res_logits_cache_size,
-            send_to_cpu=True,
+            send_to_cpu=False,
         )
         extra_weights_provider_headers = get_extra_weights_provider_headers(
             countinference=kwargs.get("countinference"),
@@ -170,7 +173,6 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
             load_logits_from_cache and not DISABLE_SAM3_LOGITS_CACHE
         )
         save_logits_to_cache = save_logits_to_cache and not DISABLE_SAM3_LOGITS_CACHE
-        loaded_image = self.preproc_image(image)
 
         if prompts is not None:
             if isinstance(prompts, dict):
@@ -188,9 +190,7 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
         if mask_input is not None and isinstance(mask_input, list):
             mask_input = np.array(mask_input)
 
-        prediction = self._model.segment_with_visual_prompts(
-            images=loaded_image,
-            image_hashes=image_id,
+        segment_kwargs = dict(
             point_coordinates=args["point_coords"],
             point_labels=args["point_labels"],
             boxes=args["box"],
@@ -200,7 +200,26 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
             load_from_mask_input_cache=load_logits_from_cache,
             save_to_mask_input_cache=save_logits_to_cache,
             use_embeddings_cache=True,
-        )[0]
+        )
+
+        prediction = None
+        if image_id is not None:
+            # Fast path: skip image decode/preproc when embeddings are already cached.
+            # NOTE: match the cache-miss message so other ModelInputErrors (bad prompt
+            # shape, invalid hash usage) propagate instead of silently re-decoding.
+            try:
+                prediction = self._model.segment_with_visual_prompts(
+                    images=None, image_hashes=image_id, **segment_kwargs
+                )[0]
+            except ModelInputError as error:
+                if "no embeddings were found in the cache" not in str(error):
+                    raise
+                prediction = None
+        if prediction is None:
+            loaded_image = self.preproc_image(image)
+            prediction = self._model.segment_with_visual_prompts(
+                images=loaded_image, image_hashes=image_id, **segment_kwargs
+            )[0]
         # SAM3Torch already selects the most confident of the multimask proposals
         # for each prompt, so masks/scores/logits arrive with exactly one entry
         # per prompt. Reducing again here would collapse a multi-prompt request
