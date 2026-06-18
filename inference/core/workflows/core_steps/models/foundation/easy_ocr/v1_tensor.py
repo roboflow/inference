@@ -228,6 +228,7 @@ class EasyOCRBlockV1(WorkflowBlock):
                 model_id,
                 images=[single_image.tensor_image],
                 input_color_format="rgb",
+                confidence=0.0,  # align with old inference default
             )
             # EasyOCRTorch.pre_process honours input_color_format for tensor inputs
             # (defaults to "rgb"), so passing it explicitly matches tensor_image.

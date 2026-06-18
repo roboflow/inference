@@ -113,6 +113,7 @@ class InferenceModelsEasyOCRAdapter(Model):
         predictions_for_image = []
         for instance_id in range(prediction_result[1].xyxy.shape[0]):
             x_min, y_min, x_max, y_max = prediction_result[1].xyxy[instance_id].tolist()
+            instance_confidence = prediction_result[1].confidence[instance_id].item()
             width = x_max - x_min
             height = y_max - y_min
             center_x = (x_min + x_max) / 2
@@ -125,7 +126,7 @@ class InferenceModelsEasyOCRAdapter(Model):
                         "y": center_y,
                         "width": width,
                         "height": height,
-                        "confidence": 1.0,  # confidence is not returned by the model
+                        "confidence": instance_confidence,
                         "class": prediction_result[1].bboxes_metadata[instance_id][
                             "text"
                         ],
