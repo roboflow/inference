@@ -14,10 +14,10 @@ import pytest
 
 from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 from inference_model_manager.model_manager_process import (
+    _ERR_STALE,
+    T_ERROR,
     ModelManagerProcess,
     ModelState,
-    T_ERROR,
-    _ERR_STALE,
 )
 
 
@@ -99,7 +99,7 @@ def test_reaper_frees_stale_slot_without_ticket(pool):
     asyncio.run(_run())
     assert pool.free_count == pool.n_slots
     assert 101 not in mmp._pending
-    (_, msg_type, payload) = mmp._sent[0]
+    _, msg_type, payload = mmp._sent[0]
     assert msg_type == T_ERROR
     assert struct.unpack(">QB", payload) == (101, _ERR_STALE)
 

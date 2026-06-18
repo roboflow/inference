@@ -406,11 +406,11 @@ class TestOwnershipCheckedFree:
         try:
             s = pool.alloc_slot()
             pool.mark_allocated(s, request_id=111)
-            pool.free_slot(s, request_id=111)      # reaper-style legitimate free
+            pool.free_slot(s, request_id=111)  # reaper-style legitimate free
             s2 = pool.alloc_slot()
             assert s2 == s
             pool.mark_allocated(s2, request_id=999)
-            pool.free_slot(s, request_id=111)      # late free from old owner
+            pool.free_slot(s, request_id=111)  # late free from old owner
             assert pool.free_count == 0
             assert pool.read_header(s).request_id == 999
         finally:
@@ -462,12 +462,11 @@ class TestTimestampRefresh:
 # Metadata block — advisory free-count for admission control
 # ---------------------------------------------------------------------------
 
+from inference_model_manager.backends.utils.shm_pool import _META_FMT, _META_MAGIC
 from inference_model_manager.backends.utils.shm_pool import (  # noqa: E402
-    _META_FMT,
-    _META_MAGIC,
     SHMPool as _SHMPool,
-    read_free_count,
 )
+from inference_model_manager.backends.utils.shm_pool import read_free_count
 
 
 def test_free_count_starts_at_n_slots():

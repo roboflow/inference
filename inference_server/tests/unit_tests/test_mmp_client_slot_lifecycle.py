@@ -220,7 +220,9 @@ def test_start_rejects_shm_geometry_mismatch():
             with pytest.raises(RuntimeError, match="geometry mismatch"):
                 try:
                     mod.zmq.asyncio.Context = lambda: type(
-                        "C", (), {"socket": lambda s, t: _Sock(), "term": lambda s: None}
+                        "C",
+                        (),
+                        {"socket": lambda s, t: _Sock(), "term": lambda s: None},
                     )()
                     await client.start()
                 finally:
@@ -300,14 +302,16 @@ def test_ensure_loaded_caches_and_skips_second_send():
         assert len(sock.sent) == 1
 
         assert (await client.ensure_loaded("m"))[0] == "model_ready"
-        assert len(sock.sent) == 1, "warm cache must skip the T_ENSURE_LOADED round-trip"
+        assert (
+            len(sock.sent) == 1
+        ), "warm cache must skip the T_ENSURE_LOADED round-trip"
 
     asyncio.run(_run())
 
 
 def test_shm_admission_skips_alloc_when_pool_full():
-    from inference_server.errors import ServerBusyError
     from inference_model_manager.backends.utils.shm_pool import SHMPool
+    from inference_server.errors import ServerBusyError
 
     async def _run():
         pool = SHMPool.create(n_slots=4, input_mb=0.001)

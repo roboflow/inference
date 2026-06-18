@@ -38,6 +38,7 @@ def _capture_fd_stderr():
         holder["text"] = tmp.read().decode("utf-8", "replace")
         tmp.close()
 
+
 # ---------------------------------------------------------------------------
 # Fixtures — minimal valid JPEG and PNG bytes
 # ---------------------------------------------------------------------------

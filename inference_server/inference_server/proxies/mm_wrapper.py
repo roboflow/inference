@@ -69,9 +69,7 @@ class MMWrapper:
             try:
                 await asyncio.get_running_loop().run_in_executor(
                     None,
-                    lambda: self.manager.load(
-                        model_id, api_key, device=device or None
-                    ),
+                    lambda: self.manager.load(model_id, api_key, device=device or None),
                 )
             except Exception:
                 logger.warning("MMWrapper.ensure_loaded: load failed", exc_info=True)
