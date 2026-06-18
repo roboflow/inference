@@ -2,6 +2,7 @@ from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass
 from typing import Deque, List, Literal, Optional, Tuple, Type, Union
+from weakref import finalize
 
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 
@@ -255,6 +256,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         self._step_execution_mode = step_execution_mode
         self._last_model_id: Optional[str] = None
         self._stream_response_executor: Optional[ThreadPoolExecutor] = None
+        self._stream_response_executor_finalizer = None
         self._pending_stream_prediction_contexts: Deque[_StreamPredictionContext] = (
             deque()
         )
@@ -420,6 +422,11 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
     def _get_stream_response_executor(self) -> ThreadPoolExecutor:
         if self._stream_response_executor is None:
             self._stream_response_executor = ThreadPoolExecutor(max_workers=1)
+            self._stream_response_executor_finalizer = finalize(
+                self,
+                self._stream_response_executor.shutdown,
+                wait=False,
+            )
         return self._stream_response_executor
 
     def _submit_async_post_process_result(
@@ -610,8 +617,12 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
 
     def close_stream_pipeline(self) -> None:
         if self._stream_response_executor is not None:
+            finalizer = self._stream_response_executor_finalizer
+            if finalizer is not None and finalizer.alive:
+                finalizer.detach()
             self._stream_response_executor.shutdown(wait=False)
             self._stream_response_executor = None
+            self._stream_response_executor_finalizer = None
         if (
             self._last_model_id is None
             or self._last_model_id not in self._model_manager
