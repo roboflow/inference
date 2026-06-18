@@ -128,6 +128,13 @@ def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
     submits later GPU work. Keeping this cache thread-local avoids two workers
     writing into the same scratch tensor. The small LRU cap prevents retaining a
     new pinned allocation for every transient shape.
+
+    The cache is keyed by ``(name, dtype)`` only. When a cached buffer is large
+    enough, this returns a **view** into that entry, not a fresh allocation.
+    ``.numpy()`` and any slices alias the scratch memory until the next
+    ``copy_`` into the same cache slot. Values that outlive the current
+    finalization must be copied or reduced to scalars / fresh polygon arrays
+    before returning.
     """
     cache = getattr(_PINNED_HOST_BUFFER_CONTEXT, "cache", None)
     if cache is None:
@@ -729,6 +736,8 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     and isinstance(combined_gpu, torch.Tensor)
                     and combined_gpu.is_cuda
                 ):
+                    # combined_np / class_column / combined_slice are scratch views;
+                    # use only for survivor counting and in-loop scalar extraction.
                     combined_host = get_pinned_buffer(
                         "combined_full",
                         tuple(combined_gpu.shape),
@@ -852,6 +861,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                         polys_or_rles = rle_masks2poly(det.mask)
                 class_ids = det.class_id.detach().cpu().numpy()
 
+            # Some branches above intentionally keep numpy views into
+            # thread-local pinned scratch buffers. Only scalar values and
+            # polygon/RLE lists may be stored on responses below; do not return
+            # those arrays or any view derived from them.
             predictions: List[
                 Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
             ] = []
