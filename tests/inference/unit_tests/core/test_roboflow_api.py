@@ -516,6 +516,7 @@ async def test_get_serverless_usage_check_async_when_workspace_is_billing_restri
         assert result == ServerlessUsageCheckResponse(
             status_code=402,
             workspace_id="my-workspace",
+            workspace_db_id="workspace-db-id",
             under_cap=False,
             error="Workspace billing is restricted.",
         )
@@ -541,6 +542,7 @@ async def test_get_serverless_usage_check_async_when_response_is_valid() -> None
         assert result == ServerlessUsageCheckResponse(
             status_code=200,
             workspace_id="my_workspace",
+            workspace_db_id="workspace-db-id",
             under_cap=True,
         )
         registered_requests = request_mock.requests[
@@ -913,7 +915,7 @@ def test_get_model_metadata_from_inference_models_registry_when_wrong_api_key_us
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         status_code=401,
     )
 
@@ -955,7 +957,7 @@ def test_get_model_metadata_from_inference_models_registry_when_wrong_model_used
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         status_code=404,
     )
 
@@ -997,7 +999,7 @@ def test_get_model_metadata_from_inference_models_registry_when_http_error_occur
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         status_code=500,
     )
 
@@ -1043,7 +1045,7 @@ def test_get_model_metadata_from_inference_models_registry_when_response_parsing
     expected_response = b"For sure not a JSON payload"
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         content=expected_response,
     )
 
@@ -1132,13 +1134,17 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 ) -> None:
     # given
     expected_response = {
+        "status": "ok",
         "modelMetadata": {
-            "modelArchitecture": "yolov8",
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coins_detection/1",
+            "modelArchitecture": "rfdetr",
+            "modelVariant": "rfdetr-nano",
             "taskType": "object-detection",
-        }
+        },
     }
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         json=expected_response,
     )
 
@@ -1152,7 +1158,42 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     assert "modelid=coins_detection%2f1" in requests_mock.last_request.query
     assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
     assert result == {
-        "modelType": "yolov8",
+        "modelType": "rfdetr",
+        "taskType": "object-detection",
+    }
+
+
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
+def test_get_model_metadata_from_inference_models_registry_when_no_api_key_is_provided(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    expected_response = {
+        "status": "ok",
+        "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "rfdetr-nano",
+            "modelArchitecture": "rfdetr",
+            "modelVariant": "rfdetr-nano",
+            "taskType": "object-detection",
+        },
+    }
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
+        json=expected_response,
+    )
+
+    # when
+    result = get_model_metadata_from_inference_models_registry(
+        api_key=None,
+        model_id="rfdetr-nano",
+    )
+
+    # then
+    assert "modelid=rfdetr-nano" in requests_mock.last_request.query
+    assert "Authorization" not in requests_mock.last_request.headers
+    assert result == {
+        "modelType": "rfdetr",
         "taskType": "object-detection",
     }
 
@@ -1165,13 +1206,17 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 ) -> None:
     # given
     expected_response = {
+        "status": "ok",
         "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
+            "modelVariant": None,
             "taskType": "object-detection",
-        }
+        },
     }
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         json=expected_response,
     )
 
@@ -1197,6 +1242,98 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
     }
 
 
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
+@mock.patch.object(
+    roboflow_api, "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN", "assume-token"
+)
+def test_get_model_metadata_from_inference_models_registry_uses_request_workspace_db_id(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    expected_response = {
+        "status": "ok",
+        "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coins_detection/1",
+            "modelArchitecture": "yolov8",
+            "modelVariant": None,
+            "taskType": "object-detection",
+        },
+    }
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
+        json=expected_response,
+    )
+    token = roboflow_api.assume_identity_authorised_workspace_db_id.set(
+        "workspace-db-id"
+    )
+
+    try:
+        # when
+        result = get_model_metadata_from_inference_models_registry(
+            api_key="my_api_key",
+            model_id="coins_detection/1",
+        )
+    finally:
+        roboflow_api.assume_identity_authorised_workspace_db_id.reset(token)
+
+    # then
+    assert requests_mock.last_request.headers["Authorization"] == "Bearer my_api_key"
+    assert (
+        requests_mock.last_request.headers["x-assume-identity-access-token"]
+        == "assume-token"
+    )
+    assert (
+        requests_mock.last_request.headers["x-assume-identity-authorised-workspace"]
+        == "workspace-db-id"
+    )
+    assert result == {
+        "modelType": "yolov8",
+        "taskType": "object-detection",
+    }
+
+
+@mock.patch.object(roboflow_api, "MODELS_CACHE_AUTH_ENABLED", True)
+@mock.patch.object(
+    roboflow_api, "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN", "assume-token"
+)
+def test_get_model_metadata_from_inference_models_registry_does_not_send_token_without_workspace(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    expected_response = {
+        "status": "ok",
+        "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coins_detection/1",
+            "modelArchitecture": "yolov8",
+            "modelVariant": None,
+            "taskType": "object-detection",
+        },
+    }
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
+        json=expected_response,
+    )
+
+    # when
+    result = get_model_metadata_from_inference_models_registry(
+        api_key="my_api_key",
+        model_id="coins_detection/1",
+    )
+
+    # then
+    assert "x-assume-identity-access-token" not in requests_mock.last_request.headers
+    assert (
+        "x-assume-identity-authorised-workspace"
+        not in requests_mock.last_request.headers
+    )
+    assert result == {
+        "modelType": "yolov8",
+        "taskType": "object-detection",
+    }
+
+
 @mock.patch.object(roboflow_api, "GCP_SERVERLESS", True)
 @mock.patch.object(roboflow_api, "ENFORCE_CREDITS_VERIFICATION", True)
 @mock.patch.object(roboflow_api, "ROBOFLOW_SERVICE_SECRET", "dummy-secret")
@@ -1206,13 +1343,17 @@ def test_get_model_metadata_from_inference_models_registry_when_valid_response_e
 ) -> None:
     # given
     expected_response = {
+        "status": "ok",
         "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coins_detection/1",
             "modelArchitecture": "yolov8",
+            "modelVariant": None,
             "taskType": "object-detection",
-        }
+        },
     }
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/models/v1/external/weights"),
+        url=wrap_url(f"{API_BASE_URL}/models/v1/external/stat"),
         json=expected_response,
     )
 
@@ -3470,6 +3611,7 @@ async def test_get_serverless_usage_check_async_routes_through_secure_gateway() 
 
         assert result.status_code == 200
         assert result.workspace_id == "my-workspace"
+        assert result.workspace_db_id == "ws-id"
         called_urls = [str(k[1]) for k in request_mock.requests.keys()]
         assert any(
             PROXY_PREFIX in u for u in called_urls
