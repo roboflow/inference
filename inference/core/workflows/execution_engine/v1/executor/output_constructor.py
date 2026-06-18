@@ -41,9 +41,7 @@ from inference_models.models.base.instance_segmentation import (
 from inference_models.models.base.keypoints_detection import (
     KeyPoints as NativeKeyPoints,
 )
-from inference_models.models.base.object_detection import (
-    Detections as NativeDetections,
-)
+from inference_models.models.base.object_detection import Detections as NativeDetections
 
 
 def construct_workflow_output(

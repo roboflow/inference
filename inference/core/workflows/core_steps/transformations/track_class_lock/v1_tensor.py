@@ -159,9 +159,7 @@ def _vote_and_lock(
     the cross-run ``self._per_video_state`` persistence is identical.
     """
     video_id = image.video_metadata.video_identifier
-    video_state = self._per_video_state.setdefault(
-        video_id, {"tracks": {}, "frame": 0}
-    )
+    video_state = self._per_video_state.setdefault(video_id, {"tracks": {}, "frame": 0})
     self._per_video_state.move_to_end(video_id)
     while len(self._per_video_state) > MAX_TRACKED_VIDEOS:
         self._per_video_state.popitem(last=False)
@@ -231,9 +229,7 @@ def _vote_and_lock(
                 if dets.class_id is not None:
                     st["class_ids"][cname] = int(dets.class_id[i])
             if st["votes"]:
-                ranked = sorted(
-                    st["votes"].items(), key=lambda kv: kv[1], reverse=True
-                )
+                ranked = sorted(st["votes"].items(), key=lambda kv: kv[1], reverse=True)
                 top_c, top_v = ranked[0]
                 runner_v = ranked[1][1] if len(ranked) > 1 else 0
                 if top_v >= min_votes and top_v - runner_v >= lead_margin:
@@ -273,12 +269,12 @@ def _vote_and_lock(
         del tracks[t]
 
     out_class_names = (
-        np.asarray(class_names) if class_names is not None else np.empty((n,), dtype=object)
+        np.asarray(class_names)
+        if class_names is not None
+        else np.empty((n,), dtype=object)
     )
     out_class_id = (
-        dets.class_id.copy()
-        if dets.class_id is not None
-        else np.empty((n,), dtype=int)
+        dets.class_id.copy() if dets.class_id is not None else np.empty((n,), dtype=int)
     )
     return out_class_names, out_class_id, locked_flags
 
@@ -299,7 +295,9 @@ def _repack_native(
     """
     result = deepcopy(detections)
     n = int(result.xyxy.shape[0])
-    new_class_id = result.class_id.new_tensor(class_id.tolist()) if n else result.class_id
+    new_class_id = (
+        result.class_id.new_tensor(class_id.tolist()) if n else result.class_id
+    )
     new_confidence = (
         result.confidence.new_tensor(confidence.tolist()) if n else result.confidence
     )
