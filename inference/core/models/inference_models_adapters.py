@@ -73,6 +73,7 @@ from inference_models import (
 )
 from inference_models.configuration import (
     INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED,
+    MAX_RFDETR_PIPELINE_DEPTH,
     get_rfdetr_pipeline_depth,
 )
 from inference_models.models.base.async_handoff import (
@@ -386,7 +387,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         ] = deque()
 
     def _resolve_pipeline_depth(self) -> int:
-        requested_depth = get_rfdetr_pipeline_depth()
+        requested_depth = min(get_rfdetr_pipeline_depth(), MAX_RFDETR_PIPELINE_DEPTH)
         if requested_depth <= 1 or self._model_supports_stream_pipeline():
             return requested_depth
         return 1

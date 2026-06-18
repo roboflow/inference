@@ -176,7 +176,7 @@ def test_pipeline_depth_falls_back_to_one_for_unsupported_models(monkeypatch) ->
     assert adapter._resolve_pipeline_depth() == 1
 
 
-def test_pipeline_depth_honors_requested_depth_for_supported_models(
+def test_pipeline_depth_caps_requested_depth_for_supported_models(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
@@ -186,7 +186,7 @@ def test_pipeline_depth_honors_requested_depth_for_supported_models(
     adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
     adapter._model = SimpleNamespace(supports_stream_pipeline=True)
 
-    assert adapter._resolve_pipeline_depth() == 3
+    assert adapter._resolve_pipeline_depth() == 2
 
 
 def test_pipeline_uses_sync_forward_for_batched_requests() -> None:
