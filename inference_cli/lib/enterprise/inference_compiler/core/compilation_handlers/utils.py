@@ -201,8 +201,9 @@ def execute_compilation(
     registered_model_features: Optional[dict] = None,
     console: Optional[Console] = None,
     platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
-) -> Tuple[str, TRTConfig, TRTModelPackageV1, Optional[ModelPackageRegistrationResponse]]:
-    platform_policy = platform_registration
+) -> Tuple[
+    str, TRTConfig, TRTModelPackageV1, Optional[ModelPackageRegistrationResponse]
+]:
     runtime_xray = x_ray_runtime_environment()
     logger.info(
         "Runtime environment: gpu=%s, cc=%s, cuda=%s, trt=%s, driver=%s, l4t=%s",
@@ -290,7 +291,7 @@ def execute_compilation(
     except RequestError as error:
         if error.status_code == 409:
             raise AlreadyCompiledError("Model package already compiled.")
-        if platform_policy == PlatformRegistrationPolicy.REQUIRED:
+        if platform_registration == PlatformRegistrationPolicy.REQUIRED:
             logger.exception("Could not pre-register model package")
             raise CompiledPackageRegistrationError(
                 f"Could not register model package: {error}"
@@ -303,7 +304,7 @@ def execute_compilation(
         )
         skip_platform_registration = True
     except Exception as error:
-        if platform_policy == PlatformRegistrationPolicy.REQUIRED:
+        if platform_registration == PlatformRegistrationPolicy.REQUIRED:
             logger.exception("Error while registering model package")
             raise CompiledPackageRegistrationError(
                 f"Could not register model package: {error}"
@@ -347,7 +348,7 @@ def execute_compilation(
         "TRT engine compiled for %s at %s (platform_registration=%s)",
         model_id,
         engine_path,
-        platform_policy.value,
+        platform_registration.value,
     )
     if skip_platform_registration:
         logger.info(
@@ -368,7 +369,7 @@ def execute_compilation(
     except RequestError as error:
         if error.status_code == 409:
             raise AlreadyCompiledError("Model package already compiled.")
-        if platform_policy == PlatformRegistrationPolicy.OPTIONAL:
+        if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
             logger.warning(
                 "Post-compile register failed for %s (status %s); local install will follow: %s",
                 model_id,
@@ -381,7 +382,7 @@ def execute_compilation(
             f"Could not register model package: {error}"
         ) from error
     except Exception as error:
-        if platform_policy == PlatformRegistrationPolicy.OPTIONAL:
+        if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
             logger.warning(
                 "Post-compile register failed for %s; local install will follow: %s",
                 model_id,

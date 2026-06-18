@@ -181,6 +181,7 @@ class CompilationVariantOutcome:
     compiled: bool = False
     installed_local: bool = False
     local_package_id: Optional[str] = None
+    local_install_path: Optional[str] = None
     registered_platform: bool = False
     uploaded_sealed: bool = False
     compile_error: Optional[str] = None
@@ -189,39 +190,23 @@ class CompilationVariantOutcome:
     reason: str = ""
 
 
+@dataclass
 class CompilationPipelineResult:
     """Outcome of compile → install → register/upload."""
 
-    def __init__(
-        self,
-        model_id: str,
-        model_architecture: str,
-        *,
-        compiled: bool = False,
-        installed_local: bool = False,
-        local_package_id: Optional[str] = None,
-        local_install_path: Optional[str] = None,
-        registered_platform: bool = False,
-        uploaded_sealed: bool = False,
-        compile_error: Optional[str] = None,
-        register_error: Optional[str] = None,
-        backend: str = "onnx_cuda",
-        reason: str = "",
-        variant_outcomes: Optional[List[CompilationVariantOutcome]] = None,
-    ):
-        self.model_id = model_id
-        self.model_architecture = model_architecture
-        self.compiled = compiled
-        self.installed_local = installed_local
-        self.local_package_id = local_package_id
-        self.local_install_path = local_install_path
-        self.registered_platform = registered_platform
-        self.uploaded_sealed = uploaded_sealed
-        self.compile_error = compile_error
-        self.register_error = register_error
-        self.backend = backend
-        self.reason = reason
-        self.variant_outcomes = variant_outcomes or []
+    model_id: str
+    model_architecture: str
+    compiled: bool = False
+    installed_local: bool = False
+    local_package_id: Optional[str] = None
+    local_install_path: Optional[str] = None
+    registered_platform: bool = False
+    uploaded_sealed: bool = False
+    compile_error: Optional[str] = None
+    register_error: Optional[str] = None
+    backend: str = "onnx_cuda"
+    reason: str = ""
+    variant_outcomes: List[CompilationVariantOutcome] = field(default_factory=list)
 
     def as_log_metadata(self) -> dict:
         return {
@@ -244,6 +229,7 @@ class CompilationPipelineResult:
                     "compiled": variant.compiled,
                     "installed_local": variant.installed_local,
                     "local_package_id": variant.local_package_id,
+                    "local_install_path": variant.local_install_path,
                     "registered_platform": variant.registered_platform,
                     "uploaded_sealed": variant.uploaded_sealed,
                     "compile_error": variant.compile_error,
@@ -284,6 +270,7 @@ def aggregate_compilation_variant_outcomes(
         compiled=preferred.compiled,
         installed_local=preferred.installed_local,
         local_package_id=preferred.local_package_id,
+        local_install_path=preferred.local_install_path,
         registered_platform=preferred.registered_platform,
         uploaded_sealed=preferred.uploaded_sealed,
         compile_error=preferred.compile_error,

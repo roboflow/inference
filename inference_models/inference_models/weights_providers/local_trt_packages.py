@@ -5,13 +5,23 @@ import logging
 import os
 from typing import List, Optional, Union
 
+from inference_models.errors import FileHashSumMissmatch
 from inference_models.models.auto_loaders.entities import BackendType
+from inference_models.models.auto_loaders.model_cache_paths import (
+    generate_model_cache_root_for_model_id,
+    generate_model_package_cache_path,
+    generate_shared_blobs_path,
+)
+from inference_models.utils.download import (
+    is_valid_md5_hash,
+    verify_hash_sum_of_local_file,
+)
 from inference_models.weights_providers.entities import (
     JetsonEnvironmentRequirements,
     LocalFileArtefactSpecs,
     ModelPackageMetadata,
-    PackageSourceType,
     PackageArtefactSpec,
+    PackageSourceType,
     Quantization,
     ServerEnvironmentRequirements,
     TRTPackageDetails,
@@ -21,17 +31,19 @@ from inference_models.weights_providers.local_trt_constants import (
     LOCAL_TRT_MANIFEST_FILE,
     LOCAL_TRT_PACKAGE_PREFIX,
 )
+from inference_models.weights_providers.trt_manifest import (
+    GPUServerSpecsV1,
+    JetsonMachineSpecsV1,
+    TrtModelPackageV1,
+    as_version,
+)
 
 logger = logging.getLogger(__name__)
 
+ENGINE_PLAN_FILE = "engine.plan"
+
 
 def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
-    from inference_models.models.auto_loaders.core import (
-        generate_model_cache_root_for_model_id,
-        generate_model_package_cache_path,
-        generate_shared_blobs_path,
-    )
-
     cache_root = generate_model_cache_root_for_model_id(model_id=model_id)
     if not os.path.isdir(cache_root):
         return []
@@ -41,15 +53,24 @@ def discover_local_trt_packages(model_id: str) -> List[ModelPackageMetadata]:
     for package_id in sorted(os.listdir(cache_root)):
         if not package_id.startswith(LOCAL_TRT_PACKAGE_PREFIX):
             continue
-        package_dir = generate_model_package_cache_path(
-            model_id=model_id, package_id=package_id
-        )
-        metadata = _parse_local_trt_package(
-            model_id=model_id,
-            package_id=package_id,
-            package_dir=package_dir,
-            shared_blobs_dir=shared_blobs_dir,
-        )
+        try:
+            package_dir = generate_model_package_cache_path(
+                model_id=model_id, package_id=package_id
+            )
+            metadata = _parse_local_trt_package(
+                model_id=model_id,
+                package_id=package_id,
+                package_dir=package_dir,
+                shared_blobs_dir=shared_blobs_dir,
+            )
+        except Exception as error:
+            logger.warning(
+                "Skipping unreadable local TRT package model_id=%s package_id=%s error=%s",
+                model_id,
+                package_id,
+                error,
+            )
+            continue
         if metadata is not None:
             discovered.append(metadata)
     if discovered:
@@ -77,16 +98,16 @@ def _parse_local_trt_package(
     shared_blobs_dir: str,
 ) -> Optional[ModelPackageMetadata]:
     manifest_path = os.path.join(package_dir, LOCAL_TRT_MANIFEST_FILE)
-    engine_path = os.path.join(package_dir, "engine.plan")
+    engine_path = os.path.join(package_dir, ENGINE_PLAN_FILE)
     if not os.path.isfile(manifest_path) or not os.path.isfile(engine_path):
         return None
 
     try:
         with open(manifest_path, encoding="utf-8") as manifest_file:
             manifest_data = json.load(manifest_file)
-        from inference_models.weights_providers.roboflow import TrtModelPackageV1
-
-        parsed_manifest = TrtModelPackageV1.model_validate(manifest_data["packageManifest"])
+        parsed_manifest = TrtModelPackageV1.model_validate(
+            manifest_data["packageManifest"]
+        )
         file_md5 = manifest_data["files"]
     except Exception as error:
         logger.warning(
@@ -101,37 +122,14 @@ def _parse_local_trt_package(
     if environment_requirements is None:
         return None
 
-    package_artefacts: List[PackageArtefactSpec] = []
-    for handle, md5_hash in file_md5.items():
-        if not _is_safe_local_trt_file_handle(handle=handle):
-            logger.warning(
-                "Local TRT package has disallowed file handle model_id=%s package_id=%s handle=%s",
-                model_id,
-                package_id,
-                handle,
-            )
-            return None
-        package_file_path = os.path.join(package_dir, handle)
-        if not os.path.isfile(package_file_path):
-            logger.warning(
-                "Local TRT package missing artefact model_id=%s package_id=%s handle=%s",
-                model_id,
-                package_id,
-                handle,
-            )
-            return None
-        shared_blob_path = os.path.join(shared_blobs_dir, md5_hash)
-        if not os.path.isfile(shared_blob_path):
-            logger.warning(
-                "Local TRT package missing shared blob model_id=%s package_id=%s handle=%s",
-                model_id,
-                package_id,
-                handle,
-            )
-            return None
-        package_artefacts.append(
-            LocalFileArtefactSpecs(file_handle=handle, md5_hash=md5_hash)
-        )
+    package_artefacts = _build_local_package_artefacts(
+        model_id=model_id,
+        package_id=package_id,
+        package_dir=package_dir,
+        file_md5=file_md5,
+    )
+    if package_artefacts is None:
+        return None
 
     trt_package_details = TRTPackageDetails(
         min_dynamic_batch_size=parsed_manifest.min_batch_size,
@@ -152,24 +150,72 @@ def _parse_local_trt_package(
         package_source=PackageSourceType.LOCAL_CACHE,
         environment_requirements=environment_requirements,
         trt_package_details=trt_package_details,
-        trusted_source=True,
+        # Locally compiled engines are not platform-authoritative; require an
+        # explicit opt-in (allow_untrusted_packages) to be loaded.
+        trusted_source=False,
+        cache_model_id=model_id,
         model_features=None,
         recommended_parameters=None,
     )
 
 
-def _environment_requirements_from_manifest(
-    parsed_manifest,
-) -> Optional[Union[ServerEnvironmentRequirements, JetsonEnvironmentRequirements]]:
-    from inference_models.weights_providers.roboflow import (
-        GPUServerSpecsV1,
-        JetsonMachineSpecsV1,
-        TrtModelPackageV1,
-        as_version,
-    )
+def _build_local_package_artefacts(
+    model_id: str,
+    package_id: str,
+    package_dir: str,
+    file_md5: dict,
+) -> Optional[List[PackageArtefactSpec]]:
+    package_artefacts: List[PackageArtefactSpec] = []
+    for handle, md5_hash in file_md5.items():
+        if not _is_safe_local_trt_file_handle(handle=handle):
+            logger.warning(
+                "Local TRT package has disallowed file handle model_id=%s package_id=%s handle=%s",
+                model_id,
+                package_id,
+                handle,
+            )
+            return None
+        if not is_valid_md5_hash(md5_hash):
+            logger.warning(
+                "Local TRT package has invalid md5 model_id=%s package_id=%s handle=%s",
+                model_id,
+                package_id,
+                handle,
+            )
+            return None
+        package_file_path = os.path.join(package_dir, handle)
+        if not os.path.isfile(package_file_path):
+            logger.warning(
+                "Local TRT package missing artefact model_id=%s package_id=%s handle=%s",
+                model_id,
+                package_id,
+                handle,
+            )
+            return None
+        try:
+            verify_hash_sum_of_local_file(
+                url=f"local-cache://{handle}",
+                file_path=package_file_path,
+                expected_md5_hash=md5_hash,
+            )
+        except FileHashSumMissmatch as error:
+            logger.warning(
+                "Local TRT package failed md5 verification model_id=%s package_id=%s handle=%s error=%s",
+                model_id,
+                package_id,
+                handle,
+                error,
+            )
+            return None
+        package_artefacts.append(
+            LocalFileArtefactSpecs(file_handle=handle, md5_hash=md5_hash)
+        )
+    return package_artefacts
 
-    if not isinstance(parsed_manifest, TrtModelPackageV1):
-        return None
+
+def _environment_requirements_from_manifest(
+    parsed_manifest: TrtModelPackageV1,
+) -> Optional[Union[ServerEnvironmentRequirements, JetsonEnvironmentRequirements]]:
     if parsed_manifest.machine_type == "gpu-server":
         if not isinstance(parsed_manifest.machine_specs, GPUServerSpecsV1):
             return None

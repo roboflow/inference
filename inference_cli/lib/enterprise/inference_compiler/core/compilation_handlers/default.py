@@ -68,6 +68,7 @@ def _variant_outcome_from_result(
         compiled=result.compiled,
         installed_local=result.installed_local,
         local_package_id=result.local_package_id,
+        local_install_path=result.local_install_path,
         registered_platform=result.registered_platform,
         uploaded_sealed=result.uploaded_sealed,
         compile_error=result.compile_error,
@@ -272,25 +273,27 @@ def compile_and_register_default_model_trt_variant(
         if KEYPOINTS_METADATA_FILE in local_files:
             file_handles_to_register.append(KEYPOINTS_METADATA_FILE)
 
-        engine_path, trt_config, package_manifest, registration_response = execute_compilation(
-            models_service_client=models_service_client,
-            model_id=model_metadata.model_id,
-            model_architecture=model_metadata.model_architecture,
-            task_type=model_metadata.task_type,
-            model_variant=model_metadata.model_variant,
-            file_handles_to_register=file_handles_to_register,
-            compilation_directory=compilation_directory,
-            onnx_path=local_files[WEIGHTS_ONNX_FILE],
-            precision=precision,
-            model_input_size=training_size,
-            workspace_size_gb=workspace_size_gb,
-            min_batch_size=min_batch_size,
-            opt_batch_size=opt_batch_size,
-            max_batch_size=max_batch_size,
-            trt_version_compatible=trt_forward_compatible,
-            same_compute_compatibility=same_compute_compatibility,
-            console=console,
-            platform_registration=platform_registration,
+        engine_path, trt_config, package_manifest, registration_response = (
+            execute_compilation(
+                models_service_client=models_service_client,
+                model_id=model_metadata.model_id,
+                model_architecture=model_metadata.model_architecture,
+                task_type=model_metadata.task_type,
+                model_variant=model_metadata.model_variant,
+                file_handles_to_register=file_handles_to_register,
+                compilation_directory=compilation_directory,
+                onnx_path=local_files[WEIGHTS_ONNX_FILE],
+                precision=precision,
+                model_input_size=training_size,
+                workspace_size_gb=workspace_size_gb,
+                min_batch_size=min_batch_size,
+                opt_batch_size=opt_batch_size,
+                max_batch_size=max_batch_size,
+                trt_version_compatible=trt_forward_compatible,
+                same_compute_compatibility=same_compute_compatibility,
+                console=console,
+                platform_registration=platform_registration,
+            )
         )
     except AlreadyCompiledError:
         print_to_console(
@@ -383,7 +386,9 @@ def compile_and_register_default_model_trt_variant(
         pipeline_result.register_error = "platform upload or seal failed"
         pipeline_result.reason = "compiled locally; platform upload failed"
     else:
-        pipeline_result.reason = "compiled, installed locally, and registered on platform"
+        pipeline_result.reason = (
+            "compiled, installed locally, and registered on platform"
+        )
     logger.info(
         "TRT pipeline complete for %s precision=%s %s",
         model_metadata.model_id,

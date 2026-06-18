@@ -147,6 +147,10 @@ class ModelPackageMetadata:
     ] = field(default=None)
     model_features: Optional[dict] = field(default=None)
     recommended_parameters: Optional[RecommendedParameters] = field(default=None)
+    # Model id whose on-disk cache directory holds this package. Set for
+    # locally-discovered packages whose cache slug differs from the requested
+    # (alias) model id so loading resolves the correct directory.
+    cache_model_id: Optional[str] = field(default=None)
 
     def get_summary(self) -> str:
         return (

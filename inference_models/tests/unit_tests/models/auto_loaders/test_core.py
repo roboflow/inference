@@ -14,6 +14,7 @@ from inference_models.errors import (
     ModelLoadingError,
 )
 from inference_models.models.auto_loaders import core
+from inference_models.models.auto_loaders import model_cache_paths
 from inference_models.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCacheEntry,
 )
@@ -153,7 +154,7 @@ def test_parse_model_config_when_full_config_provided(full_config_path: str) -> 
     )
 
 
-@mock.patch.object(core, "INFERENCE_HOME", "/some")
+@mock.patch.object(model_cache_paths, "INFERENCE_HOME", "/some")
 def test_generate_model_package_cache_path() -> None:
     # when
     result = generate_model_package_cache_path(
@@ -164,7 +165,7 @@ def test_generate_model_package_cache_path() -> None:
     assert result == "/some/models-cache/my-model-6fa11b0c/mypackage"
 
 
-@mock.patch.object(core, "INFERENCE_HOME", "/some")
+@mock.patch.object(model_cache_paths, "INFERENCE_HOME", "/some")
 def test_generate_model_package_cache_path_when_id_contains_forward_slash_at_front() -> (
     None
 ):
@@ -177,7 +178,7 @@ def test_generate_model_package_cache_path_when_id_contains_forward_slash_at_fro
     assert result == "/some/models-cache/-my-model-9651d483/mypackage"
 
 
-@mock.patch.object(core, "INFERENCE_HOME", "/some")
+@mock.patch.object(model_cache_paths, "INFERENCE_HOME", "/some")
 def test_generate_model_package_cache_path_when_id_contains_forward_slash_in_the_middle() -> (
     None
 ):
@@ -190,7 +191,7 @@ def test_generate_model_package_cache_path_when_id_contains_forward_slash_in_the
     assert result == "/some/models-cache/my-model-home-0b1d84f7/mypackage"
 
 
-@mock.patch.object(core, "INFERENCE_HOME", "/some")
+@mock.patch.object(model_cache_paths, "INFERENCE_HOME", "/some")
 def test_generate_model_package_cache_path_when_package_id_is_not_sanitized() -> None:
     # when
     with pytest.raises(InsecureModelIdentifierError):

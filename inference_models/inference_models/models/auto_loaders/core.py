@@ -1,8 +1,6 @@
-import hashlib
 import importlib
 import importlib.util
 import os.path
-import re
 from datetime import datetime
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
@@ -15,13 +13,11 @@ from rich.text import Text
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     FILE_LOCK_ACQUIRE_TIMEOUT,
-    INFERENCE_HOME,
 )
 from inference_models.errors import (
     CorruptedModelPackageError,
     DirectLocalStorageAccessError,
     ForbiddenLocalCodePackageAccessError,
-    InsecureModelIdentifierError,
     InvalidModelInitParameterError,
     InvalidParameterError,
     MissingModelInitParameterError,
@@ -59,6 +55,10 @@ from inference_models.models.auto_loaders.entities import (
     ModelArchitecture,
     TaskType,
 )
+from inference_models.models.auto_loaders.model_cache_paths import (
+    generate_model_package_cache_path,
+    generate_shared_blobs_path,
+)
 from inference_models.models.auto_loaders.models_registry import (
     INSTANCE_SEGMENTATION_TASK,
     OBJECT_DETECTION_TASK,
@@ -73,7 +73,12 @@ from inference_models.models.auto_loaders.presentation_utils import (
     render_table_with_model_packages,
 )
 from inference_models.runtime_introspection.core import x_ray_runtime_environment
-from inference_models.utils.download import FileHandle, download_files_to_directory
+from inference_models.utils.download import (
+    FileHandle,
+    download_files_to_directory,
+    is_valid_md5_hash,
+    verify_hash_sum_of_local_file,
+)
 from inference_models.utils.file_system import dump_json, read_json
 from inference_models.utils.hashing import hash_dict_content
 from inference_models.weights_providers.core import get_model_from_provider
@@ -1276,8 +1281,9 @@ def initialize_model(
                 f"us to solve the problem.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
+    cache_model_id = model_package.cache_model_id or model_id
     model_package_cache_dir = generate_model_package_cache_path(
-        model_id=model_id,
+        model_id=cache_model_id,
         package_id=model_package.package_id,
     )
     os.makedirs(model_package_cache_dir, exist_ok=True)
@@ -1553,16 +1559,10 @@ def dump_auto_resolution_cache(
     )
 
 
-def generate_shared_blobs_path() -> str:
-    return os.path.abspath(os.path.join(INFERENCE_HOME, "shared-blobs"))
-
-
 def _resolve_local_cache_package_files(
     model_package_cache_dir: str,
     package_artefacts: List[LocalFileArtefactSpecs],
 ) -> Dict[str, str]:
-    from inference_models.utils.download import verify_hash_sum_of_local_file
-
     shared_blobs_dir = generate_shared_blobs_path()
     shared_files_mapping: Dict[str, str] = {}
     for artefact in package_artefacts:
@@ -1571,6 +1571,14 @@ def _resolve_local_cache_package_files(
                 message=(
                     "Local cache model package contains non-local artefact specs. "
                     "All artefacts must be LocalFileArtefactSpecs."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+        if not is_valid_md5_hash(artefact.md5_hash):
+            raise CorruptedModelPackageError(
+                message=(
+                    f"Local cache model package artefact `{artefact.file_handle}` has an "
+                    f"invalid md5 hash `{artefact.md5_hash}`."
                 ),
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
@@ -1592,45 +1600,6 @@ def _resolve_local_cache_package_files(
             shared_blobs_dir, artefact.md5_hash
         )
     return shared_files_mapping
-
-
-def generate_model_cache_root_for_model_id(model_id: str) -> str:
-    model_id_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
-    return os.path.abspath(os.path.join(INFERENCE_HOME, "models-cache", model_id_slug))
-
-
-def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
-    ensure_package_id_is_os_safe(model_id=model_id, package_id=package_id)
-    model_id_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
-    return os.path.abspath(
-        os.path.join(INFERENCE_HOME, "models-cache", model_id_slug, package_id)
-    )
-
-
-def ensure_package_id_is_os_safe(model_id: str, package_id: str) -> None:
-    if re.search(r"[^A-Za-z0-9]", package_id):
-        raise InsecureModelIdentifierError(
-            message=f"Attempted to load model: {model_id} using package ID: {package_id} which "
-            f"has invalid format. ID is expected to contain only ASCII characters and numbers to "
-            f"ensure safety of local cache. If you see this error running your model on Roboflow platform, "
-            f"raise the issue: https://github.com/roboflow/inference/issues. If you are running `inference` "
-            f"outside of the platform, verify that your weights provider keeps the model packages identifiers "
-            f"in the expected format.",
-            help_url="https://inference-models.roboflow.com/errors/model-loading/#insecuremodelidentifiererror",
-        )
-
-
-def slugify_model_id_to_os_safe_format(model_id: str) -> str:
-    # Only ASCII
-    model_id_slug = re.sub(r"[^A-Za-z0-9_-]+", "-", model_id)
-    # Collapse multiple underscores/dashes
-    model_id_slug = re.sub(r"[_-]{2,}", "-", model_id_slug)
-    if not model_id_slug:
-        model_id_slug = "special-char-only-model-id"
-    if len(model_id_slug) > 48:
-        model_id_slug = model_id_slug[:48]
-    digest = hashlib.blake2s(model_id.encode("utf-8"), digest_size=4).hexdigest()
-    return f"{model_id_slug}-{digest}"
 
 
 def attempt_loading_model_from_local_storage(
