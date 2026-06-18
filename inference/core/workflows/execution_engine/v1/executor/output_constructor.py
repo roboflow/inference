@@ -1,6 +1,5 @@
 import traceback
 from collections import defaultdict
-from concurrent.futures import Future
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 import numpy as np
@@ -31,6 +30,11 @@ from inference.core.workflows.execution_engine.v1.executor.execution_data_manage
 )
 from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
     ExecutionDataManager,
+)
+from inference.core.workflows.execution_engine.v1.executor.utils import (
+    contains_future,
+    maybe_resolve_futures,
+    resolve_futures,
 )
 
 
@@ -325,31 +329,21 @@ def create_outputs_for_generated_lineage_outputs(
 
 
 def _resolve_output_futures(value: Any) -> Any:
-    if isinstance(value, Future):
-        return _resolve_output_futures(value.result())
-    if isinstance(value, list):
-        return [_resolve_output_futures(element) for element in value]
-    if isinstance(value, tuple):
-        return tuple(_resolve_output_futures(element) for element in value)
-    if isinstance(value, dict):
-        return {key: _resolve_output_futures(element) for key, element in value.items()}
-    return value
+    return resolve_futures(
+        value=value,
+        context="workflow_execution | output_construction",
+    )
 
 
 def _output_contains_future(value: Any) -> bool:
-    if isinstance(value, Future):
-        return True
-    if isinstance(value, (list, tuple)):
-        return any(_output_contains_future(element) for element in value)
-    if isinstance(value, dict):
-        return any(_output_contains_future(element) for element in value.values())
-    return False
+    return contains_future(value=value)
 
 
 def _maybe_resolve_output_futures(value: Any) -> Any:
-    if not _output_contains_future(value):
-        return value
-    return _resolve_output_futures(value)
+    return maybe_resolve_futures(
+        value=value,
+        context="workflow_execution | output_construction",
+    )
 
 
 def create_array(indices: np.ndarray) -> Optional[list]:

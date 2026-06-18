@@ -13,7 +13,7 @@ from inference.core.workflows.execution_engine.constants import (
     TOP_LEVEL_LINEAGES_KEY,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
-from inference.core.workflows.execution_engine.entities.base import JsonField
+from inference.core.workflows.execution_engine.entities.base import Batch, JsonField
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
@@ -31,6 +31,7 @@ from inference.core.workflows.execution_engine.v1.executor.output_constructor im
     place_data_in_array,
     serialize_data_piece,
 )
+from inference.core.workflows.execution_engine.v1.executor.utils import contains_future
 
 
 def _completed_future(value: Any) -> Future:
@@ -475,6 +476,45 @@ def test_construct_workflow_output_resolves_futures_by_default() -> None:
     assert result == [{"a": {"predictions": ["resolved"]}}]
 
 
+def test_construct_workflow_output_resolves_batch_wrapped_futures() -> None:
+    # given
+    execution_data_manager = MagicMock()
+    workflow_outputs = [
+        JsonField(type="JsonField", name="a", selector="$steps.some.a"),
+    ]
+    execution_graph = DiGraph()
+    execution_graph.add_node(
+        "$outputs.a",
+        node_compilation_output=OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name=workflow_outputs[0].name,
+            selector=workflow_outputs[0].selector,
+            data_lineage=[],
+            output_manifest=workflow_outputs[0],
+        ),
+    )
+    execution_data_manager.get_selector_indices.return_value = None
+    execution_data_manager.get_non_batch_data.return_value = Batch.init(
+        content=[_completed_future("resolved")],
+        indices=[(0,)],
+    )
+
+    # when
+    result = construct_workflow_output(
+        workflow_outputs=workflow_outputs,
+        execution_graph=execution_graph,
+        execution_data_manager=execution_data_manager,
+        serialize_results=False,
+        kinds_serializers=KINDS_SERIALIZERS,
+    )
+
+    # then
+    resolved_batch = result[0]["a"]
+    assert isinstance(resolved_batch, Batch)
+    assert list(resolved_batch) == ["resolved"]
+    assert resolved_batch.indices == [(0,)]
+
+
 def test_construct_workflow_output_can_defer_future_resolution() -> None:
     # given
     execution_data_manager = MagicMock()
@@ -508,6 +548,45 @@ def test_construct_workflow_output_can_defer_future_resolution() -> None:
 
     # then
     assert result == [{"a": {"predictions": predictions}}]
+
+
+def test_construct_workflow_output_defers_batch_wrapped_futures() -> None:
+    # given
+    execution_data_manager = MagicMock()
+    workflow_outputs = [
+        JsonField(type="JsonField", name="a", selector="$steps.some.a"),
+    ]
+    execution_graph = DiGraph()
+    execution_graph.add_node(
+        "$outputs.a",
+        node_compilation_output=OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name=workflow_outputs[0].name,
+            selector=workflow_outputs[0].selector,
+            data_lineage=[],
+            output_manifest=workflow_outputs[0],
+        ),
+    )
+    deferred_batch = Batch.init(
+        content=[_completed_future("resolved")],
+        indices=[(0,)],
+    )
+    execution_data_manager.get_selector_indices.return_value = None
+    execution_data_manager.get_non_batch_data.return_value = deferred_batch
+
+    # when
+    result = construct_workflow_output(
+        workflow_outputs=workflow_outputs,
+        execution_graph=execution_graph,
+        execution_data_manager=execution_data_manager,
+        serialize_results=False,
+        kinds_serializers=KINDS_SERIALIZERS,
+        resolve_output_futures=False,
+    )
+
+    # then
+    assert result == [{"a": deferred_batch}]
+    assert contains_future(result[0]["a"]) is True
 
 
 def test_construct_workflow_output_when_batch_outputs_present() -> None:

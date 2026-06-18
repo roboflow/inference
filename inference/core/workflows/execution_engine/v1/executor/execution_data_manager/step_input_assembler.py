@@ -1,4 +1,3 @@
-from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple, TypeVar, Union
 
@@ -25,6 +24,11 @@ from inference.core.workflows.execution_engine.v1.executor.execution_data_manage
 from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.execution_cache import (
     ExecutionCache,
 )
+from inference.core.workflows.execution_engine.v1.executor.utils import (
+    contains_future,
+    maybe_resolve_futures,
+    resolve_futures,
+)
 
 T = TypeVar("T")
 
@@ -42,40 +46,21 @@ class NonBatchModeSIMDStepInput:
 
 
 def _resolve_step_output_futures(value: Any) -> Any:
-    if isinstance(value, Future):
-        return _resolve_step_output_futures(value.result())
-    if isinstance(value, Batch):
-        return Batch.init(
-            content=[_resolve_step_output_futures(element) for element in value],
-            indices=value.indices,
-        )
-    if isinstance(value, list):
-        return [_resolve_step_output_futures(element) for element in value]
-    if isinstance(value, tuple):
-        return tuple(_resolve_step_output_futures(element) for element in value)
-    if isinstance(value, dict):
-        return {
-            key: _resolve_step_output_futures(element) for key, element in value.items()
-        }
-    return value
+    return resolve_futures(
+        value=value,
+        context="workflow_execution | step_input_assembling",
+    )
 
 
 def _step_output_contains_future(value: Any) -> bool:
-    if isinstance(value, Future):
-        return True
-    if isinstance(value, Batch):
-        return any(_step_output_contains_future(element) for element in value)
-    if isinstance(value, list) or isinstance(value, tuple):
-        return any(_step_output_contains_future(element) for element in value)
-    if isinstance(value, dict):
-        return any(_step_output_contains_future(element) for element in value.values())
-    return False
+    return contains_future(value=value)
 
 
 def _maybe_resolve_step_output_futures(value: Any) -> Any:
-    if not _step_output_contains_future(value):
-        return value
-    return _resolve_step_output_futures(value)
+    return maybe_resolve_futures(
+        value=value,
+        context="workflow_execution | step_input_assembling",
+    )
 
 
 def construct_non_simd_step_input(
