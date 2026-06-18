@@ -487,10 +487,6 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_all_pending_responses()
         responses: List[InstanceSegmentationInferenceResponse] = []
         while self._response_futures:
-<<<<<<< HEAD
-            response_future, _ = self._response_futures.popleft()
-            responses.extend(response_future.result())
-=======
             response_future = self._response_futures.popleft()
             responses.extend(
                 _resolve_response_future(
@@ -498,7 +494,6 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     context="RF-DETR stream pipeline flush",
                 )
             )
->>>>>>> a7390e23b (Enhance asynchronous future resolution in inference pipeline and models)
         return responses
 
     def shutdown_pipeline(self) -> None:
