@@ -536,6 +536,15 @@ def with_route_exceptions(route):
                     "context": error.context,
                     "inner_error_type": error.inner_error_type,
                     "inner_error_message": str(error.inner_error),
+                    # Attached by the workflow-run route when `debug=True` and the
+                    # run failed; carries logs of python blocks executed before the
+                    # failure.
+                    "python_blocks_output_streams": getattr(
+                        error, "python_blocks_output_streams", None
+                    ),
+                    "python_blocks_debug_traces": getattr(
+                        error, "python_blocks_debug_traces", None
+                    ),
                 },
             )
         except (
@@ -999,6 +1008,15 @@ def with_route_exceptions_async(route):
                     "context": error.context,
                     "inner_error_type": error.inner_error_type,
                     "inner_error_message": str(error.inner_error),
+                    # Attached by the workflow-run route when `debug=True` and the
+                    # run failed; carries logs of python blocks executed before the
+                    # failure.
+                    "python_blocks_output_streams": getattr(
+                        error, "python_blocks_output_streams", None
+                    ),
+                    "python_blocks_debug_traces": getattr(
+                        error, "python_blocks_debug_traces", None
+                    ),
                 },
             )
         except (
