@@ -40,6 +40,7 @@ def construct_workflow_output(
     execution_data_manager: ExecutionDataManager,
     serialize_results: bool,
     kinds_serializers: Dict[str, Callable[[Any], Any]],
+    resolve_output_futures: bool = True,
 ) -> List[Dict[str, Any]]:
     # Maybe we should make blocks to change coordinates systems:
     # https://github.com/roboflow/inference/issues/440
@@ -64,7 +65,8 @@ def construct_workflow_output(
         if output.name in batch_oriented_outputs:
             continue
         data_piece = execution_data_manager.get_non_batch_data(selector=output.selector)
-        data_piece = _maybe_resolve_output_futures(data_piece)
+        if resolve_output_futures:
+            data_piece = _maybe_resolve_output_futures(data_piece)
         if serialize_results:
             output_kind = kinds_of_output_nodes[output.name]
             data_piece = serialize_data_piece(
@@ -110,6 +112,7 @@ def construct_workflow_output(
         non_batch_outputs=non_batch_outputs,
         dimensionality_for_output_nodes=dimensionality_for_output_nodes,
         batch_oriented_outputs=batch_oriented_outputs,
+        resolve_output_futures=resolve_output_futures,
     )
     if len(results) == 0 and len(outputs_for_generated_lineage) > 0:
         results.append({})
@@ -125,6 +128,7 @@ def construct_workflow_output(
                 kinds_serializers=kinds_serializers,
                 kinds_of_output_nodes=kinds_of_output_nodes,
                 dimensionality_for_output_nodes=dimensionality_for_output_nodes,
+                resolve_output_futures=resolve_output_futures,
             )
         )
         for output in results:
@@ -145,6 +149,7 @@ def create_outputs_for_input_induced_lineages(
     non_batch_outputs: Dict[str, Any],
     dimensionality_for_output_nodes: Dict[str, int],
     batch_oriented_outputs: Set[str],
+    resolve_output_futures: bool = True,
 ) -> List[Dict[str, Any]]:
     outputs_arrays: Dict[str, Optional[list]] = {
         name: create_array(indices=np.array(indices))
@@ -171,7 +176,8 @@ def create_outputs_for_input_induced_lineages(
             indices=indices,
         )
         for index, data_piece in zip(indices, data):
-            data_piece = _maybe_resolve_output_futures(data_piece)
+            if resolve_output_futures:
+                data_piece = _maybe_resolve_output_futures(data_piece)
             if (
                 name in outputs_requested_in_parent_coordinates
                 and data_contains_sv_detections(data=data_piece)
@@ -242,6 +248,7 @@ def create_outputs_for_generated_lineage_outputs(
         str, Union[List[Union[Kind, str]], Dict[str, List[Union[Kind, str]]]]
     ],
     dimensionality_for_output_nodes: Dict[str, int],
+    resolve_output_futures: bool = True,
 ) -> Dict[str, List[Any]]:
     outputs_arrays: Dict[str, Optional[list]] = {
         name: create_array(indices=np.array(indices))
@@ -266,7 +273,8 @@ def create_outputs_for_generated_lineage_outputs(
             indices=indices,
         )
         for index, data_piece in zip(indices, data):
-            data_piece = _maybe_resolve_output_futures(data_piece)
+            if resolve_output_futures:
+                data_piece = _maybe_resolve_output_futures(data_piece)
             if (
                 name in outputs_requested_in_parent_coordinates
                 and data_contains_sv_detections(data=data_piece)

@@ -122,6 +122,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         _is_preview: bool = False,
         serialize_results: bool = False,
         defer_stream_pipeline_flush: bool = False,
+        resolve_output_futures: bool = True,
     ) -> List[Dict[str, Any]]:
         self._profiler.start_workflow_run()
         runtime_parameters = assemble_runtime_parameters(
@@ -156,6 +157,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             executor=self._executor,
             step_error_handler=self._step_error_handler,
             defer_stream_pipeline_flush=defer_stream_pipeline_flush,
+            resolve_output_futures=resolve_output_futures,
         )
         self._profiler.end_workflow_run()
         return result

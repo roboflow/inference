@@ -101,6 +101,7 @@ def run_workflow(
     executor: Optional[ThreadPoolExecutor] = None,
     step_error_handler: Optional[Callable[[Exception], None]] = None,
     defer_stream_pipeline_flush: bool = False,
+    resolve_output_futures: bool = True,
 ) -> List[Dict[str, Any]]:
     with start_span("workflow.run"):
         return _run_workflow(
@@ -113,6 +114,7 @@ def run_workflow(
             executor=executor,
             step_error_handler=step_error_handler,
             defer_stream_pipeline_flush=defer_stream_pipeline_flush,
+            resolve_output_futures=resolve_output_futures,
         )
 
 
@@ -126,6 +128,7 @@ def _run_workflow(
     executor: Optional[ThreadPoolExecutor] = None,
     step_error_handler: Optional[Callable[[Exception], None]] = None,
     defer_stream_pipeline_flush: bool = False,
+    resolve_output_futures: bool = True,
 ) -> List[Dict[str, Any]]:
     execution_data_manager = ExecutionDataManager.init(
         execution_graph=workflow.execution_graph,
@@ -168,6 +171,7 @@ def _run_workflow(
                 execution_data_manager=execution_data_manager,
                 serialize_results=serialize_results,
                 kinds_serializers=kinds_serializers,
+                resolve_output_futures=resolve_output_futures,
             )
     finally:
         if not defer_stream_pipeline_flush:

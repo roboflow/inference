@@ -36,6 +36,7 @@ class WorkflowRunner:
         self,
         video_frames: List[VideoFrame],
         defer_stream_pipeline_flush: bool = False,
+        resolve_output_futures: bool = True,
     ) -> List[dict]:
         workflows_parameters, fps = self._build_workflows_parameters(
             video_frames=video_frames
@@ -46,6 +47,7 @@ class WorkflowRunner:
             serialize_results=self._serialize_results,
             _is_preview=self._is_preview,
             defer_stream_pipeline_flush=defer_stream_pipeline_flush,
+            resolve_output_futures=resolve_output_futures,
         )
 
     def _flush_stream_pipeline(self, video_frames: List[VideoFrame]) -> List[dict]:
@@ -115,9 +117,13 @@ class PipelinedWorkflowRunner:
     def __call__(
         self, video_frames: List[VideoFrame]
     ) -> Optional[InferenceHandlerResult]:
+        # Resolving RF-DETR output futures here serializes postprocess before the
+        # next frame can launch. The stream dispatcher resolves them after the
+        # frame buffer delay, when they should already be ready.
         predictions = self._workflow_runner._run_workflow(
             video_frames=video_frames,
             defer_stream_pipeline_flush=True,
+            resolve_output_futures=self._workflow_runner._serialize_results,
         )
         stream_buffer_depth = self._stream_buffer_depth()
         if stream_buffer_depth <= 0:

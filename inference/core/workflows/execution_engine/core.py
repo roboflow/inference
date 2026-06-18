@@ -75,6 +75,7 @@ class ExecutionEngine(BaseExecutionEngine):
         _is_preview: bool = False,
         serialize_results: bool = False,
         defer_stream_pipeline_flush: bool = False,
+        resolve_output_futures: bool = True,
     ) -> List[Dict[str, Any]]:
         return self._engine.run(
             runtime_parameters=runtime_parameters,
@@ -82,6 +83,7 @@ class ExecutionEngine(BaseExecutionEngine):
             _is_preview=_is_preview,
             serialize_results=serialize_results,
             defer_stream_pipeline_flush=defer_stream_pipeline_flush,
+            resolve_output_futures=resolve_output_futures,
         )
 
     def flush_stream_pipeline(
