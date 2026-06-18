@@ -814,3 +814,21 @@ def test_instance_segmentation_stream_context_id_includes_frame_metadata() -> No
 
     assert "video-frame-7" in context_id
     assert ":7:" in context_id
+
+
+def test_close_stream_pipeline_detaches_response_executor_finalizer() -> None:
+    block = RoboflowInstanceSegmentationModelBlockV3(
+        model_manager=SimpleNamespace(__contains__=lambda *_args, **_kwargs: False),
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    executor = block._get_stream_response_executor()
+
+    assert block._stream_response_executor_finalizer is not None
+    assert block._stream_response_executor_finalizer.alive
+
+    block.close_stream_pipeline()
+
+    assert block._stream_response_executor is None
+    assert block._stream_response_executor_finalizer is None
+    assert executor._shutdown
