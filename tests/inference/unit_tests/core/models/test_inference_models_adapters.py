@@ -98,6 +98,7 @@ def _make_pipeline_adapter(
     adapter._pending_futures = deque()
     adapter._response_futures = deque()
     adapter._response_executor = None
+    adapter._gpu_submit_generation = 0
     adapter._model = _FakePipelineModel(futures=futures, ops=ops)
     adapter.class_names = []
     adapter.map_inference_kwargs = lambda kwargs: dict(kwargs)

@@ -1,11 +1,12 @@
 import base64
 import io
 from collections import OrderedDict, deque
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from io import BytesIO
 from threading import local
 from time import perf_counter
 from typing import Any, Deque, List, Optional, Tuple, Union
+from weakref import finalize
 
 import numpy as np
 import torch
@@ -45,6 +46,7 @@ from inference.core.env import (
     GCP_SERVERLESS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
+    WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
 from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
@@ -141,6 +143,16 @@ def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
     while len(cache) > _PINNED_HOST_BUFFER_CACHE_SIZE:
         cache.popitem(last=False)
     return buf
+
+
+def _resolve_response_future(
+    future: Future,
+    context: str,
+):
+    try:
+        return future.result(timeout=WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT)
+    except TimeoutError as error:
+        raise RuntimeError(f"Timed out while waiting for {context}.") from error
 
 
 class _PipelinePrimingSentinel:
@@ -356,8 +368,12 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         ] = deque()
         self._gpu_submit_generation = 0
         self._response_executor: Optional[ThreadPoolExecutor] = None
+        self._response_executor_finalizer = None
         self._response_futures: Deque[
-            Future[List[InstanceSegmentationInferenceResponse]]
+            Tuple[
+                Future[List[InstanceSegmentationInferenceResponse]],
+                Optional[str],
+            ]
         ] = deque()
 
     def _resolve_pipeline_depth(self) -> int:
@@ -463,18 +479,33 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_all_pending_responses()
         responses: List[InstanceSegmentationInferenceResponse] = []
         while self._response_futures:
-            responses.extend(self._response_futures.popleft().result())
+            response_future, _ = self._response_futures.popleft()
+            responses.extend(
+                _resolve_response_future(
+                    future=response_future,
+                    context="RF-DETR stream pipeline flush",
+                )
+            )
         return responses
 
     def shutdown_pipeline(self) -> None:
         if self._response_executor is None:
             return None
+        finalizer = getattr(self, "_response_executor_finalizer", None)
+        if finalizer is not None and finalizer.alive:
+            finalizer.detach()
         self._response_executor.shutdown(wait=False)
         self._response_executor = None
+        self._response_executor_finalizer = None
 
     def _get_response_executor(self) -> ThreadPoolExecutor:
         if self._response_executor is None:
             self._response_executor = ThreadPoolExecutor(max_workers=1)
+            self._response_executor_finalizer = finalize(
+                self,
+                self._response_executor.shutdown,
+                wait=False,
+            )
         return self._response_executor
 
     def _submit_future_gpu_work(
@@ -490,7 +521,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         submit_gpu_work = getattr(fut, "submit_gpu_work", None)
         if callable(submit_gpu_work):
             submit_gpu_work(meta)
-            self._gpu_submit_generation = getattr(self, "_gpu_submit_generation", 0) + 1
+            self._gpu_submit_generation += 1
             mark_adapter_gpu_work_submitted(fut, self._gpu_submit_generation)
 
     def _submit_next_pending_gpu_work(self) -> None:
@@ -516,7 +547,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             meta,
             mapped_kwargs,
         )
-        self._response_futures.append(response_future)
+        context_id = mapped_kwargs.get("source_info")
+        self._response_futures.append(
+            (response_future, context_id if isinstance(context_id, str) else None)
+        )
 
     def _submit_ready_responses(self) -> None:
         while self._pending_futures:
@@ -527,7 +561,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 submit_generation = get_adapter_gpu_submit_generation(fut)
             if submit_generation is None:
                 break
-            gpu_submit_generation = getattr(self, "_gpu_submit_generation", 0)
+            gpu_submit_generation = self._gpu_submit_generation
             if gpu_submit_generation < submit_generation + self._response_delay:
                 break
             self._submit_response_build(*self._pending_futures.popleft())
@@ -566,16 +600,23 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 workflow_execution=kwargs.get("source") == "workflow-execution",
             )
 
-        response_future = self._response_futures.popleft()
+        response_future, context_id = self._response_futures.popleft()
         if kwargs.get("source") == "workflow-execution":
             responses = self._empty_responses_for_metadata(
                 preprocess_return_metadata=preprocess_return_metadata,
                 workflow_execution=True,
             )
             if responses:
-                attach_async_response_future(responses[0], response_future)
+                attach_async_response_future(
+                    response=responses[0],
+                    response_future=response_future,
+                    context_id=context_id,
+                )
             return responses
-        return response_future.result()
+        return _resolve_response_future(
+            future=response_future,
+            context="RF-DETR stream pipeline response finalization",
+        )
 
     def _empty_responses_for_metadata(
         self,
@@ -809,6 +850,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                         polys_or_rles = rle_masks2poly(det.mask)
                 class_ids = det.class_id.detach().cpu().numpy()
 
+            # Some branches above intentionally keep numpy views into
+            # thread-local pinned scratch buffers. Only scalar values and
+            # polygon/RLE lists may be stored on responses below; do not return
+            # those arrays or any view derived from them.
             predictions: List[
                 Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
             ] = []
