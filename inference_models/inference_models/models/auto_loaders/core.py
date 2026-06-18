@@ -77,7 +77,6 @@ from inference_models.utils.download import (
     FileHandle,
     download_files_to_directory,
     is_valid_md5_hash,
-    verify_hash_sum_of_local_file,
 )
 from inference_models.utils.file_system import dump_json, read_json
 from inference_models.utils.hashing import hash_dict_content
@@ -1084,7 +1083,7 @@ def attempt_loading_model_with_auto_load_cache(
             model_features=cache_entry.model_features,
         )
         model_package_cache_dir = generate_model_package_cache_path(
-            model_id=cache_entry.model_id,
+            model_id=cache_entry.cache_model_id or cache_entry.model_id,
             package_id=cache_entry.model_package_id,
         )
         model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
@@ -1366,6 +1365,7 @@ def initialize_model(
         auto_resolution_cache=auto_resolution_cache,
         auto_negotiation_hash=auto_negotiation_hash,
         model_id=model_id,
+        cache_model_id=cache_model_id,
         model_package_id=model_package.package_id,
         model_architecture=model_architecture,
         task_type=task_type,
@@ -1539,11 +1539,13 @@ def dump_auto_resolution_cache(
     model_dependencies: Optional[List[ModelDependency]],
     model_features: Optional[dict],
     recommended_parameters: Optional[RecommendedParameters] = None,
+    cache_model_id: Optional[str] = None,
 ) -> None:
     if not use_auto_resolution_cache:
         return None
     cache_content = AutoResolutionCacheEntry(
         model_id=model_id,
+        cache_model_id=cache_model_id,
         model_package_id=model_package_id,
         resolved_files=resolved_files,
         model_architecture=model_architecture,
@@ -1591,11 +1593,9 @@ def _resolve_local_cache_package_files(
                 ),
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        verify_hash_sum_of_local_file(
-            url=f"local-cache://{artefact.file_handle}",
-            file_path=package_file_path,
-            expected_md5_hash=artefact.md5_hash,
-        )
+        # File content md5 is verified during discovery (discover_local_trt_packages),
+        # so we only validate presence and hash format here to avoid re-hashing the
+        # full engine on the load path.
         shared_files_mapping[artefact.file_handle] = os.path.join(
             shared_blobs_dir, artefact.md5_hash
         )

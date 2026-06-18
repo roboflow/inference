@@ -192,6 +192,9 @@ def _build_local_package_artefacts(
                 handle,
             )
             return None
+        # md5 here detects on-disk corruption only; the manifest is locally
+        # written so this is not a tamper guarantee. Authenticity is gated by
+        # trusted_source=False (requires allow_untrusted_packages to load).
         try:
             verify_hash_sum_of_local_file(
                 url=f"local-cache://{handle}",

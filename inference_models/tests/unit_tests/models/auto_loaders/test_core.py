@@ -264,6 +264,37 @@ def test_dump_auto_resolution_cache_when_cache_enabled(
 
 
 @mock.patch.object(core, "datetime")
+def test_dump_auto_resolution_cache_persists_cache_model_id(
+    datetime_mock: MagicMock,
+) -> None:
+    # For locally-discovered packages resolved under an alias, the cache entry
+    # must record the model id whose on-disk cache holds the package so cache
+    # hits rebuild the correct directory.
+    now = datetime.now()
+    auto_resolution_cache = MagicMock()
+    datetime_mock.now.return_value = now
+
+    dump_auto_resolution_cache(
+        use_auto_resolution_cache=True,
+        auto_resolution_cache=auto_resolution_cache,
+        auto_negotiation_hash="my-hash",
+        model_id="rfdetr-nano",
+        cache_model_id="workspace/coco-38",
+        model_package_id="localtrtabc123",
+        model_architecture="rfdetr",
+        task_type="object-detection",
+        backend_type=BackendType.TRT,
+        resolved_files={"some/file.txt"},
+        model_dependencies=None,
+        model_features=None,
+    )
+
+    registered_entry = auto_resolution_cache.register.call_args.kwargs["cache_entry"]
+    assert registered_entry.model_id == "rfdetr-nano"
+    assert registered_entry.cache_model_id == "workspace/coco-38"
+
+
+@mock.patch.object(core, "datetime")
 def test_dump_auto_resolution_cache_persists_recommended_parameters(
     datetime_mock: MagicMock,
 ) -> None:
