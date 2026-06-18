@@ -1457,15 +1457,20 @@ class ModelManagerProcess:
             )
             return None
 
+    def _vram_metadata_model_id(self, model_id: str) -> str:
+        """Strip multi-instance routing suffix for Roboflow metadata lookup."""
+        return model_id.rsplit(":", 1)[0]
+
     def _required_mb(self, model_id: str, api_key: str = "", batch: int = 1) -> int:
         """VRAM needed to admit an incoming model (MB). Cached on success;
         transient fetch failures (None) are NOT cached so the next load retries."""
-        if model_id in self._vram_meta_cache:
-            return self._vram_meta_cache[model_id]
-        mb = self._fetch_vram_mb(model_id, api_key, batch)
+        metadata_model_id = self._vram_metadata_model_id(model_id)
+        if metadata_model_id in self._vram_meta_cache:
+            return self._vram_meta_cache[metadata_model_id]
+        mb = self._fetch_vram_mb(metadata_model_id, api_key, batch)
         if mb is None:
             return 0
-        self._vram_meta_cache[model_id] = mb
+        self._vram_meta_cache[metadata_model_id] = mb
         return mb
 
     def _recent_count(self, flavor: str, window_s: float) -> int:
