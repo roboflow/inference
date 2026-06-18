@@ -415,12 +415,7 @@ class FastPreprocessRuntime:
             return "only scaling_factor None or 255 is supported"
         if network_input.normalization is None:
             return "normalization is required"
-        if network_input.resize_mode not in (
-            ResizeMode.STRETCH_TO,
-            ResizeMode.LETTERBOX,
-            ResizeMode.CENTER_CROP,
-            ResizeMode.LETTERBOX_REFLECT_EDGES,
-        ):
+        if network_input.resize_mode is not ResizeMode.STRETCH_TO:
             return f"resize mode {network_input.resize_mode!r} is unsupported"
 
         if isinstance(images, list):
