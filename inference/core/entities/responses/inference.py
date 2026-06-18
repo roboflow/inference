@@ -303,6 +303,7 @@ class InstanceSegmentationPredictionDC:
     class_name: str  # serialized as "class" in the dict form
     class_id: int
     points: list  # list[PointDC]
+    mask_format: Literal["polygon"] = "polygon"
     detection_id: str = field(default_factory=lambda: str(uuid4()))
     parent_id: object = None
     class_confidence: object = None
@@ -337,6 +338,7 @@ def _is_pred_dc_to_dict(p: InstanceSegmentationPredictionDC) -> dict:
         "class_id": p.class_id,
         "detection_id": p.detection_id,
         "points": [{"x": pt.x, "y": pt.y} for pt in p.points],
+        "mask_format": p.mask_format,
     }
     if p.class_confidence is not None:
         d["class_confidence"] = p.class_confidence
