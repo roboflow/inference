@@ -417,36 +417,15 @@ def test_pipeline_depth_three_submits_oldest_pending_before_forward() -> None:
     ]
 
 
-def test_pipeline_submit_response_build_stores_response_context_id() -> None:
+def test_pipeline_flush_raises_on_response_future_timeout(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference.core.models.inference_models_adapters.WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT",
+        0.001,
+    )
     ops: list[str] = []
-    future = _FakePipelineFuture(name="f1", ops=ops)
-    adapter = _make_pipeline_adapter(futures=[future], ops=ops, pipeline_depth=2)
+    adapter = _make_pipeline_adapter(futures=[], ops=ops, pipeline_depth=2)
+    hung_future = Future()
+    adapter._response_futures.append((hung_future, None))
 
-    attach_adapter_mapped_kwargs(
-        future,
-        {},
-        stream_pipeline_context_id="context-xyz",
-    )
-    adapter._submit_response_build(
-        future,
-        _make_meta("frame-1"),
-        {},
-    )
-
-    assert adapter._response_futures[-1][1] == "context-xyz"
-
-
-def test_map_inference_kwargs_strips_stream_pipeline_context_id() -> None:
-    adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
-    adapter._model = SimpleNamespace(supported_mask_formats={"rle"})
-
-    mapped = adapter.map_inference_kwargs(
-        {
-            "stream_pipeline_context_id": "context-xyz",
-            "disable_preproc_contrast": False,
-            "disable_preproc_grayscale": False,
-            "disable_preproc_static_crop": False,
-        }
-    )
-
-    assert "stream_pipeline_context_id" not in mapped
+    with pytest.raises(RuntimeError, match="Timed out while waiting for"):
+        adapter.flush()

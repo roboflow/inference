@@ -2,10 +2,12 @@ from concurrent.futures import Future
 
 import pytest
 
+from inference.core.workflows.errors import ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.executor.utils import (
     contains_future,
     maybe_resolve_futures,
+    resolve_future_result,
     resolve_futures,
 )
 
@@ -79,3 +81,22 @@ def test_resolve_futures_propagates_future_exception() -> None:
         resolve_futures(batch)
 
     assert error_info.value is resolution_error
+
+
+def test_resolve_future_result_raises_on_timeout() -> None:
+    future = Future()
+
+    with pytest.raises(ExecutionEngineRuntimeError, match="Timed out"):
+        resolve_future_result(
+            future,
+            context="test | future_resolution",
+            timeout=0.001,
+        )
+
+
+def test_resolve_futures_raises_on_timeout() -> None:
+    future = Future()
+    batch = Batch.init(content=[future], indices=[(0,)])
+
+    with pytest.raises(ExecutionEngineRuntimeError, match="Timed out"):
+        resolve_futures(batch, timeout=0.001)

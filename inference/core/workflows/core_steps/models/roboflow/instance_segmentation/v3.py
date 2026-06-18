@@ -1,5 +1,5 @@
 from collections import deque
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass
 from typing import Deque, List, Literal, Optional, Tuple, Type, Union
 
@@ -15,6 +15,7 @@ from inference.core.entities.responses.inference import (
 from inference.core.env import (
     HOSTED_INSTANCE_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -459,7 +460,10 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         predictions_future: Future,
         stream_context: _StreamPredictionContext,
     ) -> BlockResult:
-        predictions = predictions_future.result()
+        predictions = _resolve_stream_future(
+            future=predictions_future,
+            context="RF-DETR async prediction finalization",
+        )
         if not isinstance(predictions, list):
             predictions = [predictions]
         return self._finalize_prediction_responses(
@@ -523,7 +527,10 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         result_future: Future,
         image_index: int,
     ):
-        result = result_future.result()
+        result = _resolve_stream_future(
+            future=result_future,
+            context="RF-DETR async prediction selection",
+        )
         if image_index >= len(result):
             return []
         return result[image_index]["predictions"]
@@ -716,6 +723,16 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             }
             for inference_id, prediction in zip(inference_ids, predictions)
         ]
+
+
+def _resolve_stream_future(
+    future: Future,
+    context: str,
+):
+    try:
+        return future.result(timeout=WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT)
+    except TimeoutError as error:
+        raise RuntimeError(f"Timed out while waiting for {context}.") from error
 
 
 def _stream_context_indices(images: Batch[WorkflowImageData]) -> List[Tuple[int, ...]]:
