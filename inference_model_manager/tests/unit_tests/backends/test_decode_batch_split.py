@@ -100,8 +100,7 @@ def _fill_slot(pool: SHMPool, req_id: int, payload: bytes) -> int:
 def test_split_respects_decoded_bytes_cap(pool):
     # 4 x 1000x1000 JPEG, ~3MB decoded each; cap 7MB -> chunks of 2.
     batch = [
-        (_fill_slot(pool, 100 + i, _jpeg(1000, 1000)), 100 + i, b"{}")
-        for i in range(4)
+        (_fill_slot(pool, 100 + i, _jpeg(1000, 1000)), 100 + i, b"{}") for i in range(4)
     ]
     chunks = _split_batch_by_decoded_bytes(pool, batch, 7_000_000)
     assert [len(c) for c in chunks] == [2, 2]
@@ -110,8 +109,7 @@ def test_split_respects_decoded_bytes_cap(pool):
 
 def test_split_oversized_image_gets_own_chunk(pool):
     batch = [
-        (_fill_slot(pool, 100 + i, _jpeg(2000, 2000)), 100 + i, b"{}")
-        for i in range(2)
+        (_fill_slot(pool, 100 + i, _jpeg(2000, 2000)), 100 + i, b"{}") for i in range(2)
     ]
     # 12MB each, cap 1MB: each image alone, never dropped.
     chunks = _split_batch_by_decoded_bytes(pool, batch, 1_000_000)
@@ -120,7 +118,6 @@ def test_split_oversized_image_gets_own_chunk(pool):
 
 def test_split_disabled_when_cap_nonpositive(pool):
     batch = [
-        (_fill_slot(pool, 100 + i, _jpeg(2000, 2000)), 100 + i, b"{}")
-        for i in range(3)
+        (_fill_slot(pool, 100 + i, _jpeg(2000, 2000)), 100 + i, b"{}") for i in range(3)
     ]
     assert _split_batch_by_decoded_bytes(pool, batch, 0) == [batch]

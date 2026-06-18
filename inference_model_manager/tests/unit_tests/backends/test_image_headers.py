@@ -6,7 +6,10 @@ import io
 
 import pytest
 
-from inference_model_manager.backends.utils.image_headers import _OVERSIZED, image_pixels
+from inference_model_manager.backends.utils.image_headers import (
+    _OVERSIZED,
+    image_pixels,
+)
 
 PIL = pytest.importorskip("PIL")
 from PIL import Image  # noqa: E402

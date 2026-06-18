@@ -11,11 +11,11 @@ import pytest
 
 import inference_model_manager.model_manager_process as mmp_mod
 from inference_model_manager.model_manager_process import (
-    ModelManagerProcess,
-    ModelState,
+    _ERR_LOAD_FAILED,
     T_ERROR,
     T_OK,
-    _ERR_LOAD_FAILED,
+    ModelManagerProcess,
+    ModelState,
     _gpu_used_fraction,
 )
 
@@ -129,15 +129,11 @@ class TestEvictionCoordination:
         mmp._unload_blocking = lambda model_id: False
         ok = asyncio.run(mmp._evict_model("a"))
         assert ok is False
-        assert "a" not in mmp._unloading   # always discarded
+        assert "a" not in mmp._unloading  # always discarded
 
 
 def _load_frame(req_id: int, model_id: bytes = b"m") -> list[bytes]:
-    return [
-        struct.pack(">QH", req_id, len(model_id))
-        + model_id
-        + struct.pack(">H", 0)
-    ]
+    return [struct.pack(">QH", req_id, len(model_id)) + model_id + struct.pack(">H", 0)]
 
 
 def _handler_mmp():
@@ -159,7 +155,7 @@ class TestHandleLoad:
             mmp = _handler_mmp()
             mmp._models["m"] = ModelState(loading=True)  # load in flight
             await mmp._handle_load(b"id1", _load_frame(7))
-            assert mmp._sent == []                        # no premature error
+            assert mmp._sent == []  # no premature error
             fs = mmp._models["m"]
             assert fs.admin_waiters == [(b"id1", 7)]
             fs.loaded, fs.loading = True, False
@@ -186,7 +182,7 @@ class TestHandleLoad:
             return mmp
 
         mmp = asyncio.run(_run())
-        assert mmp._models["m"].loading is False          # latch reset
+        assert mmp._models["m"].loading is False  # latch reset
         assert (b"id1", T_ERROR, struct.pack(">QB", 7, _ERR_LOAD_FAILED)) in mmp._sent
 
     def test_handle_load_does_not_block_on_cold_load(self):
@@ -202,7 +198,7 @@ class TestHandleLoad:
             mmp._load_model_inner = _slow_load
             await asyncio.wait_for(
                 mmp._handle_load(b"id1", _load_frame(7)), timeout=0.5
-            )                                              # returns immediately
+            )  # returns immediately
             await asyncio.wait_for(started.wait(), timeout=0.5)
             release.set()
 
@@ -227,23 +223,23 @@ class TestHandleUnload:
             mmp._models["m"] = ModelState(loaded=True)
             frame = [struct.pack(">QH", 9, 1) + b"m"]
             await asyncio.wait_for(mmp._handle_unload(b"id1", frame), timeout=0.5)
-            assert mmp._sent == []                         # reply not sent yet
+            assert mmp._sent == []  # reply not sent yet
             release.set()
             for _ in range(50):
                 await asyncio.sleep(0.01)
                 if mmp._sent:
                     break
             assert mmp._sent == [(b"id1", T_OK, struct.pack(">Q", 9))]
-            assert calls == [("m", True)]                  # drain=True
+            assert calls == [("m", True)]  # drain=True
 
         asyncio.run(_run())
 
 
 class TestAllocBackpressure:
     def test_alloc_rejected_when_model_at_inflight_cap(self, monkeypatch):
+        from inference_model_manager import configuration as cfg
         from inference_model_manager.backends.utils.shm_pool import SHMPool
         from inference_model_manager.model_manager_process import _ERR_POOL_FULL
-        from inference_model_manager import configuration as cfg
 
         monkeypatch.setattr(cfg, "INFERENCE_MAX_INFLIGHT_PER_MODEL", 2)
         pool = SHMPool.create(n_slots=8, input_mb=0.1)
@@ -273,7 +269,7 @@ class TestRegisterBackendAccess:
     def test_register_overwrites_stale_access_timestamp(self):
         mmp = _bare_mmp()
         mmp._loop = None
-        mmp._model_access["m"] = 1.0                       # pre-crash stale
+        mmp._model_access["m"] = 1.0  # pre-crash stale
         mmp.register_backend("m", object())
         assert mmp._model_access["m"] > 1.0
 
@@ -283,8 +279,8 @@ class TestRequiredMbCaching:
         mmp = _bare_mmp()
         results = iter([None, 1234])
         mmp._fetch_vram_mb = lambda model_id, api_key, batch: next(results)
-        assert mmp._required_mb("m") == 0          # failure → 0, NOT cached
-        assert mmp._required_mb("m") == 1234       # retried, now cached
+        assert mmp._required_mb("m") == 0  # failure → 0, NOT cached
+        assert mmp._required_mb("m") == 1234  # retried, now cached
         assert mmp._required_mb("m") == 1234
         assert mmp._vram_meta_cache["m"] == 1234
 
@@ -294,4 +290,4 @@ class TestRequiredMbCaching:
         mmp._fetch_vram_mb = lambda model_id, api_key, batch: calls.append(1) or 0
         assert mmp._required_mb("m") == 0
         assert mmp._required_mb("m") == 0
-        assert calls == [1]                        # 0 = no-data, cached
+        assert calls == [1]  # 0 = no-data, cached

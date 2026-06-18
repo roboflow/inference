@@ -476,13 +476,13 @@ class TestSubmitSlotFutureLifecycle:
             mm._ensure_pool()  # normally created on first subprocess load
             fut = mm.submit("m", raw_input=b"\xff\xd8abc")
 
-            assert mm._pool.free_count == 1          # slot held
-            assert fut.cancel() is False             # uncancellable
-            assert mm._pool.free_count == 1          # cancel freed nothing
+            assert mm._pool.free_count == 1  # slot held
+            assert fut.cancel() is False  # uncancellable
+            assert mm._pool.free_count == 1  # cancel freed nothing
 
             captured["fut"].set_result("prediction")
             assert fut.result(timeout=1) == "prediction"
-            assert mm._pool.free_count == 2          # freed exactly on resolution
+            assert mm._pool.free_count == 2  # freed exactly on resolution
         finally:
             mm.shutdown()
 
@@ -491,6 +491,7 @@ class TestSubmitSlotFutureLifecycle:
 
         mm = ModelManager(n_slots=2, input_mb=0.1)
         try:
+
             class _DeadBackend:
                 def submit_slot(self, slot_id, req_id, future, params_bytes):
                     raise RuntimeError("recv thread is dead")
@@ -560,7 +561,7 @@ class TestSubprocessPathParity:
         try:
             with pytest.raises(ValueError, match="prompt"):
                 mm.submit("m", raw_input=b"\xff\xd8img")
-            assert mm._pool.free_count == 2          # no slot consumed
+            assert mm._pool.free_count == 2  # no slot consumed
             assert captured == {}
         finally:
             mm.shutdown()
@@ -597,7 +598,7 @@ class TestLoadLockScope:
         try:
             assert started.wait(timeout=2)
             t0 = _time.monotonic()
-            mm.load("fast", api_key="")              # must not wait on slow
+            mm.load("fast", api_key="")  # must not wait on slow
             assert _time.monotonic() - t0 < 1.0
             assert "fast" in mm
         finally:
@@ -630,6 +631,7 @@ class TestLoadLockScope:
 class TestDirectDrain:
     def test_drain_waits_for_inflight(self):
         import time as _time
+
         from inference_model_manager.backends.direct import DirectBackend
 
         b = DirectBackend.__new__(DirectBackend)

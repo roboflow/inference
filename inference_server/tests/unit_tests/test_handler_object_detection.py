@@ -243,8 +243,9 @@ def test_serializer_handles_batch_of_predictions():
 
 
 def test_output_serializer_encodes_tensors_as_numbers():
-    import torch
     from types import SimpleNamespace
+
+    import torch
 
     pred = SimpleNamespace(
         xyxy=torch.tensor([[1.0, 2.0, 3.0, 4.0]]),
@@ -262,8 +263,9 @@ def test_output_serializer_encodes_tensors_as_numbers():
 
 
 def test_output_serializer_nan_confidence_is_valid_json():
-    import torch
     from types import SimpleNamespace
+
+    import torch
 
     pred = SimpleNamespace(
         xyxy=torch.tensor([[1.0, 2.0, 3.0, 4.0]]),
