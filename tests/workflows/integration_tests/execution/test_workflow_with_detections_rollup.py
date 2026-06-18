@@ -14,6 +14,9 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference_models.models.base.keypoints_detection import KeyPoints
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
@@ -698,6 +701,65 @@ def test_dimension_rollup_with_keypoint_detection_only_tensor_native(
     result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
+        }
+    )
+
+    # then
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert set(result[0].keys()) == {
+        "rolled_up_detections",
+        "keypoint_visualization",
+    }
+
+    # The keypoint kind's runtime payload is a (KeyPoints, Detections) tuple; the
+    # KeyPoints component carries the rolled-up keypoint data that lived in
+    # sv.Detections.data["keypoints_xy"] on the numpy path.
+    rolled_up = result[0]["rolled_up_detections"]
+    assert isinstance(rolled_up, tuple), "Keypoint rollup output is a tuple"
+    key_points, detections = rolled_up
+    assert isinstance(key_points, KeyPoints)
+    assert hasattr(detections, "xyxy"), "Bbox component should have xyxy"
+    # One skeleton instance per bounding box; each instance carries (K, 2) keypoints
+    # (or there are no instances at all, mirroring the numpy len==0 fallback).
+    assert key_points.xy.shape[0] == detections.xyxy.shape[0]
+    assert key_points.xy.shape[0] == 0 or key_points.xy.shape[-1] == 2
+
+    # Validate visualization
+    assert (
+        result[0]["keypoint_visualization"].numpy_image.shape[:2]
+        == crowd_image.shape[:2]
+    ), "Visualization should match image dimensions"
+
+
+@_TENSOR_ONLY
+def test_dimension_rollup_with_keypoint_detection_only_with_tensor_input(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    """Tensor-input parity of test_dimension_rollup_with_keypoint_detection_only.
+
+    Same as the *_tensor_native variant, but the image arrives ALREADY materialised as
+    a CHW RGB device tensor (is_tensor_materialised() == True), so the OD producer runs
+    its on-device tensor path. Results must match the numpy-input variant.
+    """
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=KEYPOINT_ROLLUP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when — feed the fixture as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(crowd_image),
         }
     )
 

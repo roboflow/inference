@@ -8,6 +8,9 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
@@ -170,6 +173,57 @@ def test_legacy_workflow_with_masked_crop_tensor_native(
     assert pixels_sum == 0, "Expected everything black outside mask"
 
 
+@_TENSOR_ONLY
+def test_legacy_workflow_with_masked_crop_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as test_legacy_workflow_with_masked_crop_tensor_native, but the image arrives
+    # ALREADY materialised as a CHW RGB device tensor (is_tensor_materialised() == True),
+    # so the segmentation block runs its on-device tensor path. Results must match the
+    # numpy-input variant.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=MASKED_CROP_LEGACY_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when — feed the fixture as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+        }
+    )
+
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "crops",
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    assert len(result[0]["crops"]) == 2, "Expected 2 crops for two dogs detected"
+    crop_image = result[0]["crops"][0].numpy_image
+    # Native InstanceDetections -> sv.Detections recovers numpy xyxy (N, 4) and a
+    # (N, H, W) bool mask, matching the numpy baseline the sv test asserts.
+    sv_predictions = result[0]["predictions"].to_supervision()
+    x_min, y_min, x_max, y_max = sv_predictions.xyxy[0].round().astype(dtype=int)
+    crop_mask = sv_predictions.mask[0][y_min:y_max, x_min:x_max]
+    pixels_outside_mask = np.where(
+        np.stack([crop_mask] * 3, axis=-1) == 0,
+        crop_image,
+        np.zeros_like(crop_image),
+    )
+    pixels_sum = pixels_outside_mask.sum()
+    assert pixels_sum == 0, "Expected everything black outside mask"
+
+
 MASKED_CROP_WORKFLOW = {
     "version": "1.0",
     "inputs": [
@@ -295,6 +349,57 @@ def test_workflow_with_masked_crop_tensor_native(
     result = execution_engine.run(
         runtime_parameters={
             "image": dogs_image,
+        }
+    )
+
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "crops",
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    assert len(result[0]["crops"]) == 2, "Expected 2 crops for two dogs detected"
+    crop_image = result[0]["crops"][0].numpy_image
+    # Native InstanceDetections -> sv.Detections recovers numpy xyxy (N, 4) and a
+    # (N, H, W) bool mask, matching the numpy baseline the sv test asserts.
+    sv_predictions = result[0]["predictions"].to_supervision()
+    x_min, y_min, x_max, y_max = sv_predictions.xyxy[0].round().astype(dtype=int)
+    crop_mask = sv_predictions.mask[0][y_min:y_max, x_min:x_max]
+    pixels_outside_mask = np.where(
+        np.stack([crop_mask] * 3, axis=-1) == 0,
+        crop_image,
+        np.zeros_like(crop_image),
+    )
+    pixels_sum = pixels_outside_mask.sum()
+    assert pixels_sum == 0, "Expected everything black outside mask"
+
+
+@_TENSOR_ONLY
+def test_workflow_with_masked_crop_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as test_workflow_with_masked_crop_tensor_native, but the image arrives ALREADY
+    # materialised as a CHW RGB device tensor (is_tensor_materialised() == True), so the
+    # segmentation block runs its on-device tensor path. Results must match the numpy-input
+    # variant.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=MASKED_CROP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when — feed the fixture as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
         }
     )
 

@@ -20,6 +20,9 @@ from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference_models.models.base.object_detection import (
     Detections as NativeDetections,
 )
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
@@ -795,6 +798,48 @@ def test_workflow_when_there_is_faulty_application_of_aggregation_step_at_batch_
             "image": [
                 np.zeros((192, 168, 3), dtype=np.uint8),
                 np.zeros((200, 168, 3), dtype=np.uint8),
+            ]
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Expected result to collapse"
+    assert (
+        len(result[0]["result"]) == 2
+    ), "Expected both predictions to be placed in the list"
+    # DimensionCollapse preserves element type; under the flag the producer emits
+    # native inference_models.Detections, so collapsed elements are native.
+    assert isinstance(result[0]["result"][0], NativeDetections)
+    assert isinstance(result[0]["result"][1], NativeDetections)
+
+
+@_TENSOR_ONLY
+def test_workflow_when_there_is_faulty_application_of_aggregation_step_at_batch_with_dimension_1_with_tensor_input(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as ..._tensor_native, but each image arrives ALREADY materialised as a CHW RGB
+    # device tensor (is_tensor_materialised() == True), so the OD producer runs its
+    # on-device tensor path. Results must match the numpy-input variant.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_INVALID_AGGREGATION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when — feed each fixture as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [
+                numpy_image_as_tensor(np.zeros((192, 168, 3), dtype=np.uint8)),
+                numpy_image_as_tensor(np.zeros((200, 168, 3), dtype=np.uint8)),
             ]
         }
     )

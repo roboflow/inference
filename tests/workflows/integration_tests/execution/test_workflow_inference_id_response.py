@@ -14,6 +14,9 @@ from inference.core.workflows.execution_engine.constants import (
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference_models.models.base.classification import ClassificationPrediction
 from inference_models.models.base.object_detection import Detections as NativeDetections
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 
 # Under ENABLE_TENSOR_DATA_REPRESENTATION the detection/classification blocks emit native
 # inference_models dataclasses (Detections / ClassificationPrediction) instead of
@@ -200,6 +203,61 @@ def test_detection_plus_classification_workflow_with_inference_id_tensor_native(
     ], "Expected predictions to be as measured in reference run"
 
 
+@_TENSOR_ONLY
+@pytest.mark.workflows
+def test_detection_plus_classification_workflow_with_inference_id_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as test_detection_plus_classification_workflow_with_inference_id_tensor_native,
+    # but the image arrives ALREADY materialised as a CHW RGB device tensor
+    # (is_tensor_materialised() == True), so the OD block runs its on-device tensor path.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=DETECTION_PLUS_CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+        }
+    )
+
+    # then
+    assert (
+        len(result[0]["predictions"]) == 2
+    ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
+
+    # Under the flag each nested classification result is a native
+    # ClassificationPrediction dataclass (not iterable). inference_id lives on
+    # image-level metadata at images_metadata[0][INFERENCE_ID_KEY]; the top class is
+    # resolved via images_metadata[0][CLASS_NAMES_KEY][top class_id].
+    tops = []
+    for prediction in result[0]["predictions"]:
+        assert isinstance(
+            prediction, ClassificationPrediction
+        ), "Expected native ClassificationPrediction under the flag"
+        meta = prediction.images_metadata[0]
+        assert INFERENCE_ID_KEY in meta, "Expected inference_id in image metadata"
+        assert meta[INFERENCE_ID_KEY] is not None, "Expected non-null inference_id"
+        top_class_id = int(prediction.class_id.reshape(-1)[0])
+        tops.append(meta[CLASS_NAMES_KEY][top_class_id])
+
+    assert tops == [
+        "116.Parson_russell_terrier",
+        "131.Wirehaired_pointing_griffon",
+    ], "Expected predictions to be as measured in reference run"
+
+
 @_NUMPY_ONLY
 @pytest.mark.workflows
 def test_object_detection_workflow_with_inference_id(
@@ -259,6 +317,48 @@ def test_object_detection_workflow_with_inference_id_tensor_native(
     result = execution_engine.run(
         runtime_parameters={
             "image": dogs_image,
+        }
+    )
+
+    # then
+    # Under the flag predictions is a native Detections carrier (no __getitem__).
+    # inference_id is image-level metadata shared by both boxes, not per-box.
+    dets = result[0]["predictions"]
+    assert isinstance(
+        dets, NativeDetections
+    ), "Expected native inference_models.Detections under the flag"
+    assert dets.xyxy.shape[0] == 2, "Expected 2 predictions"
+    assert (
+        dets.image_metadata[INFERENCE_ID_KEY] is not None
+    ), "Expected non-null inference_id"
+
+
+@_TENSOR_ONLY
+@pytest.mark.workflows
+def test_object_detection_workflow_with_inference_id_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as test_object_detection_workflow_with_inference_id_tensor_native, but the image
+    # arrives ALREADY materialised as a CHW RGB device tensor (is_tensor_materialised() ==
+    # True), so the OD block runs its on-device tensor path.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
         }
     )
 

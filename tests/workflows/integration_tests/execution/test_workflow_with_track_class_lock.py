@@ -15,6 +15,9 @@ from inference.core.workflows.execution_engine.constants import (
     TRACKER_ID_KEY,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 
 # Under ENABLE_TENSOR_DATA_REPRESENTATION the track_class_lock block is the
 # tensor-native sibling (v1_tensor): it accepts/returns an
@@ -221,6 +224,68 @@ def test_track_class_lock_state_persists_across_sequential_engine_runs_tensor_na
     result = execution_engine.run(
         runtime_parameters={
             "image": [image],
+            "predictions": [_native_tracked_detections("dog", 0.95)],
+        }
+    )
+
+    # then - relabelled to the locked class, proving state persisted
+    out = result[0]["tracked_detections"]
+    assert isinstance(out, NativeDetections)
+    assert _native_class_locked(out)
+    assert _native_class_name(out) == "cat"
+    assert int(out.class_id[0]) == CLASS_IDS["cat"]
+
+
+@_TENSOR_ONLY
+def test_track_class_lock_state_persists_across_sequential_engine_runs_with_tensor_input(
+    model_manager: ModelManager,
+) -> None:
+    """Same as
+    test_track_class_lock_state_persists_across_sequential_engine_runs_tensor_native,
+    but the image arrives ALREADY materialised as a CHW RGB device tensor
+    (is_tensor_materialised() == True), so the block runs its on-device tensor path.
+    Asserts the SAME lock-persistence semantics (lock acquired after min_votes frames;
+    a later contrary frame is relabelled to the locked class)."""
+    # given
+    from inference_models.models.base.object_detection import (
+        Detections as NativeDetections,
+    )
+
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=TRACK_CLASS_LOCK_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    image = np.zeros((64, 64, 3), dtype=np.uint8)
+
+    # when - 10 confident "cat" frames, one engine call per frame
+    results = []
+    for _ in range(10):
+        result = execution_engine.run(
+            runtime_parameters={
+                "image": [numpy_image_as_tensor(image)],
+                "predictions": [_native_tracked_detections("cat", 0.9)],
+            }
+        )
+        results.append(result)
+
+    # then - lock requires state accumulated across separate engine runs
+    before_lock = results[8][0]["tracked_detections"]
+    assert isinstance(before_lock, NativeDetections)
+    assert not _native_class_locked(before_lock)
+    locked = results[9][0]["tracked_detections"]
+    assert _native_class_locked(locked)
+    assert _native_class_name(locked) == "cat"
+
+    # when - a contrary "dog" frame arrives in a fresh engine call
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [numpy_image_as_tensor(image)],
             "predictions": [_native_tracked_detections("dog", 0.95)],
         }
     )

@@ -10,6 +10,9 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
@@ -177,6 +180,57 @@ def test_workflow_with_overlap_all_tensor_native(
     result = execution_engine.run(
         runtime_parameters={
             "image": fruit_image,
+        }
+    )
+
+    # then
+    assert len(result) == 1, "One set of images provided, so one output expected"
+
+    # The overlap block returns a native inference_models.Detections (torch tensors,
+    # no sv `.data`); class names are resolved from `image_metadata[class_names]`.
+    # Same semantic result as the sv `test_workflow_with_overlap_all` else-branch.
+
+    # if overlap_type is "Any Overlap", both the apples and orange will overlap the banana
+    any_redictions = result[0]["any_predictions"]
+    assert len(any_redictions.class_id) == 5
+    class_names = _native_class_names(any_redictions)
+    assert "banana" not in class_names
+    assert "apple" in class_names
+    assert "orange" in class_names
+
+    # if overlap_type is "Center Overlap" the apple and orange will overlap
+    any_redictions = result[0]["center_predictions"]
+    assert len(any_redictions.class_id) == 2
+    class_names = _native_class_names(any_redictions)
+    assert "banana" not in class_names
+    assert "apple" in class_names
+    assert "orange" in class_names
+
+
+@_TENSOR_ONLY
+def test_workflow_with_overlap_all_with_tensor_input(
+    model_manager: ModelManager,
+    fruit_image: np.ndarray,
+) -> None:
+    # Same as test_workflow_with_overlap_all_tensor_native, but the image arrives ALREADY
+    # materialised as a CHW RGB device tensor (is_tensor_materialised() == True), so the
+    # OD block runs its on-device tensor path.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=OVERLAP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(fruit_image),
         }
     )
 

@@ -15,6 +15,9 @@ from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference_models.models.base.instance_segmentation import (
     InstanceDetections as NativeInstanceDetections,
 )
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 
 # The edge-snap pipeline pipes a `segmentation` runtime input into `mask_edge_snap`.
 # Under ENABLE_TENSOR_DATA_REPRESENTATION that block accepts a tensor-native
@@ -552,6 +555,71 @@ def test_edge_snap_cv_pipeline_with_segmentation_tensor_native(
 
 
 @_TENSOR_ONLY
+def test_edge_snap_cv_pipeline_with_segmentation_with_tensor_input(
+    model_manager: ModelManager,
+) -> None:
+    """Same as test_edge_snap_cv_pipeline_with_segmentation_tensor_native, but the image
+    arrives ALREADY materialised as a CHW RGB device tensor (is_tensor_materialised() ==
+    True), so the preprocessing blocks run their on-device tensor path. The segmentation is
+    a native InstanceDetections; results must match the numpy-input variant."""
+    # given - Create a test image with a synthetic object
+    test_image = np.ones((200, 200, 3), dtype=np.uint8) * 100
+    test_image[50:150, 50:150] = 150
+    np.random.seed(42)
+    noise = np.random.randint(-20, 20, (200, 200, 3), dtype=np.int16)
+    noisy_image = np.clip(test_image.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+
+    # Synthetic native segmentation with a single rectangular mask
+    mask = np.zeros((200, 200), dtype=np.uint8)
+    mask[50:150, 50:150] = 1
+
+    detections = NativeInstanceDetections(
+        xyxy=torch.tensor([[50, 50, 150, 150]], dtype=torch.float32),
+        confidence=torch.tensor([0.95], dtype=torch.float32),
+        class_id=torch.tensor([0], dtype=torch.long),
+        mask=torch.as_tensor(mask[np.newaxis, :, :], dtype=torch.bool),
+        image_metadata=None,
+    )
+
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_EDGE_SNAP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when — feed the image as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(noisy_image),
+            "segmentation": detections,
+        },
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    assert "refined_segmentation" in result_dict
+    assert "preprocessed_image" in result_dict
+
+    refined_seg = result_dict["refined_segmentation"]
+    preprocessed = result_dict["preprocessed_image"].numpy_image
+
+    # Verify outputs
+    assert refined_seg is not None
+    assert preprocessed.shape == noisy_image.shape
+    assert preprocessed.dtype == np.uint8
+
+    # Verify that refined_segmentation has masks
+    assert hasattr(refined_seg, "mask")
+    assert refined_seg.mask is not None or len(refined_seg.mask) == 0
+
+
+@_TENSOR_ONLY
 def test_edge_snap_cv_pipeline_with_empty_segmentation_tensor_native(
     model_manager: ModelManager,
 ) -> None:
@@ -581,6 +649,56 @@ def test_edge_snap_cv_pipeline_with_empty_segmentation_tensor_native(
     # when
     result = execution_engine.run(
         runtime_parameters={"image": test_image, "segmentation": detections},
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    result_dict = result[0]
+    assert "refined_segmentation" in result_dict
+    preprocessed = result_dict["preprocessed_image"].numpy_image
+
+    # Verify preprocessing still works
+    assert preprocessed.shape == test_image.shape
+    assert preprocessed.dtype == np.uint8
+
+
+@_TENSOR_ONLY
+def test_edge_snap_cv_pipeline_with_empty_segmentation_with_tensor_input(
+    model_manager: ModelManager,
+) -> None:
+    """Same as test_edge_snap_cv_pipeline_with_empty_segmentation_tensor_native, but the
+    image arrives ALREADY materialised as a CHW RGB device tensor (is_tensor_materialised()
+    == True), so the preprocessing blocks run their on-device tensor path. Results must match
+    the numpy-input variant."""
+    # given - Create a simple test image
+    test_image = np.ones((150, 150, 3), dtype=np.uint8) * 120
+
+    # Empty native detections
+    detections = NativeInstanceDetections(
+        xyxy=torch.zeros((0, 4), dtype=torch.float32),
+        class_id=torch.zeros((0,), dtype=torch.long),
+        confidence=torch.zeros((0,), dtype=torch.float32),
+        mask=torch.zeros((0, 150, 150), dtype=torch.bool),
+        image_metadata=None,
+    )
+
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_EDGE_SNAP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when — feed the image as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(test_image),
+            "segmentation": detections,
+        },
     )
 
     # then

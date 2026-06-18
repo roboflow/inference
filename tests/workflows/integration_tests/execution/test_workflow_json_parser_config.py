@@ -12,6 +12,9 @@ from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference_models.models.base.object_detection import (
     Detections as NativeDetections,
 )
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 
 # Under ENABLE_TENSOR_DATA_REPRESENTATION the object detection model block emits a
 # native inference_models.Detections instead of sv.Detections. The sv-typed test below
@@ -114,6 +117,45 @@ def test_workflow_with_json_parameter_tensor_native(
     result = execution_engine.run(
         runtime_parameters={
             "image": dogs_image,
+            "config": '{"model_id": "yolov8n-640"}',
+        }
+    )
+
+    assert len(result) == 1
+    assert set(result[0].keys()) == {"json_parser", "model_predictions"}
+    assert result[0]["json_parser"] == "yolov8n-640"
+    # Under ENABLE_TENSOR_DATA_REPRESENTATION the model block emits a native
+    # inference_models.Detections (torch-backed) rather than sv.Detections.
+    predictions = result[0]["model_predictions"]
+    assert isinstance(predictions, NativeDetections)
+    # Same semantic result as the numpy path: two dogs detected (COCO class_id 16).
+    assert len(predictions.xyxy) == 2
+    assert predictions.class_id.tolist() == [16, 16]
+
+
+@_TENSOR_ONLY
+def test_workflow_with_json_parameter_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    # Same as test_workflow_with_json_parameter_tensor_native, but the image arrives
+    # ALREADY materialised as a CHW RGB device tensor (is_tensor_materialised() == True),
+    # so the OD model block runs its on-device tensor path. Results must match the
+    # numpy-input variant.
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=JSON_PARSER_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
             "config": '{"model_id": "yolov8n-640"}',
         }
     )

@@ -20,5 +20,5 @@ def numpy_image_as_tensor(bgr_hwc_image: np.ndarray) -> torch.Tensor:
     """BGR HWC uint8 numpy fixture -> CHW RGB uint8 tensor on WORKFLOWS_IMAGE_TENSOR_DEVICE."""
     rgb = bgr_hwc_image[:, :, ::-1].copy()
     return (
-        torch.from_numpy(rgb).permute(2, 0, 1).contiguous().to(WORKFLOWS_IMAGE_T3ENSOR_DEVICE)
+        torch.from_numpy(rgb).permute(2, 0, 1).contiguous().to(WORKFLOWS_IMAGE_TENSOR_DEVICE)
     )

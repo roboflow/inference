@@ -13,6 +13,9 @@ from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference_models.models.base.instance_segmentation import (
     InstanceDetections as NativeInstanceDetections,
 )
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 
 # Under ENABLE_TENSOR_DATA_REPRESENTATION the `mask_edge_snap` block's `segmentation`
 # input is a tensor-native `InstanceDetections` (not sv.Detections), and its outputs
@@ -593,6 +596,60 @@ def test_mask_edge_snap_workflow_with_empty_segmentation_tensor_native(
 
 @pytest.mark.slow
 @_TENSOR_ONLY
+def test_mask_edge_snap_workflow_with_empty_segmentation_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Same as test_mask_edge_snap_workflow_with_empty_segmentation_tensor_native, but the
+    image arrives ALREADY materialised as a CHW RGB device tensor (is_tensor_materialised()
+    == True), so the block runs its on-device tensor path. Results must match the numpy-input
+    variant."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_mask_edge_snap_workflow(),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    h, w = dogs_image.shape[:2]
+    empty_segmentation = NativeInstanceDetections(
+        xyxy=torch.zeros((0, 4), dtype=torch.float32),
+        class_id=torch.zeros((0,), dtype=torch.long),
+        confidence=torch.zeros((0,), dtype=torch.float32),
+        mask=torch.zeros((0, h, w), dtype=torch.bool),
+        image_metadata=None,
+    )
+
+    # when — feed the image as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+            "segmentation": empty_segmentation,
+            "pixel_tolerance": 15,
+            "sigma": 1.0,
+            "min_contour_area": 50.0,
+            "dilation_iterations": 2,
+            "boundary_band_width": 15,
+            "adaptive_window_size": 41,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    output = result[0]["result"]
+    assert "refined_segmentation" in output
+    assert "edges" in output
+    assert len(output["refined_segmentation"]) == 0
+
+
+@pytest.mark.slow
+@_TENSOR_ONLY
 def test_mask_edge_snap_workflow_with_single_mask_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -625,6 +682,65 @@ def test_mask_edge_snap_workflow_with_single_mask_tensor_native(
     result = execution_engine.run(
         runtime_parameters={
             "image": dogs_image,
+            "segmentation": segmentation,
+            "pixel_tolerance": 15,
+            "sigma": 1.0,
+            "min_contour_area": 50.0,
+            "dilation_iterations": 2,
+            "boundary_band_width": 15,
+            "adaptive_window_size": 41,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    output = result[0]["result"]
+    assert "refined_segmentation" in output
+    assert "edges" in output
+    refined = output["refined_segmentation"]
+    assert len(refined) == 1
+    assert refined.mask is not None
+    assert tuple(refined.mask[0].shape) == (h, w)
+
+
+@pytest.mark.slow
+@_TENSOR_ONLY
+def test_mask_edge_snap_workflow_with_single_mask_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Same as test_mask_edge_snap_workflow_with_single_mask_tensor_native, but the image
+    arrives ALREADY materialised as a CHW RGB device tensor (is_tensor_materialised() ==
+    True), so the block runs its on-device tensor path. Results must match the numpy-input
+    variant."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_mask_edge_snap_workflow(),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    h, w = dogs_image.shape[:2]
+    mask = np.zeros((h, w), dtype=bool)
+    mask[50:150, 100:200] = True
+
+    segmentation = _native_segmentation(
+        xyxy=np.array([[100.0, 50.0, 200.0, 150.0]]),
+        masks=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+    )
+
+    # when — feed the image as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
             "segmentation": segmentation,
             "pixel_tolerance": 15,
             "sigma": 1.0,
@@ -707,6 +823,67 @@ def test_mask_edge_snap_workflow_with_multiple_masks_tensor_native(
 
 @pytest.mark.slow
 @_TENSOR_ONLY
+def test_mask_edge_snap_workflow_with_multiple_masks_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Same as test_mask_edge_snap_workflow_with_multiple_masks_tensor_native, but the image
+    arrives ALREADY materialised as a CHW RGB device tensor (is_tensor_materialised() ==
+    True), so the block runs its on-device tensor path. Results must match the numpy-input
+    variant."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_mask_edge_snap_workflow(),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    h, w = dogs_image.shape[:2]
+    mask1 = np.zeros((h, w), dtype=bool)
+    mask1[50:150, 100:200] = True
+
+    mask2 = np.zeros((h, w), dtype=bool)
+    mask2[200:300, 300:400] = True
+
+    segmentation = _native_segmentation(
+        xyxy=np.array([[100.0, 50.0, 200.0, 150.0], [300.0, 200.0, 400.0, 300.0]]),
+        masks=np.array([mask1, mask2]),
+        confidence=np.array([0.9, 0.85]),
+        class_id=np.array([0, 1]),
+    )
+
+    # when — feed the image as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+            "segmentation": segmentation,
+            "pixel_tolerance": 15,
+            "sigma": 1.0,
+            "min_contour_area": 50.0,
+            "dilation_iterations": 2,
+            "boundary_band_width": 15,
+            "adaptive_window_size": 41,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    output = result[0]["result"]
+    assert "refined_segmentation" in output
+    assert "edges" in output
+    refined = output["refined_segmentation"]
+    assert len(refined) == 2
+    assert refined.mask.shape[0] == 2
+
+
+@pytest.mark.slow
+@_TENSOR_ONLY
 def test_mask_edge_snap_workflow_with_permissive_parameters_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -759,6 +936,61 @@ def test_mask_edge_snap_workflow_with_permissive_parameters_tensor_native(
 
 @pytest.mark.slow
 @_TENSOR_ONLY
+def test_mask_edge_snap_workflow_with_permissive_parameters_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Same as test_mask_edge_snap_workflow_with_permissive_parameters_tensor_native, but the
+    image arrives ALREADY materialised as a CHW RGB device tensor (is_tensor_materialised()
+    == True), so the block runs its on-device tensor path. Results must match the numpy-input
+    variant."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_mask_edge_snap_workflow(),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    h, w = dogs_image.shape[:2]
+    mask = np.zeros((h, w), dtype=bool)
+    mask[50:150, 100:200] = True
+
+    segmentation = _native_segmentation(
+        xyxy=np.array([[100.0, 50.0, 200.0, 150.0]]),
+        masks=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+    )
+
+    # when - using permissive parameters, image fed as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+            "segmentation": segmentation,
+            "pixel_tolerance": 5,
+            "sigma": 0.3,
+            "min_contour_area": 10.0,
+            "dilation_iterations": 1,
+            "boundary_band_width": 10,
+            "adaptive_window_size": 21,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1
+    output = result[0]["result"]
+    assert "refined_segmentation" in output
+    assert "edges" in output
+
+
+@pytest.mark.slow
+@_TENSOR_ONLY
 def test_mask_edge_snap_workflow_with_strict_parameters_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -791,6 +1023,61 @@ def test_mask_edge_snap_workflow_with_strict_parameters_tensor_native(
     result = execution_engine.run(
         runtime_parameters={
             "image": dogs_image,
+            "segmentation": segmentation,
+            "pixel_tolerance": 50,
+            "sigma": 2.0,
+            "min_contour_area": 200.0,
+            "dilation_iterations": 5,
+            "boundary_band_width": 50,
+            "adaptive_window_size": 81,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1
+    output = result[0]["result"]
+    assert "refined_segmentation" in output
+    assert "edges" in output
+
+
+@pytest.mark.slow
+@_TENSOR_ONLY
+def test_mask_edge_snap_workflow_with_strict_parameters_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Same as test_mask_edge_snap_workflow_with_strict_parameters_tensor_native, but the
+    image arrives ALREADY materialised as a CHW RGB device tensor (is_tensor_materialised()
+    == True), so the block runs its on-device tensor path. Results must match the numpy-input
+    variant."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_mask_edge_snap_workflow(),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    h, w = dogs_image.shape[:2]
+    mask = np.zeros((h, w), dtype=bool)
+    mask[50:150, 100:200] = True
+
+    segmentation = _native_segmentation(
+        xyxy=np.array([[100.0, 50.0, 200.0, 150.0]]),
+        masks=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+    )
+
+    # when - using strict parameters, image fed as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
             "segmentation": segmentation,
             "pixel_tolerance": 50,
             "sigma": 2.0,
@@ -870,6 +1157,68 @@ def test_mask_edge_snap_workflow_with_different_mask_sizes_tensor_native(
 
 @pytest.mark.slow
 @_TENSOR_ONLY
+def test_mask_edge_snap_workflow_with_different_mask_sizes_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Same as test_mask_edge_snap_workflow_with_different_mask_sizes_tensor_native, but the
+    image arrives ALREADY materialised as a CHW RGB device tensor (is_tensor_materialised()
+    == True), so the block runs its on-device tensor path. Results must match the numpy-input
+    variant."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_mask_edge_snap_workflow(),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    h, w = dogs_image.shape[:2]
+
+    small_mask = np.zeros((h, w), dtype=bool)
+    small_mask[100:120, 150:170] = True
+
+    medium_mask = np.zeros((h, w), dtype=bool)
+    medium_mask[50:200, 100:300] = True
+
+    segmentation = _native_segmentation(
+        xyxy=np.array([[150.0, 100.0, 170.0, 120.0], [100.0, 50.0, 300.0, 200.0]]),
+        masks=np.array([small_mask, medium_mask]),
+        confidence=np.array([0.9, 0.85]),
+        class_id=np.array([0, 1]),
+    )
+
+    # when — feed the image as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+            "segmentation": segmentation,
+            "pixel_tolerance": 15,
+            "sigma": 1.0,
+            "min_contour_area": 50.0,
+            "dilation_iterations": 2,
+            "boundary_band_width": 15,
+            "adaptive_window_size": 41,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    output = result[0]["result"]
+    assert "refined_segmentation" in output
+    assert "edges" in output
+    refined = output["refined_segmentation"]
+    assert len(refined) == 2, "Both masks should be refined"
+    assert refined.mask.shape[0] == 2
+
+
+@pytest.mark.slow
+@_TENSOR_ONLY
 def test_mask_edge_snap_workflow_with_morphological_preprocessing_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -902,6 +1251,59 @@ def test_mask_edge_snap_workflow_with_morphological_preprocessing_tensor_native(
     result = execution_engine.run(
         runtime_parameters={
             "image": dogs_image,
+            "segmentation": segmentation,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    output = result[0]["result"]
+    assert "refined_segmentation" in output
+    assert "edges" in output
+    refined = output["refined_segmentation"]
+    assert len(refined) == 1
+    assert refined.mask is not None
+    assert tuple(refined.mask[0].shape) == (h, w)
+
+
+@pytest.mark.slow
+@_TENSOR_ONLY
+def test_mask_edge_snap_workflow_with_morphological_preprocessing_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Same as test_mask_edge_snap_workflow_with_morphological_preprocessing_tensor_native,
+    but the image arrives ALREADY materialised as a CHW RGB device tensor
+    (is_tensor_materialised() == True), so the preprocessing + edge-snap blocks run their
+    on-device tensor path. Results must match the numpy-input variant."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_mask_edge_snap_with_morphological_preprocessing_workflow(),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    h, w = dogs_image.shape[:2]
+    mask = np.zeros((h, w), dtype=bool)
+    mask[50:150, 100:200] = True
+
+    segmentation = _native_segmentation(
+        xyxy=np.array([[100.0, 50.0, 200.0, 150.0]]),
+        masks=np.array([mask]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+    )
+
+    # when - run workflow with morphological preprocessing, image fed as a tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
             "segmentation": segmentation,
         }
     )

@@ -22,6 +22,9 @@ from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference_models.models.base.object_detection import (
     Detections as NativeDetections,
 )
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
@@ -588,6 +591,160 @@ def test_class_rename_workflow_when_mapping_is_parametrised_tensor_native(
     result = execution_engine.run(
         runtime_parameters={
             "image": fruit_image,
+            "model_id": "yolov8n-640",
+            "class_map": {"apple": "fruit", "banana": "fruit"},
+            "strict": False,
+        },
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    renamed = result[0]["renamed_predictions"]
+    assert isinstance(
+        renamed, NativeDetections
+    ), "Output must be native inference_models.Detections under tensor mode"
+    # Same semantic result as the numpy path (order-independent): 5 boxes renamed to
+    # `fruit` with new non-strict id 1024, the single `orange` (id 49) kept as-is.
+    assert _native_class_names(renamed) == Counter(
+        {"fruit": 5, "orange": 1}
+    ), "Expected renamed class names multiset to match the numpy baseline"
+    assert Counter(renamed.class_id.tolist()) == Counter(
+        {1024: 5, 49: 1}
+    ), "Expected renamed class id multiset to match the numpy baseline"
+    assert len(renamed) == len(
+        result[0]["original_predictions"]
+    ), "Expected length of predictions not to change"
+
+
+@_TENSOR_ONLY
+def test_class_rename_workflow_with_non_strict_mapping_with_tensor_input(
+    model_manager: ModelManager,
+    fruit_image: np.ndarray,
+) -> None:
+    # Same as test_class_rename_workflow_with_non_strict_mapping_tensor_native, but the
+    # image arrives ALREADY materialised as a CHW RGB device tensor
+    # (is_tensor_materialised() == True), so the OD block runs its on-device tensor path.
+    workflow_definition = build_class_remapping_workflow_definition(
+        class_map={"apple": "fruit", "banana": "fruit"},
+        strict=False,
+    )
+
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=workflow_definition,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(fruit_image),
+            "model_id": "yolov8n-640",
+        },
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    renamed = result[0]["renamed_predictions"]
+    assert isinstance(
+        renamed, NativeDetections
+    ), "Output must be native inference_models.Detections under tensor mode"
+    # Same semantic result as the numpy path (order-independent): 5 boxes renamed to
+    # `fruit` with new non-strict id 1024, the single `orange` (id 49) kept as-is.
+    assert _native_class_names(renamed) == Counter(
+        {"fruit": 5, "orange": 1}
+    ), "Expected renamed class names multiset to match the numpy baseline"
+    assert Counter(renamed.class_id.tolist()) == Counter(
+        {1024: 5, 49: 1}
+    ), "Expected renamed class id multiset to match the numpy baseline"
+    assert len(renamed) == len(
+        result[0]["original_predictions"]
+    ), "Expected length of predictions not to change"
+
+
+@_TENSOR_ONLY
+def test_class_rename_workflow_with_strict_mapping_when_all_classes_are_remapped_with_tensor_input(
+    model_manager: ModelManager,
+    fruit_image: np.ndarray,
+) -> None:
+    # Same as
+    # test_class_rename_workflow_with_strict_mapping_when_all_classes_are_remapped_tensor_native,
+    # but the image arrives ALREADY materialised as a CHW RGB device tensor
+    # (is_tensor_materialised() == True), so the OD block runs its on-device tensor path.
+    workflow_definition = build_class_remapping_workflow_definition(
+        class_map={"apple": "fruit", "banana": "fruit", "orange": "my-orange"},
+        strict=True,
+    )
+
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=workflow_definition,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(fruit_image),
+            "model_id": "yolov8n-640",
+        },
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    renamed = result[0]["renamed_predictions"]
+    assert isinstance(
+        renamed, NativeDetections
+    ), "Output must be native inference_models.Detections under tensor mode"
+    # Strict mapping reindexes the resulting classes from 0 (sorted): fruit -> 0,
+    # my-orange -> 1. Same semantic result as the numpy path (order-independent).
+    assert _native_class_names(renamed) == Counter(
+        {"fruit": 5, "my-orange": 1}
+    ), "Expected renamed class names multiset to match the numpy baseline"
+    assert Counter(renamed.class_id.tolist()) == Counter(
+        {0: 5, 1: 1}
+    ), "Expected renamed class id multiset to match the numpy baseline"
+    assert len(renamed) == len(
+        result[0]["original_predictions"]
+    ), "Expected length of predictions not to change"
+
+
+@_TENSOR_ONLY
+def test_class_rename_workflow_when_mapping_is_parametrised_with_tensor_input(
+    model_manager: ModelManager,
+    fruit_image: np.ndarray,
+) -> None:
+    # Same as test_class_rename_workflow_when_mapping_is_parametrised_tensor_native, but
+    # the image arrives ALREADY materialised as a CHW RGB device tensor
+    # (is_tensor_materialised() == True), so the OD block runs its on-device tensor path.
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_PARAMETRISED_DETECTIONS_RENAME,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(fruit_image),
             "model_id": "yolov8n-640",
             "class_map": {"apple": "fruit", "banana": "fruit"},
             "strict": False,
