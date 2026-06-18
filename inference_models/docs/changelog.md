@@ -1,5 +1,12 @@
 # Changelog
 
+## `0.29.4`
+
+### Added
+
+- Adjustment to `KeyPoints` interface to expose `__len__(...)` method.
+
+
 ## `0.29.3`
 
 ### Fixed
