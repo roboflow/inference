@@ -1,5 +1,5 @@
 import os
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from enum import Enum
 from functools import partial
@@ -66,6 +66,7 @@ from inference.core.workflows.execution_engine.profiling.core import (
     BaseWorkflowsProfiler,
     NullWorkflowsProfiler,
 )
+from inference.core.workflows.execution_engine.v1.executor.utils import resolve_futures
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
 
@@ -1175,17 +1176,10 @@ def send_inference_pipeline_status_update(
 
 
 def _resolve_prediction_futures(value: Any) -> Any:
-    if isinstance(value, Future):
-        return _resolve_prediction_futures(value.result())
-    if isinstance(value, list):
-        return [_resolve_prediction_futures(element) for element in value]
-    if isinstance(value, tuple):
-        return tuple(_resolve_prediction_futures(element) for element in value)
-    if isinstance(value, dict):
-        return {
-            key: _resolve_prediction_futures(element) for key, element in value.items()
-        }
-    return value
+    return resolve_futures(
+        value=value,
+        context="inference_pipeline | prediction_dispatch",
+    )
 
 
 def _rfdetr_stream_pipeline_enabled() -> bool:

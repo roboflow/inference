@@ -76,11 +76,13 @@ from inference_models.configuration import (
     get_rfdetr_pipeline_depth,
 )
 from inference_models.models.base.async_handoff import (
+    STREAM_PIPELINE_CONTEXT_ID_KWARG,
     adapter_gpu_work_submitted,
     attach_adapter_mapped_kwargs,
     attach_async_response_future,
     get_adapter_gpu_submit_generation,
     get_adapter_mapped_kwargs,
+    get_adapter_stream_pipeline_context_id,
     get_deferred_postprocess_done_event,
     get_deferred_postprocess_finalizer,
     mark_adapter_gpu_work_submitted,
@@ -128,6 +130,13 @@ def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
     submits later GPU work. Keeping this cache thread-local avoids two workers
     writing into the same scratch tensor. The small LRU cap prevents retaining a
     new pinned allocation for every transient shape.
+
+    The cache is keyed by ``(name, dtype)`` only. When a cached buffer is large
+    enough, this returns a **view** into that entry, not a fresh allocation.
+    ``.numpy()`` and any slices alias the scratch memory until the next
+    ``copy_`` into the same cache slot. Values that outlive the current
+    finalization must be copied or reduced to scalars / fresh polygon arrays
+    before returning.
     """
     cache = getattr(_PINNED_HOST_BUFFER_CONTEXT, "cache", None)
     if cache is None:
@@ -411,6 +420,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             and not enforce_dense_masks_in_inference_models
         ):
             kwargs["mask_format"] = "rle"
+        kwargs.pop(STREAM_PIPELINE_CONTEXT_ID_KWARG, None)
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -462,7 +472,14 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_next_pending_gpu_work()
         pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
         fut = self._model.forward_async(img_in, pre_processing_meta, **mapped_kwargs)
-        attach_adapter_mapped_kwargs(fut, mapped_kwargs)
+        stream_pipeline_context_id = kwargs.get(STREAM_PIPELINE_CONTEXT_ID_KWARG)
+        if not isinstance(stream_pipeline_context_id, str):
+            stream_pipeline_context_id = None
+        attach_adapter_mapped_kwargs(
+            fut,
+            mapped_kwargs,
+            stream_pipeline_context_id=stream_pipeline_context_id,
+        )
         if pre_processing_meta is not None:
             self._submit_future_gpu_work(fut, pre_processing_meta, mapped_kwargs)
         self._submit_ready_responses()
@@ -550,9 +567,12 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             meta,
             mapped_kwargs,
         )
-        context_id = mapped_kwargs.get("source_info")
+        context_id = get_adapter_stream_pipeline_context_id(fut)
         self._response_futures.append(
-            (response_future, context_id if isinstance(context_id, str) else None)
+            (
+                response_future,
+                context_id,
+            )
         )
 
     def _submit_ready_responses(self) -> None:
@@ -739,6 +759,8 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     and isinstance(combined_gpu, torch.Tensor)
                     and combined_gpu.is_cuda
                 ):
+                    # combined_np / class_column / combined_slice are scratch views;
+                    # use only for survivor counting and in-loop scalar extraction.
                     combined_host = get_pinned_buffer(
                         "combined_full",
                         tuple(combined_gpu.shape),

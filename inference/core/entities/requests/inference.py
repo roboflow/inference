@@ -28,6 +28,14 @@ class BaseRequest(BaseModel):
     start: Optional[float] = None
     source: Optional[str] = None
     source_info: Optional[str] = None
+    stream_pipeline_context_id: Optional[str] = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+        description=(
+            "Internal stream-pipeline frame pairing id. Not part of the public API."
+        ),
+    )
     disable_model_monitoring: Optional[bool] = Field(
         default=False, description="If true, disables model monitoring for this request"
     )

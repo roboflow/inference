@@ -262,8 +262,6 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         self._pending_stream_prediction_contexts: Deque[_StreamPredictionContext] = (
             deque()
         )
-        self._last_request_used_stream_pipeline = False
-        self._stream_pipeline_disabled_for_workflow = False
         self._stream_context_generation = 0
 
     @classmethod
@@ -363,7 +361,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             images=images,
             class_filter=class_filter,
             model_id=model_id,
-            context_id=self._next_stream_context_id(),
+            context_id=self._build_stream_context_id(images=images),
         )
         if self._last_request_used_stream_pipeline:
             self._pending_stream_prediction_contexts.append(stream_context)
@@ -382,7 +380,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
             source="workflow-execution",
-            source_info=stream_context.context_id,
+            stream_pipeline_context_id=stream_context.context_id,
             enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
             disable_stream_pipeline=stream_pipeline_disabled,
         )
@@ -499,7 +497,14 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         # (cheaper construct + dict-walk than pydantic). Any other response type
         # (e.g. if a non-rfdetr backend is bound to the same block) falls back
         # to `model_dump`.
-        predictions = [_prediction_response_to_dict(e) for e in predictions]
+        predictions = [
+            (
+                _is_response_dc_to_dict(e)
+                if isinstance(e, InstanceSegmentationInferenceResponseDC)
+                else e.model_dump(by_alias=True, exclude_none=True)
+            )
+            for e in predictions
+        ]
         _validate_stream_prediction_alignment(
             predictions=predictions,
             stream_context=stream_context,
@@ -651,9 +656,21 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         if callable(shutdown_fn):
             shutdown_fn()
 
-    def _next_stream_context_id(self) -> str:
+    def _build_stream_context_id(self, images: Batch[WorkflowImageData]) -> str:
         self._stream_context_generation += 1
-        return f"instance-segmentation-v3:{id(self)}:{self._stream_context_generation}"
+        if len(images) == 1:
+            video_metadata = images[0].video_metadata
+            return (
+                "instance-segmentation-v3:"
+                f"{video_metadata.video_identifier}:"
+                f"{video_metadata.frame_number}:"
+                f"{self._stream_context_generation}"
+            )
+        return (
+            "instance-segmentation-v3:"
+            f"batch:{len(images)}:"
+            f"{self._stream_context_generation}"
+        )
 
     def run_remotely(
         self,
@@ -742,23 +759,6 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         ]
 
 
-def _stream_context_indices(images: Batch[WorkflowImageData]) -> List[Tuple[int, ...]]:
-    indices = getattr(images, "indices", None)
-    if indices is not None:
-        return indices
-    return [(i,) for i in range(len(images))]
-
-
-def _prediction_response_to_dict(response: object) -> dict:
-    if isinstance(response, InstanceSegmentationInferenceResponseDC):
-        result = _is_response_dc_to_dict(response)
-    else:
-        result = response.model_dump(by_alias=True, exclude_none=True)
-    if getattr(response, _RFDETR_SPARSE_RLE_POSTPROCESS_ATTR, False):
-        result[_RFDETR_SPARSE_RLE_POSTPROCESS_ATTR] = True
-    return result
-
-
 def _resolve_stream_future(
     future: Future,
     context: str,
@@ -767,6 +767,13 @@ def _resolve_stream_future(
         return future.result(timeout=WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT)
     except TimeoutError as error:
         raise RuntimeError(f"Timed out while waiting for {context}.") from error
+
+
+def _stream_context_indices(images: Batch[WorkflowImageData]) -> List[Tuple[int, ...]]:
+    indices = getattr(images, "indices", None)
+    if indices is not None:
+        return indices
+    return [(i,) for i in range(len(images))]
 
 
 def _validate_stream_prediction_alignment(
@@ -798,7 +805,7 @@ def _validate_stream_prediction_alignment(
 
 def _workflow_image_size(image: WorkflowImageData) -> Optional[Tuple[int, int]]:
     try:
-        numpy_image = getattr(image, "numpy_image", None)
+        numpy_image = image.numpy_image
     except Exception:
         numpy_image = None
     shape = getattr(numpy_image, "shape", None)

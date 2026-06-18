@@ -41,26 +41,35 @@ def _run(fun: Callable[[], T]) -> T:
     return fun()
 
 
+def resolve_future_result(
+    future: Future,
+    *,
+    context: str,
+    timeout: float = WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
+) -> Any:
+    try:
+        return future.result(timeout=timeout)
+    except TimeoutError as error:
+        raise ExecutionEngineRuntimeError(
+            public_message=(
+                "Timed out while resolving an asynchronous workflow future."
+            ),
+            context=context,
+            inner_error=error,
+        ) from error
+
+
 def resolve_futures(
     value: Any,
     timeout: float = WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
     context: str = "workflow_execution | future_resolution",
 ) -> Any:
     if isinstance(value, Future):
-        try:
-            return resolve_futures(
-                value.result(timeout=timeout),
-                timeout=timeout,
-                context=context,
-            )
-        except TimeoutError as error:
-            raise ExecutionEngineRuntimeError(
-                public_message=(
-                    "Timed out while resolving an asynchronous workflow future."
-                ),
-                context=context,
-                inner_error=error,
-            ) from error
+        return resolve_futures(
+            resolve_future_result(value, context=context, timeout=timeout),
+            timeout=timeout,
+            context=context,
+        )
     if isinstance(value, Batch):
         return Batch.init(
             content=[

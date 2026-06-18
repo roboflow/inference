@@ -22,6 +22,7 @@ from inference_models import (
     InstanceDetections,
     MultiLabelClassificationPrediction,
 )
+from inference_models.models.base.async_handoff import attach_adapter_mapped_kwargs
 
 
 class _ImmediateExecutor:
@@ -444,3 +445,17 @@ def test_pipeline_depth_three_submits_oldest_pending_before_forward() -> None:
         "submit:f3",
         "result:f1",
     ]
+
+
+def test_pipeline_flush_raises_on_response_future_timeout(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference.core.models.inference_models_adapters.WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT",
+        0.001,
+    )
+    ops: list[str] = []
+    adapter = _make_pipeline_adapter(futures=[], ops=ops, pipeline_depth=2)
+    hung_future = Future()
+    adapter._response_futures.append((hung_future, None))
+
+    with pytest.raises(RuntimeError, match="Timed out while waiting for"):
+        adapter.flush()

@@ -1,7 +1,5 @@
 import traceback
 from collections import defaultdict
-from concurrent.futures import Future
-from threading import Lock
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 import numpy as np

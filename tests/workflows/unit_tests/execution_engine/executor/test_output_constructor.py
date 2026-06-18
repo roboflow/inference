@@ -31,6 +31,7 @@ from inference.core.workflows.execution_engine.v1.executor.output_constructor im
     place_data_in_array,
     serialize_data_piece,
 )
+from inference.core.workflows.execution_engine.v1.executor.utils import contains_future
 
 
 def _completed_future(value: Any) -> Future:
@@ -551,9 +552,7 @@ def test_construct_workflow_output_can_defer_future_resolution() -> None:
     assert result == [{"a": {"predictions": predictions}}]
 
 
-def test_construct_workflow_output_defers_coordinate_conversion_with_future_output() -> (
-    None
-):
+def test_construct_workflow_output_defers_batch_wrapped_futures() -> None:
     # given
     execution_data_manager = MagicMock()
     workflow_outputs = [
@@ -566,16 +565,16 @@ def test_construct_workflow_output_defers_coordinate_conversion_with_future_outp
             node_category=NodeCategory.OUTPUT_NODE,
             name=workflow_outputs[0].name,
             selector=workflow_outputs[0].selector,
-            data_lineage=["<workflow_input>"],
+            data_lineage=[],
             output_manifest=workflow_outputs[0],
         ),
     )
-    execution_graph.graph[TOP_LEVEL_LINEAGES_KEY] = WORKFLOW_INPUT_BATCH_LINEAGE_ID
-    execution_data_manager.get_selector_indices.return_value = [(0,)]
-    execution_data_manager.get_batch_data.return_value = [
-        {"predictions": _completed_future(assembly_sv_detections())}
-    ]
-    execution_data_manager.get_lineage_indices.return_value = [(0,)]
+    deferred_batch = Batch.init(
+        content=[_completed_future("resolved")],
+        indices=[(0,)],
+    )
+    execution_data_manager.get_selector_indices.return_value = None
+    execution_data_manager.get_non_batch_data.return_value = deferred_batch
 
     # when
     result = construct_workflow_output(
@@ -588,12 +587,8 @@ def test_construct_workflow_output_defers_coordinate_conversion_with_future_outp
     )
 
     # then
-    deferred_output = result[0]["a"]
-    assert isinstance(deferred_output, Future)
-    resolved_output = deferred_output.result()
-    assert_transformed_detections_matches_expectation(
-        result=resolved_output["predictions"]
-    )
+    assert result == [{"a": deferred_batch}]
+    assert contains_future(result[0]["a"]) is True
 
 
 def test_construct_workflow_output_when_batch_outputs_present() -> None:

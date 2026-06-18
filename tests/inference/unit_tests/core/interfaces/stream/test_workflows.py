@@ -17,16 +17,7 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
     RoboflowInstanceSegmentationModelBlockV3,
 )
-from inference.core.workflows.execution_engine.constants import (
-    NODE_COMPILATION_OUTPUT_PROPERTY,
-)
-from inference.core.workflows.execution_engine.v1.compiler.entities import (
-    DynamicStepInputDefinition,
-    NodeCategory,
-    NodeInputCategory,
-    ParameterSpecification,
-    StepNode,
-)
+from inference.core.workflows.execution_engine.entities.base import Batch, VideoMetadata
 from inference_models.models.base.async_handoff import attach_async_response_future
 
 
@@ -275,9 +266,32 @@ class _ImmediateExecutor:
 
 
 class _FakeWorkflowImage:
-    def __init__(self, tag: str, width: int = 8, height: int = 8) -> None:
+    def __init__(
+        self,
+        tag: str,
+        width: int = 8,
+        height: int = 8,
+        frame_number: Optional[int] = None,
+    ) -> None:
         self.tag = tag
         self._image = np.zeros((height, width, 3), dtype=np.uint8)
+        if frame_number is None and tag.rsplit("-", maxsplit=1)[-1].isdigit():
+            frame_number = int(tag.rsplit("-", maxsplit=1)[-1])
+        if frame_number is None:
+            frame_number = 1
+        self._video_metadata = VideoMetadata(
+            video_identifier=f"video-{tag}",
+            frame_number=frame_number,
+            frame_timestamp=datetime.now(),
+        )
+
+    @property
+    def video_metadata(self) -> VideoMetadata:
+        return self._video_metadata
+
+    @property
+    def numpy_image(self):
+        return self._image
 
     def to_inference_format(self, numpy_preferred: bool):
         assert numpy_preferred is True
@@ -355,18 +369,19 @@ class _ContextAwareModelManager(_FakeModelManager):
     def __init__(self, mode: str) -> None:
         super().__init__(inference_results=[])
         self.mode = mode
-        self.source_infos = []
+        self.stream_pipeline_context_ids = []
 
     def infer_from_request_sync(self, model_id: str, request):
         self.infer_calls += 1
-        self.source_infos.append(request.source_info)
+        assert request.source_info is None
+        self.stream_pipeline_context_ids.append(request.stream_pipeline_context_id)
         if self.infer_calls == 1:
             return [_FakeResponse("priming", width=8, height=8)]
         if self.mode == "previous":
             return [
                 _make_async_placeholder(
                     "first-final",
-                    context_id=self.source_infos[0],
+                    context_id=self.stream_pipeline_context_ids[0],
                     response_width=8,
                     response_height=8,
                 )
@@ -375,7 +390,7 @@ class _ContextAwareModelManager(_FakeModelManager):
             return [
                 _make_async_placeholder(
                     "first-final",
-                    context_id=request.source_info,
+                    context_id=request.stream_pipeline_context_id,
                     response_width=8,
                     response_height=8,
                 )
@@ -871,6 +886,11 @@ def test_instance_segmentation_stream_pipeline_uses_response_context_id() -> Non
     )
 
     assert second_result[0]["predictions"].result() == "frame-1:first-final"
+    assert len(manager.stream_pipeline_context_ids) == 2
+    assert (
+        manager.stream_pipeline_context_ids[0]
+        != manager.stream_pipeline_context_ids[1]
+    )
 
 
 def test_instance_segmentation_stream_pipeline_rejects_unknown_context_id() -> None:
@@ -974,3 +994,19 @@ def test_instance_segmentation_stream_pipeline_rejects_image_metadata_mismatch()
 
     with pytest.raises(RuntimeError, match="image metadata"):
         second_result[0]["predictions"].result()
+
+
+def test_instance_segmentation_stream_context_id_includes_frame_metadata() -> None:
+    block = RoboflowInstanceSegmentationModelBlockV3(
+        model_manager=SimpleNamespace(__contains__=lambda *_args, **_kwargs: False),
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    image = _FakeWorkflowImage("frame-7", width=8, height=8, frame_number=7)
+
+    context_id = block._build_stream_context_id(
+        images=Batch.init(content=[image], indices=[(0,)]),
+    )
+
+    assert "video-frame-7" in context_id
+    assert ":7:" in context_id
