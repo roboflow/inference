@@ -172,9 +172,11 @@ def _merge_local_trt_packages(
     has valid platform packages.
     """
     known_package_ids = {package.package_id for package in parsed_model_packages}
-    discovery_model_ids = [requested_model_id]
-    if resolved_model_id != requested_model_id:
-        discovery_model_ids.append(resolved_model_id)
+    # Discover the resolved (canonical) id first: that is where the compiler
+    # installs engines, so it wins over any same-id package under the alias dir.
+    discovery_model_ids = [resolved_model_id]
+    if requested_model_id != resolved_model_id:
+        discovery_model_ids.append(requested_model_id)
     for discovery_model_id in discovery_model_ids:
         try:
             local_packages = discover_local_trt_packages(model_id=discovery_model_id)

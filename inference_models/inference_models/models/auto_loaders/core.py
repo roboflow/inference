@@ -1584,6 +1584,14 @@ def _resolve_local_cache_package_files(
                 ),
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
+        if artefact.file_handle != os.path.basename(artefact.file_handle):
+            raise CorruptedModelPackageError(
+                message=(
+                    f"Local cache model package artefact `{artefact.file_handle}` has an "
+                    f"unsafe file handle."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
         package_file_path = os.path.join(model_package_cache_dir, artefact.file_handle)
         if not os.path.isfile(package_file_path):
             raise CorruptedModelPackageError(

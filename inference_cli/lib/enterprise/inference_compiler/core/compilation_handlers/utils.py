@@ -368,6 +368,14 @@ def execute_compilation(
         return engine_path, trt_config, package_manifest, registration_result
     except RequestError as error:
         if error.status_code == 409:
+            # The engine is already built; under OPTIONAL keep it for local
+            # install rather than discarding the compilation work.
+            if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
+                logger.warning(
+                    "Post-compile register returned 409 for %s; local install will follow",
+                    model_id,
+                )
+                return engine_path, trt_config, package_manifest, None
             raise AlreadyCompiledError("Model package already compiled.")
         if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
             logger.warning(
