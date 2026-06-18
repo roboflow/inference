@@ -487,7 +487,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_all_pending_responses()
         responses: List[InstanceSegmentationInferenceResponse] = []
         while self._response_futures:
-            response_future = self._response_futures.popleft()
+            response_future, _ = self._response_futures.popleft()
             responses.extend(
                 _resolve_response_future(
                     future=response_future,

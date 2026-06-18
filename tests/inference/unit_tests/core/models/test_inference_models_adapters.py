@@ -425,7 +425,7 @@ def test_pipeline_flush_raises_on_response_future_timeout(monkeypatch) -> None:
     ops: list[str] = []
     adapter = _make_pipeline_adapter(futures=[], ops=ops, pipeline_depth=2)
     hung_future = Future()
-    adapter._response_futures.append(hung_future)
+    adapter._response_futures.append((hung_future, None))
 
     with pytest.raises(RuntimeError, match="Timed out while waiting for"):
         adapter.flush()
