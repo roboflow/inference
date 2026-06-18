@@ -16,11 +16,15 @@ _ASYNC_RESPONSE_CONTEXT_ID_ATTR = "_async_response_context_id"
 _DEFERRED_POSTPROCESS_ATTR = "_inference_deferred_postprocess_handoff"
 
 
+STREAM_PIPELINE_CONTEXT_ID_KWARG = "stream_pipeline_context_id"
+
+
 @dataclass(frozen=True)
 class AdapterFutureContext:
     """State the inference adapter keeps on an in-flight model future."""
 
     mapped_kwargs: dict
+    stream_pipeline_context_id: Optional[str] = None
     gpu_work_submitted: bool = False
     gpu_submit_generation: Optional[int] = None
 
@@ -34,12 +38,19 @@ class DeferredPostprocessHandoff:
     finalize: Callable[[], Any]
 
 
-def attach_adapter_mapped_kwargs(future: Any, mapped_kwargs: dict) -> None:
+def attach_adapter_mapped_kwargs(
+    future: Any,
+    mapped_kwargs: dict,
+    stream_pipeline_context_id: Optional[str] = None,
+) -> None:
     """Store mapped inference kwargs on a model future."""
     setattr(
         future,
         _ADAPTER_CONTEXT_ATTR,
-        AdapterFutureContext(mapped_kwargs=dict(mapped_kwargs)),
+        AdapterFutureContext(
+            mapped_kwargs=dict(mapped_kwargs),
+            stream_pipeline_context_id=stream_pipeline_context_id,
+        ),
     )
 
 
@@ -49,6 +60,17 @@ def get_adapter_mapped_kwargs(future: Any) -> dict:
     if not isinstance(context, AdapterFutureContext):
         return {}
     return context.mapped_kwargs
+
+
+def get_adapter_stream_pipeline_context_id(future: Any) -> Optional[str]:
+    """Return the stream-pipeline context id stored on a model future."""
+    context = getattr(future, _ADAPTER_CONTEXT_ATTR, None)
+    if not isinstance(context, AdapterFutureContext):
+        return None
+    context_id = context.stream_pipeline_context_id
+    if isinstance(context_id, str):
+        return context_id
+    return None
 
 
 def adapter_gpu_work_submitted(future: Any) -> bool:

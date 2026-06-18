@@ -368,7 +368,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
             source="workflow-execution",
-            source_info=stream_context.context_id,
+            stream_pipeline_context_id=stream_context.context_id,
             enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
         )
         predictions = self._model_manager.infer_from_request_sync(

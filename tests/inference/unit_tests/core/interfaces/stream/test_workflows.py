@@ -300,18 +300,19 @@ class _ContextAwareModelManager(_FakeModelManager):
     def __init__(self, mode: str) -> None:
         super().__init__(inference_results=[])
         self.mode = mode
-        self.source_infos = []
+        self.stream_pipeline_context_ids = []
 
     def infer_from_request_sync(self, model_id: str, request):
         self.infer_calls += 1
-        self.source_infos.append(request.source_info)
+        assert request.source_info is None
+        self.stream_pipeline_context_ids.append(request.stream_pipeline_context_id)
         if self.infer_calls == 1:
             return [_FakeResponse("priming", width=8, height=8)]
         if self.mode == "previous":
             return [
                 _make_async_placeholder(
                     "first-final",
-                    context_id=self.source_infos[0],
+                    context_id=self.stream_pipeline_context_ids[0],
                     response_width=8,
                     response_height=8,
                 )
@@ -320,7 +321,7 @@ class _ContextAwareModelManager(_FakeModelManager):
             return [
                 _make_async_placeholder(
                     "first-final",
-                    context_id=request.source_info,
+                    context_id=request.stream_pipeline_context_id,
                     response_width=8,
                     response_height=8,
                 )
@@ -689,8 +690,11 @@ def test_instance_segmentation_stream_pipeline_uses_response_context_id() -> Non
     )
 
     assert second_result[0]["predictions"].result() == "frame-1:first-final"
-    assert len(manager.source_infos) == 2
-    assert manager.source_infos[0] != manager.source_infos[1]
+    assert len(manager.stream_pipeline_context_ids) == 2
+    assert (
+        manager.stream_pipeline_context_ids[0]
+        != manager.stream_pipeline_context_ids[1]
+    )
 
 
 def test_instance_segmentation_stream_pipeline_rejects_unknown_context_id() -> None:
