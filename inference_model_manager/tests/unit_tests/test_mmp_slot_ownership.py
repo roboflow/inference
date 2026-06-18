@@ -10,9 +10,9 @@ import pytest
 
 from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 from inference_model_manager.model_manager_process import (
-    ModelManagerProcess,
-    T_ERROR,
     _ERR_STALE,
+    T_ERROR,
+    ModelManagerProcess,
 )
 
 
@@ -70,14 +70,14 @@ def test_submit_for_reaped_slot_rejected_with_stale(pool):
     mmp = _make_mmp(pool)
     s = _alloc(pool, 101)
     pool.alloc_slot()  # burn the other slot so re-allocation reuses s
-    pool.free_slot(s, request_id=101)          # reaper got it
+    pool.free_slot(s, request_id=101)  # reaper got it
     s2 = pool.alloc_slot()
-    pool.mark_allocated(s2, request_id=999)    # rebound to a new request
+    pool.mark_allocated(s2, request_id=999)  # rebound to a new request
     assert s2 == s
     asyncio.run(mmp._handle_submit(b"id1", _submit_frame(101, s)))
     assert mmp._forwarded == []
     assert 101 not in mmp._pending
-    (_, msg_type, payload) = mmp._sent[0]
+    _, msg_type, payload = mmp._sent[0]
     assert msg_type == T_ERROR
     assert struct.unpack(">QB", payload) == (101, _ERR_STALE)
     # New owner's slot untouched
@@ -88,9 +88,9 @@ def test_submit_for_reaped_slot_rejected_with_stale(pool):
 def test_handle_free_requires_matching_req_id(pool):
     mmp = _make_mmp(pool)
     s = _alloc(pool, 101)
-    mmp._handle_free([struct.pack(">QI", 999, s)])   # wrong req
+    mmp._handle_free([struct.pack(">QI", 999, s)])  # wrong req
     assert pool.free_count == pool.n_slots - 1
-    mmp._handle_free([struct.pack(">QI", 101, s)])   # right req
+    mmp._handle_free([struct.pack(">QI", 101, s)])  # right req
     assert pool.free_count == pool.n_slots
 
 

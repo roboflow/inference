@@ -16,8 +16,8 @@ import pytest
 
 import inference_model_manager.backends.subproc as subproc
 from inference_model_manager.backends.subproc import (
-    SubprocessBackend,
     _WORKER_HEARTBEAT_TIMEOUT,
+    SubprocessBackend,
 )
 from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 
@@ -96,9 +96,7 @@ class TestBusyLiveness:
 
     def test_busy_silence_past_busy_timeout_is_unhealthy(self):
         b = _bare_backend(_outstanding=1)
-        b._last_worker_activity = time.monotonic() - (
-            subproc._WORKER_BUSY_TIMEOUT + 10
-        )
+        b._last_worker_activity = time.monotonic() - (subproc._WORKER_BUSY_TIMEOUT + 10)
         assert b.state == "unhealthy"
 
 

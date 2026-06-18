@@ -86,6 +86,8 @@ def limit_concurrency(n_slots: int, workers: int) -> int:
         return int(override)
     # 125% of this worker's slot share (floored)
     return max(1, math.ceil(n_slots / max(1, workers)) * 5 // 4)
+
+
 SSL_CERTFILE = os.environ.get("SSL_CERTFILE")
 SSL_KEYFILE = os.environ.get("SSL_KEYFILE")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "warning").lower()

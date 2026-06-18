@@ -232,9 +232,7 @@ def serialize_text(output: Any, model: Any) -> dict:
     if isinstance(output, list):
         return {
             "type": "roboflow-text-v1",
-            "batch": [
-                {"text": t if isinstance(t, str) else str(t)} for t in output
-            ],
+            "batch": [{"text": t if isinstance(t, str) else str(t)} for t in output],
         }
     return {
         "type": "roboflow-text-v1",

@@ -181,7 +181,12 @@ class SHMPool:
         # Pack metadata LAST — after the pre-fault page-touch, which would
         # otherwise zero a byte inside the meta block on some geometries.
         struct.pack_into(
-            _META_FMT, shm.buf, n_slots * slot_bytes, _META_MAGIC, _META_VERSION, n_slots
+            _META_FMT,
+            shm.buf,
+            n_slots * slot_bytes,
+            _META_MAGIC,
+            _META_VERSION,
+            n_slots,
         )
 
         return cls(shm, n_slots, data_bytes, owner=True)
@@ -287,9 +292,7 @@ class SHMPool:
                 return  # double-free guard — silently ignore
             off = self._slot_offset(slot_id)
             if request_id is not None:
-                (current,) = struct.unpack_from(
-                    "<Q", self._shm.buf, off + _OFF_REQ_ID
-                )
+                (current,) = struct.unpack_from("<Q", self._shm.buf, off + _OFF_REQ_ID)
                 if current != request_id:
                     return  # stale free — slot since rebound to another request
             self._allocated.discard(slot_id)

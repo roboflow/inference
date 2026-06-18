@@ -75,8 +75,12 @@ _MSG_STATS_REQ = b"\x05"  # parent→worker: force stats refresh (no payload)
 _STATS_SENTINEL = "STATS"  # sentinel for outbound queue → sends _MSG_STATS_REQ
 
 _HEARTBEAT_INTERVAL_S = cfg.INFERENCE_WORKER_HEARTBEAT_INTERVAL_S
-_WORKER_HEARTBEAT_TIMEOUT = cfg.INFERENCE_WORKER_HEARTBEAT_TIMEOUT_S  # silence → unhealthy
-_WORKER_BUSY_TIMEOUT = cfg.INFERENCE_WORKER_BUSY_TIMEOUT_S  # silence while work outstanding
+_WORKER_HEARTBEAT_TIMEOUT = (
+    cfg.INFERENCE_WORKER_HEARTBEAT_TIMEOUT_S
+)  # silence → unhealthy
+_WORKER_BUSY_TIMEOUT = (
+    cfg.INFERENCE_WORKER_BUSY_TIMEOUT_S
+)  # silence while work outstanding
 _SEND_TIMEOUT_MS = 5000  # parent PAIR sends must never block forever
 
 _BATCH_SIZE_FALLBACK = 8
@@ -402,9 +406,7 @@ def _worker_loop(
             except zmq.ZMQError:
                 pass
             decode_max_bytes = decode_budget_fn() if decode_budget_fn else 0
-            for chunk in _split_batch_by_decoded_bytes(
-                pool, pending, decode_max_bytes
-            ):
+            for chunk in _split_batch_by_decoded_bytes(pool, pending, decode_max_bytes):
                 if len(chunk) < len(pending):
                     log.info(
                         "Worker: decoded-bytes cap split batch of %d — "
@@ -484,9 +486,7 @@ def _decode_bytes_budget(
     Floors at 1 byte: a starved GPU degrades to one-image chunks, never to
     an uncapped batch (0 means cap disabled to the splitter).
     """
-    return max(
-        1, int((free_vram_bytes - headroom_mb * 1024 * 1024) / scratch_factor)
-    )
+    return max(1, int((free_vram_bytes - headroom_mb * 1024 * 1024) / scratch_factor))
 
 
 def _split_batch_by_decoded_bytes(
@@ -607,7 +607,6 @@ def _process_slots(
                     _MAX_DECODED_PIXELS / 1e6,
                 )
 
-
     # .npy slots — standalone mode (numpy arrays serialised via np.save)
     for i, (mv, npy) in enumerate(zip(mvs, is_npy)):
         if npy:
@@ -634,7 +633,6 @@ def _process_slots(
             )
             for i in raw_indices:
                 decode_errors[i] = True
-
 
     # Release memoryviews
     for mv in mvs:
@@ -739,9 +737,7 @@ def _process_slots(
             # Unserializable result (numpy fields without .cpu(), unpicklable
             # objects) must error this slot, not kill the worker.
             log.exception("Worker: result serialization failed for slot %d", slot_id)
-            _write_error_to_slot(
-                pool, slot_id, f"result serialization failed: {exc}"
-            )
+            _write_error_to_slot(pool, slot_id, f"result serialization failed: {exc}")
             try:
                 sock.send_multipart(
                     [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
@@ -783,7 +779,6 @@ def _process_slots(
         except zmq.ZMQError:
             return
         n_ok += 1
-
 
     # Update worker stats
     end = time.monotonic()
@@ -883,7 +878,9 @@ class SubprocessBackend(Backend):
         # surface as worker death, not a hung recv thread.
         self._zmq_sock.setsockopt(zmq.SNDTIMEO, _SEND_TIMEOUT_MS)
 
-        _transport = os.environ.get(cfg.INFERENCE_ZMQ_TRANSPORT_ENV, default_transport())
+        _transport = os.environ.get(
+            cfg.INFERENCE_ZMQ_TRANSPORT_ENV, default_transport()
+        )
         _sock_id = f"sp_{os.getpid()}_{uuid.uuid4().hex[:8]}"
         if _transport == "ipc":
             self._zmq_addr = f"ipc:///tmp/inference_{_sock_id}.ipc"
@@ -1283,7 +1280,8 @@ class SubprocessBackend(Backend):
             # idle heartbeat timeout — but a hung worker with outstanding work
             # still trips eventually.
             limit = (
-                _WORKER_BUSY_TIMEOUT if self._outstanding > 0
+                _WORKER_BUSY_TIMEOUT
+                if self._outstanding > 0
                 else _WORKER_HEARTBEAT_TIMEOUT
             )
             if idle > limit:

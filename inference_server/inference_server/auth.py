@@ -34,6 +34,7 @@ def extract_bearer(value: str) -> str:
         return value[7:].strip()
     return ""
 
+
 API_BASE_URL = configuration.API_BASE_URL
 _CACHE_TTL_S = configuration.AUTH_CACHE_TTL_S
 _CACHE_FAIL_TTL_S = configuration.AUTH_CACHE_FAIL_TTL_S

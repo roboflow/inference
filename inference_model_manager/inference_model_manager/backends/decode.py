@@ -29,7 +29,9 @@ from PIL import Image
 class Decoder(str, Enum):
     IMAGECODECS = "imagecodecs"
     NVJPEG = "nvjpeg"
-    NVIMGCODEC = "nvimgcodec"  # nvImageCodec — L4 hardware JPEG decoder, ~5x faster than NVJPEG
+    NVIMGCODEC = (
+        "nvimgcodec"  # nvImageCodec — L4 hardware JPEG decoder, ~5x faster than NVJPEG
+    )
     PASSTHROUGH = "passthrough"  # debugging only — skips decode, returns dummy tensors
 
 
@@ -48,8 +50,19 @@ log = logging.getLogger(__name__)
 _FTYP_OFFSET = 4
 _FTYP_MAGIC = b"ftyp"
 _HEIF_BRANDS = frozenset(
-    (b"heic", b"heix", b"hevc", b"heim", b"heis", b"hevm", b"hevs",
-     b"mif1", b"msf1", b"avif", b"avis")
+    (
+        b"heic",
+        b"heix",
+        b"hevc",
+        b"heim",
+        b"heis",
+        b"hevm",
+        b"hevs",
+        b"mif1",
+        b"msf1",
+        b"avif",
+        b"avis",
+    )
 )
 
 

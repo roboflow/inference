@@ -47,9 +47,9 @@ from typing import Any, Optional, Protocol
 import zmq
 import zmq.asyncio
 
+from inference_model_manager import configuration as cfg
 from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 from inference_model_manager.backends.utils.transport import zmq_addr
-from inference_model_manager import configuration as cfg
 from inference_model_manager.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
@@ -498,7 +498,7 @@ class ModelManagerProcess:
             # libzmq does not unlink stale ipc socket files — after SIGKILL the
             # next bind fails EADDRINUSE without this.
             try:
-                os.unlink(bind_addr[len("ipc://"):])
+                os.unlink(bind_addr[len("ipc://") :])
             except OSError:
                 pass
         self._router.bind(bind_addr)
@@ -737,9 +737,7 @@ class ModelManagerProcess:
                 hdr.request_id,
                 req_id,
             )
-            await self._send(
-                identity, T_ERROR, struct.pack(">QB", req_id, _ERR_STALE)
-            )
+            await self._send(identity, T_ERROR, struct.pack(">QB", req_id, _ERR_STALE))
             return
 
         self._pending[req_id] = (identity, slot_id, model_id)
@@ -1006,9 +1004,7 @@ class ModelManagerProcess:
     # on_result — event-loop side
     # ------------------------------------------------------------------
 
-    def _on_result_on_loop(
-        self, req_id: int, slot_id: int, result_sz: int
-    ) -> None:
+    def _on_result_on_loop(self, req_id: int, slot_id: int, result_sz: int) -> None:
         """Must be called on the event loop thread."""
         self._inflight.pop(slot_id, None)
         pending = self._pending.pop(req_id, None)
@@ -1128,9 +1124,7 @@ class ModelManagerProcess:
         # won't be rejected with "already loaded".
         if model_id in self._manager:
             try:
-                await loop.run_in_executor(
-                    None, lambda: self._manager.unload(model_id)
-                )
+                await loop.run_in_executor(None, lambda: self._manager.unload(model_id))
             except Exception:
                 self._manager._backends.pop(model_id, None)
 
@@ -1437,9 +1431,7 @@ class ModelManagerProcess:
         (so transient failures are not cached).
         """
         try:
-            from inference_models.weights_providers.roboflow import (
-                get_model_metadata,
-            )
+            from inference_models.weights_providers.roboflow import get_model_metadata
 
             meta = get_model_metadata(model_id, api_key or None)
             values = []
@@ -1555,9 +1547,7 @@ class ModelManagerProcess:
         idle = time.monotonic() - self._model_access.get(flavor, 0.0)
         return idle > self._vram_idle_cutoff_s
 
-    async def _execute_eviction_plan(
-        self, plan: list, deficit_mb: float
-    ) -> bool:
+    async def _execute_eviction_plan(self, plan: list, deficit_mb: float) -> bool:
         """Unload victims one at a time, re-validating each step (revocable).
 
         If a planned victim turned hot/in-flight, drop it and elect a replacement

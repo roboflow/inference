@@ -36,8 +36,8 @@ class _Log:
 
 
 def _stats() -> dict:
-    from collections import deque
     import time
+    from collections import deque
 
     return {
         "inference_count": 0,
@@ -88,9 +88,11 @@ def test_mismatched_req_id_slot_is_skipped(pool, monkeypatch):
     monkeypatch.setattr(
         subproc,
         "invoke_task",
-        lambda model, task, images, **kw: [{"pred": True}]
-        if not isinstance(images, list)
-        else [{"pred": True} for _ in images],
+        lambda model, task, images, **kw: (
+            [{"pred": True}]
+            if not isinstance(images, list)
+            else [{"pred": True} for _ in images]
+        ),
     )
 
     # Signal for s1 carries a STALE req_id (999) — slot was rebound to 202.

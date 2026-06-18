@@ -320,8 +320,8 @@ async def test_cuda_oom_is_500_not_busy(fake_handler_entry):
         )
     assert r.status_code == 500
     body = r.body.decode()
-    assert "Tried to allocate" not in body          # no internal text leaked
-    assert "ref " in body                            # correlation id present
+    assert "Tried to allocate" not in body  # no internal text leaked
+    assert "ref " in body  # correlation id present
 
 
 @pytest.mark.asyncio
