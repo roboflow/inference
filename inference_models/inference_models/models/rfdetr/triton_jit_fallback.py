@@ -8,13 +8,23 @@ from typing import Set
 
 logger = logging.getLogger(__name__)
 
+_triton_jit_exception_types: list[type[BaseException]] = []
+
 try:
     from triton.runtime.errors import OutOfResources as _OutOfResources
+
+    _triton_jit_exception_types.append(_OutOfResources)
+except ImportError:  # pragma: no cover - optional at import time
+    pass
+
+try:
     from triton.runtime.errors import PTXASError as _PTXASError
 
-    _TRITON_JIT_EXCEPTION_TYPES = (_PTXASError, _OutOfResources)
+    _triton_jit_exception_types.append(_PTXASError)
 except ImportError:  # pragma: no cover - optional at import time
-    _TRITON_JIT_EXCEPTION_TYPES = ()
+    pass
+
+_TRITON_JIT_EXCEPTION_TYPES = tuple(_triton_jit_exception_types)
 
 _RUNTIME_ERROR_MARKERS = (
     "c compiler",
