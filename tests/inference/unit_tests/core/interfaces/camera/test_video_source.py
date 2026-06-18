@@ -1372,3 +1372,52 @@ def test_source_properties_initialized_on_video_source_using_string_values(
         ],
         any_order=True,
     )
+
+
+def test_video_source_sets_error_state_when_producer_factory_raises() -> None:
+    # given - a callable producer reference whose construction fails (e.g. a
+    # camera __init__ that blocks out or raises), which must land the source in
+    # ERROR so recovery (which keys off ERROR) can fire.
+    def failing_factory():
+        raise RuntimeError("camera busy")
+
+    source = VideoSource.init(video_reference=failing_factory)
+
+    # when
+    with pytest.raises(RuntimeError):
+        source.start()
+
+    # then
+    assert (
+        source.describe_source().state is StreamState.ERROR
+    ), "A failed producer construction must land the source in ERROR, not INITIALISING"
+
+
+def test_consume_video_emits_poison_pill_on_consume_error() -> None:
+    # given - a source whose consume thread crashes mid-stream
+    from inference.core.interfaces.camera.exceptions import EndOfStreamError
+
+    source = VideoSource.init(video_reference="dummy")
+    source._video = MagicMock()
+    source._video.isOpened.return_value = True
+    source._source_properties = SourceProperties(
+        width=100,
+        height=100,
+        total_frames=-1,
+        is_file=False,
+        fps=30,
+        timestamp_created=None,
+    )
+    source._video_consumer = MagicMock()
+    source._video_consumer.consume_frame.side_effect = RuntimeError("decode blew up")
+    source._playback_allowed.set()
+
+    # when - run the consume loop body directly (it owns the except handler)
+    source._consume_video()
+
+    # then - state went ERROR and a poison pill is queued so a blocked consumer
+    # gets EndOfStreamError (and the multiplexer can reconnect) instead of
+    # timing out forever.
+    assert source._state is StreamState.ERROR
+    with pytest.raises(EndOfStreamError):
+        source.read_frame(timeout=0.0)
