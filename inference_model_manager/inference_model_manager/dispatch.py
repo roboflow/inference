@@ -10,14 +10,17 @@ import logging
 from typing import Any, Dict, Optional
 
 from inference_model_manager.registry import TaskEntry
+from inference_model_manager.registry_defaults import (
+    _TASK_CONFIGS,
+    lazy_register,
+    registry,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def _get_registry():
-    """Lazy import to avoid heavy imports at module level."""
-    from inference_model_manager.registry_defaults import registry
-
+    """Return the default task registry."""
     return registry
 
 
@@ -27,8 +30,6 @@ def discover_tasks_by_mro(mro_names: list[str]) -> Dict[str, Dict[str, Any]]:
     Used for subprocess backends where model lives in worker process.
     Matches names against registry configs.
     """
-    from inference_model_manager.registry_defaults import _TASK_CONFIGS
-
     result: Dict[str, Dict[str, Any]] = {}
     for name in mro_names:
         config = _TASK_CONFIGS.get(name)
@@ -58,8 +59,6 @@ def resolve_task(model: Any, task: Optional[str] = None) -> tuple[str, TaskEntry
     Raises:
         ValueError: If task not found or no default task registered.
     """
-    from inference_model_manager.registry_defaults import lazy_register
-
     lazy_register(type(model))
 
     registry = _get_registry()
