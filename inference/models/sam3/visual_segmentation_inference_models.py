@@ -26,6 +26,7 @@ from inference.core.env import (
     DEVICE,
     DISABLE_SAM3_LOGITS_CACHE,
     DISABLED_INFERENCE_MODELS_BACKENDS,
+    SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
     SAM3_MAX_EMBEDDING_CACHE_SIZE,
     SAM3_MAX_LOGITS_CACHE_SIZE,
     VALID_INFERENCE_MODELS_BACKENDS,
@@ -72,15 +73,13 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
         self.api_key = api_key if api_key else API_KEY
         self.task_type = "unsupervised-segmentation"
 
-        # Keep interactive embeddings/logits on GPU to match legacy click latency;
-        # make CPU spill configurable if memory pressure shows up.
         sam3_image_embeddings_cache = Sam3ImageEmbeddingsInMemoryCache.init(
             size_limit=embedding_cache_size,
-            send_to_cpu=False,
+            send_to_cpu=SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
         )
         sam3_low_resolution_masks_cache = Sam3LowResolutionMasksInMemoryCache.init(
             size_limit=low_res_logits_cache_size,
-            send_to_cpu=False,
+            send_to_cpu=SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
         )
         extra_weights_provider_headers = get_extra_weights_provider_headers(
             countinference=kwargs.get("countinference"),

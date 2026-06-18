@@ -212,7 +212,10 @@ def test_segment_image_propagates_non_cache_miss_input_error(
     adapter.preproc_image.assert_not_called()
 
 
-def test_adapter_init_keeps_caches_on_gpu(adapter_module: ModuleType) -> None:
+@pytest.mark.parametrize("send_to_cpu", [True, False])
+def test_adapter_init_honors_cache_device_setting(
+    adapter_module: ModuleType, send_to_cpu: bool
+) -> None:
     # when
     with patch.object(
         adapter_module.Sam3ImageEmbeddingsInMemoryCache, "init"
@@ -222,9 +225,11 @@ def test_adapter_init_keeps_caches_on_gpu(adapter_module: ModuleType) -> None:
         adapter_module.AutoModel, "from_pretrained"
     ), patch.object(
         adapter_module, "get_extra_weights_provider_headers"
+    ), patch.object(
+        adapter_module, "SAM3_INTERACTIVE_CACHE_SEND_TO_CPU", send_to_cpu
     ):
         adapter_module.InferenceModelsSAM3InteractiveAdapter(api_key="k")
 
     # then
-    assert emb_init.call_args.kwargs["send_to_cpu"] is False
-    assert masks_init.call_args.kwargs["send_to_cpu"] is False
+    assert emb_init.call_args.kwargs["send_to_cpu"] is send_to_cpu
+    assert masks_init.call_args.kwargs["send_to_cpu"] is send_to_cpu
