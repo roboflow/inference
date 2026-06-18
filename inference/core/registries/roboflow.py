@@ -141,9 +141,19 @@ def _check_if_api_key_has_access_to_model(
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     if _get_local_model_type(model_id=model_id) is not None:
         return True
-    _, version_id = get_model_id_chunks(model_id=model_id)
+    dataset_id, version_id = get_model_id_chunks(model_id=model_id)
+    use_legacy_core_model_auth = (
+        endpoint_type == ModelEndpointType.CORE_MODEL and dataset_id == "yolo_world"
+    )
     try:
-        if version_id is not None:
+        if USE_INFERENCE_MODELS and not use_legacy_core_model_auth:
+            get_model_metadata_from_inference_models_registry(
+                api_key=api_key,
+                model_id=model_id,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
+        elif version_id is not None or use_legacy_core_model_auth:
             get_roboflow_model_data(
                 api_key=api_key,
                 model_id=model_id,
@@ -152,15 +162,8 @@ def _check_if_api_key_has_access_to_model(
                 countinference=countinference,
                 service_secret=service_secret,
             )
-        elif not USE_INFERENCE_MODELS:
-            get_roboflow_instant_model_data(
-                api_key=api_key,
-                model_id=model_id,
-                countinference=countinference,
-                service_secret=service_secret,
-            )
         else:
-            get_model_metadata_from_inference_models_registry(
+            get_roboflow_instant_model_data(
                 api_key=api_key,
                 model_id=model_id,
                 countinference=countinference,
@@ -273,7 +276,15 @@ def get_model_type(
         )
         return project_task_type, model_type
 
-    if version_id is not None:
+    if USE_INFERENCE_MODELS:
+        api_data = get_model_metadata_from_inference_models_registry(
+            api_key=api_key,
+            model_id=model_id,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
+        project_task_type = api_data.get("taskType", "object-detection")
+    elif version_id is not None:
         api_data = get_roboflow_model_data(
             api_key=api_key,
             model_id=model_id,
@@ -283,16 +294,8 @@ def get_model_type(
             device_id=GLOBAL_DEVICE_ID,
         ).get("ort")
         project_task_type = api_data.get("type", "object-detection")
-    elif not USE_INFERENCE_MODELS:
-        api_data = get_roboflow_instant_model_data(
-            api_key=api_key,
-            model_id=model_id,
-            countinference=countinference,
-            service_secret=service_secret,
-        )
-        project_task_type = api_data.get("taskType", "object-detection")
     else:
-        api_data = get_model_metadata_from_inference_models_registry(
+        api_data = get_roboflow_instant_model_data(
             api_key=api_key,
             model_id=model_id,
             countinference=countinference,
@@ -333,7 +336,7 @@ def _ensure_model_supported_on_this_deployment(
 ) -> None:
     if SAM3_FINE_TUNED_MODELS_ENABLED:
         return None
-    if model_type != "sam3-large":
+    if model_type not in {"sam3", "sam3-large"}:
         return None
     if project_task_type != "instance-segmentation":
         return None

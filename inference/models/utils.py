@@ -827,6 +827,9 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = (
                     InferenceModelsQwen35VLAdapter
                 )
+                ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = (
+                    InferenceModelsQwen35VLAdapter
+                )
             elif task == "embed" and variant == "sam":
                 from inference.models.sam.segment_anything_inference_models import (
                     InferenceModelsSAMAdapter,
@@ -851,6 +854,9 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsSAM3Adapter
+                ROBOFLOW_MODEL_TYPES[("instance-segmentation", "sam3")] = (
+                    InferenceModelsSAM3Adapter
+                )
                 ROBOFLOW_MODEL_TYPES[("instance-segmentation", "sam3-large")] = (
                     InferenceModelsSAM3Adapter
                 )
@@ -860,6 +866,9 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                    InferenceModelsSAM3InteractiveAdapter
+                )
+                ROBOFLOW_MODEL_TYPES[("interactive-instance-segmentation", "sam3")] = (
                     InferenceModelsSAM3InteractiveAdapter
                 )
             elif task == "embed" and variant == "clip":
@@ -895,6 +904,9 @@ if USE_INFERENCE_MODELS:
                 )
 
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsGazeAdapter
+                ROBOFLOW_MODEL_TYPES[("gaze-detection", "l2cs-net")] = (
+                    InferenceModelsGazeAdapter
+                )
             elif task in {"lmm", "text-image-pairs"} and (
                 variant.startswith("smolvlm-2.2b")
                 or variant.startswith("smolvlm2")
@@ -968,6 +980,9 @@ if USE_INFERENCE_MODELS:
                 ROBOFLOW_MODEL_TYPES[(task, variant)] = (
                     InferenceModelsGroundingDINOAdapter
                 )
+                ROBOFLOW_MODEL_TYPES[
+                    ("open-vocabulary-object-detection", "grounding-dino")
+                ] = InferenceModelsGroundingDINOAdapter
             elif task == "embed" and variant == "perception_encoder":
                 from inference.models.perception_encoder.perception_encoder_inference_models import (
                     InferenceModelsPerceptionEncoderAdapter,
@@ -992,6 +1007,80 @@ if USE_INFERENCE_MODELS:
                 f"falling back to regular `inference` stack - error: {e}",
                 category=InferenceModelsStackMissing,
             )
+
+    # Exact (taskType, modelArchitecture) tuples returned by
+    # /models/v1/external/stat for entries backed by generic inference-models
+    # adapters. These complement the legacy variant aliases above.
+    ROBOFLOW_MODEL_TYPES.update(
+        {
+            ("object-detection", "rfdetr"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolo26"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yololite"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolonas"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov10"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov11"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov12"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov5"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov8"): InferenceModelsObjectDetectionAdapter,
+            ("object-detection", "yolov9"): InferenceModelsObjectDetectionAdapter,
+            ("instance-segmentation", "rfdetr"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "segment-anything-2-rt"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolact"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolo26"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolov11"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolov5"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolov7"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("instance-segmentation", "yolov8"): (
+                InferenceModelsInstanceSegmentationAdapter
+            ),
+            ("keypoint-detection", "rfdetr"): (
+                InferenceModelsKeyPointsDetectionAdapter
+            ),
+            ("keypoint-detection", "yolo26"): (
+                InferenceModelsKeyPointsDetectionAdapter
+            ),
+            ("keypoint-detection", "yolov11"): (
+                InferenceModelsKeyPointsDetectionAdapter
+            ),
+            ("keypoint-detection", "yolov8"): (
+                InferenceModelsKeyPointsDetectionAdapter
+            ),
+            ("semantic-segmentation", "deep-lab-v3-plus"): (
+                InferenceModelsSemanticSegmentationAdapter
+            ),
+            ("semantic-segmentation", "yolo26"): (
+                InferenceModelsSemanticSegmentationAdapter
+            ),
+            ("classification", "dinov3_probe"): InferenceModelsClassificationAdapter,
+            ("classification", "resnet"): InferenceModelsClassificationAdapter,
+            ("classification", "vit"): InferenceModelsClassificationAdapter,
+            ("classification", "yolov11"): InferenceModelsClassificationAdapter,
+            ("classification", "yolov8"): InferenceModelsClassificationAdapter,
+            ("multi-label-classification", "dinov3_probe"): (
+                InferenceModelsClassificationAdapter
+            ),
+            ("multi-label-classification", "resnet"): (
+                InferenceModelsClassificationAdapter
+            ),
+            ("multi-label-classification", "vit"): (
+                InferenceModelsClassificationAdapter
+            ),
+        }
+    )
 
     # YOLO26 semantic segmentation is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.
@@ -1050,6 +1139,7 @@ if USE_INFERENCE_MODELS:
                 InferenceModelsQwen35VLAdapter
             )
         ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = InferenceModelsQwen35VLAdapter
+        ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = InferenceModelsQwen35VLAdapter
 
     if GLM_OCR_ENABLED:
         from inference.models.glm_ocr.glm_ocr_inference_models import (
