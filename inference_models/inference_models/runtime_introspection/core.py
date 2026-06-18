@@ -381,7 +381,14 @@ def get_driver_version() -> Optional[Version]:
         if match:
             return Version(match.group(1))
     except Exception:
-        return None
+        pass
+    # `/proc/driver/nvidia/version` is only created by the NVIDIA (open) kernel
+    # module. Tegra/Jetson devices running the legacy `nvgpu` driver never expose
+    # it, so fall back to the L4T BSP version, which is the effective GPU driver
+    # version on those devices.
+    if is_running_on_jetson():
+        return get_l4t_version()
+    return None
 
 
 @cache
