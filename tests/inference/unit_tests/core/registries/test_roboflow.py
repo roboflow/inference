@@ -472,6 +472,29 @@ def test_get_model_type_when_roboflow_api_is_called_for_model_from_new_model_reg
     )
 
 
+@mock.patch.object(roboflow, "ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES", True)
+@mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
+def test_get_model_type_for_local_inference_models_package_uses_declared_architecture(
+    empty_local_dir: str,
+) -> None:
+    # given
+    with open(os.path.join(empty_local_dir, "model_config.json"), "w") as f:
+        json.dump(
+            {
+                "model_architecture": "depth-anything-v2",
+                "task_type": "depth-estimation",
+                "backend_type": "torch",
+            },
+            f,
+        )
+
+    # when
+    result = get_model_type(model_id=empty_local_dir, api_key="my_api_key")
+
+    # then
+    assert result == ("depth-estimation", "depth-anything-v2")
+
+
 @mock.patch.object(roboflow, "get_roboflow_model_data")
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model_type_not_specified(
