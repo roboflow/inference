@@ -127,3 +127,78 @@ def test_get_roboflow_model_merges_discovered_local_packages(
     metadata = get_roboflow_model(model_id=local_trt_layout["model_id"], api_key="k")
     package_ids = {package.package_id for package in metadata.model_packages}
     assert local_trt_layout["package_id"] in package_ids
+
+
+@patch("inference_models.weights_providers.roboflow.get_model_metadata")
+def test_get_roboflow_model_discovers_local_packages_by_resolved_model_id(
+    get_model_metadata_mock, tmp_path, monkeypatch
+):
+    from inference_models.weights_providers.roboflow import RoboflowModelMetadata
+
+    monkeypatch.setenv("INFERENCE_HOME", str(tmp_path))
+    resolved_model_id = "workspace/coco-38"
+    package_id = "localtrtabc123"
+    package_dir = generate_model_package_cache_path(
+        model_id=resolved_model_id, package_id=package_id
+    )
+    shared_blobs_dir = generate_shared_blobs_path()
+    os.makedirs(package_dir, exist_ok=True)
+    os.makedirs(shared_blobs_dir, exist_ok=True)
+    engine_md5 = _write_file(os.path.join(package_dir, "engine.plan"), b"engine-bytes")
+    config_md5 = _write_file(
+        os.path.join(package_dir, "inference_config.json"), b'{"network_input": {}}'
+    )
+    class_names_md5 = _write_file(
+        os.path.join(package_dir, "class_names.txt"), b"class-a\n"
+    )
+    trt_config_md5 = _write_file(
+        os.path.join(package_dir, "trt_config.json"), b'{"static_batch_size": 1}'
+    )
+    for md5_hash in (engine_md5, config_md5, class_names_md5, trt_config_md5):
+        _write_file(os.path.join(shared_blobs_dir, md5_hash), b"shared-" + md5_hash.encode())
+    manifest = {
+        "packageManifest": {
+            "type": "trt-model-package-v1",
+            "backendType": "trt",
+            "dynamicBatchSize": False,
+            "staticBatchSize": 1,
+            "quantization": "fp16",
+            "cudaDeviceType": "Orin",
+            "cudaDeviceCC": "8.7",
+            "cudaVersion": "12.2",
+            "trtVersion": "8.6.2",
+            "sameCCCompatible": True,
+            "trtForwardCompatible": False,
+            "trtLeanRuntimeExcluded": False,
+            "machineType": "jetson",
+            "machineSpecs": {
+                "type": "jetson-machine-specs-v1",
+                "l4tVersion": "36.3",
+                "deviceName": "jetson-orin-nano",
+                "driverVersion": "540.3",
+            },
+        },
+        "files": {
+            "engine.plan": engine_md5,
+            "inference_config.json": config_md5,
+            "class_names.txt": class_names_md5,
+            "trt_config.json": trt_config_md5,
+        },
+        "modelArchitecture": "rfdetr",
+        "taskType": "object-detection",
+    }
+    with open(os.path.join(package_dir, LOCAL_TRT_MANIFEST_FILE), "w", encoding="utf-8") as f:
+        json.dump(manifest, f)
+
+    get_model_metadata_mock.return_value = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": resolved_model_id,
+            "modelArchitecture": "rfdetr",
+            "taskType": "object-detection",
+            "modelPackages": [],
+        }
+    )
+    metadata = get_roboflow_model(model_id="rfdetr-nano", api_key="k")
+    package_ids = {package.package_id for package in metadata.model_packages}
+    assert package_id in package_ids

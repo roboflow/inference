@@ -128,10 +128,15 @@ def get_roboflow_model(
             continue
         parsed_model_packages.append(parsed_model_package)
     platform_package_ids = {package.package_id for package in parsed_model_packages}
-    for local_package in discover_local_trt_packages(model_id=model_id):
-        if local_package.package_id not in platform_package_ids:
-            parsed_model_packages.append(local_package)
-            platform_package_ids.add(local_package.package_id)
+    resolved_model_id = model_metadata.model_id
+    local_discovery_model_ids = [model_id]
+    if resolved_model_id != model_id:
+        local_discovery_model_ids.append(resolved_model_id)
+    for discovery_model_id in local_discovery_model_ids:
+        for local_package in discover_local_trt_packages(model_id=discovery_model_id):
+            if local_package.package_id not in platform_package_ids:
+                parsed_model_packages.append(local_package)
+                platform_package_ids.add(local_package.package_id)
     model_dependencies = None
     if model_metadata.model_dependencies:
         model_dependencies = []
