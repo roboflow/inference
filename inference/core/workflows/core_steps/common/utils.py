@@ -66,6 +66,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.prototypes.block import BlockResult
 
 T = TypeVar("T")
+_RFDETR_SPARSE_RLE_POSTPROCESS_ATTR = "_rfdetr_sparse_rle_postprocess"
 
 
 def load_core_model(
@@ -281,6 +282,8 @@ def convert_inference_detections_batch_to_sv_detections(
                 raw_predictions = filter_out_invalid_polygons(
                     predictions=raw_predictions
                 )
+            if _has_sparse_rle_postprocess_marker(prediction=p):
+                detections.data.pop(POLYGON_KEY_IN_SV_DETECTIONS, None)
         else:
             detections, raw_predictions = fast_result
 
@@ -304,6 +307,16 @@ def convert_inference_detections_batch_to_sv_detections(
             )
         batch_of_detections.append(detections)
     return batch_of_detections
+
+
+def _has_sparse_rle_postprocess_marker(prediction: Dict[str, Any]) -> bool:
+    if not prediction.get(_RFDETR_SPARSE_RLE_POSTPROCESS_ATTR):
+        return False
+    return any(
+        d.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE) is not None
+        or d.get("rle") is not None
+        for d in prediction.get("predictions", [])
+    )
 
 
 def add_inference_keypoints_to_sv_detections(

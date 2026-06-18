@@ -99,6 +99,12 @@ except ImportError as import_error:
     ) from import_error
 
 
+def _supports_fast_preprocess_batch(
+    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+) -> bool:
+    return not isinstance(images, list) or len(images) == 1
+
+
 class RFDetrForInstanceSegmentationTRT(
     InstanceSegmentationModel[
         torch.Tensor,
@@ -263,7 +269,7 @@ class RFDetrForInstanceSegmentationTRT(
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         fast = None
-        if self._fast_preprocess_enabled:
+        if self._fast_preprocess_enabled and _supports_fast_preprocess_batch(images):
             fast = self._fast_preprocess_runtime.try_preprocess(
                 images=images,
                 input_color_format=input_color_format,
@@ -469,6 +475,7 @@ class RFDetrForInstanceSegmentationTRT(
                     num_classes=len(self.class_names),
                     classes_re_mapping=self._classes_re_mapping,
                     defer_postprocess_sync=kwargs.get("defer_postprocess_sync", False),
+                    use_triton_postprocess=kwargs.get("use_triton_postprocess"),
                 )
             if graph_state is not None:
                 output_consumed_events = [

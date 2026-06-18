@@ -78,6 +78,7 @@ _MAX_PINNED_HOST_POOL_BUFFERS = 8
 _PINNED_HOST_POOL = OrderedDict()
 _PINNED_HOST_POOL_LOCK = Lock()
 _PINNED_HOST_POOL_SIZE = 0
+_RFDETR_SPARSE_RLE_POSTPROCESS_ATTR = "_rfdetr_sparse_rle_postprocess"
 
 
 def _get_interpolation_weights(
@@ -214,6 +215,8 @@ def _release_pinned_host_buffer(buffer: torch.Tensor) -> None:
         buffers.append(buffer)
         _PINNED_HOST_POOL.move_to_end(key)
         _PINNED_HOST_POOL_SIZE += 1
+
+
 def post_process_single_instance_segmentation_result_to_rle_masks_triton(
     image_bboxes: torch.Tensor,
     image_scores: torch.Tensor,
@@ -607,14 +610,16 @@ def _instance_detections_from_sparse_records(
     """
     active_ranks = np.flatnonzero(metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
-        return InstanceDetections(
-            xyxy=torch.empty((0, 4), dtype=torch.int32),
-            confidence=torch.empty((0,), dtype=torch.float32),
-            class_id=torch.empty((0,), dtype=torch.int32),
-            mask=InstancesRLEMasks.from_coco_rle_masks(
-                image_size=(height, width),
-                masks=[],
-            ),
+        return _mark_sparse_rle_postprocess(
+            InstanceDetections(
+                xyxy=torch.empty((0, 4), dtype=torch.int32),
+                confidence=torch.empty((0,), dtype=torch.float32),
+                class_id=torch.empty((0,), dtype=torch.int32),
+                mask=InstancesRLEMasks.from_coco_rle_masks(
+                    image_size=(height, width),
+                    masks=[],
+                ),
+            )
         )
     if np.any(metadata_host[active_ranks, 8] > 0.5):
         return None
@@ -673,11 +678,13 @@ def _instance_detections_from_sparse_records(
     # The pipeline RLE-to-polygon path consumes uncompressed counts directly, so
     # keep them beside the pycocotools-compressed masks instead of decoding later.
     _attach_uncompressed_counts(instances_masks, rle_counts)
-    return InstanceDetections(
-        xyxy=boxes,
-        confidence=confidence,
-        class_id=class_id,
-        mask=instances_masks,
+    return _mark_sparse_rle_postprocess(
+        InstanceDetections(
+            xyxy=boxes,
+            confidence=confidence,
+            class_id=class_id,
+            mask=instances_masks,
+        )
     )
 
 
@@ -698,14 +705,16 @@ def _instance_detections_from_sparse_query_records(
     """
     active_ranks = np.flatnonzero(class_metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
-        return InstanceDetections(
-            xyxy=torch.empty((0, 4), dtype=torch.int32),
-            confidence=torch.empty((0,), dtype=torch.float32),
-            class_id=torch.empty((0,), dtype=torch.int32),
-            mask=InstancesRLEMasks.from_coco_rle_masks(
-                image_size=(height, width),
-                masks=[],
-            ),
+        return _mark_sparse_rle_postprocess(
+            InstanceDetections(
+                xyxy=torch.empty((0, 4), dtype=torch.int32),
+                confidence=torch.empty((0,), dtype=torch.float32),
+                class_id=torch.empty((0,), dtype=torch.int32),
+                mask=InstancesRLEMasks.from_coco_rle_masks(
+                    image_size=(height, width),
+                    masks=[],
+                ),
+            )
         )
     if np.any(class_metadata_host[active_ranks, 8] > 0.5):
         return None
@@ -777,12 +786,19 @@ def _instance_detections_from_sparse_query_records(
     # The pipeline RLE-to-polygon path consumes uncompressed counts directly, so
     # keep them beside the pycocotools-compressed masks instead of decoding later.
     _attach_uncompressed_counts(instances_masks, rle_counts)
-    return InstanceDetections(
-        xyxy=boxes,
-        confidence=confidence,
-        class_id=class_id,
-        mask=instances_masks,
+    return _mark_sparse_rle_postprocess(
+        InstanceDetections(
+            xyxy=boxes,
+            confidence=confidence,
+            class_id=class_id,
+            mask=instances_masks,
+        )
     )
+
+
+def _mark_sparse_rle_postprocess(detections: InstanceDetections) -> InstanceDetections:
+    setattr(detections, _RFDETR_SPARSE_RLE_POSTPROCESS_ATTR, True)
+    return detections
 
 
 def _sparse_query_records_failure_reason(
@@ -793,7 +809,9 @@ def _sparse_query_records_failure_reason(
     active_ranks = np.flatnonzero(class_metadata_host[:, 0] > 0.5)
     if active_ranks.size == 0:
         return "no_failure"
-    metadata_overflows = int(np.count_nonzero(class_metadata_host[active_ranks, 8] > 0.5))
+    metadata_overflows = int(
+        np.count_nonzero(class_metadata_host[active_ranks, 8] > 0.5)
+    )
     total_runs = int(records_host[0, 0])
     overflow_flag = int(records_host[0, 1])
     reasons = []
@@ -1730,9 +1748,7 @@ if triton is not None:
                     y_idx + y_base + 1,
                     mask=row_active,
                     other=0,
-                ).to(
-                    tl.int64
-                )
+                ).to(tl.int64)
                 y_weight0 = tl.load(y_weight + y_base, mask=row_active, other=0.0)
                 y_weight1 = tl.load(
                     y_weight + y_base + 1,
@@ -1780,7 +1796,9 @@ if triton is not None:
                 # current positive after previous background starts a run;
                 # previous positive followed by current background ends it.
                 previous_y = output_y - 1
-                previous_row_active = boundary_row_active & (row_y[:, None] > roi_y_start)
+                previous_row_active = boundary_row_active & (
+                    row_y[:, None] > roi_y_start
+                )
                 previous_active = previous_row_active & column_active[None, :]
                 previous_y_base = previous_y * 2
                 prev_source_y0 = tl.load(

@@ -65,6 +65,8 @@ This version of block introduces breaking change in behaviour of mask constructi
 shapes of any kind from remote server.
 """
 
+_RFDETR_SPARSE_RLE_POSTPROCESS_ATTR = "_rfdetr_sparse_rle_postprocess"
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -336,9 +338,7 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
         )
         if not isinstance(predictions, list):
             predictions = [predictions]
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
+        predictions = [_prediction_response_to_dict(e) for e in predictions]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -432,3 +432,10 @@ class RoboflowInstanceSegmentationModelBlockV4(WorkflowBlock):
             }
             for inference_id, prediction in zip(inference_ids, predictions)
         ]
+
+
+def _prediction_response_to_dict(response: object) -> dict:
+    result = response.model_dump(by_alias=True, exclude_none=True)
+    if getattr(response, _RFDETR_SPARSE_RLE_POSTPROCESS_ATTR, False):
+        result[_RFDETR_SPARSE_RLE_POSTPROCESS_ATTR] = True
+    return result

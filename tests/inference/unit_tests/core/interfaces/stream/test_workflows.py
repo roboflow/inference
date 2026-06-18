@@ -3,6 +3,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Optional
 
+import networkx as nx
 import numpy as np
 import pytest
 
@@ -15,6 +16,16 @@ from inference.core.interfaces.stream.model_handlers.workflows import (
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
     RoboflowInstanceSegmentationModelBlockV3,
+)
+from inference.core.workflows.execution_engine.constants import (
+    NODE_COMPILATION_OUTPUT_PROPERTY,
+)
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    DynamicStepInputDefinition,
+    NodeCategory,
+    NodeInputCategory,
+    ParameterSpecification,
+    StepNode,
 )
 from inference_models.models.base.async_handoff import attach_async_response_future
 
@@ -37,6 +48,16 @@ class _FakePipelinedStep:
 
     def close_stream_pipeline(self) -> None:
         self.close_calls += 1
+
+
+class _DisableAwarePipelinedStep(_FakePipelinedStep):
+    def __init__(self, stream_buffer_depth: int) -> None:
+        super().__init__(stream_buffer_depth=stream_buffer_depth)
+        self.disable_calls = 0
+
+    def disable_stream_pipeline_for_workflow(self) -> None:
+        self.disable_calls += 1
+        self._stream_buffer_depth = 0
 
 
 class _FakeExecutionEngine:
@@ -81,6 +102,17 @@ class _FakeExecutionEngine:
         _is_preview,
     ):
         return self.step.flush_stream_pipeline()[0]
+
+
+class _GraphAwareExecutionEngine:
+    def __init__(self, execution_graph, step) -> None:
+        self.step = step
+        self._engine = SimpleNamespace(
+            _compiled_workflow=SimpleNamespace(
+                steps={"segmentation": SimpleNamespace(step=self.step)},
+                execution_graph=execution_graph,
+            )
+        )
 
 
 class _FakeLateActivatingStep:
@@ -191,6 +223,47 @@ class _FakeDownstreamPipelinedExecutionEngine:
         return [{"result": f"downstream-frame-{frame_number}"}]
 
 
+def _step_node(
+    name: str,
+    input_data: Optional[dict] = None,
+) -> StepNode:
+    return StepNode(
+        node_category=NodeCategory.STEP_NODE,
+        name=name,
+        selector=f"$steps.{name}",
+        data_lineage=[],
+        step_manifest=SimpleNamespace(type=f"test/{name}@v1"),
+        input_data=input_data or {},
+    )
+
+
+def _dynamic_input(
+    parameter_name: str,
+    selector: str,
+    category: NodeInputCategory = NodeInputCategory.BATCH_STEP_OUTPUT,
+) -> DynamicStepInputDefinition:
+    return DynamicStepInputDefinition(
+        parameter_specification=ParameterSpecification(
+            parameter_name=parameter_name,
+        ),
+        category=category,
+        data_lineage=[],
+        selector=selector,
+    )
+
+
+def _graph_with_nodes(nodes, edges):
+    graph = nx.DiGraph()
+    for node in nodes:
+        graph.add_node(
+            node.selector,
+            **{NODE_COMPILATION_OUTPUT_PROPERTY: node},
+        )
+    for source, target in edges:
+        graph.add_edge(source, target)
+    return graph
+
+
 class _ImmediateExecutor:
     def submit(self, fn, *args, **kwargs) -> Future:
         future = Future()
@@ -259,6 +332,7 @@ class _FakeModelManager:
         self._inference_results = list(inference_results)
         self.model = _FakeStreamModel()
         self.add_model_calls = []
+        self.requests = []
         self.infer_calls = 0
 
     def add_model(self, model_id: str, api_key: str) -> None:
@@ -266,6 +340,7 @@ class _FakeModelManager:
 
     def infer_from_request_sync(self, model_id: str, request):
         self.infer_calls += 1
+        self.requests.append(request)
         return self._inference_results.pop(0)
 
     def __contains__(self, model_id: str) -> bool:
@@ -389,6 +464,88 @@ def test_wrap_workflow_runner_leaves_non_pipelined_workflows_unchanged() -> None
         )
         is runner
     )
+
+
+def test_wrap_workflow_runner_keeps_stream_pipeline_for_prediction_only_downstream() -> (
+    None
+):
+    step = _DisableAwarePipelinedStep(stream_buffer_depth=1)
+    segmentation = _step_node("segmentation")
+    confidence_filter = _step_node(
+        "confidence_filter",
+        input_data={
+            "predictions": _dynamic_input(
+                parameter_name="predictions",
+                selector="$steps.segmentation.predictions",
+            )
+        },
+    )
+    engine = _GraphAwareExecutionEngine(
+        execution_graph=_graph_with_nodes(
+            nodes=[segmentation, confidence_filter],
+            edges=[("$steps.segmentation", "$steps.confidence_filter")],
+        ),
+        step=step,
+    )
+    runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+
+    wrapped = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=runner,
+        execution_engine=engine,
+    )
+
+    assert isinstance(wrapped, PipelinedWorkflowRunner)
+    assert step.disable_calls == 0
+
+
+def test_wrap_workflow_runner_disables_stream_pipeline_for_downstream_image_inputs() -> (
+    None
+):
+    step = _DisableAwarePipelinedStep(stream_buffer_depth=1)
+    segmentation = _step_node("segmentation")
+    center_crop = _step_node("center_crop")
+    polygon_visualization = _step_node(
+        "polygon_visualization",
+        input_data={
+            "predictions": _dynamic_input(
+                parameter_name="predictions",
+                selector="$steps.segmentation.predictions",
+            ),
+            "image": _dynamic_input(
+                parameter_name="image",
+                selector="$steps.center_crop.crops",
+            ),
+        },
+    )
+    engine = _GraphAwareExecutionEngine(
+        execution_graph=_graph_with_nodes(
+            nodes=[segmentation, center_crop, polygon_visualization],
+            edges=[
+                ("$steps.center_crop", "$steps.polygon_visualization"),
+                ("$steps.segmentation", "$steps.polygon_visualization"),
+            ],
+        ),
+        step=step,
+    )
+    runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+
+    wrapped = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=runner,
+        execution_engine=engine,
+    )
+
+    assert wrapped is runner
+    assert step.disable_calls == 1
 
 
 def test_workflow_runner_buffers_frames_until_delayed_prediction_arrives() -> None:
@@ -541,6 +698,51 @@ def test_instance_segmentation_stream_pipeline_activation_requires_depth_above_o
         lambda: 2,
     )
     assert block.can_activate_stream_pipeline() is True
+
+
+def test_instance_segmentation_stream_pipeline_is_disabled_for_generated_batches() -> (
+    None
+):
+    manager = _FakeModelManager(
+        inference_results=[
+            [_FakeResponse("frame-1-a"), _FakeResponse("frame-1-b")],
+        ]
+    )
+    block = RoboflowInstanceSegmentationModelBlockV3(
+        model_manager=manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    block._post_process_result = lambda images, predictions, class_filter, model_id: [
+        {
+            "predictions": f"{image.tag}:{prediction['tag']}",
+            "model_id": model_id,
+        }
+        for image, prediction in zip(images, predictions)
+    ]
+
+    result = block.run_locally(
+        images=[_FakeWorkflowImage("slice-1"), _FakeWorkflowImage("slice-2")],
+        model_id="model",
+        class_agnostic_nms=None,
+        class_filter=None,
+        confidence=0.4,
+        iou_threshold=None,
+        max_detections=None,
+        max_candidates=None,
+        mask_decode_mode="accurate",
+        tradeoff_factor=None,
+        disable_active_learning=None,
+        active_learning_target_dataset=None,
+        enforce_dense_masks_in_inference_models=False,
+    )
+
+    assert manager.requests[0].disable_stream_pipeline is True
+    assert block.stream_pipeline_depth() == 0
+    assert result == [
+        {"predictions": "slice-1:frame-1-a", "model_id": "model"},
+        {"predictions": "slice-2:frame-1-b", "model_id": "model"},
+    ]
 
 
 def test_instance_segmentation_stream_flush_drains_model_without_rerunning_workflow() -> (

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import supervision as sv
 from supervision.config import ORIENTED_BOX_COORDINATES
+from supervision.detection.compact_mask import CompactMask
 
 from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
     BlockManifest,
@@ -197,6 +198,42 @@ def test_detections_stitch_with_masks() -> None:
     assert merged.mask is not None
     assert len(merged) == 1
     assert merged.mask.shape[1:] == (400, 500)
+
+
+def test_detections_stitch_moves_compact_masks_without_materializing_dense_masks() -> (
+    None
+):
+    # given
+    block = DetectionsStitchBlockV1()
+    reference_image = make_test_image(width=100, height=100)
+    dense_mask = np.zeros((1, 10, 10), dtype=np.bool_)
+    dense_mask[0, 2:5, 3:7] = True
+    boxes = np.array([[3, 2, 6, 4]], dtype=np.float32)
+    detections = make_test_detections(
+        boxes=boxes.copy(),
+        parent_offset=(20, 30),
+        parent_dims=(100, 100),
+    )
+    detections.mask = CompactMask.from_dense(
+        masks=dense_mask,
+        xyxy=boxes,
+        image_shape=(10, 10),
+    )
+
+    # when
+    result = block.run(
+        reference_image=reference_image,
+        predictions=[detections],
+        overlap_filtering_strategy="none",
+        iou_threshold=0.5,
+    )
+
+    # then
+    stitched = result["predictions"]
+    assert isinstance(stitched.mask, CompactMask)
+    np.testing.assert_array_equal(stitched.xyxy, np.array([[23, 32, 26, 34]]))
+    assert stitched.mask.offsets.tolist() == [[23, 32]]
+    assert stitched.mask.shape == (1, 100, 100)
 
 
 def test_detections_stitch_verify_mask_dimensions_match_reference() -> None:

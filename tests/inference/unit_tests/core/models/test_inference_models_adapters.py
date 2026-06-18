@@ -86,6 +86,16 @@ def _make_meta(tag: str):
     ]
 
 
+def _make_batch_meta(*tags: str):
+    return [
+        SimpleNamespace(
+            tag=tag,
+            original_size=SimpleNamespace(width=10, height=20),
+        )
+        for tag in tags
+    ]
+
+
 def _make_pipeline_adapter(
     futures: list[_FakePipelineFuture],
     ops: list[str],
@@ -170,6 +180,25 @@ def test_pipeline_postprocess_uses_sync_path_for_non_future_predictions() -> Non
     assert responses == ["meta-1"]
     assert len(adapter._model.post_process_calls) == 1
     assert adapter._model.post_process_calls[0][0] == "sync-raw"
+
+
+def test_sync_postprocess_disables_triton_postprocess_for_batches() -> None:
+    ops: list[str] = []
+    adapter = _make_pipeline_adapter(
+        futures=[],
+        ops=ops,
+        pipeline_depth=2,
+    )
+
+    adapter.postprocess(
+        "sync-raw",
+        _make_batch_meta("meta-1", "meta-2"),
+        response_mask_format="dense",
+    )
+
+    assert len(adapter._model.post_process_calls) == 1
+    kwargs = adapter._model.post_process_calls[0][2]
+    assert kwargs["use_triton_postprocess"] is False
 
 
 def test_workflow_response_fast_dataclass_path_is_disabled_at_depth_one() -> None:
