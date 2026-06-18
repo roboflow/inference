@@ -589,6 +589,51 @@ def test_construct_workflow_output_defers_batch_wrapped_futures() -> None:
     assert contains_future(result[0]["a"]) is True
 
 
+def test_construct_workflow_output_defers_coordinate_conversion_with_future_output() -> (
+    None
+):
+    # given
+    execution_data_manager = MagicMock()
+    workflow_outputs = [
+        JsonField(type="JsonField", name="a", selector="$steps.some.a"),
+    ]
+    execution_graph = DiGraph()
+    execution_graph.add_node(
+        "$outputs.a",
+        node_compilation_output=OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name=workflow_outputs[0].name,
+            selector=workflow_outputs[0].selector,
+            data_lineage=["<workflow_input>"],
+            output_manifest=workflow_outputs[0],
+        ),
+    )
+    execution_graph.graph[TOP_LEVEL_LINEAGES_KEY] = WORKFLOW_INPUT_BATCH_LINEAGE_ID
+    execution_data_manager.get_selector_indices.return_value = [(0,)]
+    execution_data_manager.get_batch_data.return_value = [
+        {"predictions": _completed_future(assembly_sv_detections())}
+    ]
+    execution_data_manager.get_lineage_indices.return_value = [(0,)]
+
+    # when
+    result = construct_workflow_output(
+        workflow_outputs=workflow_outputs,
+        execution_graph=execution_graph,
+        execution_data_manager=execution_data_manager,
+        serialize_results=False,
+        kinds_serializers=KINDS_SERIALIZERS,
+        resolve_output_futures=False,
+    )
+
+    # then
+    deferred_output = result[0]["a"]
+    assert isinstance(deferred_output, Future)
+    resolved_output = deferred_output.result()
+    assert_transformed_detections_matches_expectation(
+        result=resolved_output["predictions"]
+    )
+
+
 def test_construct_workflow_output_when_batch_outputs_present() -> None:
     # given
     execution_data_manager = MagicMock()
