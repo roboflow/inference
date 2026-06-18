@@ -247,6 +247,25 @@ def test_trt_fast_preprocess_warns_for_unavailable_runtime(
         ),
         (
             torch.device("cuda"),
+            {"network_input": _network_input(resize_mode=ResizeMode.LETTERBOX)},
+            "resize mode",
+        ),
+        (
+            torch.device("cuda"),
+            {"network_input": _network_input(resize_mode=ResizeMode.CENTER_CROP)},
+            "resize mode",
+        ),
+        (
+            torch.device("cuda"),
+            {
+                "network_input": _network_input(
+                    resize_mode=ResizeMode.LETTERBOX_REFLECT_EDGES
+                )
+            },
+            "resize mode",
+        ),
+        (
+            torch.device("cuda"),
             {"network_input": _network_input(resize_mode=ResizeMode.FIT_LONGER_EDGE)},
             "resize mode",
         ),

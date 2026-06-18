@@ -6,6 +6,7 @@ from io import BytesIO
 from threading import local
 from time import perf_counter
 from typing import Any, Deque, List, Optional, Tuple, Union
+from weakref import finalize
 
 import numpy as np
 import torch
@@ -377,6 +378,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         ] = deque()
         self._gpu_submit_generation = 0
         self._response_executor: Optional[ThreadPoolExecutor] = None
+        self._response_executor_finalizer = None
         self._response_futures: Deque[
             Tuple[
                 Future[List[InstanceSegmentationInferenceResponse]],
@@ -507,12 +509,21 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
     def shutdown_pipeline(self) -> None:
         if self._response_executor is None:
             return None
+        finalizer = self._response_executor_finalizer
+        if finalizer is not None and finalizer.alive:
+            finalizer.detach()
         self._response_executor.shutdown(wait=False)
         self._response_executor = None
+        self._response_executor_finalizer = None
 
     def _get_response_executor(self) -> ThreadPoolExecutor:
         if self._response_executor is None:
             self._response_executor = ThreadPoolExecutor(max_workers=1)
+            self._response_executor_finalizer = finalize(
+                self,
+                self._response_executor.shutdown,
+                wait=False,
+            )
         return self._response_executor
 
     def _submit_future_gpu_work(

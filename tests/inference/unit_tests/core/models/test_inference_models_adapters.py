@@ -99,6 +99,7 @@ def _make_pipeline_adapter(
     adapter._pending_futures = deque()
     adapter._response_futures = deque()
     adapter._response_executor = None
+    adapter._response_executor_finalizer = None
     adapter._model = _FakePipelineModel(futures=futures, ops=ops)
     adapter.class_names = []
     adapter.map_inference_kwargs = lambda kwargs: dict(kwargs)
@@ -110,6 +111,58 @@ def _make_pipeline_adapter(
     )
 
     return adapter
+
+
+def _make_live_pipeline_adapter(
+    pipeline_depth: int = 2,
+) -> InferenceModelsInstanceSegmentationAdapter:
+    adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
+    adapter._pipeline_depth = pipeline_depth
+    adapter._response_delay = max(1, pipeline_depth - 1)
+    adapter._pending_gpu_submissions = deque()
+    adapter._pending_futures = deque()
+    adapter._response_futures = deque()
+    adapter._response_executor = None
+    adapter._response_executor_finalizer = None
+    adapter._gpu_submit_generation = 0
+    adapter._model = _FakePipelineModel(futures=[], ops=[])
+    adapter.class_names = []
+    return adapter
+
+
+def test_get_response_executor_registers_shutdown_finalizer() -> None:
+    adapter = _make_live_pipeline_adapter()
+    executor = InferenceModelsInstanceSegmentationAdapter._get_response_executor(
+        adapter
+    )
+
+    assert adapter._response_executor is executor
+    assert adapter._response_executor_finalizer is not None
+    assert adapter._response_executor_finalizer.alive
+
+    adapter.shutdown_pipeline()
+
+    assert adapter._response_executor is None
+    assert adapter._response_executor_finalizer is None
+    assert executor._shutdown
+
+
+def test_response_executor_finalizer_shuts_down_when_adapter_is_collected() -> None:
+    import gc
+    import weakref
+
+    adapter = _make_live_pipeline_adapter()
+    executor = InferenceModelsInstanceSegmentationAdapter._get_response_executor(
+        adapter
+    )
+    assert not executor._shutdown
+
+    adapter_ref = weakref.ref(adapter)
+    del adapter
+    gc.collect()
+
+    assert adapter_ref() is None
+    assert executor._shutdown
 
 
 def test_pipeline_depth_falls_back_to_one_for_unsupported_models(monkeypatch) -> None:
