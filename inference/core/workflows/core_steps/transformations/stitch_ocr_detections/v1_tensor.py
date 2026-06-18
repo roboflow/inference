@@ -45,6 +45,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
+    CLASS_NAMES_KEY,
+)
 from inference_models.models.base.object_detection import Detections
 
 TEXT_KEY = "text"
@@ -230,13 +234,28 @@ def _native_xyxy_int(detections: Detections) -> np.ndarray:
 
 
 def _native_class_names(detections: Detections) -> np.ndarray:
-    """Native equivalent of ``detections.data["class_name"]``: the recognised text
-    rides per-box on ``bboxes_metadata[i]["text"]``. Returned as an object array so
+    """Native equivalent of ``detections.data["class_name"]`` for OCR stitching.
+
+    Resolves each detection's label the way the tensor serialiser does: a per-box
+    override wins (OCR-as-detector rides the recognised text on ``class``; the legacy
+    ``text`` key is also honoured), otherwise the label is resolved from
+    ``image_metadata['class_names']`` keyed by ``class_id`` — which is where a plain
+    character/word *detection* model carries its label. Returned as an object array so
     the numpy fancy-indexing in ``stitch_ocr_detections`` works unchanged."""
     n = int(detections.xyxy.shape[0])
+    class_names_map = (detections.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
+    class_ids = detections.class_id.detach().cpu().tolist()
     bboxes_metadata = detections.bboxes_metadata or [{} for _ in range(n)]
-    texts = [str((bboxes_metadata[i] or {}).get(TEXT_KEY, "")) for i in range(n)]
-    return np.array(texts, dtype=object)
+    names = []
+    for i in range(n):
+        meta = bboxes_metadata[i] or {}
+        if CLASS_NAME_KEY in meta:
+            names.append(str(meta[CLASS_NAME_KEY]))
+        elif TEXT_KEY in meta:
+            names.append(str(meta[TEXT_KEY]))
+        else:
+            names.append(str(class_names_map.get(int(class_ids[i]), "")))
+    return np.array(names, dtype=object)
 
 
 def detect_reading_direction(detections: Detections) -> str:
