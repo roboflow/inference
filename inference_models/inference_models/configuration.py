@@ -316,6 +316,7 @@ INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED = get_boolean_from_env(
 RFDETR_PIPELINE_DEPTH_ENV_NAME = "RFDETR_PIPELINE_DEPTH"
 DEFAULT_RFDETR_PIPELINE_DEPTH = 1
 MIN_RFDETR_PIPELINE_DEPTH = 1
+MAX_RFDETR_PIPELINE_DEPTH = 2
 
 
 def parse_rfdetr_pipeline_depth(value: Optional[str]) -> int:
@@ -323,8 +324,9 @@ def parse_rfdetr_pipeline_depth(value: Optional[str]) -> int:
 
     Depth is the number of in-flight CPU/GPU stages the stream adapter may keep
     alive. ``1`` preserves the original synchronous behavior; values greater
-    than one enable delayed response finalization. Zero, negative, and
-    non-integer values are rejected instead of being silently clamped.
+    than one enable delayed response finalization. Values above the supported
+    maximum are normalized to ``2``. Zero, negative, and non-integer values are
+    rejected instead of being silently clamped.
     """
     if value is None:
         return DEFAULT_RFDETR_PIPELINE_DEPTH
@@ -346,7 +348,7 @@ def parse_rfdetr_pipeline_depth(value: Optional[str]) -> int:
             ),
             help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
         )
-    return parsed
+    return min(parsed, MAX_RFDETR_PIPELINE_DEPTH)
 
 
 def get_rfdetr_pipeline_depth() -> int:
