@@ -506,6 +506,14 @@ def with_route_exceptions(route):
                         block_id=error.block_id,
                     ),
                 ],
+                # Attached by the workflow-run route when `debug=True` and the run
+                # failed; carries logs of python blocks executed before the failure.
+                python_blocks_output_streams=getattr(
+                    error, "python_blocks_output_streams", None
+                ),
+                python_blocks_debug_traces=getattr(
+                    error, "python_blocks_debug_traces", None
+                ),
             )
             resp = JSONResponse(
                 status_code=error.status_code,
@@ -961,6 +969,14 @@ def with_route_exceptions_async(route):
                         block_id=error.block_id,
                     ),
                 ],
+                # Attached by the workflow-run route when `debug=True` and the run
+                # failed; carries logs of python blocks executed before the failure.
+                python_blocks_output_streams=getattr(
+                    error, "python_blocks_output_streams", None
+                ),
+                python_blocks_debug_traces=getattr(
+                    error, "python_blocks_debug_traces", None
+                ),
             )
             resp = JSONResponse(
                 status_code=error.status_code,
