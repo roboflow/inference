@@ -31,6 +31,10 @@ from typing import Dict, List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field, field_validator
 
+from inference.core.workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
+    CLASS_NAMES_KEY,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -48,10 +52,6 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
-)
-from inference.core.workflows.execution_engine.constants import (
-    CLASS_NAME_KEY,
-    CLASS_NAMES_KEY,
 )
 from inference_models.models.base.object_detection import Detections
 
