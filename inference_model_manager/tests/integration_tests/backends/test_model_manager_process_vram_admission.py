@@ -142,6 +142,27 @@ class TestRequired:
         assert mmp._required_mb("m", api_key="k") == 800
         assert calls == ["m"]  # fetched once, then cache
 
+    def test_instance_suffix_is_stripped_for_metadata_fetch(self):
+        mmp = _mmp()
+        calls = []
+
+        def fake_fetch(model_id, api_key, batch):
+            calls.append(model_id)
+            return 800
+
+        mmp._fetch_vram_mb = fake_fetch
+        assert mmp._required_mb("m:3", api_key="k") == 800
+        assert mmp._required_mb("m:4", api_key="k") == 800
+        assert calls == ["m"]
+        assert mmp._vram_meta_cache["m"] == 800
+
+    def test_measured_footprint_remains_instance_specific(self):
+        mmp = _mmp()
+        mmp._record_vram_samples({"m:3": 700, "m:4": 900})
+        mmp._vram_meta_cache["m"] = 500
+        assert mmp._footprint_mb("m:3") == 700
+        assert mmp._footprint_mb("m:4") == 900
+
     def test_no_data_is_zero(self):
         mmp = _mmp()
         mmp._fetch_vram_mb = lambda model_id, api_key, batch: 0
