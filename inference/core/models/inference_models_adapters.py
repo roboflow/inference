@@ -451,7 +451,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
     def predict(self, img_in, **kwargs):
         mapped_kwargs = self.map_inference_kwargs(kwargs)
-        if self._pipeline_depth <= 1:
+        if self._pipeline_depth <= 1 or kwargs.get("disable_stream_pipeline", True):
             # Original path: forward on current frame, postprocess on
             # current frame, all synchronous.
             return self._model.forward(img_in, **mapped_kwargs)
@@ -597,7 +597,11 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         preprocess_return_metadata: PreprocessingMetadata,
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
-        if self._pipeline_depth <= 1 or not isinstance(predictions, InferenceFuture):
+        if (
+            self._pipeline_depth <= 1
+            or kwargs.get("disable_stream_pipeline", True)
+            or not isinstance(predictions, InferenceFuture)
+        ):
             return self._postprocess_sync(
                 predictions, preprocess_return_metadata, **kwargs
             )
@@ -706,13 +710,14 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
         return_in_rle = kwargs.get("response_mask_format") == "rle"
-        # Workflow callers consume a plain dict via `_is_response_dc_to_dict`;
-        # dataclasses avoid pydantic validation + `model_dump` overhead per
-        # frame. Keep the pydantic path for RLE responses and for non-workflow
-        # callers that rely on the response model type.
+        # Stream-pipelined workflow callers consume a plain dict via
+        # `_is_response_dc_to_dict`; dataclasses avoid pydantic validation +
+        # `model_dump` overhead per frame. Keep the pydantic path for disabled,
+        # RLE, and non-workflow callers that rely on the response model type.
         use_dc = (
             kwargs.get("source") == "workflow-execution"
             and not return_in_rle
+            and not kwargs.get("disable_stream_pipeline", True)
             and getattr(self, "_pipeline_depth", 1) > 1
         )
 

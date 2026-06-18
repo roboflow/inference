@@ -279,6 +279,7 @@ class _FakeModelManager:
         self._inference_results = list(inference_results)
         self.model = _FakeStreamModel()
         self.add_model_calls = []
+        self.requests = []
         self.infer_calls = 0
 
     def add_model(self, model_id: str, api_key: str) -> None:
@@ -286,6 +287,7 @@ class _FakeModelManager:
 
     def infer_from_request_sync(self, model_id: str, request):
         self.infer_calls += 1
+        self.requests.append(request)
         return self._inference_results.pop(0)
 
     def __contains__(self, model_id: str) -> bool:
@@ -564,6 +566,51 @@ def test_instance_segmentation_stream_pipeline_activation_requires_depth_above_o
     assert block.can_activate_stream_pipeline() is True
 
 
+def test_instance_segmentation_stream_pipeline_is_disabled_for_generated_batches() -> (
+    None
+):
+    manager = _FakeModelManager(
+        inference_results=[
+            [_FakeResponse("frame-1-a"), _FakeResponse("frame-1-b")],
+        ]
+    )
+    block = RoboflowInstanceSegmentationModelBlockV3(
+        model_manager=manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    block._post_process_result = lambda images, predictions, class_filter, model_id: [
+        {
+            "predictions": f"{image.tag}:{prediction['tag']}",
+            "model_id": model_id,
+        }
+        for image, prediction in zip(images, predictions)
+    ]
+
+    result = block.run_locally(
+        images=[_FakeWorkflowImage("slice-1"), _FakeWorkflowImage("slice-2")],
+        model_id="model",
+        class_agnostic_nms=None,
+        class_filter=None,
+        confidence=0.4,
+        iou_threshold=None,
+        max_detections=None,
+        max_candidates=None,
+        mask_decode_mode="accurate",
+        tradeoff_factor=None,
+        disable_active_learning=None,
+        active_learning_target_dataset=None,
+        enforce_dense_masks_in_inference_models=False,
+    )
+
+    assert manager.requests[0].disable_stream_pipeline is True
+    assert block.stream_pipeline_depth() == 0
+    assert result == [
+        {"predictions": "slice-1:frame-1-a", "model_id": "model"},
+        {"predictions": "slice-2:frame-1-b", "model_id": "model"},
+    ]
+
+
 def test_instance_segmentation_stream_flush_drains_model_without_rerunning_workflow() -> (
     None
 ):
@@ -627,6 +674,8 @@ def test_instance_segmentation_stream_flush_drains_model_without_rerunning_workf
         }
     ]
     assert second_result[0]["predictions"].result() == "frame-1:first-final"
+    assert manager.requests[0].disable_stream_pipeline is False
+    assert manager.requests[1].disable_stream_pipeline is False
     assert flushed_results == [
         [
             {
@@ -692,8 +741,7 @@ def test_instance_segmentation_stream_pipeline_uses_response_context_id() -> Non
     assert second_result[0]["predictions"].result() == "frame-1:first-final"
     assert len(manager.stream_pipeline_context_ids) == 2
     assert (
-        manager.stream_pipeline_context_ids[0]
-        != manager.stream_pipeline_context_ids[1]
+        manager.stream_pipeline_context_ids[0] != manager.stream_pipeline_context_ids[1]
     )
 
 

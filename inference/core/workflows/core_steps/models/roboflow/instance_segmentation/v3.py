@@ -261,6 +261,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             deque()
         )
         self._stream_context_generation = 0
+        self._last_request_used_stream_pipeline = False
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -348,13 +349,18 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             model_id=model_id,
             api_key=self._api_key,
         )
+        stream_pipeline_disabled = len(images) != 1
+        model_stream_pipeline_depth = self._model_stream_pipeline_depth()
+        self._last_request_used_stream_pipeline = (
+            not stream_pipeline_disabled and model_stream_pipeline_depth > 0
+        )
         stream_context = _StreamPredictionContext(
             images=images,
             class_filter=class_filter,
             model_id=model_id,
             context_id=self._build_stream_context_id(images=images),
         )
-        if self.stream_pipeline_depth() > 0 and len(images) == 1:
+        if self._last_request_used_stream_pipeline:
             self._pending_stream_prediction_contexts.append(stream_context)
         request = InstanceSegmentationInferenceRequest(
             api_key=self._api_key,
@@ -373,6 +379,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             source="workflow-execution",
             stream_pipeline_context_id=stream_context.context_id,
             enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
+            disable_stream_pipeline=stream_pipeline_disabled,
         )
         predictions = self._model_manager.infer_from_request_sync(
             model_id=model_id, request=request
@@ -542,19 +549,21 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             return []
         return result[image_index]["predictions"]
 
-    def is_stream_pipelined(self) -> bool:
+    def _model_stream_pipeline_depth(self) -> int:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
-            return False
+            return 0
         if (
             self._last_model_id is None
             or self._last_model_id not in self._model_manager
         ):
-            return False
+            return 0
         model = self._model_manager[self._last_model_id]
-        return (
-            callable(getattr(model, "flush", None))
-            and getattr(model, "_pipeline_depth", 1) > 1
-        )
+        if not callable(getattr(model, "flush", None)):
+            return 0
+        return max(0, int(getattr(model, "_pipeline_depth", 1)) - 1)
+
+    def is_stream_pipelined(self) -> bool:
+        return self._model_stream_pipeline_depth() > 0
 
     def can_activate_stream_pipeline(self) -> bool:
         return (
@@ -563,14 +572,16 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         )
 
     def stream_pipeline_depth(self) -> int:
-        if not self.is_stream_pipelined():
+        if not self._last_request_used_stream_pipeline:
             return 0
-        model = self._model_manager[self._last_model_id]
-        return max(0, int(getattr(model, "_pipeline_depth", 1)) - 1)
+        return self._model_stream_pipeline_depth()
 
     def flush_stream_pipeline_outputs(
         self,
     ) -> List[Tuple[List[Tuple[int, ...]], BlockResult]]:
+        if not self._last_request_used_stream_pipeline:
+            self._pending_stream_prediction_contexts.clear()
+            return []
         if (
             self._last_model_id is None
             or self._last_model_id not in self._model_manager

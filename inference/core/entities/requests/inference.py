@@ -261,6 +261,10 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
         "RLE but consume more memory which may be unstable in some cases. This flag cannot be tweaked "
         "when used on Roboflow serverless platform.",
     )
+    disable_stream_pipeline: Optional[bool] = Field(
+        default=True,
+        description="Internal workflow flag forcing RF-DETR stream pipelining off for requests whose downstream graph needs same-frame context.",
+    )
 
 
 class SemanticSegmentationInferenceRequest(CVInferenceRequest):

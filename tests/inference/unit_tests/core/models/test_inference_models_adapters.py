@@ -206,6 +206,24 @@ def test_pipeline_uses_sync_forward_for_batched_requests() -> None:
     assert len(adapter._model.forward_calls) == 1
 
 
+def test_pipeline_uses_sync_forward_when_stream_pipeline_not_explicitly_enabled() -> (
+    None
+):
+    ops: list[str] = []
+    future = _FakePipelineFuture(name="f1", ops=ops)
+    adapter = _make_pipeline_adapter(
+        futures=[future],
+        ops=ops,
+        pipeline_depth=2,
+    )
+
+    result = adapter.predict("frame-1", response_mask_format="dense")
+
+    assert result == "sync-raw"
+    assert ops == []
+    assert len(adapter._model.forward_calls) == 1
+
+
 def test_pipeline_postprocess_uses_sync_path_for_non_future_predictions() -> None:
     ops: list[str] = []
     adapter = _make_pipeline_adapter(
@@ -243,6 +261,7 @@ def test_workflow_response_fast_dataclass_path_is_disabled_at_depth_one() -> Non
         detections,
         metadata,
         source="workflow-execution",
+        disable_stream_pipeline=False,
     )
 
     assert isinstance(responses[0], InstanceSegmentationInferenceResponse)
@@ -266,9 +285,34 @@ def test_workflow_response_fast_dataclass_path_is_enabled_above_depth_one() -> N
         detections,
         metadata,
         source="workflow-execution",
+        disable_stream_pipeline=False,
     )
 
     assert isinstance(responses[0], InstanceSegmentationInferenceResponseDC)
+
+
+def test_workflow_response_uses_pydantic_when_stream_pipeline_is_disabled() -> None:
+    adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
+    adapter._pipeline_depth = 2
+    adapter.class_names = ["car"]
+    metadata = [SimpleNamespace(original_size=SimpleNamespace(width=4, height=4))]
+    detections = [
+        InstanceDetections(
+            xyxy=torch.tensor([[1, 1, 3, 3]], dtype=torch.int32),
+            confidence=torch.tensor([0.9], dtype=torch.float32),
+            class_id=torch.tensor([0], dtype=torch.int32),
+            mask=torch.zeros((1, 4, 4), dtype=torch.uint8),
+        )
+    ]
+
+    responses = adapter._build_responses_from_detections(
+        detections,
+        metadata,
+        source="workflow-execution",
+        disable_stream_pipeline=True,
+    )
+
+    assert isinstance(responses[0], InstanceSegmentationInferenceResponse)
 
 
 def test_prepare_multi_label_response_uses_class_ids_for_predicted_classes() -> None:
@@ -356,17 +400,26 @@ def test_pipeline_submits_previous_future_before_next_forward() -> None:
     )
 
     meta_1 = _make_meta("meta-1")
-    prediction_1 = adapter.predict("frame-1", response_mask_format="dense")
+    prediction_1 = adapter.predict(
+        "frame-1",
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
     priming = adapter.postprocess(
         prediction_1,
         meta_1,
         response_mask_format="dense",
+        disable_stream_pipeline=False,
     )
 
     assert len(priming) == 1
     assert future_1.submitted_meta == []
 
-    adapter.predict("frame-2", response_mask_format="dense")
+    adapter.predict(
+        "frame-2",
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
 
     assert future_1.submitted_meta == [meta_1]
     assert ops == ["forward:f1", "submit:f1", "forward:f2"]
@@ -384,14 +437,28 @@ def test_pipeline_returns_previous_frame_response_using_previous_metadata() -> N
 
     meta_1 = _make_meta("meta-1")
     meta_2 = _make_meta("meta-2")
-    prediction_1 = adapter.predict("frame-1", response_mask_format="dense")
-    adapter.postprocess(prediction_1, meta_1, response_mask_format="dense")
+    prediction_1 = adapter.predict(
+        "frame-1",
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
+    adapter.postprocess(
+        prediction_1,
+        meta_1,
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
 
-    prediction_2 = adapter.predict("frame-2", response_mask_format="dense")
+    prediction_2 = adapter.predict(
+        "frame-2",
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
     responses = adapter.postprocess(
         prediction_2,
         meta_2,
         response_mask_format="dense",
+        disable_stream_pipeline=False,
     )
 
     assert responses == ["meta-1"]
@@ -416,8 +483,17 @@ def test_pipeline_flush_submits_remaining_gpu_work_before_finalizing() -> None:
     )
 
     meta_1 = _make_meta("meta-1")
-    prediction_1 = adapter.predict("frame-1", response_mask_format="dense")
-    adapter.postprocess(prediction_1, meta_1, response_mask_format="dense")
+    prediction_1 = adapter.predict(
+        "frame-1",
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
+    adapter.postprocess(
+        prediction_1,
+        meta_1,
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
 
     responses = adapter.flush()
 
@@ -441,17 +517,40 @@ def test_pipeline_depth_three_submits_oldest_pending_before_forward() -> None:
     meta_2 = _make_meta("meta-2")
     meta_3 = _make_meta("meta-3")
 
-    prediction_1 = adapter.predict("frame-1", response_mask_format="dense")
-    adapter.postprocess(prediction_1, meta_1, response_mask_format="dense")
+    prediction_1 = adapter.predict(
+        "frame-1",
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
+    adapter.postprocess(
+        prediction_1,
+        meta_1,
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
 
-    prediction_2 = adapter.predict("frame-2", response_mask_format="dense")
-    priming = adapter.postprocess(prediction_2, meta_2, response_mask_format="dense")
+    prediction_2 = adapter.predict(
+        "frame-2",
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
+    priming = adapter.postprocess(
+        prediction_2,
+        meta_2,
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
 
-    prediction_3 = adapter.predict("frame-3", response_mask_format="dense")
+    prediction_3 = adapter.predict(
+        "frame-3",
+        response_mask_format="dense",
+        disable_stream_pipeline=False,
+    )
     responses = adapter.postprocess(
         prediction_3,
         meta_3,
         response_mask_format="dense",
+        disable_stream_pipeline=False,
     )
 
     assert len(priming) == 1
