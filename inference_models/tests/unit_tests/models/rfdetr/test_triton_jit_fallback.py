@@ -1,4 +1,7 @@
+import importlib
 import logging
+import sys
+from types import ModuleType
 
 import numpy as np
 import pytest
@@ -119,6 +122,67 @@ def test_is_triton_jit_failure_detects_out_of_resources_type() -> None:
     exc = OutOfResources(required=131072, limit=101376, name="shared memory")
 
     assert is_triton_jit_failure(exc)
+
+
+def _reload_triton_jit_fallback_with_fake_errors(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    error_classes: dict[str, type[BaseException]],
+):
+    fake_errors = ModuleType("triton.runtime.errors")
+    for name, cls in error_classes.items():
+        setattr(fake_errors, name, cls)
+
+    fake_runtime = ModuleType("triton.runtime")
+    fake_runtime.errors = fake_errors
+    fake_triton = ModuleType("triton")
+    fake_triton.runtime = fake_runtime
+
+    monkeypatch.setitem(sys.modules, "triton", fake_triton)
+    monkeypatch.setitem(sys.modules, "triton.runtime", fake_runtime)
+    monkeypatch.setitem(sys.modules, "triton.runtime.errors", fake_errors)
+
+    import inference_models.models.rfdetr.triton_jit_fallback as fallback_mod
+
+    reloaded_fallback_mod = importlib.reload(fallback_mod)
+
+    return reloaded_fallback_mod
+
+
+@pytest.fixture
+def triton_jit_fallback_module():
+    import inference_models.models.rfdetr.triton_jit_fallback as fallback_mod
+
+    yield fallback_mod
+
+    importlib.reload(fallback_mod)
+
+
+def test_triton_jit_exception_types_import_independently(
+    monkeypatch: pytest.MonkeyPatch,
+    triton_jit_fallback_module,
+) -> None:
+    class FakeOutOfResources(Exception):
+        pass
+
+    class FakePTXASError(Exception):
+        pass
+
+    fallback_mod = _reload_triton_jit_fallback_with_fake_errors(
+        monkeypatch=monkeypatch,
+        error_classes={"OutOfResources": FakeOutOfResources},
+    )
+
+    assert fallback_mod._TRITON_JIT_EXCEPTION_TYPES == (FakeOutOfResources,)
+    assert fallback_mod.is_triton_jit_failure(FakeOutOfResources())
+
+    fallback_mod = _reload_triton_jit_fallback_with_fake_errors(
+        monkeypatch=monkeypatch,
+        error_classes={"PTXASError": FakePTXASError},
+    )
+
+    assert fallback_mod._TRITON_JIT_EXCEPTION_TYPES == (FakePTXASError,)
+    assert fallback_mod.is_triton_jit_failure(FakePTXASError())
 
 
 def test_warn_triton_jit_fallback_logs_once(caplog: pytest.LogCaptureFixture) -> None:
