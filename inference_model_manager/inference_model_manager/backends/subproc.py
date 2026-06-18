@@ -42,11 +42,18 @@ from concurrent.futures import Future
 from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
+import zmq
 
+from inference_model_manager import configuration as cfg
 from inference_model_manager.backends.base import Backend
+from inference_model_manager.backends.decode import (
+    Decoder,
+    estimate_decoded_bytes,
+    make_batch_decoder,
+)
+from inference_model_manager.backends.utils.image_headers import image_pixels
 from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 from inference_model_manager.backends.utils.transport import default_transport
-from inference_model_manager import configuration as cfg
 from inference_model_manager.dispatch import invoke_task
 from inference_models.utils.environment import get_boolean_from_env
 
@@ -192,11 +199,6 @@ def _worker_main(
             cfg.ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_DEFAULT
         )
 
-    import zmq  # noqa: PLC0415
-
-    from inference_model_manager.backends.decode import (  # noqa: PLC0415
-        make_batch_decoder,
-    )
     from inference_models.models.auto_loaders.core import AutoModel  # noqa: PLC0415
 
     _log = logging.getLogger(f"{__name__}.worker")
@@ -306,8 +308,6 @@ def _worker_loop(
     decode_budget_fn: Optional[Callable[[], int]] = None,
 ) -> None:
     """Greedy batch loop — accumulate T_SLOT_READY, fire on size-or-timeout."""
-    import zmq  # noqa: PLC0415 — subprocess; already in sys.modules from _worker_main
-
     poller = zmq.Poller()
     poller.register(sock, zmq.POLLIN)
 
@@ -501,7 +501,6 @@ def _split_batch_by_decoded_bytes(
     """
     if max_bytes <= 0 or len(batch) <= 1:
         return [batch]
-    from inference_model_manager.backends.decode import estimate_decoded_bytes
 
     chunks: list[list[tuple[int, int, bytes]]] = []
     chunk: list[tuple[int, int, bytes]] = []
@@ -545,8 +544,6 @@ def _process_slots(
     worker_stats: dict,
 ) -> None:
     """Process a batch of (slot_id, req_id, params_bytes), write results to SHM, send T_RESULT."""
-    import zmq
-
     t0 = time.monotonic()
 
     # Ownership gate: drop slots whose header no longer matches the signalled
@@ -597,8 +594,6 @@ def _process_slots(
 
     # Resolution reject gate — drop oversized images by header dims, no decode.
     if _MAX_DECODED_PIXELS:
-        from inference_model_manager.backends.utils.image_headers import image_pixels
-
         for i, mv in enumerate(mvs):
             if decode_errors[i] or is_npy[i] or len(mv) == 0:
                 continue
@@ -838,10 +833,6 @@ class SubprocessBackend(Backend):
         worker_start_timeout: float = cfg.INFERENCE_WORKER_START_TIMEOUT_S,
         **kwargs,
     ) -> None:
-        import zmq  # noqa: PLC0415
-
-        from inference_model_manager.backends.decode import Decoder  # noqa: PLC0415
-
         self._model_id = model_id
         self._state_value: str = "loading"
 
@@ -1026,8 +1017,6 @@ class SubprocessBackend(Backend):
     # ------------------------------------------------------------------
 
     def _recv_loop(self) -> None:
-        import zmq  # noqa: PLC0415
-
         poller = zmq.Poller()
         poller.register(self._zmq_sock, zmq.POLLIN)
 
