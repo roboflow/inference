@@ -119,6 +119,7 @@ DEFAULT_COLOR_PALETTE = [
 
 _PINNED_HOST_BUFFER_CACHE_SIZE = 16
 _PINNED_HOST_BUFFER_CONTEXT = local()
+_RFDETR_SPARSE_RLE_POSTPROCESS_ATTR = "_rfdetr_sparse_rle_postprocess"
 
 
 def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
@@ -448,11 +449,13 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
 
     def predict(self, img_in, **kwargs):
         mapped_kwargs = self.map_inference_kwargs(kwargs)
-        if self._pipeline_depth <= 1:
+        if (
+            self._pipeline_depth <= 1
+            or kwargs.get("disable_stream_pipeline")
+            or self._request_batch_size(img_in) > 1
+        ):
             # Original path: forward on current frame, postprocess on
             # current frame, all synchronous.
-            return self._model.forward(img_in, **mapped_kwargs)
-        if self._request_batch_size(img_in) > 1:
             return self._model.forward(img_in, **mapped_kwargs)
 
         mapped_kwargs["defer_count_to_adapter"] = (
@@ -585,7 +588,11 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         preprocess_return_metadata: PreprocessingMetadata,
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
-        if self._pipeline_depth <= 1 or not isinstance(predictions, InferenceFuture):
+        if (
+            self._pipeline_depth <= 1
+            or kwargs.get("disable_stream_pipeline")
+            or not isinstance(predictions, InferenceFuture)
+        ):
             return self._postprocess_sync(
                 predictions, preprocess_return_metadata, **kwargs
             )
@@ -680,6 +687,8 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         return_in_rle = kwargs.get("response_mask_format") == "rle"
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         mapped_kwargs["defer_count_to_adapter"] = not return_in_rle
+        if len(preprocess_return_metadata) > 1:
+            mapped_kwargs["use_triton_postprocess"] = False
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
         )
@@ -709,6 +718,9 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             finalize_pending = get_deferred_postprocess_finalizer(det)
             if callable(finalize_pending):
                 det = finalize_pending()
+            sparse_rle_postprocess = return_in_rle and bool(
+                getattr(det, _RFDETR_SPARSE_RLE_POSTPROCESS_ATTR, False)
+            )
             H = preproc_metadata.original_size.height
             W = preproc_metadata.original_size.width
 
@@ -939,19 +951,22 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                         )
 
             if use_dc:
-                responses.append(
-                    InstanceSegmentationInferenceResponseDC(
-                        predictions=predictions,
-                        image=InferenceResponseImageDC(width=W, height=H),
-                    )
+                response = InstanceSegmentationInferenceResponseDC(
+                    predictions=predictions,
+                    image=InferenceResponseImageDC(width=W, height=H),
                 )
             else:
-                responses.append(
-                    InstanceSegmentationInferenceResponse(
-                        predictions=predictions,
-                        image=InferenceResponseImage(width=W, height=H),
-                    )
+                response = InstanceSegmentationInferenceResponse(
+                    predictions=predictions,
+                    image=InferenceResponseImage(width=W, height=H),
                 )
+            if sparse_rle_postprocess:
+                object.__setattr__(
+                    response,
+                    _RFDETR_SPARSE_RLE_POSTPROCESS_ATTR,
+                    True,
+                )
+            responses.append(response)
         return responses
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:

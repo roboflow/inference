@@ -1,14 +1,29 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+import networkx as nx
+
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import InferenceHandlerResult
+from inference.core.workflows.execution_engine.constants import (
+    NODE_COMPILATION_OUTPUT_PROPERTY,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    DynamicStepInputDefinition,
+    NodeCategory,
+    StepInputDefinition,
+    StepNode,
+)
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
+    get_step_selector_from_its_output,
+)
 
 
 @dataclass(frozen=True)
 class _StreamPipelineStep:
+    selector: str
     step: Any
 
 
@@ -184,6 +199,12 @@ def wrap_workflow_runner_for_stream_pipeline(
     stream_steps = _stream_pipeline_steps(execution_engine=execution_engine)
     if not stream_steps:
         return workflow_runner
+    if _workflow_requires_synchronous_stream_steps(
+        execution_engine=execution_engine,
+        stream_steps=stream_steps,
+    ):
+        _disable_stream_pipeline_steps(stream_steps=stream_steps)
+        return workflow_runner
     return PipelinedWorkflowRunner(
         workflow_runner=workflow_runner,
         stream_steps=stream_steps,
@@ -197,10 +218,15 @@ def _stream_pipeline_steps(
     compiled_workflow = getattr(engine, "_compiled_workflow", None)
     steps = getattr(compiled_workflow, "steps", {})
     stream_steps = []
-    for initialised_step in steps.values():
+    for step_name, initialised_step in steps.items():
         step_instance = getattr(initialised_step, "step", None)
         if _is_stream_pipeline_step(step_instance=step_instance):
-            stream_steps.append(_StreamPipelineStep(step=step_instance))
+            stream_steps.append(
+                _StreamPipelineStep(
+                    selector=f"$steps.{step_name}",
+                    step=step_instance,
+                )
+            )
     return stream_steps
 
 
@@ -217,3 +243,92 @@ def _stream_step_depth(stream_step: _StreamPipelineStep) -> int:
     if not callable(get_depth):
         return 0
     return max(0, int(get_depth()))
+
+
+def _workflow_requires_synchronous_stream_steps(
+    execution_engine: ExecutionEngine,
+    stream_steps: List[_StreamPipelineStep],
+) -> bool:
+    engine = getattr(execution_engine, "_engine", None)
+    compiled_workflow = getattr(engine, "_compiled_workflow", None)
+    execution_graph = getattr(compiled_workflow, "execution_graph", None)
+    if execution_graph is None:
+        return False
+    stream_step_selectors = {stream_step.selector for stream_step in stream_steps}
+    safe_step_selectors = set(stream_step_selectors)
+    downstream_step_selectors = set()
+    for stream_step_selector in stream_step_selectors:
+        if stream_step_selector not in execution_graph:
+            continue
+        downstream_step_selectors.update(
+            node
+            for node in nx.descendants(execution_graph, stream_step_selector)
+            if _is_step_node(execution_graph=execution_graph, node=node)
+        )
+    for node in nx.topological_sort(execution_graph):
+        if node not in downstream_step_selectors:
+            continue
+        step_node = _get_step_node(execution_graph=execution_graph, node=node)
+        if step_node is None:
+            continue
+        if _step_has_unsafe_stream_dependency(
+            step_node=step_node,
+            safe_step_selectors=safe_step_selectors,
+        ):
+            return True
+        safe_step_selectors.add(node)
+    return False
+
+
+def _disable_stream_pipeline_steps(stream_steps: List[_StreamPipelineStep]) -> None:
+    for stream_step in stream_steps:
+        disable_fn = getattr(
+            stream_step.step,
+            "disable_stream_pipeline_for_workflow",
+            None,
+        )
+        if callable(disable_fn):
+            disable_fn()
+
+
+def _step_has_unsafe_stream_dependency(
+    step_node: StepNode,
+    safe_step_selectors: set[str],
+) -> bool:
+    for input_definition in step_node.input_data.values():
+        for leaf_definition in _iter_step_input_definitions(input_definition):
+            if leaf_definition.is_static_value():
+                continue
+            if leaf_definition.points_to_input():
+                return True
+            if not isinstance(leaf_definition, DynamicStepInputDefinition):
+                continue
+            producer_step_selector = get_step_selector_from_its_output(
+                step_output_selector=leaf_definition.selector,
+            )
+            if producer_step_selector not in safe_step_selectors:
+                return True
+    return False
+
+
+def _iter_step_input_definitions(input_definition: Any):
+    iterate_definitions = getattr(input_definition, "iterate_through_definitions", None)
+    if callable(iterate_definitions):
+        yield from iterate_definitions()
+        return
+    if isinstance(input_definition, StepInputDefinition):
+        yield input_definition
+
+
+def _is_step_node(execution_graph: Any, node: str) -> bool:
+    step_node = _get_step_node(execution_graph=execution_graph, node=node)
+    return step_node is not None
+
+
+def _get_step_node(execution_graph: Any, node: str) -> Optional[StepNode]:
+    node_data = execution_graph.nodes[node].get(NODE_COMPILATION_OUTPUT_PROPERTY)
+    if getattr(node_data, "node_category", None) is not NodeCategory.STEP_NODE:
+        return None
+    if not isinstance(node_data, StepNode):
+        return None
+    return node_data

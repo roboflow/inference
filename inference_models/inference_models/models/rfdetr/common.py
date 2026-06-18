@@ -9,9 +9,7 @@ from inference_models.configuration import (
 )
 from inference_models.entities import ImageDimensions
 from inference_models.errors import CorruptedModelPackageError
-from inference_models.models.common.roboflow.model_packages import (
-    PreProcessingMetadata,
-)
+from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
     align_instance_segmentation_results_to_rle_masks,
@@ -391,12 +389,18 @@ def post_process_instance_segmentation_results_to_rle_masks(
     num_classes: int,
     classes_re_mapping: Optional[ClassesReMapping],
     defer_postprocess_sync: bool = False,
+    use_triton_postprocess: Optional[bool] = None,
 ) -> List[InstanceDetections]:
     logits_sigmoid = torch.nn.functional.sigmoid(logits)
     device = bboxes.device
     if isinstance(threshold, torch.Tensor):
         threshold = threshold.to(device=device, dtype=logits_sigmoid.dtype)
-    if _TRITON_POSTPROC_ENABLED:
+    triton_postprocess_enabled = (
+        _TRITON_POSTPROC_ENABLED
+        if use_triton_postprocess is None
+        else use_triton_postprocess
+    )
+    if triton_postprocess_enabled:
         return [
             _post_process_single_instance_segmentation_result_to_rle_masks_with_triton(
                 image_bboxes=image_bboxes,

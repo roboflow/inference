@@ -73,6 +73,8 @@ block. To learn more about setting your Roboflow API key, [refer to the Inferenc
 documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 """
 
+_RFDETR_SPARSE_RLE_POSTPROCESS_ATTR = "_rfdetr_sparse_rle_postprocess"
+
 
 @dataclass(frozen=True)
 class _StreamPredictionContext:
@@ -258,6 +260,8 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         self._pending_stream_prediction_contexts: Deque[_StreamPredictionContext] = (
             deque()
         )
+        self._last_request_used_stream_pipeline = False
+        self._stream_pipeline_disabled_for_workflow = False
         self._stream_context_generation = 0
 
     @classmethod
@@ -346,13 +350,20 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             model_id=model_id,
             api_key=self._api_key,
         )
+        stream_pipeline_disabled = (
+            self._stream_pipeline_disabled_for_workflow or len(images) != 1
+        )
+        model_stream_pipeline_depth = self._model_stream_pipeline_depth()
+        self._last_request_used_stream_pipeline = (
+            not stream_pipeline_disabled and model_stream_pipeline_depth > 0
+        )
         stream_context = _StreamPredictionContext(
             images=images,
             class_filter=class_filter,
             model_id=model_id,
             context_id=self._build_stream_context_id(images=images),
         )
-        if self.stream_pipeline_depth() > 0 and len(images) == 1:
+        if self._last_request_used_stream_pipeline:
             self._pending_stream_prediction_contexts.append(stream_context)
         request = InstanceSegmentationInferenceRequest(
             api_key=self._api_key,
@@ -371,6 +382,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             source="workflow-execution",
             stream_pipeline_context_id=stream_context.context_id,
             enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
+            disable_stream_pipeline=stream_pipeline_disabled,
         )
         predictions = self._model_manager.infer_from_request_sync(
             model_id=model_id, request=request
@@ -480,14 +492,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         # (cheaper construct + dict-walk than pydantic). Any other response type
         # (e.g. if a non-rfdetr backend is bound to the same block) falls back
         # to `model_dump`.
-        predictions = [
-            (
-                _is_response_dc_to_dict(e)
-                if isinstance(e, InstanceSegmentationInferenceResponseDC)
-                else e.model_dump(by_alias=True, exclude_none=True)
-            )
-            for e in predictions
-        ]
+        predictions = [_prediction_response_to_dict(e) for e in predictions]
         _validate_stream_prediction_alignment(
             predictions=predictions,
             stream_context=stream_context,
@@ -536,34 +541,44 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         return result[image_index]["predictions"]
 
     def is_stream_pipelined(self) -> bool:
+        return self.stream_pipeline_depth() > 0
+
+    def _model_stream_pipeline_depth(self) -> int:
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
-            return False
+            return 0
         if (
             self._last_model_id is None
             or self._last_model_id not in self._model_manager
         ):
-            return False
+            return 0
         model = self._model_manager[self._last_model_id]
-        return (
-            callable(getattr(model, "flush", None))
-            and getattr(model, "_pipeline_depth", 1) > 1
-        )
+        if not callable(getattr(model, "flush", None)):
+            return 0
+        return max(0, int(getattr(model, "_pipeline_depth", 1)) - 1)
 
     def can_activate_stream_pipeline(self) -> bool:
         return (
             self._step_execution_mode is StepExecutionMode.LOCAL
             and get_rfdetr_pipeline_depth() > 1
+            and not self._stream_pipeline_disabled_for_workflow
         )
 
     def stream_pipeline_depth(self) -> int:
-        if not self.is_stream_pipelined():
+        if not self._last_request_used_stream_pipeline:
             return 0
-        model = self._model_manager[self._last_model_id]
-        return max(0, int(getattr(model, "_pipeline_depth", 1)) - 1)
+        return self._model_stream_pipeline_depth()
+
+    def disable_stream_pipeline_for_workflow(self) -> None:
+        self._stream_pipeline_disabled_for_workflow = True
+        self._last_request_used_stream_pipeline = False
+        self._pending_stream_prediction_contexts.clear()
 
     def flush_stream_pipeline_outputs(
         self,
     ) -> List[Tuple[List[Tuple[int, ...]], BlockResult]]:
+        if not self._last_request_used_stream_pipeline:
+            self._pending_stream_prediction_contexts.clear()
+            return []
         if (
             self._last_model_id is None
             or self._last_model_id not in self._model_manager
@@ -723,6 +738,16 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             }
             for inference_id, prediction in zip(inference_ids, predictions)
         ]
+
+
+def _prediction_response_to_dict(response: object) -> dict:
+    if isinstance(response, InstanceSegmentationInferenceResponseDC):
+        result = _is_response_dc_to_dict(response)
+    else:
+        result = response.model_dump(by_alias=True, exclude_none=True)
+    if getattr(response, _RFDETR_SPARSE_RLE_POSTPROCESS_ATTR, False):
+        result[_RFDETR_SPARSE_RLE_POSTPROCESS_ATTR] = True
+    return result
 
 
 def _resolve_stream_future(
