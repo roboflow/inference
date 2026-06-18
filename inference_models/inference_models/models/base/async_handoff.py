@@ -12,7 +12,11 @@ from typing import Any, Callable, Optional
 
 _ADAPTER_CONTEXT_ATTR = "_inference_adapter_future_context"
 _ASYNC_RESPONSE_FUTURE_ATTR = "_async_response_future"
+_ASYNC_RESPONSE_CONTEXT_ID_ATTR = "_async_response_context_id"
 _DEFERRED_POSTPROCESS_ATTR = "_inference_deferred_postprocess_handoff"
+
+
+STREAM_PIPELINE_CONTEXT_ID_KWARG = "stream_pipeline_context_id"
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,7 @@ class AdapterFutureContext:
     """State the inference adapter keeps on an in-flight model future."""
 
     mapped_kwargs: dict
+    stream_pipeline_context_id: Optional[str] = None
     gpu_work_submitted: bool = False
     gpu_submit_generation: Optional[int] = None
 
@@ -33,12 +38,19 @@ class DeferredPostprocessHandoff:
     finalize: Callable[[], Any]
 
 
-def attach_adapter_mapped_kwargs(future: Any, mapped_kwargs: dict) -> None:
+def attach_adapter_mapped_kwargs(
+    future: Any,
+    mapped_kwargs: dict,
+    stream_pipeline_context_id: Optional[str] = None,
+) -> None:
     """Store mapped inference kwargs on a model future."""
     setattr(
         future,
         _ADAPTER_CONTEXT_ATTR,
-        AdapterFutureContext(mapped_kwargs=dict(mapped_kwargs)),
+        AdapterFutureContext(
+            mapped_kwargs=dict(mapped_kwargs),
+            stream_pipeline_context_id=stream_pipeline_context_id,
+        ),
     )
 
 
@@ -48,6 +60,17 @@ def get_adapter_mapped_kwargs(future: Any) -> dict:
     if not isinstance(context, AdapterFutureContext):
         return {}
     return context.mapped_kwargs
+
+
+def get_adapter_stream_pipeline_context_id(future: Any) -> Optional[str]:
+    """Return the stream-pipeline context id stored on a model future."""
+    context = getattr(future, _ADAPTER_CONTEXT_ATTR, None)
+    if not isinstance(context, AdapterFutureContext):
+        return None
+    context_id = context.stream_pipeline_context_id
+    if isinstance(context_id, str):
+        return context_id
+    return None
 
 
 def adapter_gpu_work_submitted(future: Any) -> bool:
@@ -80,14 +103,28 @@ def get_adapter_gpu_submit_generation(future: Any) -> Optional[int]:
     return context.gpu_submit_generation
 
 
-def attach_async_response_future(response: Any, response_future: Any) -> None:
+def attach_async_response_future(
+    response: Any,
+    response_future: Any,
+    context_id: Optional[str] = None,
+) -> None:
     """Attach a CPU response future to a placeholder workflow response."""
     setattr(response, _ASYNC_RESPONSE_FUTURE_ATTR, response_future)
+    if context_id is not None:
+        setattr(response, _ASYNC_RESPONSE_CONTEXT_ID_ATTR, context_id)
 
 
 def get_async_response_future(response: Any) -> Any:
     """Return the CPU response future attached to a workflow response."""
     return getattr(response, _ASYNC_RESPONSE_FUTURE_ATTR, None)
+
+
+def get_async_response_context_id(response: Any) -> Optional[str]:
+    """Return the stream context id attached to a placeholder response."""
+    context_id = getattr(response, _ASYNC_RESPONSE_CONTEXT_ID_ATTR, None)
+    if isinstance(context_id, str):
+        return context_id
+    return None
 
 
 def attach_deferred_postprocess_handoff(

@@ -74,11 +74,13 @@ from inference_models.configuration import (
     get_rfdetr_pipeline_depth,
 )
 from inference_models.models.base.async_handoff import (
+    STREAM_PIPELINE_CONTEXT_ID_KWARG,
     adapter_gpu_work_submitted,
     attach_adapter_mapped_kwargs,
     attach_async_response_future,
     get_adapter_gpu_submit_generation,
     get_adapter_mapped_kwargs,
+    get_adapter_stream_pipeline_context_id,
     get_deferred_postprocess_done_event,
     get_deferred_postprocess_finalizer,
     mark_adapter_gpu_work_submitted,
@@ -357,7 +359,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._gpu_submit_generation = 0
         self._response_executor: Optional[ThreadPoolExecutor] = None
         self._response_futures: Deque[
-            Future[List[InstanceSegmentationInferenceResponse]]
+            Tuple[
+                Future[List[InstanceSegmentationInferenceResponse]],
+                Optional[str],
+            ]
         ] = deque()
 
     def _resolve_pipeline_depth(self) -> int:
@@ -394,6 +399,7 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             and not enforce_dense_masks_in_inference_models
         ):
             kwargs["mask_format"] = "rle"
+        kwargs.pop(STREAM_PIPELINE_CONTEXT_ID_KWARG, None)
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -443,7 +449,14 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_next_pending_gpu_work()
         pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
         fut = self._model.forward_async(img_in, pre_processing_meta, **mapped_kwargs)
-        attach_adapter_mapped_kwargs(fut, mapped_kwargs)
+        stream_pipeline_context_id = kwargs.get(STREAM_PIPELINE_CONTEXT_ID_KWARG)
+        if not isinstance(stream_pipeline_context_id, str):
+            stream_pipeline_context_id = None
+        attach_adapter_mapped_kwargs(
+            fut,
+            mapped_kwargs,
+            stream_pipeline_context_id=stream_pipeline_context_id,
+        )
         if pre_processing_meta is not None:
             self._submit_future_gpu_work(fut, pre_processing_meta, mapped_kwargs)
         self._submit_ready_responses()
@@ -463,7 +476,8 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_all_pending_responses()
         responses: List[InstanceSegmentationInferenceResponse] = []
         while self._response_futures:
-            responses.extend(self._response_futures.popleft().result())
+            response_future, _ = self._response_futures.popleft()
+            responses.extend(response_future.result())
         return responses
 
     def shutdown_pipeline(self) -> None:
@@ -516,7 +530,13 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             meta,
             mapped_kwargs,
         )
-        self._response_futures.append(response_future)
+        context_id = get_adapter_stream_pipeline_context_id(fut)
+        self._response_futures.append(
+            (
+                response_future,
+                context_id,
+            )
+        )
 
     def _submit_ready_responses(self) -> None:
         while self._pending_futures:
@@ -566,14 +586,18 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 workflow_execution=kwargs.get("source") == "workflow-execution",
             )
 
-        response_future = self._response_futures.popleft()
+        response_future, context_id = self._response_futures.popleft()
         if kwargs.get("source") == "workflow-execution":
             responses = self._empty_responses_for_metadata(
                 preprocess_return_metadata=preprocess_return_metadata,
                 workflow_execution=True,
             )
             if responses:
-                attach_async_response_future(responses[0], response_future)
+                attach_async_response_future(
+                    response=responses[0],
+                    response_future=response_future,
+                    context_id=context_id,
+                )
             return responses
         return response_future.result()
 

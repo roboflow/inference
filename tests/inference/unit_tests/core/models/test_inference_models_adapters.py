@@ -22,6 +22,7 @@ from inference_models import (
     InstanceDetections,
     MultiLabelClassificationPrediction,
 )
+from inference_models.models.base.async_handoff import attach_adapter_mapped_kwargs
 
 
 class _ImmediateExecutor:
@@ -414,3 +415,38 @@ def test_pipeline_depth_three_submits_oldest_pending_before_forward() -> None:
         "submit:f3",
         "result:f1",
     ]
+
+
+def test_pipeline_submit_response_build_stores_response_context_id() -> None:
+    ops: list[str] = []
+    future = _FakePipelineFuture(name="f1", ops=ops)
+    adapter = _make_pipeline_adapter(futures=[future], ops=ops, pipeline_depth=2)
+
+    attach_adapter_mapped_kwargs(
+        future,
+        {},
+        stream_pipeline_context_id="context-xyz",
+    )
+    adapter._submit_response_build(
+        future,
+        _make_meta("frame-1"),
+        {},
+    )
+
+    assert adapter._response_futures[-1][1] == "context-xyz"
+
+
+def test_map_inference_kwargs_strips_stream_pipeline_context_id() -> None:
+    adapter = object.__new__(InferenceModelsInstanceSegmentationAdapter)
+    adapter._model = SimpleNamespace(supported_mask_formats={"rle"})
+
+    mapped = adapter.map_inference_kwargs(
+        {
+            "stream_pipeline_context_id": "context-xyz",
+            "disable_preproc_contrast": False,
+            "disable_preproc_grayscale": False,
+            "disable_preproc_static_crop": False,
+        }
+    )
+
+    assert "stream_pipeline_context_id" not in mapped

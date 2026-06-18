@@ -12,6 +12,11 @@ from inference.core.entities.responses.inference import (
     _is_pred_dc_to_dict,
     _is_response_dc_to_dict,
 )
+from inference_models.models.base.async_handoff import (
+    attach_async_response_future,
+    get_async_response_context_id,
+    get_async_response_future,
+)
 
 
 def _pydantic_prediction(
@@ -157,3 +162,20 @@ def test_workflow_dc_path_emits_mask_format_in_prediction_dicts() -> None:
         prediction["mask_format"] == "polygon"
         for prediction in dumped["predictions"]
     )
+
+
+def test_instance_segmentation_dc_can_carry_async_response_context() -> None:
+    response = InstanceSegmentationInferenceResponseDC(
+        predictions=[],
+        image=InferenceResponseImageDC(width=640, height=480),
+    )
+    response_future = object()
+
+    attach_async_response_future(
+        response=response,
+        response_future=response_future,
+        context_id="context-1",
+    )
+
+    assert get_async_response_future(response) is response_future
+    assert get_async_response_context_id(response) == "context-1"

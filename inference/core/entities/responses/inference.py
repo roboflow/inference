@@ -324,6 +324,7 @@ class InstanceSegmentationInferenceResponseDC:
     # response future through Model.infer_from_request without blocking the
     # inference thread. `_is_response_dc_to_dict` intentionally ignores it.
     _async_response_future: object = None
+    _async_response_context_id: object = None
 
 
 def _is_pred_dc_to_dict(p: InstanceSegmentationPredictionDC) -> dict:
