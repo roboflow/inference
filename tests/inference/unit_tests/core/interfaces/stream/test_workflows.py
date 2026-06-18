@@ -1,8 +1,10 @@
 from concurrent.futures import Future
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Optional
 
 import numpy as np
+import pytest
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.model_handlers.workflows import (
@@ -14,6 +16,7 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
     RoboflowInstanceSegmentationModelBlockV3,
 )
+from inference.core.workflows.execution_engine.entities.base import Batch, VideoMetadata
 from inference_models.models.base.async_handoff import attach_async_response_future
 
 
@@ -200,25 +203,60 @@ class _ImmediateExecutor:
 
 
 class _FakeWorkflowImage:
-    def __init__(self, tag: str) -> None:
+    def __init__(
+        self,
+        tag: str,
+        width: int = 8,
+        height: int = 8,
+        frame_number: Optional[int] = None,
+    ) -> None:
         self.tag = tag
+        self._image = np.zeros((height, width, 3), dtype=np.uint8)
+        if frame_number is None and tag.rsplit("-", maxsplit=1)[-1].isdigit():
+            frame_number = int(tag.rsplit("-", maxsplit=1)[-1])
+        if frame_number is None:
+            frame_number = 1
+        self._video_metadata = VideoMetadata(
+            video_identifier=f"video-{tag}",
+            frame_number=frame_number,
+            frame_timestamp=datetime.now(),
+        )
+
+    @property
+    def video_metadata(self) -> VideoMetadata:
+        return self._video_metadata
+
+    @property
+    def numpy_image(self):
+        return self._image
 
     def to_inference_format(self, numpy_preferred: bool):
         assert numpy_preferred is True
         return {
             "type": "numpy_object",
-            "value": np.zeros((8, 8, 3), dtype=np.uint8),
+            "value": self._image,
         }
 
 
 class _FakeResponse:
-    def __init__(self, tag: str) -> None:
+    def __init__(
+        self,
+        tag: str,
+        width: int = 8,
+        height: int = 8,
+    ) -> None:
         self.tag = tag
+        self.width = width
+        self.height = height
 
     def model_dump(self, by_alias: bool, exclude_none: bool):
         assert by_alias is True
         assert exclude_none is True
-        return {"tag": self.tag}
+        return {
+            "tag": self.tag,
+            "image": {"width": self.width, "height": self.height},
+            "predictions": [],
+        }
 
 
 class _FakeStreamModel:
@@ -258,11 +296,61 @@ class _FakeModelManager:
         return self.model
 
 
-def _make_async_placeholder(response_tag: str) -> _FakeResponse:
+class _ContextAwareModelManager(_FakeModelManager):
+    def __init__(self, mode: str) -> None:
+        super().__init__(inference_results=[])
+        self.mode = mode
+        self.source_infos = []
+
+    def infer_from_request_sync(self, model_id: str, request):
+        self.infer_calls += 1
+        self.source_infos.append(request.source_info)
+        if self.infer_calls == 1:
+            return [_FakeResponse("priming", width=8, height=8)]
+        if self.mode == "previous":
+            return [
+                _make_async_placeholder(
+                    "first-final",
+                    context_id=self.source_infos[0],
+                    response_width=8,
+                    response_height=8,
+                )
+            ]
+        if self.mode == "current-with-old-size":
+            return [
+                _make_async_placeholder(
+                    "first-final",
+                    context_id=request.source_info,
+                    response_width=8,
+                    response_height=8,
+                )
+            ]
+        return [
+            _make_async_placeholder(
+                "first-final",
+                context_id="missing-context",
+                response_width=8,
+                response_height=8,
+            )
+        ]
+
+
+def _make_async_placeholder(
+    response_tag: str,
+    context_id: Optional[str] = None,
+    response_width: int = 8,
+    response_height: int = 8,
+) -> _FakeResponse:
     future = Future()
-    future.set_result([_FakeResponse(response_tag)])
+    future.set_result(
+        [_FakeResponse(response_tag, width=response_width, height=response_height)]
+    )
     response = _FakeResponse("placeholder")
-    attach_async_response_future(response=response, response_future=future)
+    attach_async_response_future(
+        response=response,
+        response_future=future,
+        context_id=context_id,
+    )
     return response
 
 
@@ -551,3 +639,174 @@ def test_instance_segmentation_stream_flush_drains_model_without_rerunning_workf
     assert manager.model.flush_calls == 1
     block.close_stream_pipeline()
     assert manager.model.shutdown_calls == 1
+
+
+def test_instance_segmentation_stream_pipeline_uses_response_context_id() -> None:
+    manager = _ContextAwareModelManager(mode="previous")
+    block = RoboflowInstanceSegmentationModelBlockV3(
+        model_manager=manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    block._get_stream_response_executor = lambda: _ImmediateExecutor()
+    block._post_process_result = lambda images, predictions, class_filter, model_id: [
+        {
+            "predictions": f"{images[0].tag}:{predictions[0]['tag']}",
+            "class_filter": class_filter,
+            "model_id": model_id,
+        }
+    ]
+
+    block.run_locally(
+        images=[_FakeWorkflowImage("frame-1", width=8, height=8)],
+        model_id="model",
+        class_agnostic_nms=None,
+        class_filter=["car"],
+        confidence=0.4,
+        iou_threshold=None,
+        max_detections=None,
+        max_candidates=None,
+        mask_decode_mode="accurate",
+        tradeoff_factor=None,
+        disable_active_learning=None,
+        active_learning_target_dataset=None,
+        enforce_dense_masks_in_inference_models=False,
+    )
+    second_result = block.run_locally(
+        images=[_FakeWorkflowImage("frame-2", width=4, height=4)],
+        model_id="model",
+        class_agnostic_nms=None,
+        class_filter=["car"],
+        confidence=0.4,
+        iou_threshold=None,
+        max_detections=None,
+        max_candidates=None,
+        mask_decode_mode="accurate",
+        tradeoff_factor=None,
+        disable_active_learning=None,
+        active_learning_target_dataset=None,
+        enforce_dense_masks_in_inference_models=False,
+    )
+
+    assert second_result[0]["predictions"].result() == "frame-1:first-final"
+    assert len(manager.source_infos) == 2
+    assert manager.source_infos[0] != manager.source_infos[1]
+
+
+def test_instance_segmentation_stream_pipeline_rejects_unknown_context_id() -> None:
+    manager = _ContextAwareModelManager(mode="missing")
+    block = RoboflowInstanceSegmentationModelBlockV3(
+        model_manager=manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    block._get_stream_response_executor = lambda: _ImmediateExecutor()
+    block._post_process_result = lambda images, predictions, class_filter, model_id: [
+        {
+            "predictions": f"{images[0].tag}:{predictions[0]['tag']}",
+            "class_filter": class_filter,
+            "model_id": model_id,
+        }
+    ]
+
+    block.run_locally(
+        images=[_FakeWorkflowImage("frame-1", width=8, height=8)],
+        model_id="model",
+        class_agnostic_nms=None,
+        class_filter=["car"],
+        confidence=0.4,
+        iou_threshold=None,
+        max_detections=None,
+        max_candidates=None,
+        mask_decode_mode="accurate",
+        tradeoff_factor=None,
+        disable_active_learning=None,
+        active_learning_target_dataset=None,
+        enforce_dense_masks_in_inference_models=False,
+    )
+
+    with pytest.raises(RuntimeError, match="context did not match"):
+        block.run_locally(
+            images=[_FakeWorkflowImage("frame-2", width=4, height=4)],
+            model_id="model",
+            class_agnostic_nms=None,
+            class_filter=["car"],
+            confidence=0.4,
+            iou_threshold=None,
+            max_detections=None,
+            max_candidates=None,
+            mask_decode_mode="accurate",
+            tradeoff_factor=None,
+            disable_active_learning=None,
+            active_learning_target_dataset=None,
+            enforce_dense_masks_in_inference_models=False,
+        )
+
+
+def test_instance_segmentation_stream_pipeline_rejects_image_metadata_mismatch() -> (
+    None
+):
+    manager = _ContextAwareModelManager(mode="current-with-old-size")
+    block = RoboflowInstanceSegmentationModelBlockV3(
+        model_manager=manager,
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    block._get_stream_response_executor = lambda: _ImmediateExecutor()
+    block._post_process_result = lambda images, predictions, class_filter, model_id: [
+        {
+            "predictions": f"{images[0].tag}:{predictions[0]['tag']}",
+            "class_filter": class_filter,
+            "model_id": model_id,
+        }
+    ]
+
+    block.run_locally(
+        images=[_FakeWorkflowImage("frame-1", width=8, height=8)],
+        model_id="model",
+        class_agnostic_nms=None,
+        class_filter=["car"],
+        confidence=0.4,
+        iou_threshold=None,
+        max_detections=None,
+        max_candidates=None,
+        mask_decode_mode="accurate",
+        tradeoff_factor=None,
+        disable_active_learning=None,
+        active_learning_target_dataset=None,
+        enforce_dense_masks_in_inference_models=False,
+    )
+    second_result = block.run_locally(
+        images=[_FakeWorkflowImage("frame-2", width=4, height=4)],
+        model_id="model",
+        class_agnostic_nms=None,
+        class_filter=["car"],
+        confidence=0.4,
+        iou_threshold=None,
+        max_detections=None,
+        max_candidates=None,
+        mask_decode_mode="accurate",
+        tradeoff_factor=None,
+        disable_active_learning=None,
+        active_learning_target_dataset=None,
+        enforce_dense_masks_in_inference_models=False,
+    )
+
+    with pytest.raises(RuntimeError, match="image metadata"):
+        second_result[0]["predictions"].result()
+
+
+def test_instance_segmentation_stream_context_id_includes_frame_metadata() -> None:
+    block = RoboflowInstanceSegmentationModelBlockV3(
+        model_manager=SimpleNamespace(__contains__=lambda *_args, **_kwargs: False),
+        api_key="api-key",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+    image = _FakeWorkflowImage("frame-7", width=8, height=8, frame_number=7)
+
+    context_id = block._build_stream_context_id(
+        images=Batch.init(content=[image], indices=[(0,)]),
+    )
+
+    assert "video-frame-7" in context_id
+    assert ":7:" in context_id

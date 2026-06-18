@@ -414,3 +414,17 @@ def test_pipeline_depth_three_submits_oldest_pending_before_forward() -> None:
         "submit:f3",
         "result:f1",
     ]
+
+
+def test_pipeline_submit_response_build_stores_response_context_id() -> None:
+    ops: list[str] = []
+    future = _FakePipelineFuture(name="f1", ops=ops)
+    adapter = _make_pipeline_adapter(futures=[future], ops=ops, pipeline_depth=2)
+
+    adapter._submit_response_build(
+        future,
+        _make_meta("frame-1"),
+        {"source_info": "context-xyz"},
+    )
+
+    assert adapter._response_futures[-1][1] == "context-xyz"

@@ -55,7 +55,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_models.configuration import get_rfdetr_pipeline_depth
-from inference_models.models.base.async_handoff import get_async_response_future
+from inference_models.models.base.async_handoff import (
+    get_async_response_context_id,
+    get_async_response_future,
+)
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
@@ -75,6 +78,7 @@ class _StreamPredictionContext:
     images: Batch[WorkflowImageData]
     class_filter: Optional[List[str]]
     model_id: str
+    context_id: str
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -253,6 +257,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         self._pending_stream_prediction_contexts: Deque[_StreamPredictionContext] = (
             deque()
         )
+        self._stream_context_generation = 0
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -344,6 +349,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             images=images,
             class_filter=class_filter,
             model_id=model_id,
+            context_id=self._build_stream_context_id(images=images),
         )
         if self.stream_pipeline_depth() > 0 and len(images) == 1:
             self._pending_stream_prediction_contexts.append(stream_context)
@@ -362,6 +368,7 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
             source="workflow-execution",
+            source_info=stream_context.context_id,
             enforce_dense_masks_in_inference_models=enforce_dense_masks_in_inference_models,
         )
         predictions = self._model_manager.infer_from_request_sync(
@@ -373,7 +380,13 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             predictions=predictions
         )
         if async_response_future is not None:
-            stream_context = self._pop_stream_prediction_context(default=stream_context)
+            response_context_id = self._extract_async_response_context_id(
+                predictions=predictions
+            )
+            stream_context = self._pop_stream_prediction_context(
+                default=stream_context,
+                context_id=response_context_id,
+            )
             return self._submit_async_post_process_result(
                 predictions_future=async_response_future,
                 stream_context=stream_context,
@@ -391,6 +404,16 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             async_response_future = get_async_response_future(prediction)
             if isinstance(async_response_future, Future):
                 return async_response_future
+        return None
+
+    def _extract_async_response_context_id(
+        self,
+        predictions: List[object],
+    ) -> Optional[str]:
+        for prediction in predictions:
+            context_id = get_async_response_context_id(prediction)
+            if context_id is not None:
+                return context_id
         return None
 
     def _get_stream_response_executor(self) -> ThreadPoolExecutor:
@@ -461,6 +484,10 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
             )
             for e in predictions
         ]
+        _validate_stream_prediction_alignment(
+            predictions=predictions,
+            stream_context=stream_context,
+        )
         return self._post_process_result(
             images=stream_context.images,
             predictions=predictions,
@@ -471,7 +498,22 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
     def _pop_stream_prediction_context(
         self,
         default: _StreamPredictionContext,
+        context_id: Optional[str],
     ) -> _StreamPredictionContext:
+        if context_id is not None:
+            for index, stream_context in enumerate(
+                self._pending_stream_prediction_contexts
+            ):
+                if stream_context.context_id != context_id:
+                    continue
+                del self._pending_stream_prediction_contexts[index]
+                return stream_context
+            if default.context_id == context_id:
+                return default
+            raise RuntimeError(
+                "Async instance-segmentation response context did not match any "
+                "pending stream frame."
+            )
         if self._pending_stream_prediction_contexts:
             return self._pending_stream_prediction_contexts.popleft()
         return default
@@ -573,6 +615,22 @@ class RoboflowInstanceSegmentationModelBlockV3(WorkflowBlock):
         if callable(shutdown_fn):
             shutdown_fn()
 
+    def _build_stream_context_id(self, images: Batch[WorkflowImageData]) -> str:
+        self._stream_context_generation += 1
+        if len(images) == 1:
+            video_metadata = images[0].video_metadata
+            return (
+                "instance-segmentation-v3:"
+                f"{video_metadata.video_identifier}:"
+                f"{video_metadata.frame_number}:"
+                f"{self._stream_context_generation}"
+            )
+        return (
+            "instance-segmentation-v3:"
+            f"batch:{len(images)}:"
+            f"{self._stream_context_generation}"
+        )
+
     def run_remotely(
         self,
         images: Batch[WorkflowImageData],
@@ -665,3 +723,47 @@ def _stream_context_indices(images: Batch[WorkflowImageData]) -> List[Tuple[int,
     if indices is not None:
         return indices
     return [(i,) for i in range(len(images))]
+
+
+def _validate_stream_prediction_alignment(
+    predictions: List[dict],
+    stream_context: _StreamPredictionContext,
+) -> None:
+    if len(predictions) != len(stream_context.images):
+        raise RuntimeError(
+            "Async instance-segmentation prediction count did not match the "
+            "stream frame batch size."
+        )
+    for prediction, image in zip(predictions, stream_context.images):
+        response_image = prediction.get("image")
+        if not isinstance(response_image, dict):
+            continue
+        image_size = _workflow_image_size(image=image)
+        if image_size is None:
+            continue
+        image_width, image_height = image_size
+        if (
+            response_image.get("width") != image_width
+            or response_image.get("height") != image_height
+        ):
+            raise RuntimeError(
+                "Async instance-segmentation response image metadata did not "
+                "match the paired stream frame."
+            )
+
+
+def _workflow_image_size(image: WorkflowImageData) -> Optional[Tuple[int, int]]:
+    try:
+        numpy_image = image.numpy_image
+    except Exception:
+        numpy_image = None
+    shape = getattr(numpy_image, "shape", None)
+    if shape is None:
+        try:
+            inference_image = image.to_inference_format(numpy_preferred=True)
+        except Exception:
+            return None
+        shape = getattr(inference_image.get("value"), "shape", None)
+    if shape is None or len(shape) < 2:
+        return None
+    return int(shape[1]), int(shape[0])

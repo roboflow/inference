@@ -12,6 +12,7 @@ from typing import Any, Callable, Optional
 
 _ADAPTER_CONTEXT_ATTR = "_inference_adapter_future_context"
 _ASYNC_RESPONSE_FUTURE_ATTR = "_async_response_future"
+_ASYNC_RESPONSE_CONTEXT_ID_ATTR = "_async_response_context_id"
 _DEFERRED_POSTPROCESS_ATTR = "_inference_deferred_postprocess_handoff"
 
 
@@ -80,14 +81,28 @@ def get_adapter_gpu_submit_generation(future: Any) -> Optional[int]:
     return context.gpu_submit_generation
 
 
-def attach_async_response_future(response: Any, response_future: Any) -> None:
+def attach_async_response_future(
+    response: Any,
+    response_future: Any,
+    context_id: Optional[str] = None,
+) -> None:
     """Attach a CPU response future to a placeholder workflow response."""
     setattr(response, _ASYNC_RESPONSE_FUTURE_ATTR, response_future)
+    if context_id is not None:
+        setattr(response, _ASYNC_RESPONSE_CONTEXT_ID_ATTR, context_id)
 
 
 def get_async_response_future(response: Any) -> Any:
     """Return the CPU response future attached to a workflow response."""
     return getattr(response, _ASYNC_RESPONSE_FUTURE_ATTR, None)
+
+
+def get_async_response_context_id(response: Any) -> Optional[str]:
+    """Return the stream context id attached to a placeholder response."""
+    context_id = getattr(response, _ASYNC_RESPONSE_CONTEXT_ID_ATTR, None)
+    if isinstance(context_id, str):
+        return context_id
+    return None
 
 
 def attach_deferred_postprocess_handoff(

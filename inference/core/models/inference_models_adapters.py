@@ -357,7 +357,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._gpu_submit_generation = 0
         self._response_executor: Optional[ThreadPoolExecutor] = None
         self._response_futures: Deque[
-            Future[List[InstanceSegmentationInferenceResponse]]
+            Tuple[
+                Future[List[InstanceSegmentationInferenceResponse]],
+                Optional[str],
+            ]
         ] = deque()
 
     def _resolve_pipeline_depth(self) -> int:
@@ -463,7 +466,8 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_all_pending_responses()
         responses: List[InstanceSegmentationInferenceResponse] = []
         while self._response_futures:
-            responses.extend(self._response_futures.popleft().result())
+            response_future, _ = self._response_futures.popleft()
+            responses.extend(response_future.result())
         return responses
 
     def shutdown_pipeline(self) -> None:
@@ -516,7 +520,13 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             meta,
             mapped_kwargs,
         )
-        self._response_futures.append(response_future)
+        context_id = mapped_kwargs.get("source_info")
+        self._response_futures.append(
+            (
+                response_future,
+                context_id if isinstance(context_id, str) else None,
+            )
+        )
 
     def _submit_ready_responses(self) -> None:
         while self._pending_futures:
@@ -566,14 +576,18 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 workflow_execution=kwargs.get("source") == "workflow-execution",
             )
 
-        response_future = self._response_futures.popleft()
+        response_future, context_id = self._response_futures.popleft()
         if kwargs.get("source") == "workflow-execution":
             responses = self._empty_responses_for_metadata(
                 preprocess_return_metadata=preprocess_return_metadata,
                 workflow_execution=True,
             )
             if responses:
-                attach_async_response_future(responses[0], response_future)
+                attach_async_response_future(
+                    response=responses[0],
+                    response_future=response_future,
+                    context_id=context_id,
+                )
             return responses
         return response_future.result()
 
