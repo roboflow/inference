@@ -62,7 +62,6 @@ from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCac
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.utils.function import experimental
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.execution_engine.entities.base import CoordinatesSystem
 from inference.core.workflows.execution_engine.profiling.core import (
     BaseWorkflowsProfiler,
     NullWorkflowsProfiler,
@@ -571,9 +570,6 @@ class InferencePipeline:
                 newest version for the request. Only applies for Workflows definitions saved on Roboflow platform.
             serialize_results (bool): Boolean flag to decide if ExecutionEngine run should serialize workflow
                 results for each frame. If that is set true, sinks will receive serialized workflow responses.
-                When False, output futures are resolved in the dispatch thread and detections in workflow
-                outputs declared with `coordinates_system: parent` are converted to root coordinates at
-                dispatch time instead of in the execution engine.
             predictions_queue_size int: Size of buffer for predictions that are ready for dispatching
                 default value is taken from INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE env variable
             decoding_buffer_size (int): size of video source decoding buffer
@@ -610,8 +606,6 @@ class InferencePipeline:
             raise ValueError(
                 "Either (`workspace_name`, `workflow_id`) or `workflow_specification` must be provided."
             )
-        workflow_parent_coordinate_outputs = frozenset()
-        workflow_defer_output_coordinate_conversion = False
         try:
             from inference.core.interfaces.stream.model_handlers.workflows import (
                 WorkflowRunner,
@@ -676,12 +670,6 @@ class InferencePipeline:
                 workflow_runner=workflow_runner,
                 execution_engine=execution_engine,
             )
-            workflow_parent_coordinate_outputs = (
-                _workflow_parent_coordinate_output_names(
-                    workflow_specification=workflow_specification,
-                )
-            )
-            workflow_defer_output_coordinate_conversion = not serialize_results
         except ImportError as error:
             raise CannotInitialiseModelError(
                 f"Could not initialise workflow processing due to lack of dependencies required. "
@@ -709,10 +697,6 @@ class InferencePipeline:
             batch_collection_timeout=batch_collection_timeout,
             predictions_queue_size=predictions_queue_size,
             decoding_buffer_size=decoding_buffer_size,
-            workflow_parent_coordinate_outputs=workflow_parent_coordinate_outputs,
-            workflow_defer_output_coordinate_conversion=(
-                workflow_defer_output_coordinate_conversion
-            ),
         )
 
     @classmethod
@@ -733,8 +717,6 @@ class InferencePipeline:
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
-        workflow_parent_coordinate_outputs: Optional[frozenset[str]] = None,
-        workflow_defer_output_coordinate_conversion: bool = False,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -805,15 +787,6 @@ class InferencePipeline:
                 default value is taken from INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE env variable
             decoding_buffer_size (int): size of video source decoding buffer
                 default value is taken from VIDEO_SOURCE_BUFFER_SIZE env variable
-            workflow_parent_coordinate_outputs (Optional[frozenset[str]]): Names of workflow outputs whose
-                `coordinates_system` is `parent`. Used by the dispatch thread to convert `sv.Detections`
-                to root coordinates when coordinate conversion is deferred. Populated automatically by
-                `init_with_workflow(...)`; only needed when constructing the pipeline via
-                `init_with_custom_logic(...)` with a workflow-backed handler.
-            workflow_defer_output_coordinate_conversion (bool): When True, parent-coordinate conversion
-                for workflow detections is applied in `_dispatch_inference_results(...)` after futures
-                are resolved, rather than in the execution engine output constructor. Set automatically
-                to `not serialize_results` by `init_with_workflow(...)`.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -868,10 +841,6 @@ class InferencePipeline:
             on_pipeline_end=on_pipeline_end,
             batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
-            workflow_parent_coordinate_outputs=workflow_parent_coordinate_outputs,
-            workflow_defer_output_coordinate_conversion=(
-                workflow_defer_output_coordinate_conversion
-            ),
         )
 
     def __init__(
@@ -887,8 +856,6 @@ class InferencePipeline:
         max_fps: Optional[float] = None,
         batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
-        workflow_parent_coordinate_outputs: Optional[frozenset[str]] = None,
-        workflow_defer_output_coordinate_conversion: bool = False,
     ):
         self._on_video_frame = on_video_frame
         self._video_sources = video_sources
@@ -906,12 +873,6 @@ class InferencePipeline:
         self._on_pipeline_end = on_pipeline_end
         self._batch_collection_timeout = batch_collection_timeout
         self._sink_mode = sink_mode
-        self._workflow_parent_coordinate_outputs = (
-            workflow_parent_coordinate_outputs or frozenset()
-        )
-        self._workflow_defer_output_coordinate_conversion = (
-            workflow_defer_output_coordinate_conversion
-        )
 
     def start(self, use_main_thread: bool = True) -> None:
         self._stop = False
@@ -1028,11 +989,6 @@ class InferencePipeline:
             predictions, video_frames = inference_results
             if _rfdetr_stream_pipeline_enabled():
                 predictions = _resolve_prediction_futures(predictions)
-                if self._workflow_defer_output_coordinate_conversion:
-                    predictions = _apply_workflow_parent_coordinate_conversion(
-                        predictions=predictions,
-                        parent_output_names=self._workflow_parent_coordinate_outputs,
-                    )
             if self._on_prediction is not None:
                 self._handle_predictions_dispatching(
                     predictions=predictions,
@@ -1230,55 +1186,6 @@ def _resolve_prediction_futures(value: Any) -> Any:
             key: _resolve_prediction_futures(element) for key, element in value.items()
         }
     return value
-
-
-def _workflow_parent_coordinate_output_names(
-    workflow_specification: Optional[dict],
-) -> frozenset[str]:
-    if workflow_specification is None:
-        return frozenset()
-    parent_output_names = set()
-    for output in workflow_specification.get("outputs", []):
-        coordinates_system = output.get(
-            "coordinates_system",
-            CoordinatesSystem.PARENT.value,
-        )
-        if coordinates_system in (
-            CoordinatesSystem.PARENT,
-            CoordinatesSystem.PARENT.value,
-        ):
-            parent_output_names.add(output["name"])
-    return frozenset(parent_output_names)
-
-
-def _apply_workflow_parent_coordinate_conversion(
-    predictions: Any,
-    parent_output_names: frozenset[str],
-) -> Any:
-    if not parent_output_names:
-        return predictions
-    from inference.core.workflows.execution_engine.v1.executor.output_constructor import (
-        convert_sv_detections_coordinates,
-    )
-
-    if isinstance(predictions, list):
-        return [
-            _apply_workflow_parent_coordinate_conversion(
-                predictions=item,
-                parent_output_names=parent_output_names,
-            )
-            for item in predictions
-        ]
-    if isinstance(predictions, dict):
-        converted = dict(predictions)
-        for output_name in parent_output_names:
-            if output_name not in converted:
-                continue
-            converted[output_name] = convert_sv_detections_coordinates(
-                data=converted[output_name]
-            )
-        return converted
-    return predictions
 
 
 def _rfdetr_stream_pipeline_enabled() -> bool:
