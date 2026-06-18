@@ -1,6 +1,8 @@
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from typing import Any, Callable, Generator, Iterable, List, Optional, TypeVar
 
+from inference.core.env import WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT
+from inference.core.workflows.errors import ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.entities.base import Batch
 
 T = TypeVar("T")
@@ -39,24 +41,56 @@ def _run(fun: Callable[[], T]) -> T:
     return fun()
 
 
+def resolve_future_result(
+    future: Future,
+    *,
+    context: str,
+    timeout: float = WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
+) -> Any:
+    try:
+        return future.result(timeout=timeout)
+    except TimeoutError as error:
+        raise ExecutionEngineRuntimeError(
+            public_message=(
+                "Timed out while resolving an asynchronous workflow future."
+            ),
+            context=context,
+            inner_error=error,
+        ) from error
+
+
 def resolve_futures(
     value: Any,
+    timeout: float = WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
     context: str = "workflow_execution | future_resolution",
 ) -> Any:
     if isinstance(value, Future):
-        return resolve_futures(value.result(), context=context)
+        return resolve_futures(
+            resolve_future_result(value, context=context, timeout=timeout),
+            timeout=timeout,
+            context=context,
+        )
     if isinstance(value, Batch):
         return Batch.init(
-            content=[resolve_futures(element, context=context) for element in value],
+            content=[
+                resolve_futures(element, timeout=timeout, context=context)
+                for element in value
+            ],
             indices=value.indices,
         )
     if isinstance(value, list):
-        return [resolve_futures(element, context=context) for element in value]
+        return [
+            resolve_futures(element, timeout=timeout, context=context)
+            for element in value
+        ]
     if isinstance(value, tuple):
-        return tuple(resolve_futures(element, context=context) for element in value)
+        return tuple(
+            resolve_futures(element, timeout=timeout, context=context)
+            for element in value
+        )
     if isinstance(value, dict):
         return {
-            key: resolve_futures(element, context=context)
+            key: resolve_futures(element, timeout=timeout, context=context)
             for key, element in value.items()
         }
     return value
@@ -76,8 +110,9 @@ def contains_future(value: Any) -> bool:
 
 def maybe_resolve_futures(
     value: Any,
+    timeout: float = WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
     context: str = "workflow_execution | future_resolution",
 ) -> Any:
     if not contains_future(value):
         return value
-    return resolve_futures(value=value, context=context)
+    return resolve_futures(value=value, timeout=timeout, context=context)

@@ -417,6 +417,7 @@ def test_pipeline_depth_three_submits_oldest_pending_before_forward() -> None:
     ]
 
 
+<<<<<<< HEAD
 def test_pipeline_submit_response_build_stores_response_context_id() -> None:
     ops: list[str] = []
     future = _FakePipelineFuture(name="f1", ops=ops)
@@ -450,3 +451,17 @@ def test_map_inference_kwargs_strips_stream_pipeline_context_id() -> None:
     )
 
     assert "stream_pipeline_context_id" not in mapped
+=======
+def test_pipeline_flush_raises_on_response_future_timeout(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference.core.models.inference_models_adapters.WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT",
+        0.001,
+    )
+    ops: list[str] = []
+    adapter = _make_pipeline_adapter(futures=[], ops=ops, pipeline_depth=2)
+    hung_future = Future()
+    adapter._response_futures.append(hung_future)
+
+    with pytest.raises(RuntimeError, match="Timed out while waiting for"):
+        adapter.flush()
+>>>>>>> a7390e23b (Enhance asynchronous future resolution in inference pipeline and models)

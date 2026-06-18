@@ -863,6 +863,12 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 # 2048 -> ~22G
 RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
 
+# Timeout in seconds for resolving asynchronous workflow / RF-DETR stream
+# pipeline futures on the main execution path.
+WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT = float(
+    os.getenv("WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT", "60.0")
+)
+
 # Confidence lower bound to prevent OOM when inferring on instance segmentation models
 CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(
     os.getenv("CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", "0.01")

@@ -1,7 +1,7 @@
 import base64
 import io
 from collections import OrderedDict, deque
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from io import BytesIO
 from threading import local
 from time import perf_counter
@@ -45,6 +45,7 @@ from inference.core.env import (
     GCP_SERVERLESS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
+    WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
 from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
@@ -143,6 +144,16 @@ def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
     while len(cache) > _PINNED_HOST_BUFFER_CACHE_SIZE:
         cache.popitem(last=False)
     return buf
+
+
+def _resolve_response_future(
+    future: Future,
+    context: str,
+):
+    try:
+        return future.result(timeout=WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT)
+    except TimeoutError as error:
+        raise RuntimeError(f"Timed out while waiting for {context}.") from error
 
 
 class _PipelinePrimingSentinel:
@@ -476,8 +487,18 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         self._submit_all_pending_responses()
         responses: List[InstanceSegmentationInferenceResponse] = []
         while self._response_futures:
+<<<<<<< HEAD
             response_future, _ = self._response_futures.popleft()
             responses.extend(response_future.result())
+=======
+            response_future = self._response_futures.popleft()
+            responses.extend(
+                _resolve_response_future(
+                    future=response_future,
+                    context="RF-DETR stream pipeline flush",
+                )
+            )
+>>>>>>> a7390e23b (Enhance asynchronous future resolution in inference pipeline and models)
         return responses
 
     def shutdown_pipeline(self) -> None:
@@ -599,7 +620,10 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     context_id=context_id,
                 )
             return responses
-        return response_future.result()
+        return _resolve_response_future(
+            future=response_future,
+            context="RF-DETR stream pipeline response finalization",
+        )
 
     def _empty_responses_for_metadata(
         self,
