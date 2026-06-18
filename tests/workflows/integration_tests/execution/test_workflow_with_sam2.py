@@ -249,6 +249,7 @@ def test_grounded_sam2_workflow(
             "image.[0]",
         ], "Expected parent_ids to be correct"
     else:
+        print(result[0]["sam_predictions"])
         assert np.allclose(
             result[0]["sam_predictions"].xyxy,
             np.array([[321, 223, 582, 405], [370, 208, 371, 209], [226, 73, 378, 381]]),
