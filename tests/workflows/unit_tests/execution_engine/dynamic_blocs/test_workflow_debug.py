@@ -116,6 +116,21 @@ def test_trace_truncates_oversized_entries() -> None:
     assert _entry_serialized_size(entry) <= 50
 
 
+def test_trace_truncation_respects_cap_with_json_escaped_characters() -> None:
+    # given - characters that json.dumps escapes (quotes/backslashes) expand the
+    # serialized size, so a char-count slice alone would overshoot the cap.
+    trace = WorkflowDebugTrace(max_entry_serialized_chars=80)
+    large_value = '"\\' * 500
+
+    # when
+    trace.append(step_name="step", value=large_value)
+
+    # then
+    entry = trace.snapshot()[0]
+    assert entry["value"].endswith("... [entry truncated]")
+    assert _entry_serialized_size(entry) <= 80
+
+
 def test_trace_does_not_hang_when_metadata_exceeds_entry_cap() -> None:
     # given - a step name alone is larger than the per-entry cap, so the value
     # cannot be truncated enough to fit (previously this looped forever).

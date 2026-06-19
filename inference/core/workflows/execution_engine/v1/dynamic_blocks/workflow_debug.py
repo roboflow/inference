@@ -107,16 +107,23 @@ class WorkflowDebugTrace:
                 if isinstance(serialized_value, str)
                 else repr(serialized_value)
             )
-            # Pre-slice to bound the shrink loop, then trim the value (never the
-            # marker) until the whole entry fits or the value is exhausted.
-            text = text[: max(0, self._max_entry_serialized_chars)]
-            entry["value"] = text + marker
-            while (
-                text
-                and _entry_serialized_size(entry) > self._max_entry_serialized_chars
-            ):
-                text = text[:-1]
-                entry["value"] = text + marker
+            # Binary-search the longest value prefix that keeps the whole entry
+            # (value + marker + metadata) within the cap. A char-count slice is
+            # not a reliable size bound because json.dumps escaping can expand
+            # characters several-fold; trimming one char at a time would
+            # re-serialize the entry O(n) times for a large value. Serialized
+            # size is monotonic in prefix length, so binary search needs only
+            # O(log n) serializations.
+            lo, hi, best = 0, len(text), 0
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                entry["value"] = text[:mid] + marker
+                if _entry_serialized_size(entry) <= self._max_entry_serialized_chars:
+                    best = mid
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
+            entry["value"] = text[:best] + marker
         entry_size = _entry_serialized_size(entry)
         with self._lock:
             if self._capacity_exceeded:
