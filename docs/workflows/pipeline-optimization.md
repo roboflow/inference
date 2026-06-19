@@ -16,6 +16,7 @@ We have introduced high-performance [Triton](https://github.com/triton-lang/trit
 # Required: the optimization runs on the non-dense RLE path.
 "enforce_dense_masks_in_inference_models": False,
 ```
+
 2. Currently, only the **TensorRT** package of **RF-DETR instance segmentation** models is supported.
 3. Workflows with static **batch size** of **1** are supported. Blocks like Image Slicer increase the batch size, which disables the optimization.
 4. Only `STRETCH_TO` resize mode for input pre-processing is supported at the moment.
@@ -30,11 +31,13 @@ RFDETR_PIPELINE_DEPTH=2
 
 ### Script (script.py)
 
+Save this script as `script.py` in the repository root.
+
 ```python
 """Minimal benchmark: RF-DETR instance segmentation through inference-models,
 run via InferencePipeline on a single video source.
 
-Workflow has exactly one block — the segmentation model. No annotators, no
+Workflow has exactly one block: the segmentation model. No annotators, no
 buffer strategies, no rate limiting.
 
 The example pins the TRT backend before importing `inference` by setting
@@ -63,8 +66,35 @@ _ALL_BACKENDS = {
 _DEFAULT_MODEL_ID = "rfdetr-seg-nano"
 _PREFERRED_LOCAL_TRT_PACKAGE = "rfdetr-seg-nano-orin-trt-package"
 _LOCAL_WORKFLOW_MODEL_ID = f"{_DEFAULT_MODEL_ID}/1"
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _looks_like_repo_root(path: Path) -> bool:
+    return (
+        (path / "inference" / "__init__.py").is_file()
+        and (path / "inference_models").is_dir()
+    )
+
+
+def _find_repo_root() -> Path:
+    for start in (Path.cwd().resolve(), Path(__file__).resolve().parent):
+        for candidate in (start, *start.parents):
+            if _looks_like_repo_root(candidate):
+                return candidate
+    raise RuntimeError(
+        "Could not locate the inference repository root. Run this script from "
+        "the repository root or place it somewhere inside the repository."
+    )
+
+
+_REPO_ROOT = _find_repo_root()
 _INFERENCE_MODELS_ROOT = _REPO_ROOT / "inference_models"
+
+
+def _resolve_local_package_path(path: str) -> Path:
+    package_path = Path(path).expanduser()
+    if package_path.is_absolute():
+        return package_path
+    return _REPO_ROOT / package_path
 
 
 def _is_local_trt_package(path: Path) -> bool:
@@ -81,18 +111,21 @@ def _is_local_trt_package(path: Path) -> bool:
 
 
 def _find_local_trt_package() -> str | None:
-    preferred = Path.cwd() / _PREFERRED_LOCAL_TRT_PACKAGE
+    preferred = _resolve_local_package_path(_PREFERRED_LOCAL_TRT_PACKAGE)
     if _is_local_trt_package(preferred):
         return str(preferred.resolve())
 
     candidates = sorted(
-        path.resolve() for path in Path.cwd().iterdir() if _is_local_trt_package(path)
+        path.resolve()
+        for path in _REPO_ROOT.iterdir()
+        if _is_local_trt_package(path)
     )
     if len(candidates) == 1:
         return str(candidates[0])
     return None
 
-_BACKEND = 'trt'
+
+_BACKEND = "trt"
 _LOCAL_TRT_PACKAGE = _find_local_trt_package() if _BACKEND == "trt" else None
 if _LOCAL_TRT_PACKAGE is not None:
     os.environ.setdefault(
@@ -111,7 +144,10 @@ for path in (str(_INFERENCE_MODELS_ROOT), str(_REPO_ROOT)):
 for module_name in list(sys.modules):
     if module_name == "inference" or module_name.startswith("inference."):
         del sys.modules[module_name]
-    if module_name == "inference_models" or module_name.startswith("inference_models."):
+    if (
+        module_name == "inference_models"
+        or module_name.startswith("inference_models.")
+    ):
         del sys.modules[module_name]
 
 from time import perf_counter
@@ -139,7 +175,7 @@ def _prepare_local_workflow_model_bundle(model_id: str) -> None:
     if _LOCAL_TRT_PACKAGE is None or model_id != _LOCAL_WORKFLOW_MODEL_ID:
         return
 
-    model_dir = Path(model_id)
+    model_dir = _REPO_ROOT / model_id
     model_dir.parent.mkdir(parents=True, exist_ok=True)
     target_dir = Path(_LOCAL_TRT_PACKAGE)
     if not model_dir.exists():
@@ -150,7 +186,7 @@ def _prepare_local_workflow_model_bundle(model_id: str) -> None:
     model_type_path = model_cache_dir / "model_type.json"
     model_metadata = {
         "project_task_type": "instance-segmentation",
-        "model_type": model_id,
+        "model_type": _DEFAULT_MODEL_ID,
     }
     model_type_path.write_text(json.dumps(model_metadata, indent=4))
 
@@ -228,7 +264,8 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 ```
-Here's an example of a single-step workflow for the `rfdetr-seg-nano` model running with the `trt` backend. To run the script with the Triton kernels and pipelining optimization, run:
+
+Here's an example of a single-step workflow for the `rfdetr-seg-nano` model running with the `trt` backend. To run the script with the Triton kernels and pipelining optimization, run this from the repository root:
 
 ```shell
 ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND=true \
@@ -242,4 +279,4 @@ Optional Arguments:
 * `--model_id`: set to `rfdetr-seg-nano` by default. Use `rfdetr-seg-small`, `rfdetr-seg-medium`, `rfdetr-seg-large`, `rfdetr-seg-xlarge`, or `rfdetr-seg-2xlarge`.
 * `--confidence`: set to `0.4` by default.
 
-Note: you may set `_PREFERRED_LOCAL_TRT_PACKAGE` to the relative path to your local model build for the `rfdetr-seg` variant you want to test on.
+Note: you may set `_PREFERRED_LOCAL_TRT_PACKAGE` to the path to your local model build for the `rfdetr-seg` variant you want to test. Relative paths are resolved from the repository root.
