@@ -7,6 +7,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
 ARG PYTORCH_VERSION=2.6.0
 ARG TORCHVISION_VERSION=0.21.0
+ARG TRITON_VERSION=3.2.0
 ARG OPENCV_VERSION=4.13.0
 # Per-Jetson-platform OpenCV build parameters. To replicate this from-source
 # OpenCV section in another Jetson dockerfile (jp51, jp71), copy the OpenCV
@@ -76,7 +77,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-bu
     libleveldb-dev \
     libsnappy-dev \
     libprotobuf-dev \
-    protobuf-compiler
+    protobuf-compiler \
+    libxml2-dev
 
 # Install CMake
 RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
@@ -209,6 +211,44 @@ RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/cuda12,sharin
 RUN export MAX_JOBS=4 && \
     export FLASH_ATTN_CUDA_ARCHS="87" TORCH_CUDA_ARCH_LIST="8.7" && \
     python3 -m pip install --break-system-packages --no-build-isolation flash-attn==2.8.3
+
+# Build Triton from source. Torch 2.6.0 on JP6.2 pairs with Triton ${TRITON_VERSION}.
+# Done in the main builder (not a separate stage) so build deps and Depot cache
+# mounts are reused; a dedicated triton-builder stage re-pulled l4t-jetpack and
+# rebuilt cold every time, which made CI builds very slow. Triton needs cmake <4.0;
+# install via pip because this builder ships cmake 4.2.
+WORKDIR /build/triton
+RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${TRITON_VERSION}-${TARGETARCH} \
+    if [ ! -d src/.git ]; then \
+        git clone --depth 1 --branch v${TRITON_VERSION} https://github.com/triton-lang/triton.git src; \
+    else \
+        git -C src fetch --depth 1 origin tag v${TRITON_VERSION} && \
+        git -C src checkout v${TRITON_VERSION}; \
+    fi && \
+    git -C src submodule update --init --recursive
+RUN --mount=type=cache,target=/root/.triton/llvm,sharing=locked,id=triton-llvm-${TRITON_VERSION}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
+    set -eux; \
+    mkdir -p /tmp/triton-wheels; \
+    python3 -m pip install --break-system-packages --no-cache-dir \
+        "setuptools>=40.8.0" \
+        wheel \
+        "cmake>=3.18,<4.0" \
+        "ninja>=1.11.1" \
+        "pybind11>=2.13.1"; \
+    MAX_JOBS=4 python3 -m pip wheel --break-system-packages --no-cache-dir \
+        --no-build-isolation \
+        --no-deps \
+        /build/triton/src/python \
+        --wheel-dir /tmp/triton-wheels; \
+    set -- /tmp/triton-wheels/triton-${TRITON_VERSION}-*.whl; \
+    if [ ! -e "$1" ]; then \
+        echo "Expected source-built Triton wheel for ${TRITON_VERSION} was not found" >&2; \
+        exit 1; \
+    fi; \
+    python3 -m pip install --break-system-packages --no-cache-dir "$1"; \
+    rm -rf /root/.triton/llvm /tmp/triton-wheels; \
+    python3 -c "import triton; print('triton', triton.__version__)"
 
 # Copy requirements files (done after compilation to improve cache efficiency)
 WORKDIR /build/reqs
@@ -478,7 +518,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
     libegl1 \
-    libgles2
+    libgles2 \
+    build-essential \
+    python3-dev \
+    zlib1g-dev \
+    libxml2-dev
 
 # No system GDAL: rasterio (the only GDAL consumer, via requirements.sam.txt)
 # installs as a manylinux wheel with its own bundled libgdal/libproj/gdal-data;
@@ -576,8 +620,15 @@ RUN ldconfig
 ENV GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
 RUN rm -rf /root/.cache/gstreamer-1.0 /home/*/.cache/gstreamer-1.0 2>/dev/null || true
 
+# build-essential/python3-dev/zlib1g-dev/libxml2-dev: required for Triton JIT kernel
+# compilation at runtime (gcc alone is insufficient; needs g++, make, and libc6-dev
+# from build-essential). Triton python pkg ships in dist-packages below; nvidia/json
+# JIT toolchains are copied separately (llvm cache excluded at build time).
+
 # Copy Python packages
 COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
+COPY --from=builder /root/.triton/nvidia /root/.triton/nvidia
+COPY --from=builder /root/.triton/json /root/.triton/json
 # tensorrt_dispatch python pkg dropped along with libnvinfer_dispatch (zero
 # imports repo-wide); tensorrt_lean kept to match libnvinfer_lean above.
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt /usr/local/lib/python3.10/dist-packages/tensorrt
