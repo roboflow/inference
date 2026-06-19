@@ -1,12 +1,10 @@
 """Qwen-Image-Edit HF backend.
 
-Wraps the Qwen/Qwen-Image-Edit diffusion pipeline so it satisfies the
+Wraps the Qwen/Qwen-Image-Edit pipeline so it satisfies the
 `from_pretrained(model_name_or_path)` contract expected by `inference_models.AutoModel`.
 
 The model takes a source image and a text editing instruction and returns an
-edited PIL Image.  It is a *diffusion* model (not an autoregressive LM), so
-the pipeline is loaded via `diffusers.DiffusionPipeline` and returns
-`pipe.images[0]` rather than text tokens.
+edited PIL Image. It is loaded via `diffusers.QwenImageEditPipeline`.
 """
 
 from threading import Lock
@@ -20,12 +18,11 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_GUIDANCE_SCALE,
     INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_NUM_INFERENCE_STEPS,
-    INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_STRENGTH,
 )
 
 
 class QwenImageEditHF:
-    """Thin wrapper around the Qwen-Image-Edit diffusion pipeline."""
+    """Thin wrapper around the Qwen-Image-Edit pipeline."""
 
     default_dtype = torch.bfloat16
 
@@ -37,27 +34,20 @@ class QwenImageEditHF:
         local_files_only: bool = True,
         **kwargs,
     ) -> "QwenImageEditHF":
-        from diffusers import DiffusionPipeline
+        from diffusers import QwenImageEditPipeline
 
-        # device_map="auto" is not supported for all pipeline types; MPS doesn't
-        # support it at all. Map the device to the closest valid strategy instead.
-        device_type = device.type
-        if device_type == "cuda":
-            device_map = "cuda"
-        elif device_type == "cpu":
-            device_map = "cpu"
-        else:
-            device_map = None  # e.g. mps — move to device manually after load
-
-        pipe = DiffusionPipeline.from_pretrained(
+        pipe = QwenImageEditPipeline.from_pretrained(
             model_name_or_path,
-            torch_dtype=cls.default_dtype,
             local_files_only=local_files_only,
-            **({"device_map": device_map} if device_map is not None else {}),
         )
+        pipe.to(cls.default_dtype)
 
-        if device_map is None:
-            pipe = pipe.to(device)
+        if device.type == "cuda":
+            # CPU offload moves each sub-model to GPU only when needed,
+            # keeping peak VRAM usage low on smaller cards.
+            pipe.enable_model_cpu_offload()
+        else:
+            pipe.to(device)
 
         return cls(pipeline=pipe, device=device)
 
@@ -72,7 +62,7 @@ class QwenImageEditHF:
         prompt: str,
         num_inference_steps: int = INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_NUM_INFERENCE_STEPS,
         guidance_scale: float = INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_GUIDANCE_SCALE,
-        strength: float = INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_STRENGTH,
+        negative_prompt: str = " ",
         seed: Optional[int] = None,
         **kwargs,
     ) -> Image.Image:
@@ -80,14 +70,15 @@ class QwenImageEditHF:
 
         generator = None
         if seed is not None:
-            generator = torch.Generator(device=self._device).manual_seed(seed)
+            generator = torch.Generator().manual_seed(seed)
 
         with self._lock, torch.inference_mode():
             result = self._pipeline(
-                prompt=prompt,
                 image=pil_image,
+                prompt=prompt,
                 num_inference_steps=num_inference_steps,
-                guidance_scale=guidance_scale,
+                true_cfg_scale=guidance_scale,
+                negative_prompt=negative_prompt,
                 generator=generator,
             )
 
