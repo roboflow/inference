@@ -81,6 +81,8 @@ _WORKER_HEARTBEAT_TIMEOUT = (
 _WORKER_BUSY_TIMEOUT = (
     cfg.INFERENCE_WORKER_BUSY_TIMEOUT_S
 )  # silence while work outstanding
+_EMPTY_CACHE_EVERY_N_BATCHES = cfg.INFERENCE_WORKER_EMPTY_CACHE_EVERY_N_BATCHES
+_EMPTY_CACHE_MIN_FREE_BYTES = cfg.INFERENCE_WORKER_EMPTY_CACHE_MIN_FREE_BYTES
 _SEND_TIMEOUT_MS = 5000  # parent PAIR sends must never block forever
 
 _BATCH_SIZE_FALLBACK = 8
@@ -171,6 +173,43 @@ def _tensors_to_numpy(result: Any) -> Any:
         return obj
 
     return _walk(result)
+
+
+def _maybe_empty_cuda_cache(
+    batch_count: int,
+    every_n_batches: int,
+    min_free_bytes: int,
+    log,
+) -> None:
+    if every_n_batches <= 0 or batch_count <= 0:
+        return
+    if batch_count % every_n_batches:
+        return
+    try:
+        import torch  # noqa: PLC0415
+
+        if not torch.cuda.is_available():
+            return
+        allocated = sum(
+            torch.cuda.memory_allocated(i) for i in range(torch.cuda.device_count())
+        )
+        reserved = sum(
+            torch.cuda.memory_reserved(i) for i in range(torch.cuda.device_count())
+        )
+        cached_slack = reserved - allocated
+        if cached_slack > min_free_bytes:
+            torch.cuda.empty_cache()
+            log.debug(
+                "Worker: torch.cuda.empty_cache() after %d batches "
+                "(reserved=%d allocated=%d slack=%d threshold=%d)",
+                batch_count,
+                reserved,
+                allocated,
+                cached_slack,
+                min_free_bytes,
+            )
+    except Exception:
+        log.debug("Worker: torch.cuda.empty_cache() check failed", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -790,6 +829,12 @@ def _process_slots(
     worker_stats["decode_ms"].append((t_decoded - t0) * 1000)
     worker_stats["infer_ms"].append((t_infer - t_decoded) * 1000)
     worker_stats["write_ms"].append((end - t_infer) * 1000)
+    _maybe_empty_cuda_cache(
+        worker_stats["batch_count"],
+        _EMPTY_CACHE_EVERY_N_BATCHES,
+        _EMPTY_CACHE_MIN_FREE_BYTES,
+        log,
+    )
 
 
 # ---------------------------------------------------------------------------

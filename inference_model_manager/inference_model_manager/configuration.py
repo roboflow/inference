@@ -80,6 +80,15 @@ INFERENCE_WORKER_START_TIMEOUT_S = get_float_from_env(
 INFERENCE_WORKER_BUSY_TIMEOUT_S = get_float_from_env(
     "INFERENCE_WORKER_BUSY_TIMEOUT_S", default=300.0
 )
+# 0 disables periodic cache clearing. When enabled, the worker calls
+# torch.cuda.empty_cache() every N processed batches only if reserved-allocated
+# exceeds INFERENCE_WORKER_EMPTY_CACHE_MIN_FREE_BYTES.
+INFERENCE_WORKER_EMPTY_CACHE_EVERY_N_BATCHES = get_integer_from_env(
+    "INFERENCE_WORKER_EMPTY_CACHE_EVERY_N_BATCHES", default=0
+)
+INFERENCE_WORKER_EMPTY_CACHE_MIN_FREE_BYTES = get_integer_from_env(
+    "INFERENCE_WORKER_EMPTY_CACHE_MIN_FREE_BYTES", default=512 * 1024 * 1024
+)
 # Decoded-bytes batch cap, derived from free VRAM at batch-fire time:
 # budget = (free_vram - headroom) / scratch_factor. Headroom reserves VRAM
 # for inference itself; scratch_factor covers nvjpeg working buffers beyond
