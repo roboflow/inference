@@ -17,9 +17,9 @@ from inference.core.workflows.execution_engine.v1.compiler.core import compile_w
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
-from inference.core.workflows.execution_engine.v1.executor.core import run_workflow
 from inference.core.workflows.execution_engine.v1.executor.core import (
     flush_stream_pipeline_workflow,
+    run_workflow,
 )
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembler import (
     assemble_runtime_parameters,
