@@ -609,31 +609,37 @@ class VideoSource:
 
     def _start(self) -> None:
         self._change_state(target_state=StreamState.INITIALISING)
-        if callable(self._stream_reference):
-            self._video = self._stream_reference()
-        elif _is_test_pattern_reference(self._stream_reference):
-            from inference.core.interfaces.camera.test_pattern_producer import (
-                TestPatternStreamProducer,
-            )
+        try:
+            if callable(self._stream_reference):
+                self._video = self._stream_reference()
+            elif _is_test_pattern_reference(self._stream_reference):
+                from inference.core.interfaces.camera.test_pattern_producer import (
+                    TestPatternStreamProducer,
+                )
 
-            self._video = TestPatternStreamProducer()
-        else:
-            self._video = CV2VideoFrameProducer(self._stream_reference)
-        if not self._video.isOpened():
+                self._video = TestPatternStreamProducer()
+            else:
+                self._video = CV2VideoFrameProducer(self._stream_reference)
+            if not self._video.isOpened():
+                raise SourceConnectionError(
+                    f"Cannot connect to video source under reference: {self._stream_reference}"
+                )
+            self._video.initialize_source_properties(self._video_source_properties)
+            self._source_properties = self._video.discover_source_properties()
+            self._video_consumer.reset(source_properties=self._source_properties)
+            if self._source_properties.is_file:
+                self._set_file_mode_consumption_strategies()
+            else:
+                self._set_stream_mode_consumption_strategies()
+            self._playback_allowed.set()
+            self._stream_consumption_thread = Thread(target=self._consume_video)
+            self._stream_consumption_thread.start()
+        except Exception:
+            # Any startup failure (factory raises, cannot connect, property
+            # discovery fails) leaves the source in ERROR, not INITIALISING, so
+            # recovery (which keys off ERROR) fires. Re-raise for the caller.
             self._change_state(target_state=StreamState.ERROR)
-            raise SourceConnectionError(
-                f"Cannot connect to video source under reference: {self._stream_reference}"
-            )
-        self._video.initialize_source_properties(self._video_source_properties)
-        self._source_properties = self._video.discover_source_properties()
-        self._video_consumer.reset(source_properties=self._source_properties)
-        if self._source_properties.is_file:
-            self._set_file_mode_consumption_strategies()
-        else:
-            self._set_stream_mode_consumption_strategies()
-        self._playback_allowed.set()
-        self._stream_consumption_thread = Thread(target=self._consume_video)
-        self._stream_consumption_thread.start()
+            raise
 
     def _terminate(
         self, wait_on_frames_consumption: bool, purge_frames_buffer: bool
@@ -717,6 +723,10 @@ class VideoSource:
             logger.info(f"Video consumption finished")
         except Exception as error:
             self._change_state(target_state=StreamState.ERROR)
+            # Emit a poison pill so a consumer blocked on read_frame gets
+            # end-of-stream instead of timing out forever; ERROR is
+            # restart-eligible, so reconnection fires.
+            self._frames_buffer.put(POISON_PILL)
             payload = {
                 "source_id": self._source_id,
                 "error_type": error.__class__.__name__,
