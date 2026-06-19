@@ -3,6 +3,7 @@ torchvision>=0.15.0
 transformers>=4.57.3,<=5.9.0
 timm>=1.0.0
 accelerate>=1.0.0,<2.0.0
+diffusers>=0.37.0,<1.0.0
 einops>=0.7.0
 peft>=0.15.0
 num2words~=0.5.14

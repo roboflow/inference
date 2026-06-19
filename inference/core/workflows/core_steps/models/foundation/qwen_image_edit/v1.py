@@ -102,6 +102,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "section": "model",
                 "icon": "fal fa-paintbrush",
                 "blockPriority": 6,
+                "needsGPU": True,
             },
         },
         protected_namespaces=(),
