@@ -1,6 +1,7 @@
 import json
 import os
 import socket
+import warnings
 
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "9999"))
@@ -14,12 +15,17 @@ def main() -> None:
         while True:
             message, _ = udp_socket.recvfrom(BUFFER_SIZE)
             if len(message) > BUFFER_SIZE:
+                warnings.warn("Message exceeds buffer size")
                 continue
             try:
                 decoded_message = message.decode("utf-8")
                 parsed_message = json.loads(decoded_message)
                 print(parsed_message)
-            except (UnicodeDecodeError, json.JSONDecodeError):
+            except UnicodeDecodeError:
+                warnings.warn("Failed to decode message as UTF-8")
+                continue
+            except json.JSONDecodeError:
+                warnings.warn("Failed to parse message as JSON")
                 continue
     finally:
         udp_socket.close()
