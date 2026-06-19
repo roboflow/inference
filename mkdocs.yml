@@ -122,12 +122,12 @@ nav:
         - Inner workflows: workflows/inner_workflow_design.md
         - Dynamic Python Blocks: workflows/custom_python_code_blocks.md
         - Video Processing: workflows/video_processing/overview.md
-        - Pipeline Optimization: workflows/pipeline-optimization.md
       - Examples: workflows/gallery/
       - Block Gallery: workflows/blocks/
       - Developer Guide:
         - Workflows Definitions: workflows/definitions.md
         - Workflow Execution: workflows/workflow_execution.md
+        - Pipeline Optimization: workflows/pipeline-optimization.md
         - Kinds: workflows/kinds/
         - Compiler: workflows/workflows_compiler.md
         - Inner workflows (design): workflows/inner_workflow_design.md
