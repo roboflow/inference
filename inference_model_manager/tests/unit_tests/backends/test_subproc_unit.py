@@ -13,6 +13,7 @@ from inference_model_manager.backends.subproc import (
     _MSG_RESULT,
     _MSG_SLOT_READY,
     _NP_MAGIC,
+    _maybe_empty_cuda_cache,
     _to_bytes,
 )
 
@@ -146,3 +147,78 @@ class TestNumpyMagic:
     def test_raw_png_header_not_magic(self) -> None:
         png_start = b"\x89PNG\r\n\x1a\n"
         assert png_start[:6] != _NP_MAGIC
+
+
+class _Cuda:
+    def __init__(self, allocated: int, reserved: int) -> None:
+        self.allocated = allocated
+        self.reserved = reserved
+        self.empty_cache_calls = 0
+
+    def is_available(self) -> bool:
+        return True
+
+    def device_count(self) -> int:
+        return 1
+
+    def memory_allocated(self, device: int) -> int:
+        return self.allocated
+
+    def memory_reserved(self, device: int) -> int:
+        return self.reserved
+
+    def empty_cache(self) -> None:
+        self.empty_cache_calls += 1
+
+
+class _Torch:
+    def __init__(self, cuda: _Cuda) -> None:
+        self.cuda = cuda
+
+
+class _DebugLog:
+    def debug(self, *a, **k):
+        pass
+
+
+class TestMaybeEmptyCudaCache:
+    def test_empty_cache_when_interval_and_slack_threshold_match(
+        self, monkeypatch
+    ) -> None:
+        cuda = _Cuda(allocated=100, reserved=300)
+        monkeypatch.setitem(__import__("sys").modules, "torch", _Torch(cuda))
+
+        _maybe_empty_cuda_cache(
+            batch_count=10,
+            every_n_batches=5,
+            min_free_bytes=100,
+            log=_DebugLog(),
+        )
+
+        assert cuda.empty_cache_calls == 1
+
+    def test_skip_when_not_on_interval(self, monkeypatch) -> None:
+        cuda = _Cuda(allocated=100, reserved=300)
+        monkeypatch.setitem(__import__("sys").modules, "torch", _Torch(cuda))
+
+        _maybe_empty_cuda_cache(
+            batch_count=9,
+            every_n_batches=5,
+            min_free_bytes=100,
+            log=_DebugLog(),
+        )
+
+        assert cuda.empty_cache_calls == 0
+
+    def test_skip_when_slack_at_threshold(self, monkeypatch) -> None:
+        cuda = _Cuda(allocated=100, reserved=200)
+        monkeypatch.setitem(__import__("sys").modules, "torch", _Torch(cuda))
+
+        _maybe_empty_cuda_cache(
+            batch_count=10,
+            every_n_batches=5,
+            min_free_bytes=100,
+            log=_DebugLog(),
+        )
+
+        assert cuda.empty_cache_calls == 0
