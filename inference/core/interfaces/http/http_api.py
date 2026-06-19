@@ -187,6 +187,7 @@ from inference.core.env import (
     PRELOAD_API_KEY,
     PRELOAD_MODELS,
     PROFILE,
+    ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
@@ -282,6 +283,7 @@ from inference.core.managers.model_load_collector import (
 )
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
+    assume_identity_authorised_workspace_db_id,
     build_roboflow_api_headers,
     get_roboflow_workspace,
     get_roboflow_workspace_async,
@@ -373,6 +375,7 @@ if ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
 class AuthorizationCacheEntry:
     expires_at: float
     workspace_id: Optional[str]
+    workspace_db_id: Optional[str] = None
     status_code: int = 200
     message: Optional[str] = None
 
@@ -478,6 +481,18 @@ def _attach_observability_headers_to_early_response(
     trace_id = get_trace_id()
     if trace_id is not None:
         response.headers[TRACE_ID_HEADER] = trace_id
+
+
+async def _call_next_with_assume_identity_authorised_workspace_db_id(
+    request: Request, call_next, workspace_db_id: Optional[str]
+) -> Response:
+    if not workspace_db_id:
+        return await call_next(request)
+    token = assume_identity_authorised_workspace_db_id.set(workspace_db_id)
+    try:
+        return await call_next(request)
+    finally:
+        assume_identity_authorised_workspace_db_id.reset(token)
 
 
 def _log_serverless_authorization_denial(
@@ -851,12 +866,25 @@ class HttpInterface(BaseInterface):
                         cache_key = (api_key, enforce_credits_verification)
                         cache_entry = cached_api_keys.get(cache_key)
                         workspace_id = None
+                        workspace_db_id = None
+                        cache_entry_needs_workspace_db_refresh = (
+                            bool(ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN)
+                            and enforce_credits_verification
+                            and cache_entry is not None
+                            and cache_entry.expires_at >= time.time()
+                            and cache_entry.status_code == 200
+                            and cache_entry.workspace_db_id is None
+                        )
                         if auth_span is not None:
                             auth_span.set_attribute(
                                 "auth.enforce_credits_verification",
                                 enforce_credits_verification,
                             )
-                        if cache_entry and cache_entry.expires_at >= time.time():
+                        if (
+                            cache_entry
+                            and cache_entry.expires_at >= time.time()
+                            and not cache_entry_needs_workspace_db_refresh
+                        ):
                             if auth_span is not None:
                                 auth_span.set_attribute("auth.cache_hit", True)
                             if cache_entry.status_code != 200:
@@ -874,6 +902,7 @@ class HttpInterface(BaseInterface):
                                     cache_hit=True,
                                 )
                             workspace_id = cache_entry.workspace_id
+                            workspace_db_id = cache_entry.workspace_db_id
                         else:
                             if auth_span is not None:
                                 auth_span.set_attribute("auth.cache_hit", False)
@@ -920,11 +949,13 @@ class HttpInterface(BaseInterface):
                                 )
                                 if usage_check_result.status_code == 200:
                                     workspace_id = usage_check_result.workspace_id
+                                    workspace_db_id = usage_check_result.workspace_db_id
                                     cached_api_keys[cache_key] = (
                                         AuthorizationCacheEntry(
                                             expires_at=time.time()
                                             + AUTH_CACHE_TTL_SECONDS,
                                             workspace_id=workspace_id,
+                                            workspace_db_id=workspace_db_id,
                                         )
                                     )
                                 elif usage_check_result.status_code == 401:
@@ -965,6 +996,7 @@ class HttpInterface(BaseInterface):
                                             expires_at=time.time()
                                             + SHORT_AUTH_CACHE_TTL_SECONDS,
                                             workspace_id=usage_check_result.workspace_id,
+                                            workspace_db_id=usage_check_result.workspace_db_id,
                                             status_code=402,
                                             message=message,
                                         )
@@ -991,7 +1023,13 @@ class HttpInterface(BaseInterface):
                     record_error(error)
                     raise
 
-                response = await call_next(request)
+                response = (
+                    await _call_next_with_assume_identity_authorised_workspace_db_id(
+                        request=request,
+                        call_next=call_next,
+                        workspace_db_id=workspace_db_id,
+                    )
+                )
                 if workspace_id:
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
@@ -1086,7 +1124,13 @@ class HttpInterface(BaseInterface):
                     except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
-                response = await call_next(request)
+                response = (
+                    await _call_next_with_assume_identity_authorised_workspace_db_id(
+                        request=request,
+                        call_next=call_next,
+                        workspace_db_id=None,
+                    )
+                )
                 if workspace_id:
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
