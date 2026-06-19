@@ -237,7 +237,7 @@ def test_load_image_from_url_rejects_backslash_userinfo_allowlist_bypass() -> No
         with pytest.raises(InputImageLoadError) as error:
             _ = load_image_from_url(value="https://localhost:6666\\@www.baidu.com")
 
-    assert "whitelisted" in str(error.value)
+    assert "invalid" in str(error.value)
     requests_get.assert_not_called()
 
 
