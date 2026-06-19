@@ -116,7 +116,7 @@ def test_trace_stops_recording_after_entry_limit() -> None:
 
 def test_trace_truncates_oversized_entries() -> None:
     # given
-    trace = WorkflowDebugTrace(max_entry_serialized_chars=120)
+    trace = WorkflowDebugTrace(max_entry_serialized_chars=50)
     large_value = "x" * 200
 
     # when
@@ -147,7 +147,7 @@ def test_trace_truncation_respects_cap_with_json_escaped_characters() -> None:
 def test_trace_does_not_hang_when_metadata_exceeds_entry_cap() -> None:
     # given - a step name alone is larger than the per-entry cap, so the value
     # cannot be truncated enough to fit (previously this looped forever).
-    trace = WorkflowDebugTrace(max_entry_serialized_chars=50)
+    trace = WorkflowDebugTrace(max_entry_serialized_chars=120)
     oversized_step = "s" * 500
 
     # when - non-string value drove the infinite-loop path
