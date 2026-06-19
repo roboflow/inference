@@ -1,7 +1,9 @@
 import binascii
+import ipaddress
 import os
 import pickle
 import re
+import socket
 import urllib.parse
 from enum import Enum
 from io import BytesIO
@@ -38,6 +40,7 @@ from inference.core.utils.function import deprecated
 from inference.core.utils.requests import api_key_safe_raise_for_status
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
+MAX_IMAGE_URL_REDIRECTS = 5
 
 
 class ImageType(Enum):
@@ -395,6 +398,41 @@ def load_image_from_url(
         Image.Image: The loaded PIL image.
     """
     _ensure_url_input_allowed()
+    url = value
+    response = None
+    for _ in range(MAX_IMAGE_URL_REDIRECTS + 1):
+        prepared_url = _prepare_and_validate_image_url(value=url)
+        try:
+            response = requests.get(
+                prepared_url,
+                stream=True,
+                allow_redirects=False,
+            )
+            if response.is_redirect:
+                location = response.headers.get("Location")
+                if not location:
+                    break
+                url = urllib.parse.urljoin(prepared_url, location)
+                response.close()
+                continue
+            api_key_safe_raise_for_status(response=response)
+            return load_image_from_encoded_bytes(
+                value=response.content, cv_imread_flags=cv_imread_flags
+            )
+        except (RequestException, ConnectionError) as error:
+            raise InputImageLoadError(
+                message=f"Could not load image from url: {value}. Details: {error}",
+                public_message="Data pointed by URL could not be decoded into image.",
+            )
+    if response is not None:
+        response.close()
+    raise InputImageLoadError(
+        message=f"Could not load image from url: {value}. Too many redirects.",
+        public_message="Data pointed by URL could not be decoded into image.",
+    )
+
+
+def _prepare_and_validate_image_url(value: str) -> str:
     try:
         original_parsed_url = urllib.parse.urlparse(value)
         if "\\" in original_parsed_url.netloc:
@@ -409,7 +447,13 @@ def load_image_from_url(
             public_message=message,
         ) from error
     _ensure_resource_schema_allowed(schema=parsed_url.scheme)
-    network_location = parsed_url.hostname or ""
+    network_location = parsed_url.hostname
+    if network_location is None:
+        message = "Provided image URL is invalid"
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        )
     if ":" in network_location:
         network_location = f"[{network_location}]"
     domain_extraction_result = tldextract.TLDExtract(suffix_list_urls=())(
@@ -426,15 +470,24 @@ def load_image_from_url(
     _ensure_location_matches_destination_blacklist(
         destination=address_parts_concatenated
     )
+    _ensure_url_resolves_to_global_address(hostname=parsed_url.hostname)
+    return prepared_url
+
+
+def _ensure_url_resolves_to_global_address(hostname: str) -> None:
     try:
-        response = requests.get(prepared_url, stream=True)
-        api_key_safe_raise_for_status(response=response)
-        return load_image_from_encoded_bytes(
-            value=response.content, cv_imread_flags=cv_imread_flags
-        )
-    except (RequestException, ConnectionError) as error:
+        addresses = {
+            ipaddress.ip_address(result[4][0].split("%", 1)[0])
+            for result in socket.getaddrinfo(hostname, None)
+        }
+    except (OSError, ValueError) as error:
         raise InputImageLoadError(
-            message=f"Could not load image from url: {value}. Details: {error}",
+            message=f"Could not resolve image URL host: {hostname}. Details: {error}",
+            public_message="Data pointed by URL could not be decoded into image.",
+        ) from error
+    if not addresses or any(not address.is_global for address in addresses):
+        raise InputImageLoadError(
+            message="Image URL resolves to a non-public address.",
             public_message="Data pointed by URL could not be decoded into image.",
         )
 
