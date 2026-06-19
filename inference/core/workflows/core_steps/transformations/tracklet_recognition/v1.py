@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import deque
+from collections import OrderedDict, deque
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -63,6 +63,11 @@ ORIGINAL_CLASS_NAME_KEY = "original_class_name"
 ORIGINAL_CLASS_ID_KEY = "original_class_id"
 ORIGINAL_CONFIDENCE_KEY = "original_confidence"
 
+MAX_STATE_IDS = 1024
+MAX_VIDEOS_PER_STATE = 256
+MAX_TRACKLETS_PER_VIDEO = 16384
+TRACKLET_STATE_TTL_SECONDS = 300.0
+
 SHORT_GATE_DESCRIPTION = "Select tracked detections that are due for recognition."
 SHORT_CACHE_DESCRIPTION = (
     "Cache recognition results by tracklet and attach them to every frame."
@@ -75,18 +80,51 @@ class TrackletRecognition:
     class_id: int
     confidence: float
     updated_at_seconds: float
+    last_seen_at_seconds: float
     history: Deque[str] = field(default_factory=deque)
     locked: bool = False
 
 
 class TrackletRecognitionStore:
-    def __init__(self) -> None:
-        self._per_video: Dict[str, Dict[Union[int, str], TrackletRecognition]] = {}
+    def __init__(
+        self,
+        max_videos: int = MAX_VIDEOS_PER_STATE,
+        max_tracklets_per_video: int = MAX_TRACKLETS_PER_VIDEO,
+        tracklet_state_ttl_seconds: float = TRACKLET_STATE_TTL_SECONDS,
+    ) -> None:
+        self._per_video: (
+            "OrderedDict[str, OrderedDict[Union[int, str], TrackletRecognition]]"
+        ) = OrderedDict()
+        self._max_videos = max_videos
+        self._max_tracklets_per_video = max_tracklets_per_video
+        self._tracklet_state_ttl_seconds = tracklet_state_ttl_seconds
 
     def get(
-        self, video_id: str, tracker_id: Union[int, str]
+        self,
+        video_id: str,
+        tracker_id: Union[int, str],
+        timestamp_seconds: Optional[float] = None,
     ) -> Optional[TrackletRecognition]:
-        return self._per_video.get(video_id, {}).get(tracker_id)
+        per_video = self._per_video.get(video_id)
+        if per_video is None:
+            return None
+        self._per_video.move_to_end(video_id)
+        recognition = per_video.get(tracker_id)
+        if recognition is None:
+            return None
+        if timestamp_seconds is not None and is_stale(
+            last_seen_at_seconds=recognition.last_seen_at_seconds,
+            timestamp_seconds=timestamp_seconds,
+            ttl_seconds=self._tracklet_state_ttl_seconds,
+        ):
+            del per_video[tracker_id]
+            if not per_video:
+                del self._per_video[video_id]
+            return None
+        per_video.move_to_end(tracker_id)
+        if timestamp_seconds is not None:
+            recognition.last_seen_at_seconds = timestamp_seconds
+        return recognition
 
     def set(
         self,
@@ -98,7 +136,9 @@ class TrackletRecognitionStore:
         timestamp_seconds: float,
         consistency_window: int,
     ) -> TrackletRecognition:
-        per_video = self._per_video.setdefault(video_id, {})
+        self.prune(timestamp_seconds=timestamp_seconds)
+        per_video = self._per_video.setdefault(video_id, OrderedDict())
+        self._per_video.move_to_end(video_id)
         existing = per_video.get(tracker_id)
         if existing is None:
             history: Deque[str] = deque(maxlen=max(1, consistency_window))
@@ -107,6 +147,7 @@ class TrackletRecognitionStore:
                 class_id=class_id,
                 confidence=confidence,
                 updated_at_seconds=timestamp_seconds,
+                last_seen_at_seconds=timestamp_seconds,
                 history=history,
             )
             per_video[tracker_id] = existing
@@ -119,20 +160,52 @@ class TrackletRecognitionStore:
         existing.class_id = class_id
         existing.confidence = confidence
         existing.updated_at_seconds = timestamp_seconds
+        existing.last_seen_at_seconds = timestamp_seconds
         existing.history.append(class_name)
         existing.locked = (
             len(existing.history) == existing.history.maxlen
             and len(set(existing.history)) == 1
         )
+        per_video.move_to_end(tracker_id)
+        self.enforce_limits()
         return existing
 
+    def prune(self, timestamp_seconds: float) -> None:
+        empty_video_ids = []
+        for video_id, per_video in self._per_video.items():
+            stale_tracker_ids = [
+                tracker_id
+                for tracker_id, recognition in per_video.items()
+                if is_stale(
+                    last_seen_at_seconds=recognition.last_seen_at_seconds,
+                    timestamp_seconds=timestamp_seconds,
+                    ttl_seconds=self._tracklet_state_ttl_seconds,
+                )
+            ]
+            for tracker_id in stale_tracker_ids:
+                del per_video[tracker_id]
+            if not per_video:
+                empty_video_ids.append(video_id)
+        for video_id in empty_video_ids:
+            del self._per_video[video_id]
 
-_STORES: Dict[str, TrackletRecognitionStore] = {}
+    def enforce_limits(self) -> None:
+        while len(self._per_video) > self._max_videos:
+            self._per_video.popitem(last=False)
+        for per_video in self._per_video.values():
+            while len(per_video) > self._max_tracklets_per_video:
+                per_video.popitem(last=False)
+
+
+_STORES: "OrderedDict[str, TrackletRecognitionStore]" = OrderedDict()
 
 
 def _get_store(state_id: str) -> TrackletRecognitionStore:
     if state_id not in _STORES:
         _STORES[state_id] = TrackletRecognitionStore()
+    _STORES.move_to_end(state_id)
+    while len(_STORES) > MAX_STATE_IDS:
+        _STORES.popitem(last=False)
     return _STORES[state_id]
 
 
@@ -142,7 +215,7 @@ class TrackletRecognitionGateManifest(WorkflowBlockManifest):
             "name": "Tracklet Recognition Gate",
             "version": "v1",
             "short_description": SHORT_GATE_DESCRIPTION,
-            "long_description": "Filters tracked detections so downstream recognition only runs for tracklets that are not locked and whose recognition interval has elapsed.",
+            "long_description": "Filters tracked detections so downstream recognition only runs for tracklets that are not locked and whose recognition interval has elapsed. State is process-local, bounded, and intended for stateful video workflows; it is not durable or shared across server instances.",
             "license": "Apache-2.0",
             "block_type": "transformation",
             "ui_manifest": {
@@ -169,7 +242,7 @@ class TrackletRecognitionGateManifest(WorkflowBlockManifest):
     )
     state_id: Union[str, Selector(kind=[STRING_KIND])] = Field(
         default="default",
-        description="Shared state namespace. Use the same value in the Tracklet Recognition Cache block connected after recognition.",
+        description="Shared process-local state namespace. Use the same low-cardinality value in the Tracklet Recognition Cache block connected after recognition.",
     )
 
     @classmethod
@@ -217,10 +290,15 @@ class TrackletRecognitionGateBlockV1(WorkflowBlock):
         timestamp_seconds = get_video_time_seconds(image=image)
         video_id = image.video_metadata.video_identifier
         store = _get_store(state_id=state_id)
+        store.prune(timestamp_seconds=timestamp_seconds)
 
         due_mask = []
         for tracker_id in detections.tracker_id.tolist():
-            recognition = store.get(video_id=video_id, tracker_id=tracker_id)
+            recognition = store.get(
+                video_id=video_id,
+                tracker_id=tracker_id,
+                timestamp_seconds=timestamp_seconds,
+            )
             is_due = is_due_for_recognition(
                 recognition=recognition,
                 timestamp_seconds=timestamp_seconds,
@@ -240,7 +318,7 @@ class TrackletRecognitionCacheManifest(WorkflowBlockManifest):
             "name": "Tracklet Recognition Cache",
             "version": "v1",
             "short_description": SHORT_CACHE_DESCRIPTION,
-            "long_description": "Stores recognition results by tracker ID, locks stable tracklets, and emits all current detections enriched with cached recognition metadata.",
+            "long_description": "Stores recognition results by tracker ID, locks stable tracklets, and emits all current detections enriched with cached recognition metadata. State is process-local and bounded by state namespace, video stream, tracklet count, and stale-track TTL; it is not durable or shared across server instances.",
             "license": "Apache-2.0",
             "block_type": "transformation",
             "ui_manifest": {
@@ -275,7 +353,7 @@ class TrackletRecognitionCacheManifest(WorkflowBlockManifest):
     )
     state_id: Union[str, Selector(kind=[STRING_KIND])] = Field(
         default="default",
-        description="Shared state namespace. Must match the Tracklet Recognition Gate block.",
+        description="Shared process-local state namespace. Must match the Tracklet Recognition Gate block and should use a stable, low-cardinality value.",
     )
     update_detection_class: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
@@ -361,6 +439,7 @@ class TrackletRecognitionCacheBlockV1(WorkflowBlock):
         timestamp_seconds = get_video_time_seconds(image=image)
         video_id = image.video_metadata.video_identifier
         store = _get_store(state_id=state_id)
+        store.prune(timestamp_seconds=timestamp_seconds)
         updated_tracker_ids = update_store_from_predictions(
             store=store,
             video_id=video_id,
@@ -403,6 +482,17 @@ def is_due_for_recognition(
     return (
         timestamp_seconds - recognition.updated_at_seconds
     ) >= recognition_interval_seconds
+
+
+def is_stale(
+    last_seen_at_seconds: float,
+    timestamp_seconds: float,
+    ttl_seconds: float,
+) -> bool:
+    return (
+        timestamp_seconds >= last_seen_at_seconds
+        and (timestamp_seconds - last_seen_at_seconds) > ttl_seconds
+    )
 
 
 def update_store_from_predictions(
@@ -511,7 +601,11 @@ def enrich_detections_with_recognition(
     updated = []
     ages = []
     for tracker_id in detections.tracker_id.tolist():
-        recognition = store.get(video_id=video_id, tracker_id=tracker_id)
+        recognition = store.get(
+            video_id=video_id,
+            tracker_id=tracker_id,
+            timestamp_seconds=timestamp_seconds,
+        )
         if recognition is None:
             class_names.append("")
             class_ids.append(-1)
@@ -616,7 +710,11 @@ def build_recognition_results(
 ) -> List[Dict[str, Any]]:
     results = []
     for tracker_id in detections.tracker_id.tolist():
-        recognition = store.get(video_id=video_id, tracker_id=tracker_id)
+        recognition = store.get(
+            video_id=video_id,
+            tracker_id=tracker_id,
+            timestamp_seconds=timestamp_seconds,
+        )
         if recognition is None:
             continue
         results.append(

@@ -4,12 +4,16 @@ import numpy as np
 import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD
 
+from inference.core.workflows.core_steps.transformations.tracklet_recognition import (
+    v1 as tracklet_recognition,
+)
 from inference.core.workflows.core_steps.transformations.tracklet_recognition.v1 import (
     DETECTION_ID_KEY,
     RECOGNITION_AGE_SECONDS_KEY,
     RECOGNITION_CLASS_NAME_KEY,
     RECOGNITION_LOCKED_KEY,
     RECOGNITION_UPDATED_KEY,
+    TrackletRecognitionStore,
     TrackletRecognitionCacheBlockV1,
     TrackletRecognitionCacheManifest,
     TrackletRecognitionGateBlockV1,
@@ -99,7 +103,9 @@ def test_tracklet_recognition_gate_throttles_and_skips_locked_tracklets() -> Non
     assert after_lock_result["detections_to_recognize"].tracker_id.tolist() == [5]
 
 
-def test_tracklet_recognition_cache_emits_cached_result_without_new_recognition() -> None:
+def test_tracklet_recognition_cache_emits_cached_result_without_new_recognition() -> (
+    None
+):
     # given
     gate = TrackletRecognitionGateBlockV1()
     cache = TrackletRecognitionCacheBlockV1()
@@ -170,7 +176,9 @@ def test_tracklet_recognition_cache_accepts_crop_level_predictions() -> None:
     }
 
 
-def test_tracklet_recognition_cache_treats_scalar_ocr_string_as_single_prediction() -> None:
+def test_tracklet_recognition_cache_treats_scalar_ocr_string_as_single_prediction() -> (
+    None
+):
     # given
     gate = TrackletRecognitionGateBlockV1()
     cache = TrackletRecognitionCacheBlockV1()
@@ -277,6 +285,109 @@ def test_tracklet_recognition_cache_can_use_status_as_class_id() -> None:
     assert locked_detections[RECOGNITION_UPDATED_KEY].tolist() == [True]
     assert locked_detections[RECOGNITION_LOCKED_KEY].tolist() == [True]
     assert locked_detections.class_id.tolist() == [2]
+
+
+def test_tracklet_recognition_store_is_bounded() -> None:
+    # given
+    store = TrackletRecognitionStore(
+        max_videos=1,
+        max_tracklets_per_video=2,
+        tracklet_state_ttl_seconds=1.0,
+    )
+
+    # when - a third tracklet is inserted after tracklet 1 was touched
+    store.set(
+        video_id="video-a",
+        tracker_id=1,
+        class_name="A",
+        class_id=0,
+        confidence=1.0,
+        timestamp_seconds=0.0,
+        consistency_window=1,
+    )
+    store.set(
+        video_id="video-a",
+        tracker_id=2,
+        class_name="B",
+        class_id=1,
+        confidence=1.0,
+        timestamp_seconds=0.0,
+        consistency_window=1,
+    )
+    assert (
+        store.get(video_id="video-a", tracker_id=1, timestamp_seconds=0.5) is not None
+    )
+    store.set(
+        video_id="video-a",
+        tracker_id=3,
+        class_name="C",
+        class_id=2,
+        confidence=1.0,
+        timestamp_seconds=0.5,
+        consistency_window=1,
+    )
+
+    # then - the least recently used tracklet is evicted
+    assert (
+        store.get(video_id="video-a", tracker_id=1, timestamp_seconds=0.5) is not None
+    )
+    assert store.get(video_id="video-a", tracker_id=2, timestamp_seconds=0.5) is None
+    assert (
+        store.get(video_id="video-a", tracker_id=3, timestamp_seconds=0.5) is not None
+    )
+
+    # when - a second video is inserted
+    store.set(
+        video_id="video-b",
+        tracker_id=4,
+        class_name="D",
+        class_id=3,
+        confidence=1.0,
+        timestamp_seconds=0.5,
+        consistency_window=1,
+    )
+
+    # then - the least recently used video is evicted
+    assert store.get(video_id="video-a", tracker_id=1, timestamp_seconds=0.5) is None
+    assert (
+        store.get(video_id="video-b", tracker_id=4, timestamp_seconds=0.5) is not None
+    )
+
+
+def test_tracklet_recognition_store_prunes_stale_tracklets() -> None:
+    # given
+    store = TrackletRecognitionStore(tracklet_state_ttl_seconds=1.0)
+    store.set(
+        video_id="video",
+        tracker_id=1,
+        class_name="A",
+        class_id=0,
+        confidence=1.0,
+        timestamp_seconds=0.0,
+        consistency_window=1,
+    )
+
+    # then
+    assert store.get(video_id="video", tracker_id=1, timestamp_seconds=1.0) is not None
+    assert store.get(video_id="video", tracker_id=1, timestamp_seconds=2.1) is None
+
+
+def test_tracklet_recognition_store_registry_is_bounded(monkeypatch) -> None:
+    # given
+    monkeypatch.setattr(tracklet_recognition, "MAX_STATE_IDS", 2)
+    _STORES.clear()
+
+    # when
+    first_store = tracklet_recognition._get_store(state_id="first")
+    second_store = tracklet_recognition._get_store(state_id="second")
+    assert tracklet_recognition._get_store(state_id="first") is first_store
+    third_store = tracklet_recognition._get_store(state_id="third")
+
+    # then
+    assert list(_STORES.keys()) == ["first", "third"]
+    assert _STORES["first"] is first_store
+    assert _STORES["third"] is third_store
+    assert second_store not in _STORES.values()
 
 
 def _detections(
