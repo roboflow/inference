@@ -122,6 +122,7 @@ nav:
         - Inner workflows: workflows/inner_workflow_design.md
         - Dynamic Python Blocks: workflows/custom_python_code_blocks.md
         - Video Processing: workflows/video_processing/overview.md
+        - Pipeline Optimization: workflows/pipeline-optimization.md
       - Examples: workflows/gallery/
       - Block Gallery: workflows/blocks/
       - Developer Guide:
