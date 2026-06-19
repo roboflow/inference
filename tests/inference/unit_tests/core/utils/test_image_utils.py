@@ -248,6 +248,28 @@ def test_load_image_from_url_rejects_backslash_userinfo_allowlist_bypass() -> No
 
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
 @mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+def test_load_image_from_url_rejects_redirect_to_metadata_address(
+    requests_mock: Mocker,
+    image_as_png_bytes: bytes,
+) -> None:
+    public_url = "https://some.com/image.png"
+    metadata_url = "http://169.254.169.254/latest/meta-data"
+    requests_mock.get(
+        public_url,
+        status_code=302,
+        headers={"Location": metadata_url},
+    )
+    requests_mock.get(metadata_url, content=image_as_png_bytes)
+
+    with pytest.raises(InputImageLoadError):
+        _ = load_image_from_url(value=public_url)
+
+    assert [request.url for request in requests_mock.request_history] == [public_url]
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
 @mock.patch.object(
     image_utils,
