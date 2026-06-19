@@ -175,7 +175,7 @@ pip install "inference-models[torch-cu124,onnx-cu12,trt10]"
 
 For NVIDIA Jetson devices, see the [Hardware Compatibility](hardware-compatibility.md) guide for detailed installation instructions and platform-specific requirements.
 
-### Jetson with JetPack 6 (CUDA 12.6)
+### Jetson with JetPack 6.2 (CUDA 12.6)
 
 ```bash
 # Using uv (recommended)

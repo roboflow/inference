@@ -138,22 +138,22 @@ docker run -it --network=host --gpus=all roboflow/roboflow-inference-server-gpu:
 docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
 ```
 
-- Run on NVIDIA Jetson with JetPack `4.x` (Deprecated):
+- Run on NVIDIA Jetson with JetPack `7.2` (Orin and Thor):
 
 ```bash
-docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson:latest
+docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-7.2.0:latest
 ```
 
-- Run on NVIDIA Jetson with JetPack `5.x`:
+- Run on NVIDIA Jetson with JetPack `6.2` (support ends 2027 - migrate to JetPack 7.2):
+
+```bash
+docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-6.2.0:latest
+```
+
+- Run on NVIDIA Jetson with JetPack `5.1.x` (deprecated, support will be removed in 2027 - migrate to JetPack 7.2):
 
 ```bash
 docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-5.1.1:latest
-```
-
-- Run on NVIDIA Jetson with JetPack `6.x`:
-
-```bash
-docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-6.0.0:latest
 ```
 
 </details>

@@ -21,8 +21,10 @@ to run bigger models and live streaming video we recommend
 
 ## Suggested Edge Devices
 
-NVIDIA Jetson Orin devices with JetPack 5 or JetPack 6 are powerful, well-rounded
-machines. Our test-suite regularly runs against these devices.
+NVIDIA Jetson Orin and Thor devices are powerful, well-rounded machines, and our
+test-suite regularly runs against them. We recommend JetPack 7.2, which supports both
+Orin and Thor. JetPack 6.2 and JetPack 5.1.x are still supported, but support for both
+ends in 2027 (5.1.x is deprecated), so plan to migrate to JetPack 7.2.
 
 The [Jetson Orin Nano Super Developer Kit](https://www.seeedstudio.com/NVIDIAr-Jetson-Orintm-Nano-Developer-Kit-p-5617.html)
 is a good device to start building with.
