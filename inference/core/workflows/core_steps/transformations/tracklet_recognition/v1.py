@@ -5,14 +5,13 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
 from math import isfinite
-from typing import Any, Deque, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Deque, Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core import logger
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     extract_leading_class_from_prediction,
 )
@@ -222,10 +221,6 @@ class TrackletRecognitionGateBlockV1(WorkflowBlock):
         store = _get_store(state_id=state_id)
 
         due_mask = []
-        due_tracker_ids = []
-        locked_tracker_ids = []
-        throttled_tracker_ids = []
-        new_tracker_ids = []
         for tracker_id in detections.tracker_id.tolist():
             recognition = store.get(video_id=video_id, tracker_id=tracker_id)
             is_due = is_due_for_recognition(
@@ -234,32 +229,6 @@ class TrackletRecognitionGateBlockV1(WorkflowBlock):
                 recognition_interval_seconds=recognition_interval_seconds,
             )
             due_mask.append(is_due)
-            if recognition is None:
-                new_tracker_ids.append(tracker_id)
-            if is_due:
-                due_tracker_ids.append(tracker_id)
-            elif recognition is not None and recognition.locked:
-                locked_tracker_ids.append(tracker_id)
-            else:
-                throttled_tracker_ids.append(tracker_id)
-
-        logger.warning(
-            "[tracklet_recognition_gate] video=%s frame=%s t=%.3f state_id=%s "
-            "total=%d due=%d new=%d throttled=%d locked=%d interval=%.3f "
-            "due_tracker_ids=%s locked_tracker_ids=%s",
-            video_id,
-            image.video_metadata.frame_number,
-            timestamp_seconds,
-            state_id,
-            len(detections),
-            len(due_tracker_ids),
-            len(new_tracker_ids),
-            len(throttled_tracker_ids),
-            len(locked_tracker_ids),
-            recognition_interval_seconds,
-            compact_ids(due_tracker_ids),
-            compact_ids(locked_tracker_ids),
-        )
 
         return {
             "detections_to_recognize": detections[due_mask],
@@ -384,13 +353,6 @@ class TrackletRecognitionCacheBlockV1(WorkflowBlock):
         update_class_id_from_cache_status: bool = False,
     ) -> BlockResult:
         if detections is None:
-            logger.warning(
-                "[tracklet_recognition_cache] video=%s frame=%s state_id=%s "
-                "detections=None; emitting None",
-                image.video_metadata.video_identifier,
-                image.video_metadata.frame_number,
-                state_id,
-            )
             return {"recognized_detections": None, "recognition_results": None}
         detections = ensure_detection_ids(detections=deepcopy(detections))
         if detections.tracker_id is None:
@@ -418,45 +380,12 @@ class TrackletRecognitionCacheBlockV1(WorkflowBlock):
             update_detection_class=update_detection_class,
             update_class_id_from_cache_status=update_class_id_from_cache_status,
         )
-        cached_tracker_ids = get_cached_tracker_ids(
-            detections=enriched,
-            store=store,
-            video_id=video_id,
-        )
-        locked_tracker_ids = get_locked_tracker_ids(
-            detections=enriched,
-            store=store,
-            video_id=video_id,
-        )
         recognition_results = build_recognition_results(
             detections=enriched,
             store=store,
             video_id=video_id,
             timestamp_seconds=timestamp_seconds,
             updated_tracker_ids=updated_tracker_ids,
-        )
-        logger.warning(
-            "[tracklet_recognition_cache] video=%s frame=%s t=%.3f state_id=%s "
-            "total=%d recognized_input=%d predictions=%d updated=%d cached=%d "
-            "locked=%d results=%d update_detection_class=%s updated_tracker_ids=%s "
-            "update_class_id_from_cache_status=%s locked_tracker_ids=%s "
-            "result_texts=%s",
-            video_id,
-            image.video_metadata.frame_number,
-            timestamp_seconds,
-            state_id,
-            len(detections),
-            len(recognized_detections) if recognized_detections is not None else 0,
-            len(normalize_recognition_predictions(recognition_predictions)),
-            len(updated_tracker_ids),
-            len(cached_tracker_ids),
-            len(locked_tracker_ids),
-            len(recognition_results),
-            update_detection_class,
-            compact_ids(sorted(updated_tracker_ids, key=str)),
-            update_class_id_from_cache_status,
-            compact_ids(locked_tracker_ids),
-            compact_ids([result["text"] for result in recognition_results]),
         )
         return {
             "recognized_detections": enriched,
@@ -682,31 +611,6 @@ def add_empty_recognition_fields(detections: sv.Detections) -> None:
     detections[RECOGNITION_AGE_SECONDS_KEY] = np.asarray([], dtype=float)
 
 
-def get_cached_tracker_ids(
-    detections: sv.Detections,
-    store: TrackletRecognitionStore,
-    video_id: str,
-) -> List[Union[int, str]]:
-    return [
-        tracker_id
-        for tracker_id in detections.tracker_id.tolist()
-        if store.get(video_id=video_id, tracker_id=tracker_id) is not None
-    ]
-
-
-def get_locked_tracker_ids(
-    detections: sv.Detections,
-    store: TrackletRecognitionStore,
-    video_id: str,
-) -> List[Union[int, str]]:
-    locked_tracker_ids = []
-    for tracker_id in detections.tracker_id.tolist():
-        recognition = store.get(video_id=video_id, tracker_id=tracker_id)
-        if recognition is not None and recognition.locked:
-            locked_tracker_ids.append(tracker_id)
-    return locked_tracker_ids
-
-
 def build_recognition_results(
     detections: sv.Detections,
     store: TrackletRecognitionStore,
@@ -737,12 +641,6 @@ def to_native_value(value: Any) -> Any:
     if isinstance(value, np.generic):
         return value.item()
     return value
-
-
-def compact_ids(values: List[Union[int, str]], limit: int = 20) -> List[Union[int, str]]:
-    if len(values) <= limit:
-        return values
-    return values[:limit] + [f"...+{len(values) - limit} more"]
 
 
 def ensure_detection_ids(detections: sv.Detections) -> sv.Detections:
