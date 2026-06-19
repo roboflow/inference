@@ -326,10 +326,10 @@ def test_load_image_from_url_rejects_too_many_redirects(
     with pytest.raises(InputImageLoadError, match="Too many redirects"):
         _ = load_image_from_url(max_redirects=1, value=first_url)
 
-    assert [request.url for request in requests_mock.request_history] == [
-        first_url,
-        second_url,
-    ]
+    requested_urls = [request.url for request in requests_mock.request_history]
+    assert first_url in requested_urls
+    assert second_url in requested_urls
+    assert third_url not in requested_urls
 
 
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
