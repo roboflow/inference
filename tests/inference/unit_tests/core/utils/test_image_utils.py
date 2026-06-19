@@ -37,6 +37,27 @@ from inference.core.utils.image_utils import (
 )
 
 
+@pytest.fixture(autouse=True)
+def mock_image_url_dns(monkeypatch) -> None:
+    def getaddrinfo(host, *args, **kwargs):
+        try:
+            address = image_utils.ipaddress.ip_address(host.split("%", 1)[0])
+            resolved = str(address)
+        except ValueError:
+            resolved = "93.184.216.34"
+        return [
+            (
+                image_utils.socket.AF_INET,
+                image_utils.socket.SOCK_STREAM,
+                6,
+                "",
+                (resolved, 0),
+            )
+        ]
+
+    monkeypatch.setattr(image_utils.socket, "getaddrinfo", getaddrinfo)
+
+
 @pytest.mark.parametrize(
     "response_status_code", [400, 401, 403, 404, 500, 501, 502, 503, 504]
 )
@@ -188,9 +209,6 @@ def test_load_image_from_url_when_locations_not_whitelisted(url: str) -> None:
     image_utils,
     "WHITELISTED_DESTINATIONS_FOR_URL_INPUT",
     {
-        "127.0.0.1",
-        "fe80::1ff:fe23:4567:890a%25eth0",
-        "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
         "google.com",
         "subdomain.google.com",
     },
@@ -198,11 +216,6 @@ def test_load_image_from_url_when_locations_not_whitelisted(url: str) -> None:
 @pytest.mark.parametrize(
     "url",
     [
-        "https://127.0.0.1/image.jpg",
-        "https://127.0.0.1:90/image.jpg",
-        "https://[fe80::1ff:fe23:4567:890a%25eth0]/image.jpg",
-        "https://[fe80::1ff:fe23:4567:890a%25eth0]:90/image.jpg",
-        "https://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]/image.jpg",
         "https://subdomain.google.com/image.jpg?param=some",
         "https://google.com/image.jpg?param=some",
     ],
@@ -266,6 +279,36 @@ def test_load_image_from_url_rejects_redirect_to_metadata_address(
         _ = load_image_from_url(value=public_url)
 
     assert [request.url for request in requests_mock.request_history] == [public_url]
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+def test_load_image_from_url_rejects_hostname_resolving_to_metadata_address(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        image_utils.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [
+            (
+                image_utils.socket.AF_INET,
+                image_utils.socket.SOCK_STREAM,
+                6,
+                "",
+                ("169.254.169.254", 0),
+            )
+        ],
+    )
+    with mock.patch.object(
+        image_utils.requests,
+        "get",
+        side_effect=AssertionError("requests.get must not be called"),
+    ) as requests_get:
+        with pytest.raises(InputImageLoadError, match="non-public"):
+            _ = load_image_from_url(value="https://some.com/image.png")
+
+    requests_get.assert_not_called()
 
 
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
