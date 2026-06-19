@@ -238,7 +238,7 @@ RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${T
         "cmake>=3.18,<4.0" \
         "ninja>=1.11.1" \
         "pybind11>=2.13.1"; \
-    MAX_JOBS=4 python3 -m pip wheel --break-system-packages --no-cache-dir \
+    MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
         --no-build-isolation \
         --no-deps \
         /build/triton/src/python \

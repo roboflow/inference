@@ -203,7 +203,7 @@ RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${T
     mkdir -p /tmp/triton-wheels; \
     python3 -m pip install --break-system-packages --no-cache-dir \
         -r /build/triton/src/python/requirements.txt; \
-    MAX_JOBS=4 python3 -m pip wheel --break-system-packages --no-cache-dir \
+    MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
         --no-build-isolation \
         --no-deps \
         /build/triton/src \
