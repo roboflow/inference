@@ -44,6 +44,13 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_last_chunk_of_selector,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
+    current_debug_collector,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import (
+    current_debug_step_name,
+    current_debug_trace,
+)
 from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
     ExecutionDataManager,
 )
@@ -130,6 +137,7 @@ def _run_workflow(
     execution_coordinator = ParallelStepExecutionCoordinator.init(
         execution_graph=workflow.execution_graph,
     )
+    workflow_execution_id = get_or_create_workflow_execution_id()
     next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
     while next_steps is not None:
         execute_steps(
@@ -140,6 +148,7 @@ def _run_workflow(
             profiler=profiler,
             executor=executor,
             step_error_handler=step_error_handler,
+            workflow_execution_id=workflow_execution_id,
         )
         next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
     with profiler.profile_execution_phase(
@@ -155,6 +164,14 @@ def _run_workflow(
         )
 
 
+def get_or_create_workflow_execution_id() -> str:
+    if execution_id is not None:
+        current_execution_id = execution_id.get()
+        if current_execution_id:
+            return current_execution_id
+    return str(uuid4())
+
+
 @execution_phase(
     name="group_of_steps_execution",
     categories=["execution_engine_operation"],
@@ -165,14 +182,11 @@ def execute_steps(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     max_concurrent_steps: int,
+    workflow_execution_id: str,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> None:
-    if execution_id is not None:
-        workflow_execution_id = execution_id.get()
-    else:
-        workflow_execution_id = None
     if remote_processing_times is not None:
         processing_time_collector = remote_processing_times.get()
     else:
@@ -181,6 +195,11 @@ def execute_steps(
         duration_minimum_value = apply_duration_minimum.get()
     else:
         duration_minimum_value = None
+    # Capture the active debug-log collector (if any) in the request thread,
+    # so that worker threads can re-bind the ContextVar locally — ContextVars
+    # set in this thread do not propagate into ThreadPoolExecutor workers.
+    debug_collector = current_debug_collector.get()
+    debug_trace = current_debug_trace.get()
     # Capture OTel context so it can be re-attached inside worker threads
     otel_ctx = capture_context()
     logger.debug(f"Executing steps: {next_steps}.")
@@ -194,6 +213,8 @@ def execute_steps(
             workflow_execution_id=workflow_execution_id,
             processing_time_collector=processing_time_collector,
             duration_minimum_value=duration_minimum_value,
+            debug_collector=debug_collector,
+            debug_trace=debug_trace,
             step_error_handler=step_error_handler,
             otel_ctx=otel_ctx,
         )
@@ -217,22 +238,30 @@ def safe_execute_step(
     workflow_execution_id: Optional[str] = None,
     processing_time_collector=None,
     duration_minimum_value=None,
+    debug_collector=None,
+    debug_trace=None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     otel_ctx=None,
 ) -> None:
-    if execution_id is not None:
+    if execution_id is not None and workflow_execution_id:
         execution_id.set(workflow_execution_id)
     if remote_processing_times is not None and processing_time_collector is not None:
         remote_processing_times.set(processing_time_collector)
     if apply_duration_minimum is not None and duration_minimum_value is not None:
         apply_duration_minimum.set(duration_minimum_value)
+    # Always (re)bind, including None: pool threads are reused across requests,
+    # and a conditional set would leave a previous request's collector bound in
+    # this thread, silently accumulating logs on a dead object.
+    current_debug_collector.set(debug_collector)
+    current_debug_trace.set(debug_trace)
+    step_name = get_last_chunk_of_selector(selector=step_selector)
+    current_debug_step_name.set(step_name)
     # Re-attach OTel context in worker thread so trace propagation works.
     # Must detach when done — threads are reused in the pool, and leaked
     # contexts cause incorrect span parenting on subsequent tasks.
     _otel_token = attach_context(otel_ctx)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
-    step_name = get_last_chunk_of_selector(selector=step_selector)
     try:
         with start_span("workflow.step", {"workflow.step": step_name}):
             try:
