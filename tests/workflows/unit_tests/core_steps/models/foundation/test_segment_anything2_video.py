@@ -166,12 +166,31 @@ def test_manifest_rejects_unknown_prompt_mode():
 # ---------------------------------------------------------------------------
 
 
-def test_block_rejects_remote_execution_mode():
+def test_block_accepts_remote_execution_mode_at_initialisation():
+    block = SegmentAnything2VideoBlockV1(
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.REMOTE,
+    )
+
+    assert block._step_execution_mode is StepExecutionMode.REMOTE
+
+
+def test_block_rejects_remote_execution_mode_at_runtime():
+    block = SegmentAnything2VideoBlockV1(
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.REMOTE,
+    )
+
     with pytest.raises(NotImplementedError, match="LOCAL workflow step execution"):
-        SegmentAnything2VideoBlockV1(
-            model_manager=MagicMock(),
-            api_key=None,
-            step_execution_mode=StepExecutionMode.REMOTE,
+        block.run(
+            images=[],
+            boxes=None,
+            model_id="sam2video/small",
+            prompt_mode="first_frame",
+            prompt_interval=30,
+            threshold=0.0,
         )
 
 
