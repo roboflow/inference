@@ -264,6 +264,37 @@ INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_STRENGTH = get_float_from_env(
     variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_STRENGTH",
     default=0.85,
 )
+# When enabled, the lightx2v Qwen-Image-Lightning LoRA is fused into the base
+# Qwen-Image-Edit pipeline. This is a step-distillation LoRA: it lets the model
+# produce results in a handful of diffusion steps with guidance disabled, making
+# the (otherwise very heavy) model usable on consumer GPUs.
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_USE_LIGHTNING_LORA = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_USE_LIGHTNING_LORA",
+    default=False,
+)
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_NUM_INFERENCE_STEPS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_NUM_INFERENCE_STEPS",
+    default=4,
+)
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_GUIDANCE_SCALE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_GUIDANCE_SCALE",
+    default=1.0,
+)
+# When the Lightning LoRA is active, inputs larger than this many megapixels are
+# downscaled before inference. Image size dominates VRAM/latency for diffusion,
+# so a small cap is what makes the model survive on consumer GPUs.
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_MAX_MEGAPIXELS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_MAX_MEGAPIXELS",
+    default=0.35,
+)
+# How the diffusers pipeline is placed on the device: "model" keeps one
+# sub-model on the GPU at a time (default), "sequential" offloads at the
+# submodule level (much lower VRAM, slower — needed for the full base model on
+# <=24GB cards), "none" keeps the whole pipeline resident on the device.
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD = os.getenv(
+    "INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD",
+    "model",
+).strip().lower()
 INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS",
     default=512,

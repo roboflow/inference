@@ -50,8 +50,11 @@ def test_manifest_minimal_valid():
         }
     )
     assert manifest.model_id == DEFAULT_MODEL_ID
-    assert manifest.num_inference_steps == 28
-    assert manifest.guidance_scale == 5.0
+    # Steps/guidance default to None ("auto") and are resolved by the backend.
+    assert manifest.num_inference_steps is None
+    assert manifest.guidance_scale is None
+    assert manifest.use_lightning_lora is False
+    assert manifest.scale_megapixels is None
     assert manifest.seed is None
 
 
@@ -113,10 +116,11 @@ def _run(block, fake_model, **overrides):
         prompt="make it brighter",
         model_id=DEFAULT_MODEL_ID,
         local_weights_path=None,
+        use_lightning_lora=False,
         num_inference_steps=28,
         guidance_scale=5.0,
-
         seed=None,
+        scale_megapixels=None,
     )
     defaults.update(overrides)
     with patch.object(block, "_get_model", return_value=fake_model):
@@ -170,16 +174,54 @@ def test_get_model_uses_local_path_directly(tmp_path):
     fake_model = MagicMock(spec=QwenImageEditHF)
 
     with patch.object(QwenImageEditHF, "from_pretrained", return_value=fake_model) as mock_fp:
-        result = block._get_model(model_id=DEFAULT_MODEL_ID, local_weights_path=weights_dir)
+        result = block._get_model(
+            model_id=DEFAULT_MODEL_ID,
+            local_weights_path=weights_dir,
+            use_lightning_lora=False,
+        )
 
-    mock_fp.assert_called_once_with(model_name_or_path=weights_dir, local_files_only=True)
+    mock_fp.assert_called_once_with(
+        model_name_or_path=weights_dir,
+        local_files_only=True,
+        use_lightning_lora=False,
+    )
+    assert result is fake_model
+
+
+def test_get_model_lightning_lora_loads_from_huggingface():
+    block = _make_block()
+
+    from inference_models.models.qwen_image_edit.qwen_image_edit_hf import (
+        MODEL_ID,
+        QwenImageEditHF,
+    )
+
+    fake_model = MagicMock(spec=QwenImageEditHF)
+    with patch.object(
+        QwenImageEditHF, "from_pretrained", return_value=fake_model
+    ) as mock_fp:
+        result = block._get_model(
+            model_id=DEFAULT_MODEL_ID,
+            local_weights_path=None,
+            use_lightning_lora=True,
+        )
+
+    mock_fp.assert_called_once_with(
+        model_name_or_path=MODEL_ID,
+        local_files_only=False,
+        use_lightning_lora=True,
+    )
     assert result is fake_model
 
 
 def test_get_model_raises_for_missing_local_path():
     block = _make_block()
     with pytest.raises(ValueError, match="does not exist"):
-        block._get_model(model_id=DEFAULT_MODEL_ID, local_weights_path="/nonexistent/path")
+        block._get_model(
+            model_id=DEFAULT_MODEL_ID,
+            local_weights_path="/nonexistent/path",
+            use_lightning_lora=False,
+        )
 
 
 def test_get_restrictions_returns_gpu_only_hard_restrictions():
@@ -197,11 +239,16 @@ def test_model_cache_reuses_instance():
     block = _make_block()
     fake_model = MagicMock()
 
-    # Seed the cache directly — simulates the state after first load.
-    QwenImageEditBlockV1._model_cache[DEFAULT_MODEL_ID] = fake_model
+    # Seed the cache directly — simulates the state after first load. The cache
+    # key is (load-path-or-model-id, use_lightning_lora).
+    QwenImageEditBlockV1._model_cache[(DEFAULT_MODEL_ID, False)] = fake_model
 
-    result = block._get_model(DEFAULT_MODEL_ID, local_weights_path=None)
-    result2 = block._get_model(DEFAULT_MODEL_ID, local_weights_path=None)
+    result = block._get_model(
+        DEFAULT_MODEL_ID, local_weights_path=None, use_lightning_lora=False
+    )
+    result2 = block._get_model(
+        DEFAULT_MODEL_ID, local_weights_path=None, use_lightning_lora=False
+    )
 
     assert result is fake_model
     assert result2 is fake_model

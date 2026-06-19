@@ -23,6 +23,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
+    FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
@@ -55,14 +57,24 @@ output.
 * Weights are loaded from `local_weights_path` if provided, otherwise fetched
   from the Roboflow model registry using `model_id`.
 
+#### Lightning LoRA (fast / low-VRAM)
+
+Enable `use_lightning_lora` to fuse the lightx2v **Qwen-Image-Lightning**
+step-distillation LoRA into the pipeline. The model then runs in ~4 diffusion
+steps with guidance disabled — dramatically faster and feasible on consumer
+GPUs. When enabled with no `local_weights_path`, the base model and LoRA are
+pulled directly from HuggingFace (no Roboflow registry / API key needed). On
+GPUs with limited VRAM set `INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD=sequential`.
+
 #### Parameters
 
 | Parameter | Default | Notes |
 |---|---|---|
 | `prompt` | — | Required editing instruction |
 | `local_weights_path` | None | Absolute path to locally downloaded weights directory |
-| `num_inference_steps` | 28 | More steps → higher quality, slower |
-| `guidance_scale` | 5.0 | Higher → stronger prompt adherence |
+| `use_lightning_lora` | False | Fuse the 4-step Qwen-Image-Lightning LoRA |
+| `num_inference_steps` | auto | Auto = 4 with LoRA, 28 otherwise |
+| `guidance_scale` | auto | Auto = 1.0 with LoRA, 5.0 otherwise |
 | `seed` | None | Set for reproducible outputs |
 """
 
@@ -120,22 +132,53 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["/tmp/qwen-image-edit-weights", "$inputs.weights_path"],
     )
 
-    num_inference_steps: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
-        default=28,
-        description="Number of diffusion denoising steps. More steps improve quality at the cost of speed.",
-        examples=[28, 50],
+    use_lightning_lora: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(
+        default=False,
+        description=(
+            "Fuse the lightx2v Qwen-Image-Lightning step-distillation LoRA into the "
+            "pipeline. This lets the model run in ~4 diffusion steps (guidance "
+            "disabled), making it dramatically faster and feasible on consumer GPUs. "
+            "When enabled and no weights path is given, the base model and LoRA are "
+            "pulled directly from HuggingFace (no Roboflow registry / API key needed)."
+        ),
+        examples=[True, "$inputs.use_lightning_lora"],
     )
 
-    guidance_scale: Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float] = Field(
-        default=5.0,
-        description="Classifier-free guidance scale. Higher values make the output adhere more strongly to the prompt.",
-        examples=[5.0, 7.5],
+    num_inference_steps: Optional[Union[Selector(kind=[INTEGER_KIND]), int]] = Field(
+        default=None,
+        description=(
+            "Number of diffusion denoising steps. More steps improve quality at the "
+            "cost of speed. Leave unset to auto-select (4 with the Lightning LoRA, "
+            "28 otherwise)."
+        ),
+        examples=[4, 28, 50],
+    )
+
+    guidance_scale: Optional[Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float]] = Field(
+        default=None,
+        description=(
+            "Classifier-free guidance scale. Higher values make the output adhere "
+            "more strongly to the prompt. Leave unset to auto-select (1.0 with the "
+            "Lightning LoRA, 5.0 otherwise)."
+        ),
+        examples=[1.0, 5.0, 7.5],
     )
 
     seed: Optional[Union[Selector(kind=[INTEGER_KIND]), int]] = Field(
         default=None,
         description="Optional RNG seed for reproducible outputs. Leave unset for random results.",
         examples=[42, "$inputs.seed"],
+    )
+
+    scale_megapixels: Optional[Union[Selector(kind=[FLOAT_KIND]), float]] = Field(
+        default=None,
+        description=(
+            "Downscale inputs larger than this many megapixels before inference "
+            "(never upscales). Diffusion VRAM/latency scales with pixel count, so a "
+            "small cap is what keeps the model on a consumer GPU. Leave unset to "
+            "auto-select (~0.35 MP with the Lightning LoRA, full size otherwise)."
+        ),
+        examples=[0.35, 1.0],
     )
 
     @classmethod
@@ -208,11 +251,17 @@ class QwenImageEditBlockV1(WorkflowBlock):
         prompt: str,
         model_id: str,
         local_weights_path: Optional[str],
-        num_inference_steps: int,
-        guidance_scale: float,
+        use_lightning_lora: bool,
+        num_inference_steps: Optional[int],
+        guidance_scale: Optional[float],
         seed: Optional[int],
+        scale_megapixels: Optional[float],
     ) -> BlockResult:
-        model = self._get_model(model_id=model_id, local_weights_path=local_weights_path)
+        model = self._get_model(
+            model_id=model_id,
+            local_weights_path=local_weights_path,
+            use_lightning_lora=use_lightning_lora,
+        )
         results = []
         for image in images:
             edited_pil = model.edit(
@@ -221,6 +270,7 @@ class QwenImageEditBlockV1(WorkflowBlock):
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
                 seed=seed,
+                scale_megapixels=scale_megapixels,
             )
             edited_np = np.array(edited_pil)[:, :, ::-1]  # RGB → BGR
             parent_metadata = ImageParentMetadata(parent_id=str(uuid.uuid4()))
@@ -234,26 +284,47 @@ class QwenImageEditBlockV1(WorkflowBlock):
             )
         return results
 
-    def _get_model(self, model_id: str, local_weights_path: Optional[str]):
-        # Use the local path as cache key when provided so switching paths
-        # forces a reload, while the same path reuses the cached instance.
-        cache_key = local_weights_path if local_weights_path else model_id
+    def _get_model(
+        self,
+        model_id: str,
+        local_weights_path: Optional[str],
+        use_lightning_lora: bool,
+    ):
+        # Use the load path as cache key when provided so switching paths forces
+        # a reload, while the same path reuses the cached instance. The Lightning
+        # toggle is part of the key so flipping it loads a distinct instance.
+        base_key = local_weights_path if local_weights_path else model_id
+        cache_key = (base_key, bool(use_lightning_lora))
 
         if cache_key not in QwenImageEditBlockV1._model_cache:
+            from inference_models.models.qwen_image_edit.qwen_image_edit_hf import (
+                MODEL_ID,
+                QwenImageEditHF,
+            )
+
             if local_weights_path:
                 if not os.path.isdir(local_weights_path):
                     raise ValueError(
                         f"local_weights_path '{local_weights_path}' does not exist or is not a directory."
                     )
-                from inference_models.models.qwen_image_edit.qwen_image_edit_hf import QwenImageEditHF
                 QwenImageEditBlockV1._model_cache[cache_key] = QwenImageEditHF.from_pretrained(
                     model_name_or_path=local_weights_path,
                     local_files_only=True,
+                    use_lightning_lora=use_lightning_lora,
+                )
+            elif use_lightning_lora:
+                # Dev / offline-friendly path: pull the base model and LoRA
+                # straight from HuggingFace, bypassing the Roboflow registry.
+                QwenImageEditBlockV1._model_cache[cache_key] = QwenImageEditHF.from_pretrained(
+                    model_name_or_path=MODEL_ID,
+                    local_files_only=False,
+                    use_lightning_lora=True,
                 )
             else:
                 from inference_models import AutoModel
                 QwenImageEditBlockV1._model_cache[cache_key] = AutoModel.from_pretrained(
                     model_id_or_path=model_id,
                     api_key=self._api_key,
+                    use_lightning_lora=False,
                 )
         return QwenImageEditBlockV1._model_cache[cache_key]
