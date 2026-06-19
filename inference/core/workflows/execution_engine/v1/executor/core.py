@@ -144,6 +144,7 @@ def _run_workflow(
     execution_coordinator = ParallelStepExecutionCoordinator.init(
         execution_graph=workflow.execution_graph,
     )
+    workflow_execution_id = get_or_create_workflow_execution_id()
     try:
         next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
         while next_steps is not None:
@@ -152,6 +153,7 @@ def _run_workflow(
                 workflow=workflow,
                 execution_data_manager=execution_data_manager,
                 max_concurrent_steps=max_concurrent_steps,
+                workflow_execution_id=workflow_execution_id,
                 profiler=profiler,
                 executor=executor,
                 step_error_handler=step_error_handler,
