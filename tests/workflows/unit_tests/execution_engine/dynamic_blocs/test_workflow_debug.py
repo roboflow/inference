@@ -36,6 +36,19 @@ def test_trace_records_entries_with_step_name() -> None:
     ]
 
 
+def test_trace_snapshots_json_values_at_append_time() -> None:
+    # given
+    trace = WorkflowDebugTrace()
+    value = {"items": []}
+
+    # when
+    trace.append(step_name="step", value=value)
+    value["items"].append("later")
+
+    # then
+    assert trace.snapshot() == [{"step": "step", "value": {"items": []}}]
+
+
 def test_debug_traces_proxy_forwards_to_active_trace_with_current_step() -> None:
     # given
     trace = WorkflowDebugTrace()
@@ -103,7 +116,7 @@ def test_trace_stops_recording_after_entry_limit() -> None:
 
 def test_trace_truncates_oversized_entries() -> None:
     # given
-    trace = WorkflowDebugTrace(max_entry_serialized_chars=50)
+    trace = WorkflowDebugTrace(max_entry_serialized_chars=120)
     large_value = "x" * 200
 
     # when
@@ -143,11 +156,25 @@ def test_trace_does_not_hang_when_metadata_exceeds_entry_cap() -> None:
     # then
     snapshot = trace.snapshot()
     assert len(snapshot) == 1
+    assert snapshot[0]["step"] is None
     assert snapshot[0]["value"] == CAPACITY_EXCEEDED_MARKER
+    assert _entry_serialized_size(snapshot[0]) <= 120
 
     # and - the trace is now closed to further entries
     trace.append(step_name="step", value="anything")
     assert len(trace.snapshot()) == 1
+
+
+def test_trace_counts_capacity_marker_size() -> None:
+    # given
+    trace = WorkflowDebugTrace(max_entries=0)
+
+    # when
+    trace.append(step_name="step", value="anything")
+
+    # then
+    marker = trace.snapshot()[0]
+    assert trace._total_serialized_chars == _entry_serialized_size(marker)
 
 
 def test_debug_traces_proxy_append_with_timestamp() -> None:

@@ -38,14 +38,23 @@ CAPACITY_EXCEEDED_MARKER = (
 
 def _serialize_debug_value(value: Any) -> Any:
     try:
-        json.dumps(value)
-        return value
+        return json.loads(json.dumps(value))
     except (TypeError, ValueError):
         return repr(value)
 
 
 def _entry_serialized_size(entry: Dict[str, Any]) -> int:
     return len(json.dumps(entry, default=str))
+
+
+def _capacity_marker_entry(
+    step_name: Optional[str],
+    max_entry_serialized_chars: int,
+) -> Dict[str, Any]:
+    entry = {"step": step_name, "value": CAPACITY_EXCEEDED_MARKER}
+    if _entry_serialized_size(entry) <= max_entry_serialized_chars:
+        return entry
+    return {"step": None, "value": CAPACITY_EXCEEDED_MARKER}
 
 
 def _resolve_timestamp_tz(
@@ -85,6 +94,11 @@ class WorkflowDebugTrace:
         self._max_total_serialized_chars = max_total_serialized_chars
         self._total_serialized_chars = 0
         self._capacity_exceeded = False
+
+    def _append_capacity_marker(self, step_name: Optional[str]) -> None:
+        entry = _capacity_marker_entry(step_name, self._max_entry_serialized_chars)
+        self._total_serialized_chars += _entry_serialized_size(entry)
+        self._entries.append(entry)
 
     def append(
         self,
@@ -134,24 +148,18 @@ class WorkflowDebugTrace:
                 # a very long, client-controlled step name) does not fit. Record
                 # the capacity marker and stop instead of looping forever.
                 self._capacity_exceeded = True
-                self._entries.append(
-                    {"step": step_name, "value": CAPACITY_EXCEEDED_MARKER}
-                )
+                self._append_capacity_marker(step_name)
                 return
             if len(self._entries) >= self._max_entries:
                 self._capacity_exceeded = True
-                self._entries.append(
-                    {"step": step_name, "value": CAPACITY_EXCEEDED_MARKER}
-                )
+                self._append_capacity_marker(step_name)
                 return
             if (
                 self._total_serialized_chars + entry_size
                 > self._max_total_serialized_chars
             ):
                 self._capacity_exceeded = True
-                self._entries.append(
-                    {"step": step_name, "value": CAPACITY_EXCEEDED_MARKER}
-                )
+                self._append_capacity_marker(step_name)
                 return
             self._total_serialized_chars += entry_size
             self._entries.append(entry)
