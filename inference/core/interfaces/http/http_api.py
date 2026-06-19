@@ -3389,7 +3389,27 @@ class HttpInterface(BaseInterface):
                     ),
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
+                    # Distinct param names aliased to the real query keys: declaring these
+                    # as `source` / `source_info` would land them in the usage collector's
+                    # func_kwargs and override roboflow_service_name (e.g.
+                    # async-serverless-gpu) with the feature tag. We only want them
+                    # persisted on the request (and thus in resource_details).
+                    request_source: Optional[str] = Query(
+                        None,
+                        alias="source",
+                        description="The source of the inference request",
+                    ),
+                    request_source_info: Optional[str] = Query(
+                        None,
+                        alias="source_info",
+                        description="The detailed source information of the inference request",
+                    ),
                 ):
+                    if request_source is not None:
+                        inference_request.source = request_source
+                    if request_source_info is not None:
+                        inference_request.source_info = request_source_info
+
                     if not SAM3_FINE_TUNED_MODELS_ENABLED:
                         if not inference_request.model_id.startswith("sam3/"):
                             raise HTTPException(
@@ -3449,6 +3469,8 @@ class HttpInterface(BaseInterface):
                             "image": http_image,
                             "prompts": http_prompts,
                             "output_prob_thresh": inference_request.output_prob_thresh,
+                            "source": inference_request.source,
+                            "source_info": inference_request.source_info,
                         }
 
                         try:
@@ -3529,8 +3551,28 @@ class HttpInterface(BaseInterface):
                     ),
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
+                    # Distinct param names aliased to the real query keys: declaring these
+                    # as `source` / `source_info` would land them in the usage collector's
+                    # func_kwargs and override roboflow_service_name (e.g.
+                    # async-serverless-gpu) with the feature tag. We only want them
+                    # persisted on the request (and thus in resource_details).
+                    request_source: Optional[str] = Query(
+                        None,
+                        alias="source",
+                        description="The source of the inference request",
+                    ),
+                    request_source_info: Optional[str] = Query(
+                        None,
+                        alias="source_info",
+                        description="The detailed source information of the inference request",
+                    ),
                 ):
                     logger.debug(f"Reached /sam3/visual_segment")
+
+                    if request_source is not None:
+                        inference_request.source = request_source
+                    if request_source_info is not None:
+                        inference_request.source_info = request_source_info
 
                     if SAM3_EXEC_MODE == "remote":
                         endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
@@ -3550,6 +3592,8 @@ class HttpInterface(BaseInterface):
                             "image": http_image,
                             "prompts": prompts_data,
                             "multimask_output": inference_request.multimask_output,
+                            "source": inference_request.source,
+                            "source_info": inference_request.source_info,
                         }
 
                         try:

@@ -396,16 +396,24 @@ def load_image_from_url(
     """
     _ensure_url_input_allowed()
     try:
-        parsed_url = urllib.parse.urlparse(value)
-    except ValueError as error:
+        original_parsed_url = urllib.parse.urlparse(value)
+        if "\\" in original_parsed_url.netloc:
+            raise ValueError("URL authority contains a backslash")
+        prepared_request = requests.Request(method="GET", url=value).prepare()
+        prepared_url = prepared_request.url
+        parsed_url = urllib.parse.urlparse(prepared_url)
+    except (RequestException, ValueError) as error:
         message = "Provided image URL is invalid"
         raise InputImageLoadError(
             message=message,
             public_message=message,
         ) from error
     _ensure_resource_schema_allowed(schema=parsed_url.scheme)
+    network_location = parsed_url.hostname or ""
+    if ":" in network_location:
+        network_location = f"[{network_location}]"
     domain_extraction_result = tldextract.TLDExtract(suffix_list_urls=())(
-        parsed_url.netloc
+        network_location
     )  # we get rid of potential ports and parse FQDNs
     _ensure_resource_fqdn_allowed(fqdn=domain_extraction_result.fqdn)
     address_parts_concatenated = _concatenate_chunks_of_network_location(
@@ -419,7 +427,7 @@ def load_image_from_url(
         destination=address_parts_concatenated
     )
     try:
-        response = requests.get(value, stream=True)
+        response = requests.get(prepared_url, stream=True)
         api_key_safe_raise_for_status(response=response)
         return load_image_from_encoded_bytes(
             value=response.content, cv_imread_flags=cv_imread_flags
