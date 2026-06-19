@@ -5,6 +5,13 @@
 
 ### Fixed
 
+- Security issues patch, 19.06.2026 - `bleach>=6.4.0` and `tornado>=6.5.7` in `docs` extras.
+
+
+## `0.29.4`
+
+### Fixed
+
 - Fixed GLM-OCR dtype mismatch on Jetson by casting HuggingFace processor floating-point
 inputs to the model dtype resolved for the target device (bfloat16 on supported CUDA hardware,
 otherwise float16).
