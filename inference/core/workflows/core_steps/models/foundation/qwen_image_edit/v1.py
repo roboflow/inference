@@ -155,14 +155,16 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[4, 28, 50],
     )
 
-    guidance_scale: Optional[Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float]] = Field(
-        default=None,
-        description=(
-            "Classifier-free guidance scale. Higher values make the output adhere "
-            "more strongly to the prompt. Leave unset to auto-select (1.0 with the "
-            "Lightning LoRA, 5.0 otherwise)."
-        ),
-        examples=[1.0, 5.0, 7.5],
+    guidance_scale: Optional[Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float]] = (
+        Field(
+            default=None,
+            description=(
+                "Classifier-free guidance scale. Higher values make the output adhere "
+                "more strongly to the prompt. Leave unset to auto-select (1.0 with the "
+                "Lightning LoRA, 5.0 otherwise)."
+            ),
+            examples=[1.0, 5.0, 7.5],
+        )
     )
 
     seed: Optional[Union[Selector(kind=[INTEGER_KIND]), int]] = Field(
@@ -308,24 +310,31 @@ class QwenImageEditBlockV1(WorkflowBlock):
                     raise ValueError(
                         f"local_weights_path '{local_weights_path}' does not exist or is not a directory."
                     )
-                QwenImageEditBlockV1._model_cache[cache_key] = QwenImageEditHF.from_pretrained(
-                    model_name_or_path=local_weights_path,
-                    local_files_only=True,
-                    use_lightning_lora=use_lightning_lora,
+                QwenImageEditBlockV1._model_cache[cache_key] = (
+                    QwenImageEditHF.from_pretrained(
+                        model_name_or_path=local_weights_path,
+                        local_files_only=True,
+                        use_lightning_lora=use_lightning_lora,
+                    )
                 )
             elif use_lightning_lora:
                 # Dev / offline-friendly path: pull the base model and LoRA
                 # straight from HuggingFace, bypassing the Roboflow registry.
-                QwenImageEditBlockV1._model_cache[cache_key] = QwenImageEditHF.from_pretrained(
-                    model_name_or_path=MODEL_ID,
-                    local_files_only=False,
-                    use_lightning_lora=True,
+                QwenImageEditBlockV1._model_cache[cache_key] = (
+                    QwenImageEditHF.from_pretrained(
+                        model_name_or_path=MODEL_ID,
+                        local_files_only=False,
+                        use_lightning_lora=True,
+                    )
                 )
             else:
                 from inference_models import AutoModel
-                QwenImageEditBlockV1._model_cache[cache_key] = AutoModel.from_pretrained(
-                    model_id_or_path=model_id,
-                    api_key=self._api_key,
-                    use_lightning_lora=False,
+
+                QwenImageEditBlockV1._model_cache[cache_key] = (
+                    AutoModel.from_pretrained(
+                        model_id_or_path=model_id,
+                        api_key=self._api_key,
+                        use_lightning_lora=False,
+                    )
                 )
         return QwenImageEditBlockV1._model_cache[cache_key]

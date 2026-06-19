@@ -321,11 +321,11 @@ from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
-    QwenVlmBlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.qwen_image_edit.v1 import (
     QwenImageEditBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
+    QwenVlmBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
     SegPreviewBlockV1,
