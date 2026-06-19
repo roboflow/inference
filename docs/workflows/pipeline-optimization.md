@@ -6,28 +6,29 @@ We have introduced high-performance [Triton](https://github.com/triton-lang/trit
 
 1. Use this block in your workflow:
 
-```python
-"type": "roboflow_core/roboflow_instance_segmentation_model@v3",  # v3 workflow only at the moment
-"name": "segmentation",
-"images": "$inputs.image",
-"model_id": model_id,  # Any RF-DETR instance segmentation model
-"confidence_mode": "custom",
-"custom_confidence": confidence,
-# Required: the optimization runs on the non-dense RLE path.
-"enforce_dense_masks_in_inference_models": False,
-```
+    ```python
+    "type": "roboflow_core/roboflow_instance_segmentation_model@v3",  # v3 workflow only at the moment
+    "name": "segmentation",
+    "images": "$inputs.image",
+    "model_id": model_id,  # Any RF-DETR instance segmentation model
+    "confidence_mode": "custom",
+    "custom_confidence": confidence,
+    # Required: the optimization runs on the non-dense RLE path.
+    "enforce_dense_masks_in_inference_models": False,
+    ```
+
 
 2. Currently, only the **TensorRT** package of **RF-DETR instance segmentation** models is supported.
 3. Workflows with static **batch size** of **1** are supported. Blocks like Image Slicer increase the batch size, which disables the optimization.
 4. Only `STRETCH_TO` resize mode for input pre-processing is supported at the moment.
 5. Use these env vars while running your workflow script:
 
-```shell
-ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND=true \
-INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=true \
-INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED=true \
-RFDETR_PIPELINE_DEPTH=2
-```
+    ```shell
+    ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND=true \
+    INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=true \
+    INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED=true \
+    RFDETR_PIPELINE_DEPTH=2
+    ```
 
 ### Script (script.py)
 
