@@ -230,6 +230,21 @@ def test_load_image_from_url_when_locations_whitelisted(
 @mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
 @mock.patch.object(
+    image_utils, "WHITELISTED_DESTINATIONS_FOR_URL_INPUT", {"www.baidu.com"}
+)
+def test_load_image_from_url_rejects_backslash_userinfo_allowlist_bypass() -> None:
+    with mock.patch.object(image_utils.requests, "get") as requests_get:
+        with pytest.raises(InputImageLoadError) as error:
+            _ = load_image_from_url(value="https://localhost:6666\\@www.baidu.com")
+
+    assert "whitelisted" in str(error.value)
+    requests_get.assert_not_called()
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+@mock.patch.object(
     image_utils,
     "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT",
     {
