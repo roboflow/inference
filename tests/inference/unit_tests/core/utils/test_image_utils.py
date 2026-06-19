@@ -1,5 +1,7 @@
 import io
+import ipaddress
 import pickle
+import socket
 from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
@@ -41,21 +43,21 @@ from inference.core.utils.image_utils import (
 def mock_image_url_dns(monkeypatch) -> None:
     def getaddrinfo(host, *args, **kwargs):
         try:
-            address = image_utils.ipaddress.ip_address(host.split("%", 1)[0])
+            address = ipaddress.ip_address(host.split("%", 1)[0])
             resolved = str(address)
         except ValueError:
             resolved = "93.184.216.34"
         return [
             (
-                image_utils.socket.AF_INET,
-                image_utils.socket.SOCK_STREAM,
+                socket.AF_INET,
+                socket.SOCK_STREAM,
                 6,
                 "",
                 (resolved, 0),
             )
         ]
 
-    monkeypatch.setattr(image_utils.socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
 
 
 @pytest.mark.parametrize(
@@ -288,12 +290,12 @@ def test_load_image_from_url_rejects_hostname_resolving_to_metadata_address(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        image_utils.socket,
+        socket,
         "getaddrinfo",
         lambda *args, **kwargs: [
             (
-                image_utils.socket.AF_INET,
-                image_utils.socket.SOCK_STREAM,
+                socket.AF_INET,
+                socket.SOCK_STREAM,
                 6,
                 "",
                 ("169.254.169.254", 0),
