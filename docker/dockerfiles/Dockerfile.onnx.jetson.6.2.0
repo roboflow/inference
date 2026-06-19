@@ -217,18 +217,20 @@ RUN export MAX_JOBS=4 && \
 # mounts are reused; a dedicated triton-builder stage re-pulled l4t-jetpack and
 # rebuilt cold every time, which made CI builds very slow. Triton needs cmake <4.0;
 # install via pip because this builder ships cmake 4.2.
+# Clone + wheel build must share one RUN: cache-mounted src is not persisted
+# across separate RUN instructions.
 WORKDIR /build/triton
 RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${TRITON_VERSION}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.triton/llvm,sharing=locked,id=triton-llvm-${TRITON_VERSION}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
+    set -eux; \
     if [ ! -d src/.git ]; then \
         git clone --depth 1 --branch v${TRITON_VERSION} https://github.com/triton-lang/triton.git src; \
     else \
         git -C src fetch --depth 1 origin tag v${TRITON_VERSION} && \
         git -C src checkout v${TRITON_VERSION}; \
-    fi && \
-    git -C src submodule update --init --recursive
-RUN --mount=type=cache,target=/root/.triton/llvm,sharing=locked,id=triton-llvm-${TRITON_VERSION}-${TARGETARCH} \
-    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
-    set -eux; \
+    fi; \
+    git -C src submodule update --init --recursive; \
     mkdir -p /tmp/triton-wheels; \
     python3 -m pip install --break-system-packages --no-cache-dir \
         "setuptools>=40.8.0" \
