@@ -1,6 +1,5 @@
 """Unit tests for the Qwen-Image-Edit workflow block (v1)."""
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -13,7 +12,6 @@ from inference.core.workflows.core_steps.models.foundation.qwen_image_edit.v1 im
     QwenImageEditBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -144,8 +142,14 @@ def test_run_passes_params_to_model():
     fake_model = MagicMock()
     fake_model.edit.return_value = _fake_pil_image()
 
-    _run(block, fake_model, prompt="add a hat", num_inference_steps=10,
-         guidance_scale=3.5, seed=7)
+    _run(
+        block,
+        fake_model,
+        prompt="add a hat",
+        num_inference_steps=10,
+        guidance_scale=3.5,
+        seed=7,
+    )
 
     call_kwargs = fake_model.edit.call_args.kwargs
     assert call_kwargs["prompt"] == "add a hat"
@@ -159,7 +163,9 @@ def test_run_processes_batch():
     fake_model = MagicMock()
     fake_model.edit.return_value = _fake_pil_image()
 
-    results = _run(block, fake_model, images=[_stub_image(), _stub_image(), _stub_image()])
+    results = _run(
+        block, fake_model, images=[_stub_image(), _stub_image(), _stub_image()]
+    )
 
     assert len(results) == 3
     assert fake_model.edit.call_count == 3
@@ -170,10 +176,15 @@ def test_get_model_uses_local_path_directly(tmp_path):
     # Create a fake weights dir so the path-existence check passes.
     weights_dir = str(tmp_path)
 
-    from inference_models.models.qwen_image_edit.qwen_image_edit_hf import QwenImageEditHF
+    from inference_models.models.qwen_image_edit.qwen_image_edit_hf import (
+        QwenImageEditHF,
+    )
+
     fake_model = MagicMock(spec=QwenImageEditHF)
 
-    with patch.object(QwenImageEditHF, "from_pretrained", return_value=fake_model) as mock_fp:
+    with patch.object(
+        QwenImageEditHF, "from_pretrained", return_value=fake_model
+    ) as mock_fp:
         result = block._get_model(
             model_id=DEFAULT_MODEL_ID,
             local_weights_path=weights_dir,
@@ -226,9 +237,12 @@ def test_get_model_raises_for_missing_local_path():
 
 def test_get_restrictions_returns_gpu_only_hard_restrictions():
     from inference.core.workflows.prototypes.block import Runtime, Severity
+
     restrictions = BlockManifest.get_restrictions()
     assert len(restrictions) == 2
-    runtimes = {r for restriction in restrictions for r in restriction.applies_to_runtimes}
+    runtimes = {
+        r for restriction in restrictions for r in restriction.applies_to_runtimes
+    }
     assert Runtime.SELF_HOSTED_CPU in runtimes
     assert Runtime.HOSTED_SERVERLESS in runtimes
     for restriction in restrictions:

@@ -291,10 +291,14 @@ INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_MAX_MEGAPIXELS = get_float_from_env(
 # sub-model on the GPU at a time (default), "sequential" offloads at the
 # submodule level (much lower VRAM, slower — needed for the full base model on
 # <=24GB cards), "none" keeps the whole pipeline resident on the device.
-INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD = os.getenv(
-    "INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD",
-    "model",
-).strip().lower()
+INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD = (
+    os.getenv(
+        "INFERENCE_MODELS_QWEN_IMAGE_EDIT_CPU_OFFLOAD",
+        "model",
+    )
+    .strip()
+    .lower()
+)
 INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
     variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS",
     default=512,

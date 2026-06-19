@@ -201,12 +201,16 @@ class QwenImageEditHF:
         Explicit caller-provided values always win; ``None`` means "auto".
         """
         if self._lightning_lora_applied:
-            default_steps = INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_NUM_INFERENCE_STEPS
+            default_steps = (
+                INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_NUM_INFERENCE_STEPS
+            )
             default_cfg = INFERENCE_MODELS_QWEN_IMAGE_EDIT_LIGHTNING_GUIDANCE_SCALE
         else:
             default_steps = INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_NUM_INFERENCE_STEPS
             default_cfg = INFERENCE_MODELS_QWEN_IMAGE_EDIT_DEFAULT_GUIDANCE_SCALE
-        steps = num_inference_steps if num_inference_steps is not None else default_steps
+        steps = (
+            num_inference_steps if num_inference_steps is not None else default_steps
+        )
         cfg_scale = guidance_scale if guidance_scale is not None else default_cfg
         return steps, cfg_scale
 

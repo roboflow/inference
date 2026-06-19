@@ -18,7 +18,6 @@ from inference_models.models.qwen_image_edit.qwen_image_edit_hf import (
     _to_pil,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -200,7 +199,9 @@ def test_edit_explicit_values_override_lightning_defaults():
 def _patched_pipeline_module(pipe: MagicMock):
     """Return a fake `diffusers` module exposing QwenImageEditPipeline."""
     fake_diffusers = SimpleNamespace(
-        QwenImageEditPipeline=SimpleNamespace(from_pretrained=MagicMock(return_value=pipe))
+        QwenImageEditPipeline=SimpleNamespace(
+            from_pretrained=MagicMock(return_value=pipe)
+        )
     )
     return patch.dict("sys.modules", {"diffusers": fake_diffusers})
 
@@ -232,9 +233,7 @@ def test_from_pretrained_skips_lora_when_disabled():
     pipe = MagicMock()
     with _patched_pipeline_module(pipe), patch.object(
         qhf, "_build_lightning_scheduler"
-    ) as m_sched, patch.object(
-        qhf, "_load_transformer"
-    ) as m_trans, patch.object(
+    ) as m_sched, patch.object(qhf, "_load_transformer") as m_trans, patch.object(
         qhf, "_load_lightning_lora"
     ) as m_lora:
         model = QwenImageEditHF.from_pretrained(
@@ -254,9 +253,7 @@ def test_from_pretrained_lora_failure_is_non_fatal():
     pipe = MagicMock()
     with _patched_pipeline_module(pipe), patch.object(
         qhf, "_build_lightning_scheduler", return_value=MagicMock()
-    ), patch.object(
-        qhf, "_load_transformer", return_value=MagicMock()
-    ), patch.object(
+    ), patch.object(qhf, "_load_transformer", return_value=MagicMock()), patch.object(
         qhf, "_load_lightning_lora", return_value=False
     ):
         model = QwenImageEditHF.from_pretrained(
@@ -310,11 +307,11 @@ def test_edit_auto_scales_input_with_lightning_lora():
 
 
 def test_registry_entry_resolves():
+    from inference_models.models.auto_loaders.entities import BackendType
     from inference_models.models.auto_loaders.models_registry import (
         IMAGE_EDITING_TASK,
         REGISTERED_MODELS,
     )
-    from inference_models.models.auto_loaders.entities import BackendType
 
     key = ("qwen-image-edit", IMAGE_EDITING_TASK, BackendType.HF)
     assert key in REGISTERED_MODELS, "qwen-image-edit not found in REGISTERED_MODELS"
