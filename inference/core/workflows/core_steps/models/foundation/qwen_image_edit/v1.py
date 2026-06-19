@@ -300,16 +300,20 @@ class QwenImageEditBlockV1(WorkflowBlock):
         cache_key = (base_key, bool(use_lightning_lora))
 
         if cache_key not in QwenImageEditBlockV1._model_cache:
+            # Validate the cheap precondition before importing the (heavy) backend
+            # so a bad path fails fast with a clear error regardless of whether the
+            # GPU model stack is importable.
+            if local_weights_path and not os.path.isdir(local_weights_path):
+                raise ValueError(
+                    f"local_weights_path '{local_weights_path}' does not exist or is not a directory."
+                )
+
             from inference_models.models.qwen_image_edit.qwen_image_edit_hf import (
                 MODEL_ID,
                 QwenImageEditHF,
             )
 
             if local_weights_path:
-                if not os.path.isdir(local_weights_path):
-                    raise ValueError(
-                        f"local_weights_path '{local_weights_path}' does not exist or is not a directory."
-                    )
                 QwenImageEditBlockV1._model_cache[cache_key] = (
                     QwenImageEditHF.from_pretrained(
                         model_name_or_path=local_weights_path,

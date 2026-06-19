@@ -172,13 +172,16 @@ def test_run_processes_batch():
 
 
 def test_get_model_uses_local_path_directly(tmp_path):
+    # The concrete backend lives in the separately-published `inference_models`
+    # package; skip when it is not installed (e.g. CI before a matching release).
+    qwen_hf = pytest.importorskip(
+        "inference_models.models.qwen_image_edit.qwen_image_edit_hf"
+    )
+    QwenImageEditHF = qwen_hf.QwenImageEditHF
+
     block = _make_block()
     # Create a fake weights dir so the path-existence check passes.
     weights_dir = str(tmp_path)
-
-    from inference_models.models.qwen_image_edit.qwen_image_edit_hf import (
-        QwenImageEditHF,
-    )
 
     fake_model = MagicMock(spec=QwenImageEditHF)
 
@@ -200,12 +203,13 @@ def test_get_model_uses_local_path_directly(tmp_path):
 
 
 def test_get_model_lightning_lora_loads_from_huggingface():
-    block = _make_block()
-
-    from inference_models.models.qwen_image_edit.qwen_image_edit_hf import (
-        MODEL_ID,
-        QwenImageEditHF,
+    qwen_hf = pytest.importorskip(
+        "inference_models.models.qwen_image_edit.qwen_image_edit_hf"
     )
+    MODEL_ID = qwen_hf.MODEL_ID
+    QwenImageEditHF = qwen_hf.QwenImageEditHF
+
+    block = _make_block()
 
     fake_model = MagicMock(spec=QwenImageEditHF)
     with patch.object(
