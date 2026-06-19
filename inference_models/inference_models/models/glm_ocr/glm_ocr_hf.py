@@ -49,6 +49,14 @@ def _is_ampere_plus(device: torch.device) -> bool:
     return major >= 8
 
 
+def _resolve_default_dtype(device: torch.device) -> torch.dtype:
+    if device.type == "cuda":
+        if torch.cuda.is_bf16_supported():
+            return torch.bfloat16
+        return torch.float16
+    return torch.float32
+
+
 class GlmOcrHF:
     default_dtype = torch.bfloat16
 
@@ -62,7 +70,7 @@ class GlmOcrHF:
         quantization_config: Any = None,
         **kwargs,
     ) -> "GlmOcrHF":
-        dtype = cls.default_dtype
+        dtype = _resolve_default_dtype(device)
         attn_implementation = _get_glm_ocr_attn_implementation(device)
 
         model = (
@@ -100,6 +108,7 @@ class GlmOcrHF:
         self._model = model
         self._processor = processor
         self._device = device
+        self._torch_dtype = next(model.parameters()).dtype
         self._lock = Lock()
 
     def recognize_table(
@@ -208,7 +217,11 @@ class GlmOcrHF:
         )
 
         inputs = {
-            k: v.to(self._device)
+            k: (
+                v.to(self._device, dtype=self._torch_dtype)
+                if v.is_floating_point()
+                else v.to(self._device)
+            )
             for k, v in inputs.items()
             if isinstance(v, torch.Tensor)
         }

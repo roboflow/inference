@@ -1,6 +1,6 @@
 [project]
 name = "inference-models"
-version = "0.29.2"
+version = "0.29.5"
 description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -144,9 +144,10 @@ docs = [
   "mkdocs-git-revision-date-localized-plugin>=1.2.4",
   "mkdocs-literate-nav~=0.6.2",
   "mkdocs-gen-files~=0.6.0",
-  "tornado>=6.5.5",
+  "tornado>=6.5.7",
   "mistune>=3.2.1,<4.0.0",
-  "pymdown-extensions>=10.21.3"
+  "pymdown-extensions>=10.21.3",
+  "bleach>=6.4.0"
 ]
 
 [tool.uv.sources]
