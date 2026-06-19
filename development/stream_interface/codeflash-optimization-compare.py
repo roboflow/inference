@@ -471,6 +471,7 @@ def do_run(
         video_reference=_resolve_video_reference(video_reference),
         workflow_specification=build_workflow(workflow_model_id, confidence),
         on_prediction=sink,
+        serialize_results=True,
     )
     pipeline.start()
     pipeline.join()
