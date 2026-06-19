@@ -36,6 +36,27 @@ def get_model_resource_details_from_kwargs(
     return resource_details
 
 
+def get_source_info_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
+    # source_info can arrive as a direct kwarg (request-category HTTP handlers),
+    # nested under the catch-all kwargs of a model's infer(self, image, **kwargs),
+    # or as an attribute of the request object passed to infer_from_request.
+    source_info = None
+    if "source_info" in func_kwargs:
+        source_info = func_kwargs["source_info"]
+    elif "kwargs" in func_kwargs and isinstance(func_kwargs["kwargs"], dict):
+        source_info = func_kwargs["kwargs"].get("source_info")
+    if not source_info:
+        for request_key in ("inference_request", "request", "workflow_request"):
+            request = func_kwargs.get(request_key)
+            if request is not None and hasattr(request, "source_info"):
+                source_info = request.source_info
+                if source_info:
+                    break
+    if source_info and source_info != "external":
+        return source_info
+    return None
+
+
 def get_resource_details_from_workflow_json(
     workflow_json: Dict[str, Any],
 ) -> List[str]:
