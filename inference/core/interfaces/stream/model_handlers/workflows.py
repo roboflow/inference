@@ -30,7 +30,7 @@ class WorkflowRunner:
             VideoMetadata(
                 video_identifier=(
                     str(video_frame.source_id)
-                    if video_frame.source_id
+                    if video_frame.source_id is not None
                     else "default_source"
                 ),
                 frame_number=video_frame.frame_id,
