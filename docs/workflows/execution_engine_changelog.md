@@ -2,6 +2,16 @@
 
 Below you can find the changelog for Execution Engine.
 
+## Execution Engine `v1.12.0` | inference `v1.3.2`
+
+**What changed**
+
+**Future resolution** - Some steps might now emit `Future` objects which defer output
+resolution to until outputs are needed by clients. For downstream blocks these futures
+are being resolved in the [step_input_assembler](inference/core/workflows/execution_engine/v1/executor/execution_data_manager/step_input_assembler.py)
+while for output construction in the [output_constructor](inference/core/workflows/execution_engine/v1/executor/output_constructor.py)
+along with coordinate conversion.
+
 ## Execution Engine `v1.11.0` | inference `v1.3.1`
 
 **What changed**

@@ -74,11 +74,24 @@ def initialise_step(
             context="workflow_compilation | steps_initialisation",
             inner_error=e,
         ) from e
+    attach_workflow_step_metadata(
+        step=step,
+        step_manifest=step_manifest,
+    )
     return InitialisedStep(
         block_specification=block_specification,
         manifest=step_manifest,
         step=step,
     )
+
+
+def attach_workflow_step_metadata(
+    step: Any,
+    step_manifest: WorkflowBlockManifest,
+) -> None:
+    setattr(step, "_workflow_step_name", step_manifest.name)
+    setattr(step, "_workflow_step_type", step_manifest.type)
+    setattr(step, "_workflow_step_selector", f"$steps.{step_manifest.name}")
 
 
 def retrieve_init_parameters_values(
