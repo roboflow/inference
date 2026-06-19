@@ -82,6 +82,7 @@ _WORKER_BUSY_TIMEOUT = (
     cfg.INFERENCE_WORKER_BUSY_TIMEOUT_S
 )  # silence while work outstanding
 _EMPTY_CACHE_EVERY_N_BATCHES = cfg.INFERENCE_WORKER_EMPTY_CACHE_EVERY_N_BATCHES
+_EMPTY_CACHE_CHECK_INTERVAL_S = cfg.INFERENCE_WORKER_EMPTY_CACHE_CHECK_INTERVAL_S
 _EMPTY_CACHE_MIN_FREE_BYTES = cfg.INFERENCE_WORKER_EMPTY_CACHE_MIN_FREE_BYTES
 _SEND_TIMEOUT_MS = 5000  # parent PAIR sends must never block forever
 
@@ -177,19 +178,26 @@ def _tensors_to_numpy(result: Any) -> Any:
 
 def _maybe_empty_cuda_cache(
     batch_count: int,
+    last_check_ts: float,
+    now: float,
     every_n_batches: int,
+    every_n_seconds: float,
     min_free_bytes: int,
     log,
-) -> None:
-    if every_n_batches <= 0 or batch_count <= 0:
-        return
-    if batch_count % every_n_batches:
-        return
+) -> float:
+    batch_due = (
+        every_n_batches > 0
+        and batch_count > 0
+        and batch_count % every_n_batches == 0
+    )
+    time_due = every_n_seconds > 0 and now - last_check_ts >= every_n_seconds
+    if not batch_due and not time_due:
+        return last_check_ts
     try:
         import torch  # noqa: PLC0415
 
         if not torch.cuda.is_available():
-            return
+            return now
         allocated = sum(
             torch.cuda.memory_allocated(i) for i in range(torch.cuda.device_count())
         )
@@ -210,6 +218,7 @@ def _maybe_empty_cuda_cache(
             )
     except Exception:
         log.debug("Worker: torch.cuda.empty_cache() check failed", exc_info=True)
+    return now
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +379,7 @@ def _worker_loop(
         "infer_ms": deque(maxlen=1000),
         "write_ms": deque(maxlen=1000),
         "start_ts": time.monotonic(),
+        "last_empty_cache_check_ts": 0.0,
     }
 
     while True:
@@ -829,9 +839,12 @@ def _process_slots(
     worker_stats["decode_ms"].append((t_decoded - t0) * 1000)
     worker_stats["infer_ms"].append((t_infer - t_decoded) * 1000)
     worker_stats["write_ms"].append((end - t_infer) * 1000)
-    _maybe_empty_cuda_cache(
+    worker_stats["last_empty_cache_check_ts"] = _maybe_empty_cuda_cache(
         worker_stats["batch_count"],
+        worker_stats.get("last_empty_cache_check_ts", 0.0),
+        end,
         _EMPTY_CACHE_EVERY_N_BATCHES,
+        _EMPTY_CACHE_CHECK_INTERVAL_S,
         _EMPTY_CACHE_MIN_FREE_BYTES,
         log,
     )
