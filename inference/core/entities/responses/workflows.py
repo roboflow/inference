@@ -226,11 +226,15 @@ class WorkflowErrorResponse(BaseModel):
         default=None,
         description="When `debug=True` was set on the request, stdout/stderr captured for "
         "each local custom Python block execution that completed before (or caused) the "
-        "failure, keyed by step name. Same format as on `WorkflowInferenceResponse`.",
+        "failure, keyed by step name. Same format as on `WorkflowInferenceResponse`. "
+        "Best-effort: logs from steps running in parallel with the failing step may be "
+        "missing if those steps had not finished recording when the failure propagated.",
     )
     python_blocks_debug_traces: Optional[List[Dict[str, Any]]] = Field(
         default=None,
         description="When `debug=True` was set on the request, structured debug entries "
         "appended via the `debug_traces` variable before (or at) the failure. Same format as on "
-        "`WorkflowInferenceResponse`.",
+        "`WorkflowInferenceResponse`. Best-effort: entries from steps running in parallel with "
+        "the failing step may be missing if those steps had not finished recording when the "
+        "failure propagated.",
     )
