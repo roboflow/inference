@@ -6,6 +6,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from supervision import OverlapFilter, move_boxes, move_masks
 from supervision.config import ORIENTED_BOX_COORDINATES
+from supervision.detection.compact_mask import CompactMask
 
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
@@ -286,10 +287,26 @@ def move_detections(
             raise ValueError(
                 "To move non-empty detections with segmentation mask, resolution_wh is needed, but not given."
             )
-        detections.mask = move_masks(
-            masks=detections.mask, offset=offset, resolution_wh=resolution_wh
+        detections.mask = move_detection_masks(
+            masks=detections.mask,
+            offset=offset,
+            resolution_wh=resolution_wh,
         )
     return detections
+
+
+def move_detection_masks(
+    masks: Union[np.ndarray, CompactMask],
+    offset: np.ndarray,
+    resolution_wh: Tuple[int, int],
+) -> Union[np.ndarray, CompactMask]:
+    if isinstance(masks, CompactMask):
+        return masks.with_offset(
+            dx=int(offset[0]),
+            dy=int(offset[1]),
+            new_image_shape=(resolution_wh[1], resolution_wh[0]),
+        )
+    return move_masks(masks=masks, offset=offset, resolution_wh=resolution_wh)
 
 
 def choose_overlap_filter_strategy(

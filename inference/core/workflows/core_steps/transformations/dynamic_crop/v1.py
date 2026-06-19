@@ -6,6 +6,7 @@ import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from supervision.config import ORIENTED_BOX_COORDINATES
+from supervision.detection.compact_mask import CompactMask
 
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -242,7 +243,13 @@ def crop_image(
             selected_detection,
             xyxy=sv.move_boxes(xyxy=selected_detection.xyxy, offset=(-x_min, -y_min)),
             mask=(
-                selected_detection.mask[:, y_min:y_max, x_min:x_max]
+                crop_selected_detection_mask(
+                    mask=selected_detection.mask,
+                    x_min=x_min,
+                    y_min=y_min,
+                    x_max=x_max,
+                    y_max=y_max,
+                )
                 if selected_detection.mask is not None
                 else None
             ),
@@ -274,6 +281,19 @@ def crop_image(
             }
         )
     return crops
+
+
+def crop_selected_detection_mask(
+    mask: Union[np.ndarray, CompactMask],
+    x_min: int,
+    y_min: int,
+    x_max: int,
+    y_max: int,
+) -> np.ndarray:
+    if isinstance(mask, CompactMask):
+        dense_mask = mask[0]
+        return dense_mask[np.newaxis, y_min:y_max, x_min:x_max]
+    return mask[:, y_min:y_max, x_min:x_max]
 
 
 def overlay_crop_with_mask(

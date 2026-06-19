@@ -6,6 +6,7 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 from supervision.config import ORIENTED_BOX_COORDINATES
+from supervision.detection.compact_mask import CompactMask
 
 from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import (
     BlockManifest,
@@ -451,6 +452,48 @@ def test_crop_image_when_background_removal_requested_and_mask_found() -> None:
     assert (
         result[2]["crops"].numpy_image == expected_third_crop
     ).all(), "Image must have expected size and color"
+
+
+def test_crop_image_when_compact_mask_found() -> None:
+    # given
+    np_image = np.zeros((100, 100, 3), dtype=np.uint8)
+    np_image[10:30, 20:50] = 39
+    mask = np.zeros((1, 100, 100), dtype=np.bool_)
+    mask[0, 12:24, 25:42] = True
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
+        numpy_image=np_image,
+    )
+    boxes = np.array([[20, 10, 50, 30]], dtype=np.float64)
+    detections = sv.Detections(
+        xyxy=boxes,
+        class_id=np.array([1]),
+        mask=CompactMask.from_dense(mask, xyxy=boxes, image_shape=(100, 100)),
+        confidence=np.array([0.5], dtype=np.float64),
+        data={
+            "detection_id": np.array(["one"]),
+            "class_name": np.array(["cat"]),
+        },
+    )
+
+    # when
+    result = crop_image(
+        image=image,
+        detections=detections,
+        mask_opacity=1.0,
+        background_color=(127, 127, 127),
+    )
+
+    # then
+    assert len(result) == 1
+    expected_crop = np.ones((20, 30, 3), dtype=np.uint8) * 127
+    expected_crop[2:14, 5:22, :] = 39
+    assert (result[0]["crops"].numpy_image == expected_crop).all()
+    translated_mask = result[0]["predictions"].mask
+    assert isinstance(translated_mask, np.ndarray)
+    assert translated_mask.shape == (1, 20, 30)
+    assert translated_mask[0, 2:14, 5:22].all()
+    assert not translated_mask[0, :2].any()
 
 
 @pytest.mark.parametrize(
