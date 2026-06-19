@@ -1,6 +1,7 @@
 import hashlib
 import math
 import os
+import re
 import time
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from threading import Lock
@@ -49,6 +50,13 @@ from inference_models.utils.file_system import (
 FileHandle = str
 DownloadUrl = str
 MD5Hash = Optional[str]
+
+_MD5_HASH_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+def is_valid_md5_hash(value: object) -> bool:
+    return isinstance(value, str) and _MD5_HASH_PATTERN.fullmatch(value) is not None
+
 
 MIN_SIZE_FOR_THREADED_DOWNLOAD = 32 * 1024 * 1024  # 32MB
 MIN_THREAD_CHUNK_SIZE = 16 * 1024 * 1024  # 16MB
