@@ -28,6 +28,7 @@ from inference.core.env import (
     ALLOW_URL_INPUT,
     ALLOW_URL_INPUT_WITHOUT_FQDN,
     BLACKLISTED_DESTINATIONS_FOR_URL_INPUT,
+    MAX_IMAGE_URL_REDIRECTS,
     WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
 )
 from inference.core.exceptions import (
@@ -40,7 +41,6 @@ from inference.core.utils.function import deprecated
 from inference.core.utils.requests import api_key_safe_raise_for_status
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
-MAX_IMAGE_URL_REDIRECTS = 5
 
 
 class ImageType(Enum):
@@ -202,7 +202,14 @@ def load_image_with_inferred_type(
     elif isinstance(value, Image.Image):
         return np.asarray(value.convert("RGB")), False
     elif isinstance(value, str) and (value.startswith("http")):
-        return load_image_from_url(value=value, cv_imread_flags=cv_imread_flags), True
+        return (
+            load_image_from_url(
+                value=value,
+                max_redirects=MAX_IMAGE_URL_REDIRECTS,
+                cv_imread_flags=cv_imread_flags,
+            ),
+            True,
+        )
     elif (
         isinstance(value, str)
         and ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM
@@ -387,7 +394,9 @@ def validate_numpy_image(data: np.ndarray) -> None:
 
 
 def load_image_from_url(
-    value: str, cv_imread_flags: int = cv2.IMREAD_COLOR
+    value: str,
+    max_redirects: int,
+    cv_imread_flags: int = cv2.IMREAD_COLOR,
 ) -> np.ndarray:
     """Loads an image from a given URL.
 
@@ -400,7 +409,7 @@ def load_image_from_url(
     _ensure_url_input_allowed()
     url = value
     response = None
-    for _ in range(MAX_IMAGE_URL_REDIRECTS + 1):
+    for _ in range(max_redirects + 1):
         prepared_url = _prepare_and_validate_image_url(value=url)
         try:
             response = requests.get(
@@ -590,7 +599,11 @@ IMAGE_LOADERS = {
     ImageType.NUMPY: lambda v, _: load_image_from_numpy_str(v),
     ImageType.NUMPY_OBJECT: lambda v, _: load_image_from_numpy_object(v),
     ImageType.PILLOW: lambda v, _: np.asarray(v.convert("RGB")),
-    ImageType.URL: load_image_from_url,
+    ImageType.URL: lambda v, flags: load_image_from_url(
+        value=v,
+        max_redirects=MAX_IMAGE_URL_REDIRECTS,
+        cv_imread_flags=flags,
+    ),
 }
 
 
