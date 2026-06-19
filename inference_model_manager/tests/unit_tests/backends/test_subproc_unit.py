@@ -190,7 +190,10 @@ class TestMaybeEmptyCudaCache:
 
         _maybe_empty_cuda_cache(
             batch_count=10,
+            last_check_ts=0.0,
+            now=5.0,
             every_n_batches=5,
+            every_n_seconds=0.0,
             min_free_bytes=100,
             log=_DebugLog(),
         )
@@ -203,7 +206,10 @@ class TestMaybeEmptyCudaCache:
 
         _maybe_empty_cuda_cache(
             batch_count=9,
+            last_check_ts=0.0,
+            now=5.0,
             every_n_batches=5,
+            every_n_seconds=0.0,
             min_free_bytes=100,
             log=_DebugLog(),
         )
@@ -216,9 +222,29 @@ class TestMaybeEmptyCudaCache:
 
         _maybe_empty_cuda_cache(
             batch_count=10,
+            last_check_ts=0.0,
+            now=5.0,
             every_n_batches=5,
+            every_n_seconds=0.0,
             min_free_bytes=100,
             log=_DebugLog(),
         )
 
         assert cuda.empty_cache_calls == 0
+
+    def test_empty_cache_when_time_interval_matches(self, monkeypatch) -> None:
+        cuda = _Cuda(allocated=100, reserved=300)
+        monkeypatch.setitem(__import__("sys").modules, "torch", _Torch(cuda))
+
+        last_check = _maybe_empty_cuda_cache(
+            batch_count=9,
+            last_check_ts=10.0,
+            now=20.0,
+            every_n_batches=5,
+            every_n_seconds=10.0,
+            min_free_bytes=100,
+            log=_DebugLog(),
+        )
+
+        assert cuda.empty_cache_calls == 1
+        assert last_check == 20.0
