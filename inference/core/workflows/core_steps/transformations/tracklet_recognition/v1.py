@@ -63,9 +63,7 @@ ORIGINAL_CLASS_NAME_KEY = "original_class_name"
 ORIGINAL_CLASS_ID_KEY = "original_class_id"
 ORIGINAL_CONFIDENCE_KEY = "original_confidence"
 
-SHORT_GATE_DESCRIPTION = (
-    "Select tracked detections that are due for recognition."
-)
+SHORT_GATE_DESCRIPTION = "Select tracked detections that are due for recognition."
 SHORT_CACHE_DESCRIPTION = (
     "Cache recognition results by tracklet and attach them to every frame."
 )
@@ -283,14 +281,14 @@ class TrackletRecognitionCacheManifest(WorkflowBlockManifest):
         default=True,
         description="When true, replace detection class/confidence with the latest cached recognition result so existing visualization blocks can display it.",
     )
-    update_class_id_from_cache_status: Union[
-        bool, Selector(kind=[BOOLEAN_KIND])
-    ] = Field(
-        default=False,
-        description="Advanced setting. When true, replace detection class_id with cache status for visualization coloring: 0 for unlocked cached results, 1 for results updated in the current frame, and 2 for locked results. This does not change the displayed recognition text.",
-        json_schema_extra={
-            "advanced": True,
-        },
+    update_class_id_from_cache_status: Union[bool, Selector(kind=[BOOLEAN_KIND])] = (
+        Field(
+            default=False,
+            description="Advanced setting. When true, replace detection class_id with cache status for visualization coloring: 0 for unlocked cached results, 1 for results updated in the current frame, and 2 for locked results. This does not change the displayed recognition text.",
+            json_schema_extra={
+                "advanced": True,
+            },
+        )
     )
 
     @classmethod
@@ -553,9 +551,9 @@ def enrich_detections_with_recognition(
         ]
         if detections.confidence is None:
             detections.confidence = np.full(len(detections), np.nan, dtype=float)
-        detections.confidence[has_recognition] = detections[
-            RECOGNITION_CONFIDENCE_KEY
-        ][has_recognition]
+        detections.confidence[has_recognition] = detections[RECOGNITION_CONFIDENCE_KEY][
+            has_recognition
+        ]
 
     if update_class_id_from_cache_status:
         preserve_original_detection_class(detections=detections)
@@ -590,9 +588,7 @@ def preserve_original_detection_class(detections: sv.Detections) -> None:
         if detections.class_id is not None:
             detections[ORIGINAL_CLASS_ID_KEY] = detections.class_id.copy()
         else:
-            detections[ORIGINAL_CLASS_ID_KEY] = np.full(
-                len(detections), -1, dtype=int
-            )
+            detections[ORIGINAL_CLASS_ID_KEY] = np.full(len(detections), -1, dtype=int)
     if ORIGINAL_CONFIDENCE_KEY not in detections.data:
         if detections.confidence is not None:
             detections[ORIGINAL_CONFIDENCE_KEY] = detections.confidence.copy()
