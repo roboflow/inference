@@ -46,6 +46,16 @@ def parse_args() -> argparse.Namespace:
         "--video", required=True, help="Path to a local video file."
     )
     parser.add_argument(
+        "-n",
+        "--n",
+        type=int,
+        default=1,
+        dest="n",
+        help="Number of concurrent streams to run, all decoding the SAME --video "
+        "(multi-source / multi-camera throughput test). The video is passed N times "
+        "as the pipeline's video_reference; aggregate (and per-stream) FPS is reported.",
+    )
+    parser.add_argument(
         "--model-id",
         default=None,
         help="Optional value for the workflow's `model_id` parameter "
@@ -133,6 +143,12 @@ def main() -> None:
         )
     if not os.path.isfile(args.video):
         raise SystemExit(f"Video file not found: {args.video}")
+    if args.n < 1:
+        raise SystemExit("--n must be >= 1")
+
+    # Multiply the same video into N concurrent sources. A single reference keeps the
+    # exact legacy behaviour; a list makes InferencePipeline run one VideoSource per copy.
+    video_reference = args.video if args.n == 1 else [args.video] * args.n
 
     # Only steer `model_id` when explicitly provided, so the workflow keeps its own
     # default otherwise.
@@ -143,7 +159,7 @@ def main() -> None:
     counter = FPSCounter()
     watchdog = BasePipelineWatchDog()
     pipeline = InferencePipeline.init_with_workflow(
-        video_reference=args.video,
+        video_reference=video_reference,
         workspace_name=args.workspace,
         workflow_id=args.workflow_id,
         api_key=args.api_key,
@@ -158,7 +174,7 @@ def main() -> None:
     model = f" model_id='{args.model_id}'" if args.model_id else ""
     print(
         f"Running '{args.workspace}/{args.workflow_id}' over '{args.video}' "
-        f"({cap}){model}\n"
+        f"x{args.n} stream(s) ({cap}){model}\n"
     )
     wall_start = time.monotonic()
     try:
@@ -170,10 +186,12 @@ def main() -> None:
         pipeline.join()
     elapsed = time.monotonic() - wall_start
 
+    per_stream = f"  ({counter.overall_fps / args.n:.2f}/stream)" if args.n > 1 else ""
     print("\n=== Summary ===")
-    print(f"frames processed     : {counter.frames}")
+    print(f"streams (same video) : {args.n}")
+    print(f"frames processed     : {counter.frames}  (aggregate across streams)")
     print(f"total wall time      : {elapsed:.2f} s (includes model load / warm-up)")
-    print(f"average processing FPS: {counter.overall_fps:.2f}")
+    print(f"average processing FPS: {counter.overall_fps:.2f} aggregate{per_stream}")
 
 
 if __name__ == "__main__":

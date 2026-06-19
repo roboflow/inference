@@ -1,5 +1,6 @@
 from typing import List, Optional
 
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
@@ -41,9 +42,10 @@ class WorkflowRunner:
             )
             for video_frame in video_frames
         ]
+        image_type = "numpy_object" if not ENABLE_TENSOR_DATA_REPRESENTATION else "tensor"
         workflows_parameters[image_input_name] = [
             {
-                "type": "numpy_object",
+                "type": image_type,
                 "value": video_frame.image,
                 "video_metadata": video_metadata,
             }
