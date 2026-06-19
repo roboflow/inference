@@ -37,17 +37,27 @@ class QwenImageEditHF:
         local_files_only: bool = True,
         **kwargs,
     ) -> "QwenImageEditHF":
-        # TODO: verify the exact pipeline class on the HF model card.
-        # DiffusionPipeline is the universal diffusers loader; if the model
-        # ships a custom pipeline class, replace the import and constructor.
         from diffusers import DiffusionPipeline
+
+        # device_map="auto" is not supported for all pipeline types; MPS doesn't
+        # support it at all. Map the device to the closest valid strategy instead.
+        device_type = device.type
+        if device_type == "cuda":
+            device_map = "cuda"
+        elif device_type == "cpu":
+            device_map = "cpu"
+        else:
+            device_map = None  # e.g. mps — move to device manually after load
 
         pipe = DiffusionPipeline.from_pretrained(
             model_name_or_path,
             torch_dtype=cls.default_dtype,
             local_files_only=local_files_only,
-            device_map="auto",
+            **({"device_map": device_map} if device_map is not None else {}),
         )
+
+        if device_map is None:
+            pipe = pipe.to(device)
 
         return cls(pipeline=pipe, device=device)
 
