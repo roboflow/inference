@@ -17,14 +17,14 @@ from inference.core.workflows.core_steps.common.utils import (
     scale_sv_detections,
     sv_detections_to_root_coordinates,
 )
+from inference.core.workflows.execution_engine.constants import (
+    POLYGON_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     OriginCoordinatesSystem,
     WorkflowImageData,
-)
-from inference.core.workflows.execution_engine.constants import (
-    POLYGON_KEY_IN_SV_DETECTIONS,
 )
 
 
@@ -188,6 +188,7 @@ def test_convert_inference_detections_batch_to_sv_detections() -> None:
     expected_mask = np.zeros((2, 200, 100), dtype=np.bool_)
     expected_mask[0, 80:121, 30:71] = True
     expected_mask[1, 170:191, 70:91] = True
+    assert isinstance(result[0].mask, np.ndarray)
     assert np.allclose(result[0].mask, expected_mask)
     assert result[0] == sv.Detections(
         xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
