@@ -1,4 +1,7 @@
+# syntax=docker/dockerfile:1.7
 FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.3
+
+ARG TRITON_VERSION=3.0.0
 
 RUN apt-get update -y && apt-get install -y ffmpeg
 
@@ -28,6 +31,49 @@ RUN python -m pip install \
     "torchvision==0.19.1" \
     "transformers<=5.7.0"
 
+# Build Triton from source. Torch 2.4.1 on JP5.1 pairs with Triton ${TRITON_VERSION}.
+# Single-stage image: clone + wheel build share one RUN (cache-mounted src is not
+# persisted across RUN instructions). LLVM lives in a cache mount (not in the
+# image layer); do not rm that path - it is mounted and busy during the RUN.
+RUN --mount=type=cache,target=/tmp/triton-build/src,sharing=locked,id=triton-src-${TRITON_VERSION}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.triton/llvm,sharing=locked,id=triton-llvm-${TRITON_VERSION}-${TARGETARCH} \
+    set -eux; \
+    apt-get update -y; \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        libxml2-dev \
+        ninja-build \
+        python3-dev \
+        zlib1g-dev; \
+    rm -rf /var/lib/apt/lists/*; \
+    if [ ! -d /tmp/triton-build/src/.git ]; then \
+        git clone --depth 1 --branch v${TRITON_VERSION} https://github.com/triton-lang/triton.git /tmp/triton-build/src; \
+    else \
+        git -C /tmp/triton-build/src fetch --depth 1 origin tag v${TRITON_VERSION} && \
+        git -C /tmp/triton-build/src checkout v${TRITON_VERSION}; \
+    fi; \
+    git -C /tmp/triton-build/src submodule update --init --recursive; \
+    mkdir -p /tmp/triton-wheels; \
+    python -m pip install --no-cache-dir \
+        "setuptools>=40.8.0" \
+        wheel \
+        "cmake>=3.18,<4.0" \
+        "ninja>=1.11.1"; \
+    MAX_JOBS=4 python -m pip wheel --no-cache-dir \
+        --no-build-isolation \
+        --no-deps \
+        /tmp/triton-build/src/python \
+        --wheel-dir /tmp/triton-wheels; \
+    set -- /tmp/triton-wheels/triton-${TRITON_VERSION}-*.whl; \
+    if [ ! -e "$1" ]; then \
+        echo "Expected source-built Triton wheel for ${TRITON_VERSION} was not found" >&2; \
+        exit 1; \
+    fi; \
+    python -m pip install --no-cache-dir "$1"; \
+    rm -rf /tmp/triton-wheels; \
+    python -c "import triton; print('triton', triton.__version__)"
 
 WORKDIR /app/
 COPY inference inference
