@@ -14,7 +14,7 @@ class name changes to `fruit` and class id is 1024.
 You can test the execution submitting image like 
 [this](https://www.pexels.com/photo/four-trays-of-varieties-of-fruits-1300975/).
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiS1JyYU5sS2hjZkl2bTQzNlBCYUYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NTd9.10KZne00gecExSibl78T7FteNEDpeU4JK1abpPE4f_U?showGraph=true" loading="lazy" title="Roboflow Workflow for detections class remapping" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiS1JyYU5sS2hjZkl2bTQzNlBCYUYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ2MDF9.eH-44pnxkNszzeUTV9UqaL1Svqzqikd5Gs_z3WW4xS8?showGraph=true" loading="lazy" title="Roboflow Workflow for detections class remapping" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -80,7 +80,7 @@ that is going to filter predictions based on:
 
 - size of predicted bounding box relative to size of input image
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoicHNXU0I0WkgzTVd5ZkUxaTc5ek8iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NTh9.2tNuo0qrFoCU01y3yp4EYOOxYhil2iFnJuCbYlJ82iE?showGraph=true" loading="lazy" title="Roboflow Workflow for detections filtering" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoicHNXU0I0WkgzTVd5ZkUxaTc5ek8iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ2MDF9.Tn_Ai2xWO2lsJQIHARFFX8SRkKr89BXONxz9EmHZE8s?showGraph=true" loading="lazy" title="Roboflow Workflow for detections filtering" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -198,7 +198,7 @@ that is going to filter predictions based on:
 This example showcases how to extract all instances detected by instance segmentation model
 as separate crops without background.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiSzJLNnpRNG51aUh0UlpRRk5mZGIiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NTl9.y6ggn-U-4q-02Gqhf_gPr9pRpDMZUqHy__pQ_qeG1ZM?showGraph=true" loading="lazy" title="Roboflow Workflow for segmentation plus masked crop" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiSzJLNnpRNG51aUh0UlpRRk5mZGIiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ2MDJ9.RY6_Cy2KDlug4dZ8LpUQ9kvoG1xCS82LVUqg8MXwd5A?showGraph=true" loading="lazy" title="Roboflow Workflow for segmentation plus masked crop" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -259,7 +259,7 @@ This workflow presents how to use Detections Transformation block that is going 
 align predictions from object detection model such that results are sorted 
 ascending regarding confidence.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoicDE3T1ZiOThTMEl4bXU2ekdXc3UiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NTl9.XQqNHt5FJ8mvRu3gVrcLPUouNNt0V2sYLU7p8L6B1AU?showGraph=true" loading="lazy" title="Roboflow Workflow for detections sorting" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoicDE3T1ZiOThTMEl4bXU2ekdXc3UiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ2MDN9.Qj2zRSuGyXnXE07MtS0aKoXgRp1GD-Do1TxDtpdEJN0?showGraph=true" loading="lazy" title="Roboflow Workflow for detections sorting" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

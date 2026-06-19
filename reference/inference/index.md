@@ -234,6 +234,8 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.utils.preprocess
 
+::: inference.core.utils.rle_to_polygon
+
 ::: inference.core.utils.sqlite_wrapper
 
 ::: inference.core.utils.torchscript_guard
@@ -480,9 +482,15 @@ Workflow execution engine entry points and helpers.
 
 ::: inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
 
+::: inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding
+
+::: inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs
+
 ::: inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils
 
 ::: inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor
+
+::: inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug
 
 ## `core/workflows/execution_engine/v1/executor/execution_data_manager`
 

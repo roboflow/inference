@@ -168,6 +168,7 @@ Roboflow Inference is an open-source (Apache 2.0) computer vision inference serv
 - [Inner Workflow](https://inference.roboflow.com/workflows/blocks/inner_workflow/index.md)
 - [Rate Limiter](https://inference.roboflow.com/workflows/blocks/rate_limiter/index.md)
 - [Delta Filter](https://inference.roboflow.com/workflows/blocks/delta_filter/index.md)
+- [Switch Case](https://inference.roboflow.com/workflows/blocks/switch_case/index.md)
 - [Detections Consensus](https://inference.roboflow.com/workflows/blocks/detections_consensus/index.md)
 - [Roboflow Dataset Upload](https://inference.roboflow.com/workflows/blocks/roboflow_dataset_upload/index.md)
 - [Roboflow Asset Library Attributes](https://inference.roboflow.com/workflows/blocks/roboflow_asset_library_attributes/index.md)

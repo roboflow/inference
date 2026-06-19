@@ -6,7 +6,7 @@ Below you can find example workflows you can use as inspiration to build your ap
 
 This Workflow illustrates how to send notification to Slack.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZk9FOEkxUzM0V0Z4dDFmaTVHS28iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NzF9.VVy05vlUkunz_UT1qjXGmFdBF7OqxRzmgkNvSzKqbLo?showGraph=true" loading="lazy" title="Roboflow Workflow for basic slack notification" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZk9FOEkxUzM0V0Z4dDFmaTVHS28iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ2MTV9.F-PBmkyjHfYzpaEYE-iixMdRs0hFxaqj6JG_Ky-tqnc?showGraph=true" loading="lazy" title="Roboflow Workflow for basic slack notification" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -74,7 +74,7 @@ This Workflow illustrates how to send notification to Slack.
 
 This Workflow illustrates how to send notification with attachments to Slack.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiSG16cHl4dnlpQVBjWmhwRU1EU0IiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NzJ9.FG_Y0d-7pCliTFRT1arZqQCHhH0WnnKeaopo9gZyyNo?showGraph=true" loading="lazy" title="Roboflow Workflow for advanced slack notification" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiSG16cHl4dnlpQVBjWmhwRU1EU0IiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ2MTZ9.z3WgNeIwZ3FeUPYi1Xb6xFrQg49wwypI283BkL0CQ_I?showGraph=true" loading="lazy" title="Roboflow Workflow for advanced slack notification" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -169,7 +169,7 @@ This Workflow illustrates how to send notification with attachments to Slack.
 
 This Workflow illustrates how to send SMS notification with Twilio.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiWVEwOHFjazM4UnVkNHllVXhnZUYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NzJ9.N_pX1vU-KTmLhYM1EgCKlOGQgMl0cVwEJk00xOxTBCE?showGraph=true" loading="lazy" title="Roboflow Workflow for basic twilio sms notification" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiWVEwOHFjazM4UnVkNHllVXhnZUYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ2MTZ9.MvaUGX6slgaAayE2D3-5ONmq61DCDjmndGmZRbdqrJE?showGraph=true" loading="lazy" title="Roboflow Workflow for basic twilio sms notification" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

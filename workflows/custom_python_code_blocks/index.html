@@ -1014,6 +1014,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#debugging-dynamic-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debugging dynamic blocks
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1683,6 +1694,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#debugging-dynamic-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debugging dynamic blocks
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2103,6 +2125,32 @@ as if that was normal block exposed through static plugin:</p>
 <span class="w">    </span><span class="nt">&quot;class_y&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;dog&quot;</span>
 <span class="p">}</span>
 </code></pre></div>
+<h2 id="debugging-dynamic-blocks">Debugging dynamic blocks<a class="headerlink" href="#debugging-dynamic-blocks" title="Permanent link">&para;</a></h2>
+<p>Set <code>debug=True</code> on the <code>/workflows/run</code> request to capture diagnostics from custom Python
+blocks. It is opt-in (preview runs do not enable it implicitly).</p>
+<p><strong>Capturing stdout/stderr.</strong> Anything your block prints is captured per step.</p>
+<p><strong>Emitting structured traces.</strong> A <code>debug_traces</code> helper is available in your <code>run(...)</code> code
+(injected as a baseline symbol, alongside the standard imports). Append any JSON-serialisable
+value; pass <code>add_timestamp=True</code> to stamp the entry:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BlockResult</span><span class="p">:</span>
+    <span class="n">debug_traces</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;received&quot;</span><span class="p">:</span> <span class="n">value</span><span class="p">})</span>
+    <span class="n">debug_traces</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">value</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="n">add_timestamp</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;result&quot;</span><span class="p">:</span> <span class="n">value</span> <span class="o">*</span> <span class="mi">2</span><span class="p">}</span>
+</code></pre></div>
+<p>When <code>debug</code> is not enabled (or under Modal / OCI sandbox execution), <code>debug_traces.append(...)</code>
+is a safe no-op and is not collected.</p>
+<p><strong>Successful run (HTTP 200).</strong> The response carries:</p>
+<ul>
+<li><code>python_blocks_output_streams</code> — captured stdout/stderr keyed by step name, e.g.
+  <code>{"my_step": [{"stdout": "...", "stderr": null}]}</code>.</li>
+<li><code>python_blocks_debug_traces</code> — appended entries in execution order, e.g.
+  <code>[{"step": "my_step", "value": {"received": 7}, "timestamp": "...", "timestamp_timezone": "UTC"}]</code>
+  (<code>timestamp*</code> present only when <code>add_timestamp=True</code>).</li>
+</ul>
+<p>Both are <code>null</code> when <code>debug</code> is off or nothing was captured. Only populated for local execution.</p>
+<p><strong>Failed run (HTTP 400).</strong> The error response carries the <strong>same two fields</strong> with the partial
+output/traces produced by steps that ran (and printed/appended) before the failure, plus
+<code>blocks_errors[].block_traceback</code> with the failing step's own stdout/stderr.</p>
 
 
 

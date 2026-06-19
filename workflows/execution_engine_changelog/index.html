@@ -1435,6 +1435,28 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#execution-engine-v1120-inference-v132" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Engine v1.12.0 | inference v1.3.2
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#execution-engine-v1110-inference-v131" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Engine v1.11.0 | inference v1.3.1
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#execution-engine-v1101-inference-v1212" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1794,6 +1816,28 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#execution-engine-v1120-inference-v132" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Engine v1.12.0 | inference v1.3.2
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#execution-engine-v1110-inference-v131" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Engine v1.11.0 | inference v1.3.1
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#execution-engine-v1101-inference-v1212" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1964,6 +2008,36 @@
 
 <h1 id="execution-engine-changelog">Execution Engine Changelog<a class="headerlink" href="#execution-engine-changelog" title="Permanent link">&para;</a></h1>
 <p>Below you can find the changelog for Execution Engine.</p>
+<h2 id="execution-engine-v1120-inference-v132">Execution Engine <code>v1.12.0</code> | inference <code>v1.3.2</code><a class="headerlink" href="#execution-engine-v1120-inference-v132" title="Permanent link">&para;</a></h2>
+<p><strong>What changed</strong></p>
+<p><strong>Future resolution</strong> - Some steps might now emit <code>Future</code> objects which defer output
+resolution to until outputs are needed by clients. For downstream blocks these futures
+are being resolved in the <a href="../inference/core/workflows/execution_engine/v1/executor/execution_data_manager/step_input_assembler.py">step_input_assembler</a>
+while for output construction in the <a href="../inference/core/workflows/execution_engine/v1/executor/output_constructor.py">output_constructor</a>
+along with coordinate conversion.</p>
+<h2 id="execution-engine-v1110-inference-v131">Execution Engine <code>v1.11.0</code> | inference <code>v1.3.1</code><a class="headerlink" href="#execution-engine-v1110-inference-v131" title="Permanent link">&para;</a></h2>
+<p><strong>What changed</strong></p>
+<ul>
+<li>
+<p><strong>Per-case execution branches for dict step selectors</strong> — When a flow-control block
+  declares step selectors inside a <code>Dict[str, StepSelector]</code> property (rather than a
+  <code>List[StepSelector]</code>), the compiler now creates a distinct execution branch per
+  dictionary key. Previously every selector in a single property shared one branch, so
+  a block could not route to its targets independently. Branch names now include the
+  dictionary key (e.g. <code>Branch[$steps.switch -&gt; cases[red]]</code>). Selectors held in list
+  properties (such as <code>next_steps</code>) keep the prior shared-branch behavior, so existing
+  blocks are unaffected. This change is what enables the new
+  <code>roboflow_core/switch_case@v1</code> block (<code>graph_constructor.establish_control_flow_edge</code>).</p>
+</li>
+<li>
+<p><strong>Fix: non-SIMD flow-control masks with repeated branch names</strong> — A non-SIMD
+  flow-control step that selected more than one target through a single list property
+  raised <code>Attempted to re-register maks for execution branch</code>. Branch-mask registration
+  now deduplicates branch names before registering, fixing the crash (affected e.g.
+  <code>ContinueIf</code> with multiple <code>next_steps</code>;
+  <code>execution_data_manager.manager._register_control_flow_output_for_non_simd_step</code>).</p>
+</li>
+</ul>
 <h2 id="execution-engine-v1101-inference-v1212">Execution Engine <code>v1.10.1</code> | inference <code>v1.2.12</code><a class="headerlink" href="#execution-engine-v1101-inference-v1212" title="Permanent link">&para;</a></h2>
 <p><strong>What changed</strong></p>
 <ul>

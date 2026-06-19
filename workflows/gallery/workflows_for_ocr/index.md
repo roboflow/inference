@@ -20,7 +20,7 @@ license plate detection for every detected car instance (increasing the depth of
 runs and we have bounding boxes for license plates - we crop previously cropped cars images to extract plates.
 Once this is done, plates crops are passed to OCR step which turns images of plates into text.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMlRqQ3FIakh3NkxqUUI5cmxvNEciLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NTJ9.vAjE0yKi6aJ6b8b79GzS2SdeiuLO4vZkhyVZ4nIzw-Q?showGraph=true" loading="lazy" title="Roboflow Workflow for detection plus ocr" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMlRqQ3FIakh3NkxqUUI5cmxvNEciLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ1OTV9.TWwl8Fem2NVZ_g7uD6m_4I-OVRt9X8Dz6-rtg-XXQv4?showGraph=true" loading="lazy" title="Roboflow Workflow for detection plus ocr" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -111,7 +111,7 @@ In this example, Google Vision OCR is used to extract text from input image.
 Additionally, example presents how to combine structured output of Google API
 with visualisation blocks.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMkxLMHdHZ2FWS0diaFAxU3QxVEIiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NTN9.jolOx2RhD5KxF24e81xJAx1SPDiV-G98cot0yUypMys?showGraph=true" loading="lazy" title="Roboflow Workflow for google vision ocr" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiMkxLMHdHZ2FWS0diaFAxU3QxVEIiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ1OTZ9.V59NaTDdwSKoWEkwzf3j27nKb7D6bO2DdFuVkVISX0w?showGraph=true" loading="lazy" title="Roboflow Workflow for google vision ocr" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -180,7 +180,7 @@ reading order (`left-to-right`).
 The final output is a JSON field containing the structured text in readable, logical order, accurately reflecting 
 the layout of the original image.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoidnpKT3FKUFd2bzNQRjFDeEk0aFYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NTN9.FUeZYjTQe7OewViSzn3J8TlsUZ7vrPnPRlhEYETi3D4?showGraph=true" loading="lazy" title="Roboflow Workflow for ocr detections stitch" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoidnpKT3FKUFd2bzNQRjFDeEk0aFYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ1OTd9.0qjYliGjk3GNvUWcFI6LgraFCF25MZeOGQm3gC4EFYw?showGraph=true" loading="lazy" title="Roboflow Workflow for ocr detections stitch" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -244,7 +244,7 @@ specified pixel `tolerance` for spacing and arranges them in reading order (`lef
 
 The tolerance algorithm is best for consistent font sizes and well-aligned horizontal/vertical text.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiYkhwZ3I0b09QMDMwOEM1UVM1cTIiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NTR9.ApGyl2f8N8eOp1jf_lh0PIDT8lvMhA_ZVbkS07S3hGg?showGraph=true" loading="lazy" title="Roboflow Workflow for ocr detections stitch v2 tolerance" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiYkhwZ3I0b09QMDMwOEM1UVM1cTIiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ1OTh9.91tmwGb40Idb5tDCqtdGPr4PiS4URmjDfeQBbNsBmTE?showGraph=true" loading="lazy" title="Roboflow Workflow for ocr detections stitch v2 tolerance" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -309,7 +309,7 @@ the optimal threshold separating character gaps from word gaps.
 The Otsu algorithm is resolution-invariant and works well with variable font sizes and automatic word
 boundary detection. It detects bimodal distributions to distinguish single words from multi-word text.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiRFV1MG16cHlHcGQ0U1JFMVBRc2UiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NTV9.PiPM7zbD-F8rvg0o8I202qBRGFMKwJgiRBICUqbI4ZI?showGraph=true" loading="lazy" title="Roboflow Workflow for ocr detections stitch v2 otsu" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiRFV1MG16cHlHcGQ0U1JFMVBRc2UiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ1OTh9.-W1v-vMLRMmO2tk4Vr8FvhxkMAsmAkqd6T8sqo4ZRSY?showGraph=true" loading="lazy" title="Roboflow Workflow for ocr detections stitch v2 otsu" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -374,7 +374,7 @@ building lines through traversal rather than bucketing.
 The collimate algorithm is best for skewed, curved, or non-axis-aligned text where traditional
 bucket-based line grouping may fail.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiejhLdzBXZ1pZenRGTmtGY2k1V2wiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODEyODA1NTZ9.Hstyc-i_basFnSLH6D4Kj9REyvVGJsHXgOD9RAAjdi8?showGraph=true" loading="lazy" title="Roboflow Workflow for ocr detections stitch v2 collimate" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiejhLdzBXZ1pZenRGTmtGY2k1V2wiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ1OTl9.si2UjlVt0CQFTChxmZ3h61DgwOwlXAoHgq_JAH2lIwo?showGraph=true" loading="lazy" title="Roboflow Workflow for ocr detections stitch v2 collimate" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

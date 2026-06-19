@@ -1106,6 +1106,21 @@ hide:
 
 
 
+            <a href="switch_case">
+              <div class="block">
+                
+                <div class="block_name"> <i class="far fa-split" > </i>  Switch Case</div>
+                <div class="block_description">Route execution to one of several branches based on the value of an input.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
             <a href="detections_consensus">
               <div class="block">
                 
