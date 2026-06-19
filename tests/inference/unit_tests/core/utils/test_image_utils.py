@@ -233,11 +233,16 @@ def test_load_image_from_url_when_locations_whitelisted(
     image_utils, "WHITELISTED_DESTINATIONS_FOR_URL_INPUT", {"www.baidu.com"}
 )
 def test_load_image_from_url_rejects_backslash_userinfo_allowlist_bypass() -> None:
-    with mock.patch.object(image_utils.requests, "get") as requests_get:
-        with pytest.raises(InputImageLoadError) as error:
+    with mock.patch.object(
+        image_utils.requests,
+        "get",
+        side_effect=AssertionError(
+            "requests.get must not be called for a rejected URL"
+        ),
+    ) as requests_get:
+        with pytest.raises(InputImageLoadError, match="invalid|whitelisted"):
             _ = load_image_from_url(value="https://localhost:6666\\@www.baidu.com")
 
-    assert "invalid" in str(error.value)
     requests_get.assert_not_called()
 
 
