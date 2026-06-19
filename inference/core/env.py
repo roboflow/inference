@@ -4,6 +4,7 @@ import uuid
 import warnings
 from typing import Optional
 
+import torch
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
@@ -1074,3 +1075,16 @@ if DISABLED_INFERENCE_MODELS_BACKENDS is not None:
         )
 else:
     DISABLED_INFERENCE_MODELS_BACKENDS = set()
+
+ENABLE_TENSOR_DATA_REPRESENTATION = (
+    str2bool(os.getenv("ENABLE_TENSOR_DATA_REPRESENTATION", "False"))
+    and USE_INFERENCE_MODELS
+)
+
+
+WORKFLOWS_IMAGE_TENSOR_DEVICE_STR: Optional[str] = os.getenv(
+    "WORKFLOWS_IMAGE_TENSOR_DEVICE"
+)
+if WORKFLOWS_IMAGE_TENSOR_DEVICE_STR is None:
+    WORKFLOWS_IMAGE_TENSOR_DEVICE_STR = "cuda" if torch.cuda.is_available() else "cpu"
+WORKFLOWS_IMAGE_TENSOR_DEVICE = torch.device(WORKFLOWS_IMAGE_TENSOR_DEVICE_STR)

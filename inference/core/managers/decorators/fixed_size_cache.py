@@ -1,7 +1,7 @@
 import gc
 from collections import deque
 from threading import Lock
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
@@ -224,6 +224,10 @@ class WithFixedSizeCache(ModelManagerDecorator):
         """
         self._refresh_model_position_in_a_queue(model_id=model_id)
         return super().infer_from_request_sync(model_id, request, **kwargs)
+
+    def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
+        self._refresh_model_position_in_a_queue(model_id=model_id)
+        return super().run_tensor_native_inference(model_id, **kwargs)
 
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request and updates the cache.

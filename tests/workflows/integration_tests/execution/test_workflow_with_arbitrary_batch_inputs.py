@@ -5,7 +5,10 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -16,6 +19,40 @@ from inference.core.workflows.errors import (
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
+from inference_models.models.base.object_detection import Detections as NativeDetections
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the ObjectDetectionModel emits a native
+# `inference_models.Detections` and the ClassificationModel emits native
+# `ClassificationPrediction` objects (per-image, single-row: class_id -> (1,),
+# confidence -> (1, num_classes) full softmax) instead of sv.Detections / inference
+# classification dicts. The sv/dict-shaped tests below are skipped when the flag is
+# on; each has a `*_tensor_native` parity test (skipped when the flag is off) that
+# asserts the same semantic result expressed for the native objects. Serialized
+# branches still yield dicts and are left unchanged.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="sv.Detections / classification-dict reads; models are native under "
+    "ENABLE_TENSOR_DATA_REPRESENTATION — see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
+
+
+def _native_top_class_id(prediction) -> int:
+    # Native per-image ClassificationPrediction: class_id -> (1,) holding the top
+    # class id (argmax over the softmax row). Equivalent to sv's `p["top"]` class.
+    return int(prediction.class_id[0])
+
+
+def _native_top_confidence(prediction) -> float:
+    # confidence -> (1, num_classes) full softmax; the top-class confidence is the
+    # row max, equivalent to sv's `p["confidence"]`.
+    return float(prediction.confidence[0].max())
 
 TWO_STAGE_WORKFLOW = {
     "version": "1.3.0",
@@ -128,6 +165,7 @@ CLASSIFICATION_WORKFLOW = {
 }
 
 
+@_NUMPY_ONLY
 def test_debug_execution_of_workflow_for_single_image_without_conditional_evaluation(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -198,6 +236,169 @@ def test_debug_execution_of_workflow_for_single_image_without_conditional_evalua
     ), "Expected confidences from step-by-step execution to match e2e execution"
 
 
+@_TENSOR_ONLY
+def test_debug_execution_of_workflow_for_single_image_without_conditional_evaluation_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    end_to_end_execution_engine = ExecutionEngine.init(
+        workflow_definition=TWO_STAGE_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    first_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    second_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CROP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    third_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    e2e_results = end_to_end_execution_engine.run(
+        runtime_parameters={
+            "image": dogs_image,
+        }
+    )
+    detection_results = first_step_execution_engine.run(
+        runtime_parameters={
+            "image": dogs_image,
+        }
+    )
+    cropping_results = second_step_execution_engine.run(
+        runtime_parameters={
+            "image": dogs_image,
+            "predictions": detection_results[0]["result"]["predictions"],
+        }
+    )
+    classification_results = third_step_execution_engine.run(
+        runtime_parameters={
+            "crops": [[e["crops"] for e in cropping_results[0]["result"]]],
+        }
+    )
+
+    # then
+    # Native per-image ClassificationPrediction objects: top class via class_id,
+    # top confidence via the per-image max over the full softmax row.
+    e2e_top_classes = [
+        _native_top_class_id(p) for p in e2e_results[0]["predictions"]
+    ]
+    debug_top_classes = [
+        _native_top_class_id(p) for p in classification_results[0]["predictions"]
+    ]
+    assert (
+        e2e_top_classes == debug_top_classes
+    ), "Expected top class prediction from step-by-step execution to match e2e execution"
+    e2e_confidence = [
+        _native_top_confidence(p) for p in e2e_results[0]["predictions"]
+    ]
+    debug_confidence = [
+        _native_top_confidence(p) for p in classification_results[0]["predictions"]
+    ]
+    assert np.allclose(
+        e2e_confidence, debug_confidence, atol=1e-4
+    ), "Expected confidences from step-by-step execution to match e2e execution"
+
+
+@_TENSOR_ONLY
+def test_debug_execution_of_workflow_for_single_image_without_conditional_evaluation_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as
+    # test_debug_execution_of_workflow_for_single_image_without_conditional_evaluation_tensor_native,
+    # but each image arrives ALREADY materialised as a CHW RGB device tensor
+    # (is_tensor_materialised() == True), so the model blocks run their on-device tensor path.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    end_to_end_execution_engine = ExecutionEngine.init(
+        workflow_definition=TWO_STAGE_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    first_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    second_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CROP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    third_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    e2e_results = end_to_end_execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+        }
+    )
+    detection_results = first_step_execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+        }
+    )
+    cropping_results = second_step_execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+            "predictions": detection_results[0]["result"]["predictions"],
+        }
+    )
+    classification_results = third_step_execution_engine.run(
+        runtime_parameters={
+            "crops": [[e["crops"] for e in cropping_results[0]["result"]]],
+        }
+    )
+
+    # then
+    # Native per-image ClassificationPrediction objects: top class via class_id,
+    # top confidence via the per-image max over the full softmax row.
+    e2e_top_classes = [
+        _native_top_class_id(p) for p in e2e_results[0]["predictions"]
+    ]
+    debug_top_classes = [
+        _native_top_class_id(p) for p in classification_results[0]["predictions"]
+    ]
+    assert (
+        e2e_top_classes == debug_top_classes
+    ), "Expected top class prediction from step-by-step execution to match e2e execution"
+    e2e_confidence = [
+        _native_top_confidence(p) for p in e2e_results[0]["predictions"]
+    ]
+    debug_confidence = [
+        _native_top_confidence(p) for p in classification_results[0]["predictions"]
+    ]
+    assert np.allclose(
+        e2e_confidence, debug_confidence, atol=1e-4
+    ), "Expected confidences from step-by-step execution to match e2e execution"
+
+
+@_NUMPY_ONLY
 def test_debug_execution_of_workflow_for_single_image_without_conditional_evaluation_when_serialization_is_requested(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -322,6 +523,273 @@ def test_debug_execution_of_workflow_for_single_image_without_conditional_evalua
     ), "Expected confidences from step-by-step execution to match e2e execution"
 
 
+@_TENSOR_ONLY
+def test_debug_execution_of_workflow_for_single_image_without_conditional_evaluation_when_serialization_is_requested_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    end_to_end_execution_engine = ExecutionEngine.init(
+        workflow_definition=TWO_STAGE_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    first_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    second_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CROP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    third_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    e2e_results = end_to_end_execution_engine.run(
+        runtime_parameters={
+            "image": dogs_image,
+        },
+        serialize_results=True,
+    )
+    detection_results = first_step_execution_engine.run(
+        runtime_parameters={
+            "image": dogs_image,
+        },
+        serialize_results=True,
+    )
+    detection_results_not_serialized = first_step_execution_engine.run(
+        runtime_parameters={
+            "image": dogs_image,
+        },
+    )
+    cropping_results = second_step_execution_engine.run(
+        runtime_parameters={
+            "image": dogs_image,
+            "predictions": detection_results[0]["result"]["predictions"],
+        },
+        serialize_results=True,
+    )
+    cropping_results_not_serialized = second_step_execution_engine.run(
+        runtime_parameters={
+            "image": dogs_image,
+            "predictions": detection_results_not_serialized[0]["result"]["predictions"],
+        },
+        serialize_results=False,
+    )
+    classification_results = third_step_execution_engine.run(
+        runtime_parameters={
+            "crops": [[e["crops"] for e in cropping_results[0]["result"]]],
+        },
+        serialize_results=True,
+    )
+
+    # then
+    # Serialized branch still yields a dict (unchanged); the NOT-serialized branch
+    # yields a native inference_models.Detections under the flag.
+    assert isinstance(
+        detection_results[0]["result"]["predictions"], dict
+    ), "Expected sv.Detections to be serialized"
+    assert isinstance(
+        detection_results_not_serialized[0]["result"]["predictions"], NativeDetections
+    ), "Expected native Detections not to be serialized"
+    deserialized_detections = sv.Detections.from_inference(
+        detection_results[0]["result"]["predictions"]
+    )
+    assert np.allclose(
+        deserialized_detections.confidence,
+        detection_results_not_serialized[0]["result"]["predictions"]
+        .confidence.cpu()
+        .numpy(),
+        atol=1e-4,
+    ), "Expected confidence match when serialized detections are deserialized"
+    intermediate_crop = cropping_results[0]["result"][0]["crops"]
+    assert (
+        intermediate_crop["type"] == "base64"
+    ), "Expected crop to be serialized to base64"
+    decoded_image, _ = load_image(intermediate_crop)
+    number_of_pixels = (
+        decoded_image.shape[0] * decoded_image.shape[1] * decoded_image.shape[2]
+    )
+    assert (
+        decoded_image.shape
+        == cropping_results_not_serialized[0]["result"][0]["crops"].numpy_image.shape
+    ), "Expected deserialized crop to match in size with not serialized one"
+    assert (
+        abs(
+            (decoded_image.sum() / number_of_pixels)
+            - (
+                cropping_results_not_serialized[0]["result"][0][
+                    "crops"
+                ].numpy_image.sum()
+                / number_of_pixels
+            )
+        )
+        < 1e-1
+    ), "Content of serialized and not serialized crop should roughly match (up to compression)"
+    # Both e2e and debug classification ran with serialize_results=True, so these
+    # remain inference classification dicts (unchanged from the sv-path test).
+    e2e_top_classes = [p["top"] for p in e2e_results[0]["predictions"]]
+    debug_top_classes = [p["top"] for p in classification_results[0]["predictions"]]
+    assert (
+        e2e_top_classes == debug_top_classes
+    ), "Expected top class prediction from step-by-step execution to match e2e execution"
+    e2e_confidence = [p["confidence"] for p in e2e_results[0]["predictions"]]
+    debug_confidence = [
+        p["confidence"] for p in classification_results[0]["predictions"]
+    ]
+    assert np.allclose(
+        e2e_confidence, debug_confidence, atol=1e-1
+    ), "Expected confidences from step-by-step execution to match e2e execution"
+
+
+@_TENSOR_ONLY
+def test_debug_execution_of_workflow_for_single_image_without_conditional_evaluation_when_serialization_is_requested_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as
+    # test_debug_execution_of_workflow_for_single_image_without_conditional_evaluation_when_serialization_is_requested_tensor_native,
+    # but each image arrives ALREADY materialised as a CHW RGB device tensor
+    # (is_tensor_materialised() == True), so the model blocks run their on-device tensor path.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    end_to_end_execution_engine = ExecutionEngine.init(
+        workflow_definition=TWO_STAGE_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    first_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    second_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CROP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    third_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    e2e_results = end_to_end_execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+        },
+        serialize_results=True,
+    )
+    detection_results = first_step_execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+        },
+        serialize_results=True,
+    )
+    detection_results_not_serialized = first_step_execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+        },
+    )
+    cropping_results = second_step_execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+            "predictions": detection_results[0]["result"]["predictions"],
+        },
+        serialize_results=True,
+    )
+    cropping_results_not_serialized = second_step_execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+            "predictions": detection_results_not_serialized[0]["result"]["predictions"],
+        },
+        serialize_results=False,
+    )
+    classification_results = third_step_execution_engine.run(
+        runtime_parameters={
+            "crops": [[e["crops"] for e in cropping_results[0]["result"]]],
+        },
+        serialize_results=True,
+    )
+
+    # then
+    # Serialized branch still yields a dict (unchanged); the NOT-serialized branch
+    # yields a native inference_models.Detections under the flag.
+    assert isinstance(
+        detection_results[0]["result"]["predictions"], dict
+    ), "Expected sv.Detections to be serialized"
+    assert isinstance(
+        detection_results_not_serialized[0]["result"]["predictions"], NativeDetections
+    ), "Expected native Detections not to be serialized"
+    deserialized_detections = sv.Detections.from_inference(
+        detection_results[0]["result"]["predictions"]
+    )
+    assert np.allclose(
+        deserialized_detections.confidence,
+        detection_results_not_serialized[0]["result"]["predictions"]
+        .confidence.cpu()
+        .numpy(),
+        atol=1e-4,
+    ), "Expected confidence match when serialized detections are deserialized"
+    intermediate_crop = cropping_results[0]["result"][0]["crops"]
+    assert (
+        intermediate_crop["type"] == "base64"
+    ), "Expected crop to be serialized to base64"
+    decoded_image, _ = load_image(intermediate_crop)
+    number_of_pixels = (
+        decoded_image.shape[0] * decoded_image.shape[1] * decoded_image.shape[2]
+    )
+    assert (
+        decoded_image.shape
+        == cropping_results_not_serialized[0]["result"][0]["crops"].numpy_image.shape
+    ), "Expected deserialized crop to match in size with not serialized one"
+    assert (
+        abs(
+            (decoded_image.sum() / number_of_pixels)
+            - (
+                cropping_results_not_serialized[0]["result"][0][
+                    "crops"
+                ].numpy_image.sum()
+                / number_of_pixels
+            )
+        )
+        < 1e-1
+    ), "Content of serialized and not serialized crop should roughly match (up to compression)"
+    # Both e2e and debug classification ran with serialize_results=True, so these
+    # remain inference classification dicts (unchanged from the sv-path test).
+    e2e_top_classes = [p["top"] for p in e2e_results[0]["predictions"]]
+    debug_top_classes = [p["top"] for p in classification_results[0]["predictions"]]
+    assert (
+        e2e_top_classes == debug_top_classes
+    ), "Expected top class prediction from step-by-step execution to match e2e execution"
+    e2e_confidence = [p["confidence"] for p in e2e_results[0]["predictions"]]
+    debug_confidence = [
+        p["confidence"] for p in classification_results[0]["predictions"]
+    ]
+    assert np.allclose(
+        e2e_confidence, debug_confidence, atol=1e-1
+    ), "Expected confidences from step-by-step execution to match e2e execution"
+
+
+@_NUMPY_ONLY
 def test_debug_execution_of_workflow_for_batch_of_images_without_conditional_evaluation(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -400,6 +868,186 @@ def test_debug_execution_of_workflow_for_batch_of_images_without_conditional_eva
     ), "Expected confidences from step-by-step execution to match e2e execution"
 
 
+@_TENSOR_ONLY
+def test_debug_execution_of_workflow_for_batch_of_images_without_conditional_evaluation_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    end_to_end_execution_engine = ExecutionEngine.init(
+        workflow_definition=TWO_STAGE_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    first_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    second_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CROP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    third_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    e2e_results = end_to_end_execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image, dogs_image],
+        }
+    )
+    detection_results = first_step_execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image, dogs_image],
+        }
+    )
+    cropping_results = second_step_execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image, dogs_image],
+            "predictions": [
+                detection_results[0]["result"]["predictions"],
+                detection_results[1]["result"]["predictions"],
+            ],
+        }
+    )
+    classification_results = third_step_execution_engine.run(
+        runtime_parameters={
+            "crops": [
+                [e["crops"] for e in cropping_results[0]["result"]],
+                [e["crops"] for e in cropping_results[1]["result"]],
+            ],
+        }
+    )
+
+    # then
+    # Native per-image ClassificationPrediction objects across the flattened batch.
+    e2e_top_classes = [
+        _native_top_class_id(p) for r in e2e_results for p in r["predictions"]
+    ]
+    debug_top_classes = [
+        _native_top_class_id(p)
+        for r in classification_results
+        for p in r["predictions"]
+    ]
+    assert (
+        e2e_top_classes == debug_top_classes
+    ), "Expected top class prediction from step-by-step execution to match e2e execution"
+    e2e_confidence = [
+        _native_top_confidence(p) for r in e2e_results for p in r["predictions"]
+    ]
+    debug_confidence = [
+        _native_top_confidence(p)
+        for r in classification_results
+        for p in r["predictions"]
+    ]
+    assert np.allclose(
+        e2e_confidence, debug_confidence, atol=1e-4
+    ), "Expected confidences from step-by-step execution to match e2e execution"
+
+
+@_TENSOR_ONLY
+def test_debug_execution_of_workflow_for_batch_of_images_without_conditional_evaluation_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as
+    # test_debug_execution_of_workflow_for_batch_of_images_without_conditional_evaluation_tensor_native,
+    # but each image arrives ALREADY materialised as a CHW RGB device tensor
+    # (is_tensor_materialised() == True), so the model blocks run their on-device tensor path.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    end_to_end_execution_engine = ExecutionEngine.init(
+        workflow_definition=TWO_STAGE_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    first_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    second_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CROP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    third_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    e2e_results = end_to_end_execution_engine.run(
+        runtime_parameters={
+            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+        }
+    )
+    detection_results = first_step_execution_engine.run(
+        runtime_parameters={
+            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+        }
+    )
+    cropping_results = second_step_execution_engine.run(
+        runtime_parameters={
+            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+            "predictions": [
+                detection_results[0]["result"]["predictions"],
+                detection_results[1]["result"]["predictions"],
+            ],
+        }
+    )
+    classification_results = third_step_execution_engine.run(
+        runtime_parameters={
+            "crops": [
+                [e["crops"] for e in cropping_results[0]["result"]],
+                [e["crops"] for e in cropping_results[1]["result"]],
+            ],
+        }
+    )
+
+    # then
+    # Native per-image ClassificationPrediction objects across the flattened batch.
+    e2e_top_classes = [
+        _native_top_class_id(p) for r in e2e_results for p in r["predictions"]
+    ]
+    debug_top_classes = [
+        _native_top_class_id(p)
+        for r in classification_results
+        for p in r["predictions"]
+    ]
+    assert (
+        e2e_top_classes == debug_top_classes
+    ), "Expected top class prediction from step-by-step execution to match e2e execution"
+    e2e_confidence = [
+        _native_top_confidence(p) for r in e2e_results for p in r["predictions"]
+    ]
+    debug_confidence = [
+        _native_top_confidence(p)
+        for r in classification_results
+        for p in r["predictions"]
+    ]
+    assert np.allclose(
+        e2e_confidence, debug_confidence, atol=1e-4
+    ), "Expected confidences from step-by-step execution to match e2e execution"
+
+
 TWO_STAGE_WORKFLOW_WITH_FLOW_CONTROL = {
     "version": "1.3.0",
     "inputs": [{"type": "WorkflowImage", "name": "image"}],
@@ -463,6 +1111,7 @@ TWO_STAGE_WORKFLOW_WITH_FLOW_CONTROL = {
 }
 
 
+@_NUMPY_ONLY
 def test_debug_execution_of_workflow_for_batch_of_images_with_conditional_evaluation(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -553,6 +1202,218 @@ def test_debug_execution_of_workflow_for_batch_of_images_with_conditional_evalua
     ]
     debug_confidence = [
         p["confidence"] if p else -1000.0
+        for r in classification_results
+        for p in r["predictions"]
+    ]
+    assert np.allclose(
+        e2e_confidence, debug_confidence, atol=1e-4
+    ), "Expected confidences from step-by-step execution to match e2e execution"
+
+
+@_TENSOR_ONLY
+def test_debug_execution_of_workflow_for_batch_of_images_with_conditional_evaluation_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    end_to_end_execution_engine = ExecutionEngine.init(
+        workflow_definition=TWO_STAGE_WORKFLOW_WITH_FLOW_CONTROL,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    first_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    second_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CROP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    third_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    e2e_results = end_to_end_execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image, dogs_image],
+        }
+    )
+    detection_results = first_step_execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image, dogs_image],
+        }
+    )
+    cropping_results = second_step_execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image, dogs_image],
+            "predictions": [
+                detection_results[0]["result"]["predictions"],
+                detection_results[1]["result"]["predictions"],
+            ],
+        }
+    )
+    classification_results = third_step_execution_engine.run(
+        runtime_parameters={
+            "crops": [
+                [cropping_results[0]["result"][0]["crops"], None],
+                [cropping_results[1]["result"][0]["crops"], None],
+            ],
+        }
+    )
+
+    # then
+    assert (
+        e2e_results[0]["predictions"][0] is not None
+    ), "Expected first dog crop not to be excluded by conditional eval"
+    assert (
+        e2e_results[0]["predictions"][1] is None
+    ), "Expected second dog crop to be excluded by conditional eval"
+    assert (
+        e2e_results[1]["predictions"][0] is not None
+    ), "Expected first dog crop not to be excluded by conditional eval"
+    assert (
+        e2e_results[1]["predictions"][1] is None
+    ), "Expected second dog crop to be excluded by conditional eval"
+    # Native per-image ClassificationPrediction objects; excluded entries stay None.
+    e2e_top_classes = [
+        _native_top_class_id(p) if p else None
+        for r in e2e_results
+        for p in r["predictions"]
+    ]
+    debug_top_classes = [
+        _native_top_class_id(p) if p else None
+        for r in classification_results
+        for p in r["predictions"]
+    ]
+    assert (
+        e2e_top_classes == debug_top_classes
+    ), "Expected top class prediction from step-by-step execution to match e2e execution"
+    e2e_confidence = [
+        _native_top_confidence(p) if p else -1000.0
+        for r in e2e_results
+        for p in r["predictions"]
+    ]
+    debug_confidence = [
+        _native_top_confidence(p) if p else -1000.0
+        for r in classification_results
+        for p in r["predictions"]
+    ]
+    assert np.allclose(
+        e2e_confidence, debug_confidence, atol=1e-4
+    ), "Expected confidences from step-by-step execution to match e2e execution"
+
+
+@_TENSOR_ONLY
+def test_debug_execution_of_workflow_for_batch_of_images_with_conditional_evaluation_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as
+    # test_debug_execution_of_workflow_for_batch_of_images_with_conditional_evaluation_tensor_native,
+    # but each image arrives ALREADY materialised as a CHW RGB device tensor
+    # (is_tensor_materialised() == True), so the model blocks run their on-device tensor path.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    end_to_end_execution_engine = ExecutionEngine.init(
+        workflow_definition=TWO_STAGE_WORKFLOW_WITH_FLOW_CONTROL,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    first_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    second_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CROP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    third_step_execution_engine = ExecutionEngine.init(
+        workflow_definition=CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    e2e_results = end_to_end_execution_engine.run(
+        runtime_parameters={
+            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+        }
+    )
+    detection_results = first_step_execution_engine.run(
+        runtime_parameters={
+            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+        }
+    )
+    cropping_results = second_step_execution_engine.run(
+        runtime_parameters={
+            "image": [numpy_image_as_tensor(dogs_image), numpy_image_as_tensor(dogs_image)],
+            "predictions": [
+                detection_results[0]["result"]["predictions"],
+                detection_results[1]["result"]["predictions"],
+            ],
+        }
+    )
+    classification_results = third_step_execution_engine.run(
+        runtime_parameters={
+            "crops": [
+                [cropping_results[0]["result"][0]["crops"], None],
+                [cropping_results[1]["result"][0]["crops"], None],
+            ],
+        }
+    )
+
+    # then
+    assert (
+        e2e_results[0]["predictions"][0] is not None
+    ), "Expected first dog crop not to be excluded by conditional eval"
+    assert (
+        e2e_results[0]["predictions"][1] is None
+    ), "Expected second dog crop to be excluded by conditional eval"
+    assert (
+        e2e_results[1]["predictions"][0] is not None
+    ), "Expected first dog crop not to be excluded by conditional eval"
+    assert (
+        e2e_results[1]["predictions"][1] is None
+    ), "Expected second dog crop to be excluded by conditional eval"
+    # Native per-image ClassificationPrediction objects; excluded entries stay None.
+    e2e_top_classes = [
+        _native_top_class_id(p) if p else None
+        for r in e2e_results
+        for p in r["predictions"]
+    ]
+    debug_top_classes = [
+        _native_top_class_id(p) if p else None
+        for r in classification_results
+        for p in r["predictions"]
+    ]
+    assert (
+        e2e_top_classes == debug_top_classes
+    ), "Expected top class prediction from step-by-step execution to match e2e execution"
+    e2e_confidence = [
+        _native_top_confidence(p) if p else -1000.0
+        for r in e2e_results
+        for p in r["predictions"]
+    ]
+    debug_confidence = [
+        _native_top_confidence(p) if p else -1000.0
         for r in classification_results
         for p in r["predictions"]
     ]

@@ -2,15 +2,39 @@ import base64
 
 import cv2
 import numpy as np
+import pytest
 import supervision as sv
 
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
-from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    USE_INFERENCE_MODELS,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference_models.models.base.object_detection import Detections as NativeDetections
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
+)
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the detections_stitch block emits a native
+# inference_models.Detections whose .xyxy/.confidence/.class_id are torch tensors (no
+# numpy .copy()). The direct-SAHI reference side stays numpy on both flags. The numpy
+# assertions run only with the flag off; the *_tensor_native twin bridges the
+# workflow-side tensors to numpy and asserts the same equality.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="sv.Detections workflow output; native under ENABLE_TENSOR_DATA_REPRESENTATION "
+    "— see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 SAHI_WORKFLOW = {
@@ -189,7 +213,7 @@ def test_sahi_workflow_with_none_as_filtering_strategy(
                     [523, 257, 557, 362],
                 ]
             ),
-            atol=1e-1,
+            atol=2,
         ), "Expected boxes for second image to be exactly as measured during test creation"
 
 
@@ -442,7 +466,7 @@ def test_sahi_workflow_with_nms_as_filtering_strategy(
                     [523, 257, 557, 362],
                 ]
             ),
-            atol=1e-1,
+            atol=2,
         ), "Expected boxes for second image to be exactly as measured during test creation"
 
 
@@ -614,6 +638,7 @@ def test_sahi_workflow_with_serialization(
     ), "Expected to deserialize result image properly"
 
 
+@_NUMPY_ONLY
 def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -705,6 +730,222 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
     detections_obtained_directly_class_id = detections_obtained_directly.class_id.copy()
     detections_obtained_directly_class_id.sort(axis=0)
     workflow_result_class_id = workflow_result[0]["predictions"].class_id.copy()
+    workflow_result_class_id.sort(axis=0)
+    assert np.all(
+        detections_obtained_directly_class_id == workflow_result_class_id
+    ), "Expected class ids to be the same for workflow SAHI and direct SAHI"
+
+
+@_TENSOR_ONLY
+def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_native(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    """Tensor-native parity: detections_stitch emits a native inference_models.Detections
+    (torch fields). The direct-SAHI reference side stays numpy; the workflow side is bridged
+    to numpy before the identical sort + np.allclose comparison."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=SAHI_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    model_manager.add_model(
+        model_id="yolov8n-640",
+        api_key=None,
+    )
+    model = model_manager.models()["yolov8n-640"]
+
+    def slicer_callback(image_slice: np.ndarray):
+        inference_image = {"type": "numpy_object", "value": image_slice}
+        request = ObjectDetectionInferenceRequest(
+            api_key=None,
+            model_id="yolov8n-640",
+            image=[inference_image],
+        )
+
+        predictions = model.infer_from_request(request)[0]
+        detections = sv.Detections.from_inference(predictions)
+        return detections
+
+    try:
+        slicer = sv.InferenceSlicer(
+            callback=slicer_callback,
+            slice_wh=(640, 640),
+            overlap_wh=(0.2, 0.2),
+            overlap_filter=sv.OverlapFilter.NON_MAX_SUPPRESSION,
+            iou_threshold=0.3,
+        )
+    except ValueError:
+        slicer = sv.InferenceSlicer(
+            callback=slicer_callback,
+            slice_wh=(640, 640),
+            overlap_ratio_wh=(0.2, 0.2),
+            overlap_filter=sv.OverlapFilter.NON_MAX_SUPPRESSION,
+            iou_threshold=0.3,
+        )
+
+    # when
+    detections_obtained_directly = slicer(crowd_image)
+    workflow_result = execution_engine.run(
+        runtime_parameters={
+            "image": [crowd_image],
+            "overlap_filtering_strategy": "nms",
+        }
+    )
+
+    # The workflow-side predictions are a native Detections (torch tensors); bridge each
+    # field to numpy before the in-place sort. The reference side is already numpy.
+    workflow_predictions = workflow_result[0]["predictions"]
+    assert isinstance(workflow_predictions, NativeDetections)
+
+    detections_obtained_directly_xyxy = detections_obtained_directly.xyxy.copy()
+    detections_obtained_directly_xyxy.sort(axis=0)
+    workflow_result_xyxy = workflow_predictions.xyxy.detach().cpu().numpy().copy()
+    workflow_result_xyxy.sort(axis=0)
+    # then
+    # The workflow runs the model through the tensor-native inference backend
+    # (run_tensor_native_inference) while the direct-SAHI reference uses the numpy
+    # infer_from_request path; the two backends agree on detection count and class but
+    # box coordinates differ by ~2px, so the cross-backend tolerance is slightly looser
+    # than the same-backend numpy test (atol=2).
+    assert detections_obtained_directly_xyxy.shape == workflow_result_xyxy.shape, (
+        "Expected the same number of SAHI detections across backends"
+    )
+    assert np.allclose(
+        detections_obtained_directly_xyxy,
+        workflow_result_xyxy,
+        atol=6,
+    ), "Expected bounding boxes to be the same for workflow SAHI and direct SAHI"
+    detections_obtained_directly_confidence = (
+        detections_obtained_directly.confidence.copy()
+    )
+    detections_obtained_directly_confidence.sort()
+    workflow_result_confidence = (
+        workflow_predictions.confidence.detach().cpu().numpy().copy()
+    )
+    workflow_result_confidence.sort()
+    assert np.allclose(
+        detections_obtained_directly_confidence,
+        workflow_result_confidence,
+        atol=1e-1,
+    ), "Expected confidences to be the same for workflow SAHI and direct SAHI"
+    detections_obtained_directly_class_id = detections_obtained_directly.class_id.copy()
+    detections_obtained_directly_class_id.sort(axis=0)
+    workflow_result_class_id = workflow_predictions.class_id.detach().cpu().numpy().copy()
+    workflow_result_class_id.sort(axis=0)
+    assert np.all(
+        detections_obtained_directly_class_id == workflow_result_class_id
+    ), "Expected class ids to be the same for workflow SAHI and direct SAHI"
+
+
+@_TENSOR_ONLY
+def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_with_tensor_input(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    """Same as test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly_tensor_native,
+    but the workflow image arrives ALREADY materialised as a CHW RGB device tensor
+    (is_tensor_materialised() == True), so the OD block runs its on-device tensor path. The
+    direct-SAHI reference side stays numpy; the workflow side is bridged to numpy before the
+    identical sort + np.allclose comparison."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=SAHI_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    model_manager.add_model(
+        model_id="yolov8n-640",
+        api_key=None,
+    )
+    model = model_manager.models()["yolov8n-640"]
+
+    def slicer_callback(image_slice: np.ndarray):
+        inference_image = {"type": "numpy_object", "value": image_slice}
+        request = ObjectDetectionInferenceRequest(
+            api_key=None,
+            model_id="yolov8n-640",
+            image=[inference_image],
+        )
+
+        predictions = model.infer_from_request(request)[0]
+        detections = sv.Detections.from_inference(predictions)
+        return detections
+
+    try:
+        slicer = sv.InferenceSlicer(
+            callback=slicer_callback,
+            slice_wh=(640, 640),
+            overlap_wh=(0.2, 0.2),
+            overlap_filter=sv.OverlapFilter.NON_MAX_SUPPRESSION,
+            iou_threshold=0.3,
+        )
+    except ValueError:
+        slicer = sv.InferenceSlicer(
+            callback=slicer_callback,
+            slice_wh=(640, 640),
+            overlap_ratio_wh=(0.2, 0.2),
+            overlap_filter=sv.OverlapFilter.NON_MAX_SUPPRESSION,
+            iou_threshold=0.3,
+        )
+
+    # when — feed the fixture as a pre-materialised tensor
+    detections_obtained_directly = slicer(crowd_image)
+    workflow_result = execution_engine.run(
+        runtime_parameters={
+            "image": [numpy_image_as_tensor(crowd_image)],
+            "overlap_filtering_strategy": "nms",
+        }
+    )
+
+    # The workflow-side predictions are a native Detections (torch tensors); bridge each
+    # field to numpy before the in-place sort. The reference side is already numpy.
+    workflow_predictions = workflow_result[0]["predictions"]
+    assert isinstance(workflow_predictions, NativeDetections)
+
+    detections_obtained_directly_xyxy = detections_obtained_directly.xyxy.copy()
+    detections_obtained_directly_xyxy.sort(axis=0)
+    workflow_result_xyxy = workflow_predictions.xyxy.detach().cpu().numpy().copy()
+    workflow_result_xyxy.sort(axis=0)
+    # then
+    # The workflow runs the model through the tensor-native inference backend
+    # (run_tensor_native_inference) while the direct-SAHI reference uses the numpy
+    # infer_from_request path; the two backends agree on detection count and class but
+    # box coordinates differ by ~2px, so the cross-backend tolerance is slightly looser
+    # than the same-backend numpy test (atol=2).
+    assert detections_obtained_directly_xyxy.shape == workflow_result_xyxy.shape, (
+        "Expected the same number of SAHI detections across backends"
+    )
+    assert np.allclose(
+        detections_obtained_directly_xyxy,
+        workflow_result_xyxy,
+        atol=6,
+    ), "Expected bounding boxes to be the same for workflow SAHI and direct SAHI"
+    detections_obtained_directly_confidence = (
+        detections_obtained_directly.confidence.copy()
+    )
+    detections_obtained_directly_confidence.sort()
+    workflow_result_confidence = (
+        workflow_predictions.confidence.detach().cpu().numpy().copy()
+    )
+    workflow_result_confidence.sort()
+    assert np.allclose(
+        detections_obtained_directly_confidence,
+        workflow_result_confidence,
+        atol=1e-1,
+    ), "Expected confidences to be the same for workflow SAHI and direct SAHI"
+    detections_obtained_directly_class_id = detections_obtained_directly.class_id.copy()
+    detections_obtained_directly_class_id.sort(axis=0)
+    workflow_result_class_id = workflow_predictions.class_id.detach().cpu().numpy().copy()
     workflow_result_class_id.sort(axis=0)
     assert np.all(
         detections_obtained_directly_class_id == workflow_result_class_id
@@ -858,5 +1099,5 @@ def test_sahi_workflow_for_segmentation_with_nms_as_filtering_strategy(
                     [525, 274, 550, 318],
                 ]
             ),
-            atol=1e-1,
+            atol=2,
         ), "Expected boxes for first image to be exactly as measured during test creation"

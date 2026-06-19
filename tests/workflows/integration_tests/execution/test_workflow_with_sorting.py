@@ -2,7 +2,11 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    USE_INFERENCE_MODELS,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
@@ -13,8 +17,26 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 )
 from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
+)
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the sort block returns a native
+# `inference_models.Detections` (plain @dataclass over torch tensors) that has no
+# sv-only `.box_area`. The sv-asserting test is skipped when the flag is on; the
+# `*_tensor_native` parity test (skipped when the flag is off) asserts the same
+# semantic result (boxes sorted by area, descending) computed from `.xyxy`.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="asserts sv-only Detections.box_area; sort block is native-only under "
+    "ENABLE_TENSOR_DATA_REPRESENTATION — see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 
@@ -312,6 +334,7 @@ def test_sorting_workflow_for_y_max_descending(
     ), "Expected alignment of boxes max_y to be as requested"
 
 
+@_NUMPY_ONLY
 def test_sorting_workflow_for_size_descending(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -357,6 +380,101 @@ def test_sorting_workflow_for_size_descending(
             np.array([7104, 6669, 4830, 4346, 3502, 2496]),
             atol=1,
         ), "Expected alignment of boxes size to be as requested"
+
+
+@_TENSOR_ONLY
+def test_sorting_workflow_for_size_descending_tensor_native(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    workflow_definition = build_sorting_workflow_definition(
+        sort_operation_mode=DetectionsSortProperties.SIZE,
+        ascending=False,
+    )
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=workflow_definition,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": crowd_image,
+            "model_id": "yolov8n-640",
+            "classes": {"person"},
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    # Native `inference_models.Detections` has no sv-only `.box_area`; compute the
+    # same quantity from the torch `.xyxy` tensor and assert the boxes are sorted
+    # by area descending (semantic parity with the sv `.box_area` assertion above).
+    detections = result[0]["result"]["predictions"]
+    xyxy = detections.xyxy.cpu().numpy()
+    box_area = (xyxy[:, 3] - xyxy[:, 1]) * (xyxy[:, 2] - xyxy[:, 0])
+    assert np.allclose(
+        box_area,
+        np.array([7104, 6669, 4830, 4346, 3502, 2496]),
+        atol=1,
+    ), "Expected alignment of boxes size to be as requested"
+
+
+@_TENSOR_ONLY
+def test_sorting_workflow_for_size_descending_with_tensor_input(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    # Same as test_sorting_workflow_for_size_descending_tensor_native, but the image
+    # arrives ALREADY materialised as a CHW RGB device tensor
+    # (is_tensor_materialised() == True), so the OD block runs its on-device tensor path.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    workflow_definition = build_sorting_workflow_definition(
+        sort_operation_mode=DetectionsSortProperties.SIZE,
+        ascending=False,
+    )
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=workflow_definition,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(crowd_image),
+            "model_id": "yolov8n-640",
+            "classes": {"person"},
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    # Native `inference_models.Detections` has no sv-only `.box_area`; compute the
+    # same quantity from the torch `.xyxy` tensor and assert the boxes are sorted
+    # by area descending (semantic parity with the sv `.box_area` assertion above).
+    detections = result[0]["result"]["predictions"]
+    xyxy = detections.xyxy.cpu().numpy()
+    box_area = (xyxy[:, 3] - xyxy[:, 1]) * (xyxy[:, 2] - xyxy[:, 0])
+    assert np.allclose(
+        box_area,
+        np.array([7104, 6669, 4830, 4346, 3502, 2496]),
+        atol=1,
+    ), "Expected alignment of boxes size to be as requested"
 
 
 def test_sorting_workflow_for_center_x_descending(

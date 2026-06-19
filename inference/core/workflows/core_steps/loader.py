@@ -5,6 +5,7 @@ from inference.core.env import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     API_KEY,
+    ENABLE_TENSOR_DATA_REPRESENTATION,
     SAM3_3D_OBJECTS_ENABLED,
     WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     WORKFLOW_DISABLED_BLOCK_PATTERNS,
@@ -14,32 +15,74 @@ from inference.core.env import (
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
 )
-from inference.core.workflows.core_steps.analytics.detection_event_log.v1 import (
-    DetectionEventLogBlockV1,
-)
-from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
-    LineCounterBlockV1,
-)
-from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
-    LineCounterBlockV2,
-)
-from inference.core.workflows.core_steps.analytics.overlap.v1 import OverlapBlockV1
-from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
-    PathDeviationAnalyticsBlockV1,
-)
-from inference.core.workflows.core_steps.analytics.path_deviation.v2 import (
-    PathDeviationAnalyticsBlockV2,
-)
-from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
-    TimeInZoneBlockV1,
-)
-from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
-    TimeInZoneBlockV2,
-)
-from inference.core.workflows.core_steps.analytics.time_in_zone.v3 import (
-    TimeInZoneBlockV3,
-)
-from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.analytics.detection_event_log.v1 import (
+        DetectionEventLogBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.analytics.detection_event_log.v1_tensor import (
+        DetectionEventLogBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
+        LineCounterBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.analytics.line_counter.v1_tensor import (
+        LineCounterBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
+        LineCounterBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.analytics.line_counter.v2_tensor import (
+        LineCounterBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.analytics.overlap.v1 import OverlapBlockV1
+    from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
+        PathDeviationAnalyticsBlockV1,
+    )
+    from inference.core.workflows.core_steps.analytics.path_deviation.v2 import (
+        PathDeviationAnalyticsBlockV2,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
+        TimeInZoneBlockV1,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
+        TimeInZoneBlockV2,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v3 import (
+        TimeInZoneBlockV3,
+    )
+    from inference.core.workflows.core_steps.analytics.velocity.v1 import (
+        VelocityBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.analytics.overlap.v1_tensor import (
+        OverlapBlockV1,
+    )
+    from inference.core.workflows.core_steps.analytics.path_deviation.v1_tensor import (
+        PathDeviationAnalyticsBlockV1,
+    )
+    from inference.core.workflows.core_steps.analytics.path_deviation.v2_tensor import (
+        PathDeviationAnalyticsBlockV2,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v1_tensor import (
+        TimeInZoneBlockV1,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v2_tensor import (
+        TimeInZoneBlockV2,
+    )
+    from inference.core.workflows.core_steps.analytics.time_in_zone.v3_tensor import (
+        TimeInZoneBlockV3,
+    )
+    from inference.core.workflows.core_steps.analytics.velocity.v1_tensor import (
+        VelocityBlockV1,
+    )
+
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
 from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 import (
@@ -63,9 +106,16 @@ from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 i
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
 )
-from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
-    DistanceMeasurementBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
+        DistanceMeasurementBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1_tensor import (
+        DistanceMeasurementBlockV1,
+    )
+
 from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
     DominantColorBlockV1,
 )
@@ -75,21 +125,38 @@ from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
 from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
     ImagePreprocessingBlockV1,
 )
-from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
-    MaskAreaMeasurementBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1 import (
-    MaskEdgeSnapBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
+        MaskAreaMeasurementBlockV1,
+    )
+    from inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1 import (
+        MaskEdgeSnapBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1_tensor import (
+        MaskAreaMeasurementBlockV1,
+    )
+    from inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1_tensor import (
+        MaskEdgeSnapBlockV1,
+    )
+
 from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1 import (
     MorphologicalTransformationBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v2 import (
     MorphologicalTransformationBlockV2,
 )
-from inference.core.workflows.core_steps.classical_cv.motion_detection.v1 import (
-    MotionDetectionBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.motion_detection.v1 import (
+        MotionDetectionBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.motion_detection.v1_tensor import (
+        MotionDetectionBlockV1,
+    )
+
 from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
     PixelationCountBlockV1,
 )
@@ -100,12 +167,22 @@ from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import 
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v2 import (
     SIFTComparisonBlockV2,
 )
-from inference.core.workflows.core_steps.classical_cv.size_measurement.v1 import (
-    SizeMeasurementBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
-    TemplateMatchingBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.classical_cv.size_measurement.v1 import (
+        SizeMeasurementBlockV1,
+    )
+    from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
+        TemplateMatchingBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.classical_cv.size_measurement.v1_tensor import (
+        SizeMeasurementBlockV1,
+    )
+    from inference.core.workflows.core_steps.classical_cv.template_matching.v1_tensor import (
+        TemplateMatchingBlockV1,
+    )
+
 from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
 )
@@ -113,11 +190,9 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_boolean_kind,
     deserialize_bytes_kind,
     deserialize_classification_prediction_kind,
-    deserialize_detections_kind,
     deserialize_dictionary_kind,
     deserialize_float_kind,
     deserialize_float_zero_to_one_kind,
-    deserialize_image_kind,
     deserialize_integer_kind,
     deserialize_labeled_points_kind,
     deserialize_list_of_values_kind,
@@ -125,7 +200,6 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_optional_string_kind,
     deserialize_point_kind,
     deserialize_rgb_color_kind,
-    deserialize_rle_detections_kind,
     deserialize_string_kind,
     deserialize_timestamp,
     deserialize_video_metadata_kind,
@@ -134,13 +208,48 @@ from inference.core.workflows.core_steps.common.deserializers import (
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
-    serialise_rle_sv_detections,
-    serialise_sv_detections,
     serialize_secret,
     serialize_timestamp,
     serialize_video_metadata_kind,
     serialize_wildcard_kind,
 )
+from inference.core.workflows.execution_engine.entities.tensor_native_types import (
+    TENSOR_KIND,
+    TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND,
+    TENSOR_NATIVE_EMBEDDING_KIND,
+    TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
+    TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+    TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND,
+)
+
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.common.deserializers_tensor import (
+        deserialize_detections_kind,
+        deserialize_image_kind,
+        deserialize_rle_detections_kind,
+    )
+    from inference.core.workflows.core_steps.common.serializers_tensor import (
+        serialise_native_classification,
+        serialise_native_embedding,
+        serialise_native_keypoint_detection,
+        serialise_native_rle_detections,
+        serialise_native_tensor,
+        serialise_rle_sv_detections,
+        serialise_sv_detections,
+    )
+else:
+    from inference.core.workflows.core_steps.common.deserializers import (
+        deserialize_detections_kind,
+        deserialize_image_kind,
+        deserialize_rle_detections_kind,
+    )
+    from inference.core.workflows.core_steps.common.serializers import (
+        serialise_rle_sv_detections,
+        serialise_sv_detections,
+    )
+
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
@@ -172,41 +281,97 @@ from inference.core.workflows.core_steps.formatters.json_parser.v1 import (
 from inference.core.workflows.core_steps.formatters.property_definition.v1 import (
     PropertyDefinitionBlockV1,
 )
-from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
-    VLMAsClassifierBlockV1,
-)
-from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v2 import (
-    VLMAsClassifierBlockV2,
-)
-from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
-    VLMAsDetectorBlockV1,
-)
-from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
-    VLMAsDetectorBlockV2,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
+        VLMAsClassifierBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1_tensor import (
+        VLMAsClassifierBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v2 import (
+        VLMAsClassifierBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v2_tensor import (
+        VLMAsClassifierBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
+        VLMAsDetectorBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1_tensor import (
+        VLMAsDetectorBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
+        VLMAsDetectorBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2_tensor import (
+        VLMAsDetectorBlockV2,
+    )
+
 from inference.core.workflows.core_steps.fusion.buffer.v1 import BufferBlockV1
-from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
-    DetectionsClassesReplacementBlockV1,
-)
-from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
-    DetectionsConsensusBlockV1,
-)
-from inference.core.workflows.core_steps.fusion.detections_list_rollup.v1 import (
-    DetectionsListRollUpBlockV1,
-)
-from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
-    DetectionsStitchBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
+        DetectionsClassesReplacementBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1_tensor import (
+        DetectionsClassesReplacementBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
+        DetectionsConsensusBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.detections_consensus.v1_tensor import (
+        DetectionsConsensusBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.detections_list_rollup.v1 import (
+        DetectionsListRollUpBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.detections_list_rollup.v1_tensor import (
+        DetectionsListRollUpBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
+        DetectionsStitchBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.detections_stitch.v1_tensor import (
+        DetectionsStitchBlockV1,
+    )
+
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
 from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
-from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
-    OverlapAnalysisBlockV1,
-)
-from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
-    CosineSimilarityBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
+        OverlapAnalysisBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.fusion.overlap_analysis.v1_tensor import (
+        OverlapAnalysisBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
+        CosineSimilarityBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.math.cosine_similarity.v1_tensor import (
+        CosineSimilarityBlockV1,
+    )
+
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     AnthropicClaudeBlockV1,
 )
@@ -216,30 +381,67 @@ from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 i
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v3 import (
     AnthropicClaudeBlockV3,
 )
-from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
-    ClipModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
-    ClipComparisonBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 import (
-    ClipComparisonBlockV2,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
+        ClipModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.clip.v1_tensor import (
+        ClipModelBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
+        ClipComparisonBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 import (
+        ClipComparisonBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1_tensor import (
+        ClipComparisonBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2_tensor import (
+        ClipComparisonBlockV2,
+    )
+
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
-    DepthEstimationBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
-    EasyOCRBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
-    Florence2BlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
-    Florence2BlockV2,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
+        DepthEstimationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1_tensor import (
+        DepthEstimationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
+        EasyOCRBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1_tensor import (
+        EasyOCRBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
+        Florence2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v1_tensor import (
+        Florence2BlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
+        Florence2BlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.florence2.v2_tensor import (
+        Florence2BlockV2,
+    )
+
 from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 from inference.core.workflows.core_steps.models.foundation.glm_ocr.v1 import (
     GLMOCRBlockV1,
@@ -259,9 +461,16 @@ from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 impor
 from inference.core.workflows.core_steps.models.foundation.google_gemma.v2 import (
     GoogleGemmaBlockV2,
 )
-from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
-    GoogleVisionOCRBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
+        GoogleVisionOCRBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1_tensor import (
+        GoogleVisionOCRBlockV1,
+    )
+
 from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v1 import (
     KimiOpenRouterBlockV1,
 )
@@ -278,10 +487,24 @@ from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBloc
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.moondream2.v1 import (
-    Moondream2BlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.moondream2.v1 import (
+        Moondream2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.moondream2.v1_tensor import (
+        Moondream2BlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.ocr.v1 import (
+        OCRModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.ocr.v1_tensor import (
+        OCRModelBlockV1,
+    )
+
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
 )
@@ -300,141 +523,328 @@ from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 
 from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import (
     OpenRouterBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
-    PerceptionEncoderModelBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
+        PerceptionEncoderModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1_tensor import (
+        PerceptionEncoderModelBlockV1,
+    )
+
 from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
     Qwen35OpenRouterBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
-    Qwen35VLBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
-    Qwen35VLBlockV2,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
+        Qwen35VLBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1_tensor import (
+        Qwen35VLBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
+        Qwen35VLBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2_tensor import (
+        Qwen35VLBlockV2,
+    )
+
 from inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
     Qwen36OpenRouterBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
-    Qwen3VLBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
+        Qwen3VLBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1_tensor import (
+        Qwen3VLBlockV1,
+    )
+
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
     QwenVlmBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
-    SegPreviewBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
-    SegmentAnything2BlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
-    SegmentAnything2VideoBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
-    SegmentAnything3BlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 import (
-    SegmentAnything3BlockV2,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
-    SegmentAnything3BlockV3,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
+        SegPreviewBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.seg_preview.v1_tensor import (
+        SegPreviewBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+        SegmentAnything2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1_tensor import (
+        SegmentAnything2BlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
+        SegmentAnything2VideoBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1_tensor import (
+        SegmentAnything2VideoBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
+        SegmentAnything3BlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 import (
+        SegmentAnything3BlockV2,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
+        SegmentAnything3BlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1_tensor import (
+        SegmentAnything3BlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2_tensor import (
+        SegmentAnything3BlockV2,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3_tensor import (
+        SegmentAnything3BlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4_tensor import (
+        RoboflowInstanceSegmentationModelBlockV4,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
+        RoboflowInstanceSegmentationModelBlockV4,
+    )
+
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
     SegmentAnything3InteractiveBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
     SegmentAnything3VideoBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
-    RoboflowInstanceSegmentationModelBlockV4,
-)
 
 if SAM3_3D_OBJECTS_ENABLED:
-    from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
-        SegmentAnything3_3D_ObjectsBlockV1,
+    if not ENABLE_TENSOR_DATA_REPRESENTATION:
+        from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
+            SegmentAnything3_3D_ObjectsBlockV1,
+        )
+    else:
+        from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1_tensor import (
+            SegmentAnything3_3D_ObjectsBlockV1,
+        )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
+        SmolVLM2BlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.smolvlm.v1_tensor import (
+        SmolVLM2BlockV1,
     )
 
-from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
-    SmolVLM2BlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
     StabilityAIImageGenBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1 import (
-    StabilityAIInpaintingBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1 import (
+        StabilityAIInpaintingBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1_tensor import (
+        StabilityAIInpaintingBlockV1,
+    )
+
 from inference.core.workflows.core_steps.models.foundation.stability_ai.outpainting.v1 import (
     StabilityAIOutpaintingBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
-    YoloWorldModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
-    RoboflowInstanceSegmentationModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
-    RoboflowInstanceSegmentationModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
-    RoboflowInstanceSegmentationModelBlockV3,
-)
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
-    RoboflowKeypointDetectionModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2 import (
-    RoboflowKeypointDetectionModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3 import (
-    RoboflowKeypointDetectionModelBlockV3,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1 import (
-    RoboflowClassificationModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2 import (
-    RoboflowClassificationModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3 import (
-    RoboflowClassificationModelBlockV3,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
-    RoboflowMultiLabelClassificationModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
-    RoboflowMultiLabelClassificationModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
-    RoboflowMultiLabelClassificationModelBlockV3,
-)
-from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 import (
-    RoboflowObjectDetectionModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
-    RoboflowObjectDetectionModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 import (
-    RoboflowObjectDetectionModelBlockV3,
-)
-from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
-    RoboflowSemanticSegmentationModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2 import (
-    RoboflowSemanticSegmentationModelBlockV2,
-)
-from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
-    BarcodeDetectorBlockV1,
-)
-from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
-    QRCodeDetectorBlockV1,
-)
-from inference.core.workflows.core_steps.sampling.identify_changes.v1 import (
-    IdentifyChangesBlockV1,
-)
-from inference.core.workflows.core_steps.sampling.identify_outliers.v1 import (
-    IdentifyOutliersBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
+        YoloWorldModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.yolo_world.v1_tensor import (
+        YoloWorldModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1_tensor import (
+        RoboflowInstanceSegmentationModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
+        RoboflowInstanceSegmentationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2_tensor import (
+        RoboflowInstanceSegmentationModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
+        RoboflowInstanceSegmentationModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3_tensor import (
+        RoboflowInstanceSegmentationModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
+        RoboflowInstanceSegmentationModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1_tensor import (
+        RoboflowKeypointDetectionModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
+        RoboflowKeypointDetectionModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2_tensor import (
+        RoboflowKeypointDetectionModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2 import (
+        RoboflowKeypointDetectionModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3_tensor import (
+        RoboflowKeypointDetectionModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3 import (
+        RoboflowKeypointDetectionModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1_tensor import (
+        RoboflowClassificationModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1 import (
+        RoboflowClassificationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2_tensor import (
+        RoboflowClassificationModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2 import (
+        RoboflowClassificationModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3_tensor import (
+        RoboflowClassificationModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3 import (
+        RoboflowClassificationModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
+        RoboflowMultiLabelClassificationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
+        RoboflowMultiLabelClassificationModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3_tensor import (
+        RoboflowMultiLabelClassificationModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
+        RoboflowMultiLabelClassificationModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v1_tensor import (
+        RoboflowObjectDetectionModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 import (
+        RoboflowObjectDetectionModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v2_tensor import (
+        RoboflowObjectDetectionModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
+        RoboflowObjectDetectionModelBlockV2,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v3_tensor import (
+        RoboflowObjectDetectionModelBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 import (
+        RoboflowObjectDetectionModelBlockV3,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1_tensor import (
+        RoboflowSemanticSegmentationModelBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
+        RoboflowSemanticSegmentationModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2_tensor import (
+        RoboflowSemanticSegmentationModelBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2 import (
+        RoboflowSemanticSegmentationModelBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
+        BarcodeDetectorBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
+        QRCodeDetectorBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1_tensor import (
+        BarcodeDetectorBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1_tensor import (
+        QRCodeDetectorBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sampling.identify_changes.v1 import (
+        IdentifyChangesBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sampling.identify_changes.v1_tensor import (
+        IdentifyChangesBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sampling.identify_outliers.v1 import (
+        IdentifyOutliersBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sampling.identify_outliers.v1_tensor import (
+        IdentifyOutliersBlockV1,
+    )
+
 from inference.core.workflows.core_steps.secrets_providers.environment_secrets_store.v1 import (
     EnvironmentSecretsStoreBlockV1,
 )
@@ -445,25 +855,61 @@ from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
     EmailNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
-from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import (
+        ONVIFSinkBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.onvif_movement.v1_tensor import (
+        ONVIFSinkBlockV1,
+    )
+
 from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
     RoboflowAssetLibraryAttributesBlockV1,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
-    RoboflowCustomMetadataBlockV1,
-)
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
-    RoboflowDatasetUploadBlockV1,
-)
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
-    RoboflowDatasetUploadBlockV2,
-)
-from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
-    ModelMonitoringInferenceAggregatorBlockV1,
-)
-from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
-    RoboflowVisionEventsBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
+        RoboflowCustomMetadataBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1_tensor import (
+        RoboflowCustomMetadataBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
+        RoboflowDatasetUploadBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
+        RoboflowDatasetUploadBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
+        RoboflowDatasetUploadBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2_tensor import (
+        RoboflowDatasetUploadBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
+        ModelMonitoringInferenceAggregatorBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1_tensor import (
+        ModelMonitoringInferenceAggregatorBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1 import (
+        RoboflowVisionEventsBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1_tensor import (
+        RoboflowVisionEventsBlockV1,
+    )
+
 from inference.core.workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
@@ -475,161 +921,385 @@ from inference.core.workflows.core_steps.sinks.twilio.sms.v2 import (
     TwilioSMSNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
-from inference.core.workflows.core_steps.trackers.botsort.v1 import (
-    BoTSORTBlockV1 as TrackerBoTSORTBlockV1,
-)
-from inference.core.workflows.core_steps.trackers.bytetrack.v1 import (
-    ByteTrackBlockV1 as TrackerByteTrackBlockV1,
-)
-from inference.core.workflows.core_steps.trackers.ocsort.v1 import (
-    OCSORTBlockV1 as TrackerOCSORTBlockV1,
-)
-from inference.core.workflows.core_steps.trackers.sort.v1 import (
-    SORTBlockV1 as TrackerSORTBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
-    AbsoluteStaticCropBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import (
-    BoundingRectBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
-    ByteTrackerBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.byte_tracker.v2 import (
-    ByteTrackerBlockV2,
-)
-from inference.core.workflows.core_steps.transformations.byte_tracker.v3 import (
-    ByteTrackerBlockV3,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.trackers.botsort.v1 import (
+        BoTSORTBlockV1 as TrackerBoTSORTBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.trackers.botsort.v1_tensor import (
+        BoTSORTBlockV1 as TrackerBoTSORTBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.trackers.bytetrack.v1 import (
+        ByteTrackBlockV1 as TrackerByteTrackBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.trackers.bytetrack.v1_tensor import (
+        ByteTrackBlockV1 as TrackerByteTrackBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.trackers.ocsort.v1 import (
+        OCSORTBlockV1 as TrackerOCSORTBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.trackers.ocsort.v1_tensor import (
+        OCSORTBlockV1 as TrackerOCSORTBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.trackers.sort.v1 import (
+        SORTBlockV1 as TrackerSORTBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.trackers.sort.v1_tensor import (
+        SORTBlockV1 as TrackerSORTBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
+        AbsoluteStaticCropBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1_tensor import (
+        AbsoluteStaticCropBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import (
+        BoundingRectBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.bounding_rect.v1_tensor import (
+        BoundingRectBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
+        ByteTrackerBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.byte_tracker.v1_tensor import (
+        ByteTrackerBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.byte_tracker.v2 import (
+        ByteTrackerBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.byte_tracker.v2_tensor import (
+        ByteTrackerBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.byte_tracker.v3 import (
+        ByteTrackerBlockV3,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.byte_tracker.v3_tensor import (
+        ByteTrackerBlockV3,
+    )
+
 from inference.core.workflows.core_steps.transformations.camera_calibration.v1 import (
     CameraCalibrationBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
-    DetectionOffsetBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.detections_combine.v1 import (
-    DetectionsCombineBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
+        DetectionOffsetBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.detection_offset.v1_tensor import (
+        DetectionOffsetBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.detections_combine.v1 import (
+        DetectionsCombineBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.detections_combine.v1_tensor import (
+        DetectionsCombineBlockV1,
+    )
+
 from inference.core.workflows.core_steps.transformations.detections_filter.v1 import (
     DetectionsFilterBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.detections_merge.v1 import (
-    DetectionsMergeBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.detections_merge.v1 import (
+        DetectionsMergeBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.detections_merge.v1_tensor import (
+        DetectionsMergeBlockV1,
+    )
+
 from inference.core.workflows.core_steps.transformations.detections_transformation.v1 import (
     DetectionsTransformationBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import (
-    DynamicCropBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
-    DynamicZonesBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import (
+        DynamicCropBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.dynamic_crop.v1_tensor import (
+        DynamicCropBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
+        DynamicZonesBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.dynamic_zones.v1_tensor import (
+        DynamicZonesBlockV1,
+    )
+
 from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
     ImageSlicerBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.image_slicer.v2 import (
     ImageSlicerBlockV2,
 )
-from inference.core.workflows.core_steps.transformations.per_class_confidence_filter.v1 import (
-    PerClassConfidenceFilterBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
-    PerspectiveCorrectionBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.per_class_confidence_filter.v1 import (
+        PerClassConfidenceFilterBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.per_class_confidence_filter.v1_tensor import (
+        PerClassConfidenceFilterBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
+        PerspectiveCorrectionBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.perspective_correction.v1_tensor import (
+        PerspectiveCorrectionBlockV1,
+    )
+
 from inference.core.workflows.core_steps.transformations.qr_code_generator.v1 import (
     QRCodeGeneratorBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.stabilize_detections.v1 import (
-    StabilizeTrackedDetectionsBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.stabilize_detections.v1 import (
+        StabilizeTrackedDetectionsBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.stabilize_detections.v1_tensor import (
+        StabilizeTrackedDetectionsBlockV1,
+    )
+
 from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
     StitchImagesBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v1 import (
-    StitchOCRDetectionsBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
-    StitchOCRDetectionsBlockV2,
-)
-from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
-    TrackClassLockBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v1 import (
+        StitchOCRDetectionsBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v1_tensor import (
+        StitchOCRDetectionsBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
+        StitchOCRDetectionsBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2_tensor import (
+        StitchOCRDetectionsBlockV2,
+    )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
+        TrackClassLockBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.track_class_lock.v1_tensor import (
+        TrackClassLockBlockV1,
+    )
 
 # Visualizers
-from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
-    BackgroundColorVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.blur.v1 import (
-    BlurVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.bounding_box.v1 import (
-    BoundingBoxVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.circle.v1 import (
-    CircleVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.classification_label.v1 import (
-    ClassificationLabelVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.color.v1 import (
-    ColorVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.corner.v1 import (
-    CornerVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.crop.v1 import (
-    CropVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.dot.v1 import (
-    DotVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.ellipse.v1 import (
-    EllipseVisualizationBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
+        BackgroundColorVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.background_color.v1_tensor import (
+        BackgroundColorVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.blur.v1 import (
+        BlurVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.blur.v1_tensor import (
+        BlurVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.bounding_box.v1 import (
+        BoundingBoxVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.bounding_box.v1_tensor import (
+        BoundingBoxVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.circle.v1 import (
+        CircleVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.circle.v1_tensor import (
+        CircleVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.classification_label.v1 import (
+        ClassificationLabelVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.classification_label.v1_tensor import (
+        ClassificationLabelVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.color.v1 import (
+        ColorVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.color.v1_tensor import (
+        ColorVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.corner.v1 import (
+        CornerVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.corner.v1_tensor import (
+        CornerVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.crop.v1 import (
+        CropVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.crop.v1_tensor import (
+        CropVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.dot.v1 import (
+        DotVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.dot.v1_tensor import (
+        DotVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.ellipse.v1 import (
+        EllipseVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.ellipse.v1_tensor import (
+        EllipseVisualizationBlockV1,
+    )
+
 from inference.core.workflows.core_steps.visualizations.grid.v1 import (
     GridVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.halo.v1 import (
-    HaloVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.halo.v2 import (
-    HaloVisualizationBlockV2,
-)
-from inference.core.workflows.core_steps.visualizations.heatmap.v1 import (
-    HeatmapVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.icon.v1 import (
-    IconVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.keypoint.v1 import (
-    KeypointVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.label.v1 import (
-    LabelVisualizationBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.halo.v1 import (
+        HaloVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.halo.v1_tensor import (
+        HaloVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.halo.v2 import (
+        HaloVisualizationBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.halo.v2_tensor import (
+        HaloVisualizationBlockV2,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.heatmap.v1 import (
+        HeatmapVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.heatmap.v1_tensor import (
+        HeatmapVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.icon.v1 import (
+        IconVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.icon.v1_tensor import (
+        IconVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.keypoint.v1 import (
+        KeypointVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.keypoint.v1_tensor import (
+        KeypointVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.label.v1 import (
+        LabelVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.label.v1_tensor import (
+        LabelVisualizationBlockV1,
+    )
+
 from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
     LineCounterZoneVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.mask.v1 import (
-    MaskVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.model_comparison.v1 import (
-    ModelComparisonVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
-    PixelateVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
-    PolygonVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.polygon.v2 import (
-    PolygonVisualizationBlockV2,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.mask.v1 import (
+        MaskVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.mask.v1_tensor import (
+        MaskVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.model_comparison.v1 import (
+        ModelComparisonVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.model_comparison.v1_tensor import (
+        ModelComparisonVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
+        PixelateVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.pixelate.v1_tensor import (
+        PixelateVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
+        PolygonVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.polygon.v1_tensor import (
+        PolygonVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.polygon.v2 import (
+        PolygonVisualizationBlockV2,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.polygon.v2_tensor import (
+        PolygonVisualizationBlockV2,
+    )
+
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
     PolygonZoneVisualizationBlockV1,
 )
@@ -639,12 +1309,24 @@ from inference.core.workflows.core_steps.visualizations.reference_path.v1 import
 from inference.core.workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.trace.v1 import (
-    TraceVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
-    TriangleVisualizationBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.trace.v1 import (
+        TraceVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.trace.v1_tensor import (
+        TraceVisualizationBlockV1,
+    )
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
+        TriangleVisualizationBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.visualizations.triangle.v1_tensor import (
+        TriangleVisualizationBlockV1,
+    )
+
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
@@ -719,6 +1401,31 @@ KINDS_SERIALIZERS = {
     WILDCARD_KIND.name: serialize_wildcard_kind,
     TIMESTAMP_KIND.name: serialize_timestamp,
 }
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    # Tensor-native producers emit native dataclasses for these kinds, which the
+    # numpy serialisers cannot handle. Classification has no numpy serialiser at all;
+    # keypoint produces a (KeyPoints, Detections) tuple; semantic-seg uses the
+    # per-class RLE InstanceDetections carrier (Option B).
+    KINDS_SERIALIZERS[CLASSIFICATION_PREDICTION_KIND.name] = (
+        serialise_native_classification
+    )
+    KINDS_SERIALIZERS[KEYPOINT_DETECTION_PREDICTION_KIND.name] = (
+        serialise_native_keypoint_detection
+    )
+    # semantic-seg uses the per-class RLE InstanceDetections carrier (Option B); emit
+    # the native COCO RLE per box (no polygon collapse) via the native RLE serialiser.
+    KINDS_SERIALIZERS[SEMANTIC_SEGMENTATION_PREDICTION_KIND.name] = (
+        serialise_native_rle_detections
+    )
+    # instance-seg blocks declare the RLE kind too; the numpy `serialise_rle_sv_detections`
+    # cannot handle a native InstanceDetections, so route it to the native RLE serialiser
+    # (which emits the COCO RLE from InstancesRLEMasks, original-index aligned).
+    KINDS_SERIALIZERS[RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name] = (
+        serialise_native_rle_detections
+    )
+    # Tensor-native embedding/tensor kinds serialise to plain Python lists.
+    KINDS_SERIALIZERS[EMBEDDING_KIND.name] = serialise_native_embedding
+    KINDS_SERIALIZERS[TENSOR_KIND.name] = serialise_native_tensor
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,
@@ -1045,20 +1752,46 @@ def load_kinds() -> List[Kind]:
         FLOAT_KIND,
         DICTIONARY_KIND,
         DETECTION_KIND,
-        CLASSIFICATION_PREDICTION_KIND,
+        (
+            CLASSIFICATION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_CLASSIFICATION_PREDICTION_KIND
+        ),
         DETECTIONS_OVERLAPS_KIND,
         POINT_KIND,
         LABELED_POINTS_KIND,
         ZONE_KIND,
-        OBJECT_DETECTION_PREDICTION_KIND,
-        INSTANCE_SEGMENTATION_PREDICTION_KIND,
-        KEYPOINT_DETECTION_PREDICTION_KIND,
-        SEMANTIC_SEGMENTATION_PREDICTION_KIND,
+        (
+            OBJECT_DETECTION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND
+        ),
+        (
+            INSTANCE_SEGMENTATION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND
+        ),
+        (
+            RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND
+        ),
+        (
+            KEYPOINT_DETECTION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND
+        ),
+        (
+            SEMANTIC_SEGMENTATION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND
+        ),
         RGB_COLOR_KIND,
         IMAGE_KEYPOINTS_KIND,
         CONTOURS_KIND,
         LANGUAGE_MODEL_OUTPUT_KIND,
         NUMPY_ARRAY_KIND,
+        TENSOR_KIND,
         QR_CODE_DETECTION_KIND,
         BAR_CODE_DETECTION_KIND,
         PREDICTION_TYPE_KIND,
@@ -1068,6 +1801,10 @@ def load_kinds() -> List[Kind]:
         BYTES_KIND,
         INFERENCE_ID_KIND,
         SECRET_KIND,
-        EMBEDDING_KIND,
+        (
+            EMBEDDING_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_EMBEDDING_KIND
+        ),
         TIMESTAMP_KIND,
     ]

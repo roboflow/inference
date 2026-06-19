@@ -1,5 +1,14 @@
 FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3 AS builder
 
+# Tell apt that libopencv-dev is already satisfied (the CUDA OpenCV in
+# opencv-dev 4.5.0 from the base image covers it). This prevents apt from
+# pulling in NVIDIA's libopencv-dev which conflicts on file ownership.
+RUN mkdir -p /tmp/dummy/DEBIAN \
+ && printf 'Package: libopencv-dev\nVersion: 4.5.0\nArchitecture: arm64\nMaintainer: local <local@local>\nDescription: dummy satisfying libopencv-dev (real CUDA OpenCV lives in opencv-dev)\n' > /tmp/dummy/DEBIAN/control \
+ && dpkg-deb --build /tmp/dummy /tmp/libopencv-dev-dummy.deb \
+ && dpkg -i /tmp/libopencv-dev-dummy.deb \
+ && rm -rf /tmp/dummy /tmp/libopencv-dev-dummy.deb
+
 # install Python 3.12
 RUN apt-get update -y && apt-get install -y \
     libssl-dev \
@@ -16,13 +25,16 @@ RUN apt-get update -y && apt-get install -y \
     libswscale-dev \
     libavutil-dev \
     libgstreamer1.0-dev \
-    libgstreamer-plugins-base1.0-dev
+    libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-bad1.0-dev \
+    libjson-glib-dev \
+    libnice-dev
 
 RUN mkdir -p /build/python-3.12
 WORKDIR /build/python-3.12
 RUN wget https://www.python.org/ftp/python/3.12.12/Python-3.12.12.tgz && tar -xzf Python-3.12.12.tgz
 WORKDIR /build/python-3.12/Python-3.12.12
-RUN ./configure --enable-optimizations
+RUN ./configure --enable-optimizations --enable-shared --prefix=/usr/local LDFLAGS="-Wl,-rpath,/usr/local/lib"
 RUN make -j$(nproc) && make altinstall
 
 RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.12 1
@@ -158,6 +170,38 @@ RUN CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ FORCE_CUDA=1 PATH=/build/cm
 RUN python3.12 -m pip install dist/torchvision-*.whl
 RUN cp dist/torchvision-*.whl /build/out/wheels/
 
+RUN apt-get update -y && apt-get install -y \
+    libglew-dev \
+    libgstrtspserver-1.0-dev \
+    && mkdir -p /build/jetson-utils \
+    && cd /build/jetson-utils \
+    && git clone https://github.com/dusty-nv/jetson-utils \
+    && cd /build/jetson-utils/jetson-utils \
+    && git checkout fae4b4250f985ab92180b6ec955b79995b7a34ff \
+    && sed -i 's/2\.7 3\.6 3\.7 3\.8 3\.10 3\.12/3.12/' python/CMakeLists.txt \
+    && mkdir build \
+    && cd /build/jetson-utils/jetson-utils/build \
+    && cmake ../ \
+    && make -j$(nproc) \
+    && make install \
+    && ldconfig \
+    && python3.12 -m pip install termcolor tabulate docker \
+    && echo "/usr/lib/python3.12/dist-packages" > /usr/local/lib/python3.12/site-packages/jetson_utils.pth
+#
+#RUN mkdir -p /build/jetson-utils
+#WORKDIR /build/jetson-utils
+#RUN git clone https://github.com/dusty-nv/jetson-utils
+#WORKDIR /build/jetson-utils/jetson-utils
+#RUN sed -i 's/2\.7 3\.6 3\.7 3\.8 3\.10 3\.12/3.12/' python/CMakeLists.txt  # in-place patch for build process to select py3.12 only
+#RUN mkdir build
+#WORKDIR /build/jetson-utils/jetson-utils/build
+#RUN cmake ../
+#RUN make -j$(nproc)
+#RUN make install
+#RUN ldconfig
+#RUN python3.12 -m pip install termcolor tabulate docker  # dependencies of jetson-utils
+#RUN echo "/usr/lib/python3.12/dist-packages" > /usr/local/lib/python3.12/site-packages/jetson_utils.pth  # enforce /usr/local/lib discovery
+
 FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3 AS target
 
 RUN apt-get update -y && apt-get install -y \
@@ -195,6 +239,15 @@ ENV LD_LIBRARY_PATH="/opt/gcc-11/lib64:$$LD_LIBRARY_PATH"
 RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.12 1
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.12 1
 
+# Tell apt that libopencv-dev is already satisfied (the CUDA OpenCV in
+# opencv-dev 4.5.0 from the base image covers it). This prevents apt from
+# pulling in NVIDIA's libopencv-dev which conflicts on file ownership.
+RUN mkdir -p /tmp/dummy/DEBIAN \
+ && printf 'Package: libopencv-dev\nVersion: 4.5.0\nArchitecture: arm64\nMaintainer: local <local@local>\nDescription: dummy satisfying libopencv-dev (real CUDA OpenCV lives in opencv-dev)\n' > /tmp/dummy/DEBIAN/control \
+ && dpkg-deb --build /tmp/dummy /tmp/libopencv-dev-dummy.deb \
+ && dpkg -i /tmp/libopencv-dev-dummy.deb \
+ && rm -rf /tmp/dummy /tmp/libopencv-dev-dummy.deb
+
 # Install ffmpeg/gstreamer dev packages for OpenCV build (must be after COPY from builder)
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -202,8 +255,13 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     libavformat-dev \
     libswscale-dev \
     libavutil-dev \
-    libgstreamer1.0-dev \
-    libgstreamer-plugins-base1.0-dev \
+    libgstreamer1.0 \
+    libgstreamer-plugins-base1.0 \
+    libgstreamer-plugins-bad1.0 \
+    libjson-glib-1.0-0 \
+    libnice10 \
+    libglew2.1 \
+    libgstrtspserver-1.0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install OpenCV

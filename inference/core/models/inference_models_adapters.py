@@ -61,6 +61,9 @@ from inference_models import (
     PreProcessingOverrides,
     SemanticSegmentationModel,
 )
+from inference_models.models.base.semantic_segmentation import (
+    SemanticSegmentationResult,
+)
 from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 
@@ -120,6 +123,16 @@ class InferenceModelsObjectDetectionAdapter(Model):
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[Detections]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
@@ -273,6 +286,44 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         )
         self.class_names = list(self._model.class_names)
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[InstanceDetections]:
+        # On the tensor path this method is the single authority for the mask
+        # representation actually returned to the block. `map_inference_kwargs`
+        # resolves the model-side `mask_format` kwarg (dense `torch.Tensor` vs
+        # `InstancesRLEMasks`); the legacy `response_mask_format` kwarg only
+        # governs `postprocess` (the v0 HTTP path) and is irrelevant here — the
+        # native `InstanceDetections` is consumed directly by the block.
+        #
+        # When the caller does not enforce dense masks, RLE is the intended
+        # carrier (`map_inference_kwargs` pins `mask_format="rle"` iff the model
+        # advertises it). Previously, a model without "rle" support silently fell
+        # back to dense (`mask_format` simply left unset), skewing the output away
+        # from what an RLE-kind consumer expects. Guard that here — on the tensor
+        # path only, so the legacy path keeps its dense-fallback behaviour — by
+        # raising early instead of emitting the wrong carrier. Both carriers are
+        # valid outputs and handled downstream; we only reject the silent skew.
+        enforce_dense_masks = (
+            False
+            if GCP_SERVERLESS
+            else kwargs.get("enforce_dense_masks_in_inference_models", False)
+        )
+        if not enforce_dense_masks and "rle" not in self._model.supported_mask_formats:
+            raise PostProcessingError(
+                "RLE masks are required on the tensor-native instance-segmentation "
+                "path (enforce_dense_masks_in_inference_models is False) but the loaded "
+                f"model only supports mask formats {self._model.supported_mask_formats}. "
+                "Either use a model that supports 'rle' or set "
+                "enforce_dense_masks_in_inference_models=True to receive dense masks."
+            )
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
+
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
@@ -281,6 +332,11 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
         )
         if GCP_SERVERLESS:
+            # On serverless we ALWAYS prefer RLE (when the model supports it),
+            # regardless of the caller's `enforce_dense_masks_in_inference_models`
+            # flag — dense masks would mean large host transfers. Note the
+            # inverted naming: `enforce_dense_masks_in_inference_models = False`
+            # means "do NOT enforce dense", i.e. RLE is used below.
             enforce_dense_masks_in_inference_models = False
         else:
             enforce_dense_masks_in_inference_models = kwargs.get(
@@ -288,6 +344,13 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                 False,
             )
         kwargs["pre_processing_overrides"] = pre_processing_overrides
+        # `mask_format` (set here) is passed to the model's `post_process` and
+        # governs the carrier of the returned `InstanceDetections`. It is a
+        # DIFFERENT kwarg from `response_mask_format`, which is read only by the
+        # legacy `postprocess` (v0 HTTP) path — do not conflate the two. The
+        # tensor path guards RLE-availability in `run_tensor_native_inference`
+        # before reaching here; the legacy path keeps the historical behaviour of
+        # silently leaving `mask_format` unset (dense) when "rle" is unsupported.
         if (
             "rle" in self._model.supported_mask_formats
             and not enforce_dense_masks_in_inference_models
@@ -490,6 +553,19 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
+        # Keypoint class names per object class (List[List[str]]); reached on the
+        # tensor path via `model_manager[model_id].key_points_classes`.
+        self.key_points_classes = list(self._model.key_points_classes)
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
@@ -703,6 +779,16 @@ class InferenceModelsClassificationAdapter(Model):
         )
         self.class_names = list(self._model.class_names)
 
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Union[ClassificationPrediction, List[MultiLabelClassificationPrediction]]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
+
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
@@ -735,7 +821,10 @@ class InferenceModelsClassificationAdapter(Model):
 
     def postprocess(
         self,
-        predictions: Tuple[List[KeyPoints], Optional[List[Detections]]],
+        # Raw classifier forward output (logits/scores tensor), passed straight
+        # to the underlying model's `post_process`. (Previously mis-annotated as
+        # the KeyPoints adapter's tuple via copy-paste.)
+        predictions: torch.Tensor,
         returned_metadata: List[Tuple[int, int]],
         **kwargs,
     ) -> Union[
@@ -1037,6 +1126,16 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
     def class_map(self):
         # match segment.roboflow.com
         return {str(k): v for k, v in enumerate(self.class_names)}
+
+    def run_tensor_native_inference(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[SemanticSegmentationResult]:
+        caller_color_format = kwargs.pop("input_color_format", None)
+        kwargs = self.map_inference_kwargs(kwargs)
+        kwargs["input_color_format"] = caller_color_format
+        return self._model(images, **kwargs)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
         kwargs["input_color_format"] = "bgr"

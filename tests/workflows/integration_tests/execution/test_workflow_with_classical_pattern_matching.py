@@ -1,9 +1,33 @@
 import numpy as np
+import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference_models.models.base.object_detection import Detections as NativeDetections
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the template_matching block emits a native
+# inference_models.Detections instead of sv.Detections. The numpy-shaped assertion that
+# reaches for the sv-style ["class_name"] subscript runs only with the flag off; an
+# equivalent *_tensor_native test asserts the same facts against the native carrier with
+# the flag on.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="sv.Detections output; native under ENABLE_TENSOR_DATA_REPRESENTATION "
+    "— see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
 
 WORKFLOW_WITH_CLASSICAL_PATTERN_MATCHING = {
     "version": "1.0",
@@ -49,6 +73,7 @@ WORKFLOW_WITH_CLASSICAL_PATTERN_MATCHING = {
 }
 
 
+@_NUMPY_ONLY
 def test_workflow_with_classical_pattern_matching(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -108,6 +133,153 @@ def test_workflow_with_classical_pattern_matching(
     assert result[1]["predictions"]["class_name"].tolist() == [
         "template_match"
     ], "Expected fixed class name"
+    assert np.allclose(
+        result[1]["predictions"].confidence, np.array([1.0])
+    ), "Expected fixed confidence"
+
+
+@_TENSOR_ONLY
+def test_workflow_with_classical_pattern_matching_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    """
+    In this test set we check how classical pattern matching block integrates with
+    other blocks that accept sv.Detections.
+
+    Please point out that a single image is passed as template, and batch of images
+    are passed as images to look for template. This workflow does also validate
+    Execution Engine capabilities to broadcast batch-oriented inputs properly.
+    """
+    # given
+    template = dogs_image[220:280, 310:410]  # dog's head
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CLASSICAL_PATTERN_MATCHING,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [crowd_image, dogs_image],
+            "template": template,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "Two images provided, so two outputs expected"
+    assert set(result[0].keys()) == {
+        "predictions",
+        "visualization",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "predictions",
+        "visualization",
+    }, "Expected all declared outputs to be delivered"
+    assert (
+        len(result[0]["predictions"]) == 0
+    ), "Expected no patterns matched in first image"
+    assert (
+        len(result[1]["predictions"]) == 1
+    ), "Expected single pattern match in second image"
+    assert np.allclose(
+        result[1]["predictions"].xyxy, np.array([312, 222, 412, 282])
+    ), "Expected to find single template match"
+    assert result[1]["predictions"].class_id.tolist() == [
+        0
+    ], "Expected fixed class id 0"
+    # Native Detections carry class names in image_metadata[CLASS_NAMES_KEY] (a
+    # {id: name} mapping) rather than via the sv-style ["class_name"] subscript.
+    preds = result[1]["predictions"]
+    assert isinstance(
+        preds, NativeDetections
+    ), "Output must be instance of native inference_models.Detections"
+    assert [
+        preds.image_metadata[CLASS_NAMES_KEY][int(c)] for c in preds.class_id.tolist()
+    ] == ["template_match"], "Expected fixed class name"
+    assert np.allclose(
+        result[1]["predictions"].confidence, np.array([1.0])
+    ), "Expected fixed confidence"
+
+
+@_TENSOR_ONLY
+def test_workflow_with_classical_pattern_matching_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    """
+    Same as test_workflow_with_classical_pattern_matching_tensor_native, but every
+    image arrives ALREADY materialised as a CHW RGB device tensor
+    (is_tensor_materialised() == True), so the blocks run their on-device tensor path.
+    Results must match the numpy-input variant.
+
+    Please point out that a single image is passed as template, and batch of images
+    are passed as images to look for template. This workflow does also validate
+    Execution Engine capabilities to broadcast batch-oriented inputs properly.
+    """
+    # given
+    template = dogs_image[220:280, 310:410]  # dog's head
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CLASSICAL_PATTERN_MATCHING,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when — feed the fixtures as pre-materialised tensors
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [
+                numpy_image_as_tensor(crowd_image),
+                numpy_image_as_tensor(dogs_image),
+            ],
+            "template": numpy_image_as_tensor(template),
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "Two images provided, so two outputs expected"
+    assert set(result[0].keys()) == {
+        "predictions",
+        "visualization",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "predictions",
+        "visualization",
+    }, "Expected all declared outputs to be delivered"
+    assert (
+        len(result[0]["predictions"]) == 0
+    ), "Expected no patterns matched in first image"
+    assert (
+        len(result[1]["predictions"]) == 1
+    ), "Expected single pattern match in second image"
+    assert np.allclose(
+        result[1]["predictions"].xyxy, np.array([312, 222, 412, 282])
+    ), "Expected to find single template match"
+    assert result[1]["predictions"].class_id.tolist() == [
+        0
+    ], "Expected fixed class id 0"
+    # Native Detections carry class names in image_metadata[CLASS_NAMES_KEY] (a
+    # {id: name} mapping) rather than via the sv-style ["class_name"] subscript.
+    preds = result[1]["predictions"]
+    assert isinstance(
+        preds, NativeDetections
+    ), "Output must be instance of native inference_models.Detections"
+    assert [
+        preds.image_metadata[CLASS_NAMES_KEY][int(c)] for c in preds.class_id.tolist()
+    ] == ["template_match"], "Expected fixed class name"
     assert np.allclose(
         result[1]["predictions"].confidence, np.array([1.0])
     ), "Expected fixed confidence"

@@ -633,7 +633,7 @@ def _prepare_grounding_bounding_box_from_detections(
 
 COORDINATES_EXTRACTION = {
     "first": lambda detections: detections.xyxy[0].tolist(),
-    "last": lambda detections: detections.xyxy[0].tolist(),
+    "last": lambda detections: detections.xyxy[-1].tolist(),
     "biggest": lambda detections: detections.xyxy[np.argmax(detections.area)].tolist(),
     "smallest": lambda detections: detections.xyxy[np.argmin(detections.area)].tolist(),
     "most-confident": lambda detections: detections.xyxy[

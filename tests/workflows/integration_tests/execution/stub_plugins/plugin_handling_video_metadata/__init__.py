@@ -88,9 +88,20 @@ class TrackerBlock(WorkflowBlock):
     ) -> BlockResult:
         if metadata.video_identifier not in self._trackers:
             self._trackers[metadata.video_identifier] = sv.ByteTrack()
+        if isinstance(predictions, sv.Detections):
+            tracker_input = deepcopy(predictions)
+        else:
+            # Under ENABLE_TENSOR_DATA_REPRESENTATION predictions is a native
+            # (torch-backed) inference_models.Detections, which sv.ByteTrack cannot
+            # subscript. Materialise it to sv.Detections at the boundary.
+            tracker_input = sv.Detections(
+                xyxy=predictions.xyxy.detach().cpu().numpy(),
+                class_id=predictions.class_id.detach().cpu().numpy(),
+                confidence=predictions.confidence.detach().cpu().numpy(),
+            )
         tracked_detections = self._trackers[
             metadata.video_identifier
-        ].update_with_detections(detections=deepcopy(predictions))
+        ].update_with_detections(detections=tracker_input)
         result = (
             tracked_detections.tracker_id.tolist()
             if tracked_detections.tracker_id is not None

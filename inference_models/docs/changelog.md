@@ -1,12 +1,22 @@
 # Changelog
 
+## `0.29.4`
+
+### Added
+
+- Adjustment to `KeyPoints` interface to expose `__len__(...)` method.
+- Adjustment to `InstanceDetections` interface to expose `__len__(...)` and `__iter__(...)` method.
+- Adjustment to `Detections` interface to expose `__len__(...)` and `__iter__(...)` method.
+
+---
+
 ## `0.29.3`
 
 ### Fixed
 
 - Incompatibility with `supervision==0.29.0` due to init param in `sv.KeyPoints(...)`
 
-
+---
 
 ## `0.29.2`
 
@@ -14,6 +24,7 @@
 
 - Transitive dependency vulnerability patched - `idna>=3.15` required by the package
 
+---
 
 ## `0.29.1`
 

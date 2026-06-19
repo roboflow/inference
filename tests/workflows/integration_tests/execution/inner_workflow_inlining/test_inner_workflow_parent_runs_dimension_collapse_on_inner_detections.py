@@ -14,7 +14,9 @@ from typing import Any
 from unittest import mock
 
 import numpy as np
+import pytest
 import supervision as sv
+import torch
 
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -22,10 +24,26 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.managers.base import ModelManager
+from inference_models.models.base.object_detection import Detections as NativeDetections
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     child_detection_only_for_parent_dynamic_crop,
     execution_engine,
+)
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the OD block runs inference through
+# `run_tensor_native_inference` (+ `get_class_names`), not `infer_from_request_sync`,
+# and the collapsed predictions are native `inference_models.Detections` (no
+# `__getitem__` / value `__eq__`). The numpy test skips when the flag is on; the
+# `*_tensor_native` parity test (skipped when off) drives the same scenario natively.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="numpy ModelManager mock; OD block is native under the flag — see *_tensor_native",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 
@@ -152,6 +170,7 @@ def _flat_workflow() -> dict:
     }
 
 
+@_NUMPY_ONLY
 def test_inlined_parent_dimension_collapse_matches_inner_workflow_detection(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -187,6 +206,7 @@ def test_inlined_parent_dimension_collapse_matches_inner_workflow_detection(
     assert len(nested_result) == 1
 
 
+@_NUMPY_ONLY
 def test_inlined_parent_dimension_collapse_matches_inner_workflow_detection_runtime_image_list(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -223,3 +243,141 @@ def test_inlined_parent_dimension_collapse_matches_inner_workflow_detection_runt
     assert nested_result == flat_result
     assert len(nested_result) == 1
     _assert_collapsed_two_image_batch(nested_result[0]["collapsed"])
+
+
+# --- tensor-native parity -------------------------------------------------------------
+
+
+def _native_od_detections() -> NativeDetections:
+    """Native equivalent of ``_mock_od_response``: the same three full-frame boxes as a
+    raw ``Detections`` (xyxy from the numpy x/y/w/h centres). The OD block attaches the
+    image lineage; ``detection_id`` rides in ``bboxes_metadata``, class names via
+    ``get_class_names``. A fresh instance is built per image so the block-side metadata
+    attach never aliases tensors across the batch."""
+    return NativeDetections(
+        xyxy=torch.tensor(
+            [[30, 30, 90, 90], [210, 20, 290, 100], [400, 10, 500, 110]],
+            dtype=torch.float32,
+        ),
+        class_id=torch.tensor([0, 1, 2], dtype=torch.long),
+        confidence=torch.tensor([0.99, 0.95, 0.90], dtype=torch.float32),
+        bboxes_metadata=[
+            {"detection_id": "mock-d0"},
+            {"detection_id": "mock-d1"},
+            {"detection_id": "mock-d2"},
+        ],
+    )
+
+
+def _run_tensor_native_inference(model_id: str, images, **kwargs) -> list:
+    # Native equivalent of _mock_infer_object_detection_from_request_sync: one raw
+    # `Detections` per input image (the block zips images with this list).
+    imgs = images if isinstance(images, list) else [images]
+    return [_native_od_detections() for _ in imgs]
+
+
+def _assert_native_detection(det: NativeDetections) -> None:
+    # Value parity for the three full-frame OD boxes. Native Detections has no
+    # __getitem__: detection_id reads from bboxes_metadata, class_name from
+    # image_metadata, and xyxy entries are torch tensors.
+    expected = [
+        ("mock-d0", "x", 0, 0.99, [30, 30, 90, 90]),
+        ("mock-d1", "y", 1, 0.95, [210, 20, 290, 100]),
+        ("mock-d2", "z", 2, 0.90, [400, 10, 500, 110]),
+    ]
+    assert isinstance(det, NativeDetections)
+    assert len(det) == 3
+    for i, (det_id, class_name, class_id, conf, expected_xyxy) in enumerate(expected):
+        assert det.bboxes_metadata[i]["detection_id"] == det_id
+        assert int(det.class_id[i]) == class_id
+        assert float(det.confidence[i]) == pytest.approx(conf)
+        assert det.image_metadata["class_names"][int(det.class_id[i])] == class_name
+        np.testing.assert_allclose(
+            det.xyxy[i].cpu().numpy(), expected_xyxy, rtol=0, atol=1e-3
+        )
+
+
+def _assert_collapsed_native_batch(collapsed: list, expected_images: int) -> None:
+    # Native parity of _assert_collapsed_two_image_batch: collapse flattens the OD batch
+    # to one native `Detections` per image (each a full frame with the three boxes).
+    assert isinstance(collapsed, list)
+    assert len(collapsed) == expected_images
+    for det in collapsed:
+        _assert_native_detection(det)
+
+
+@_TENSOR_ONLY
+def test_inlined_parent_dimension_collapse_matches_inner_workflow_detection_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    run_mock = mock.MagicMock(side_effect=_run_tensor_native_inference)
+    inner = child_detection_only_for_parent_dynamic_crop()
+
+    with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
+        ModelManager, "get_class_names", return_value=["x", "y", "z"]
+    ), mock.patch.object(
+        ModelManager,
+        "run_tensor_native_inference",
+        new=run_mock,
+    ):
+        nested_engine = execution_engine(model_manager, _nested_workflow(inner))
+        flat_engine = execution_engine(model_manager, _flat_workflow())
+        nested_result = nested_engine.run(runtime_parameters={"image": dogs_image})
+        flat_result = flat_engine.run(runtime_parameters={"image": dogs_image})
+
+    assert run_mock.call_count == 2
+    for call in run_mock.call_args_list:
+        model_id = call.kwargs.get("model_id", call.args[0] if call.args else None)
+        assert model_id == "yolov8n-640"
+        imgs = call.kwargs.get(
+            "images", call.args[1] if len(call.args) > 1 else None
+        )
+        assert imgs is not None and len(imgs) == 1
+
+    # Native Detections has no value __eq__; assert the values on BOTH runs instead of
+    # comparing nested_result == flat_result. Single image -> collapse yields one frame.
+    assert len(nested_result) == 1
+    assert len(flat_result) == 1
+    _assert_collapsed_native_batch(nested_result[0]["collapsed"], expected_images=1)
+    _assert_collapsed_native_batch(flat_result[0]["collapsed"], expected_images=1)
+
+
+@_TENSOR_ONLY
+def test_inlined_parent_dimension_collapse_matches_inner_workflow_detection_runtime_image_list_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Two runtime images are still one workflow row; ``dimension_collapse`` flattens the OD batch."""
+    run_mock = mock.MagicMock(side_effect=_run_tensor_native_inference)
+    inner = child_detection_only_for_parent_dynamic_crop()
+    images = [dogs_image, dogs_image.copy()]
+
+    with mock.patch.object(ModelManager, "add_model"), mock.patch.object(
+        ModelManager, "get_class_names", return_value=["x", "y", "z"]
+    ), mock.patch.object(
+        ModelManager,
+        "run_tensor_native_inference",
+        new=run_mock,
+    ):
+        nested_engine = execution_engine(model_manager, _nested_workflow(inner))
+        flat_engine = execution_engine(model_manager, _flat_workflow())
+        nested_result = nested_engine.run(runtime_parameters={"image": images})
+        flat_result = flat_engine.run(runtime_parameters={"image": images})
+
+    assert run_mock.call_count == 2
+    for call in run_mock.call_args_list:
+        model_id = call.kwargs.get("model_id", call.args[0] if call.args else None)
+        assert model_id == "yolov8n-640"
+        imgs = call.kwargs.get(
+            "images", call.args[1] if len(call.args) > 1 else None
+        )
+        assert imgs is not None and len(imgs) == 2
+
+    # Native Detections has no value __eq__; assert the values on BOTH runs instead of
+    # comparing nested_result == flat_result. Two images -> collapse flattens to two
+    # full-frame Detections.
+    assert len(nested_result) == 1
+    assert len(flat_result) == 1
+    _assert_collapsed_native_batch(nested_result[0]["collapsed"], expected_images=2)
+    _assert_collapsed_native_batch(flat_result[0]["collapsed"], expected_images=2)

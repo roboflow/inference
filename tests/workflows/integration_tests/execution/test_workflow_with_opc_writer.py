@@ -1,4 +1,5 @@
 import asyncio
+import os
 import threading
 import time
 from typing import Optional, Union
@@ -24,6 +25,7 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.opc_writer.v1 import
     get_connection_manager,
     opc_connect_and_write_value,
 )
+from tests.workflows.integration_tests.execution.conftest import bool_env
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
@@ -395,6 +397,10 @@ allowing factory automation engineers to take advantage of machine vision when b
     workflow_definition=WORKFLOW_OPC_WRITER,
     workflow_name_in_app="opc_writer",
 )
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_OPC_WRITER_TEST", False)),
+    reason="Skipping OPC writer test due to flag `SKIP_OPC_WRITER_TEST`",
+)
 @pytest.mark.timeout(10)
 @pytest.mark.parametrize(
     "value_type,variable_name,test_value,expected_value",
@@ -475,6 +481,10 @@ def test_workflow_with_opc_writer_sink(
         assert result_value == expected_value
 
 
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_OPC_WRITER_TEST", False)),
+    reason="Skipping OPC writer test due to flag `SKIP_OPC_WRITER_TEST`",
+)
 @pytest.mark.timeout(5)
 def test_workflow_with_opc_writer_sink_direct_mode(test_opc_server) -> None:
     """Test OPC writer with direct NodeId lookup mode using the shared server"""
@@ -534,6 +544,10 @@ def reset_connection_manager():
     manager.close_all()
 
 
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_OPC_WRITER_TEST", False)),
+    reason="Skipping OPC writer test due to flag `SKIP_OPC_WRITER_TEST`",
+)
 @pytest.mark.timeout(10)
 def test_connection_pooling_reuses_connections(
     test_opc_server, reset_connection_manager
@@ -594,6 +608,10 @@ def test_connection_pooling_reuses_connections(
     assert result_value == 200
 
 
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_OPC_WRITER_TEST", False)),
+    reason="Skipping OPC writer test due to flag `SKIP_OPC_WRITER_TEST`",
+)
 @pytest.mark.timeout(10)
 def test_connection_invalidation_creates_new_connection(
     test_opc_server, reset_connection_manager
@@ -643,6 +661,10 @@ def test_connection_invalidation_creates_new_connection(
     assert stats["total_connections"] == 1
 
 
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_OPC_WRITER_TEST", False)),
+    reason="Skipping OPC writer test due to flag `SKIP_OPC_WRITER_TEST`",
+)
 @pytest.mark.timeout(10)
 def test_connection_failure_fails_fast(reset_connection_manager) -> None:
     """Test that connection failures fail fast without blocking."""
@@ -667,6 +689,10 @@ def test_connection_failure_fails_fast(reset_connection_manager) -> None:
     assert "Failed to write" in message
 
 
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_OPC_WRITER_TEST", False)),
+    reason="Skipping OPC writer test due to flag `SKIP_OPC_WRITER_TEST`",
+)
 @pytest.mark.timeout(10)
 def test_different_servers_get_different_connections(
     test_opc_server, reset_connection_manager
@@ -711,6 +737,10 @@ def test_different_servers_get_different_connections(
     assert "AUTH ERROR" in message2
 
 
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_OPC_WRITER_TEST", False)),
+    reason="Skipping OPC writer test due to flag `SKIP_OPC_WRITER_TEST`",
+)
 @pytest.mark.timeout(10)
 def test_close_all_connections(test_opc_server, reset_connection_manager) -> None:
     """Test that close_all properly closes all pooled connections."""
