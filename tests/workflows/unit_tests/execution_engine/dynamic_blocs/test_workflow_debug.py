@@ -116,6 +116,25 @@ def test_trace_truncates_oversized_entries() -> None:
     assert _entry_serialized_size(entry) <= 50
 
 
+def test_trace_does_not_hang_when_metadata_exceeds_entry_cap() -> None:
+    # given - a step name alone is larger than the per-entry cap, so the value
+    # cannot be truncated enough to fit (previously this looped forever).
+    trace = WorkflowDebugTrace(max_entry_serialized_chars=50)
+    oversized_step = "s" * 500
+
+    # when - non-string value drove the infinite-loop path
+    trace.append(step_name=oversized_step, value={"payload": "x" * 200})
+
+    # then
+    snapshot = trace.snapshot()
+    assert len(snapshot) == 1
+    assert snapshot[0]["value"] == CAPACITY_EXCEEDED_MARKER
+
+    # and - the trace is now closed to further entries
+    trace.append(step_name="step", value="anything")
+    assert len(trace.snapshot()) == 1
+
+
 def test_debug_traces_proxy_append_with_timestamp() -> None:
     # given
     trace = WorkflowDebugTrace()

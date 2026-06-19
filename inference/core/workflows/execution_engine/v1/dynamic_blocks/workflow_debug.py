@@ -102,29 +102,34 @@ class WorkflowDebugTrace:
             entry["timestamp_timezone"] = timezone_label
         if _entry_serialized_size(entry) > self._max_entry_serialized_chars:
             marker = "... [entry truncated]"
-            if isinstance(serialized_value, str):
-                truncated = serialized_value
-                entry["value"] = truncated + marker
-                while (
-                    truncated
-                    and _entry_serialized_size(entry) > self._max_entry_serialized_chars
-                ):
-                    truncated = truncated[:-1]
-                    entry["value"] = truncated + marker
-            else:
-                entry["value"] = (
-                    repr(serialized_value)[
-                        : max(1, self._max_entry_serialized_chars - len(marker))
-                    ]
-                    + marker
-                )
-                while _entry_serialized_size(entry) > self._max_entry_serialized_chars:
-                    entry["value"] = entry["value"][:-1]
-                    if not entry["value"].endswith(marker):
-                        entry["value"] = entry["value"][: -len(marker)] + marker
+            text = (
+                serialized_value
+                if isinstance(serialized_value, str)
+                else repr(serialized_value)
+            )
+            # Pre-slice to bound the shrink loop, then trim the value (never the
+            # marker) until the whole entry fits or the value is exhausted.
+            text = text[: max(0, self._max_entry_serialized_chars)]
+            entry["value"] = text + marker
+            while (
+                text
+                and _entry_serialized_size(entry) > self._max_entry_serialized_chars
+            ):
+                text = text[:-1]
+                entry["value"] = text + marker
         entry_size = _entry_serialized_size(entry)
         with self._lock:
             if self._capacity_exceeded:
+                return
+            if entry_size > self._max_entry_serialized_chars:
+                # The value has been truncated as far as possible but the entry
+                # still overflows the per-entry cap, so the metadata alone (e.g.
+                # a very long, client-controlled step name) does not fit. Record
+                # the capacity marker and stop instead of looping forever.
+                self._capacity_exceeded = True
+                self._entries.append(
+                    {"step": step_name, "value": CAPACITY_EXCEEDED_MARKER}
+                )
                 return
             if len(self._entries) >= self._max_entries:
                 self._capacity_exceeded = True
