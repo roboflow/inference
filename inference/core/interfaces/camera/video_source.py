@@ -19,6 +19,7 @@ from inference.core.env import (
     DEFAULT_BUFFER_SIZE,
     DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
     DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
+    ENABLE_TENSOR_DATA_REPRESENTATION,
     RUNS_ON_JETSON,
 )
 from inference.core.interfaces.camera.entities import (
@@ -192,6 +193,53 @@ def _is_test_pattern_reference(video: Union[str, int]) -> bool:
     return isinstance(video, str) and video.strip().startswith(
         "TestPatternStreamProducer"
     )
+
+
+def _build_default_producer(stream_reference: Union[str, int]) -> VideoFrameProducer:
+    """Pick the decoder for a plain (non-callable, non-test-pattern) source reference.
+
+    When ``ENABLE_TENSOR_DATA_REPRESENTATION`` is on we attempt a hardware GPU-tensor
+    decoder (Jetson / dGPU NVDEC, discovered and verified at runtime), and fall back to
+    the cv2 CPU pathway when none is installed/usable or its construction fails. The flag
+    being off preserves the legacy behaviour exactly. The selection is always logged.
+    """
+    if not ENABLE_TENSOR_DATA_REPRESENTATION:
+        logger.debug(
+            "ENABLE_TENSOR_DATA_REPRESENTATION is off; using cv2 CPU decoder for source "
+            f"reference: {stream_reference}"
+        )
+        return CV2VideoFrameProducer(stream_reference)
+    # Local import: the discoverability layer pulls optional GPU-decode deps lazily.
+    from inference.core.interfaces.camera.discoverability import (
+        available_producers,
+        build_hw_producer,
+    )
+
+    producer = None
+    try:
+        producer = build_hw_producer(str(stream_reference))
+    except Exception as error:  # noqa: BLE001 - decoder selection must never break startup
+        logger.warning(
+            "ENABLE_TENSOR_DATA_REPRESENTATION is on, but initialising a hardware "
+            f"GPU-tensor decoder for source reference {stream_reference} raised: "
+            f"{error!r}. Falling back to the cv2 CPU decoder."
+        )
+    if producer is not None:
+        logger.info(
+            "ENABLE_TENSOR_DATA_REPRESENTATION is on; selected hardware GPU-tensor decoder "
+            f"'{type(producer).__name__}' for source reference: {stream_reference}"
+        )
+        return producer
+    probe_reasons = {
+        name: availability.reason
+        for name, availability in available_producers().items()
+    }
+    logger.warning(
+        "ENABLE_TENSOR_DATA_REPRESENTATION is on, but no hardware GPU-tensor decoder is "
+        f"usable for source reference {stream_reference} (probes: {probe_reasons}). "
+        "Falling back to the cv2 CPU decoder."
+    )
+    return CV2VideoFrameProducer(stream_reference)
 
 
 class VideoSource:
@@ -618,7 +666,7 @@ class VideoSource:
 
             self._video = TestPatternStreamProducer()
         else:
-            self._video = CV2VideoFrameProducer(self._stream_reference)
+            self._video = _build_default_producer(self._stream_reference)
         if not self._video.isOpened():
             self._change_state(target_state=StreamState.ERROR)
             raise SourceConnectionError(
