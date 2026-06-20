@@ -7,6 +7,9 @@ from typing import List, Optional, Union
 
 _pattern = re.compile(r"[^A-Za-z0-9_-]")
 
+MAX_PATH_BYTES = 4096
+MAX_PATH_SEGMENT_BYTES = 255
+
 
 class AtomicPath:
     """Context manager for atomic file writes.
@@ -173,3 +176,16 @@ def ensure_write_is_allowed(path: str, allow_override: bool) -> None:
 def sanitize_path_segment(path_segment: str) -> str:
     # Keep only letters, numbers, underscores and dashes
     return _pattern.sub("_", path_segment)
+
+
+def path_fits_os_limits(path: str) -> bool:
+    if len(os.fsencode(os.path.abspath(path))) >= MAX_PATH_BYTES:
+        return False
+    drive, path_without_drive = os.path.splitdrive(path)
+    if os.altsep is not None:
+        path_without_drive = path_without_drive.replace(os.altsep, os.sep)
+    return all(
+        len(os.fsencode(path_segment)) <= MAX_PATH_SEGMENT_BYTES
+        for path_segment in path_without_drive.split(os.sep)
+        if path_segment
+    )

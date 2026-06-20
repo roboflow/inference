@@ -25,6 +25,9 @@ from inference_models.weights_providers.entities import (
 
 class AutoResolutionCacheEntry(BaseModel):
     model_id: str
+    # Model id whose on-disk cache directory holds the package. Differs from
+    # model_id for locally-discovered packages resolved under an alias.
+    cache_model_id: Optional[str] = Field(default=None)
     model_package_id: str
     resolved_files: List[str]
     model_architecture: Optional[ModelArchitecture]

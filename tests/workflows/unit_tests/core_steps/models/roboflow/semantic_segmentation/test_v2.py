@@ -120,9 +120,9 @@ def test_semantic_segmentation_model_validation_when_custom_mode_missing_custom_
         _ = BlockManifest.model_validate(data)
 
 
-def test_semantic_segmentation_model_validation_rejects_best_confidence_mode() -> None:
-    # "best" is not offered for semantic segmentation since model eval does
-    # not yet produce thresholds for this task.
+def test_semantic_segmentation_model_validation_accepts_best_confidence_mode() -> None:
+    # model eval now produces thresholds for semantic segmentation, so "best"
+    # is an accepted confidence mode (matching object detection / instance seg).
     data = {
         "type": "roboflow_core/roboflow_semantic_segmentation_model@v2",
         "name": "some",
@@ -131,8 +131,11 @@ def test_semantic_segmentation_model_validation_rejects_best_confidence_mode() -
         "confidence_mode": "best",
     }
 
-    with pytest.raises(ValidationError):
-        _ = BlockManifest.model_validate(data)
+    # when
+    result = BlockManifest.model_validate(data)
+
+    # then
+    assert result.confidence_mode == "best"
 
 
 # --- _convert_to_sv_detections tests ---

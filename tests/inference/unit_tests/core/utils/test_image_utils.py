@@ -230,6 +230,26 @@ def test_load_image_from_url_when_locations_whitelisted(
 @mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
 @mock.patch.object(
+    image_utils, "WHITELISTED_DESTINATIONS_FOR_URL_INPUT", {"www.roboflow.com"}
+)
+def test_load_image_from_url_rejects_backslash_userinfo_allowlist_bypass() -> None:
+    with mock.patch.object(
+        image_utils.requests,
+        "get",
+        side_effect=AssertionError(
+            "requests.get must not be called for a rejected URL"
+        ),
+    ) as requests_get:
+        with pytest.raises(InputImageLoadError, match="invalid|whitelisted"):
+            _ = load_image_from_url(value="https://localhost:6666\\@www.roboflow.com")
+
+    requests_get.assert_not_called()
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+@mock.patch.object(
     image_utils,
     "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT",
     {

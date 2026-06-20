@@ -7,6 +7,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
 ARG PYTORCH_VERSION=2.10.0
 ARG TORCHVISION_VERSION=0.25.0
+ARG TRITON_VERSION=3.6.0
 ARG OPENCV_VERSION=4.10.0
 ARG ONNXRUNTIME_VERSION=1.24.2
 ENV LANG=en_US.UTF-8
@@ -76,7 +77,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-bu
     libleveldb-dev \
     libsnappy-dev \
     libprotobuf-dev \
-    protobuf-compiler
+    protobuf-compiler \
+    libxml2-dev
 
 # Install CMake
 RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
@@ -182,6 +184,39 @@ RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/Linux,sharing
 RUN export MAX_JOBS=2 && \
     python3 -m pip install --break-system-packages --no-build-isolation flash-attn==2.8.3
 
+# Build Triton from source. Torch 2.10.0 on JP7.1 pairs with Triton ${TRITON_VERSION}.
+# Done in the main builder (not runtime) to reuse build deps. Clone + wheel build
+# share one RUN: cache-mounted src is not persisted across RUN instructions.
+# Triton 3.6 wheels from the repo root (not python/ subdir).
+WORKDIR /build/triton
+RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${TRITON_VERSION}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.triton/llvm,sharing=locked,id=triton-llvm-${TRITON_VERSION}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
+    set -eux; \
+    if [ ! -d src/.git ]; then \
+        git clone --depth 1 --branch v${TRITON_VERSION} https://github.com/triton-lang/triton.git src; \
+    else \
+        git -C src fetch --depth 1 origin tag v${TRITON_VERSION} && \
+        git -C src checkout v${TRITON_VERSION}; \
+    fi; \
+    git -C src submodule update --init --recursive; \
+    mkdir -p /tmp/triton-wheels; \
+    python3 -m pip install --break-system-packages --no-cache-dir \
+        -r /build/triton/src/python/requirements.txt; \
+    MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
+        --no-build-isolation \
+        --no-deps \
+        /build/triton/src \
+        --wheel-dir /tmp/triton-wheels; \
+    set -- /tmp/triton-wheels/triton-${TRITON_VERSION}*.whl; \
+    if [ ! -e "$1" ]; then \
+        echo "Expected source-built Triton wheel for ${TRITON_VERSION} was not found" >&2; \
+        exit 1; \
+    fi; \
+    python3 -m pip install --break-system-packages --no-cache-dir "$1"; \
+    rm -rf /tmp/triton-wheels; \
+    python3 -c "import triton; print('triton', triton.__version__)"
+
 # Copy requirements files (done after compilation to improve cache efficiency)
 WORKDIR /build/reqs
 COPY requirements/_requirements.txt \
@@ -279,6 +314,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     apt-get install -y --no-install-recommends \
     cuda-cudart-13-0 \
     cuda-libraries-13-0 \
+    cuda-nvcc-13-0 \
+    # ptxas for sm_110a; Triton bundled ptxas-blackwell is CUDA 12.9
     libcudnn9-cuda-13 \
     tensorrt-libs \
     python3-libnvinfer \
@@ -311,7 +348,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     libatlas3-base \
     libgl1 \
     libglib2.0-0 \
-    libatomic1
+    libatomic1 \
+    build-essential \
+    python3-dev \
+    zlib1g-dev \
+    libxml2-dev
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
@@ -325,8 +366,13 @@ ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 RUN ldconfig
 
+# build-essential/python3-dev/zlib1g-dev/libxml2-dev: required for Triton JIT kernel
+# compilation at runtime. Triton python pkg ships in dist-packages below.
+
 # Copy Python packages from builder
 COPY --from=builder /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
+COPY --from=builder /root/.triton/nvidia /root/.triton/nvidia
+COPY --from=builder /root/.triton/json /root/.triton/json
 
 # Copy TensorRT Python bindings (installed via apt in runtime stage, but ensure paths are correct)
 # Note: python3-libnvinfer packages install to /usr/lib/python3.12/dist-packages
@@ -345,7 +391,10 @@ RUN chmod +x /usr/local/bin/run_uvicorn.sh
 RUN python -m pip install --break-system-packages --force-reinstall "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
 
 # Environment variables
-ENV NVIDIA_VISIBLE_DEVICES=all \
+ENV CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/cuda/bin:$PATH \
+    TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda/bin/ptxas \
+    NVIDIA_VISIBLE_DEVICES=all \
     VERSION_CHECK_MODE=once \
     CORE_MODEL_SAM2_ENABLED=True \
     NUM_WORKERS=1 \

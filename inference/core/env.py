@@ -115,6 +115,9 @@ OWLV2_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_IMAGE_CACHE_SIZE", 10000))
 # OWLv2 model cache size, default is 100 as memory is num_prompts * ~4kb and num_prompts is rarely above 1000 (but could be much higher)
 OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 100))
 
+# OWLv2 cache device placement, default sends cached embeddings to CPU to reduce GPU memory pressure
+OWLV2_CACHE_SEND_TO_CPU = str2bool(os.getenv("OWLV2_CACHE_SEND_TO_CPU", True))
+
 # OWLv2 CPU image cache size, default is 10000
 OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 
@@ -552,6 +555,9 @@ SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
 # SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
 SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_MAX_EMBEDDING_CACHE_SIZE", 100))
 SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM3_MAX_LOGITS_CACHE_SIZE", 1000))
+SAM3_INTERACTIVE_CACHE_SEND_TO_CPU = str2bool(
+    os.getenv("SAM3_INTERACTIVE_CACHE_SEND_TO_CPU", True)
+)
 DISABLE_SAM3_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM3_LOGITS_CACHE", False))
 
 # EasyOCR version ID, default is "english_g2"
@@ -780,6 +786,9 @@ DEDICATED_DEPLOYMENT_ID = os.getenv("DEDICATED_DEPLOYMENT_ID")
 
 ROBOFLOW_INTERNAL_SERVICE_SECRET = os.getenv("ROBOFLOW_INTERNAL_SERVICE_SECRET")
 ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv("ROBOFLOW_INTERNAL_SERVICE_NAME")
+ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN = os.getenv(
+    "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN"
+) or os.getenv("ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN")
 
 # Preload Models
 PRELOAD_MODELS = (
@@ -862,6 +871,12 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 # 1600 -> ~10G
 # 2048 -> ~22G
 RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+
+# Timeout in seconds for resolving asynchronous workflow / RF-DETR stream
+# pipeline futures on the main execution path.
+WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT = float(
+    os.getenv("WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT", "60.0")
+)
 
 # Confidence lower bound to prevent OOM when inferring on instance segmentation models
 CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(

@@ -153,6 +153,9 @@ from inference.core.workflows.core_steps.flow_control.inner_workflow.v1 import (
 from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
     RateLimiterBlockV1,
 )
+from inference.core.workflows.core_steps.flow_control.switch_case.v1 import (
+    SwitchCaseBlockV1,
+)
 from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
 from inference.core.workflows.core_steps.formatters.current_time.v1 import (
     CurrentTimeBlockV1,
@@ -820,6 +823,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ContinueIfBlockV1,
         InnerWorkflowBlockV1,
         RateLimiterBlockV1,
+        SwitchCaseBlockV1,
         PerspectiveCorrectionBlockV1,
         DeltaFilterBlockV1,
         CameraCalibrationBlockV1,
