@@ -1100,3 +1100,108 @@ class TestComputeExecutionDuration:
                     )
                 )
         assert result == 0.25
+
+
+def test_source_info_from_request_object_persisted_into_resource_details(
+    usage_collector_with_mocked_threads,
+):
+    # given - a model whose infer_from_request receives the request object, the way
+    # core models (e.g. SAM3) are decorated. source_info lives on the request, not
+    # as a top-level kwarg.
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FakeRequest:
+        api_key = "test_key"
+        source = "app"
+        source_info = "smartpolySegmentImage"
+
+    @usage_collector(category="model")
+    def infer_from_request(request, api_key="test_key"):
+        return "ok"
+
+    # when
+    infer_from_request(FakeRequest())
+
+    # then
+    row = usage_collector._usage["test_key"]["model:unknown"]
+    resource_details = json.loads(row["resource_details"])
+    assert resource_details.get("source_info") == "smartpolySegmentImage"
+    # source_info on the request object must NOT leak into roboflow_service_name
+    assert row.get("roboflow_service_name") != "smartpolySegmentImage"
+
+
+def test_env_service_name_preserved_alongside_source_info(
+    usage_collector_with_mocked_threads,
+):
+    # given - a serverless deployment that stamps roboflow_service_name via
+    # ROBOFLOW_INTERNAL_SERVICE_NAME. The feature tag (source_info) must be captured
+    # WITHOUT clobbering the deployment identity (WHERE the inference ran).
+    usage_collector = usage_collector_with_mocked_threads
+
+    class FakeRequest:
+        api_key = "test_key"
+        source = "app"
+        source_info = "smartpolySegmentImage"
+
+    @usage_collector(category="model")
+    def infer_from_request(request, api_key="test_key"):
+        return "ok"
+
+    # when
+    with mock.patch(
+        "inference.usage_tracking.collector.ROBOFLOW_INTERNAL_SERVICE_NAME",
+        "async-serverless-gpu",
+    ):
+        usage_collector._usage = usage_collector.empty_usage_dict(
+            exec_session_id="test"
+        )
+        infer_from_request(FakeRequest())
+
+    # then
+    row = usage_collector._usage["test_key"]["model:unknown"]
+    assert row["roboflow_service_name"] == "async-serverless-gpu"
+    assert (
+        json.loads(row["resource_details"]).get("source_info")
+        == "smartpolySegmentImage"
+    )
+
+
+def test_source_info_nested_in_kwargs_persisted_into_resource_details(
+    usage_collector_with_mocked_threads,
+):
+    # given - a model whose infer(self, image, **kwargs) collapses request fields
+    # into a nested kwargs dict.
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="model")
+    def infer(image=None, api_key="test_key", **kwargs):
+        return "ok"
+
+    # when
+    infer(image="img", api_key="test_key", source_info="autolabelPreview")
+
+    # then
+    resource_details = json.loads(
+        usage_collector._usage["test_key"]["model:unknown"]["resource_details"]
+    )
+    assert resource_details.get("source_info") == "autolabelPreview"
+
+
+def test_external_source_info_not_persisted_into_resource_details(
+    usage_collector_with_mocked_threads,
+):
+    # given - the default Query value "external" must not pollute resource_details
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="model")
+    def infer(image=None, api_key="test_key", **kwargs):
+        return "ok"
+
+    # when
+    infer(image="img", api_key="test_key", source_info="external")
+
+    # then
+    resource_details = json.loads(
+        usage_collector._usage["test_key"]["model:unknown"]["resource_details"]
+    )
+    assert "source_info" not in resource_details

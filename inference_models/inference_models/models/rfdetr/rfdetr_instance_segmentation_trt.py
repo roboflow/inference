@@ -13,6 +13,8 @@ from inference_models import (
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED,
+    get_rfdetr_pipeline_depth,
 )
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
@@ -21,6 +23,15 @@ from inference_models.errors import (
     ModelInputError,
     ModelRuntimeError,
 )
+from inference_models.models.base.async_handoff import (
+    get_deferred_postprocess_done_event,
+    get_trt_outputs_consumed_event,
+)
+
+# Hoisted to module scope to avoid per-call `from ... import` inside the hot
+# forward_async path. Re-import inside the function added ~13µs/frame in the
+# instrumented run on Jetson Orin. Import here is a no-op on every call.
+from inference_models.models.base.instance_segmentation import _DirectInferenceFuture
 from inference_models.models.common.cuda import (
     use_cuda_context,
     use_primary_cuda_context,
@@ -52,6 +63,9 @@ from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results_to_rle_masks,
 )
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.rfdetr.triton_preprocess_runtime import (
+    FastPreprocessRuntime,
+)
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -223,6 +237,13 @@ class RFDetrForInstanceSegmentationTRT(
         self._inference_stream = torch.cuda.Stream(device=self._device)
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
+        self._stream_pipeline_enabled = get_rfdetr_pipeline_depth() > 1
+        self._fast_preprocess_enabled = INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED
+        if self._stream_pipeline_enabled:
+            self._pre_process_cuda_stream = torch.cuda.Stream(device=self._device)
+            self._post_process_cuda_stream = torch.cuda.Stream(device=self._device)
+        if self._fast_preprocess_enabled:
+            self._fast_preprocess_runtime = FastPreprocessRuntime(device=self._device)
 
     @property
     def class_names(self) -> List[str]:
@@ -232,6 +253,10 @@ class RFDetrForInstanceSegmentationTRT(
     def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
         return {"dense", "rle"}
 
+    @property
+    def supports_stream_pipeline(self) -> bool:
+        return self._trt_cuda_graph_cache is not None
+
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
@@ -240,6 +265,19 @@ class RFDetrForInstanceSegmentationTRT(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+        fast = None
+        if self._fast_preprocess_enabled:
+            fast = self._fast_preprocess_runtime.try_preprocess(
+                images=images,
+                input_color_format=input_color_format,
+                image_size=image_size,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                stream=self._pre_process_stream,
+            )
+        if fast is not None:
+            self._fast_preproc_event = fast.ready_event
+            return fast.tensor, fast.metadata
         with torch.cuda.stream(self._pre_process_stream):
             pre_processed_images, pre_processing_meta = pre_process_network_input(
                 images=images,
@@ -251,6 +289,12 @@ class RFDetrForInstanceSegmentationTRT(
                 pre_processing_overrides=pre_processing_overrides,
             )
         self._pre_process_stream.synchronize()
+        if self._stream_pipeline_enabled:
+            setattr(
+                pre_processed_images,
+                "_pre_processing_meta",
+                pre_processing_meta,
+            )
         return pre_processed_images, pre_processing_meta
 
     def forward(
@@ -260,6 +304,13 @@ class RFDetrForInstanceSegmentationTRT(
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
+        preproc_event = getattr(self, "_fast_preproc_event", None)
+        if preproc_event is not None:
+            # The Triton preprocess fast path runs on a separate CUDA stream.
+            # TensorRT consumes that tensor on `_inference_stream`, so record an
+            # explicit stream dependency instead of synchronizing the host.
+            self._inference_stream.wait_event(preproc_event)
+            self._fast_preproc_event = None
         with self._lock:
             with use_cuda_context(context=self._cuda_context):
                 detections, labels, masks = infer_from_trt_engine(
@@ -274,6 +325,101 @@ class RFDetrForInstanceSegmentationTRT(
                     trt_cuda_graph_cache=cache,
                 )
                 return detections, labels, masks
+
+    def forward_async(
+        self,
+        pre_processed_images: torch.Tensor,
+        pre_processing_meta,
+        **kwargs,
+    ):
+        """Submit CUDA-graph inference without waiting for completion."""
+        if self._trt_cuda_graph_cache is None:
+            return super().forward_async(
+                pre_processed_images, pre_processing_meta, **kwargs
+            )
+
+        preproc_event = getattr(self, "_fast_preproc_event", None)
+        if preproc_event is not None:
+            self._inference_stream.wait_event(preproc_event)
+            self._fast_preproc_event = None
+        with self._lock:
+            with use_cuda_context(context=self._cuda_context):
+                raw = infer_from_trt_engine(
+                    pre_processed_images=pre_processed_images,
+                    trt_config=self._trt_config,
+                    engine=self._engine,
+                    context=self._execution_context,
+                    device=self._device,
+                    input_name=self._input_name,
+                    outputs=self._output_names,
+                    stream=self._inference_stream,
+                    trt_cuda_graph_cache=self._trt_cuda_graph_cache,
+                    synchronize=False,
+                )
+        graph_state = getattr(raw[0], "_trt_graph_state", None)
+        if graph_state is None:
+            # Dynamic TensorRT execution does not expose graph-owned output
+            # buffers, so the future must wait for inference completion before
+            # handing outputs to postprocess.
+            self._inference_stream.synchronize()
+            return _DirectInferenceFuture(self, raw, pre_processing_meta, None, kwargs)
+        produce_event = getattr(raw[0], "_trt_produce_event", None)
+        if kwargs.get("reuse_trt_graph_outputs", False):
+            # The stream pipeline schedules postprocess before launching the
+            # next graph replay. That ordering lets postprocess read TensorRT's
+            # graph output buffers directly and avoids the DtoD clone below.
+            future_kwargs = dict(kwargs)
+            future_kwargs["defer_postprocess_sync"] = True
+            return _DirectInferenceFuture(
+                self, raw, pre_processing_meta, produce_event, future_kwargs
+            )
+
+        stream = graph_state.cuda_stream
+
+        tls = self._thread_local_storage
+        clone_sets = getattr(tls, "clone_sets", None)
+        if clone_sets is None:
+            raw0, raw1, raw2 = raw
+            clone_sets = [
+                (
+                    torch.empty_like(raw0),
+                    torch.empty_like(raw1),
+                    torch.empty_like(raw2),
+                )
+                for _ in range(3)
+            ]
+            tls.clone_sets = clone_sets
+            tls.clone_idx = 0
+        idx = tls.clone_idx
+        clones = clone_sets[idx]
+        tls.clone_idx = (idx + 1) % len(clone_sets)
+
+        prev_stream = torch.cuda.current_stream(self._device)
+        torch.cuda.set_stream(stream)
+        try:
+            raw0, raw1, raw2 = raw
+            # Non-pipelined async callers may launch the next graph replay
+            # before this future is consumed. Clone into a small ring so the
+            # next TensorRT run can safely reuse its graph output buffers.
+            clones[0].copy_(raw0, non_blocking=True)
+            clones[1].copy_(raw1, non_blocking=True)
+            clones[2].copy_(raw2, non_blocking=True)
+            produce_event = torch.cuda.Event()
+            produce_event.record(stream)
+            consumer_done = graph_state.consumer_done_event
+            if consumer_done is None:
+                consumer_done = torch.cuda.Event()
+                graph_state.consumer_done_event = consumer_done
+            consumer_done.record(stream)
+        finally:
+            torch.cuda.set_stream(prev_stream)
+
+        clones[0]._trt_produce_event = produce_event  # type: ignore[attr-defined]
+        future_kwargs = dict(kwargs)
+        future_kwargs["defer_postprocess_sync"] = True
+        return _DirectInferenceFuture(
+            self, clones, pre_processing_meta, produce_event, future_kwargs
+        )
 
     def post_process(
         self,
@@ -298,7 +444,11 @@ class RFDetrForInstanceSegmentationTRT(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         )
+        produce_event = getattr(model_results[0], "_trt_produce_event", None)
+        graph_state = getattr(model_results[0], "_trt_graph_state", None)
         with torch.cuda.stream(self._post_process_stream):
+            if produce_event is not None:
+                self._post_process_stream.wait_event(produce_event)
             for result_element in model_results:
                 result_element.record_stream(self._post_process_stream)
             bboxes, logits, masks = model_results
@@ -321,12 +471,36 @@ class RFDetrForInstanceSegmentationTRT(
                     threshold=confidence_filter.get_threshold(self.class_names),
                     num_classes=len(self.class_names),
                     classes_re_mapping=self._classes_re_mapping,
+                    defer_postprocess_sync=kwargs.get("defer_postprocess_sync", False),
                 )
-        self._post_process_stream.synchronize()
+            if graph_state is not None:
+                output_consumed_events = [
+                    get_trt_outputs_consumed_event(result) for result in results
+                ]
+                if output_consumed_events and all(
+                    event is not None for event in output_consumed_events
+                ):
+                    graph_state.consumer_done_event = output_consumed_events[-1]
+                else:
+                    consumer_done = graph_state.consumer_done_event
+                    if consumer_done is None:
+                        consumer_done = torch.cuda.Event()
+                        graph_state.consumer_done_event = consumer_done
+                    consumer_done.record(self._post_process_stream)
+        should_sync = True
+        if kwargs.get("defer_postprocess_sync", False):
+            should_sync = not all(
+                get_deferred_postprocess_done_event(result) is not None
+                for result in results
+            )
+        if should_sync:
+            self._post_process_stream.synchronize()
         return results
 
     @property
     def _pre_process_stream(self) -> torch.cuda.Stream:
+        if self._stream_pipeline_enabled:
+            return self._pre_process_cuda_stream
         if not hasattr(self._thread_local_storage, "pre_process_stream"):
             self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
                 device=self._device
@@ -335,6 +509,8 @@ class RFDetrForInstanceSegmentationTRT(
 
     @property
     def _post_process_stream(self) -> torch.cuda.Stream:
+        if self._stream_pipeline_enabled:
+            return self._post_process_cuda_stream
         if not hasattr(self._thread_local_storage, "post_process_stream"):
             self._thread_local_storage.post_process_stream = torch.cuda.Stream(
                 device=self._device

@@ -224,21 +224,21 @@ class BlockManifest(WorkflowBlockManifest):
 class SegmentAnything2VideoBlockV1(WorkflowBlock):
     """Stateful SAM2 streaming video tracking block."""
 
+    _REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE = (
+        "SAM2 Video Tracker only supports LOCAL workflow step "
+        "execution.  Remote execution would ship each frame to a "
+        "separate process and break the per-video SAM2 session "
+        "that holds the temporal memory.  Set "
+        "WORKFLOWS_STEP_EXECUTION_MODE=local (or run on a "
+        "dedicated deployment) to use this block."
+    )
+
     def __init__(
         self,
         model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
-        if step_execution_mode is not StepExecutionMode.LOCAL:
-            raise NotImplementedError(
-                "SAM2 Video Tracker only supports LOCAL workflow step "
-                "execution.  Remote execution would ship each frame to a "
-                "separate process and break the per-video SAM2 session "
-                "that holds the temporal memory.  Set "
-                "WORKFLOWS_STEP_EXECUTION_MODE=local (or run on a "
-                "dedicated deployment) to use this block."
-            )
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
@@ -276,6 +276,8 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
         prompt_interval: int,
         threshold: float,
     ) -> BlockResult:
+        if self._step_execution_mode is not StepExecutionMode.LOCAL:
+            raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
         model = self._get_model(model_id=model_id)
         if boxes is None:
             boxes = [None] * len(images)

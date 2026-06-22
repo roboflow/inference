@@ -9,6 +9,11 @@ from pydantic.alias_generators import to_camel
 from inference_models.models.auto_loaders.entities import BackendType
 
 
+class PackageSourceType(str, Enum):
+    PLATFORM = "platform"
+    LOCAL_CACHE = "local_cache"
+
+
 class Quantization(str, Enum):
     FP32 = "fp32"
     FP16 = "fp16"
@@ -22,6 +27,15 @@ class FileDownloadSpecs:
     download_url: str
     file_handle: str
     md5_hash: Optional[str] = field(default=None)
+
+
+@dataclass(frozen=True)
+class LocalFileArtefactSpecs:
+    file_handle: str
+    md5_hash: str
+
+
+PackageArtefactSpec = Union[FileDownloadSpecs, LocalFileArtefactSpecs]
 
 
 @dataclass(frozen=True)
@@ -137,7 +151,8 @@ class MemoryProfile(BaseModel):
 class ModelPackageMetadata:
     package_id: str
     backend: BackendType
-    package_artefacts: List[FileDownloadSpecs]
+    package_artefacts: List[PackageArtefactSpec]
+    package_source: PackageSourceType = field(default=PackageSourceType.PLATFORM)
     quantization: Optional[Quantization] = field(default=None)
     dynamic_batch_size_supported: Optional[bool] = field(default=None)
     static_batch_size: Optional[int] = field(default=None)
@@ -153,6 +168,10 @@ class ModelPackageMetadata:
     model_features: Optional[dict] = field(default=None)
     recommended_parameters: Optional[RecommendedParameters] = field(default=None)
     memory_profile: MemoryProfile = field(default_factory=MemoryProfile)
+    # Model id whose on-disk cache directory holds this package. Set for
+    # locally-discovered packages whose cache slug differs from the requested
+    # (alias) model id so loading resolves the correct directory.
+    cache_model_id: Optional[str] = field(default=None)
 
     def get_summary(self) -> str:
         return (

@@ -15,6 +15,7 @@ from inference.core.entities.types import (
     VersionID,
 )
 from inference.core.env import (
+    ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     CACHE_METADATA_LOCK_TIMEOUT,
     LAMBDA,
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
@@ -47,6 +48,12 @@ from inference.core.roboflow_api import (
 from inference.core.utils.file_system import dump_json, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference_models.models.auto_loaders.core import parse_model_config
+from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
+
+# fallback model_type for local `inference_models` packages that do not declare
+# model_architecture in model_config.json.
+LOCAL_INFERENCE_MODELS_MODEL_TYPE = "inference-models-local"
 
 GENERIC_MODELS = {
     "clip": ("embed", "clip"),
@@ -132,6 +139,8 @@ def _check_if_api_key_has_access_to_model(
     service_secret: Optional[str] = None,
 ) -> bool:
     model_id = resolve_roboflow_model_alias(model_id=model_id)
+    if _get_local_model_type(model_id=model_id) is not None:
+        return True
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
     use_legacy_core_model_auth = (
         endpoint_type == ModelEndpointType.CORE_MODEL and dataset_id == "yolo_world"
@@ -165,6 +174,31 @@ def _check_if_api_key_has_access_to_model(
     return True
 
 
+def _get_local_model_type(model_id: str) -> Optional[Tuple[TaskType, ModelType]]:
+    """Returns model metadata read from a local `inference_models` package directory.
+
+    Returns None when `model_id` is not a local directory or local loading is disabled,
+    in which case the regular Roboflow model id resolution applies.
+    """
+    if not (
+        USE_INFERENCE_MODELS
+        and ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES
+        and isinstance(model_id, str)
+        and os.path.isdir(model_id)
+    ):
+        return None
+
+    model_config = parse_model_config(
+        config_path=os.path.join(model_id, MODEL_CONFIG_FILE_NAME)
+    )
+    if model_config.task_type is None:
+        return None
+    return (
+        model_config.task_type,
+        model_config.model_architecture or LOCAL_INFERENCE_MODELS_MODEL_TYPE,
+    )
+
+
 def get_model_type(
     model_id: ModelID,
     api_key: Optional[str] = None,
@@ -188,6 +222,9 @@ def get_model_type(
     """
 
     model_id = resolve_roboflow_model_alias(model_id=model_id)
+    local_model_type = _get_local_model_type(model_id=model_id)
+    if local_model_type is not None:
+        return local_model_type
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
     # first check if the model id as a whole is in the GENERIC_MODELS dictionary
     if model_id in GENERIC_MODELS:
