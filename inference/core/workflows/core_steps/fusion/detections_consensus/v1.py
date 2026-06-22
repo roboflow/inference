@@ -471,7 +471,7 @@ def get_consensus_for_single_detection(
     if detection.mask is not None:
         for matched_value in detections_with_max_overlap.values():
             if matched_value[0].mask is None:
-                matched_value[0].mask = np.zeros(detection.mask.shape)
+                matched_value[0].mask = np.zeros(detection.mask.shape, dtype=bool)
     else:
         shape = None
         for d in detections_with_max_overlap.values():
@@ -481,8 +481,8 @@ def get_consensus_for_single_detection(
         if shape:
             for d in detections_with_max_overlap.values():
                 if d[0].mask is None:
-                    d[0].mask = np.zeros(shape)
-            detection.mask = np.zeros(shape)
+                    d[0].mask = np.zeros(shape, dtype=bool)
+            detection.mask = np.zeros(shape, dtype=bool)
     detections_to_merge = sv.Detections.merge(
         [detection]
         + [matched_value[0] for matched_value in detections_with_max_overlap.values()]
@@ -690,7 +690,7 @@ def get_intersection_mask(detections: sv.Detections) -> np.ndarray:
 
 
 def get_union_mask(detections: sv.Detections) -> np.ndarray:
-    return np.sum(detections.mask, axis=0)
+    return np.any(detections.mask, axis=0)
 
 
 def get_smallest_mask(detections: sv.Detections) -> np.ndarray:

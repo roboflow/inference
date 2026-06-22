@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from enum import Enum
@@ -40,6 +41,7 @@ from inference.core.interfaces.camera.video_source import (
 from inference.core.interfaces.stream.entities import (
     AnyPrediction,
     InferenceHandler,
+    InferenceHandlerResult,
     ModelConfig,
     SinkHandler,
 )
@@ -65,6 +67,7 @@ from inference.core.workflows.execution_engine.profiling.core import (
     BaseWorkflowsProfiler,
     NullWorkflowsProfiler,
 )
+from inference.core.workflows.execution_engine.v1.executor.utils import resolve_futures
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
 
@@ -254,7 +257,9 @@ class InferencePipeline:
         )
         model = get_model(model_id=model_id, api_key=api_key)
         on_video_frame = partial(
-            default_process_frame, model=model, inference_config=inference_config
+            default_process_frame,
+            model=model,
+            inference_config=inference_config,
         )
         active_learning_middleware = NullActiveLearningMiddleware()
         if active_learning_enabled is None:
@@ -606,6 +611,7 @@ class InferencePipeline:
         try:
             from inference.core.interfaces.stream.model_handlers.workflows import (
                 WorkflowRunner,
+                wrap_workflow_runner_for_stream_pipeline,
             )
             from inference.core.roboflow_api import get_workflow_specification
             from inference.core.workflows.execution_engine.core import ExecutionEngine
@@ -665,15 +671,17 @@ class InferencePipeline:
                 workflow_id=workflow_id,
                 profiler=profiler,
             )
-            workflow_runner = WorkflowRunner()
-            on_video_frame = partial(
-                workflow_runner.run_workflow,
+            workflow_runner = WorkflowRunner(
                 workflows_parameters=workflows_parameters,
                 execution_engine=execution_engine,
                 image_input_name=image_input_name,
                 video_metadata_input_name=video_metadata_input_name,
                 serialize_results=serialize_results,
                 _is_preview=_is_preview,
+            )
+            on_video_frame = wrap_workflow_runner_for_stream_pipeline(
+                workflow_runner=workflow_runner,
+                execution_engine=execution_engine,
             )
         except ImportError as error:
             raise CannotInitialiseModelError(
@@ -825,6 +833,14 @@ class InferencePipeline:
             predictions_queue_size = int(predictions_queue_size)
         except ValueError:
             predictions_queue_size = 512
+        if (
+            _rfdetr_stream_pipeline_enabled()
+            and "INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE" not in os.environ
+        ):
+            # Stream-pipelined RF-DETR returns async response futures. Letting
+            # the producer queue hundreds of full-resolution VideoFrame objects
+            # can exhaust host memory on 4K videos before dispatch catches up.
+            predictions_queue_size = min(predictions_queue_size, 4)
         predictions_queue = Queue(maxsize=predictions_queue_size)
         return cls(
             on_video_frame=on_video_frame,
@@ -928,6 +944,12 @@ class InferencePipeline:
                     frames=video_frames,
                 )
                 predictions = self._on_video_frame(video_frames)
+                if _rfdetr_stream_pipeline_enabled():
+                    self._queue_inference_result(
+                        inference_result=predictions,
+                        fallback_video_frames=video_frames,
+                    )
+                    continue
                 self._watchdog.on_model_prediction_ready(
                     frames=video_frames,
                 )
@@ -942,6 +964,8 @@ class InferencePipeline:
                     },
                     status_update_handlers=self._status_update_handlers,
                 )
+            if _rfdetr_stream_pipeline_enabled():
+                self._drain_inference_handler()
 
         except Exception as error:
             payload = {
@@ -957,6 +981,8 @@ class InferencePipeline:
             )
             logger.exception(f"Encountered inference error: {error}")
         finally:
+            if _rfdetr_stream_pipeline_enabled():
+                self._close_inference_handler()
             self._predictions_queue.put(None)
             send_inference_pipeline_status_update(
                 severity=UpdateSeverity.INFO,
@@ -974,12 +1000,91 @@ class InferencePipeline:
                 self._predictions_queue.task_done()
                 break
             predictions, video_frames = inference_results
+            if _rfdetr_stream_pipeline_enabled():
+                predictions = _resolve_prediction_futures(predictions)
             if self._on_prediction is not None:
                 self._handle_predictions_dispatching(
                     predictions=predictions,
                     video_frames=video_frames,
                 )
             self._predictions_queue.task_done()
+
+    def _queue_inference_result(
+        self,
+        inference_result: Optional[Union[List[AnyPrediction], InferenceHandlerResult]],
+        fallback_video_frames: List[VideoFrame],
+    ) -> None:
+        normalised_result = self._normalise_inference_result(
+            inference_result=inference_result,
+            fallback_video_frames=fallback_video_frames,
+        )
+        if normalised_result is None:
+            return None
+        predictions, video_frames = normalised_result
+        self._watchdog.on_model_prediction_ready(
+            frames=video_frames,
+        )
+        self._predictions_queue.put((predictions, video_frames))
+        send_inference_pipeline_status_update(
+            severity=UpdateSeverity.DEBUG,
+            event_type=INFERENCE_COMPLETED_EVENT,
+            payload={
+                "frames_ids": [f.frame_id for f in video_frames],
+                "frames_timestamps": [f.frame_timestamp for f in video_frames],
+                "sources_id": [f.source_id for f in video_frames],
+            },
+            status_update_handlers=self._status_update_handlers,
+        )
+
+    def _normalise_inference_result(
+        self,
+        inference_result: Optional[Union[List[AnyPrediction], InferenceHandlerResult]],
+        fallback_video_frames: List[VideoFrame],
+    ) -> Optional[Tuple[List[AnyPrediction], List[VideoFrame]]]:
+        if inference_result is None:
+            return None
+        if isinstance(inference_result, InferenceHandlerResult):
+            video_frames = (
+                inference_result.video_frames
+                if inference_result.video_frames is not None
+                else fallback_video_frames
+            )
+            if len(video_frames) == 0:
+                return None
+            return inference_result.predictions, video_frames
+        if len(fallback_video_frames) == 0:
+            return None
+        return inference_result, fallback_video_frames
+
+    def _drain_inference_handler(self) -> None:
+        flush_fn = getattr(self._on_video_frame, "flush", None)
+        if not callable(flush_fn):
+            return None
+        flush_result = flush_fn()
+        if flush_result is None:
+            return None
+        if isinstance(flush_result, list) and all(
+            isinstance(result, InferenceHandlerResult) for result in flush_result
+        ):
+            for result in flush_result:
+                self._queue_inference_result(
+                    inference_result=result,
+                    fallback_video_frames=[],
+                )
+            return None
+        self._queue_inference_result(
+            inference_result=flush_result,
+            fallback_video_frames=[],
+        )
+
+    def _close_inference_handler(self) -> None:
+        close_fn = getattr(self._on_video_frame, "close", None)
+        if not callable(close_fn):
+            return None
+        try:
+            close_fn()
+        except Exception as error:
+            logger.warning(f"Could not close inference handler. Cause: {error}")
 
     def _handle_predictions_dispatching(
         self,
@@ -1080,3 +1185,17 @@ def send_inference_pipeline_status_update(
             handler(status_update)
         except Exception as error:
             logger.warning(f"Could not execute handler update. Cause: {error}")
+
+
+def _resolve_prediction_futures(value: Any) -> Any:
+    return resolve_futures(
+        value=value,
+        context="inference_pipeline | prediction_dispatch",
+    )
+
+
+def _rfdetr_stream_pipeline_enabled() -> bool:
+    try:
+        return int(os.getenv("RFDETR_PIPELINE_DEPTH", "1").strip()) > 1
+    except ValueError:
+        return False
