@@ -16,6 +16,7 @@ import struct
 
 import pytest
 
+from inference_server.errors import UploadTooSlowError
 from inference_server.proxies.mmp_client import (
     T_ALLOC,
     T_ALLOC_OK,
@@ -27,6 +28,17 @@ from inference_server.proxies.mmp_client import (
     T_SUBMIT,
     MMPClient,
 )
+
+
+async def _chunks(*parts: bytes):
+    for part in parts:
+        yield part
+
+
+async def _slow_chunks():
+    yield b"\xff\xd8"
+    await asyncio.sleep(0.05)
+    yield b"x"
 
 
 class _RecordingSock:
@@ -142,6 +154,70 @@ def test_single_req_id_for_alloc_submit_free():
         assert free_slot == 5
 
     asyncio.run(_run())
+
+
+def test_infer_stream_writes_chunks_and_submits_total_size():
+    async def _run():
+        client, sock = _make_client()
+        writes = []
+        client._write_input = lambda slot_id, chunk, offset: writes.append(
+            (slot_id, bytes(chunk), offset)
+        )
+        client._read_slot_header = lambda slot_id: None
+        client._read_result = lambda slot_id, sz: pickle.dumps({"ok": 1})
+
+        task = asyncio.create_task(
+            client.infer_stream(
+                model_id="m",
+                image_chunks=_chunks(b"\xff\xd8", b"abc"),
+                content_length=5,
+            )
+        )
+        await asyncio.sleep(0)
+        alloc_frame = [f for f in sock.sent if f[0] == T_ALLOC][0]
+        req_id = struct.unpack_from(">Q", alloc_frame[1])[0]
+        client._dispatch(T_ALLOC_OK, [struct.pack(">QI", req_id, 5)])
+        for _ in range(5):
+            await asyncio.sleep(0)
+        submit_frame = [f for f in sock.sent if f[0] == T_SUBMIT][0]
+        submit_req, slot_id, input_sz = struct.unpack_from(">QII", submit_frame[1])
+        assert submit_req == req_id
+        assert slot_id == 5
+        assert input_sz == 5
+        assert writes == [(5, b"\xff\xd8", 0), (5, b"abc", 2)]
+
+        client._dispatch(T_RESULT_READY, [struct.pack(">QII", req_id, 5, 10)])
+        assert await task == {"ok": 1}
+
+    asyncio.run(_run())
+
+
+def test_infer_stream_upload_timeout_frees_unsubmitted_slot():
+    async def _run() -> list[bytes]:
+        client, sock = _make_client()
+
+        async def _fake_alloc(req_id, model_id, instance=""):
+            return 5
+
+        client._alloc_slot = _fake_alloc
+        client._write_input = lambda slot_id, chunk, offset: None
+
+        with pytest.raises(UploadTooSlowError):
+            await client.infer_stream(
+                model_id="m",
+                image_chunks=_slow_chunks(),
+                content_length=3,
+                upload_timeout_s=0.01,
+            )
+
+        for _ in range(5):
+            await asyncio.sleep(0)
+        return _msg_types(sock)
+
+    types = asyncio.run(_run())
+    assert T_SUBMIT not in types
+    assert T_CANCEL not in types
+    assert T_FREE in types
 
 
 def test_disconnect_race_prefers_completed_result():

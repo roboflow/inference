@@ -30,6 +30,18 @@ SHM_ADMISSION = get_boolean_from_env("INFERENCE_SHM_ADMISSION", default=True)
 MAX_DECODED_MEGAPIXELS = get_float_from_env(
     "INFERENCE_MAX_DECODED_MEGAPIXELS", default=0.0
 )
+INFER_STREAM_SMALL_BODY_BYTES = get_integer_from_env(
+    "INFERENCE_STREAM_SMALL_BODY_BYTES", default=200 * 1024
+)
+INFER_STREAM_DIM_PREFIX_BYTES = get_integer_from_env(
+    "INFERENCE_STREAM_DIM_PREFIX_BYTES", default=16 * 1024
+)
+INFER_STREAM_MIN_BYTES_PER_S = get_float_from_env(
+    "INFERENCE_STREAM_MIN_BYTES_PER_S", default=1024 * 1024.0
+)
+INFER_STREAM_UPLOAD_TIMEOUT_S = get_float_from_env(
+    "INFERENCE_STREAM_UPLOAD_TIMEOUT_S", default=5.0
+)
 
 # ── MMP connection (state.init_from_env, re-read per worker) ──────────────
 INFERENCE_MMP_ADDR_ENV = "INFERENCE_MMP_ADDR"

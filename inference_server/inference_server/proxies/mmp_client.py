@@ -20,16 +20,20 @@ import struct
 import time
 import uuid
 from multiprocessing.shared_memory import SharedMemory
-from typing import Any, Optional
+from typing import Any, AsyncIterable, Optional
 
 import zmq.asyncio
 from fastapi import Request
 
-from inference_model_manager.backends.utils.image_headers import image_pixels
 from inference_model_manager.backends.utils.shm_pool import read_free_count
 from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_server import configuration
-from inference_server.errors import PayloadTooLargeError, ServerBusyError
+from inference_server.errors import (
+    PayloadTooLargeError,
+    ServerBusyError,
+    UploadTooSlowError,
+)
+from inference_server.image_headers import image_pixels
 from inference_server.proxies.base import ClientDisconnected
 
 logger = logging.getLogger(__name__)
@@ -312,14 +316,7 @@ class MMPClient:
                 raise RuntimeError(err_msg)
 
             raw = self._read_result(result_slot_id, result_sz)
-            if raw_pickle:
-                out = raw
-            else:
-                try:
-                    out = pickle.loads(raw)
-                except Exception as exc:
-                    raise RuntimeError("result deserialization failed") from exc
-            return out
+            return self._decode_result(raw, raw_pickle)
         finally:
             if done:
                 # Worker finished, we read the result → safe to free.
@@ -334,6 +331,108 @@ class MMPClient:
             else:
                 # Never submitted (alloc ok but write/submit failed) → no worker
                 # ticket exists → safe to free directly.
+                self._free_slot(slot_id, req_id)
+
+    async def infer_stream(
+        self,
+        *,
+        model_id: str,
+        image_chunks: AsyncIterable[bytes],
+        content_length: Optional[int] = None,
+        task: Optional[str] = None,
+        instance: str = "",
+        params: Optional[dict] = None,
+        request: Optional[Request] = None,
+        raw_pickle: bool = False,
+        upload_timeout_s: Optional[float] = None,
+    ) -> Any:
+        if content_length is not None and content_length > self.shm_data_size:
+            raise PayloadTooLargeError(
+                f"image exceeds slot size ({content_length} > {self.shm_data_size})"
+            )
+
+        effective_params = dict(params) if params else {}
+        if task:
+            effective_params.setdefault("task", task)
+
+        req_id = _new_req_id()
+        slot_id = await self._alloc_slot(req_id, model_id, instance)
+        submitted = False
+        done = False
+        input_sz = 0
+        deadline = (
+            time.monotonic() + upload_timeout_s
+            if upload_timeout_s is not None
+            else None
+        )
+        try:
+            aiter = image_chunks.__aiter__()
+            while True:
+                try:
+                    if deadline is None:
+                        chunk = await aiter.__anext__()
+                    else:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise UploadTooSlowError("upload too slow")
+                        chunk = await asyncio.wait_for(aiter.__anext__(), remaining)
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    raise UploadTooSlowError("upload too slow") from None
+                if not chunk:
+                    continue
+                if input_sz + len(chunk) > self.shm_data_size:
+                    raise PayloadTooLargeError(
+                        f"image exceeds slot size ({input_sz + len(chunk)} > "
+                        f"{self.shm_data_size})"
+                    )
+                self._write_input(slot_id, chunk, input_sz)
+                input_sz += len(chunk)
+
+            if input_sz == 0:
+                raise ValueError("empty body")
+            if content_length is not None and input_sz != content_length:
+                raise ValueError(
+                    f"content-length mismatch ({content_length} != {input_sz})"
+                )
+
+            submitted = True
+            result = await self._submit_and_wait(
+                req_id,
+                slot_id,
+                model_id,
+                instance,
+                input_sz,
+                effective_params,
+                request=request,
+            )
+
+            if result[0] == "error":
+                raise RuntimeError("inference failed")
+            if result[0] != "result":
+                raise RuntimeError(f"unexpected result type: {result[0]!r}")
+
+            done = True
+            _, result_slot_id, result_sz = result
+            hdr = self._read_slot_header(result_slot_id)
+            if hdr is not None and hdr.status == SLOT_STATUS_ERROR:
+                err_msg = "inference failed"
+                if hdr.result_size > 0:
+                    err_msg = self._read_result(result_slot_id, hdr.result_size).decode(
+                        "utf-8", errors="replace"
+                    )
+                raise RuntimeError(err_msg)
+
+            return self._decode_result(
+                self._read_result(result_slot_id, result_sz), raw_pickle
+            )
+        finally:
+            if done:
+                self._free_slot(slot_id, req_id)
+            elif submitted:
+                self._cancel_req(req_id)
+            else:
                 self._free_slot(slot_id, req_id)
 
     async def stats(self) -> dict:
@@ -408,6 +507,14 @@ class MMPClient:
 
     def _drop_future(self, req_id: int) -> None:
         self._pending.pop(req_id, None)
+
+    def _decode_result(self, raw: bytes, raw_pickle: bool) -> Any:
+        if raw_pickle:
+            return raw
+        try:
+            return pickle.loads(raw)
+        except Exception as exc:
+            raise RuntimeError("result deserialization failed") from exc
 
     async def _alloc_slot(self, req_id: int, model_id: str, instance: str = "") -> int:
         if self.shm_admission and self._shm is not None:
