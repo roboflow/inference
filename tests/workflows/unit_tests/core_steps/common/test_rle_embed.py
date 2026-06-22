@@ -4,10 +4,12 @@ import numpy as np
 import pytest
 import torch
 
+from inference.core.workflows.core_steps.common.tensor_native import (
+    embed_rle_masks_in_larger_canvas,
+)
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import (
     coco_rle_masks_to_numpy_mask,
-    embed_rle_masks_in_larger_canvas,
     torch_mask_to_coco_rle,
 )
 

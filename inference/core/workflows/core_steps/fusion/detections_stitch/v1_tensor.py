@@ -11,6 +11,7 @@ from supervision import OverlapFilter
 from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.common.tensor_native import (
+    embed_rle_masks_in_larger_canvas,
     take_prediction_by_indices,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -51,7 +52,6 @@ from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import (
     coco_rle_masks_to_numpy_mask,
-    embed_rle_masks_in_larger_canvas,
     torch_mask_to_coco_rle,
 )
 
