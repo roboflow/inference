@@ -93,6 +93,9 @@ class RateLimiterManifest(WorkflowBlockManifest):
         examples=[1.0],
         default=1.0,
         ge=0.0,
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     depends_on: Selector() = Field(
         description="Reference to the workflow step that immediately precedes this rate limiter block. This establishes the dependency relationship - the rate limiter monitors when this step completes to determine if the cooldown period has elapsed since the last execution. The depends_on step can be any workflow block whose output triggers the rate-limited downstream processing.",
