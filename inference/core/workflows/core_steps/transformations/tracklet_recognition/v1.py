@@ -4,8 +4,9 @@ from collections import OrderedDict, deque
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
+from hashlib import sha256
 from math import isfinite
-from typing import Any, Deque, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Deque, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import supervision as sv
@@ -66,7 +67,10 @@ ORIGINAL_CONFIDENCE_KEY = "original_confidence"
 MAX_STATE_IDS = 1024
 MAX_VIDEOS_PER_STATE = 256
 MAX_TRACKLETS_PER_VIDEO = 16384
-TRACKLET_STATE_TTL_SECONDS = 300.0
+MAX_TOTAL_TRACKLETS = 100000
+MAX_CONSISTENCY_WINDOW = 100
+TRACKLET_STATE_TTL_SECONDS = 60.0
+MAX_STATE_COMPONENT_LENGTH = 256
 
 SHORT_GATE_DESCRIPTION = "Select tracked detections that are due for recognition."
 SHORT_CACHE_DESCRIPTION = (
@@ -170,6 +174,20 @@ class TrackletRecognitionStore:
         self.enforce_limits()
         return existing
 
+    def count_tracklets(self) -> int:
+        return sum(len(per_video) for per_video in self._per_video.values())
+
+    def pop_lru_tracklet(self) -> bool:
+        for video_id, per_video in list(self._per_video.items()):
+            if not per_video:
+                del self._per_video[video_id]
+                continue
+            per_video.popitem(last=False)
+            if not per_video:
+                del self._per_video[video_id]
+            return True
+        return False
+
     def prune(self, timestamp_seconds: float) -> None:
         empty_video_ids = []
         for video_id, per_video in self._per_video.items():
@@ -197,16 +215,56 @@ class TrackletRecognitionStore:
                 per_video.popitem(last=False)
 
 
-_STORES: "OrderedDict[str, TrackletRecognitionStore]" = OrderedDict()
+TrackletRecognitionStateKey = Tuple[str, str, str, str]
+_STORES: "OrderedDict[TrackletRecognitionStateKey, TrackletRecognitionStore]" = (
+    OrderedDict()
+)
 
 
-def _get_store(state_id: str) -> TrackletRecognitionStore:
-    if state_id not in _STORES:
-        _STORES[state_id] = TrackletRecognitionStore()
-    _STORES.move_to_end(state_id)
+def _get_store(state_key: TrackletRecognitionStateKey) -> TrackletRecognitionStore:
+    if state_key not in _STORES:
+        _STORES[state_key] = TrackletRecognitionStore()
+    _STORES.move_to_end(state_key)
     while len(_STORES) > MAX_STATE_IDS:
         _STORES.popitem(last=False)
-    return _STORES[state_id]
+    return _STORES[state_key]
+
+
+def enforce_global_tracklet_limit() -> None:
+    total_tracklets = sum(store.count_tracklets() for store in _STORES.values())
+    while total_tracklets > MAX_TOTAL_TRACKLETS:
+        evicted = False
+        for store in _STORES.values():
+            if store.pop_lru_tracklet():
+                total_tracklets -= 1
+                evicted = True
+                break
+        if not evicted:
+            return
+
+
+def build_effective_state_key(
+    workspace_id: Optional[str],
+    workflow_id: Optional[str],
+    execution_session_id: Optional[str],
+    user_state_id: str,
+) -> TrackletRecognitionStateKey:
+    return (
+        compact_state_component(value=workspace_id, default="local"),
+        compact_state_component(value=workflow_id, default="local_workflow"),
+        compact_state_component(value=execution_session_id, default="local_session"),
+        compact_state_component(value=user_state_id, default="default"),
+    )
+
+
+def compact_state_component(value: Optional[str], default: str) -> str:
+    component = str(value or default)
+    if len(component) <= MAX_STATE_COMPONENT_LENGTH:
+        return component
+    digest_separator = ":"
+    digest = sha256(component.encode("utf-8")).hexdigest()
+    prefix_length = MAX_STATE_COMPONENT_LENGTH - len(digest_separator) - len(digest)
+    return f"{component[:prefix_length]}{digest_separator}{digest}"
 
 
 class TrackletRecognitionGateManifest(WorkflowBlockManifest):
@@ -215,7 +273,7 @@ class TrackletRecognitionGateManifest(WorkflowBlockManifest):
             "name": "Tracklet Recognition Gate",
             "version": "v1",
             "short_description": SHORT_GATE_DESCRIPTION,
-            "long_description": "Filters tracked detections so downstream recognition only runs for tracklets that are not locked and whose recognition interval has elapsed. State is process-local, bounded, and intended for stateful video workflows; it is not durable or shared across server instances.",
+            "long_description": "Filters tracked detections so downstream recognition only runs for tracklets that are not locked and whose recognition interval has elapsed. State is process-local, bounded, and intended for stateful video workflows; it is scoped by platform workflow context plus the user-provided state_id suffix. It is not durable or shared across server instances.",
             "license": "Apache-2.0",
             "block_type": "transformation",
             "ui_manifest": {
@@ -242,7 +300,7 @@ class TrackletRecognitionGateManifest(WorkflowBlockManifest):
     )
     state_id: Union[str, Selector(kind=[STRING_KIND])] = Field(
         default="default",
-        description="Shared process-local state namespace. Use the same low-cardinality value in the Tracklet Recognition Cache block connected after recognition.",
+        description="User-defined state namespace suffix. Use the same low-cardinality value in the Tracklet Recognition Cache block connected after recognition. The runtime combines this value with platform workflow context before accessing process-local state.",
     )
 
     @classmethod
@@ -271,6 +329,20 @@ class TrackletRecognitionGateManifest(WorkflowBlockManifest):
 
 
 class TrackletRecognitionGateBlockV1(WorkflowBlock):
+    def __init__(
+        self,
+        workspace_id: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        execution_session_id: Optional[str] = None,
+    ):
+        self._workspace_id = workspace_id
+        self._workflow_id = workflow_id
+        self._execution_session_id = execution_session_id
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["workspace_id", "workflow_id", "execution_session_id"]
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return TrackletRecognitionGateManifest
@@ -289,7 +361,14 @@ class TrackletRecognitionGateBlockV1(WorkflowBlock):
             )
         timestamp_seconds = get_video_time_seconds(image=image)
         video_id = image.video_metadata.video_identifier
-        store = _get_store(state_id=state_id)
+        store = _get_store(
+            state_key=build_effective_state_key(
+                workspace_id=self._workspace_id,
+                workflow_id=self._workflow_id,
+                execution_session_id=self._execution_session_id,
+                user_state_id=state_id,
+            )
+        )
         store.prune(timestamp_seconds=timestamp_seconds)
 
         due_mask = []
@@ -318,7 +397,7 @@ class TrackletRecognitionCacheManifest(WorkflowBlockManifest):
             "name": "Tracklet Recognition Cache",
             "version": "v1",
             "short_description": SHORT_CACHE_DESCRIPTION,
-            "long_description": "Stores recognition results by tracker ID, locks stable tracklets, and emits all current detections enriched with cached recognition metadata. State is process-local and bounded by state namespace, video stream, tracklet count, and stale-track TTL; it is not durable or shared across server instances.",
+            "long_description": "Stores recognition results by tracker ID, locks stable tracklets, and emits all current detections enriched with cached recognition metadata. State is process-local and bounded by platform-scoped namespace, video stream, tracklet count, total process tracklets, and stale-track TTL; it is not durable or shared across server instances.",
             "license": "Apache-2.0",
             "block_type": "transformation",
             "ui_manifest": {
@@ -349,11 +428,12 @@ class TrackletRecognitionCacheManifest(WorkflowBlockManifest):
     lock_after_consistent_results: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=5,
         ge=1,
+        le=MAX_CONSISTENCY_WINDOW,
         description="Number of consecutive identical recognition results required before a tracklet is locked.",
     )
     state_id: Union[str, Selector(kind=[STRING_KIND])] = Field(
         default="default",
-        description="Shared process-local state namespace. Must match the Tracklet Recognition Gate block and should use a stable, low-cardinality value.",
+        description="User-defined state namespace suffix. Must match the Tracklet Recognition Gate block and should use a stable, low-cardinality value. The runtime combines this value with platform workflow context before accessing process-local state.",
     )
     update_detection_class: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
@@ -411,6 +491,20 @@ class TrackletRecognitionCacheManifest(WorkflowBlockManifest):
 
 
 class TrackletRecognitionCacheBlockV1(WorkflowBlock):
+    def __init__(
+        self,
+        workspace_id: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        execution_session_id: Optional[str] = None,
+    ):
+        self._workspace_id = workspace_id
+        self._workflow_id = workflow_id
+        self._execution_session_id = execution_session_id
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["workspace_id", "workflow_id", "execution_session_id"]
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return TrackletRecognitionCacheManifest
@@ -438,7 +532,14 @@ class TrackletRecognitionCacheBlockV1(WorkflowBlock):
 
         timestamp_seconds = get_video_time_seconds(image=image)
         video_id = image.video_metadata.video_identifier
-        store = _get_store(state_id=state_id)
+        store = _get_store(
+            state_key=build_effective_state_key(
+                workspace_id=self._workspace_id,
+                workflow_id=self._workflow_id,
+                execution_session_id=self._execution_session_id,
+                user_state_id=state_id,
+            )
+        )
         store.prune(timestamp_seconds=timestamp_seconds)
         updated_tracker_ids = update_store_from_predictions(
             store=store,
@@ -514,6 +615,10 @@ def update_store_from_predictions(
         or len(recognition_predictions) == 0
     ):
         return set()
+    if consistency_window < 1 or consistency_window > MAX_CONSISTENCY_WINDOW:
+        raise ValueError(
+            f"lock_after_consistent_results must be between 1 and {MAX_CONSISTENCY_WINDOW}, got {consistency_window}"
+        )
     if recognized_detections.tracker_id is None:
         raise ValueError("recognized_detections must include tracker_id")
     recognized_detections = ensure_detection_ids(detections=recognized_detections)
@@ -551,6 +656,7 @@ def update_store_from_predictions(
             consistency_window=consistency_window,
         )
         updated_tracker_ids.add(tracker_id)
+    enforce_global_tracklet_limit()
     return updated_tracker_ids
 
 

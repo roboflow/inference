@@ -343,6 +343,12 @@ except ImportError:
     execution_id = None
 
 
+def get_client_execution_session_id(request: Request) -> Optional[str]:
+    if EXECUTION_ID_HEADER is None:
+        return None
+    return request.headers.get(EXECUTION_ID_HEADER)
+
+
 def get_content_type(request: Request) -> str:
     content_type = request.headers.get("content-type", "")
     return content_type.split(";")[0].strip()
@@ -1316,6 +1322,8 @@ class HttpInterface(BaseInterface):
             workflow_specification: dict,
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
+            workspace_id: Optional[str] = None,
+            execution_session_id: Optional[str] = None,
         ) -> WorkflowInferenceResponse:
             if workflow_request.workflow_id:
                 request_workflow_id.set(workflow_request.workflow_id)
@@ -1324,6 +1332,12 @@ class HttpInterface(BaseInterface):
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
                 "workflows_core.background_tasks": background_tasks,
+                "workflows_core.workspace_id": workspace_id or "local",
+                "workflows_core.workflow_id": workflow_request.workflow_id
+                or workflow_specification.get("id")
+                or "local_workflow",
+                "workflows_core.execution_session_id": execution_session_id
+                or "shared-http-session",
             }
             with start_span(
                 "workflow.init",
@@ -1993,6 +2007,7 @@ class HttpInterface(BaseInterface):
                 workflow_id: str,
                 workflow_request: PredefinedWorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
+                request: Request,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
@@ -2026,6 +2041,10 @@ class HttpInterface(BaseInterface):
                         background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
                     ),
                     profiler=profiler,
+                    workspace_id=workspace_name,
+                    execution_session_id=get_client_execution_session_id(
+                        request=request
+                    ),
                 )
 
             @app.post(
@@ -2046,6 +2065,7 @@ class HttpInterface(BaseInterface):
             def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
+                request: Request,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
@@ -2061,6 +2081,9 @@ class HttpInterface(BaseInterface):
                         background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
                     ),
                     profiler=profiler,
+                    execution_session_id=get_client_execution_session_id(
+                        request=request
+                    ),
                 )
 
             @app.get(

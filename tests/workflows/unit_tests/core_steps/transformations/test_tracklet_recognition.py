@@ -1,6 +1,7 @@
 import datetime
 
 import numpy as np
+import pytest
 import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD
 
@@ -8,16 +9,16 @@ from inference.core.workflows.core_steps.transformations.tracklet_recognition im
     v1 as tracklet_recognition,
 )
 from inference.core.workflows.core_steps.transformations.tracklet_recognition.v1 import (
+    _STORES,
     DETECTION_ID_KEY,
     RECOGNITION_AGE_SECONDS_KEY,
     RECOGNITION_CLASS_NAME_KEY,
     RECOGNITION_LOCKED_KEY,
     RECOGNITION_UPDATED_KEY,
-    TrackletRecognitionStore,
     TrackletRecognitionCacheBlockV1,
     TrackletRecognitionCacheManifest,
     TrackletRecognitionGateBlockV1,
-    _STORES,
+    TrackletRecognitionStore,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -376,18 +377,150 @@ def test_tracklet_recognition_store_registry_is_bounded(monkeypatch) -> None:
     # given
     monkeypatch.setattr(tracklet_recognition, "MAX_STATE_IDS", 2)
     _STORES.clear()
+    first_key = ("workspace", "workflow", "run", "first")
+    second_key = ("workspace", "workflow", "run", "second")
+    third_key = ("workspace", "workflow", "run", "third")
 
     # when
-    first_store = tracklet_recognition._get_store(state_id="first")
-    second_store = tracklet_recognition._get_store(state_id="second")
-    assert tracklet_recognition._get_store(state_id="first") is first_store
-    third_store = tracklet_recognition._get_store(state_id="third")
+    first_store = tracklet_recognition._get_store(state_key=first_key)
+    second_store = tracklet_recognition._get_store(state_key=second_key)
+    assert tracklet_recognition._get_store(state_key=first_key) is first_store
+    third_store = tracklet_recognition._get_store(state_key=third_key)
 
     # then
-    assert list(_STORES.keys()) == ["first", "third"]
-    assert _STORES["first"] is first_store
-    assert _STORES["third"] is third_store
+    assert list(_STORES.keys()) == [first_key, third_key]
+    assert _STORES[first_key] is first_store
+    assert _STORES[third_key] is third_store
     assert second_store not in _STORES.values()
+
+
+def test_tracklet_recognition_state_is_scoped_by_platform_context() -> None:
+    # given
+    gate_first_run = TrackletRecognitionGateBlockV1(
+        workspace_id="workspace",
+        workflow_id="workflow",
+        execution_session_id="run-a",
+    )
+    cache_first_run = TrackletRecognitionCacheBlockV1(
+        workspace_id="workspace",
+        workflow_id="workflow",
+        execution_session_id="run-a",
+    )
+    gate_second_run = TrackletRecognitionGateBlockV1(
+        workspace_id="workspace",
+        workflow_id="workflow",
+        execution_session_id="run-b",
+    )
+    detections = _detections(detection_ids=["det-4"], tracker_ids=[4])
+    first_gate_result = gate_first_run.run(
+        image=_image(frame_number=0, fps=10),
+        detections=detections,
+        recognition_interval_seconds=10.0,
+        state_id="plates",
+    )
+    cache_first_run.run(
+        image=_image(frame_number=0, fps=10),
+        detections=first_gate_result["all_detections"],
+        recognized_detections=first_gate_result["detections_to_recognize"],
+        recognition_predictions=[
+            _classification_prediction(parent_id="det-4", class_name="ABC123")
+        ],
+        lock_after_consistent_results=5,
+        state_id="plates",
+        update_detection_class=True,
+    )
+
+    # when
+    first_run_result = gate_first_run.run(
+        image=_image(frame_number=1, fps=10),
+        detections=detections,
+        recognition_interval_seconds=10.0,
+        state_id="plates",
+    )
+    second_run_result = gate_second_run.run(
+        image=_image(frame_number=1, fps=10),
+        detections=detections,
+        recognition_interval_seconds=10.0,
+        state_id="plates",
+    )
+
+    # then
+    assert first_run_result["detections_to_recognize"].tracker_id.tolist() == []
+    assert second_run_result["detections_to_recognize"].tracker_id.tolist() == [4]
+
+
+def test_tracklet_recognition_global_tracklet_limit_is_bounded(monkeypatch) -> None:
+    # given
+    monkeypatch.setattr(tracklet_recognition, "MAX_TOTAL_TRACKLETS", 2)
+    first_store = tracklet_recognition._get_store(
+        state_key=("workspace", "workflow", "run", "first")
+    )
+    second_store = tracklet_recognition._get_store(
+        state_key=("workspace", "workflow", "run", "second")
+    )
+
+    # when
+    first_store.set(
+        video_id="video",
+        tracker_id=1,
+        class_name="A",
+        class_id=0,
+        confidence=1.0,
+        timestamp_seconds=0.0,
+        consistency_window=1,
+    )
+    first_store.set(
+        video_id="video",
+        tracker_id=2,
+        class_name="B",
+        class_id=1,
+        confidence=1.0,
+        timestamp_seconds=0.0,
+        consistency_window=1,
+    )
+    second_store.set(
+        video_id="video",
+        tracker_id=3,
+        class_name="C",
+        class_id=2,
+        confidence=1.0,
+        timestamp_seconds=0.0,
+        consistency_window=1,
+    )
+    tracklet_recognition.enforce_global_tracklet_limit()
+
+    # then
+    assert sum(store.count_tracklets() for store in _STORES.values()) == 2
+    assert (
+        first_store.get(video_id="video", tracker_id=1, timestamp_seconds=0.0) is None
+    )
+    assert (
+        first_store.get(video_id="video", tracker_id=2, timestamp_seconds=0.0)
+        is not None
+    )
+    assert (
+        second_store.get(video_id="video", tracker_id=3, timestamp_seconds=0.0)
+        is not None
+    )
+
+
+def test_tracklet_recognition_rejects_large_consistency_window() -> None:
+    # given
+    store = TrackletRecognitionStore()
+
+    # when / then
+    with pytest.raises(ValueError, match="lock_after_consistent_results"):
+        tracklet_recognition.update_store_from_predictions(
+            store=store,
+            video_id="video",
+            timestamp_seconds=0.0,
+            recognized_detections=_detections(
+                detection_ids=["det-4"],
+                tracker_ids=[4],
+            ),
+            recognition_predictions=["ABC123"],
+            consistency_window=tracklet_recognition.MAX_CONSISTENCY_WINDOW + 1,
+        )
 
 
 def _detections(

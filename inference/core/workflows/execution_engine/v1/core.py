@@ -1,6 +1,7 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Union
+from uuid import uuid4
 
 from packaging.version import Version
 
@@ -72,6 +73,16 @@ class ExecutionEngineV1(BaseExecutionEngine):
             "dynamic_workflows_blocks.api_key",
             init_parameters.get("workflows_core.api_key"),
         )
+        if not init_parameters.get("workflows_core.workspace_id"):
+            init_parameters["workflows_core.workspace_id"] = "local"
+        if not init_parameters.get("workflows_core.workflow_id"):
+            init_parameters["workflows_core.workflow_id"] = (
+                workflow_id or workflow_definition.get("id") or "local_workflow"
+            )
+        if not init_parameters.get("workflows_core.execution_session_id"):
+            init_parameters["workflows_core.execution_session_id"] = (
+                f"local-{uuid4().hex}"
+            )
 
         if profiler is None:
             profiler = NullWorkflowsProfiler.init()
