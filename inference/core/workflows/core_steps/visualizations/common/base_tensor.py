@@ -8,7 +8,6 @@ from pydantic import AliasChoices, ConfigDict, Field
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
-    instance_mask_to_numpy,
     split_key_point_prediction,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -39,6 +38,8 @@ from inference.core.workflows.prototypes.block import (
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints
+from inference_models.models.base.types import InstancesRLEMasks
+from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 
 OUTPUT_IMAGE_KEY: str = "image"
 
@@ -50,9 +51,14 @@ CLASS_NAME_DATA_FIELD: str = "class_name"
 
 def to_supervision_for_annotation(
     prediction: Union[TensorNativePrediction, TensorNativeDetections],
+    materialise_masks: bool = True,
 ) -> sv.Detections:
     """Materialise a tensor-native prediction into an ``sv.Detections`` carrying
     everything the supervision annotators read.
+
+    ``materialise_masks=False`` skips the dense-mask materialisation entirely
+    (``mask`` stays ``None``) for annotators that never read ``.mask`` — e.g. the
+    label annotator — avoiding the device->host mask transfer/decode for them.
 
     This is the single, sanctioned native -> sv conversion used by the
     visualisation block siblings: the annotators (``sv.BoxAnnotator`` /
@@ -62,9 +68,9 @@ def to_supervision_for_annotation(
 
     The reconstructed ``sv.Detections`` carries:
 
-    * ``xyxy`` / ``class_id`` / ``confidence`` (and a dense boolean ``mask``,
-      materialising RLE -> dense one instance at a time, for instance
-      segmentation),
+    * ``xyxy`` / ``class_id`` / ``confidence`` (and a dense boolean ``mask`` for
+      instance segmentation, materialised in a single bulk transfer/decode for
+      the whole stack),
     * ``tracker_id`` (from ``bboxes_metadata[i]["tracker_id"]`` when present),
     * ``data["class_name"]`` resolved from ``image_metadata["class_names"]``
       (``{int class_id: str name}``), falling back to ``f"class_{id}"``,
@@ -97,7 +103,11 @@ def to_supervision_for_annotation(
     xyxy = detections.xyxy.detach().cpu().numpy().astype(np.float32)
     class_id = detections.class_id.detach().cpu().numpy().astype(int)
     confidence = detections.confidence.detach().cpu().numpy().astype(np.float32)
-    mask = _materialise_mask(detections, detections_number)
+    mask = (
+        _materialise_mask(detections, detections_number)
+        if materialise_masks
+        else None
+    )
     tracker_id = _materialise_tracker_id(bboxes_metadata)
     data = _materialise_data(
         bboxes_metadata=bboxes_metadata,
@@ -124,12 +134,14 @@ def _materialise_mask(
         return None
     if detections_number == 0:
         return None
-    return np.stack(
-        [
-            instance_mask_to_numpy(detections, index)
-            for index in range(detections_number)
-        ]
-    )
+    mask = detections.mask
+    if isinstance(mask, InstancesRLEMasks):
+        # RLE: decode every instance in one call (never one-at-a-time) -> (N, H, W) bool.
+        return coco_rle_masks_to_numpy_mask(mask)
+    # Dense torch.Tensor (N, H, W): a single bulk device->host transfer instead of
+    # N per-instance `.detach().to("cpu").numpy()` round-trips (each a blocking CUDA
+    # sync). Mirrors `InstanceDetections.to_supervision`'s dense branch.
+    return mask.detach().cpu().numpy().astype(bool)
 
 
 def _materialise_tracker_id(

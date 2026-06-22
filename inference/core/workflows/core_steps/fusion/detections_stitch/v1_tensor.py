@@ -5,8 +5,9 @@ from uuid import uuid4
 import numpy as np
 import supervision as sv
 import torch
+import torchvision
 from pydantic import ConfigDict, Field
-from supervision import OverlapFilter, move_boxes, move_masks
+from supervision import OverlapFilter
 from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.common.tensor_native import (
@@ -50,6 +51,7 @@ from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import (
     coco_rle_masks_to_numpy_mask,
+    embed_rle_masks_in_larger_canvas,
     torch_mask_to_coco_rle,
 )
 
@@ -325,14 +327,15 @@ def move_detections(
         return detections
     if offset is None:
         raise ValueError("To move non-empty detections offset is needed, but not given")
-    # sv.move_boxes is a pure numpy translation; read xyxy out as numpy, shift,
-    # write the result back as a tensor (no sv.Detections is ever materialised).
-    moved_xyxy = move_boxes(
-        xyxy=detections.xyxy.detach().to("cpu").numpy(), offset=offset
+    # Translate xyxy on-device: add [dx, dy, dx, dy] broadcast over the box rows,
+    # staying on detections.xyxy.device/dtype (no D2H->H2D round-trip per slice).
+    dx, dy = float(offset[0]), float(offset[1])
+    xyxy_shift = torch.as_tensor(
+        [dx, dy, dx, dy],
+        dtype=detections.xyxy.dtype,
+        device=detections.xyxy.device,
     )
-    detections.xyxy = torch.as_tensor(
-        moved_xyxy, dtype=detections.xyxy.dtype, device=detections.xyxy.device
-    )
+    detections.xyxy = detections.xyxy + xyxy_shift
     bboxes_metadata = detections.bboxes_metadata
     if bboxes_metadata is not None and any(
         ORIENTED_BOX_COORDINATES in (box_metadata or {})
@@ -362,30 +365,42 @@ def _move_native_masks(
     mask: Union[torch.Tensor, InstancesRLEMasks],
     offset: np.ndarray,
     resolution_wh: Tuple[int, int],
-) -> Union[torch.Tensor, InstancesRLEMasks]:
-    # sv.move_masks is a pure numpy operation (pad/shift to the target resolution);
-    # decode the native masks to a numpy stack, move them, then re-encode in the
-    # original representation (dense torch or RLE). No sv.Detections is built.
-    is_rle = isinstance(mask, InstancesRLEMasks)
-    if is_rle:
-        numpy_masks = coco_rle_masks_to_numpy_mask(mask)
+) -> InstancesRLEMasks:
+    # Move masks in RLE form via embed_rle_masks_in_larger_canvas: the slice-resolution
+    # masks are placed onto the (H, W) reference canvas at the slice's top-left offset,
+    # entirely in RLE (the big canvas is never densified, no full-frame D2H). The output
+    # is always RLE — dense input is first converted slice-by-slice to RLE.
+    target_width, target_height = resolution_wh
+    target_size_hw = (target_height, target_width)
+    x0, y0 = int(offset[0]), int(offset[1])
+    if isinstance(mask, InstancesRLEMasks):
+        rle_masks = mask
     else:
-        numpy_masks = mask.detach().to("cpu").numpy().astype(bool)
-    moved_masks = move_masks(
-        masks=numpy_masks, offset=offset, resolution_wh=resolution_wh
-    )
-    if is_rle:
-        target_height, target_width = resolution_wh[1], resolution_wh[0]
-        rle_masks = [
-            torch_mask_to_coco_rle(torch.as_tensor(single_mask, dtype=torch.bool))[
-                "counts"
+        # DENSE input: convert each slice mask to RLE, wrap as InstancesRLEMasks.
+        dense_masks = mask.detach().to(dtype=torch.bool)
+        if dense_masks.shape[0] == 0:
+            slice_height, slice_width = int(dense_masks.shape[1]), int(
+                dense_masks.shape[2]
+            )
+            rle_masks = InstancesRLEMasks(
+                image_size=(slice_height, slice_width), masks=[]
+            )
+        else:
+            slice_height, slice_width = int(dense_masks.shape[1]), int(
+                dense_masks.shape[2]
+            )
+            counts = [
+                torch_mask_to_coco_rle(single_mask)["counts"]
+                for single_mask in dense_masks
             ]
-            for single_mask in moved_masks
-        ]
-        return InstancesRLEMasks(
-            image_size=(target_height, target_width), masks=rle_masks
-        )
-    return torch.as_tensor(moved_masks, dtype=torch.bool, device=mask.device)
+            rle_masks = InstancesRLEMasks(
+                image_size=(slice_height, slice_width), masks=counts
+            )
+    return embed_rle_masks_in_larger_canvas(
+        masks=rle_masks,
+        offset_xy=(x0, y0),
+        target_size_hw=target_size_hw,
+    )
 
 
 def merge_detections(
@@ -521,18 +536,24 @@ def with_nms(
 ) -> TensorNativeDetections:
     if len(detections) == 0:
         return detections
-    # sv.Detections is used here purely as the NMS algorithm (mirroring the numpy
-    # block's `merged.with_nms`). A synthetic row index travels through `.data`
-    # so the surviving original rows can be recovered and sliced natively; no
-    # sv.Detections is returned.
-    number_of_detections = len(detections)
-    nms_input = sv.Detections(
-        xyxy=detections.xyxy.detach().to("cpu").numpy().astype(float),
-        confidence=detections.confidence.detach().to("cpu").numpy().astype(float),
-        class_id=detections.class_id.detach().to("cpu").numpy().astype(int),
-        data={"__row_index__": np.arange(number_of_detections)},
-    ).with_nms(threshold=threshold)
-    surviving_indices = nms_input.data["__row_index__"].astype(int).tolist()
+    # NMS runs on-device via torchvision.ops.batched_nms over the merged native
+    # xyxy/confidence/class_id tensors (box IoU, class-aware — matching the prior
+    # sv box NMS, which this block fed without masks). The kept indices index the
+    # native detections directly; no sv.Detections is materialised. batched_nms
+    # returns kept indices sorted by descending score; sort ascending so the
+    # surviving rows keep their original relative order.
+    boxes = detections.xyxy.to(dtype=torch.float32)
+    scores = detections.confidence.to(dtype=torch.float32)
+    # torchvision's NMS kernel requires float boxes/scores and an int64 idxs
+    # (the kernel is not implemented for int32 class ids).
+    class_ids = detections.class_id.to(dtype=torch.long)
+    keep = torchvision.ops.batched_nms(
+        boxes=boxes,
+        scores=scores,
+        idxs=class_ids,
+        iou_threshold=threshold,
+    )
+    surviving_indices = torch.sort(keep).values.detach().to("cpu").tolist()
     survivors = take_prediction_by_indices(
         prediction=detections, indices=surviving_indices
     )

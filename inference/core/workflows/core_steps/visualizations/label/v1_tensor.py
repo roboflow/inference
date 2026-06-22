@@ -250,7 +250,11 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         text_padding: Optional[int],
         border_radius: Optional[int],
     ) -> BlockResult:
-        predictions = to_supervision_for_annotation(predictions)
+        # The label annotator never reads `.mask`, so skip mask materialisation
+        # (avoids the device->host mask transfer/decode for label-only viz).
+        predictions = to_supervision_for_annotation(
+            predictions, materialise_masks=False
+        )
         if len(predictions) == 0:
             return {
                 OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
