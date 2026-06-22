@@ -259,7 +259,7 @@ def make_decoder(name: str, device: str = "cuda:0") -> Callable[[bytes], Any]:
             try:
                 img = _nv.decode([np.frombuffer(data, dtype=np.uint8)])[0]
                 if img is not None:
-                    return torch.from_dlpack(img).permute(2, 0, 1)
+                    return torch.from_dlpack(img).permute(2, 0, 1).contiguous()
             except Exception:
                 pass
             img = _decode_heif(data) if _is_heif(data) else _decode_ic(data)
@@ -400,7 +400,7 @@ def make_batch_decoder(
                 if img is None:
                     continue
                 try:
-                    out[i] = torch.from_dlpack(img).permute(2, 0, 1)
+                    out[i] = torch.from_dlpack(img).permute(2, 0, 1).contiguous()
                 except Exception:
                     log.exception("nvimgcodec→torch failed for batch index %d", i)
             # CPU fallback (imagecodecs/HEIF) for anything nvimgcodec couldn't decode.
