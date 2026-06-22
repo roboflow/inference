@@ -30,7 +30,7 @@ class Decoder(str, Enum):
     IMAGECODECS = "imagecodecs"
     NVJPEG = "nvjpeg"
     NVIMGCODEC = (
-        "nvimgcodec"  # nvImageCodec — L4 hardware JPEG decoder, ~5x faster than NVJPEG
+        "nvimgcodec"  # nvImageCodec — L4 hardware JPEG decoder (wraps nvjpeg; benchmark vs NVJPEG before defaulting)
     )
     PASSTHROUGH = "passthrough"  # debugging only — skips decode, returns dummy tensors
 
@@ -266,6 +266,7 @@ def make_decoder(name: str, device: str = "cuda:0") -> Callable[[bytes], Any]:
             return (
                 torch.from_numpy(np.ascontiguousarray(img))
                 .permute(2, 0, 1)
+                .contiguous()
                 .to(torch_device)
             )
 
@@ -395,6 +396,12 @@ def make_batch_decoder(
             try:
                 imgs = _nv.decode([np.frombuffer(mv, dtype=np.uint8) for mv in mvs])
             except Exception:
+                log.warning(
+                    "nvimgcodec batch decode failed for %d image(s), "
+                    "falling back to CPU imagecodecs",
+                    len(mvs),
+                    exc_info=True,
+                )
                 imgs = [None] * len(mvs)
             for i, img in enumerate(imgs):
                 if img is None:
@@ -413,6 +420,7 @@ def make_batch_decoder(
                     out[i] = (
                         torch.from_numpy(np.ascontiguousarray(img))
                         .permute(2, 0, 1)
+                        .contiguous()
                         .to(torch_device)
                     )
                 except Exception:
