@@ -40,10 +40,14 @@ import threading
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+from filelock import FileLock
+
 from inference.core import logger
 from inference.models.vllm_proxy.adapter_patch import (
     ADAPTER_CONFIG_FILE,
+    ADAPTER_WEIGHTS_FILE,
     BASE_MODEL_CHECK_MATCH,
+    PATCH_REPORT_FILE,
     patch_adapter,
 )
 from inference.models.vllm_proxy.config import (
@@ -64,8 +68,15 @@ from inference_models.utils.download import download_files_to_directory
 from inference_models.weights_providers.core import get_model_from_provider
 
 ADAPTERS_CACHE_SUBDIR = "vllm-adapters"
+ADAPTER_CACHE_LOCK_FILE = ".registration.lock"
+ADAPTER_CACHE_LOCK_TIMEOUT_SECONDS = 120
 BASE_PACKAGE_DIR_PREFIX = "base/"
 SUPPORTED_MODEL_ARCHITECTURES = ("qwen3_5", "qwen3vl")
+PATCHED_ADAPTER_REQUIRED_FILES = (
+    ADAPTER_CONFIG_FILE,
+    ADAPTER_WEIGHTS_FILE,
+    PATCH_REPORT_FILE,
+)
 
 # Registry fine-tune variants carry this suffix; a fine-tune of base X is
 # servable on a pool whose vLLM container serves X.
@@ -232,16 +243,11 @@ class AdapterManager:
         )
         with self._lock:
             existing = self._registered.get(slug)
-            if existing is not None and os.path.isdir(existing.patched_dir):
+            if existing is not None and self._try_load_existing_registration(existing):
                 # Skip ONLY the expensive download/patch work. The vLLM
                 # registration call must still happen: this process's map
                 # may be stale (shared engine, NUM_WORKERS>1) and the call
                 # is idempotent and ~ms with files already on disk.
-                self._load_adapter_into_vllm(
-                    slug=slug,
-                    model_id=existing.model_id,
-                    patched_dir=existing.patched_dir,
-                )
                 return slug
             registration = self._download_patch_and_load(
                 slug=slug,
@@ -319,39 +325,51 @@ class AdapterManager:
         )
         source_dir = os.path.join(adapter_cache_dir, "src")
         patched_dir = os.path.join(adapter_cache_dir, "patched")
-        os.makedirs(source_dir, exist_ok=True)
-        download_files_to_directory(
-            target_dir=source_dir,
-            files_specs=[
-                (artefact.file_handle, artefact.download_url, artefact.md5_hash)
-                for artefact in adapter_files
-            ],
-            verbose=False,
-        )
-        report = patch_adapter(
-            src_dir=source_dir,
-            dst_dir=patched_dir,
-            policy=get_vllm_dora_policy(),
-            model_id=model_id,
-            registry_variant=registry_variant,
-        )
-        if (
-            not registry_variant_matches
-            and report.base_model_check == BASE_MODEL_CHECK_MATCH
-        ):
-            # Drift audit: the adapter is servable here (its own config
-            # matches the served base) but the registry disagrees - flag the
-            # registry record for correction.
-            logger.warning(
-                "Registry modelVariant misregistered for %s: registry says "
-                "%r, adapter declares %r.",
-                model_id,
-                registry_variant,
-                report.base_model_name_or_path,
+        os.makedirs(adapter_cache_dir, exist_ok=True)
+        with self._adapter_cache_lock(adapter_cache_dir):
+            if not self._patched_adapter_ready(patched_dir):
+                dora_policy = get_vllm_dora_policy()
+                if dora_policy == "svd":
+                    raise NotServableOnVLLMError(
+                        "VLLM_DORA_POLICY=svd is not supported in the runtime "
+                        "adapter manager: the manager downloads adapter-only "
+                        "artifacts and intentionally prunes base/ weights. Use "
+                        "VLLM_DORA_POLICY=strip or reject at runtime, or run "
+                        "offline SVD conversion with an explicit base_dir."
+                    )
+                os.makedirs(source_dir, exist_ok=True)
+                download_files_to_directory(
+                    target_dir=source_dir,
+                    files_specs=[
+                        (artefact.file_handle, artefact.download_url, artefact.md5_hash)
+                        for artefact in adapter_files
+                    ],
+                    verbose=False,
+                )
+                report = patch_adapter(
+                    src_dir=source_dir,
+                    dst_dir=patched_dir,
+                    policy=dora_policy,
+                    model_id=model_id,
+                    registry_variant=registry_variant,
+                )
+                if (
+                    not registry_variant_matches
+                    and report.base_model_check == BASE_MODEL_CHECK_MATCH
+                ):
+                    # Drift audit: the adapter is servable here (its own config
+                    # matches the served base) but the registry disagrees - flag the
+                    # registry record for correction.
+                    logger.warning(
+                        "Registry modelVariant misregistered for %s: registry says "
+                        "%r, adapter declares %r.",
+                        model_id,
+                        registry_variant,
+                        report.base_model_name_or_path,
+                    )
+            self._load_adapter_into_vllm(
+                slug=slug, model_id=model_id, patched_dir=patched_dir
             )
-        self._load_adapter_into_vllm(
-            slug=slug, model_id=model_id, patched_dir=patched_dir
-        )
         logger.info(
             "Registered LoRA adapter %s (model_id=%s, package_id=%s) with vLLM",
             slug,
@@ -365,6 +383,35 @@ class AdapterManager:
             content_digest=content_digest,
             source_dir=source_dir,
             patched_dir=patched_dir,
+        )
+
+    def _try_load_existing_registration(
+        self, registration: AdapterRegistration
+    ) -> bool:
+        adapter_cache_dir = os.path.dirname(registration.patched_dir)
+        os.makedirs(adapter_cache_dir, exist_ok=True)
+        with self._adapter_cache_lock(adapter_cache_dir):
+            if not self._patched_adapter_ready(registration.patched_dir):
+                return False
+            self._load_adapter_into_vllm(
+                slug=registration.served_name,
+                model_id=registration.model_id,
+                patched_dir=registration.patched_dir,
+            )
+            return True
+
+    @staticmethod
+    def _adapter_cache_lock(adapter_cache_dir: str) -> FileLock:
+        return FileLock(
+            os.path.join(adapter_cache_dir, ADAPTER_CACHE_LOCK_FILE),
+            timeout=ADAPTER_CACHE_LOCK_TIMEOUT_SECONDS,
+        )
+
+    @staticmethod
+    def _patched_adapter_ready(patched_dir: str) -> bool:
+        return os.path.isdir(patched_dir) and all(
+            os.path.isfile(os.path.join(patched_dir, file_name))
+            for file_name in PATCHED_ADAPTER_REQUIRED_FILES
         )
 
     def _load_adapter_into_vllm(

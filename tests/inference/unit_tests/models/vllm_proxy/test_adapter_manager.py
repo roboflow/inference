@@ -395,6 +395,66 @@ class TestResolveAndRegister:
         assert len(fake_download) == 2
         assert os.path.isdir(manager.get_registration(served_name).patched_dir)
 
+    def test_partial_patched_dir_redoes_download_and_patch(
+        self, monkeypatch, fake_download, model_cache_dir
+    ) -> None:
+        # given - a prior worker died after creating the patched dir but before
+        # all files were published. The manager must not hand that path to vLLM.
+        model_id = "some-workspace/some-project/1"
+        metadata = build_metadata(model_id=model_id)
+        _install_provider(monkeypatch, {model_id: metadata})
+        manager = AdapterManager(client=MagicMock())
+        package = metadata.model_packages[0]
+        adapter_files = [
+            artefact
+            for artefact in package.package_artefacts
+            if not artefact.file_handle.startswith("base/")
+        ]
+        slug = manager._build_slug(
+            model_id=metadata.model_id,
+            package_id=package.package_id,
+            content_digest=manager._compute_content_digest(adapter_files),
+        )
+        patched_dir = os.path.join(model_cache_dir, "vllm-adapters", slug, "patched")
+        os.makedirs(patched_dir, exist_ok=True)
+        with open(os.path.join(patched_dir, "adapter_config.json"), "w") as f:
+            json.dump({"partial": True}, f)
+
+        # when
+        served_name = manager.resolve_and_register(model_id=model_id)
+
+        # then
+        assert served_name == slug
+        assert len(fake_download) == 1
+        _, load_kwargs = manager.client.load_lora_adapter.call_args
+        assert os.path.isfile(
+            os.path.join(load_kwargs["path"], "adapter_model.safetensors")
+        )
+        assert os.path.isfile(os.path.join(load_kwargs["path"], "patch_report.json"))
+
+    def test_runtime_svd_policy_is_rejected_before_download(
+        self, monkeypatch, model_cache_dir
+    ) -> None:
+        # given - adapter_manager intentionally prunes base/ artifacts, so the
+        # request-path cannot satisfy patch_adapter(policy="svd", base_dir=...).
+        monkeypatch.setenv("VLLM_DORA_POLICY", "svd")
+        model_id = "some-workspace/some-project/1"
+        _install_provider(monkeypatch, {model_id: build_metadata(model_id=model_id)})
+        download = MagicMock()
+        monkeypatch.setattr(
+            adapter_manager_module, "download_files_to_directory", download
+        )
+        client = MagicMock()
+        manager = AdapterManager(client=client)
+
+        # when / then
+        with pytest.raises(NotServableOnVLLMError) as error:
+            manager.resolve_and_register(model_id=model_id)
+        assert "VLLM_DORA_POLICY=svd" in str(error.value)
+        assert "base/ weights" in str(error.value)
+        download.assert_not_called()
+        client.load_lora_adapter.assert_not_called()
+
     def test_overflow_past_max_registered_warns_and_never_unloads(
         self, monkeypatch, fake_download, model_cache_dir
     ) -> None:
@@ -637,9 +697,7 @@ class TestResolveAndRegister:
         def _fake_download(target_dir: str, files_specs, verbose=True, **kwargs):
             write_adapter_package(
                 target_dir=target_dir,
-                config=build_adapter_config(
-                    base_model_name_or_path="qwen/qwen3_5-2b"
-                ),
+                config=build_adapter_config(base_model_name_or_path="qwen/qwen3_5-2b"),
             )
 
         monkeypatch.setattr(

@@ -155,6 +155,24 @@ class TestPatchAdapterDoraPolicies:
         assert os.path.isfile(os.path.join(dst_dir, "patch_report.json"))
         assert report.remapped_keys == 2
 
+    def test_patch_adapter_publishes_complete_directory(self, tmp_path) -> None:
+        # given - an existing output dir must never be observed half-written.
+        src_dir = write_adapter_package(target_dir=str(tmp_path / "src"))
+        dst_path = tmp_path / "dst"
+        dst_path.mkdir()
+        (dst_path / "stale-file").write_text("old")
+
+        # when
+        report = patch_adapter(src_dir=src_dir, dst_dir=str(dst_path))
+
+        # then
+        assert report.dst_dir == str(dst_path)
+        assert not (dst_path / "stale-file").exists()
+        assert (dst_path / "adapter_model.safetensors").is_file()
+        assert (dst_path / "adapter_config.json").is_file()
+        assert (dst_path / "patch_report.json").is_file()
+        assert list(tmp_path.glob(".dst-*")) == []
+
     def test_unknown_policy_raises(self, tmp_path) -> None:
         # given
         src_dir = write_adapter_package(target_dir=str(tmp_path / "src"))
@@ -258,9 +276,7 @@ class TestBaseModelCrossCheck:
         assert persisted["base_model_check"] == BASE_MODEL_CHECK_MATCH
         assert persisted["base_model_name_or_path"] == "qwen/qwen3_5-0.8b"
 
-    def test_base_matching_served_base_name_passes(
-        self, monkeypatch, tmp_path
-    ) -> None:
+    def test_base_matching_served_base_name_passes(self, monkeypatch, tmp_path) -> None:
         # given - HF-style reference matches VLLM_SERVED_BASE_NAME (not the
         # variant), with different separators/casing
         monkeypatch.setenv("VLLM_SERVED_BASE_VARIANT", "qwen3vl-2b")
@@ -282,8 +298,9 @@ class TestBaseModelCrossCheck:
         self, monkeypatch, tmp_path
     ) -> None:
         # given - fixture config carries no base_model_name_or_path
-        from inference.models.vllm_proxy import adapter_patch as adapter_patch_module
         from unittest.mock import MagicMock
+
+        from inference.models.vllm_proxy import adapter_patch as adapter_patch_module
 
         logger_mock = MagicMock()
         monkeypatch.setattr(adapter_patch_module, "logger", logger_mock)

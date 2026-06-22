@@ -27,6 +27,8 @@ import json
 import math
 import os
 import re
+import shutil
+import tempfile
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -269,20 +271,66 @@ def patch_adapter(
             "Adapter contains no servable LoRA tensors after filtering."
         )
 
-    os.makedirs(dst_dir, exist_ok=True)
-    patched_weights_path = os.path.join(dst_dir, ADAPTER_WEIGHTS_FILE)
-    save_file(remapped_tensors, patched_weights_path)
-    report.patched_weights_digest = _sha256_of_file(patched_weights_path)
-    with open(os.path.join(dst_dir, ADAPTER_CONFIG_FILE), "w") as f:
-        json.dump(config, f, indent=2, sort_keys=True)
-    report.notes.append(
-        "The exact adapter key layout accepted by vLLM v0.22.1 is empirically "
-        "unconfirmed - adjust VLLM_ADAPTER_KEY_TEMPLATE if vLLM rejects the "
-        "patched adapter."
+    dst_dir = os.path.abspath(dst_dir)
+    dst_parent = os.path.dirname(dst_dir)
+    os.makedirs(dst_parent, exist_ok=True)
+    staging_dir = tempfile.mkdtemp(
+        prefix=f".{os.path.basename(dst_dir)}-", dir=dst_parent
     )
-    with open(os.path.join(dst_dir, PATCH_REPORT_FILE), "w") as f:
-        json.dump(dataclasses.asdict(report), f, indent=2)
+    try:
+        patched_weights_path = os.path.join(staging_dir, ADAPTER_WEIGHTS_FILE)
+        save_file(remapped_tensors, patched_weights_path)
+        report.patched_weights_digest = _sha256_of_file(patched_weights_path)
+        with open(os.path.join(staging_dir, ADAPTER_CONFIG_FILE), "w") as f:
+            json.dump(config, f, indent=2, sort_keys=True)
+        report.notes.append(
+            "The exact adapter key layout accepted by vLLM v0.22.1 is empirically "
+            "unconfirmed - adjust VLLM_ADAPTER_KEY_TEMPLATE if vLLM rejects the "
+            "patched adapter."
+        )
+        with open(os.path.join(staging_dir, PATCH_REPORT_FILE), "w") as f:
+            json.dump(dataclasses.asdict(report), f, indent=2)
+        _replace_directory(src_dir=staging_dir, dst_dir=dst_dir)
+        staging_dir = None
+    finally:
+        if staging_dir is not None:
+            _remove_path(staging_dir)
     return report
+
+
+def _replace_directory(src_dir: str, dst_dir: str) -> None:
+    """Publishes `src_dir` at `dst_dir` without exposing partial contents."""
+    old_dir = None
+    if os.path.exists(dst_dir):
+        old_dir = tempfile.mkdtemp(
+            prefix=f".{os.path.basename(dst_dir)}-old-",
+            dir=os.path.dirname(os.path.abspath(dst_dir)),
+        )
+        os.rmdir(old_dir)
+        os.replace(dst_dir, old_dir)
+    try:
+        os.replace(src_dir, dst_dir)
+    except Exception:
+        if (
+            old_dir is not None
+            and os.path.exists(old_dir)
+            and not os.path.exists(dst_dir)
+        ):
+            os.replace(old_dir, dst_dir)
+        raise
+    finally:
+        if old_dir is not None and os.path.exists(old_dir):
+            _remove_path(old_dir)
+
+
+def _remove_path(path: str) -> None:
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path)
+    else:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
 
 
 def svd_convert(base_dir: str, adapter_dir: str, dst_dir: str, rank: int) -> None:
