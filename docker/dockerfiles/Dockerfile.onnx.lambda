@@ -35,7 +35,7 @@ RUN dnf makecache -y && dnf install -y \
   && /var/lang/bin/python3.12 -m pip install --upgrade pip && rm -rf ~/.cache/pip \
   && pip3 install \
     --extra-index-url https://download.pytorch.org/whl/cpu \
-    certifi==2022.12.07 \
+    certifi==2023.5.7 \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.cpu.txt \

@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
@@ -13,6 +14,7 @@ from pydantic import ConfigDict, Field
 from inference.core.env import API_BASE_URL
 from inference.core.logger import logger
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.serializers import mask_to_polygon
 from inference.core.workflows.execution_engine.constants import (
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
@@ -97,6 +99,19 @@ dashboard.
    and custom metadata
 4. Supports fire-and-forget mode for non-blocking execution
 
+## Deployment Modes
+
+By default this block sends events to the **Roboflow Vision Events API** (cloud /
+Serverless API), uploading images and posting the event over the public API.
+
+For edge deployments, enable **Write to Local Event Store** to send events to a
+local Event Ingestion Service instead. In this mode images are embedded directly
+in the request (no upload step) and the event is posted to `<event store URL>/v2/events`.
+The event store URL defaults to `http://localhost:8001` and can be overridden. No
+Roboflow API key is required in this mode; if the local service requires
+authentication, set the `EVENT_INGESTION_API_KEY` environment variable on the
+inference server.
+
 ## Event Types
 
 - **quality_check**: Manufacturing/inspection QA with pass/fail result and optional confidence
@@ -107,8 +122,9 @@ dashboard.
 
 ## Requirements
 
-**API Key Required**: This block requires a valid Roboflow API key with `vision-events:write`
-scope. The API key must be configured in your environment or workflow configuration.
+The default (cloud) mode requires a valid Roboflow API key with `vision-events:write`
+scope, configured in your environment or workflow configuration. No Roboflow API key is
+needed when **Write to Local Event Store** is enabled (see Deployment Modes above).
 
 ## Common Use Cases
 
@@ -133,7 +149,11 @@ class BlockManifest(WorkflowBlockManifest):
                 "icon": "fal fa-eye",
                 "blockPriority": 1,
                 "popular": False,
-                "requires_rf_key": True,
+                # Not unconditionally required: the local event store mode needs no
+                # Roboflow key. A True value here walls off the whole block config in
+                # the inference-embedded (edge) editor, which would defeat that mode.
+                # The cloud path still raises at runtime if no key is available.
+                "requires_rf_key": False,
             },
         }
     )
@@ -353,11 +373,36 @@ class BlockManifest(WorkflowBlockManifest):
         description="If True, the block is disabled and no events are sent.",
         examples=[False, "$inputs.disable_vision_events"],
     )
+    write_to_event_store: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=False,
+        title="Write to Local Event Store",
+        description="If True, send the event to a local Event Ingestion Service "
+        "(edge deployment) instead of the Roboflow Vision Events API (cloud). "
+        "Images are embedded in the request and the event is posted to "
+        "`<Event Store URL>/v2/events`. No Roboflow API key is required in this mode.",
+        examples=[False, True, "$inputs.write_to_event_store"],
+    )
+    event_store_url: Union[Selector(kind=[STRING_KIND]), str] = Field(
+        default="http://localhost:8001",
+        title="Event Store URL",
+        description="Base URL of the local Event Ingestion Service. Only used when "
+        "`Write to Local Event Store` is enabled.",
+        examples=["http://localhost:8001", "$inputs.event_store_url"],
+        json_schema_extra={
+            "relevant_for": {
+                "write_to_event_store": {
+                    "values": [True],
+                    "required": False,
+                },
+            },
+        },
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
+            OutputDefinition(name="event_id", kind=[STRING_KIND]),
             OutputDefinition(name="message", kind=[STRING_KIND]),
         ]
 
@@ -396,6 +441,8 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         custom_metadata: Dict[str, Any],
         fire_and_forget: bool,
         disable_sink: bool,
+        write_to_event_store: bool = False,
+        event_store_url: str = "http://localhost:8001",
         external_id: Optional[str] = None,
         qc_result: Optional[str] = None,
         location: Optional[str] = None,
@@ -408,17 +455,10 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         related_event_id: Optional[str] = None,
         feedback: Optional[str] = None,
     ) -> BlockResult:
-        if self._api_key is None:
-            raise ValueError(
-                "VisionEvents block cannot run without Roboflow API key. "
-                "If you do not know how to get API key - visit "
-                "https://docs.roboflow.com/api-reference/authentication"
-                "#retrieve-an-api-key to learn how to retrieve one."
-            )
-
         if disable_sink:
             return {
                 "error_status": False,
+                "event_id": "",
                 "message": "Sink was disabled by parameter `disable_sink`",
             }
 
@@ -437,34 +477,60 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
             feedback=feedback,
         )
 
-        task = partial(
-            _execute_vision_event,
-            api_base_url=API_BASE_URL,
-            api_key=self._api_key,
-            input_image=input_image,
-            output_image=output_image,
-            prediction=predictions,
-            event_type=event_type,
-            solution=solution,
-            event_data=event_data,
-            custom_metadata=custom_metadata,
-        )
+        if write_to_event_store:
+            task = partial(
+                _execute_local_event,
+                event_store_url=event_store_url,
+                input_image=input_image,
+                output_image=output_image,
+                prediction=predictions,
+                event_type=event_type,
+                solution=solution,
+                event_data=event_data,
+                custom_metadata=custom_metadata,
+            )
+        else:
+            if self._api_key is None:
+                raise ValueError(
+                    "VisionEvents block cannot run without Roboflow API key. "
+                    "If you do not know how to get API key - visit "
+                    "https://docs.roboflow.com/api-reference/authentication"
+                    "#retrieve-an-api-key to learn how to retrieve one."
+                )
+            task = partial(
+                _execute_vision_event,
+                api_base_url=API_BASE_URL,
+                api_key=self._api_key,
+                input_image=input_image,
+                output_image=output_image,
+                prediction=predictions,
+                event_type=event_type,
+                solution=solution,
+                event_data=event_data,
+                custom_metadata=custom_metadata,
+            )
 
         if fire_and_forget and self._background_tasks:
             self._background_tasks.add_task(task)
             return {
                 "error_status": False,
+                "event_id": "",
                 "message": "Vision event sent in background task",
             }
         elif fire_and_forget and self._thread_pool_executor:
             self._thread_pool_executor.submit(task)
             return {
                 "error_status": False,
+                "event_id": "",
                 "message": "Vision event sent in background task",
             }
         else:
-            error_status, message = task()
-            return {"error_status": error_status, "message": message}
+            error_status, message, event_id = task()
+            return {
+                "error_status": error_status,
+                "event_id": event_id,
+                "message": message,
+            }
 
 
 def _build_event_data(
@@ -511,6 +577,44 @@ def _build_event_data(
     return {k: v for k, v in data.items() if v is not None}
 
 
+def _convert_predictions_to_annotations(
+    prediction: Optional[Union[sv.Detections, dict]],
+) -> Dict[str, List[dict]]:
+    """Convert predictions into vision events annotation lists.
+
+    Returns a dict keyed by annotation type (objectDetections, classifications,
+    instanceSegmentations, keypoints), containing only the non-empty annotation
+    lists. Shared by the cloud and local event store code paths.
+    """
+    object_detections: List[dict] = []
+    classifications: List[dict] = []
+    instance_segmentations: List[dict] = []
+    keypoints_detections: List[dict] = []
+
+    if prediction is not None:
+        if isinstance(prediction, sv.Detections) and len(prediction) > 0:
+            (
+                object_detections,
+                instance_segmentations,
+                keypoints_detections,
+            ) = _convert_sv_detections_to_vision_events_format(prediction)
+        elif isinstance(prediction, dict):
+            classifications = _convert_classification_to_vision_events_format(
+                prediction
+            )
+
+    annotations: Dict[str, List[dict]] = {}
+    if object_detections:
+        annotations["objectDetections"] = object_detections
+    if classifications:
+        annotations["classifications"] = classifications
+    if instance_segmentations:
+        annotations["instanceSegmentations"] = instance_segmentations
+    if keypoints_detections:
+        annotations["keypoints"] = keypoints_detections
+    return annotations
+
+
 def _execute_vision_event(
     api_base_url: str,
     api_key: str,
@@ -521,25 +625,10 @@ def _execute_vision_event(
     solution: str,
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
-) -> Tuple[bool, str]:
+) -> Tuple[bool, str, str]:
     try:
-        # Step 1: Convert predictions to vision events format
-        object_detections: List[dict] = []
-        classifications: List[dict] = []
-        instance_segmentations: List[dict] = []
-        keypoints_detections: List[dict] = []
-
-        if prediction is not None:
-            if isinstance(prediction, sv.Detections) and len(prediction) > 0:
-                (
-                    object_detections,
-                    instance_segmentations,
-                    keypoints_detections,
-                ) = _convert_sv_detections_to_vision_events_format(prediction)
-            elif isinstance(prediction, dict):
-                classifications = _convert_classification_to_vision_events_format(
-                    prediction
-                )
+        # Step 1: Convert predictions to vision events annotation format
+        annotations = _convert_predictions_to_annotations(prediction)
 
         # Step 2: Upload images and build a single image entry
         # sourceId = output/display image, inputSourceId = original input image
@@ -557,14 +646,7 @@ def _execute_vision_event(
 
         if image_entry:
             image_entry["label"] = "workflow"
-            if object_detections:
-                image_entry["objectDetections"] = object_detections
-            if classifications:
-                image_entry["classifications"] = classifications
-            if instance_segmentations:
-                image_entry["instanceSegmentations"] = instance_segmentations
-            if keypoints_detections:
-                image_entry["keypoints"] = keypoints_detections
+            image_entry.update(annotations)
 
         images_payload: List[dict] = [image_entry] if image_entry else []
 
@@ -577,10 +659,138 @@ def _execute_vision_event(
             custom_metadata=custom_metadata,
         )
 
-        return _send_event(api_base_url, api_key, payload)
+        error_status, message = _send_event(api_base_url, api_key, payload)
+        # The eventId is generated client-side and sent in the payload, so it is the
+        # canonical id of the created event; surface it on success.
+        event_id = "" if error_status else payload.get("eventId", "")
+        return error_status, message, event_id
     except Exception as error:
         logger.warning("Failed to create vision event: %s", error)
-        return True, f"Error creating vision event: {type(error).__name__}: {error}"
+        return (
+            True,
+            f"Error creating vision event: {type(error).__name__}: {error}",
+            "",
+        )
+
+
+def _execute_local_event(
+    event_store_url: str,
+    input_image: Optional[WorkflowImageData],
+    output_image: Optional[WorkflowImageData],
+    prediction: Optional[Union[sv.Detections, dict]],
+    event_type: str,
+    solution: str,
+    event_data: Dict[str, Any],
+    custom_metadata: Dict[str, Any],
+) -> Tuple[bool, str, str]:
+    """Send an event to a local Event Ingestion Service (v2 API).
+
+    Unlike the cloud path, images are embedded directly in the request as base64
+    rather than uploaded first. The use case (`solution`) is forwarded so events are
+    namespaced consistently with the cloud path; the service requires it when cloud
+    upload is enabled.
+    """
+    try:
+        # Convert predictions to vision events annotation format
+        annotations = _convert_predictions_to_annotations(prediction)
+
+        # Build a single image entry with base64-embedded images
+        # base64Image = output/display image, inputBase64Image = original input image
+        image_entry: Dict[str, Any] = {}
+        if output_image is not None:
+            image_entry["base64Image"] = output_image.base64_image
+        if input_image is not None:
+            image_entry["inputBase64Image"] = input_image.base64_image
+        if image_entry:
+            image_entry["label"] = "workflow"
+            image_entry.update(annotations)
+
+        images_payload: List[dict] = [image_entry] if image_entry else []
+
+        payload: Dict[str, Any] = {
+            "inference_timestamp": datetime.now(timezone.utc).isoformat(),
+            "solution": solution,
+            "event_schema": event_type,
+            "event_data": event_data,
+            "images": images_payload,
+        }
+        if custom_metadata:
+            payload["custom_metadata"] = custom_metadata
+        if images_payload:
+            payload["displayImagePosition"] = 0
+
+        url = f"{event_store_url.rstrip('/')}/v2/events"
+        return _send_local_event(url, payload)
+    except Exception as error:
+        logger.warning("Failed to write event to local event store: %s", error)
+        return (
+            True,
+            f"Error writing event to event store: {type(error).__name__}: {error}",
+            "",
+        )
+
+
+def _send_local_event(
+    url: str,
+    payload: dict,
+) -> Tuple[bool, str, str]:
+    """Send an event to the local Event Ingestion Service.
+
+    Authenticates with the ``EVENT_INGESTION_API_KEY`` environment variable when set.
+    Mirrors the Event Writer sink's response handling for the shared ``/v2/events``
+    endpoint: the service returns 201 with the server-assigned event ``id`` on success,
+    and 529 when the device is at capacity and applying backpressure while it waits for
+    cloud uploads to drain.
+
+    Returns:
+        Tuple of (error_status, message, event_id)
+    """
+    try:
+        headers = {"Content-Type": "application/json"}
+        api_key = os.environ.get("EVENT_INGESTION_API_KEY")
+        if api_key:
+            headers["X-API-Key"] = api_key
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+
+        if response.status_code == 201:
+            event_id = str(response.json().get("id", ""))
+            return False, "Event written to local event store successfully", event_id
+
+        if response.status_code == 529:
+            detail = _extract_detail(response)
+            return (
+                True,
+                "Event Ingestion Service at capacity (529). The device is "
+                f"experiencing backpressure. Detail: {detail}",
+                "",
+            )
+
+        detail = _extract_detail(response)
+        logger.warning(
+            "Event Ingestion Service error (%s): %s", response.status_code, detail
+        )
+        return (
+            True,
+            f"Failed to write event to event store. HTTP {response.status_code}: {detail}",
+            "",
+        )
+    except requests.exceptions.Timeout:
+        return True, "Request to event store timed out after 30s", ""
+    except Exception as e:
+        logger.warning("Failed to write event to local event store: %s", e)
+        return (
+            True,
+            f"Failed to write event to event store. Error: {type(e).__name__}: {e}",
+            "",
+        )
+
+
+def _extract_detail(response: requests.Response) -> str:
+    """Extract the ``detail`` field from a JSON error response, falling back to text."""
+    try:
+        return str(response.json().get("detail", response.text))
+    except Exception:
+        return response.text
 
 
 def _detect_prediction_type(detections: sv.Detections) -> str:
@@ -745,7 +955,7 @@ def _upload_image(
         image_data.numpy_image, jpeg_quality=jpeg_quality
     )
     response = requests.post(
-        f"{api_base_url}/vision-events/upload",
+        wrap_url(f"{api_base_url}/vision-events/upload"),
         headers={"Authorization": f"Bearer {api_key}"},
         files={"file": ("image.jpg", image_bytes, "image/jpeg")},
         timeout=30,
@@ -797,7 +1007,7 @@ def _send_event(
     """
     try:
         response = requests.post(
-            f"{api_base_url}/vision-events",
+            wrap_url(f"{api_base_url}/vision-events"),
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",

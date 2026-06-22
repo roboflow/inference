@@ -1,12 +1,17 @@
 import base64
 import io
+from collections import OrderedDict, deque
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from io import BytesIO
+from threading import local
 from time import perf_counter
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Deque, List, Optional, Tuple, Union
+from weakref import finalize
 
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
+from pycocotools import mask as mask_utils
 
 from inference.core.entities.requests import (
     ClassificationInferenceRequest,
@@ -16,8 +21,12 @@ from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponse,
     InferenceResponseImage,
+    InferenceResponseImageDC,
     InstanceSegmentationInferenceResponse,
+    InstanceSegmentationInferenceResponseDC,
     InstanceSegmentationPrediction,
+    InstanceSegmentationPredictionDC,
+    InstanceSegmentationRLEPrediction,
     Keypoint,
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
@@ -25,6 +34,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
     Point,
+    PointDC,
     SemanticSegmentationInferenceResponse,
     SemanticSegmentationPrediction,
 )
@@ -33,13 +43,17 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
+    GCP_SERVERLESS,
     RFDETR_ONNX_MAX_RESOLUTION,
     VALID_INFERENCE_MODELS_BACKENDS,
+    WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
 )
+from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
-from inference.core.utils.postprocess import masks2poly
+from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
+from inference.core.utils.rle_to_polygon import rle_masks_to_polygons
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference_models import (
@@ -57,10 +71,29 @@ from inference_models import (
     PreProcessingOverrides,
     SemanticSegmentationModel,
 )
+from inference_models.configuration import (
+    INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED,
+    MAX_RFDETR_PIPELINE_DEPTH,
+    get_rfdetr_pipeline_depth,
+)
+from inference_models.models.base.async_handoff import (
+    STREAM_PIPELINE_CONTEXT_ID_KWARG,
+    adapter_gpu_work_submitted,
+    attach_adapter_mapped_kwargs,
+    attach_async_response_future,
+    get_adapter_gpu_submit_generation,
+    get_adapter_mapped_kwargs,
+    get_adapter_stream_pipeline_context_id,
+    get_deferred_postprocess_done_event,
+    get_deferred_postprocess_finalizer,
+    mark_adapter_gpu_work_submitted,
+)
+from inference_models.models.base.instance_segmentation import InferenceFuture
 from inference_models.models.base.semantic_segmentation import (
     SemanticSegmentationResult,
 )
-from inference_models.models.base.types import PreprocessingMetadata
+from inference_models.models.base.types import InstancesRLEMasks, PreprocessingMetadata
+from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 
 DEFAULT_COLOR_PALETTE = [
     "#A351FB",
@@ -85,6 +118,61 @@ DEFAULT_COLOR_PALETTE = [
     "#FF97CA",
     "#FF39C9",
 ]
+
+_PINNED_HOST_BUFFER_CACHE_SIZE = 16
+_PINNED_HOST_BUFFER_CONTEXT = local()
+
+
+def get_pinned_buffer(name: str, shape, dtype: torch.dtype) -> torch.Tensor:
+    """Return a thread-local pinned CPU scratch tensor for async DtoH copies.
+
+    Response finalization can run on a worker thread while the inference thread
+    submits later GPU work. Keeping this cache thread-local avoids two workers
+    writing into the same scratch tensor. The small LRU cap prevents retaining a
+    new pinned allocation for every transient shape.
+
+    The cache is keyed by ``(name, dtype)`` only. When a cached buffer is large
+    enough, this returns a **view** into that entry, not a fresh allocation.
+    ``.numpy()`` and any slices alias the scratch memory until the next
+    ``copy_`` into the same cache slot. Values that outlive the current
+    finalization must be copied or reduced to scalars / fresh polygon arrays
+    before returning.
+    """
+    cache = getattr(_PINNED_HOST_BUFFER_CONTEXT, "cache", None)
+    if cache is None:
+        cache = OrderedDict()
+        _PINNED_HOST_BUFFER_CONTEXT.cache = cache
+    key = (name, dtype)
+    buf = cache.get(key)
+    if buf is not None and all(buf.shape[i] >= shape[i] for i in range(len(shape))):
+        cache.move_to_end(key)
+        return buf[tuple(slice(0, s) for s in shape)]
+    buf = torch.empty(shape, dtype=dtype, pin_memory=True)
+    cache[key] = buf
+    cache.move_to_end(key)
+    while len(cache) > _PINNED_HOST_BUFFER_CACHE_SIZE:
+        cache.popitem(last=False)
+    return buf
+
+
+def _resolve_response_future(
+    future: Future,
+    context: str,
+):
+    try:
+        return future.result(timeout=WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT)
+    except TimeoutError as error:
+        raise RuntimeError(f"Timed out while waiting for {context}.") from error
+
+
+class _PipelinePrimingSentinel:
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debug only
+        return "<_PIPELINE_PRIMING>"
+
+
+_PIPELINE_PRIMING = _PipelinePrimingSentinel()
 
 
 class InferenceModelsObjectDetectionAdapter(Model):
@@ -120,6 +208,7 @@ class InferenceModelsObjectDetectionAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
@@ -269,14 +358,69 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
             **kwargs,
         )
         self.class_names = list(self._model.class_names)
+        # Stream pipelining: depth=1 means original synchronous behavior
+        # (preprocess→forward→postprocess on each frame, in order). depth=2
+        # means two stages in parallel: while the GPU works on the current
+        # frame, the CPU prepares/submits the next frame, then harvests the
+        # previous response. Only models that explicitly support the deferred
+        # GPU handoff contract can use this; other instance-segmentation
+        # backends keep depth=1 even if RFDETR_PIPELINE_DEPTH is set.
+        self._pipeline_depth = self._resolve_pipeline_depth()
+        self._response_delay = max(1, self._pipeline_depth - 1)
+        # Per-adapter in-flight futures + metadata. Not thread-safe; the
+        # InferencePipeline is single-producer and the adapter is owned by a
+        # single worker.
+        self._pending_gpu_submissions: Deque[
+            Tuple[InferenceFuture, PreprocessingMetadata, dict]
+        ] = deque()
+        self._pending_futures: Deque[
+            Tuple[InferenceFuture, PreprocessingMetadata, dict]
+        ] = deque()
+        self._gpu_submit_generation = 0
+        self._response_executor: Optional[ThreadPoolExecutor] = None
+        self._response_executor_finalizer = None
+        self._response_futures: Deque[
+            Tuple[
+                Future[List[InstanceSegmentationInferenceResponse]],
+                Optional[str],
+            ]
+        ] = deque()
+
+    def _resolve_pipeline_depth(self) -> int:
+        requested_depth = min(get_rfdetr_pipeline_depth(), MAX_RFDETR_PIPELINE_DEPTH)
+        if requested_depth <= 1 or self._model_supports_stream_pipeline():
+            return requested_depth
+        return 1
+
+    def _model_supports_stream_pipeline(self) -> bool:
+        supports_stream_pipeline = getattr(
+            self._model, "supports_stream_pipeline", False
+        )
+        if callable(supports_stream_pipeline):
+            return bool(supports_stream_pipeline())
+        return bool(supports_stream_pipeline)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
             disable_static_crop=kwargs.get("disable_preproc_static_crop", False),
         )
+        if GCP_SERVERLESS:
+            enforce_dense_masks_in_inference_models = False
+        else:
+            enforce_dense_masks_in_inference_models = kwargs.get(
+                "enforce_dense_masks_in_inference_models",
+                False,
+            )
         kwargs["pre_processing_overrides"] = pre_processing_overrides
+        if (
+            "rle" in self._model.supported_mask_formats
+            and not enforce_dense_masks_in_inference_models
+        ):
+            kwargs["mask_format"] = "rle"
+        kwargs.pop(STREAM_PIPELINE_CONTEXT_ID_KWARG, None)
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
@@ -294,36 +438,451 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         mapped_kwargs = self.map_inference_kwargs(kwargs)
         return self._model.pre_process(np_images, **mapped_kwargs)
 
+    def _request_batch_size(self, img_in: Any) -> int:
+        pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
+        if isinstance(pre_processing_meta, (list, tuple)):
+            return len(pre_processing_meta)
+        shape = getattr(img_in, "shape", None)
+        if shape is not None and len(shape) > 0:
+            return int(shape[0])
+        if isinstance(img_in, (list, tuple)):
+            return len(img_in)
+        return 1
+
     def predict(self, img_in, **kwargs):
         mapped_kwargs = self.map_inference_kwargs(kwargs)
-        return self._model.forward(img_in, **mapped_kwargs)
+        if self._pipeline_depth <= 1:
+            # Original path: forward on current frame, postprocess on
+            # current frame, all synchronous.
+            return self._model.forward(img_in, **mapped_kwargs)
+        if self._request_batch_size(img_in) > 1:
+            return self._model.forward(img_in, **mapped_kwargs)
+
+        mapped_kwargs["defer_count_to_adapter"] = (
+            kwargs.get("response_mask_format") != "rle"
+        )
+        mapped_kwargs["defer_postprocess_sync"] = True
+        mapped_kwargs["reuse_trt_graph_outputs"] = True
+        # Pipelined path: before launching frame N's forward, enqueue the
+        # oldest frame whose postprocess metadata is already known. That keeps
+        # postprocess off the current frame's postprocess() host path while
+        # still preserving the correctness dependency for reused TRT outputs.
+        self._submit_next_pending_gpu_work()
+        pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
+        fut = self._model.forward_async(img_in, pre_processing_meta, **mapped_kwargs)
+        stream_pipeline_context_id = kwargs.get(STREAM_PIPELINE_CONTEXT_ID_KWARG)
+        if not isinstance(stream_pipeline_context_id, str):
+            stream_pipeline_context_id = None
+        attach_adapter_mapped_kwargs(
+            fut,
+            mapped_kwargs,
+            stream_pipeline_context_id=stream_pipeline_context_id,
+        )
+        if pre_processing_meta is not None:
+            self._submit_future_gpu_work(fut, pre_processing_meta, mapped_kwargs)
+        self._submit_ready_responses()
+        return fut
+
+    def flush(self) -> List[InstanceSegmentationInferenceResponse]:
+        """Drain the tail of the pipelined queue.
+
+        Returns responses for any in-flight frames whose forward/postprocess
+        GPU work was submitted but whose CPU-visible response has not yet been
+        materialized. Callers that use `RFDETR_PIPELINE_DEPTH>=2` MUST invoke
+        this at stream end or the final frames will be dropped.
+        """
+        if self._pipeline_depth <= 1:
+            return []
+        self._submit_all_pending_gpu_work()
+        self._submit_all_pending_responses()
+        responses: List[InstanceSegmentationInferenceResponse] = []
+        while self._response_futures:
+            response_future, _ = self._response_futures.popleft()
+            responses.extend(
+                _resolve_response_future(
+                    future=response_future,
+                    context="RF-DETR stream pipeline flush",
+                )
+            )
+        return responses
+
+    def shutdown_pipeline(self) -> None:
+        if self._response_executor is None:
+            return None
+        finalizer = self._response_executor_finalizer
+        if finalizer is not None and finalizer.alive:
+            finalizer.detach()
+        self._response_executor.shutdown(wait=False)
+        self._response_executor = None
+        self._response_executor_finalizer = None
+
+    def _get_response_executor(self) -> ThreadPoolExecutor:
+        if self._response_executor is None:
+            self._response_executor = ThreadPoolExecutor(max_workers=1)
+            self._response_executor_finalizer = finalize(
+                self,
+                self._response_executor.shutdown,
+                wait=False,
+            )
+        return self._response_executor
+
+    def _submit_future_gpu_work(
+        self,
+        fut: InferenceFuture,
+        meta: PreprocessingMetadata,
+        mapped_kwargs: dict,
+    ) -> None:
+        if adapter_gpu_work_submitted(fut):
+            return None
+        fut._meta = meta  # type: ignore[attr-defined]
+        fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
+        submit_gpu_work = getattr(fut, "submit_gpu_work", None)
+        if callable(submit_gpu_work):
+            submit_gpu_work(meta)
+            self._gpu_submit_generation = getattr(self, "_gpu_submit_generation", 0) + 1
+            mark_adapter_gpu_work_submitted(fut, self._gpu_submit_generation)
+
+    def _submit_next_pending_gpu_work(self) -> None:
+        if not self._pending_gpu_submissions:
+            return None
+        self._submit_future_gpu_work(*self._pending_gpu_submissions.popleft())
+
+    def _submit_all_pending_gpu_work(self) -> None:
+        while self._pending_gpu_submissions:
+            self._submit_future_gpu_work(*self._pending_gpu_submissions.popleft())
+
+    def _submit_response_build(
+        self,
+        fut: InferenceFuture,
+        meta: PreprocessingMetadata,
+        mapped_kwargs: dict,
+    ) -> None:
+        fut._meta = meta  # type: ignore[attr-defined]
+        fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
+        response_future = self._get_response_executor().submit(
+            self._finalize_future,
+            fut,
+            meta,
+            mapped_kwargs,
+        )
+        context_id = get_adapter_stream_pipeline_context_id(fut)
+        self._response_futures.append(
+            (
+                response_future,
+                context_id,
+            )
+        )
+
+    def _submit_ready_responses(self) -> None:
+        while self._pending_futures:
+            fut, meta, mapped_kwargs = self._pending_futures[0]
+            submit_generation = get_adapter_gpu_submit_generation(fut)
+            if submit_generation is None:
+                self._submit_future_gpu_work(fut, meta, mapped_kwargs)
+                submit_generation = get_adapter_gpu_submit_generation(fut)
+            if submit_generation is None:
+                break
+            gpu_submit_generation = getattr(self, "_gpu_submit_generation", 0)
+            if gpu_submit_generation < submit_generation + self._response_delay:
+                break
+            self._submit_response_build(*self._pending_futures.popleft())
+
+    def _submit_all_pending_responses(self) -> None:
+        while self._pending_futures:
+            self._submit_response_build(*self._pending_futures.popleft())
 
     def postprocess(
+        self,
+        predictions,
+        preprocess_return_metadata: PreprocessingMetadata,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        if self._pipeline_depth <= 1 or not isinstance(predictions, InferenceFuture):
+            return self._postprocess_sync(
+                predictions, preprocess_return_metadata, **kwargs
+            )
+        fut: InferenceFuture = predictions
+        mapped_kwargs = get_adapter_mapped_kwargs(fut)
+        self._pending_gpu_submissions.append(
+            (
+                fut,
+                preprocess_return_metadata,
+                mapped_kwargs,
+            )
+        )
+        self._pending_futures.append((fut, preprocess_return_metadata, mapped_kwargs))
+        if len(self._pending_futures) > self._response_delay:
+            self._submit_next_pending_gpu_work()
+            self._submit_ready_responses()
+
+        if not self._response_futures:
+            return self._empty_responses_for_metadata(
+                preprocess_return_metadata=preprocess_return_metadata,
+                workflow_execution=kwargs.get("source") == "workflow-execution",
+            )
+
+        response_future, context_id = self._response_futures.popleft()
+        if kwargs.get("source") == "workflow-execution":
+            responses = self._empty_responses_for_metadata(
+                preprocess_return_metadata=preprocess_return_metadata,
+                workflow_execution=True,
+            )
+            if responses:
+                attach_async_response_future(
+                    response=responses[0],
+                    response_future=response_future,
+                    context_id=context_id,
+                )
+            return responses
+        return _resolve_response_future(
+            future=response_future,
+            context="RF-DETR stream pipeline response finalization",
+        )
+
+    def _empty_responses_for_metadata(
+        self,
+        preprocess_return_metadata: PreprocessingMetadata,
+        workflow_execution: bool,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        if workflow_execution:
+            return [
+                InstanceSegmentationInferenceResponseDC(
+                    predictions=[],
+                    image=InferenceResponseImageDC(
+                        width=m.original_size.width,
+                        height=m.original_size.height,
+                    ),
+                )
+                for m in preprocess_return_metadata
+            ]
+        return [
+            InstanceSegmentationInferenceResponse(
+                predictions=[],
+                image=InferenceResponseImage(
+                    width=m.original_size.width,
+                    height=m.original_size.height,
+                ),
+            )
+            for m in preprocess_return_metadata
+        ]
+
+    def _finalize_future(
+        self,
+        fut: InferenceFuture,
+        preprocess_return_metadata: PreprocessingMetadata,
+        mapped_kwargs: dict,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        # Override the future's stashed meta (which was `None` at submit
+        # time) with the correct metadata for the frame whose forward pass
+        # the future represents. This is an allowed private-surface tweak
+        # because _DirectInferenceFuture's post_process is memoised.
+        fut._meta = preprocess_return_metadata  # type: ignore[attr-defined]
+        fut._kwargs = mapped_kwargs  # type: ignore[attr-defined]
+        detections_list = fut.result()
+        return self._build_responses_from_detections(
+            detections_list, preprocess_return_metadata, **mapped_kwargs
+        )
+
+    def _postprocess_sync(
         self,
         predictions: List[InstanceDetections],
         preprocess_return_metadata: PreprocessingMetadata,
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
+        return_in_rle = kwargs.get("response_mask_format") == "rle"
         mapped_kwargs = self.map_inference_kwargs(kwargs)
+        mapped_kwargs["defer_count_to_adapter"] = not return_in_rle
         detections_list = self._model.post_process(
             predictions, preprocess_return_metadata, **mapped_kwargs
+        )
+        return self._build_responses_from_detections(
+            detections_list, preprocess_return_metadata, **kwargs
+        )
+
+    def _build_responses_from_detections(
+        self,
+        detections_list: List[InstanceDetections],
+        preprocess_return_metadata: PreprocessingMetadata,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        return_in_rle = kwargs.get("response_mask_format") == "rle"
+        # Workflow callers consume a plain dict via `_is_response_dc_to_dict`;
+        # dataclasses avoid pydantic validation + `model_dump` overhead per
+        # frame. Keep the pydantic path for RLE responses and for non-workflow
+        # callers that rely on the response model type.
+        use_dc = (
+            kwargs.get("source") == "workflow-execution"
+            and not return_in_rle
+            and getattr(self, "_pipeline_depth", 1) > 1
         )
 
         responses: List[InstanceSegmentationInferenceResponse] = []
         for preproc_metadata, det in zip(preprocess_return_metadata, detections_list):
+            finalize_pending = get_deferred_postprocess_finalizer(det)
+            if callable(finalize_pending):
+                det = finalize_pending()
             H = preproc_metadata.original_size.height
             W = preproc_metadata.original_size.width
 
-            xyxy = det.xyxy.detach().cpu().numpy()
-            confs = det.confidence.detach().cpu().numpy()
-            masks = det.mask.detach().cpu().numpy()
-            polys = masks2poly(masks)
-            class_ids = det.class_id.detach().cpu().numpy()
+            combined_gpu = getattr(det, "_combined_gpu", None)
+            mask_gpu = getattr(det, "_mask_gpu", None)
+            mask_packed_gpu = getattr(det, "_mask_packed_gpu", None)
+            mask_cpu = getattr(det, "_mask_cpu", None)
+            defer_count_to_adapter = getattr(det, "_defer_count_to_adapter", False)
+            done_event = get_deferred_postprocess_done_event(det)
+            dense_mask_cuda = isinstance(mask_gpu, torch.Tensor) and mask_gpu.is_cuda
+            packed_mask_cuda = (
+                isinstance(mask_packed_gpu, torch.Tensor) and mask_packed_gpu.is_cuda
+            )
+            if (
+                not return_in_rle
+                and done_event is not None
+                and (dense_mask_cuda or packed_mask_cuda)
+            ):
+                device = mask_gpu.device if dense_mask_cuda else mask_packed_gpu.device
+                stream = torch.cuda.current_stream(device)
+                done_event.wait(stream)
 
-            predictions: List[InstanceSegmentationPrediction] = []
+                if (
+                    defer_count_to_adapter
+                    and isinstance(combined_gpu, torch.Tensor)
+                    and combined_gpu.is_cuda
+                ):
+                    # combined_np / class_column / combined_slice are scratch views;
+                    # use only for survivor counting and in-loop scalar extraction.
+                    combined_host = get_pinned_buffer(
+                        "combined_full",
+                        tuple(combined_gpu.shape),
+                        combined_gpu.dtype,
+                    )
+                    combined_host.copy_(combined_gpu, non_blocking=True)
+                    stream.synchronize()
+                    combined_np = combined_host.numpy()
+                    class_column = combined_np[:, 5]
+                    inactive_indices = np.flatnonzero(class_column < 0)
+                    n_survivors = (
+                        int(inactive_indices[0])
+                        if inactive_indices.size > 0
+                        else int(class_column.shape[0])
+                    )
+                    if n_survivors == 0:
+                        xyxy = np.empty((0, 4), dtype=np.int32)
+                        confs = np.empty((0,), dtype=np.float32)
+                        class_ids = np.empty((0,), dtype=np.int32)
+                        polys_or_rles = []
+                    else:
+                        combined_slice = combined_np[:n_survivors]
+                        xyxy = combined_slice[:, :4]
+                        confs = combined_slice[:, 4].view(np.float32)
+                        class_ids = combined_slice[:, 5]
+                        if packed_mask_cuda:
+                            packed_slice = mask_packed_gpu[:n_survivors]
+                            packed_host = get_pinned_buffer(
+                                "mask_packed",
+                                tuple(packed_slice.shape),
+                                packed_slice.dtype,
+                            )
+                            packed_host.copy_(packed_slice, non_blocking=True)
+                            stream.synchronize()
+                            polys_or_rles = bitpacked_masks2poly(
+                                packed_host.numpy(), width=W
+                            )
+                        else:
+                            mask_slice = mask_gpu[:n_survivors]
+                            mask_host = get_pinned_buffer(
+                                "mask", tuple(mask_slice.shape), mask_slice.dtype
+                            )
+                            mask_host.copy_(mask_slice, non_blocking=True)
+                            stream.synchronize()
+                            polys_or_rles = masks2poly(mask_host.numpy())
+                else:
+                    n_survivors = int(det.xyxy.shape[0])
+                    if n_survivors == 0:
+                        xyxy = np.empty((0, 4), dtype=np.int32)
+                        confs = np.empty((0,), dtype=np.float32)
+                        class_ids = np.empty((0,), dtype=np.int32)
+                        polys_or_rles = []
+                    else:
+                        mask_slice = mask_gpu[:n_survivors]
+                        mask_host = get_pinned_buffer(
+                            "mask", tuple(mask_slice.shape), mask_slice.dtype
+                        )
+                        if (
+                            isinstance(combined_gpu, torch.Tensor)
+                            and combined_gpu.is_cuda
+                            and tuple(combined_gpu.shape)
+                            == (n_survivors, det.xyxy.shape[1] + 2)
+                        ):
+                            combined_slice = combined_gpu[:n_survivors]
+                            combined_host = get_pinned_buffer(
+                                "combined",
+                                tuple(combined_slice.shape),
+                                combined_slice.dtype,
+                            )
+                            combined_host.copy_(combined_slice, non_blocking=True)
+                            mask_host.copy_(mask_slice, non_blocking=True)
+                            stream.synchronize()
+                            combined_np = combined_host.numpy()
+                            xyxy = combined_np[:, :4]
+                            confs = combined_np[:, 4].view(np.float32)
+                            class_ids = combined_np[:, 5]
+                            polys_or_rles = masks2poly(mask_host.numpy())
+                        else:
+                            xyxy_host = get_pinned_buffer(
+                                "xyxy", tuple(det.xyxy.shape), det.xyxy.dtype
+                            )
+                            conf_host = get_pinned_buffer(
+                                "conf",
+                                tuple(det.confidence.shape),
+                                det.confidence.dtype,
+                            )
+                            class_host = get_pinned_buffer(
+                                "class_id",
+                                tuple(det.class_id.shape),
+                                det.class_id.dtype,
+                            )
+                            xyxy_host.copy_(det.xyxy, non_blocking=True)
+                            conf_host.copy_(det.confidence, non_blocking=True)
+                            class_host.copy_(det.class_id, non_blocking=True)
+                            mask_host.copy_(mask_slice, non_blocking=True)
+                            stream.synchronize()
+                            xyxy = xyxy_host.numpy()
+                            confs = conf_host.numpy()
+                            class_ids = class_host.numpy()
+                            polys_or_rles = masks2poly(mask_host.numpy())
+            elif not return_in_rle and isinstance(mask_cpu, np.ndarray):
+                xyxy = det.xyxy.detach().cpu().numpy()
+                confs = det.confidence.detach().cpu().numpy()
+                class_ids = det.class_id.detach().cpu().numpy()
+                polys_or_rles = masks2poly(mask_cpu)
+            else:
+                xyxy = det.xyxy.detach().cpu().numpy()
+                confs = det.confidence.detach().cpu().numpy()
+                if isinstance(det.mask, torch.Tensor):
+                    masks = det.mask.detach().cpu().numpy()
+                    if return_in_rle:
+                        polys_or_rles = [
+                            torch_mask_to_coco_rle(mask=mask) for mask in masks
+                        ]
+                    else:
+                        polys_or_rles = masks2poly(masks)
+                else:
+                    if return_in_rle:
+                        polys_or_rles = det.mask.to_coco_rle_masks()
+                    else:
+                        polys_or_rles = rle_masks2poly(det.mask)
+                class_ids = det.class_id.detach().cpu().numpy()
 
-            for (x1, y1, x2, y2), mask_as_poly, conf, class_id in zip(
-                xyxy, polys, confs, class_ids
+            # Some branches above intentionally keep numpy views into
+            # thread-local pinned scratch buffers. Only scalar values and
+            # polygon/RLE lists may be stored on responses below; do not return
+            # those arrays or any view derived from them.
+            predictions: List[
+                Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
+            ] = []
+
+            for (x1, y1, x2, y2), mask_as_poly_or_rle, conf, class_id in zip(
+                xyxy, polys_or_rles, confs, class_ids
             ):
                 cx = (float(x1) + float(x2)) / 2.0
                 cy = (float(y1) + float(y2)) / 2.0
@@ -340,27 +899,71 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
                     and class_name not in kwargs["class_filter"]
                 ):
                     continue
-                predictions.append(
-                    InstanceSegmentationPrediction(
-                        x=cx,
-                        y=cy,
-                        width=w,
-                        height=h,
-                        confidence=float(conf),
-                        points=[
-                            Point(x=point[0], y=point[1]) for point in mask_as_poly
-                        ],
-                        **{"class": class_name},
-                        class_id=class_id_int,
+                if use_dc:
+                    predictions.append(
+                        InstanceSegmentationPredictionDC(
+                            x=cx,
+                            y=cy,
+                            width=w,
+                            height=h,
+                            confidence=float(conf),
+                            class_name=class_name,
+                            class_id=class_id_int,
+                            points=[
+                                PointDC(x=float(point[0]), y=float(point[1]))
+                                for point in mask_as_poly_or_rle
+                            ],
+                        )
+                    )
+                else:
+                    if not return_in_rle:
+                        predictions.append(
+                            InstanceSegmentationPrediction(
+                                x=cx,
+                                y=cy,
+                                width=w,
+                                height=h,
+                                confidence=float(conf),
+                                points=[
+                                    Point(x=point[0], y=point[1])
+                                    for point in mask_as_poly_or_rle
+                                ],
+                                **{"class": class_name},
+                                class_id=class_id_int,
+                            )
+                        )
+                    else:
+                        if isinstance(mask_as_poly_or_rle["counts"], bytes):
+                            mask_as_poly_or_rle["counts"] = mask_as_poly_or_rle[
+                                "counts"
+                            ].decode("ascii")
+                        predictions.append(
+                            InstanceSegmentationRLEPrediction(
+                                x=cx,
+                                y=cy,
+                                width=w,
+                                height=h,
+                                confidence=float(conf),
+                                rle=mask_as_poly_or_rle,
+                                **{"class": class_name},
+                                class_id=class_id_int,
+                            )
+                        )
+
+            if use_dc:
+                responses.append(
+                    InstanceSegmentationInferenceResponseDC(
+                        predictions=predictions,
+                        image=InferenceResponseImageDC(width=W, height=H),
                     )
                 )
-
-            responses.append(
-                InstanceSegmentationInferenceResponse(
-                    predictions=predictions,
-                    image=InferenceResponseImage(width=W, height=H),
+            else:
+                responses.append(
+                    InstanceSegmentationInferenceResponse(
+                        predictions=predictions,
+                        image=InferenceResponseImage(width=W, height=H),
+                    )
                 )
-            )
         return responses
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
@@ -396,6 +999,22 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         )
 
 
+def rle_masks2poly(masks: InstancesRLEMasks) -> List[np.ndarray]:
+    if INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED:
+        return rle_masks_to_polygons(masks=masks)
+
+    segments = []
+    h, w = masks.image_size
+    for counts in masks.masks:
+        rle_dict = {"size": [h, w], "counts": counts}
+        decoded_rle = np.ascontiguousarray(mask_utils.decode(rle_dict))
+        if not np.any(decoded_rle):
+            segments.append(np.zeros((0, 2), dtype=np.float32))
+            continue
+        segments.append(mask2poly(decoded_rle))
+    return segments
+
+
 class InferenceModelsKeyPointsDetectionAdapter(Model):
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
@@ -428,6 +1047,7 @@ class InferenceModelsKeyPointsDetectionAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         if "request" in kwargs:
             keypoint_confidence_threshold = kwargs["request"].keypoint_confidence
             kwargs["key_points_threshold"] = keypoint_confidence_threshold
@@ -639,6 +1259,7 @@ class InferenceModelsClassificationAdapter(Model):
         self.class_names = list(self._model.class_names)
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),
@@ -677,25 +1298,34 @@ class InferenceModelsClassificationAdapter(Model):
         List[ClassificationInferenceResponse],
     ]:
         mapped_kwargs = self.map_inference_kwargs(kwargs)
-        post_processed_predictions = self._model.post_process(
-            predictions, **mapped_kwargs
-        )
-        if isinstance(post_processed_predictions, list):
-            # multi-label classification
+        if isinstance(self._model, MultiLabelClassificationModel):
+            post_processed_predictions = self._model.post_process(
+                predictions, **mapped_kwargs
+            )
             return prepare_multi_label_classification_response(
                 post_processed_predictions,
                 image_sizes=returned_metadata,
                 class_names=self.class_names,
-                confidence_threshold=kwargs.get("confidence", 0.5),
             )
-        else:
-            # single-label classification
-            return prepare_classification_response(
-                post_processed_predictions,
-                image_sizes=returned_metadata,
-                class_names=self.class_names,
-                confidence_threshold=kwargs.get("confidence", 0.5),
-            )
+        # Single-label classification: top-1 always wins regardless of
+        # confidence, so per-class refinement isn't meaningful here. The base
+        # class deliberately opts out of recommendedParameters entirely. The
+        # response builder still uses the confidence as a cutoff that decides
+        # which alternative classes show up — string-valued "best"/"default"
+        # have no meaningful mapping here, so fall back to 0.5.
+        post_processed_predictions = self._model.post_process(
+            predictions, **mapped_kwargs
+        )
+        raw_confidence = kwargs.get("confidence")
+        confidence_threshold = (
+            raw_confidence if isinstance(raw_confidence, (int, float)) else 0.5
+        )
+        return prepare_classification_response(
+            post_processed_predictions,
+            image_sizes=returned_metadata,
+            class_names=self.class_names,
+            confidence_threshold=confidence_threshold,
+        )
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
@@ -747,20 +1377,32 @@ def prepare_multi_label_classification_response(
     post_processed_predictions: List[MultiLabelClassificationPrediction],
     image_sizes: List[Tuple[int, int]],
     class_names: List[str],
-    confidence_threshold: float,
 ) -> List[MultiLabelClassificationInferenceResponse]:
+    """Build the API response from a model's post-processed predictions.
+
+    `prediction.class_ids` is the authoritative list of "passed" classes —
+    the model's `post_process` already applied the
+    full priority chain (user → per-class → global → default), so the
+    response builder doesn't re-threshold here. The full per-class score
+    vector is still emitted in `image_predictions_dict` for UI display.
+    """
     results = []
     for prediction, image_size in zip(post_processed_predictions, image_sizes):
-        image_predictions_dict = dict()
-        predicted_classes = []
-        for class_id, confidence in enumerate(prediction.confidence.cpu().tolist()):
-            cls_name = class_names[class_id]
-            image_predictions_dict[cls_name] = {
+        class_confidences = _reshape_classification_confidences(
+            confidence=prediction.confidence.cpu(),
+            expected_num_images=1,
+            class_names=class_names,
+        )[0].tolist()
+        image_predictions_dict = {
+            class_names[class_id]: {
                 "confidence": confidence,
                 "class_id": class_id,
             }
-            if confidence > confidence_threshold:
-                predicted_classes.append(cls_name)
+            for class_id, confidence in enumerate(class_confidences)
+        }
+        predicted_classes = [
+            class_names[class_id] for class_id in prediction.class_ids.tolist()
+        ]
         results.append(
             MultiLabelClassificationInferenceResponse(
                 predictions=image_predictions_dict,
@@ -779,9 +1421,12 @@ def prepare_classification_response(
     confidence_threshold: float,
 ) -> List[ClassificationInferenceResponse]:
     responses = []
-    for classes_confidence, image_size in zip(
-        post_processed_predictions.confidence.cpu().tolist(), image_sizes
-    ):
+    batch_confidences = _reshape_classification_confidences(
+        confidence=post_processed_predictions.confidence.cpu(),
+        expected_num_images=len(image_sizes),
+        class_names=class_names,
+    )
+    for classes_confidence, image_size in zip(batch_confidences.tolist(), image_sizes):
         individual_classes_predictions = []
         for i, cls_name in enumerate(class_names):
             class_score = float(classes_confidence[i])
@@ -813,6 +1458,26 @@ def prepare_classification_response(
         )
         responses.append(response)
     return responses
+
+
+def _reshape_classification_confidences(
+    confidence: torch.Tensor,
+    expected_num_images: int,
+    class_names: List[str],
+) -> torch.Tensor:
+    expected_num_classes = len(class_names)
+    expected_num_scores = expected_num_images * expected_num_classes
+    actual_num_scores = confidence.numel()
+    if actual_num_scores != expected_num_scores:
+        raise PostProcessingError(
+            "Classification model output has shape "
+            f"{tuple(confidence.shape)} containing {actual_num_scores} confidence "
+            f"score(s), but response metadata expects {expected_num_images} image(s) "
+            f"x {expected_num_classes} class name(s) = {expected_num_scores} score(s). "
+            "This usually means the model package class names metadata does not match "
+            "the classifier head."
+        )
+    return confidence.reshape(expected_num_images, expected_num_classes)
 
 
 def draw_predictions(inference_request, inference_response, class_names: List[str]):
@@ -929,6 +1594,7 @@ class InferenceModelsSemanticSegmentationAdapter(Model):
         return {str(k): v for k, v in enumerate(self.class_names)}
 
     def map_inference_kwargs(self, kwargs: dict) -> dict:
+        kwargs["input_color_format"] = "bgr"
         pre_processing_overrides = PreProcessingOverrides(
             disable_contrast_enhancement=kwargs.get("disable_preproc_contrast", False),
             disable_grayscale=kwargs.get("disable_preproc_grayscale", False),

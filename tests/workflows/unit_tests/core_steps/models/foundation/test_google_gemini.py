@@ -6,9 +6,21 @@ from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 import (
     BlockManifest,
+    MODEL_VERSION_IDS,
     execute_gemini_request,
     prepare_generation_config,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
+    BlockManifest as V3BlockManifest,
+)
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
+    MODEL_VERSION_IDS as V3_MODEL_VERSION_IDS,
+)
+
+STALE_MODEL_IDS = {
+    "gemini-3-pro-preview",
+    "gemini-3.1-flash-lite-preview",
+}
 
 
 def test_gemini_step_validation_when_input_is_valid() -> None:
@@ -32,6 +44,35 @@ def test_gemini_step_validation_when_input_is_valid() -> None:
     assert result.task_type == "unconstrained"
     assert result.prompt == "$inputs.prompt"
     assert result.api_key == "$inputs.google_api_key"
+    assert result.model_version == "gemini-3.1-pro-preview"
+
+
+def test_gemini_v3_step_validation_when_input_is_valid() -> None:
+    # given
+    specification = {
+        "type": "roboflow_core/google_gemini@v3",
+        "name": "step_1",
+        "images": "$inputs.image",
+        "task_type": "unconstrained",
+        "prompt": "$inputs.prompt",
+    }
+
+    # when
+    result = V3BlockManifest.model_validate(specification)
+
+    # then
+    assert result.type == "roboflow_core/google_gemini@v3"
+    assert result.model_version == "gemini-3.1-pro-preview"
+
+
+@pytest.mark.parametrize(
+    "model_ids",
+    [MODEL_VERSION_IDS, V3_MODEL_VERSION_IDS],
+)
+def test_gemini_model_catalog_uses_available_google_models(model_ids: list[str]) -> None:
+    assert not STALE_MODEL_IDS.intersection(model_ids)
+    assert "gemini-3.1-pro-preview" in model_ids
+    assert "gemini-3.1-flash-lite" in model_ids
 
 
 @pytest.mark.parametrize("value", [None, 1, "a", True])
@@ -71,7 +112,15 @@ def test_gemini_step_validation_when_prompt_is_given_directly() -> None:
 
 @pytest.mark.parametrize(
     "model_version",
-    ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.0-flash", "$inputs.model"],
+    [
+        "gemini-3.5-flash",
+        "gemini-3.1-pro-preview",
+        "gemini-3.1-flash-lite",
+        "gemini-3-flash-preview",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "$inputs.model",
+    ],
 )
 def test_gemini_step_validation_when_model_version_valid(model_version: str) -> None:
     # given
@@ -99,7 +148,7 @@ def test_gemini_step_validation_with_model_alias() -> None:
         "images": "$inputs.image",
         "task_type": "caption",
         "api_key": "$inputs.google_api_key",
-        "model_version": "gemini-2.0-flash-exp",  # This is an alias
+        "model_version": "gemini-2.5-pro-preview-05-06",  # This is an alias
     }
 
     # when
@@ -107,7 +156,7 @@ def test_gemini_step_validation_with_model_alias() -> None:
 
     # then
     # Should be converted to the canonical name
-    assert result.model_version == "gemini-2.0-flash"
+    assert result.model_version == "gemini-2.5-pro"
 
 
 @pytest.mark.parametrize("thinking_level", ["low", "high", "$inputs.thinking"])
@@ -119,7 +168,7 @@ def test_gemini_step_validation_with_thinking_level(thinking_level: str) -> None
         "images": "$inputs.image",
         "task_type": "caption",
         "api_key": "$inputs.google_api_key",
-        "model_version": "gemini-3-pro-preview",
+        "model_version": "gemini-3.1-pro-preview",
         "thinking_level": thinking_level,
     }
 
@@ -139,7 +188,7 @@ def test_gemini_step_validation_when_thinking_level_invalid(value: Any) -> None:
         "images": "$inputs.image",
         "task_type": "caption",
         "api_key": "$inputs.google_api_key",
-        "model_version": "gemini-3-pro-preview",
+        "model_version": "gemini-3.1-pro-preview",
         "thinking_level": value,
     }
 
@@ -277,7 +326,7 @@ def test_prepare_generation_config_with_temperature_for_newer_models() -> None:
         max_tokens=None,
         temperature=0.8,
         thinking_level=None,
-        model_version="gemini-3-pro-preview",
+        model_version="gemini-3.1-pro-preview",
     )
 
     # then
@@ -290,7 +339,7 @@ def test_prepare_generation_config_with_thinking_level_for_newer_models() -> Non
         max_tokens=None,
         temperature=None,
         thinking_level="high",
-        model_version="gemini-3-pro-preview",
+        model_version="gemini-3.1-pro-preview",
     )
 
     # then

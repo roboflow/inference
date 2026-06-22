@@ -23,9 +23,12 @@ SITE_DIR = REPO_ROOT / "site"
 MKDOCS_YML = REPO_ROOT / "mkdocs.yml"
 
 MARKDOWN_DESCRIPTION = (
-    "Roboflow Inference is a high-performance computer vision inference server. "
-    "Deploy object detection, classification, segmentation, and foundation models "
-    "on-device or in the cloud."
+    "Roboflow Inference is an open-source (Apache 2.0) computer vision inference server "
+    "for deploying object detection, classification, segmentation, keypoint detection, and "
+    "foundation models (CLIP, SAM 2, Florence-2, PaliGemma, Grounding DINO, YOLO-World, and more). "
+    "It includes Workflows — a low-code engine with 200+ composable blocks for chaining models, "
+    "video stream processing, and business logic — and runs on CPU, GPU, NVIDIA Jetson, "
+    "Raspberry Pi, Docker, or Roboflow's managed cloud. Maintained by Roboflow."
 )
 
 
@@ -203,7 +206,7 @@ def generate_llms_full_txt(
     (site_dir / "llms-full.txt").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
-def main():
+def main() -> None:
     config = load_config()
     site_name = config.get("site_name", "Documentation")
     site_description = config.get("site_description", "")

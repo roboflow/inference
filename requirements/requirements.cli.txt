@@ -1,4 +1,4 @@
-requests>=2.32.0,<3.0.0
+requests>=2.33.0,<3.0.0
 docker>=7.0.0,<8.0.0
 click<8.2.0  # temporary pin until fastapi/typer#1145 is released
 typer>=0.9.0,<=0.16.0
@@ -9,7 +9,7 @@ opencv-python>=4.8.1.78,<=4.10.0.84
 tqdm>=4.0.0,<5.0.0
 nvidia-ml-py<13.0.0
 py-cpuinfo~=9.0.0
-aiohttp~=3.13.3
+aiohttp~=3.14.0
 backoff~=2.2.0
 pandas>=2.2.3,<3.0.0
 pybase64~=1.0.0

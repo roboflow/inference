@@ -15,6 +15,7 @@
 """
 Transformer class
 """
+
 import copy
 import math
 from typing import Optional

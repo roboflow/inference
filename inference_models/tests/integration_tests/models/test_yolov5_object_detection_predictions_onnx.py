@@ -915,3 +915,33 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch_batch(
     assert np.allclose(
         predictions[1].xyxy[0].cpu().numpy(), [1256, 2054, 1419, 2244], atol=1
     )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_per_class_confidence_blocks_specific_class(
+    coin_counting_yolov5_onnx_static_bs_letterbox_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_onnx_package_with_static_batch_size_and_letterbox_numpy`
+    above) returns 30 detections across class_ids 0/2/3 (class 2 appears 11x).
+    Setting a 0.99 per-class threshold on class 2 leaves 19 detections, none
+    of which are class 2."""
+    from inference_models.models.yolov5.yolov5_object_detection_onnx import (
+        YOLOv5ForObjectDetectionOnnx,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLOv5ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov5_onnx_static_bs_letterbox_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[2]: 0.99},
+    )
+    predictions = model(coins_counting_image_numpy, confidence="best")
+    kept = predictions[0].class_id.cpu().tolist()
+    assert 2 not in kept
+    assert len(kept) == 19

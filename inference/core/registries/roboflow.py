@@ -5,6 +5,7 @@ from cachetools.func import ttl_cache
 
 from inference.core.cache import cache
 from inference.core.cache.lru_cache import LRUCache
+from inference.core.cache.model_artifacts import get_cache_dir
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import (
     DatasetID,
@@ -14,17 +15,19 @@ from inference.core.entities.types import (
     VersionID,
 )
 from inference.core.env import (
+    ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     CACHE_METADATA_LOCK_TIMEOUT,
     LAMBDA,
-    MODEL_CACHE_DIR,
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
+    SAM3_FINE_TUNED_MODELS_ENABLED,
     USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
     ModelArtefactError,
+    ModelDeploymentNotSupportedError,
     ModelNotRecognisedError,
     RoboflowAPINotAuthorizedError,
 )
@@ -45,6 +48,12 @@ from inference.core.roboflow_api import (
 from inference.core.utils.file_system import dump_json, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference_models.models.auto_loaders.core import parse_model_config
+from inference_models.models.auto_loaders.entities import MODEL_CONFIG_FILE_NAME
+
+# fallback model_type for local `inference_models` packages that do not declare
+# model_architecture in model_config.json.
+LOCAL_INFERENCE_MODELS_MODEL_TYPE = "inference-models-local"
 
 GENERIC_MODELS = {
     "clip": ("embed", "clip"),
@@ -68,12 +77,18 @@ GENERIC_MODELS = {
     "perception_encoder": ("embed", "perception_encoder"),
     "qwen3_5-0.8b": ("lmm", "qwen3_5-0.8b"),
     "qwen3_5-2b": ("lmm", "qwen3_5-2b"),
+    "qwen3_5-4b": ("lmm", "qwen3_5-4b"),
 }
 
 STUB_VERSION_ID = "0"
 
 # In-process cache for model metadata to avoid Redis lock contention on every request.
 _in_process_metadata_cache = LRUCache(capacity=1000)
+
+FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
+    "Fine-tuned SAM3 models are not supported on this deployment. "
+    "Please use a workflow or self-host the server."
+)
 
 
 class RoboflowModelRegistry(ModelRegistry):
@@ -124,9 +139,21 @@ def _check_if_api_key_has_access_to_model(
     service_secret: Optional[str] = None,
 ) -> bool:
     model_id = resolve_roboflow_model_alias(model_id=model_id)
-    _, version_id = get_model_id_chunks(model_id=model_id)
+    if _get_local_model_type(model_id=model_id) is not None:
+        return True
+    dataset_id, version_id = get_model_id_chunks(model_id=model_id)
+    use_legacy_core_model_auth = (
+        endpoint_type == ModelEndpointType.CORE_MODEL and dataset_id == "yolo_world"
+    )
     try:
-        if version_id is not None:
+        if USE_INFERENCE_MODELS and not use_legacy_core_model_auth:
+            get_model_metadata_from_inference_models_registry(
+                api_key=api_key,
+                model_id=model_id,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
+        elif version_id is not None or use_legacy_core_model_auth:
             get_roboflow_model_data(
                 api_key=api_key,
                 model_id=model_id,
@@ -135,15 +162,8 @@ def _check_if_api_key_has_access_to_model(
                 countinference=countinference,
                 service_secret=service_secret,
             )
-        elif not USE_INFERENCE_MODELS:
-            get_roboflow_instant_model_data(
-                api_key=api_key,
-                model_id=model_id,
-                countinference=countinference,
-                service_secret=service_secret,
-            )
         else:
-            get_model_metadata_from_inference_models_registry(
+            get_roboflow_instant_model_data(
                 api_key=api_key,
                 model_id=model_id,
                 countinference=countinference,
@@ -152,6 +172,31 @@ def _check_if_api_key_has_access_to_model(
     except RoboflowAPINotAuthorizedError:
         return False
     return True
+
+
+def _get_local_model_type(model_id: str) -> Optional[Tuple[TaskType, ModelType]]:
+    """Returns model metadata read from a local `inference_models` package directory.
+
+    Returns None when `model_id` is not a local directory or local loading is disabled,
+    in which case the regular Roboflow model id resolution applies.
+    """
+    if not (
+        USE_INFERENCE_MODELS
+        and ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES
+        and isinstance(model_id, str)
+        and os.path.isdir(model_id)
+    ):
+        return None
+
+    model_config = parse_model_config(
+        config_path=os.path.join(model_id, MODEL_CONFIG_FILE_NAME)
+    )
+    if model_config.task_type is None:
+        return None
+    return (
+        model_config.task_type,
+        model_config.model_architecture or LOCAL_INFERENCE_MODELS_MODEL_TYPE,
+    )
 
 
 def get_model_type(
@@ -177,6 +222,9 @@ def get_model_type(
     """
 
     model_id = resolve_roboflow_model_alias(model_id=model_id)
+    local_model_type = _get_local_model_type(model_id=model_id)
+    if local_model_type is not None:
+        return local_model_type
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
     # first check if the model id as a whole is in the GENERIC_MODELS dictionary
     if model_id in GENERIC_MODELS:
@@ -204,6 +252,11 @@ def get_model_type(
     )
 
     if cached_metadata is not None:
+        _ensure_model_supported_on_this_deployment(
+            model_id=model_id,
+            project_task_type=cached_metadata[0],
+            model_type=cached_metadata[1],
+        )
         return cached_metadata[0], cached_metadata[1]
     if version_id == STUB_VERSION_ID:
         if api_key is None:
@@ -223,7 +276,15 @@ def get_model_type(
         )
         return project_task_type, model_type
 
-    if version_id is not None:
+    if USE_INFERENCE_MODELS:
+        api_data = get_model_metadata_from_inference_models_registry(
+            api_key=api_key,
+            model_id=model_id,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
+        project_task_type = api_data.get("taskType", "object-detection")
+    elif version_id is not None:
         api_data = get_roboflow_model_data(
             api_key=api_key,
             model_id=model_id,
@@ -233,16 +294,8 @@ def get_model_type(
             device_id=GLOBAL_DEVICE_ID,
         ).get("ort")
         project_task_type = api_data.get("type", "object-detection")
-    elif not USE_INFERENCE_MODELS:
-        api_data = get_roboflow_instant_model_data(
-            api_key=api_key,
-            model_id=model_id,
-            countinference=countinference,
-            service_secret=service_secret,
-        )
-        project_task_type = api_data.get("taskType", "object-detection")
     else:
-        api_data = get_model_metadata_from_inference_models_registry(
+        api_data = get_roboflow_instant_model_data(
             api_key=api_key,
             model_id=model_id,
             countinference=countinference,
@@ -261,6 +314,11 @@ def get_model_type(
 
     if model_type is None or project_task_type is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
+    _ensure_model_supported_on_this_deployment(
+        model_id=model_id,
+        project_task_type=project_task_type,
+        model_type=model_type,
+    )
     save_model_metadata_in_cache(
         dataset_id=dataset_id,
         version_id=version_id,
@@ -269,6 +327,22 @@ def get_model_type(
     )
 
     return project_task_type, model_type
+
+
+def _ensure_model_supported_on_this_deployment(
+    model_id: ModelID,
+    project_task_type: TaskType,
+    model_type: ModelType,
+) -> None:
+    if SAM3_FINE_TUNED_MODELS_ENABLED:
+        return None
+    if model_type not in {"sam3", "sam3-large"}:
+        return None
+    if project_task_type != "instance-segmentation":
+        return None
+    if isinstance(model_id, str) and model_id.startswith("sam3/"):
+        return None
+    raise ModelDeploymentNotSupportedError(FINE_TUNED_SAM3_DEPLOYMENT_ERROR)
 
 
 def get_model_metadata_from_cache(
@@ -381,7 +455,6 @@ def _save_model_metadata_in_cache(
 def construct_model_type_cache_path(
     dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
 ) -> str:
-    cache_dir = os.path.join(
-        MODEL_CACHE_DIR, dataset_id, version_id if version_id else ""
-    )
+    model_id = dataset_id if version_id is None else f"{dataset_id}/{version_id}"
+    cache_dir = get_cache_dir(model_id=model_id)
     return os.path.join(cache_dir, "model_type.json")

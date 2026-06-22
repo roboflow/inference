@@ -33,20 +33,20 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: 🛎️ Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: 🐍 Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: 📦 Cache Python packages
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - name: 📦 Install JQ
-        uses: dcarbone/install-jq-action@v2.1.0
+        uses: dcarbone/install-jq-action@v3.2.0
       - name: 📦 Install dependencies required to run inference-cli
         run: |
           python -m pip install --upgrade pip
@@ -114,7 +114,7 @@ jobs:
         if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'workflows' && github.event.inputs.test_target == 'aws-lambda-serving' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-staging-test -wn paul-guerrie -d coco -rps 5 -br 500 -h https://lambda-classification.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
-      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 AWS LAMBDA | workflows 🔥🔥🔥🔥
+      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 SERVERLESS V2 | workflows 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'workflows' && github.event.inputs.test_target == 'serverless-v2' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-staging-test -wn paul-guerrie -d coco -rps 5 -br 500 -h https://serverless.roboflow.one --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0

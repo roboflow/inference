@@ -375,6 +375,8 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 api_key=self.api_key,
                 model_id=self.endpoint,
                 endpoint_type=endpoint_type,
+                countinference=self.countinference,
+                service_secret=self.service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {self.api_key} does not have access to model {self.endpoint}"
@@ -397,6 +399,8 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             model_id=self.endpoint,
             endpoint_type=ModelEndpointType.ORT,
             device_id=self.device_id,
+            countinference=self.countinference,
+            service_secret=self.service_secret,
         )
 
         ort = api_data.get("ort") if isinstance(api_data, dict) else None
@@ -446,11 +450,14 @@ def find_prior_prompt_in_cache(
     """
     Performs search over the cache to see if prior used prompts are subset of this one.
     """
+    num_points = initial_prompt_set.num_points()
+    if num_points <= 1:
+        return None  # there is only 1 point, hence no prior prompt can be found
 
     logits_for_image = [cache[k] for k in cache if k[0] == image_id]
     maxed_size = 0
     best_match: Optional[np.ndarray] = None
-    desired_size = initial_prompt_set.num_points() - 1
+    desired_size = num_points - 1
     for cached_dict in logits_for_image[::-1]:
         logits = cached_dict["logits"]
         prompt_set: Sam2PromptSet = cached_dict["prompt_set"]

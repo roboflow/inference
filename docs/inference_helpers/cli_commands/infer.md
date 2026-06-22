@@ -53,7 +53,7 @@ inference infer -i https://[YOUR_HOSTED_IMAGE_URL] -m {your_project}/{version} -
 ### Using Hosted API
 
 ```bash
-inference infer -i ./image.jpg -m {your_project}/{version} --api-key {YOUR_API_KEY} -h https://detect.roboflow.com
+inference infer -i ./image.jpg -m {your_project}/{version} --api-key {YOUR_API_KEY} -h https://serverless.roboflow.com
 ```
 
 ### Predict From Local Directory

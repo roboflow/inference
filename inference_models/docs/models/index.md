@@ -7,6 +7,7 @@ The `inference-models` library supports a wide range of computer vision models a
 - **Object Detection**: Detect and localize objects in images
 - **Instance Segmentation**: Detect objects with pixel-level masks
 - **Semantic Segmentation**: Classify every pixel in an image
+- **Keypoint Detection**: Detect objects with keypoints
 - **Classification**: Classify entire images or image regions
 - **Embeddings**: Generate vector representations for images and text
 - **OCR & Document Parsing**: Extract text and structure from documents
@@ -46,6 +47,15 @@ The `inference-models` library supports a wide range of computer vision models a
 | [YOLOv11 Seg](yolov11-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
 | [YOLACT](yolact-instance-segmentation.md) | `onnx` | MIT | N/A | ❌ | ✅ |
 
+### Keypoint Detection
+
+| Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
+|-------|--------|---------|-------------------------------|---------------------|-----------------|
+| [RF-DETR Keypoint](rfdetr-keypoint-detection.md) | `onnx` | Apache 2.0 | N/A | ✅ | ✅ |
+| [YOLOv8 Keypoint](yolov8-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
+| [YOLOv11 Keypoint](yolov11-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
+| [YOLO26 Keypoint](yolo26-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
+
 ### Classification
 
 | Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
@@ -66,6 +76,7 @@ The `inference-models` library supports a wide range of computer vision models a
 
 | Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
+| [YOLO26 Sem](yolo26-semantic-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | ✅ | ✅ | ✅ |
 | [DeepLabV3+](deeplabv3plus.md) | `torch`, `onnx`, `trt` | MIT | N/A | ❌ | ✅ |
 
 ### OCR & Document Parsing
@@ -84,6 +95,7 @@ The `inference-models` library supports a wide range of computer vision models a
 | [SAM](sam-interactive-segmentation.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [SAM2](sam2-interactive-segmentation.md) | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [SAM2 RT](sam2-rt-video-tracking.md) | `torch` | Apache 2.0 | N/A | ✅ | ❌ |
+| [SAM3 Video](sam3-video-concept-tracking.md) | `hugging-face` | SAM License | N/A | 🔑 | ❌ |
 
 ### Vision-Language Models
 
@@ -96,6 +108,7 @@ The `inference-models` library supports a wide range of computer vision models a
 | [Qwen3.5](qwen35.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [SmolVLM](smolvlm.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ✅ |
 | [Moondream2](moondream2.md) | `torch` | Apache 2.0 | N/A                           | ✅ | ❌ |
+| [Gemma 4](gemma4.md) | `hugging-face` | Gemma License | N/A                           | ✅ | ❌  |
 
 ### Depth Estimation
 
@@ -109,7 +122,6 @@ The `inference-models` library supports a wide range of computer vision models a
 | Model | Backends | License | Commercial License in RF Plan | Pre-trained Weights | Trainable at RF |
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
 | [L2CS](l2cs.md) | `torch` | MIT | N/A | ✅ | ❌ |
-| [MediaPipe Face](mediapipe-face.md) | `mediapipe` | Apache 2.0 | N/A | ✅ | ❌ |
 
 
 

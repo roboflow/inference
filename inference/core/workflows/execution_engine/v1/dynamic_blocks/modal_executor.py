@@ -8,6 +8,7 @@ using web endpoints for better security and no size limitations.
 import base64
 import json
 import os
+import sys
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -238,6 +239,7 @@ class ModalExecutor:
         python_code: PythonCode,
         inputs: Dict[str, Any],
         workspace_id: Optional[str] = None,
+        workflow_context: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
         """Execute a Custom Python Block in a Modal sandbox via web endpoint.
 
@@ -277,6 +279,7 @@ class ModalExecutor:
                 "imports": python_code.imports or [],
                 "run_function_name": python_code.run_function_name,
                 "inputs_json": inputs_json,
+                "workflow_context": workflow_context or {},
             }
 
             if (
@@ -351,6 +354,15 @@ class ModalExecutor:
                     stdout=result.get("stdout"),
                     stderr=result.get("stderr"),
                 )
+
+            stdout = result.get("stdout")
+            stderr = result.get("stderr")
+            if stdout:
+                sys.stdout.write(stdout)
+                sys.stdout.flush()
+            if stderr:
+                sys.stderr.write(stderr)
+                sys.stderr.flush()
 
             # Get the result and deserialize from JSON
             json_result = result.get("result", "{}")

@@ -23,7 +23,6 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.managers.base import ModelManager
-
 from tests.workflows.integration_tests.execution.inner_workflow_inlining._common import (
     child_detection_only_for_parent_dynamic_crop,
     execution_engine,
@@ -132,7 +131,7 @@ def _flat_workflow() -> dict:
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
         "steps": [
             {
-                "type": "roboflow_core/roboflow_object_detection_model@v2",
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "general_detection",
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",

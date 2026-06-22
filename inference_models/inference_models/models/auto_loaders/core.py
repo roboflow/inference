@@ -1,8 +1,6 @@
-import hashlib
 import importlib
 import importlib.util
 import os.path
-import re
 from datetime import datetime
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
@@ -15,13 +13,11 @@ from rich.text import Text
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     FILE_LOCK_ACQUIRE_TIMEOUT,
-    INFERENCE_HOME,
 )
 from inference_models.errors import (
     CorruptedModelPackageError,
     DirectLocalStorageAccessError,
     ForbiddenLocalCodePackageAccessError,
-    InsecureModelIdentifierError,
     InvalidModelInitParameterError,
     InvalidParameterError,
     MissingModelInitParameterError,
@@ -59,6 +55,10 @@ from inference_models.models.auto_loaders.entities import (
     ModelArchitecture,
     TaskType,
 )
+from inference_models.models.auto_loaders.model_cache_paths import (
+    generate_model_package_cache_path,
+    generate_shared_blobs_path,
+)
 from inference_models.models.auto_loaders.models_registry import (
     INSTANCE_SEGMENTATION_TASK,
     OBJECT_DETECTION_TASK,
@@ -73,14 +73,22 @@ from inference_models.models.auto_loaders.presentation_utils import (
     render_table_with_model_packages,
 )
 from inference_models.runtime_introspection.core import x_ray_runtime_environment
-from inference_models.utils.download import FileHandle, download_files_to_directory
+from inference_models.utils.download import (
+    FileHandle,
+    download_files_to_directory,
+    is_valid_md5_hash,
+)
 from inference_models.utils.file_system import dump_json, read_json
 from inference_models.utils.hashing import hash_dict_content
 from inference_models.weights_providers.core import get_model_from_provider
 from inference_models.weights_providers.entities import (
+    FileDownloadSpecs,
+    LocalFileArtefactSpecs,
     ModelDependency,
     ModelPackageMetadata,
+    PackageSourceType,
     Quantization,
+    RecommendedParameters,
 )
 
 MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
@@ -373,7 +381,7 @@ class AutoModel:
         - **TensorRT**: TensorRT version and availability
         - **PyTorch**: PyTorch and torchvision versions
         - **ONNX Runtime**: Version and available execution providers
-        - **Other backends**: Hugging Face Transformers, Ultralytics, MediaPipe
+        - **Other backends**: Hugging Face Transformers, Ultralytics
         - **Platform**: OS version, Jetson type (if applicable), L4T version
 
         This is useful for:
@@ -926,6 +934,7 @@ class AutoModel:
                 model_dependencies=model_metadata.model_dependencies,
                 model_dependencies_instances=model_dependencies_instances,
                 model_dependencies_directories=model_dependencies_directories,
+                recommended_parameters=model_metadata.recommended_parameters,
                 max_package_loading_attempts=max_package_loading_attempts,
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 verify_hash_while_download=verify_hash_while_download,
@@ -1074,10 +1083,16 @@ def attempt_loading_model_with_auto_load_cache(
             model_features=cache_entry.model_features,
         )
         model_package_cache_dir = generate_model_package_cache_path(
-            model_id=cache_entry.model_id,
+            model_id=cache_entry.cache_model_id or cache_entry.model_id,
             package_id=cache_entry.model_package_id,
         )
         model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
+        # Cache stores the already-resolved (package-vs-model) value written
+        # in initialize_model — no need to re-run resolve_recommended_parameters.
+        if cache_entry.recommended_parameters is not None:
+            model_init_kwargs["recommended_parameters"] = (
+                cache_entry.recommended_parameters
+            )
         model = model_class.from_pretrained(
             model_package_cache_dir, **model_init_kwargs
         )
@@ -1113,6 +1128,7 @@ def attempt_loading_matching_model_packages(
     model_dependencies: Optional[List[ModelDependency]],
     model_dependencies_instances: Dict[str, AnyModel],
     model_dependencies_directories: Dict[str, str],
+    recommended_parameters: Optional[RecommendedParameters] = None,
     max_package_loading_attempts: Optional[int] = None,
     model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     verbose: bool = True,
@@ -1130,7 +1146,7 @@ def attempt_loading_matching_model_packages(
             help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
         )
     failed_load_attempts: List[Tuple[str, Exception]] = []
-    for model_package in matching_model_packages:
+    for idx, model_package in enumerate(matching_model_packages):
         access_identifiers = AccessIdentifiers(
             model_id=model_id,
             package_id=model_package.package_id,
@@ -1153,6 +1169,7 @@ def attempt_loading_matching_model_packages(
                 model_dependencies=model_dependencies,
                 model_dependencies_instances=model_dependencies_instances,
                 model_dependencies_directories=model_dependencies_directories,
+                recommended_parameters=recommended_parameters,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
                 on_file_created=partial(
@@ -1169,6 +1186,12 @@ def attempt_loading_matching_model_packages(
                 ),
                 on_symlink_deleted=model_access_manager.on_symlink_deleted,
                 use_auto_resolution_cache=use_auto_resolution_cache,
+            )
+            LOGGER.info(
+                "Loaded model %s with backend %s (package %s)",
+                model_id,
+                model_package.backend.value,
+                model_package.package_id,
             )
             model_access_manager.on_model_loaded(
                 model=model,
@@ -1188,6 +1211,15 @@ def attempt_loading_matching_model_packages(
                 f"likely a bug in `inference-models` and you should raise an issue providing full context of "
                 f"the event. https://github.com/roboflow/inference/issues"
             )
+            next_idx = idx + 1
+            if next_idx < len(matching_model_packages):
+                next_backend = matching_model_packages[next_idx].backend.value
+                LOGGER.warning(
+                    "Falling back from %s to %s backend for model %s",
+                    model_package.backend.value,
+                    next_backend,
+                    model_id,
+                )
             failed_load_attempts.append((model_package.package_id, error))
 
     summary_of_errors = "\n".join(
@@ -1218,6 +1250,7 @@ def initialize_model(
     model_dependencies: Optional[List[ModelDependency]],
     model_dependencies_instances: Dict[str, AnyModel],
     model_dependencies_directories: Dict[str, str],
+    recommended_parameters: Optional[RecommendedParameters] = None,
     model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
@@ -1247,44 +1280,57 @@ def initialize_model(
                 f"us to solve the problem.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-    files_specs = [
-        (a.file_handle, a.download_url, a.md5_hash)
-        for a in model_package.package_artefacts
-    ]
-    file_specs_with_hash = [f for f in files_specs if f[2] is not None]
-    file_specs_without_hash = [f for f in files_specs if f[2] is None]
-    shared_blobs_dir = generate_shared_blobs_path()
+    cache_model_id = model_package.cache_model_id or model_id
     model_package_cache_dir = generate_model_package_cache_path(
-        model_id=model_id,
+        model_id=cache_model_id,
         package_id=model_package.package_id,
     )
     os.makedirs(model_package_cache_dir, exist_ok=True)
-    shared_files_mapping = download_files_to_directory(
-        target_dir=shared_blobs_dir,
-        files_specs=file_specs_with_hash,
-        file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-        verify_hash_while_download=verify_hash_while_download,
-        download_files_without_hash=download_files_without_hash,
-        name_after="md5_hash",
-        on_file_created=on_file_created,
-        on_file_renamed=on_file_renamed,
-    )
-    model_specific_files_mapping = download_files_to_directory(
-        target_dir=model_package_cache_dir,
-        files_specs=file_specs_without_hash,
-        file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-        verify_hash_while_download=verify_hash_while_download,
-        download_files_without_hash=download_files_without_hash,
-        on_file_created=on_file_created,
-        on_file_renamed=on_file_renamed,
-    )
-    symlinks_mapping = create_symlinks_to_shared_blobs(
-        model_dir=model_package_cache_dir,
-        shared_files_mapping=shared_files_mapping,
-        model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-        on_symlink_created=on_symlink_created,
-        on_symlink_deleted=on_symlink_deleted,
-    )
+    if model_package.package_source == PackageSourceType.LOCAL_CACHE:
+        shared_files_mapping = _resolve_local_cache_package_files(
+            model_package_cache_dir=model_package_cache_dir,
+            package_artefacts=model_package.package_artefacts,
+        )
+        model_specific_files_mapping: Dict[str, str] = {}
+        symlinks_mapping = {
+            handle: os.path.join(model_package_cache_dir, handle)
+            for handle in shared_files_mapping
+        }
+    else:
+        files_specs = [
+            (artefact.file_handle, artefact.download_url, artefact.md5_hash)
+            for artefact in model_package.package_artefacts
+            if isinstance(artefact, FileDownloadSpecs)
+        ]
+        file_specs_with_hash = [spec for spec in files_specs if spec[2] is not None]
+        file_specs_without_hash = [spec for spec in files_specs if spec[2] is None]
+        shared_blobs_dir = generate_shared_blobs_path()
+        shared_files_mapping = download_files_to_directory(
+            target_dir=shared_blobs_dir,
+            files_specs=file_specs_with_hash,
+            file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+            verify_hash_while_download=verify_hash_while_download,
+            download_files_without_hash=download_files_without_hash,
+            name_after="md5_hash",
+            on_file_created=on_file_created,
+            on_file_renamed=on_file_renamed,
+        )
+        model_specific_files_mapping = download_files_to_directory(
+            target_dir=model_package_cache_dir,
+            files_specs=file_specs_without_hash,
+            file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+            verify_hash_while_download=verify_hash_while_download,
+            download_files_without_hash=download_files_without_hash,
+            on_file_created=on_file_created,
+            on_file_renamed=on_file_renamed,
+        )
+        symlinks_mapping = create_symlinks_to_shared_blobs(
+            model_dir=model_package_cache_dir,
+            shared_files_mapping=shared_files_mapping,
+            model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+            on_symlink_created=on_symlink_created,
+            on_symlink_deleted=on_symlink_deleted,
+        )
     config_path = os.path.join(model_package_cache_dir, MODEL_CONFIG_FILE_NAME)
     dump_model_config_for_offline_use(
         config_path=config_path,
@@ -1307,12 +1353,19 @@ def initialize_model(
     )
     resolved_files.update(dependencies_resolved_files)
     model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
+    resolved_recommended_parameters = resolve_recommended_parameters(
+        package_level=model_package.recommended_parameters,
+        model_level=recommended_parameters,
+    )
+    if resolved_recommended_parameters is not None:
+        model_init_kwargs["recommended_parameters"] = resolved_recommended_parameters
     model = model_class.from_pretrained(model_package_cache_dir, **model_init_kwargs)
     dump_auto_resolution_cache(
         use_auto_resolution_cache=use_auto_resolution_cache,
         auto_resolution_cache=auto_resolution_cache,
         auto_negotiation_hash=auto_negotiation_hash,
         model_id=model_id,
+        cache_model_id=cache_model_id,
         model_package_id=model_package.package_id,
         model_architecture=model_architecture,
         task_type=task_type,
@@ -1320,6 +1373,7 @@ def initialize_model(
         resolved_files=resolved_files,
         model_dependencies=model_dependencies,
         model_features=model_package.model_features,
+        recommended_parameters=resolved_recommended_parameters,
     )
     return model, model_package_cache_dir
 
@@ -1484,11 +1538,14 @@ def dump_auto_resolution_cache(
     resolved_files: Set[str],
     model_dependencies: Optional[List[ModelDependency]],
     model_features: Optional[dict],
+    recommended_parameters: Optional[RecommendedParameters] = None,
+    cache_model_id: Optional[str] = None,
 ) -> None:
     if not use_auto_resolution_cache:
         return None
     cache_content = AutoResolutionCacheEntry(
         model_id=model_id,
+        cache_model_id=cache_model_id,
         model_package_id=model_package_id,
         resolved_files=resolved_files,
         model_architecture=model_architecture,
@@ -1497,48 +1554,60 @@ def dump_auto_resolution_cache(
         created_at=datetime.now(),
         model_dependencies=model_dependencies,
         model_features=model_features,
+        recommended_parameters=recommended_parameters,
     )
     auto_resolution_cache.register(
         auto_negotiation_hash=auto_negotiation_hash, cache_entry=cache_content
     )
 
 
-def generate_shared_blobs_path() -> str:
-    return os.path.abspath(os.path.join(INFERENCE_HOME, "shared-blobs"))
-
-
-def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
-    ensure_package_id_is_os_safe(model_id=model_id, package_id=package_id)
-    model_id_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
-    return os.path.abspath(
-        os.path.join(INFERENCE_HOME, "models-cache", model_id_slug, package_id)
-    )
-
-
-def ensure_package_id_is_os_safe(model_id: str, package_id: str) -> None:
-    if re.search(r"[^A-Za-z0-9]", package_id):
-        raise InsecureModelIdentifierError(
-            message=f"Attempted to load model: {model_id} using package ID: {package_id} which "
-            f"has invalid format. ID is expected to contain only ASCII characters and numbers to "
-            f"ensure safety of local cache. If you see this error running your model on Roboflow platform, "
-            f"raise the issue: https://github.com/roboflow/inference/issues. If you are running `inference` "
-            f"outside of the platform, verify that your weights provider keeps the model packages identifiers "
-            f"in the expected format.",
-            help_url="https://inference-models.roboflow.com/errors/model-loading/#insecuremodelidentifiererror",
+def _resolve_local_cache_package_files(
+    model_package_cache_dir: str,
+    package_artefacts: List[LocalFileArtefactSpecs],
+) -> Dict[str, str]:
+    shared_blobs_dir = generate_shared_blobs_path()
+    shared_files_mapping: Dict[str, str] = {}
+    for artefact in package_artefacts:
+        if not isinstance(artefact, LocalFileArtefactSpecs):
+            raise CorruptedModelPackageError(
+                message=(
+                    "Local cache model package contains non-local artefact specs. "
+                    "All artefacts must be LocalFileArtefactSpecs."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+        if not is_valid_md5_hash(artefact.md5_hash):
+            raise CorruptedModelPackageError(
+                message=(
+                    f"Local cache model package artefact `{artefact.file_handle}` has an "
+                    f"invalid md5 hash `{artefact.md5_hash}`."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+        if artefact.file_handle != os.path.basename(artefact.file_handle):
+            raise CorruptedModelPackageError(
+                message=(
+                    f"Local cache model package artefact `{artefact.file_handle}` has an "
+                    f"unsafe file handle."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+        package_file_path = os.path.join(model_package_cache_dir, artefact.file_handle)
+        if not os.path.isfile(package_file_path):
+            raise CorruptedModelPackageError(
+                message=(
+                    f"Local cache model package is missing artefact `{artefact.file_handle}` "
+                    f"at `{package_file_path}`."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+        # File content md5 is verified during discovery (discover_local_trt_packages),
+        # so we only validate presence and hash format here to avoid re-hashing the
+        # full engine on the load path.
+        shared_files_mapping[artefact.file_handle] = os.path.join(
+            shared_blobs_dir, artefact.md5_hash
         )
-
-
-def slugify_model_id_to_os_safe_format(model_id: str) -> str:
-    # Only ASCII
-    model_id_slug = re.sub(r"[^A-Za-z0-9_-]+", "-", model_id)
-    # Collapse multiple underscores/dashes
-    model_id_slug = re.sub(r"[_-]{2,}", "-", model_id_slug)
-    if not model_id_slug:
-        model_id_slug = "special-char-only-model-id"
-    if len(model_id_slug) > 48:
-        model_id_slug = model_id_slug[:48]
-    digest = hashlib.blake2s(model_id.encode("utf-8"), digest_size=4).hexdigest()
-    return f"{model_id_slug}-{digest}"
+    return shared_files_mapping
 
 
 def attempt_loading_model_from_local_storage(
@@ -1812,3 +1881,11 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
     return getattr(module, class_name)
+
+
+def resolve_recommended_parameters(
+    package_level: Optional[RecommendedParameters],
+    model_level: Optional[RecommendedParameters],
+) -> Optional[RecommendedParameters]:
+    """Package-level recommended_parameters take priority over model-level."""
+    return package_level if package_level is not None else model_level

@@ -21,7 +21,10 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -229,6 +232,13 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+        ]
 
 
 INTERVAL_UNIT_TO_SECONDS = {
@@ -441,15 +451,13 @@ class ValuesDifferenceState(AggregationState):
     def on_data(self, value: Any) -> None:
         if self._min_value is None:
             self._min_value = value
-            return None
-        if self._max_value is None:
             self._max_value = value
             return None
         self._min_value = min(self._min_value, value)
         self._max_value = max(self._max_value, value)
 
     def get_result(self) -> Any:
-        if self._min_value is None or self._max_value is None:
+        if self._min_value is None:
             return None
         return self._max_value - self._min_value
 

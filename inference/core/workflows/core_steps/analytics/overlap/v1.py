@@ -132,7 +132,7 @@ class OverlapBlockV1(WorkflowBlock):
         # coords are [x1, y1, x2, y2]
         if overlap_type == "Center Overlap":
             size = [other[2] - other[0], other[3] - other[1]]
-            (x, y) = [other[0] + size[0] / 2, other[1] + size[1] / 2]
+            x, y = [other[0] + size[0] / 2, other[1] + size[1] / 2]
             return (
                 x > overlap[0] and x < overlap[2] and y > overlap[1] and y < overlap[3]
             )

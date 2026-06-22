@@ -25,7 +25,7 @@ ONVIF_WORKFLOW = {
     "inputs": [{"type": "InferenceImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "model_1",
             "images": "$inputs.image",
             "model_id": "yolov10n-640",

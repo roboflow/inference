@@ -145,14 +145,11 @@ def test_defaults_for_unbound_rejects_non_dict_spec() -> None:
 
 
 def test_replace_inputs_whole_string_returns_binding_value_preserve_type() -> None:
-    assert (
-        _replace_inputs_in_string(
-            "$inputs.flag",
-            bindings={},
-            input_defaults={"flag": [1, 2]},
-        )
-        == [1, 2]
-    )
+    assert _replace_inputs_in_string(
+        "$inputs.flag",
+        bindings={},
+        input_defaults={"flag": [1, 2]},
+    ) == [1, 2]
     assert (
         _replace_inputs_in_string(
             "$inputs.x",
@@ -202,7 +199,9 @@ def test_replace_bare_child_step_refs_rewrites_json_list_of_step_tokens() -> Non
     assert "$steps.inner__detect" in s and "$steps.inner__other" in s
 
 
-def test_replace_bare_child_step_refs_longer_old_name_first_avoids_partial_match() -> None:
+def test_replace_bare_child_step_refs_longer_old_name_first_avoids_partial_match() -> (
+    None
+):
     s = _replace_bare_child_step_refs_in_string(
         "$steps.det",
         step_pairs=[("det", "p__det"), ("d", "p__d")],
@@ -214,18 +213,15 @@ def test_replace_bare_child_step_refs_longer_old_name_first_avoids_partial_match
 
 
 def test_rewrite_inner_scalar_non_string_unchanged() -> None:
-    assert (
-        _rewrite_inner_scalar(
-            {"nested": True},
-            step_pairs=[("a", "p__a")],
-            bindings={},
-            input_defaults={},
-        )
-        == {"nested": True}
-    )
+    assert _rewrite_inner_scalar(
+        {"nested": True},
+        step_pairs=[("a", "p__a")],
+        bindings={},
+        input_defaults={},
+    ) == {"nested": True}
 
 
-def test_rewrite_inner_scalar_pipeline_inputs_then_dotted_then_bare() -> None:
+def test_rewrite_inner_scalar_pipeline_dotted_then_bare_then_inputs() -> None:
     out = _rewrite_inner_scalar(
         "$inputs.msg and $steps.echo.out and $steps.echo",
         step_pairs=[("echo", "inner__echo")],
@@ -233,6 +229,17 @@ def test_rewrite_inner_scalar_pipeline_inputs_then_dotted_then_bare() -> None:
         input_defaults={},
     )
     assert out == "hello and $steps.inner__echo.out and $steps.inner__echo"
+
+
+def test_rewrite_inner_scalar_preserves_parent_step_in_parameter_binding() -> None:
+    """Parent ``$steps.<name>`` in bindings must not be renamed to the inlined child step."""
+    out = _rewrite_inner_scalar(
+        "$inputs.vehicle_image",
+        step_pairs=[("dynamic_crop", "inner__dynamic_crop")],
+        bindings={"vehicle_image": "$steps.dynamic_crop.crops"},
+        input_defaults={},
+    )
+    assert out == "$steps.dynamic_crop.crops"
 
 
 def test_rewrite_inner_scalar_whole_input_non_string_skips_step_rewrite() -> None:
@@ -264,7 +271,9 @@ def test_deep_map_leaves_applies_fn_to_nested_scalars_only() -> None:
 # --- _replace_inner_step_control_and_output_refs_in_object ---
 
 
-def test_replace_inner_step_control_rewrites_output_tokens_longest_out_name_first() -> None:
+def test_replace_inner_step_control_rewrites_output_tokens_longest_out_name_first() -> (
+    None
+):
     obj = {
         "a": "$steps.i.echo_extra",
         "b": "$steps.i.echo",
@@ -295,15 +304,12 @@ def test_replace_inner_step_control_bare_inner_step_routes_to_first_inlined() ->
 
 
 def test_replace_inner_step_control_non_string_leaves_unchanged() -> None:
-    assert (
-        _replace_inner_step_control_and_output_refs_in_object(
-            {"n": 42, "s": "$steps.i.x"},
-            inner_step_name="i",
-            output_name_to_selector={"x": "y"},
-            first_inlined_step_name="f",
-        )
-        == {"n": 42, "s": "y"}
-    )
+    assert _replace_inner_step_control_and_output_refs_in_object(
+        {"n": 42, "s": "$steps.i.x"},
+        inner_step_name="i",
+        output_name_to_selector={"x": "y"},
+        first_inlined_step_name="f",
+    ) == {"n": 42, "s": "y"}
 
 
 # --- inline_inner_workflow_steps (minimal) ---
@@ -440,7 +446,9 @@ def test_inline_inner_workflow_steps_raises_when_inlining_makes_no_progress() ->
                 "inference.core.workflows.execution_engine.v1.inner_workflow.inline._inline_one_inner_workflow_leaf",
                 return_value=False,
             ):
-                with pytest.raises(InnerWorkflowInliningStructureError, match="Could not inline"):
+                with pytest.raises(
+                    InnerWorkflowInliningStructureError, match="Could not inline"
+                ):
                     inline_inner_workflow_steps(
                         copy.deepcopy(normalized),
                         available_blocks=available_blocks,
@@ -454,7 +462,12 @@ def test_inline_inner_workflow_steps_raises_when_inlining_makes_no_progress() ->
 
 
 def test_inline_one_inner_workflow_leaf_false_when_no_inner_step() -> None:
-    wf = {"version": "1.0", "inputs": [], "steps": [{"name": "a", "type": "scalar_only_echo"}], "outputs": []}
+    wf = {
+        "version": "1.0",
+        "inputs": [],
+        "steps": [{"name": "a", "type": "scalar_only_echo"}],
+        "outputs": [],
+    }
     with mock.patch.object(
         blocks_loader,
         "get_plugin_modules",

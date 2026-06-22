@@ -39,8 +39,10 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    COOLDOWN_HTTP_SOFT_RESTRICTION,
     AirGappedAvailability,
     BlockResult,
+    RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -325,6 +327,10 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [COOLDOWN_HTTP_SOFT_RESTRICTION]
+
 
 class TwilioSMSNotificationBlockV2(WorkflowBlock):
 
@@ -523,7 +529,7 @@ def format_message(
 
 
 def process_media_urls_for_twilio(
-    media_url: Union[str, List[Union[str, WorkflowImageData]], WorkflowImageData]
+    media_url: Union[str, List[Union[str, WorkflowImageData]], WorkflowImageData],
 ) -> Optional[List[str]]:
     """
     Process media URLs for Twilio MMS.
@@ -614,7 +620,7 @@ def _get_mms_placeholder_image_url() -> Optional[str]:
 
 
 def serialize_media_for_api(
-    media_url: Union[str, List[str], WorkflowImageData, None]
+    media_url: Union[str, List[str], WorkflowImageData, None],
 ) -> Tuple[Optional[List[str]], Optional[List[Dict[str, str]]]]:
     """
     Serialize media for API transmission.

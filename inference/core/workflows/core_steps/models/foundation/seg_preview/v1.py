@@ -18,6 +18,7 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import build_roboflow_api_headers
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -41,6 +42,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import (
     AirGappedAvailability,
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -105,6 +109,26 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note=(
+                    "Seg Preview calls the Roboflow-internal "
+                    "API_BASE_URL/inferenceproxy/seg-preview endpoint, which is "
+                    "only reachable from Roboflow-hosted runtimes "
+                    "(HOSTED_SERVERLESS, DEDICATED_DEPLOYMENT). Self-hosted "
+                    "deployments cannot run this block."
+                ),
+                applies_to_runtimes=[
+                    Runtime.SELF_HOSTED_CPU,
+                    Runtime.SELF_HOSTED_GPU,
+                    Runtime.INFERENCE_PIPELINE,
+                ],
+            ),
+        ]
 
     @classmethod
     def get_air_gapped_availability(cls) -> AirGappedAvailability:
@@ -200,7 +224,7 @@ class SegPreviewBlockV1(WorkflowBlock):
                 headers = build_roboflow_api_headers(explicit_headers=headers)
 
                 response = requests.post(
-                    f"{endpoint}?api_key={api_key}",
+                    wrap_url(f"{endpoint}?api_key={api_key}"),
                     json=payload,
                     headers=headers,
                     timeout=60,

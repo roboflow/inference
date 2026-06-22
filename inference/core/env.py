@@ -53,6 +53,7 @@ API_BASE_URL = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+API_PROXY_BASE_URL = os.getenv("API_PROXY_BASE_URL", API_BASE_URL)
 
 # Suffix path to be appended to API_BASE_URL for endpoints that serve model weights.
 # This is only expected to be used in Roboflow internal hosting environments.
@@ -113,6 +114,9 @@ OWLV2_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_IMAGE_CACHE_SIZE", 10000))
 
 # OWLv2 model cache size, default is 100 as memory is num_prompts * ~4kb and num_prompts is rarely above 1000 (but could be much higher)
 OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 100))
+
+# OWLv2 cache device placement, default sends cached embeddings to CPU to reduce GPU memory pressure
+OWLV2_CACHE_SEND_TO_CPU = str2bool(os.getenv("OWLV2_CACHE_SEND_TO_CPU", True))
 
 # OWLv2 CPU image cache size, default is 10000
 OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
@@ -182,8 +186,21 @@ SAM3_FINE_TUNED_MODELS_ENABLED = str2bool(
     os.getenv("SAM3_FINE_TUNED_MODELS_ENABLED", _sam3_fine_tuned_default)
 )
 
-# Flag to enable GAZE core model, default is True
+# DEPRECATED: Gaze detection has been removed along with the MediaPipe
+# dependency. When True (default), the legacy POST /gaze/gaze_detection
+# route stays registered as a 410-Gone deprecation stub. The stub — and
+# this flag — will be removed end of Q2 2026. Set CORE_MODEL_GAZE_ENABLED=False
+# to disable the stub now.
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
+if CORE_MODEL_GAZE_ENABLED:
+    warnings.warn(
+        "CORE_MODEL_GAZE_ENABLED is True: POST /gaze/gaze_detection is registered "
+        "as a deprecation stub returning HTTP 410 Gone. The stub and this flag "
+        "will be removed end of Q2 2026. Set CORE_MODEL_GAZE_ENABLED=False to "
+        "disable it now.",
+        category=InferenceDeprecationWarning,
+        stacklevel=1,
+    )
 
 # Flag to enable DocTR core model, default is True
 CORE_MODEL_DOCTR_ENABLED = str2bool(os.getenv("CORE_MODEL_DOCTR_ENABLED", True))
@@ -317,6 +334,29 @@ FIX_BATCH_SIZE = str2bool(os.getenv("FIX_BATCH_SIZE", False))
 # Host, default is "0.0.0.0"
 HOST = os.getenv("HOST", "0.0.0.0")
 
+# Enable HTTPS for the inference server. When True, SSL_CERTFILE and SSL_KEYFILE
+# must point to a valid certificate/key pair on disk.
+ENABLE_HTTPS = str2bool(os.getenv("ENABLE_HTTPS", False))
+
+# Default location where customers are expected to mount their PEM cert/key
+# pair when running in a container. Override either path explicitly via
+# SSL_CERTFILE / SSL_KEYFILE if the certs live elsewhere.
+DEFAULT_SSL_CERTFILE = "/etc/inference/certs/server.crt"
+DEFAULT_SSL_KEYFILE = "/etc/inference/certs/server.key"
+
+# Path to the PEM-encoded SSL certificate file used to serve HTTPS.
+SSL_CERTFILE = os.getenv("SSL_CERTFILE", DEFAULT_SSL_CERTFILE)
+
+# Path to the PEM-encoded SSL private key file used to serve HTTPS.
+SSL_KEYFILE = os.getenv("SSL_KEYFILE", DEFAULT_SSL_KEYFILE)
+
+# Optional password used to decrypt the SSL_KEYFILE if it is encrypted.
+SSL_KEYFILE_PASSWORD = os.getenv("SSL_KEYFILE_PASSWORD", None)
+
+# Optional path to a CA certificate bundle used when client certificate
+# verification is required.
+SSL_CA_CERTS = os.getenv("SSL_CA_CERTS", None)
+
 # IoU threshold, default is 0.3
 IOU_THRESHOLD_ENV = "IOU_THRESHOLD"
 DEFAULT_IOU_THRESHOLD = 0.3
@@ -367,8 +407,19 @@ CORRELATION_ID_LOG_KEY = os.getenv("CORRELATION_ID_LOG_KEY", "request_id")
 # Flag to enable legacy route, default is True
 LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
-# License server, default is None
-LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
+# Secure gateway address for air-gapped deployments.
+# Accepts SECURE_GATEWAY (preferred) or LICENSE_SERVER (legacy).
+# May be a bare host[:port] (proxied over http, legacy behaviour) or
+# scheme-qualified, e.g. https://gateway.local, for TLS gateways.
+_legacy_license_server = os.getenv("LICENSE_SERVER")
+SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
+if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
+    warnings.warn(
+        "`LICENSE_SERVER` env variable is deprecated, use `SECURE_GATEWAY` instead. "
+        "`LICENSE_SERVER` will be removed end of Q3 2026.",
+        DeprecationWarning,
+        stacklevel=1,
+    )
 
 # Log level, default is "WARNING"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
@@ -504,6 +555,9 @@ SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
 # SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
 SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_MAX_EMBEDDING_CACHE_SIZE", 100))
 SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM3_MAX_LOGITS_CACHE_SIZE", 1000))
+SAM3_INTERACTIVE_CACHE_SEND_TO_CPU = str2bool(
+    os.getenv("SAM3_INTERACTIVE_CACHE_SEND_TO_CPU", True)
+)
 DISABLE_SAM3_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM3_LOGITS_CACHE", False))
 
 # EasyOCR version ID, default is "english_g2"
@@ -694,7 +748,11 @@ DEVICE = os.getenv("DEVICE")
 DEDICATED_DEPLOYMENT_WORKSPACE_URL = os.environ.get(
     "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None
 )
-
+WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT = safe_split_value(
+    value=os.getenv("WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT"),
+    delimiter=",",
+    strip=True,
+)
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
 STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
 
@@ -728,6 +786,9 @@ DEDICATED_DEPLOYMENT_ID = os.getenv("DEDICATED_DEPLOYMENT_ID")
 
 ROBOFLOW_INTERNAL_SERVICE_SECRET = os.getenv("ROBOFLOW_INTERNAL_SERVICE_SECRET")
 ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv("ROBOFLOW_INTERNAL_SERVICE_NAME")
+ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN = os.getenv(
+    "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN"
+) or os.getenv("ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN")
 
 # Preload Models
 PRELOAD_MODELS = (
@@ -810,6 +871,12 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 # 1600 -> ~10G
 # 2048 -> ~22G
 RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+
+# Timeout in seconds for resolving asynchronous workflow / RF-DETR stream
+# pipeline futures on the main execution path.
+WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT = float(
+    os.getenv("WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT", "60.0")
+)
 
 # Confidence lower bound to prevent OOM when inferring on instance segmentation models
 CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(
@@ -986,7 +1053,6 @@ VALID_INFERENCE_MODELS_BACKENDS = {
     "trt",
     "hugging-face",
     "ultralytics",
-    "mediapipe",
     "custom",
 }
 # env variables to control inference-models auto-loader
@@ -995,6 +1061,15 @@ if DISABLED_INFERENCE_MODELS_BACKENDS is not None:
     DISABLED_INFERENCE_MODELS_BACKENDS = set(
         DISABLED_INFERENCE_MODELS_BACKENDS.split(",")
     )
+    if "mediapipe" in DISABLED_INFERENCE_MODELS_BACKENDS:
+        warnings.warn(
+            "`mediapipe` backend for `inference-models` got deprecated and all remaining left-overs "
+            "will be removed end of Q2 2026. Keeping `mediapipe` in the list of `DISABLED_INFERENCE_MODELS_BACKENDS` "
+            "will trigger runtime exception causing `inference` to crash. Please adjust your configuration.",
+            category=InferenceDeprecationWarning,
+            stacklevel=1,
+        )
+        DISABLED_INFERENCE_MODELS_BACKENDS.discard("mediapipe")
     if any(
         v not in VALID_INFERENCE_MODELS_BACKENDS
         for v in DISABLED_INFERENCE_MODELS_BACKENDS

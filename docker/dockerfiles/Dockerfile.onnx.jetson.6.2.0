@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Jetson 6.2.0 with PyTorch/OpenCV compiled from source for numpy 2.x support
 # Stage 1: Builder - Compile everything from source
 FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS builder
@@ -6,14 +7,38 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
 ARG PYTORCH_VERSION=2.6.0
 ARG TORCHVISION_VERSION=0.21.0
-ARG OPENCV_VERSION=4.10.0
+ARG TRITON_VERSION=3.2.0
+ARG OPENCV_VERSION=4.13.0
+# Per-Jetson-platform OpenCV build parameters. To replicate this from-source
+# OpenCV section in another Jetson dockerfile (jp51, jp71), copy the OpenCV
+# block below verbatim and update these four ARGs to match the target base.
+# Cross-reference the values already used by the same dockerfile's PyTorch /
+# torchvision / onnxruntime build steps so all components target the same SoC:
+#   OPENCV_CUDA_ARCH:           jp51 (Orin on L4T r35): 8.7
+#                               jp62 (Orin on L4T r36): 8.7
+#                               jp71 (Thor on L4T r38): 11.0
+#   OPENCV_PYTHON_INSTALL_PATH: dist-packages dir of the base's Python
+#                               (jp51: python3.12, jp62: python3.10, jp71: python3.12)
+#   OPENCV_PYTHON_INCLUDE_DIR:  matches the base's Python C headers
+#   OPENCV_PYTHON_VERSION:      cmake's PYTHON_VERSION flag (major+minor, no dot)
+ARG OPENCV_CUDA_ARCH=8.7
+ARG OPENCV_PYTHON_INSTALL_PATH=/usr/local/lib/python3.10/dist-packages
+ARG OPENCV_PYTHON_INCLUDE_DIR=/usr/include/python3.10
+ARG OPENCV_PYTHON_VERSION=310
 ARG ONNXRUNTIME_VERSION=1.20.0
 ENV LANG=en_US.UTF-8
 
 WORKDIR /build
 
-# Install comprehensive build dependencies
-RUN apt-get update -y && \
+# Install comprehensive build dependencies.
+# Cache mounts on apt dirs keep .debs + lists across Depot builds. We disable
+# docker-clean and tell apt to keep downloads; the rm of /var/lib/apt/lists/*
+# is dropped because that path is the cache mount itself.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-builder-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update -y && \
     apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -25,10 +50,7 @@ RUN apt-get update -y && \
     python3-dev \
     python3-pip \
     libopenblas-dev \
-    libproj-dev \
-    libsqlite3-dev \
     libtiff-dev \
-    libcurl4-openssl-dev \
     libssl-dev \
     zlib1g-dev \
     libxext6 \
@@ -40,6 +62,10 @@ RUN apt-get update -y && \
     libavformat-dev \
     libswscale-dev \
     libv4l-dev \
+    libavutil-dev \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    unzip \
     libatlas-base-dev \
     liblapack-dev \
     gfortran \
@@ -52,7 +78,7 @@ RUN apt-get update -y && \
     libsnappy-dev \
     libprotobuf-dev \
     protobuf-compiler \
-    && rm -rf /var/lib/apt/lists/*
+    libxml2-dev
 
 # Install CMake
 RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
@@ -68,18 +94,23 @@ RUN python3 -m pip install --upgrade pip setuptools wheel && \
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv
 
-# Compile GDAL from source
-WORKDIR /build/gdal
-RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar.gz && \
-    tar -xzf gdal-3.11.5.tar.gz && \
-    cd gdal-3.11.5 && mkdir build && cd build && \
-    cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_PYTHON_BINDINGS=OFF && \
-    ninja && ninja install && ldconfig && \
-    cd ../.. && rm -rf gdal-3.11.5*
+# No from-source GDAL: rasterio (the only GDAL consumer, via
+# requirements.sam.txt) bundles its own libgdal/proj/data as a manylinux
+# wheel, nothing in this image or in roboflow-edge links the system GDAL
+# (verified via ldd scans, live deletion test, and edge repo/image audit).
 
-# Compile PyTorch from source with Jetson optimizations
+# Compile PyTorch from source with Jetson optimizations.
+# Clone is in its own RUN so the build/ cache mount in the next RUN can overlay
+# cleanly on top of the cloned source. Combining them fails because the cache
+# mount auto-creates /build/pytorch/pytorch/ before git clone runs, and git
+# refuses to clone into a non-empty target.
 WORKDIR /build/pytorch
-RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch && \
+RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
+# build/ is cache-mounted so a stage rerun reuses CMake/ninja state and object
+# files. Cache id scoped to (version, arch, SM) so a version or target bump
+# starts from a clean cache instead of contaminating the previous one.
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm87 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
     cd pytorch && \
     python3 -m pip install -r requirements.txt && \
     export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
@@ -99,11 +130,14 @@ RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorc
     python3 setup.py bdist_wheel && \
     python3 -m pip install dist/torch-*.whl
 
-# Compile torchvision from source (with retry for transient GitHub issues)
+# Compile torchvision from source (with retry for transient GitHub issues).
+# Clone in its own RUN so build/ cache mount overlays cleanly.
 WORKDIR /build/torchvision
 RUN for i in 1 2 3; do \
         git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
-    done && \
+    done
+RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-${TORCHVISION_VERSION}-${TARGETARCH}-sm87 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
     cd vision && \
     export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="8.7" && \
     export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
@@ -116,17 +150,29 @@ ENV CUDA_HOME=/usr/local/cuda \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 # Install Tensorrt
-RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*'
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-builder-${TARGETARCH} \
+    apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*'
 WORKDIR /build/tensorrt-10.x
-RUN wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.7.0/local_repo/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb && \
-    dpkg -i nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-builder-${TARGETARCH} \
+    --mount=type=cache,target=/build/tensorrt-10.x/_dl,sharing=locked,id=trt-deb-10.7.0-${TARGETARCH} \
+    if [ ! -f _dl/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb ]; then \
+        mkdir -p _dl && \
+        wget -O _dl/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb \
+            https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.7.0/local_repo/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb; \
+    fi && \
+    dpkg -i _dl/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb && \
     cp /var/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6/nv-tensorrt-local-tegra-C50F04B9-keyring.gpg /usr/share/keyrings/ && \
     apt-get update && \
     apt-get install -y tensorrt
 
-# Build onnxruntime-gpu from source with TensorRT support
+# Build onnxruntime-gpu from source with TensorRT support.
+# Clone in its own RUN so the build/cuda12 cache mount overlays cleanly.
 WORKDIR /build/onnxruntime
-RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git && \
+RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git
+RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/cuda12,sharing=locked,id=ort-build-${ONNXRUNTIME_VERSION}-${TARGETARCH}-sm87-cu126 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
     cd onnxruntime && \
     sed -i 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c09388b2e288312d8eba/g' cmake/deps.txt && \
     sed -i '/PATCH_COMMAND.*nsync_1.26.0.patch/s|$| \&\& sed -i "s/cmake_minimum_required.*/cmake_minimum_required(VERSION 3.5)/" CMakeLists.txt|' cmake/external/onnxruntime_external_deps.cmake && \
@@ -153,11 +199,58 @@ RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/mi
         --cmake_extra_defines CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
     python3 -m pip install --break-system-packages build/cuda12/Release/dist/onnxruntime_gpu-*.whl
 
-# Install flash-attn package (requires CUDA-enabled PyTorch already installed)
-# Limit MAX_JOBS to prevent timeout during CUDA kernel compilation
+# Install flash-attn, built for Orin's actual architecture (sm87).
+# The previous build used the default arch list (sm80;sm90), so every kernel
+# launch on Orin failed with "no kernel image is available" - and because the
+# package still imported, transformers' is_flash_attn_2_available() returned
+# True and PaliGemma/Qwen-VL selected flash_attention_2, then crashed at
+# inference. Building for sm87 makes the feature actually work and the
+# single-arch binary is ~195MB smaller than the old dual-arch one.
+# Limit MAX_JOBS to prevent timeout/OOM during CUDA kernel compilation.
 # Using 2.8.3 - removed legacy features (rotary, xentropy, fused_softmax, ft_attention) for faster builds
 RUN export MAX_JOBS=4 && \
+    export FLASH_ATTN_CUDA_ARCHS="87" TORCH_CUDA_ARCH_LIST="8.7" && \
     python3 -m pip install --break-system-packages --no-build-isolation flash-attn==2.8.3
+
+# Build Triton from source. Torch 2.6.0 on JP6.2 pairs with Triton ${TRITON_VERSION}.
+# Done in the main builder (not a separate stage) so build deps and Depot cache
+# mounts are reused; a dedicated triton-builder stage re-pulled l4t-jetpack and
+# rebuilt cold every time, which made CI builds very slow. Triton needs cmake <4.0;
+# install via pip because this builder ships cmake 4.2.
+# Clone + wheel build must share one RUN: cache-mounted src is not persisted
+# across separate RUN instructions.
+WORKDIR /build/triton
+RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${TRITON_VERSION}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.triton/llvm,sharing=locked,id=triton-llvm-${TRITON_VERSION}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
+    set -eux; \
+    if [ ! -d src/.git ]; then \
+        git clone --depth 1 --branch v${TRITON_VERSION} https://github.com/triton-lang/triton.git src; \
+    else \
+        git -C src fetch --depth 1 origin tag v${TRITON_VERSION} && \
+        git -C src checkout v${TRITON_VERSION}; \
+    fi; \
+    git -C src submodule update --init --recursive; \
+    mkdir -p /tmp/triton-wheels; \
+    python3 -m pip install --break-system-packages --no-cache-dir \
+        "setuptools>=40.8.0" \
+        wheel \
+        "cmake>=3.18,<4.0" \
+        "ninja>=1.11.1" \
+        "pybind11>=2.13.1"; \
+    MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
+        --no-build-isolation \
+        --no-deps \
+        /build/triton/src/python \
+        --wheel-dir /tmp/triton-wheels; \
+    set -- /tmp/triton-wheels/triton-${TRITON_VERSION}-*.whl; \
+    if [ ! -e "$1" ]; then \
+        echo "Expected source-built Triton wheel for ${TRITON_VERSION} was not found" >&2; \
+        exit 1; \
+    fi; \
+    python3 -m pip install --break-system-packages --no-cache-dir "$1"; \
+    rm -rf /tmp/triton-wheels; \
+    python3 -c "import triton; print('triton', triton.__version__)"
 
 # Copy requirements files (done after compilation to improve cache efficiency)
 WORKDIR /build/reqs
@@ -166,7 +259,6 @@ COPY requirements/_requirements.txt \
      requirements/requirements.clip.txt \
      requirements/requirements.transformers.txt \
      requirements/requirements.sam.txt \
-     requirements/requirements.gaze.txt \
      requirements/requirements.groundingdino.txt \
      requirements/requirements.yolo_world.txt \
      requirements/requirements.doctr.txt \
@@ -182,7 +274,6 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     -r requirements.clip.txt \
     -r requirements.transformers.txt \
     -r requirements.sam.txt \
-    -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
     -r requirements.doctr.txt \
@@ -191,14 +282,28 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     -r requirements.jetson.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
     "setuptools<=75.5.0" \
+    "transformers>=4.57.3,<5.9.0" \
     packaging \
     && rm -rf ~/.cache/uv
+
+# Rebuild the bitsandbytes CUDA backend for Orin (sm87). The PyPI aarch64
+# wheel ships sm90-only kernels, so every GPU quantization op (the VLM
+# use_quantization paths) fails on Orin with "named symbol not found".
+# Replaces the wheel's lib in place; the version must match the wheel pin
+# resolved by the requirements above.
+RUN BNB_VERSION=$(python3 -c "import importlib.metadata as m; print(m.version('bitsandbytes'))") && \
+    git clone --depth 1 --branch ${BNB_VERSION} https://github.com/bitsandbytes-foundation/bitsandbytes.git /build/bitsandbytes-src && \
+    cd /build/bitsandbytes-src && \
+    cmake -DCOMPUTE_BACKEND=cuda -DCOMPUTE_CAPABILITY="87" . && \
+    make -j4 && \
+    cp bitsandbytes/libbitsandbytes_cuda*.so /usr/local/lib/python3.10/dist-packages/bitsandbytes/ && \
+    cd / && rm -rf /build/bitsandbytes-src
 
 # Build inference packages
 WORKDIR /build/inference
 COPY . .
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
-    python -m pip install wheel twine requests && \
+    python -m pip install wheel && \
     rm -f dist/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
     python .release/pypi/inference.gpu.setup.py bdist_wheel && \
@@ -211,33 +316,184 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_sdk*.whl \
         "setuptools<=75.5.0"
 
+# Compile OpenCV from source with GStreamer / FFmpeg / CUDA support.
+# The pip opencv-python wheel ships without GStreamer, which blocks
+# cv2.VideoCapture from dispatching to NVIDIA's nv* GStreamer elements
+# (nvv4l2decoder, nvvidconv, nvjpegenc/dec). Built LAST in the builder so
+# nothing reinstalls the wheel-version cv2 over our from-source one.
+WORKDIR /build/opencv
+RUN wget -q https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSION}.zip -O opencv.zip && \
+    wget -q https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VERSION}.zip -O opencv_contrib.zip && \
+    unzip -q opencv.zip && unzip -q opencv_contrib.zip && \
+    rm opencv.zip opencv_contrib.zip && \
+    python3 -m pip uninstall -y opencv-python opencv-contrib-python opencv-python-headless || true && \
+    mkdir -p /build/opencv/opencv-${OPENCV_VERSION}/release
+WORKDIR /build/opencv/opencv-${OPENCV_VERSION}/release
+# release/ is cache-mounted, so the rebuild forced by `COPY . .` invalidation
+# above completes as a fast ninja no-op (CMakeCache + objects survive) instead
+# of a 30-60 min recompile. Cache id includes OPENCV_VERSION and CUDA_ARCH so
+# version/SoC bumps start clean.
+RUN --mount=type=cache,target=/build/opencv/opencv-${OPENCV_VERSION}/release,sharing=locked,id=opencv-build-${OPENCV_VERSION}-${TARGETARCH}-sm${OPENCV_CUDA_ARCH} \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp62-${TARGETARCH} \
+    cmake -GNinja \
+        -D CMAKE_BUILD_TYPE=RELEASE \
+        -D CMAKE_INSTALL_PREFIX=/usr/local \
+        -D WITH_CUDA=ON \
+        -D WITH_CUDNN=ON \
+        -D CUDA_ARCH_BIN="${OPENCV_CUDA_ARCH}" \
+        -D CUDA_ARCH_PTX="" \
+        -D OPENCV_GENERATE_PKGCONFIG=ON \
+        -D OPENCV_EXTRA_MODULES_PATH=/build/opencv/opencv_contrib-${OPENCV_VERSION}/modules \
+        -D WITH_FFMPEG=ON \
+        -D WITH_GSTREAMER=ON \
+        -D WITH_LIBV4L=ON \
+        -D BUILD_opencv_python3=ON \
+        -D BUILD_TESTS=OFF \
+        -D BUILD_PERF_TESTS=OFF \
+        -D BUILD_EXAMPLES=OFF \
+        -D BUILD_DOCS=OFF \
+        -D PYTHON3_EXECUTABLE=/usr/bin/python3 \
+        -D PYTHON3_INCLUDE_DIR=${OPENCV_PYTHON_INCLUDE_DIR} \
+        -D PYTHON_VERSION=${OPENCV_PYTHON_VERSION} \
+        -D OPENCV_PYTHON3_INSTALL_PATH=${OPENCV_PYTHON_INSTALL_PATH} \
+        -D BUILD_SHARED_LIBS=OFF \
+        -D WITH_OPENCLAMDFFT=OFF \
+        -D WITH_OPENCLAMDBLAS=OFF \
+        -D WITH_VA_INTEL=OFF \
+        .. && \
+    ninja && \
+    ninja install && \
+    ldconfig && \
+    # Rescue install-tree config files before pip install clobbers them.
+    # `ninja install` writes ${OPENCV_PYTHON_INSTALL_PATH}/cv2/config*.py with
+    # install paths (correct). The `pip install` below installs a wheel built
+    # from the BUILD-TREE python_loader directory, whose config files reference
+    # /build/... paths that don't survive into the runtime stage. Save the
+    # install-tree versions now, restore them after pip install registers
+    # opencv with pip's metadata. Without this, cv2 import in the runtime image
+    # fails with "recursion is detected during loading of cv2 binary extensions".
+    mkdir -p /tmp/cv2-install-tree && \
+    cp ${OPENCV_PYTHON_INSTALL_PATH}/cv2/config*.py /tmp/cv2-install-tree/ && \
+    python3 -m pip wheel /build/opencv/opencv-${OPENCV_VERSION}/release/python_loader --wheel-dir /build/out/wheels && \
+    python3 -m pip install --break-system-packages /build/out/wheels/opencv-*.whl && \
+    cp /tmp/cv2-install-tree/config*.py ${OPENCV_PYTHON_INSTALL_PATH}/cv2/ && \
+    rm -rf /tmp/cv2-install-tree && \
+    # Sanity check: simulate the runtime stage by removing /build/ from sys.path.
+    # If config files still leak build-tree paths, the loader bootstrap fails here
+    # with a recursion error rather than at runtime on the device.
+    env -u PYTHONPATH python3 -c "import sys; sys.path = [p for p in sys.path if '/build' not in p]; import cv2; info = cv2.getBuildInformation(); assert 'YES' in info.split('GStreamer:')[1].split(chr(10))[0], 'GStreamer not enabled'; assert 'YES' in info.split('FFMPEG:')[1].split(chr(10))[0], 'FFMPEG not enabled'; print('cv2 ' + cv2.__version__ + ' OK from install path; GStreamer + FFmpeg + CUDA enabled')"
+
+# Pin boto3/botocore last so the final versions win regardless of what the
+# requirement sets resolved to (previously done as an extra layer in the
+# runtime stage, which shipped both copies).
+RUN python3 -m pip uninstall -y boto3 botocore && \
+    python3 -m pip install "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
+
 # Remove test directories, development tools, and unnecessary packages to reduce image size
 # This happens AFTER all package installations to ensure everything gets cleaned
 # Note: Keep numpy/torch test dirs (public APIs depend on them), keep .pyi files (lazy_loader needs them)
+# The pip uninstalls double as a safety net: packages never installed are skipped
+# with a warning (exit 0), so this block is idempotent across image variants.
+# ---- image-slim cleanup (re-executed verbatim by the local donor harness) ----
 RUN cd /usr/local/lib/python3.10/dist-packages && \
+    # Build-time tooling leaked in via pytorch/onnxruntime build requirements;
+    # none has a runtime reverse-dependency (cmake pip pkg alone is 82MB)
+    python3 -m pip uninstall -y cmake lintrunner hypothesis expecttest types-dataclasses astunparse optree \
+        twine keyring readme-renderer nh3 docutils id jeepney SecretStorage \
+        jaraco.classes jaraco.context jaraco.functools || true && \
+    # jupyterlab is no longer installed (dropped from requirements.jetson.txt: every
+    # consuming dockerfile deleted it post-install anyway); remove its dependency
+    # closure, which has zero runtime reverse-dependencies. Deliberately kept:
+    # defusedxml (supervision/doctr), websockets (uvicorn), websocket-client (docker SDK).
+    python3 -m pip uninstall -y babel jedi parso ipython pyzmq nbconvert nbclient nbformat \
+        prompt-toolkit terminado argon2-cffi argon2-cffi-bindings send2trash json5 overrides \
+        pexpect ptyprocess fqdn isoduration jsonpointer uri-template webcolors \
+        rfc3339-validator rfc3986-validator rfc3987 python-json-logger comm matplotlib-inline \
+        stack-data executing asttokens pure-eval fastjsonschema arrow mistune tinycss2 bleach \
+        pandocfilters jupyterlab-pygments tornado traitlets jupyter-core jupyter-client \
+        jupyter-server jupyter-events jupyter-server-terminals jupyter-lsp notebook-shim async-lru || true && \
     find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
-    rm -rf debugpy* jupyterlab* jupyter_* notebook* ipython* ipykernel* || true && \
+    rm -rf debugpy* jupyterlab* jupyter_* notebook* ipython* IPython* ipykernel* || true && \
     rm -rf onnx/backend/test onnx/test || true && \
     rm -rf scipy/*/tests pandas/tests || true && \
-    rm -rf */examples */benchmarks */docs || true && \
-    rm -rf skimage/data || true
+    # boto3/docs and botocore/docs are importable code (boto3.resources.factory
+    # -> boto3.docs; boto3 -> botocore.docs.docstring), not documentation - the
+    # old image only survived this glob because boto3/botocore were reinstalled
+    # afterwards in the runtime stage
+    find . -mindepth 2 -maxdepth 2 -type d \( -name examples -o -name benchmarks -o -name docs \) -not -path './botocore/docs' -not -path './boto3/docs' -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf skimage/data || true && \
+    # Residual nested test dirs (numpy/torch kept per the note above)
+    find . -type d \( -name tests -o -name test \) -not -path './numpy/*' -not -path './torch/*' -exec rm -rf {} + 2>/dev/null || true && \
+    # bitsandbytes ships CUDA fatbins for ~10 CUDA versions; keep only CUDA 12.6 (+cpu).
+    # (bnb selects exactly one lib at import based on the detected CUDA version.)
+    ( cd bitsandbytes 2>/dev/null && ls libbitsandbytes_cuda*.so 2>/dev/null | grep -v cuda126 | xargs -r rm -f ) || true && \
+    # torch C++ headers only serve torch.utils.cpp_extension JIT and the runtime
+    # image ships no compiler; torch/bin holds two identical 5MB protoc copies
+    rm -rf torch/include torch/bin/protoc* || true && \
+    # The ORT python binding statically links the runtime; the separate C-API
+    # libonnxruntime.so has zero NEEDED references in the image
+    rm -f onnxruntime/capi/libonnxruntime.so* || true && \
+    # Strip symbol tables from ELF .so files, EXCLUDING auditwheel-vendored *.libs
+    # dirs: stripping patchelf-rewritten libs corrupts them ("ELF load command
+    # address/offset not page-aligned"). Verified on-device incl. CUDA paths.
+    find /usr/local/lib/python3.10/dist-packages /usr/local/lib /usr/lib/python3.10/dist-packages \
+        -name '*.so*' -type f | grep -vE '/[^/]+\.libs/' | xargs -r -n32 -P4 strip --strip-unneeded 2>/dev/null || true
+# ---- end image-slim cleanup ----
 
-# Stage 2: Runtime
-FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
+# CUDA runtime library donor stage: pinned to the exact image the runtime
+# stage previously used as its base, so library versions stay bit-identical.
+FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime AS cuda_rt
+
+# Stage 2: Runtime.
+# Plain ubuntu:22.04 (the same distro the l4t-cuda base wraps) instead of
+# l4t-cuda:12.6.11-runtime: the base shipped 1.8GB of CUDA libraries plus a
+# ~210MB mesa/freeglut-dev layer, of which only the 20 libraries COPY'd below
+# are actually referenced (readelf NEEDED + dlopen-string scan over every .so
+# in the image). Net ~300MB smaller. GPU/BSP access is unchanged: on JetPack 6
+# the nvidia-container-runtime injects libcuda/tegra libs from the host at
+# container start, driven by the NVIDIA_* envs replicated below.
+FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
+
+# Replicated verbatim from the l4t-cuda:12.6.11-runtime base / published image.
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    NVIDIA_REQUIRE_CUDA="cuda>=12.6" \
+    NVIDIA_REQUIRE_JETPACK_HOST_MOUNTS=base-only \
+    NVIDIA_PRODUCT_NAME=CUDA \
+    PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Library search paths the l4t-cuda base provided via ld.so.conf.d (tegra/nvidia
+# dirs are populated by the host mounts injected at container start).
+RUN printf '/usr/local/cuda/lib64\n/usr/lib/aarch64-linux-gnu/tegra\n/usr/lib/aarch64-linux-gnu/tegra-egl\n/usr/lib/aarch64-linux-gnu/nvidia\n/usr/lib/aarch64-linux-gnu/gstreamer-1.0\n' > /etc/ld.so.conf.d/nvidia-tegra.conf
 
 WORKDIR /app
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
-# Install runtime dependencies
-RUN apt-get update -y && \
+# Install runtime dependencies (cache id is runtime-specific, distinct from builder).
+# Trimmed relative to the original list (all verified unreferenced on-device):
+#   file (libmagic; nothing executes it), libproj22 (+proj-data; only served the
+#   removed system GDAL - rasterio bundles its own proj), python3-pip (pip already
+#   ships in dist-packages and the runtime stage no longer runs pip),
+#   gstreamer1.0-tools (debug CLIs), python3-gi + gir1.2-* (no `import gi`
+#   anywhere; cv2 links the GStreamer C libs directly), libatlas3-base (zero .so
+#   NEEDs ATLAS; BLAS is libopenblas0).
+# libegl1/libgles2 (glvnd loaders, ~1.8MB) are required by the host-injected NV
+# GStreamer plugins (nvarguscamerasrc/nvivafilter/nveglglessink/...); the actual
+# EGL/GLES drivers come from the host's tegra-egl mount at container start.
+# The dpkg path-exclude keeps docs/man/locale out of every package this layer installs.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-runtime-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-runtime-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    printf 'path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/locale/*\n' > /etc/dpkg/dpkg.cfg.d/01-nodoc && \
+    apt-get update -y && \
     apt-get install -y --no-install-recommends \
-    file \
+    tzdata \
     libopenblas0 \
-    libproj22 \
     libsqlite3-0 \
     libtiff5 \
     libcurl4 \
@@ -245,7 +501,6 @@ RUN apt-get update -y && \
     zlib1g \
     libgomp1 \
     python3 \
-    python3-pip \
     libxext6 \
     libvips42 \
     libglib2.0-0 \
@@ -260,48 +515,126 @@ RUN apt-get update -y && \
     libavformat58 \
     libswscale5 \
     ffmpeg \
-    libatlas3-base \
-    && rm -rf /var/lib/apt/lists/*
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    libegl1 \
+    libgles2 \
+    build-essential \
+    python3-dev \
+    zlib1g-dev \
+    libxml2-dev
 
-# Copy GDAL (skip headers - not needed in runtime)
-COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
-COPY --from=builder /usr/local/bin/ogr* /usr/local/bin/
-COPY --from=builder /usr/local/bin/gnm* /usr/local/bin/
-COPY --from=builder /usr/local/lib/libgdal* /usr/local/lib/
-COPY --from=builder /usr/local/share/gdal /usr/local/share/gdal
-
-ENV GDAL_DATA=/usr/local/share/gdal
+# No system GDAL: rasterio (the only GDAL consumer, via requirements.sam.txt)
+# installs as a manylinux wheel with its own bundled libgdal/libproj/gdal-data;
+# zero .so in the image links the from-source libgdal (verified via ldd scan +
+# live deletion test). GDAL_DATA must stay unset or it would override
+# rasterio's bundled data directory and break CRS handling.
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-# Copy CUDA libraries (only versioned files, then create symlinks to save ~2GB)
+# CUDA runtime libraries, exact files (not globs: the source dir mixes real
+# files and symlinks, and COPY dereferences symlinks, which would triple-copy
+# every library). The libs below are the complete set referenced by
+# torch/onnxruntime/cv2/pycuda/cudnn/TensorRT (readelf NEEDED + dlopen-string
+# scan). The nine npp* imaging libs are shipped solely for cv2's CUDA modules
+# (kept as a supported acceleration surface). Deliberately not shipped
+# (unreferenced): cusolverMg, npps, cufile, nvfatbin, nvblas, nppisu, cufftw,
+# nvToolsExt, cupti. Also not shipped:
+# libcusolver (139MB) - torch only dlopens it lazily via libtorch_cuda_linalg
+# for linalg factorizations (inv/svd/cholesky), which nothing in this codebase
+# calls (the only torch.linalg use is linalg.norm, a reduction); verified
+# on-device that conv/LSTM/matmul/linalg.norm work without it. nvJitLink stays:
+# libcusparse has a NEEDED entry on it.
+COPY --from=cuda_rt \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcudart.so.12.6.68 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcublas.so.12.6.1.4 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcublasLt.so.12.6.1.4 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcufft.so.11.2.6.59 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcurand.so.10.3.7.68 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcusparse.so.12.5.3.3 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnvJitLink.so.12.6.68 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnvrtc.so.12.6.68 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnvrtc-builtins.so.12.6.68 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppc.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppial.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppicc.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppidei.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppif.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppig.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppim.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppist.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnppitc.so.12.3.1.54 \
+     /usr/local/cuda-12.6/targets/aarch64-linux/lib/libcudla.so.1.0.0 \
+     /usr/local/cuda/lib64/
+
+# Copy CUDA libraries (only versioned files, then create symlinks to save ~2GB).
+# No libnvToolsExt COPY: the builder keeps it elsewhere (the old glob matched
+# nothing) and zero .so in the image references it.
+# No libcupti COPY: torch is built USE_KINETO=0 USE_CUPTI_SO=0 and an aggregate
+# readelf NEEDED scan over every .so in the image found zero cupti references.
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libcudnn*.so.*.*.* /usr/local/cuda/lib64/
-COPY --from=builder /usr/local/cuda/targets/aarch64-linux/lib/libcupti*.so.*.*.* /usr/local/cuda/lib64/
-COPY --from=builder /usr/local/cuda/targets/aarch64-linux/lib/libnvToolsExt*.so.*.*.* /usr/local/cuda/lib64/
 
-# TensorRT libraries (only versioned files, then create symlinks)
-COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvinfer*.so.*.*.* /usr/local/cuda/lib64/
+# TensorRT libraries (only versioned files, then create symlinks).
+# Explicit list instead of the old libnvinfer* glob: the ORT TensorRT EP NEEDs
+# libnvinfer + libnvinfer_plugin (+libnvonnxparser); builder_resource is required
+# for on-device engine builds (ORT_TENSORRT_ENGINE_CACHE_ENABLE=1); lean is kept
+# because inference_models' engine builder sets trt.BuilderFlag.VERSION_COMPATIBLE.
+# vc_plugin is kept alongside lean (TRT plugins inside version-compatible
+# engines resolve through it). Excluded as unreferenced: libnvinfer_dispatch
+# (the dispatch runtime; nothing loads VC engines via dispatch here).
+# No libnvparsers COPY: TensorRT 10.x removed it (the old glob matched nothing
+# and produced an empty layer; strict BuildKit fails on unmatched COPY globs).
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvinfer.so.*.*.* \
+     /usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.*.*.* \
+     /usr/lib/aarch64-linux-gnu/libnvinfer_builder_resource.so.*.*.* \
+     /usr/lib/aarch64-linux-gnu/libnvinfer_lean.so.*.*.* \
+     /usr/lib/aarch64-linux-gnu/libnvinfer_vc_plugin.so.*.*.* \
+     /usr/local/cuda/lib64/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so.*.*.* /usr/local/cuda/lib64/
-COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvparsers*.so.*.*.* /usr/local/cuda/lib64/
-COPY --from=builder /usr/lib/aarch64-linux-gnu/tegra/libnvdla_compiler.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/nvidia/libnvdla_compiler.so* /usr/local/cuda/lib64/
 
-# Create symlinks for cuDNN and TensorRT (saves ~2GB by not duplicating files)
+# NOTE: NVIDIA's gstreamer plugins (nvv4l2decoder, nvvidconv, nvjpegenc/dec) and
+# their tegra runtime deps (libnvbufsurface, libnvjpeg, libnvargus, ...) are NOT
+# baked into the image -- they are tied to the host's JetPack BSP and are injected
+# at container start by `nvidia-container-runtime` via the CSVs under
+# /etc/nvidia-container-runtime/host-files-for-container.d/. The host system must
+# be configured to mount them; without that, cv2 here can dispatch a GStreamer
+# pipeline but `nvv4l2decoder` / `nvvidconv` / `nvjpegenc` won't resolve.
+
+# Create symlinks for CUDA/cuDNN/TensorRT (saves ~2GB by not duplicating files).
+# libnvrtc-builtins needs its two-level soname on top of the .so/.so.MAJ links
+# the loop creates: libnvrtc dlopens it as libnvrtc-builtins.so.12.6.
 RUN cd /usr/local/cuda/lib64 && \
     for lib in *.so.*.*.*; do \
         base=$(echo $lib | sed 's/\.so\..*/\.so/') && \
         maj=$(echo $lib | sed 's/\(.*\.so\.[0-9]*\)\..*/\1/') && \
         ln -sf $lib $maj && \
         ln -sf $lib $base; \
-    done
+    done && \
+    ln -sf libnvrtc-builtins.so.12.6.68 libnvrtc-builtins.so.12.6
 
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 RUN ldconfig
 
+# GStreamer plugin discovery: point at the standard arch dir (where libgstnv*.so live).
+# Clear stale plugin registry so it's rebuilt on first use against the copied plugins.
+ENV GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
+RUN rm -rf /root/.cache/gstreamer-1.0 /home/*/.cache/gstreamer-1.0 2>/dev/null || true
+
+# build-essential/python3-dev/zlib1g-dev/libxml2-dev: required for Triton JIT kernel
+# compilation at runtime (gcc alone is insufficient; needs g++, make, and libc6-dev
+# from build-essential). Triton python pkg ships in dist-packages below; nvidia/json
+# JIT toolchains are copied separately (llvm cache excluded at build time).
+
 # Copy Python packages
 COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
+COPY --from=builder /root/.triton/nvidia /root/.triton/nvidia
+COPY --from=builder /root/.triton/json /root/.triton/json
+# tensorrt_dispatch python pkg dropped along with libnvinfer_dispatch (zero
+# imports repo-wide); tensorrt_lean kept to match libnvinfer_lean above.
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt /usr/local/lib/python3.10/dist-packages/tensorrt
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt-10.7.0.dist-info
-COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_dispatch /usr/local/lib/python3.10/dist-packages/tensorrt_dispatch
-COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_dispatch-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt_dispatch-10.7.0.dist-info
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean /usr/local/lib/python3.10/dist-packages/tensorrt_lean
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info
 COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
@@ -313,8 +646,8 @@ COPY inference inference
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
-
-RUN python -m pip uninstall -y boto3 botocore && python -m pip install "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 # Environment variables
 ENV VERSION_CHECK_MODE=once \
@@ -343,4 +676,4 @@ LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (PyT
 
 EXPOSE 9001
 
-ENTRYPOINT ["/bin/sh", "-c", "python3 -m uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT"]
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

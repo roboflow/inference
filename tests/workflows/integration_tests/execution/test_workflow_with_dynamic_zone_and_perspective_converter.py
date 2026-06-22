@@ -22,7 +22,7 @@ WORKFLOW_DYNAMIC_ZONE_AND_PERSPECTIVE_CONVERTER = {
     "inputs": [{"type": "InferenceImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_instance_segmentation_model@v2",
+            "type": "roboflow_core/roboflow_instance_segmentation_model@v3",
             "name": "model",
             "images": "$inputs.image",
             "model_id": "yolov8n-seg-640",
