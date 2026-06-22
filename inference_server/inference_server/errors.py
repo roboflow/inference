@@ -45,6 +45,10 @@ class PayloadTooLargeError(ValueError):
     """Input exceeds the SHM slot capacity — mapped to 413."""
 
 
+class UploadTooSlowError(TimeoutError):
+    """Client uploaded too slowly to hold a scarce SHM slot — mapped to 408."""
+
+
 class AuthBackendUnavailable(Exception):
     """Roboflow API unreachable during key validation.
 
