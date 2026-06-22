@@ -156,7 +156,9 @@ def patch_adapter(
         dst_dir: Output directory for the patched adapter.
         policy: DoRA handling policy, one of `reject` / `strip` / `svd`.
         base_dir: Directory holding base model safetensors - required for the
-            `svd` policy.
+            `svd` policy. Runtime AdapterManager calls intentionally download
+            adapter-only artifacts, so `svd` is reserved for offline/lab
+            conversion paths that pass base weights explicitly.
         max_lora_rank: Maximum accepted LoRA rank (defaults to
             `VLLM_MAX_LORA_RANK`).
         vision_norm_threshold: Norm threshold above which a vision `lora_B`
@@ -224,7 +226,8 @@ def patch_adapter(
             raise AdapterNotServableError(
                 "Adapter uses DoRA (`use_dora: true`), which is rejected under "
                 "the configured `VLLM_DORA_POLICY=reject`. Set the policy to "
-                "`strip` or `svd` to serve this adapter on vLLM."
+                "`strip` at runtime, or run offline `svd` conversion with "
+                "base weights."
             )
         if policy == "strip":
             tensors = _strip_magnitude_vectors(tensors=tensors, report=report)
@@ -236,7 +239,9 @@ def patch_adapter(
             if base_dir is None:
                 raise AdapterNotServableError(
                     "DoRA policy `svd` requires base model weights "
-                    "(`base_dir` was not provided)."
+                    "(`base_dir` was not provided). Runtime AdapterManager "
+                    "downloads adapter-only artifacts; reserve `svd` for "
+                    "offline conversion paths that pass base weights explicitly."
                 )
             svd_rank = min(lora_rank, max_lora_rank)
             base_weight_lookup = _build_base_weight_lookup(base_dir=base_dir)
