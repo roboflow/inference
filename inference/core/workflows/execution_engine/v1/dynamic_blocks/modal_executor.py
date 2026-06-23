@@ -806,7 +806,12 @@ class WebSocketModalExecutor:
         # as an exception on the very next ``send``/``recv`` and we drop+
         # reconnect in the caller's except block (see ``_execute_ws``).
         if self._ws is None:
-            self._connect(workspace_id)
+            with self._io_lock:
+                # Double-check inside the lock to prevent race where two
+                # threads both see _ws as None and both call _connect(),
+                # leaking a socket and keepalive thread.
+                if self._ws is None:
+                    self._connect(workspace_id)
 
     def _ensure_keepalive_thread(self) -> None:
         if self._keepalive_thread is not None and self._keepalive_thread.is_alive():
