@@ -717,7 +717,7 @@ WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
 # JPEG quality used when serializing images for the webexec round-trip.
 # Default 95 matches WorkflowImageData.base64_image; lower values (e.g. 50-75)
 # shrink payloads significantly for WebRTC preview with minimal visual impact.
-WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "75"))
+WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "95"))
 
 # Transport protocol for webexec communication: "http" (default) or "websocket".
 # "websocket" uses a persistent WebSocket connection with msgpack binary frames,
