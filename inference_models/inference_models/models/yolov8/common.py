@@ -3,10 +3,10 @@ from typing import List
 import torch
 
 from inference_models import InstanceDetections, InstancesRLEMasks
+from inference_models.models.common.rle_utils import torch_masks_to_coco_rle_batch
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
-    align_instance_segmentation_results_to_rle_masks,
     crop_masks_to_boxes,
     preprocess_segmentation_masks,
 )
@@ -83,8 +83,7 @@ def prepare_rle_masks(
             image_meta.pad_right,
             image_meta.pad_bottom,
         )
-        aligned_boxes, rle_masks = [], []
-        for bbox, mask in align_instance_segmentation_results_to_rle_masks(
+        aligned_boxes, aligned_masks = align_instance_segmentation_results(
             image_bboxes=image_bboxes,
             masks=cropped_masks,
             padding=padding,
@@ -95,37 +94,20 @@ def prepare_rle_masks(
             inference_size=image_meta.inference_size,
             static_crop_offset=image_meta.static_crop_offset,
             binarization_threshold=masks_binarization_threshold,
-        ):
-            aligned_boxes.append(bbox)
-            rle_masks.append(mask)
+        )
         instances_masks = InstancesRLEMasks.from_coco_rle_masks(
             image_size=(
                 image_meta.original_size.height,
                 image_meta.original_size.width,
             ),
-            masks=rle_masks,
+            masks=torch_masks_to_coco_rle_batch(aligned_masks),
         )
-        if len(aligned_boxes) > 0:
-            aligned_boxes_tensor = torch.stack(aligned_boxes, dim=0)
-            final_results.append(
-                InstanceDetections(
-                    xyxy=aligned_boxes_tensor[:, :4].round().int(),
-                    class_id=aligned_boxes_tensor[:, 5].int(),
-                    confidence=aligned_boxes_tensor[:, 4],
-                    mask=instances_masks,
-                )
+        final_results.append(
+            InstanceDetections(
+                xyxy=aligned_boxes[:, :4].round().int(),
+                class_id=aligned_boxes[:, 5].int(),
+                confidence=aligned_boxes[:, 4],
+                mask=instances_masks,
             )
-        else:
-            final_results.append(
-                InstanceDetections(
-                    xyxy=torch.empty(
-                        (0, 4), dtype=torch.int32, device=image_bboxes.device
-                    ),
-                    class_id=torch.empty(
-                        (0,), dtype=torch.int32, device=image_bboxes.device
-                    ),
-                    confidence=torch.empty((0,), device=image_bboxes.device),
-                    mask=instances_masks,
-                )
-            )
+        )
     return final_results
