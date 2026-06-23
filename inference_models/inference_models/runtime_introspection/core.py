@@ -1,3 +1,4 @@
+import ctypes
 import os
 import platform
 import re
@@ -216,6 +217,16 @@ def get_available_gpu_devices_cc() -> List[Version]:
 
 @cache
 def get_cuda_version() -> Optional[Version]:
+    cuda_version = _get_cuda_version_with_dpkg()
+    if cuda_version is not None:
+        return cuda_version
+    cuda_version = _get_cuda_version_loading_shared_library()
+    if cuda_version is not None:
+        return cuda_version
+    return _get_cuda_version_from_torch()
+
+
+def _get_cuda_version_with_dpkg() -> Optional[Version]:
     try:
         result = subprocess.run(
             "dpkg -l | grep cuda-cudart", shell=True, capture_output=True, text=True
@@ -224,6 +235,25 @@ def get_cuda_version() -> Optional[Version]:
             return None
         result_chunks = result.stdout.strip().split(os.linesep)[0].split()
         return Version(result_chunks[2])
+    except Exception:
+        return None
+
+def _get_cuda_version_loading_shared_library() -> Optional[Version]:
+    try:
+        lib = ctypes.CDLL("libcudart.so")  # resolves via loader / LD_LIBRARY_PATH
+        # 1. Authoritative: ask the loaded runtime
+        v = ctypes.c_int()
+        return_value = lib.cudaRuntimeGetVersion(ctypes.byref(v))
+        if return_value != 0:
+            return None
+        major, minor, patch = v.value // 1000, (v.value % 1000) // 10, v.value % 10
+        return Version(f"{major}.{minor}.{patch}")
+    except Exception:
+        return None
+
+def _get_cuda_version_from_torch() -> Optional[Version]:
+    try:
+        return Version(torch.version.cuda)
     except Exception:
         return None
 
