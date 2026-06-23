@@ -7,6 +7,7 @@ as a dependency for the main inference package.
 """
 
 from typing import Any, Dict
+import asyncio
 import base64
 import gzip
 import hashlib
@@ -38,7 +39,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
 # inference/core/interfaces/webrtc_worker/region_presets.py).
 WEBEXEC_DEPLOY_CLOUD = os.getenv("WEBEXEC_DEPLOY_CLOUD", "aws").lower().strip()
 WEBEXEC_DEPLOY_REGION = os.getenv("WEBEXEC_DEPLOY_REGION", "us-east-1")
-_WEBEXEC_REGIONAL = os.getenv("WEBEXEC_REGIONAL", "").strip().lower() in (
+_WEBEXEC_REGIONAL = os.getenv("WEBEXEC_REGIONAL", "False").strip().lower() in (
     "1",
     "true",
     "yes",
@@ -721,13 +722,14 @@ from datetime import datetime
                     client_code_hash = request.get("code_hash", "")
 
                     inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
-                    resp = Executor._run_user_code_ws(
+                    resp = await asyncio.to_thread(
+                        Executor._run_user_code_ws,
                         executor_self,
                         code_str,
                         imports,
                         run_function_name,
                         inputs,
-                        client_code_hash=client_code_hash,
+                        client_code_hash,
                     )
 
                     if resp.get("success"):
