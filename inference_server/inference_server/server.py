@@ -194,6 +194,7 @@ def main() -> None:
         os.environ.get(configuration.PORT_ENV, str(configuration.SERVER_PORT_DEFAULT))
     )
     workers = configuration.NUM_WORKERS
+    limit_concurrency = configuration.limit_concurrency(n_slots, workers)
     ssl_cert = configuration.SSL_CERTFILE
     ssl_key = configuration.SSL_KEYFILE
     log_level = configuration.LOG_LEVEL
@@ -235,18 +236,19 @@ def main() -> None:
     # ── Start uvicorn ──────────────────────────────────────────────────────
     scheme = "https" if ssl_cert else "http"
     logger.info(
-        "Starting uvicorn: %s://%s:%d  workers=%d",
+        "Starting uvicorn: %s://%s:%d  workers=%d limit_concurrency=%d",
         scheme,
         host,
         port,
         workers,
+        limit_concurrency,
     )
 
     uvicorn_kwargs: dict = dict(
         host=host,
         port=port,
         workers=workers,
-        limit_concurrency=configuration.limit_concurrency(n_slots, workers),
+        limit_concurrency=limit_concurrency,
         loop="uvloop",
         http="httptools",
         log_level=log_level,
