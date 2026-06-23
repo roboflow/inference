@@ -1069,6 +1069,15 @@ class WebSocketModalExecutor:
         if not result.get("success", False):
             self._raise_code_error(result, block_type_name, python_code)
 
+        stdout = result.get("stdout")
+        stderr = result.get("stderr")
+        if stdout:
+            sys.stdout.write(stdout)
+            sys.stdout.flush()
+        if stderr:
+            sys.stderr.write(stderr)
+            sys.stderr.flush()
+
         return _deserialize_msgpack_result(result.get("result", {}))
 
     @staticmethod

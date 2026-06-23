@@ -572,7 +572,12 @@ from datetime import datetime
                 else:
                     result = user_function(**inputs)
 
-            return {"success": True, "result": result}
+            return {
+                "success": True,
+                "result": result,
+                "stdout": stdout_buf.getvalue() or None,
+                "stderr": stderr_buf.getvalue() or None,
+            }
         except Exception as e:
             resp: Dict[str, Any] = {
                 "success": False,
