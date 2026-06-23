@@ -743,9 +743,6 @@ def _deserialize_msgpack_result(result: Any) -> Any:
 class WebSocketModalExecutor:
     """Executes Custom Python Blocks via a persistent WebSocket + msgpack.
 
-    Falls back to HTTP (``ModalExecutor``) if the WebSocket connection
-    cannot be established.
-
     Keep-alive strategy
     -------------------
     We intentionally do **not** ping on every frame: ``websocket-client``
@@ -944,6 +941,46 @@ class WebSocketModalExecutor:
             msgpack,
         )
 
+    def _send_recv_with_retry(
+        self,
+        frame_bytes: bytes,
+        workspace: str,
+    ) -> bytes:
+        """Send frame and receive response, reconnecting once on socket failure.
+
+        On the first send/recv exception we drop the connection, reconnect,
+        and resend. If the retry also fails we wrap the error in
+        ``DynamicBlockError`` to match the HTTP path's behavior.
+        """
+        last_exc: Optional[Exception] = None
+        for attempt in range(2):
+            try:
+                self._ensure_connection(workspace)
+                with self._io_lock:
+                    self._ws.send_binary(frame_bytes)
+                    resp_bytes = self._ws.recv()
+                self._last_activity = _time.monotonic()
+                return resp_bytes
+            except Exception as e:
+                last_exc = e
+                logger.warning(
+                    "[webexec-ws] send/recv failed (attempt %d/2): %s",
+                    attempt + 1,
+                    e,
+                )
+                try:
+                    if self._ws is not None:
+                        self._ws.close()
+                except Exception:
+                    pass
+                self._ws = None
+                self._hashes_sent_on_ws = set()
+
+        raise DynamicBlockError(
+            public_message=f"WebSocket connection to Modal endpoint failed after retry: {last_exc}",
+            context="modal_executor | websocket_connection",
+        )
+
     def _execute_ws(
         self,
         block_type_name: str,
@@ -977,16 +1014,7 @@ class WebSocketModalExecutor:
         )
         t_pack = _time.monotonic()
 
-        try:
-            self._ensure_connection(workspace)
-            with self._io_lock:
-                self._ws.send_binary(frame_bytes)
-                resp_bytes = self._ws.recv()
-            self._last_activity = _time.monotonic()
-        except Exception:
-            self._ws = None
-            self._hashes_sent_on_ws = set()
-            raise
+        resp_bytes = self._send_recv_with_retry(frame_bytes, workspace)
 
         t_rtt = _time.monotonic()
 
@@ -1011,16 +1039,7 @@ class WebSocketModalExecutor:
                 send_full_code=True,
                 msgpack=msgpack,
             )
-            try:
-                self._ensure_connection(workspace)
-                with self._io_lock:
-                    self._ws.send_binary(retry_frame)
-                    resp_bytes = self._ws.recv()
-                self._last_activity = _time.monotonic()
-            except Exception:
-                self._ws = None
-                self._hashes_sent_on_ws = set()
-                raise
+            resp_bytes = self._send_recv_with_retry(retry_frame, workspace)
             result = msgpack.unpackb(resp_bytes, raw=False)
 
         if result.get("success", False):
