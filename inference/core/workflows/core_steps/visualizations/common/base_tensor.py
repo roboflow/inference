@@ -36,10 +36,14 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from supervision.detection.compact_mask import CompactMask
+
+from inference.core.workflows.core_steps.common.rle_compact import (
+    instances_rle_to_compact_mask,
+)
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.types import InstancesRLEMasks
-from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 
 OUTPUT_IMAGE_KEY: str = "image"
 
@@ -104,7 +108,7 @@ def to_supervision_for_annotation(
     class_id = detections.class_id.detach().cpu().numpy().astype(int)
     confidence = detections.confidence.detach().cpu().numpy().astype(np.float32)
     mask = (
-        _materialise_mask(detections, detections_number)
+        _materialise_mask(detections, detections_number, xyxy)
         if materialise_masks
         else None
     )
@@ -129,15 +133,20 @@ def to_supervision_for_annotation(
 def _materialise_mask(
     detections: TensorNativeDetections,
     detections_number: int,
-) -> Optional[np.ndarray]:
+    xyxy: np.ndarray,
+) -> Optional[Union[np.ndarray, CompactMask]]:
     if not isinstance(detections, InstanceDetections):
         return None
     if detections_number == 0:
         return None
     mask = detections.mask
     if isinstance(mask, InstancesRLEMasks):
-        # RLE: decode every instance in one call (never one-at-a-time) -> (N, H, W) bool.
-        return coco_rle_masks_to_numpy_mask(mask)
+        # RLE path: transcode straight to a supervision CompactMask (per-crop
+        # RLE) WITHOUT ever decoding the full-frame (N, H, W) boolean stack.
+        # Compact-aware annotators (sv.MaskAnnotator / HaloAnnotator via
+        # `_paint_masks_by_area`) then paint into each bbox crop only. The boxes
+        # double as crop bounds — identical to `CompactMask.from_dense`.
+        return instances_rle_to_compact_mask(mask, xyxy)
     # Dense torch.Tensor (N, H, W): a single bulk device->host transfer instead of
     # N per-instance `.detach().to("cpu").numpy()` round-trips (each a blocking CUDA
     # sync). Mirrors `InstanceDetections.to_supervision`'s dense branch.
