@@ -34,6 +34,7 @@ import os
 import sys
 import threading
 import time as _time
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -664,13 +665,14 @@ def serialize_inputs_for_msgpack(inputs: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(value, sv.Detections):
             d = serialise_sv_detections(detections=value)
             d["_type"] = "sv_detections"
-            return d
+            return {k: _pack(v) for k, v in d.items()}
         if isinstance(value, WorkflowImageData):
-            return _serialize_image_for_msgpack(value)
+            d = _serialize_image_for_msgpack(value)
+            return {k: _pack(v) for k, v in d.items()}
         if isinstance(value, VideoMetadata):
             d = serialize_video_metadata_kind(value)
             d["_type"] = "video_metadata"
-            return d
+            return {k: _pack(v) for k, v in d.items()}
         if isinstance(value, datetime):
             return {"_type": "datetime", "value": value.isoformat()}
         if isinstance(value, np.ndarray):
@@ -894,6 +896,7 @@ class WebSocketModalExecutor:
         python_code: PythonCode,
         inputs: Dict[str, Any],
         workspace_id: Optional[str] = None,
+        workflow_context: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
         if not MODAL_AVAILABLE:
             raise DynamicBlockError(
