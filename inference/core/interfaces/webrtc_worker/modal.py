@@ -745,8 +745,11 @@ if modal is not None:
                 )
             except Empty:
                 logger.error("Modal function call timed out, cancelling function call")
-                # Modal rejects terminate_containers=True for async (spawn) calls;
-                # the server now manages container lifecycle on cancel.
+                # Modal rejects terminate_containers=True for async (spawn) calls.
+                # cancel() sends InputCancellation to the container, which is caught
+                # by run_rtc_peer_connection_with_watchdog (line ~271). The function
+                # returns, the container becomes idle, and scales down after
+                # WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW (default 3s).
                 function_call.cancel()
                 raise RoboflowAPITimeoutError("Modal function call timed out")
             except Exception as exc:
