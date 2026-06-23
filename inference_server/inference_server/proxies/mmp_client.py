@@ -27,6 +27,9 @@ from fastapi import Request
 
 from inference_model_manager.backends.utils.shm_pool import read_free_count
 from inference_model_manager.backends.utils.transport import zmq_addr
+from inference_model_manager.benchmark_trace import log as trace_log
+from inference_model_manager.benchmark_trace import ms as trace_ms
+from inference_model_manager.benchmark_trace import sampled as trace_sampled
 from inference_server import configuration
 from inference_server.errors import (
     PayloadTooLargeError,
@@ -278,15 +281,23 @@ class MMPClient:
             effective_params.setdefault("task", task)
 
         req_id = _new_req_id()
+        trace = trace_sampled(req_id)
+        t_request = time.monotonic()
+        alloc_ms = write_ms = wait_ms = read_ms = decode_ms = 0.0
+        t0 = time.monotonic()
         slot_id = await self._alloc_slot(req_id, model_id, instance)
+        alloc_ms = trace_ms(t0)
         submitted = False
         done = False
         try:
+            t0 = time.monotonic()
             self._write_input(slot_id, image, 0)
+            write_ms = trace_ms(t0)
             # Mark BEFORE awaiting: if _submit_and_wait raises (timeout /
             # disconnect) after T_SUBMIT went out, the finally block must
             # cancel — not free a slot the worker still holds.
             submitted = True
+            t0 = time.monotonic()
             result = await self._submit_and_wait(
                 req_id,
                 slot_id,
@@ -296,6 +307,7 @@ class MMPClient:
                 effective_params,
                 request=request,
             )
+            wait_ms = trace_ms(t0)
 
             if result[0] == "error":
                 raise RuntimeError("inference failed")
@@ -306,6 +318,7 @@ class MMPClient:
             # will not touch it again, so the client now owns the free.
             done = True
             _, result_slot_id, result_sz = result
+            t0 = time.monotonic()
             hdr = self._read_slot_header(result_slot_id)
             if hdr is not None and hdr.status == SLOT_STATUS_ERROR:
                 err_msg = "inference failed"
@@ -316,7 +329,27 @@ class MMPClient:
                 raise RuntimeError(err_msg)
 
             raw = self._read_result(result_slot_id, result_sz)
-            return self._decode_result(raw, raw_pickle)
+            read_ms = trace_ms(t0)
+            t0 = time.monotonic()
+            decoded = self._decode_result(raw, raw_pickle)
+            decode_ms = trace_ms(t0)
+            if trace:
+                trace_log(
+                    logger,
+                    "mmp_client",
+                    req_id=req_id,
+                    path="buffered",
+                    model_id=model_id,
+                    bytes=len(image),
+                    result_bytes=result_sz,
+                    alloc_ms=alloc_ms,
+                    upload_ms=write_ms,
+                    submit_wait_ms=wait_ms,
+                    result_read_ms=read_ms,
+                    result_decode_ms=decode_ms,
+                    total_ms=trace_ms(t_request),
+                )
+            return decoded
         finally:
             if done:
                 # Worker finished, we read the result → safe to free.
@@ -356,7 +389,13 @@ class MMPClient:
             effective_params.setdefault("task", task)
 
         req_id = _new_req_id()
+        trace = trace_sampled(req_id)
+        t_request = time.monotonic()
+        alloc_ms = upload_ms = write_ms = wait_ms = read_ms = decode_ms = 0.0
+        chunks = max_chunk = 0
+        t0 = time.monotonic()
         slot_id = await self._alloc_slot(req_id, model_id, instance)
+        alloc_ms = trace_ms(t0)
         submitted = False
         done = False
         input_sz = 0
@@ -367,6 +406,7 @@ class MMPClient:
         )
         try:
             aiter = image_chunks.__aiter__()
+            t_upload = time.monotonic()
             while True:
                 try:
                     if deadline is None:
@@ -382,13 +422,18 @@ class MMPClient:
                     raise UploadTooSlowError("upload too slow") from None
                 if not chunk:
                     continue
+                chunks += 1
+                max_chunk = max(max_chunk, len(chunk))
                 if input_sz + len(chunk) > self.shm_data_size:
                     raise PayloadTooLargeError(
                         f"image exceeds slot size ({input_sz + len(chunk)} > "
                         f"{self.shm_data_size})"
                     )
+                t0 = time.monotonic()
                 self._write_input(slot_id, chunk, input_sz)
+                write_ms += trace_ms(t0)
                 input_sz += len(chunk)
+            upload_ms = trace_ms(t_upload)
 
             if input_sz == 0:
                 raise ValueError("empty body")
@@ -398,6 +443,7 @@ class MMPClient:
                 )
 
             submitted = True
+            t0 = time.monotonic()
             result = await self._submit_and_wait(
                 req_id,
                 slot_id,
@@ -407,6 +453,7 @@ class MMPClient:
                 effective_params,
                 request=request,
             )
+            wait_ms = trace_ms(t0)
 
             if result[0] == "error":
                 raise RuntimeError("inference failed")
@@ -415,6 +462,7 @@ class MMPClient:
 
             done = True
             _, result_slot_id, result_sz = result
+            t0 = time.monotonic()
             hdr = self._read_slot_header(result_slot_id)
             if hdr is not None and hdr.status == SLOT_STATUS_ERROR:
                 err_msg = "inference failed"
@@ -424,9 +472,32 @@ class MMPClient:
                     )
                 raise RuntimeError(err_msg)
 
-            return self._decode_result(
-                self._read_result(result_slot_id, result_sz), raw_pickle
-            )
+            raw = self._read_result(result_slot_id, result_sz)
+            read_ms = trace_ms(t0)
+            t0 = time.monotonic()
+            decoded = self._decode_result(raw, raw_pickle)
+            decode_ms = trace_ms(t0)
+            if trace:
+                trace_log(
+                    logger,
+                    "mmp_client",
+                    req_id=req_id,
+                    path="stream",
+                    model_id=model_id,
+                    bytes=input_sz,
+                    content_length=content_length,
+                    chunks=chunks,
+                    max_chunk_bytes=max_chunk,
+                    result_bytes=result_sz,
+                    alloc_ms=alloc_ms,
+                    upload_ms=upload_ms,
+                    shm_write_ms=round(write_ms, 3),
+                    submit_wait_ms=wait_ms,
+                    result_read_ms=read_ms,
+                    result_decode_ms=decode_ms,
+                    total_ms=trace_ms(t_request),
+                )
+            return decoded
         finally:
             if done:
                 self._free_slot(slot_id, req_id)
@@ -520,6 +591,15 @@ class MMPClient:
         if self.shm_admission and self._shm is not None:
             free = read_free_count(self._shm.buf, self.n_slots, self.slot_total)
             if free == 0:
+                if trace_sampled(req_id):
+                    trace_log(
+                        logger,
+                        "mmp_client_alloc",
+                        req_id=req_id,
+                        model_id=model_id,
+                        outcome="local_pool_full",
+                        free_slots=free,
+                    )
                 raise ServerBusyError("no capacity (admission: pool full)")
 
         mid = _routing_key(model_id, instance).encode()
@@ -532,6 +612,14 @@ class MMPClient:
             # MMP unresponsive / pool stalled — a capacity condition, not an
             # inference timeout (504).
             self._drop_future(req_id)
+            if trace_sampled(req_id):
+                trace_log(
+                    logger,
+                    "mmp_client_alloc",
+                    req_id=req_id,
+                    model_id=model_id,
+                    outcome="timeout",
+                )
             raise ServerBusyError("slot allocation timed out") from None
         except asyncio.CancelledError:
             # Handler task cancelled (client disconnect) while T_ALLOC may be in
@@ -541,6 +629,15 @@ class MMPClient:
             raise
         if result[0] == "error":
             # Alloc-time T_ERROR is pool-full / per-model cap — retryable.
+            if trace_sampled(req_id):
+                trace_log(
+                    logger,
+                    "mmp_client_alloc",
+                    req_id=req_id,
+                    model_id=model_id,
+                    outcome="remote_error",
+                    code=result[1],
+                )
             raise ServerBusyError(f"no capacity (code={result[1]})")
         return result[1]
 

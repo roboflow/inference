@@ -50,6 +50,9 @@ import zmq.asyncio
 from inference_model_manager import configuration as cfg
 from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
 from inference_model_manager.backends.utils.transport import zmq_addr
+from inference_model_manager.benchmark_trace import log as trace_log
+from inference_model_manager.benchmark_trace import ms as trace_ms
+from inference_model_manager.benchmark_trace import sampled as trace_sampled
 from inference_model_manager.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
@@ -344,6 +347,7 @@ class ModelManagerProcess:
 
         # req_id → (uvicorn_identity, slot_id, flavor)
         self._pending: dict[int, tuple[bytes, int, str]] = {}
+        self._pending_started: dict[int, float] = {}
 
         self._rejects_pool_full = 0
 
@@ -697,15 +701,37 @@ class ModelManagerProcess:
             inflight = sum(1 for _, _, m in self._pending.values() if m == model_id)
             if inflight >= cap:
                 self._rejects_pool_full += 1
+                if trace_sampled(req_id):
+                    trace_log(
+                        logger,
+                        "mmp_alloc",
+                        req_id=req_id,
+                        model_id=model_id,
+                        outcome="per_model_cap",
+                        pending=len(self._pending),
+                        inflight=inflight,
+                    )
                 await self._send(
                     identity, T_ERROR, struct.pack(">QB", req_id, _ERR_POOL_FULL)
                 )
                 return
 
         try:
+            t0 = time.monotonic()
             slot_id = self._pool.alloc_slot(timeout=0)
         except TimeoutError:
             self._rejects_pool_full += 1
+            if trace_sampled(req_id):
+                trace_log(
+                    logger,
+                    "mmp_alloc",
+                    req_id=req_id,
+                    model_id=model_id,
+                    outcome="pool_full",
+                    pending=len(self._pending),
+                    inflight=len(self._inflight),
+                    free_slots=self._pool.free_count,
+                )
             await self._send(
                 identity, T_ERROR, struct.pack(">QB", req_id, _ERR_POOL_FULL)
             )
@@ -713,6 +739,19 @@ class ModelManagerProcess:
 
         self._pool.mark_allocated(slot_id, req_id)
         await self._send(identity, T_ALLOC_OK, struct.pack(">QI", req_id, slot_id))
+        if trace_sampled(req_id):
+            trace_log(
+                logger,
+                "mmp_alloc",
+                req_id=req_id,
+                model_id=model_id,
+                outcome="ok",
+                slot_id=slot_id,
+                alloc_ms=trace_ms(t0),
+                pending=len(self._pending),
+                inflight=len(self._inflight),
+                free_slots=self._pool.free_count,
+            )
 
     # ------------------------------------------------------------------
     # T_SUBMIT  (no reply — result delivered via on_result callback)
@@ -741,6 +780,7 @@ class ModelManagerProcess:
             return
 
         self._pending[req_id] = (identity, slot_id, model_id)
+        self._pending_started[req_id] = time.monotonic()
         self._pool.mark_written(slot_id, input_sz)
         self._forward_to_backend(model_id, slot_id, req_id, params_bytes)
 
@@ -773,6 +813,7 @@ class ModelManagerProcess:
             return
         req_id = struct.unpack_from(">Q", data[0])[0]
         self._pending.pop(req_id, None)
+        self._pending_started.pop(req_id, None)
 
     # ------------------------------------------------------------------
     # T_LOAD (admin) — trigger model load + reply T_OK immediately
@@ -975,8 +1016,10 @@ class ModelManagerProcess:
         times.append(now)
         # Keep only the recent-window of timestamps
         cutoff = now - self._vram_recent_window_s
+        trimmed = 0
         while times and times[0] < cutoff:
             times.pop(0)
+            trimmed += 1
         backend = self._backends.get(model_id)
         if backend is None:
             logger.warning("MMP: no backend for '%s', req_id=%d", model_id, req_id)
@@ -992,6 +1035,7 @@ class ModelManagerProcess:
             self._on_result_on_loop(req_id, slot_id, 0)
             return
         try:
+            t0 = time.monotonic()
             backend.signal_slot(slot_id, req_id, params_bytes)
         except Exception:
             logger.exception("MMP: signal_slot raised for '%s'", model_id)
@@ -999,6 +1043,21 @@ class ModelManagerProcess:
             self._on_result_on_loop(req_id, slot_id, 0)
             return
         self._inflight[slot_id] = model_id
+        if trace_sampled(req_id):
+            trace_log(
+                logger,
+                "mmp_forward",
+                req_id=req_id,
+                model_id=model_id,
+                slot_id=slot_id,
+                params_bytes=len(params_bytes),
+                signal_ms=trace_ms(t0),
+                recent_window_len=len(times),
+                recent_window_trimmed=trimmed,
+                pending=len(self._pending),
+                inflight=len(self._inflight),
+                backend_queue=getattr(backend, "queue_depth", None),
+            )
 
     # ------------------------------------------------------------------
     # on_result — event-loop side
@@ -1008,6 +1067,7 @@ class ModelManagerProcess:
         """Must be called on the event loop thread."""
         self._inflight.pop(slot_id, None)
         pending = self._pending.pop(req_id, None)
+        started = self._pending_started.pop(req_id, None)
         if pending is None:
             # Stale reaper already freed this, or duplicate callback — free
             # slot only if it is still bound to this request (it may have been
@@ -1015,6 +1075,17 @@ class ModelManagerProcess:
             self._pool.free_slot(slot_id, request_id=req_id)
             return
         identity, _, _ = pending
+        if trace_sampled(req_id):
+            trace_log(
+                logger,
+                "mmp_result",
+                req_id=req_id,
+                slot_id=slot_id,
+                result_bytes=result_sz,
+                submit_to_result_ms=trace_ms(started) if started else None,
+                pending=len(self._pending),
+                inflight=len(self._inflight),
+            )
         asyncio.create_task(
             self._reply_result(identity, req_id, slot_id, result_sz),
             name=f"mmp-reply-{req_id}",
