@@ -634,15 +634,42 @@ from datetime import datetime
 
     @staticmethod
     def _serialize_msgpack_result(result: Any) -> Any:
-        """Serialize a user-code return value for msgpack transport."""
+        """Serialize a user-code return value for msgpack transport.
+
+        Mirrors the HTTP path's serialize_for_modal_remote_execution logic,
+        adding _type markers for WorkflowImageData, sv.Detections, and
+        VideoMetadata so the client can reconstruct them.
+        """
         import numpy as np
         from datetime import datetime
+        import supervision as sv
+        from inference.core.workflows.execution_engine.entities.base import (
+            WorkflowImageData,
+            VideoMetadata,
+        )
+        from inference.core.workflows.core_steps.common.serializers import (
+            serialise_sv_detections,
+            serialise_image,
+            serialize_video_metadata_kind,
+        )
 
         def _encode(obj):
             if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
                 return obj
             if isinstance(obj, datetime):
                 return {"_type": "datetime", "value": obj.isoformat()}
+            if isinstance(obj, sv.Detections):
+                serialized = serialise_sv_detections(detections=obj)
+                serialized["_type"] = "sv_detections"
+                return _encode(serialized)
+            if isinstance(obj, WorkflowImageData):
+                serialized = serialise_image(image=obj)
+                serialized["_type"] = "workflow_image"
+                return _encode(serialized)
+            if isinstance(obj, VideoMetadata):
+                serialized = serialize_video_metadata_kind(obj)
+                serialized["_type"] = "video_metadata"
+                return _encode(serialized)
             if isinstance(obj, np.ndarray):
                 return {
                     "_type": "ndarray",

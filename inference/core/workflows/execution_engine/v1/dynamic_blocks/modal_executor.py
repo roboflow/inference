@@ -71,7 +71,6 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_video_metadata_kind,
 )
 
-
 _DEFAULT_WEBEXEC_APP_NAME = "webexec"
 
 
@@ -683,7 +682,17 @@ def serialize_inputs_for_msgpack(inputs: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _deserialize_msgpack_result(result: Any) -> Any:
-    """Inverse of ``_serialize_msgpack_result`` on the server side."""
+    """Inverse of ``_serialize_msgpack_result`` on the server side.
+
+    Handles _type markers for datetime, ndarray, sv_detections,
+    workflow_image, and video_metadata to mirror the HTTP path.
+    """
+    from inference.core.workflows.core_steps.common.deserializers import (
+        deserialize_detections_kind,
+        deserialize_image_kind,
+        deserialize_video_metadata_kind,
+    )
+
     if isinstance(result, dict):
         _type = result.get("_type")
         if _type == "datetime":
@@ -692,6 +701,27 @@ def _deserialize_msgpack_result(result: Any) -> Any:
             return np.array(result["value"], dtype=result["dtype"]).reshape(
                 result["shape"]
             )
+        if _type == "sv_detections":
+            decoded = {
+                k: _deserialize_msgpack_result(v)
+                for k, v in result.items()
+                if k != "_type"
+            }
+            return deserialize_detections_kind("result", decoded)
+        if _type == "workflow_image":
+            decoded = {
+                k: _deserialize_msgpack_result(v)
+                for k, v in result.items()
+                if k != "_type"
+            }
+            return deserialize_image_kind("result", decoded)
+        if _type == "video_metadata":
+            decoded = {
+                k: _deserialize_msgpack_result(v)
+                for k, v in result.items()
+                if k != "_type"
+            }
+            return deserialize_video_metadata_kind("result", decoded)
         return {k: _deserialize_msgpack_result(v) for k, v in result.items()}
     if isinstance(result, list):
         return [_deserialize_msgpack_result(v) for v in result]
