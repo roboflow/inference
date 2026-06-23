@@ -515,6 +515,7 @@ from datetime import datetime
             executor._code_namespaces[code_hash] = {
                 "__name__": "__main__",
                 "globals": executor._shared_globals,
+                "debug_traces": _NoopDebugTraces(),
             }
             import_code = "\n".join(imports) if imports else ""
             full_imports = f"""
@@ -609,6 +610,7 @@ from datetime import datetime
                     numpy_image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
                     from inference.core.workflows.execution_engine.entities.base import (
                         ImageParentMetadata,
+                        ParentOrigin,
                         WorkflowImageData,
                     )
 
@@ -617,8 +619,40 @@ from datetime import datetime
                         video_metadata = _decode(obj["video_metadata"])
 
                     parent_id = obj.get("parent_id", "webexec")
+                    parent_origin = obj.get("parent_origin")
+                    root_parent_id = obj.get("root_parent_id")
+                    root_parent_origin = obj.get("root_parent_origin")
+
+                    parent_origin_coords = None
+                    if parent_origin:
+                        parsed_origin = ParentOrigin.model_validate(parent_origin)
+                        parent_origin_coords = (
+                            parsed_origin.to_origin_coordinates_system()
+                        )
+
+                    parent_metadata = ImageParentMetadata(
+                        parent_id=parent_id,
+                        origin_coordinates=parent_origin_coords,
+                    )
+
+                    workflow_root_ancestor_metadata = None
+                    if root_parent_id:
+                        root_origin_coords = None
+                        if root_parent_origin:
+                            parsed_root_origin = ParentOrigin.model_validate(
+                                root_parent_origin
+                            )
+                            root_origin_coords = (
+                                parsed_root_origin.to_origin_coordinates_system()
+                            )
+                        workflow_root_ancestor_metadata = ImageParentMetadata(
+                            parent_id=root_parent_id,
+                            origin_coordinates=root_origin_coords,
+                        )
+
                     return WorkflowImageData(
-                        parent_metadata=ImageParentMetadata(parent_id=parent_id),
+                        parent_metadata=parent_metadata,
+                        workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
                         numpy_image=numpy_image,
                         video_metadata=video_metadata,
                     )
