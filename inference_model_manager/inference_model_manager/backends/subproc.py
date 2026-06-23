@@ -45,6 +45,9 @@ import numpy as np
 import zmq
 
 from inference_model_manager import configuration as cfg
+from inference_model_manager.benchmark_trace import log as trace_log
+from inference_model_manager.benchmark_trace import ms as trace_ms
+from inference_model_manager.benchmark_trace import sampled as trace_sampled
 from inference_model_manager.backends.base import Backend
 from inference_model_manager.backends.decode import (
     Decoder,
@@ -455,6 +458,7 @@ def _worker_loop(
             except zmq.ZMQError:
                 pass
             decode_max_bytes = decode_budget_fn() if decode_budget_fn else 0
+            fired = pending
             for chunk in _split_batch_by_decoded_bytes(pool, pending, decode_max_bytes):
                 if len(chunk) < len(pending):
                     log.info(
@@ -462,6 +466,16 @@ def _worker_loop(
                         "processing chunk of %d",
                         len(pending),
                         len(chunk),
+                    )
+                if chunk and trace_sampled(chunk[0][1]):
+                    trace_log(
+                        log,
+                        "worker_batch_fire",
+                        req_id=chunk[0][1],
+                        batch_size=len(chunk),
+                        pending_size=len(fired),
+                        batch_wait_ms=trace_ms(batch_start),
+                        decode_budget_bytes=decode_max_bytes,
                     )
                 try:
                     _process_slots(
@@ -594,6 +608,8 @@ def _process_slots(
 ) -> None:
     """Process a batch of (slot_id, req_id, params_bytes), write results to SHM, send T_RESULT."""
     t0 = time.monotonic()
+    req_id0 = batch[0][1] if batch else 0
+    trace = trace_sampled(req_id0)
 
     # Ownership gate: drop slots whose header no longer matches the signalled
     # req_id (reaper reclaimed + re-allocated between T_SLOT_READY and now) or
@@ -619,17 +635,22 @@ def _process_slots(
     batch = owned
 
     # Parse per-slot params
+    t_params = time.monotonic() if trace else 0.0
     slot_params: list[dict] = []
     for _, _, params_bytes in batch:
         slot_params.append(json.loads(params_bytes) if params_bytes else {})
+    t_params_done = time.monotonic() if trace else 0.0
 
     # Gather memoryviews; classify as .npy (standalone numpy) vs raw bytes
     mvs: list[Any] = []
     is_npy: list[bool] = []
+    input_bytes: list[int] = []
     for slot_id, _, _ in batch:
         hdr = pool.read_header(slot_id)
         mv = pool.data_memoryview(slot_id)[: hdr.input_size]
         mvs.append(mv)
+        if trace:
+            input_bytes.append(hdr.input_size)
         is_npy.append(bytes(mv[:6]) == _NP_MAGIC)
 
     images: list[Any] = [None] * len(batch)
@@ -726,10 +747,12 @@ def _process_slots(
     # processed in separate sub-batches instead of silently using only the
     # first slot's params for the entire batch.
     sub_batches: dict[str, list[int]] = {}
+    t_group = time.monotonic() if trace else 0.0
     for idx, p in enumerate(good_params):
         # Build a hashable key from the params dict (task + sorted remaining params)
         key = json.dumps(p, sort_keys=True)
         sub_batches.setdefault(key, []).append(idx)
+    t_group_done = time.monotonic() if trace else 0.0
 
     results: list[Any] = [None] * len(good_batch)
     for params_key, indices in sub_batches.items():
@@ -848,6 +871,28 @@ def _process_slots(
         _EMPTY_CACHE_MIN_FREE_BYTES,
         log,
     )
+    if trace:
+        trace_log(
+            log,
+            "worker_process",
+            req_id=req_id0,
+            batch_size=len(batch),
+            good_batch_size=len(good_batch),
+            input_bytes=sum(input_bytes),
+            min_input_bytes=min(input_bytes) if input_bytes else 0,
+            max_input_bytes=max(input_bytes) if input_bytes else 0,
+            raw_images=len(raw_indices),
+            npy_images=sum(1 for v in is_npy if v),
+            sub_batches=len(sub_batches),
+            params_parse_ms=trace_ms(t_params, t_params_done),
+            params_group_ms=trace_ms(t_group, t_group_done),
+            decode_ms=trace_ms(t0, t_decoded),
+            infer_ms=trace_ms(t_decoded, t_infer),
+            result_write_ms=trace_ms(t_infer, end),
+            total_ms=trace_ms(t0, end),
+            ok=n_ok,
+            errors=n_err,
+        )
 
 
 # ---------------------------------------------------------------------------
