@@ -662,7 +662,7 @@ from datetime import datetime
 
         return _encode(result)
 
-    @modal.asgi_app()
+    @modal.asgi_app(requires_proxy_auth=True)
     def wsapp(self):
         """Expose a FastAPI sub-application with a WebSocket route.
 
