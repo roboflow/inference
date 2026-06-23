@@ -43,18 +43,27 @@ MODEL_ALIASES = {
     "gemini-2.5-pro-preview-06-05": "gemini-2.5-pro",
     "gemini-2.5-pro-preview-05-06": "gemini-2.5-pro",
     "gemini-2.5-pro-preview-03-25": "gemini-2.5-pro",
-    "gemini-2.0-flash-exp": "gemini-2.0-flash",
 }
 
 GEMINI_MODELS = [
+    {
+        "id": "gemini-3.5-flash",
+        "name": "Gemini 3.5 Flash",
+        "supports_thinking_level": True,
+    },
     {
         "id": "gemini-3.1-pro-preview",
         "name": "Gemini 3.1 Pro",
         "supports_thinking_level": True,
     },
     {
-        "id": "gemini-3-pro-preview",
-        "name": "Gemini 3 Pro",
+        "id": "gemini-3.1-flash-lite",
+        "name": "Gemini 3.1 Flash-Lite",
+        "supports_thinking_level": True,
+    },
+    {
+        "id": "gemini-3-flash-preview",
+        "name": "Gemini 3 Flash",
         "supports_thinking_level": True,
     },
     {
@@ -70,16 +79,6 @@ GEMINI_MODELS = [
     {
         "id": "gemini-2.5-flash-lite",
         "name": "Gemini 2.5 Flash-Lite",
-        "supports_thinking_level": False,
-    },
-    {
-        "id": "gemini-2.0-flash",
-        "name": "Gemini 2.0 Flash",
-        "supports_thinking_level": False,
-    },
-    {
-        "id": "gemini-2.0-flash-lite",
-        "name": "Gemini 2.0 Flash-Lite",
         "supports_thinking_level": False,
     },
 ]
@@ -235,9 +234,9 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]),
         Literal[tuple(MODEL_VERSION_IDS)],
     ] = Field(
-        default="gemini-3-pro-preview",
+        default="gemini-3.1-pro-preview",
         description="Model to be used",
-        examples=["gemini-3-pro-preview", "$inputs.gemini_model"],
+        examples=["gemini-3.1-pro-preview", "$inputs.gemini_model"],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },

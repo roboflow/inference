@@ -1,8 +1,42 @@
+import os
+
 import numpy as np
 import pytest
 import torch
 
+from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.rle_utils import coco_rle_masks_to_torch_mask
+
+
+def _assert_instance_segmentation_predictions_match(actual, expected) -> None:
+    assert len(actual) == len(expected)
+    for actual_element, expected_element in zip(actual, expected):
+        torch.testing.assert_close(
+            actual_element.xyxy.cpu(),
+            expected_element.xyxy.cpu(),
+            atol=1.0,
+            rtol=0,
+        )
+        torch.testing.assert_close(
+            actual_element.confidence.cpu(),
+            expected_element.confidence.cpu(),
+            atol=1e-4,
+            rtol=0,
+        )
+        torch.testing.assert_close(
+            actual_element.class_id.cpu(),
+            expected_element.class_id.cpu(),
+            atol=0,
+            rtol=0,
+        )
+
+        actual_mask = actual_element.mask.detach().to(torch.bool).cpu()
+        expected_mask = expected_element.mask.detach().to(torch.bool).cpu()
+        assert tuple(actual_mask.shape) == tuple(expected_mask.shape)
+        intersection = torch.logical_and(actual_mask, expected_mask).sum().item()
+        union = torch.logical_or(actual_mask, expected_mask).sum().item()
+        assert union > 0
+        assert intersection / union >= 0.999
 
 
 @pytest.mark.slow
@@ -27,7 +61,7 @@ def test_trt_package_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -35,7 +69,7 @@ def test_trt_package_numpy(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -43,7 +77,7 @@ def test_trt_package_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16021 <= predictions[0].mask.cpu().sum().item() <= 16071
 
 
 @pytest.mark.slow
@@ -72,7 +106,7 @@ def test_trt_package_numpy_rle_variant(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -80,7 +114,7 @@ def test_trt_package_numpy_rle_variant(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -88,7 +122,7 @@ def test_trt_package_numpy_rle_variant(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= decoded_mask.sum().item() <= 16100
+    assert 16021 <= decoded_mask.sum().item() <= 16071
     assert np.allclose(
         decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
@@ -116,7 +150,7 @@ def test_trt_package_batch_numpy(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -124,7 +158,7 @@ def test_trt_package_batch_numpy(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -132,10 +166,10 @@ def test_trt_package_batch_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16021 <= predictions[0].mask.cpu().sum().item() <= 16071
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -143,7 +177,7 @@ def test_trt_package_batch_numpy(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -151,7 +185,7 @@ def test_trt_package_batch_numpy(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[1].mask.cpu().sum().item() <= 16100
+    assert 16021 <= predictions[1].mask.cpu().sum().item() <= 16071
 
 
 @pytest.mark.slow
@@ -183,7 +217,7 @@ def test_trt_package_batch_numpy_rle_variant(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -191,7 +225,7 @@ def test_trt_package_batch_numpy_rle_variant(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -199,10 +233,10 @@ def test_trt_package_batch_numpy_rle_variant(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= decoded_mask_1.cpu().sum().item() <= 16100
+    assert 16021 <= decoded_mask_1.cpu().sum().item() <= 16071
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -210,7 +244,7 @@ def test_trt_package_batch_numpy_rle_variant(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 188, 374]],
+        [[63, 172, 188, 374]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -218,7 +252,7 @@ def test_trt_package_batch_numpy_rle_variant(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= decoded_mask_2.cpu().sum().item() <= 16100
+    assert 16021 <= decoded_mask_2.cpu().sum().item() <= 16071
     assert np.allclose(
         decoded_mask_1.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
@@ -249,7 +283,7 @@ def test_trt_package_torch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -257,7 +291,7 @@ def test_trt_package_torch(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -265,7 +299,7 @@ def test_trt_package_torch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
 
 
 @pytest.mark.slow
@@ -291,7 +325,7 @@ def test_trt_package_torch_multiple_predictions_in_row(
         # then
         assert torch.allclose(
             predictions[0].confidence.cpu(),
-            torch.tensor([0.9527]).cpu(),
+            torch.tensor([0.9548]).cpu(),
             atol=0.01,
         )
         assert torch.allclose(
@@ -299,7 +333,7 @@ def test_trt_package_torch_multiple_predictions_in_row(
             torch.tensor([20], dtype=torch.int32).cpu(),
         )
         expected_xyxy = torch.tensor(
-            [[63, 173, 187, 374]],
+            [[63, 173, 189, 375]],
             dtype=torch.int32,
         )
         assert torch.allclose(
@@ -307,7 +341,7 @@ def test_trt_package_torch_multiple_predictions_in_row(
             expected_xyxy.cpu(),
             atol=5,
         )
-        assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+        assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
 
 
 @pytest.mark.slow
@@ -332,7 +366,7 @@ def test_trt_package_torch_list(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -340,7 +374,7 @@ def test_trt_package_torch_list(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -348,10 +382,10 @@ def test_trt_package_torch_list(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -359,7 +393,7 @@ def test_trt_package_torch_list(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -367,7 +401,7 @@ def test_trt_package_torch_list(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[1].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[1].mask.cpu().sum().item() <= 16229
 
 
 @pytest.mark.slow
@@ -392,7 +426,7 @@ def test_trt_package_torch_batch(
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -400,7 +434,7 @@ def test_trt_package_torch_batch(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -408,10 +442,10 @@ def test_trt_package_torch_batch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[0].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[0].mask.cpu().sum().item() <= 16229
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9527]).cpu(),
+        torch.tensor([0.9548]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
@@ -419,7 +453,7 @@ def test_trt_package_torch_batch(
         torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
-        [[63, 173, 187, 374]],
+        [[63, 173, 189, 375]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -427,7 +461,70 @@ def test_trt_package_torch_batch(
         expected_xyxy.cpu(),
         atol=5,
     )
-    assert 16050 <= predictions[1].mask.cpu().sum().item() <= 16100
+    assert 16179 <= predictions[1].mask.cpu().sum().item() <= 16229
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_trt_triton_preprocess_output_matches_reference_preprocess(
+    monkeypatch: pytest.MonkeyPatch,
+    rfdetr_seg_asl_trt_package: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    pytest.importorskip("triton")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is required for Triton preprocessing parity")
+
+    from inference_models.models.rfdetr import triton_preprocess_runtime
+    from inference_models.models.rfdetr.rfdetr_instance_segmentation_trt import (
+        RFDetrForInstanceSegmentationTRT,
+    )
+
+    model_package = os.getenv(
+        "RFDETR_SEG_TRT_PACKAGE_PATH",
+        rfdetr_seg_asl_trt_package,
+    )
+    try:
+        model = RFDetrForInstanceSegmentationTRT.from_pretrained(
+            model_name_or_path=model_package,
+            engine_host_code_allowed=True,
+        )
+    except CorruptedModelPackageError as error:
+        if "Platform specific tag mismatch" in str(error):
+            pytest.skip("TRT engine package is not compatible with this platform")
+        raise
+
+    # This test exercises the runtime fast path directly; initialize the
+    # adapter-level gate/runtime even when the process default leaves it off.
+    model._fast_preprocess_enabled = True
+    model._fast_preprocess_runtime = triton_preprocess_runtime.FastPreprocessRuntime(
+        device=model._device
+    )
+    monkeypatch.setattr(triton_preprocess_runtime, "_FAST_PATH_ENABLED", False)
+    reference_predictions = model(asl_image_numpy)
+
+    original_triton_preprocess = (
+        triton_preprocess_runtime.triton_preprocess_rfdetr_stretch_two_pass_preallocated
+    )
+    triton_calls = {"count": 0}
+
+    def counting_triton_preprocess(*args, **kwargs):
+        triton_calls["count"] += 1
+        return original_triton_preprocess(*args, **kwargs)
+
+    monkeypatch.setattr(
+        triton_preprocess_runtime,
+        "triton_preprocess_rfdetr_stretch_two_pass_preallocated",
+        counting_triton_preprocess,
+    )
+    monkeypatch.setattr(triton_preprocess_runtime, "_FAST_PATH_ENABLED", True)
+    triton_predictions = model(asl_image_numpy)
+
+    assert triton_calls["count"] == 1
+    _assert_instance_segmentation_predictions_match(
+        actual=triton_predictions,
+        expected=reference_predictions,
+    )
 
 
 @pytest.mark.slow

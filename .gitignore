@@ -1,5 +1,6 @@
 watch-dev.sh
 cpu_http.py
+.temp/
 
 # IDE
 .idea/
@@ -214,3 +215,6 @@ inference_testing
 
 # rerun.io recordings
 *.rrd
+
+openspec*/
+opsx/

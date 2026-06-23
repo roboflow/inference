@@ -21,7 +21,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
-    requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.yolo_world.txt \
@@ -42,7 +41,7 @@ RUN python3 -m pip install -U pip uv
 # world works, sooner or later I will regret that.
 COPY inference_models/uv.lock inference_models/pyproject.toml build/inference_models/
 WORKDIR build/inference_models/
-RUN UV_PROJECT_ENVIRONMENT=/usr uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra mediapipe --extra trt10
+RUN UV_PROJECT_ENVIRONMENT=/usr uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra trt10
 
 WORKDIR /app
 
@@ -54,7 +53,6 @@ RUN uv pip install --system \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
-    -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
     -r requirements.transformers.txt \
@@ -111,6 +109,8 @@ COPY examples/notebooks .
 WORKDIR /app/
 COPY inference inference
 COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
@@ -128,4 +128,4 @@ ENV ENABLE_STREAM_API=True
 ENV ENABLE_PROMETHEUS=True
 ENV STREAM_API_PRELOADED_PROCESSES=2
 
-ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

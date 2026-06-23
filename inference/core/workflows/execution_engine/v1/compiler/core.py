@@ -49,6 +49,10 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
 from inference.core.workflows.execution_engine.v1.inner_workflow.compiler_bridge import (
     validate_inner_workflow_composition_from_raw_workflow_definition,
 )
+from inference.core.workflows.execution_engine.v1.inner_workflow.dynamic_blocks_collection import (
+    apply_collected_dynamic_blocks_definitions_to_workflow_root,
+    collect_dynamic_blocks_definitions_from_workflow_definition,
+)
 from inference.core.workflows.execution_engine.v1.inner_workflow.inline import (
     inline_inner_workflow_steps,
 )
@@ -113,25 +117,35 @@ def compile_workflow_graph(
     workflow_definition: dict,
     execution_engine_version: Optional[Version] = None,
     profiler: Optional[WorkflowsProfiler] = None,
-    init_parameters: Dict[str, Union[Any, Callable[[None], Any]]] = {},
+    init_parameters: Optional[Dict[str, Union[Any, Callable[[None], Any]]]] = None,
 ) -> GraphCompilationResult:
+    if init_parameters is None:
+        init_parameters = {}
     key = COMPILATION_CACHE.get_hash_key(
         workflow_definition=workflow_definition,
         execution_engine_version=execution_engine_version,
     )
     cached_value = COMPILATION_CACHE.get(key=key)
     if cached_value is not None:
-        dynamic_blocks_definitions = workflow_definition.get(
-            "dynamic_blocks_definitions", []
+        dynamic_blocks_definitions = (
+            collect_dynamic_blocks_definitions_from_workflow_definition(
+                workflow_definition=workflow_definition,
+            )
         )
         ensure_dynamic_blocks_allowed(
             dynamic_blocks_definitions=dynamic_blocks_definitions
         )
         return cached_value
+
     raw_workflow_definition: Dict[str, Any] = (
         normalize_inner_workflow_references_in_definition(
             workflow_definition=workflow_definition,
             init_parameters=init_parameters,
+        )
+    )
+    dynamic_blocks_definitions = (
+        apply_collected_dynamic_blocks_definitions_to_workflow_root(
+            workflow_definition=raw_workflow_definition,
         )
     )
     statically_defined_blocks = load_workflow_blocks(
@@ -142,9 +156,7 @@ def compile_workflow_graph(
     kinds_serializers = load_kinds_serializers(profiler=profiler)
     kinds_deserializers = load_kinds_deserializers(profiler=profiler)
     dynamic_blocks = compile_dynamic_blocks(
-        dynamic_blocks_definitions=raw_workflow_definition.get(
-            "dynamic_blocks_definitions", []
-        ),
+        dynamic_blocks_definitions=dynamic_blocks_definitions,
         profiler=profiler,
         api_key=init_parameters.get("workflows_core.api_key", None),
     )

@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import supervision as sv
 from pydantic import ValidationError
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import (
     BlockManifest,
@@ -219,11 +220,59 @@ def test_crop_image_on_zero_size_detections() -> None:
 
     # then
     assert len(result) == 3, "Expected 3 outputs"
-    assert result[0] == {"crops": None}, "Expected first element empty"
+    assert result[0] == {
+        "crops": None,
+        "predictions": None,
+    }, "Both manifest-declared keys must be present, even on zero-area"
+    assert set(result[1].keys()) == {
+        "crops",
+        "predictions",
+    }, "Happy path must produce both manifest-declared keys"
     assert (
         result[1]["crops"].parent_metadata.parent_id == "two"
     ), "Appropriate parent id (from detection id) must be attached"
-    assert result[2] == {"crops": None}, "Expected last element empty"
+    assert result[2] == {
+        "crops": None,
+        "predictions": None,
+    }, "Both manifest-declared keys must be present, even on zero-area"
+
+
+def test_crop_image_output_keys_match_manifest_on_mixed_detections() -> None:
+    # given a mix of zero-area and valid detections
+    np_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
+        numpy_image=np_image,
+    )
+    detections = sv.Detections(
+        xyxy=np.array([[0, 0, 0, 0], [80, 80, 120, 120]], dtype=np.float64),
+        class_id=np.array([1, 1]),
+        confidence=np.array([0.5, 0.5], dtype=np.float64),
+        data={
+            "detection_id": np.array(["zero", "valid"]),
+            "class_name": np.array(["cat", "cat"]),
+        },
+    )
+
+    # when
+    result = crop_image(
+        image=image,
+        detections=detections,
+        mask_opacity=0.0,
+        background_color=(0, 0, 0),
+    )
+
+    # then — every emitted dict must carry exactly the manifest output keys
+    expected_keys = {output.name for output in BlockManifest.describe_outputs()}
+    assert expected_keys == {"crops", "predictions"}, (
+        "Sanity: manifest declares the two outputs this test locks against. "
+        "If this changes, update the assertion below accordingly."
+    )
+    for i, element in enumerate(result):
+        assert set(element.keys()) == expected_keys, (
+            f"Element {i} keys {set(element.keys())} != manifest keys "
+            f"{expected_keys}"
+        )
 
 
 def test_crop_image_when_detections_without_ids_provided() -> None:
@@ -402,3 +451,68 @@ def test_crop_image_when_background_removal_requested_and_mask_found() -> None:
     assert (
         result[2]["crops"].numpy_image == expected_third_crop
     ).all(), "Image must have expected size and color"
+
+
+@pytest.mark.parametrize(
+    "crop_offset",
+    [
+        pytest.param((250, 300), id="interior-crop"),
+        pytest.param((0, 0), id="top-left-crop"),
+        pytest.param((100, 0), id="x-only-crop"),
+    ],
+)
+def test_crop_image_translates_oriented_bounding_box_corners(
+    crop_offset: Tuple[int, int],
+) -> None:
+    """OBB corners stored in `data['xyxyxyxy']` must follow the same `-(x_min, y_min)`
+    translation already applied to `xyxy`, `mask`, `keypoints`, and `polygon`.
+    Without this, downstream OBB-aware blocks would see corners in the original
+    image frame next to a crop-local `xyxy`."""
+    # given
+    x_min, y_min = crop_offset
+    side = 40
+    np_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
+        numpy_image=np_image,
+    )
+    # OBB centered inside the crop region, rotated 45-deg (diamond corners).
+    image_corners = np.array(
+        [
+            [
+                [x_min + side / 2, y_min],
+                [x_min + side, y_min + side / 2],
+                [x_min + side / 2, y_min + side],
+                [x_min, y_min + side / 2],
+            ]
+        ],
+        dtype=np.float32,
+    )
+    detections = sv.Detections(
+        xyxy=np.array([[x_min, y_min, x_min + side, y_min + side]], dtype=np.float64),
+        class_id=np.array([0]),
+        confidence=np.array([0.9], dtype=np.float64),
+        data={
+            "detection_id": np.array(["one"]),
+            "class_name": np.array(["thing"]),
+            ORIENTED_BOX_COORDINATES: image_corners,
+        },
+    )
+
+    # when
+    result = crop_image(
+        image=image,
+        detections=detections,
+        mask_opacity=0.0,
+        background_color=(0, 0, 0),
+    )
+
+    # then
+    assert len(result) == 1
+    translated = result[0]["predictions"]
+    expected_corners = image_corners - np.array([x_min, y_min], dtype=np.float32)
+    assert np.allclose(translated.data[ORIENTED_BOX_COORDINATES], expected_corners)
+    # Cross-check: AABB of the translated corners sits inside [0, side]^2.
+    translated_corners = translated.data[ORIENTED_BOX_COORDINATES][0]
+    assert translated_corners.min() >= 0.0
+    assert translated_corners.max() <= side

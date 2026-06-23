@@ -23,6 +23,21 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     capture_output,
 )
 
+
+class _NoopDebugTraces:
+    """No-op stand-in for the workflow-scoped ``debug_traces`` proxy.
+
+    Debug traces rely on a ContextVar that is only bound in the local process
+    that drives the run; it is never propagated into the Modal sandbox. Without
+    this stand-in, user code calling ``debug_traces.append(...)`` would raise
+    ``NameError`` here even though it works locally. Injecting a no-op keeps the
+    namespace consistent with local execution while silently discarding traces.
+    """
+
+    def append(self, *args, **kwargs) -> None:
+        return None
+
+
 # Deploy-time configuration.
 #
 # Defaults preserve the legacy single-region deployment:
@@ -156,6 +171,7 @@ class Executor:
         run_function_name = request.get("run_function_name", "")
         inputs_json = request.get("inputs_json", "{}")
         client_code_hash = request.get("code_hash")
+        workflow_context = request.get("workflow_context") or {}
 
         # Resolve the effective code hash. Two request modes are supported:
         #   1. Full code: ``code_str`` is present -> compute hash, compile if new.
@@ -189,6 +205,10 @@ class Executor:
             self._code_namespaces[code_hash] = {
                 "__name__": "__main__",
                 "globals": self._shared_globals,  # Inject the shared globals dict
+                # Mirror local execution, where block_scaffolding injects
+                # `debug_traces` via IMPORTS_LINES. Here it is a no-op because
+                # the debug trace ContextVar is not propagated into the sandbox.
+                "debug_traces": _NoopDebugTraces(),
             }
 
             # Execute imports and code in the namespace to initialize it
@@ -408,7 +428,8 @@ from datetime import datetime
                     if params and params[0] == "self":
 
                         class BlockSelf:
-                            pass
+                            def get_workflow_context(self) -> Dict[str, Any]:
+                                return dict(workflow_context)
 
                         block_self = BlockSelf()
                         result = user_function(block_self, **inputs)

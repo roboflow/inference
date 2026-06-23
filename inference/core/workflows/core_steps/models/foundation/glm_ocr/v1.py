@@ -5,6 +5,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.env import (
+    GLM_OCR_ENABLED,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
@@ -26,6 +27,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -81,6 +85,12 @@ TASKS_METADATA = {
 TASKS_REQUIRING_PROMPT = {"custom"}
 TASKS_REQUIRING_OUTPUT_STRUCTURE = {"structured-answering"}
 
+
+def _is_selector(value: object) -> bool:
+    """True if value is a workflow selector reference ($inputs.X / $steps.X.Y)."""
+    return isinstance(value, str) and value.startswith("$")
+
+
 LONG_DESCRIPTION = """
 Recognize text in images using GLM-OCR, a vision language model by Zhipu AI specialized
 for optical character recognition.
@@ -109,9 +119,10 @@ Note: GLM-OCR requires a GPU for inference.
 class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
-    task_type: TaskType = Field(
+    task_type: Union[Selector(kind=[STRING_KIND]), TaskType] = Field(
         default="text-recognition",
-        description="Recognition task to perform. Determines the prompt sent to GLM-OCR.",
+        description="Recognition task to perform. Determines the prompt sent to GLM-OCR. "
+        "Accepts a selector (e.g. $inputs.task_type) so the mode can be set dynamically.",
         json_schema_extra={
             "values_metadata": TASKS_METADATA,
             "recommended_parsers": {
@@ -188,6 +199,12 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate_prompt(self) -> "BlockManifest":
+        # When task_type is a selector (e.g. "$inputs.task_type"), its concrete
+        # value isn't known until execution, so the dependent-field requirements
+        # below can't be checked here — they are enforced at runtime in
+        # _resolve_prompt instead.
+        if _is_selector(self.task_type):
+            return self
         if self.task_type == "custom" and not self.prompt:
             raise ValueError("`prompt` is required when task_type is 'custom'.")
         if (
@@ -219,15 +236,54 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restrictions = [
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Requires a GPU; run_locally() loads a model that needs CUDA.",
+                applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+                applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
+            ),
+        ]
+        if not GLM_OCR_ENABLED:
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.HARD,
+                    note=(
+                        "GLM_OCR_ENABLED=False on Roboflow Hosted Serverless: "
+                        "the GLM-OCR endpoint is not registered, so "
+                        "run_remotely() returns 404."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+                )
+            )
+        return restrictions
+
 
 def _resolve_prompt(
     task_type: str,
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
 ) -> str:
+    # task_type may arrive from a selector ($inputs.task_type), so the value is
+    # only known here. Validate it and the fields it requires at runtime — the
+    # static manifest validator skips these checks for dynamic task_type.
+    if task_type not in TASK_TYPE_TO_PROMPT:
+        raise ValueError(
+            f"Unsupported GLM-OCR task_type '{task_type}'. Expected one of: "
+            f"{', '.join(sorted(TASK_TYPE_TO_PROMPT))}."
+        )
     if task_type == "custom":
+        if not prompt:
+            raise ValueError("`prompt` is required when task_type is 'custom'.")
         return prompt
     if task_type == "structured-answering":
+        if not output_structure:
+            raise ValueError(
+                "`output_structure` is required when task_type is 'structured-answering'."
+            )
         return STRUCTURED_ANSWERING_PROMPT_TEMPLATE.format(
             output_structure=json.dumps(output_structure, indent=4),
         )

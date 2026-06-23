@@ -85,7 +85,7 @@ class TransformerModel(RoboflowInferenceModel):
 
         self.cache_model_artefacts(**kwargs)
 
-        self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
+        self.cache_dir = get_cache_dir(model_id=self.endpoint)
 
         self.initialize_model(**kwargs)
 

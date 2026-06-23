@@ -1,4 +1,5 @@
 import base64
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
@@ -271,6 +272,97 @@ class InstanceSegmentationInferenceResponse(
     predictions: List[
         Union[InstanceSegmentationPrediction, InstanceSegmentationRLEPrediction]
     ]
+
+
+# Dataclass twins used on the workflow-local fast path in
+# `InferenceModelsInstanceSegmentationAdapter.postprocess` when
+# `kwargs["source"] == "workflow-execution"`. The workflow block consumes
+# a plain dict via `_is_response_dc_to_dict` and never needs the pydantic
+# interface. HTTP / cache / visualization paths still receive the pydantic
+# `InstanceSegmentationInferenceResponse` because they use
+# `source != "workflow-execution"`.
+@dataclass(slots=True)
+class PointDC:
+    x: float
+    y: float
+
+
+@dataclass(slots=True)
+class InferenceResponseImageDC:
+    width: int
+    height: int
+
+
+@dataclass(slots=True)
+class InstanceSegmentationPredictionDC:
+    x: float
+    y: float
+    width: float
+    height: float
+    confidence: float
+    class_name: str  # serialized as "class" in the dict form
+    class_id: int
+    points: list  # list[PointDC]
+    mask_format: Literal["polygon"] = "polygon"
+    detection_id: str = field(default_factory=lambda: str(uuid4()))
+    parent_id: object = None
+    class_confidence: object = None
+
+
+@dataclass(slots=True)
+class InstanceSegmentationInferenceResponseDC:
+    predictions: list  # list[InstanceSegmentationPredictionDC]
+    image: InferenceResponseImageDC
+    # `Model.infer_from_request` assigns .time and .inference_id after
+    # construction (see inference/core/models/base.py:154-157); they're
+    # declared here so the slotted dataclass permits the reassignment.
+    inference_id: object = None
+    frame_id: object = None
+    time: object = None
+    visualization: object = None
+    # Internal stream-pipeline fast path: lets workflow execution carry a
+    # response future through Model.infer_from_request without blocking the
+    # inference thread. `_is_response_dc_to_dict` intentionally ignores it.
+    _async_response_future: object = None
+    _async_response_context_id: object = None
+
+
+def _is_pred_dc_to_dict(p: InstanceSegmentationPredictionDC) -> dict:
+    """Bit-equivalent to `InstanceSegmentationPrediction(...).model_dump(by_alias=True, exclude_none=True)`."""
+    d = {
+        "x": p.x,
+        "y": p.y,
+        "width": p.width,
+        "height": p.height,
+        "confidence": p.confidence,
+        "class": p.class_name,  # alias
+        "class_id": p.class_id,
+        "detection_id": p.detection_id,
+        "points": [{"x": pt.x, "y": pt.y} for pt in p.points],
+        "mask_format": p.mask_format,
+    }
+    if p.class_confidence is not None:
+        d["class_confidence"] = p.class_confidence
+    if p.parent_id is not None:
+        d["parent_id"] = p.parent_id
+    return d
+
+
+def _is_response_dc_to_dict(r: InstanceSegmentationInferenceResponseDC) -> dict:
+    """Bit-equivalent to `InstanceSegmentationInferenceResponse(...).model_dump(by_alias=True, exclude_none=True)`."""
+    d = {
+        "image": {"width": r.image.width, "height": r.image.height},
+        "predictions": [_is_pred_dc_to_dict(p) for p in r.predictions],
+    }
+    if r.inference_id is not None:
+        d["inference_id"] = r.inference_id
+    if r.frame_id is not None:
+        d["frame_id"] = r.frame_id
+    if r.time is not None:
+        d["time"] = r.time
+    if r.visualization is not None:
+        d["visualization"] = r.visualization
+    return d
 
 
 class SemanticSegmentationInferenceResponse(

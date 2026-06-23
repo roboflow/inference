@@ -86,16 +86,19 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/roboflow_semantic_segmentation_model@v2"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
-    # TODO: add "best" option once model eval supports semantic segmentation.
     confidence_mode: Union[
-        Literal["default", "custom"],
+        Literal["best", "default", "custom"],
         Selector(kind=[STRING_KIND]),
     ] = Field(
-        default="default",
+        default="best",
         description="How confidence thresholds are determined.",
         json_schema_extra={
             "always_visible": True,
             "values_metadata": {
+                "best": {
+                    "name": "Best (Recommended)",
+                    "description": "Use F1-optimal thresholds from model evaluation.",
+                },
                 "default": {
                     "name": "Default",
                     "description": "Use the model's built-in default threshold.",
@@ -200,7 +203,7 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
-        confidence: Union[None, float, Literal["default"]],
+        confidence: Union[None, float, Literal["best", "default"]],
     ) -> BlockResult:
         inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
         request = SemanticSegmentationInferenceRequest(
@@ -228,7 +231,7 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
-        confidence: Union[None, float, Literal["default"]],
+        confidence: Union[None, float, Literal["best", "default"]],
     ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -239,6 +242,8 @@ class RoboflowSemanticSegmentationModelBlockV2(WorkflowBlock):
             api_url=api_url,
             api_key=self._api_key,
         )
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
         client_config = InferenceConfiguration(
             confidence_threshold=confidence,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,

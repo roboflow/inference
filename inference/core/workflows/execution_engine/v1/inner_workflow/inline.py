@@ -256,11 +256,13 @@ def _rewrite_inner_scalar(
 
     Non-strings are returned unchanged. For strings, replacements run in order:
 
-    1. ``_replace_inputs_in_string`` — workflow inputs and defaults.
-    2. If that step produced a non-string (whole ``$inputs.*`` reference), it is returned as-is;
-       dotted step references are not applied to non-strings.
-    3. ``_replace_step_prefixes_in_string`` — ``$steps.<child>.`` → ``$steps.<new>.``.
-    4. ``_replace_bare_child_step_refs_in_string`` — bare ``$steps.<child>`` tokens.
+    1. ``_replace_step_prefixes_in_string`` — ``$steps.<child>.`` → ``$steps.<new>.``.
+    2. ``_replace_bare_child_step_refs_in_string`` — bare ``$steps.<child>`` tokens.
+    3. ``_replace_inputs_in_string`` — workflow inputs and defaults (parent selectors).
+
+    Child step renames run before parameter bindings so a binding such as
+    ``$steps.dynamic_crop.crops`` that refers to a parent step is not rewritten when the
+    child workflow also defines a step named ``dynamic_crop``.
 
     ``step_pairs`` maps each original child step name to its unique name after inlining
     (typically ``f"{inner_name}__{child_step}"``).
@@ -293,26 +295,21 @@ def _rewrite_inner_scalar(
     if not isinstance(value, str):
         return value
 
-    after_inputs = _replace_inputs_in_string(
-        value,
-        bindings=bindings,
-        input_defaults=input_defaults,
-    )
-
-    if not isinstance(after_inputs, str):
-        return after_inputs
-
     dotted = _replace_step_prefixes_in_string(
-        after_inputs,
+        value,
         old_to_new=step_pairs,
     )
 
-    out = _replace_bare_child_step_refs_in_string(
+    after_bare = _replace_bare_child_step_refs_in_string(
         dotted,
         step_pairs=step_pairs,
     )
 
-    return out
+    return _replace_inputs_in_string(
+        after_bare,
+        bindings=bindings,
+        input_defaults=input_defaults,
+    )
 
 
 def _deep_map_leaves(obj: Any, fn: Callable[[Any], Any]) -> Any:

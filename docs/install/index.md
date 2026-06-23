@@ -1,3 +1,7 @@
+---
+description: Install the Roboflow Inference Server on Docker, Linux, macOS, Windows, NVIDIA Jetson, or Raspberry Pi. Pick the deployment method that matches your hardware.
+---
+
 # Install Inference Server
 
 Choose the installation method that matches your platform:
@@ -77,6 +81,13 @@ Browse the navigation on the left for detailed install guides:
 - :fontawesome-brands-apple: [Mac](mac.md)
 - :simple-nvidia: [Jetson](jetson.md)
 - :fontawesome-brands-raspberry-pi: [Raspberry Pi](raspberry-pi.md)
+
+## Securing your server
+
+A self-hosted server does not enforce authentication, encryption, or network
+restrictions by default — securing it is your responsibility. Before exposing
+it beyond local development traffic, review
+[Securing a Self-Hosted Server](security.md).
 
 ## Using Your New Server
 

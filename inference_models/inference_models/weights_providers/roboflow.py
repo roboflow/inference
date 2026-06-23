@@ -1,11 +1,10 @@
 import json
 import urllib.parse
-from typing import Annotated, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import backoff
 import requests
-from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, Discriminator, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from requests import Response, Timeout
 
 from inference_models.configuration import (
@@ -44,11 +43,21 @@ from inference_models.weights_providers.entities import (
     TorchScriptPackageDetails,
     TRTPackageDetails,
 )
+from inference_models.weights_providers.local_trt_packages import (
+    discover_local_trt_packages,
+)
+from inference_models.weights_providers.trt_manifest import (
+    GPUServerSpecsV1,
+    JetsonMachineSpecsV1,
+    TrtModelPackageV1,
+    as_version,
+)
 
 MAX_MODEL_PACKAGE_PAGES = 10
 MODEL_PACKAGES_TO_IGNORE = {
     "oak-model-package-v1",
     "tfjs-model-package-v1",
+    "mediapipe-model-package-v1",
 }
 
 ProxyUrlBuilder = Optional[
@@ -125,6 +134,11 @@ def get_roboflow_model(
         if parsed_model_package is None:
             continue
         parsed_model_packages.append(parsed_model_package)
+    _merge_local_trt_packages(
+        parsed_model_packages=parsed_model_packages,
+        requested_model_id=model_id,
+        resolved_model_id=model_metadata.model_id,
+    )
     model_dependencies = None
     if model_metadata.model_dependencies:
         model_dependencies = []
@@ -145,6 +159,39 @@ def get_roboflow_model(
         model_dependencies=model_dependencies,
         recommended_parameters=model_metadata.recommended_parameters,
     )
+
+
+def _merge_local_trt_packages(
+    parsed_model_packages: List[ModelPackageMetadata],
+    requested_model_id: str,
+    resolved_model_id: str,
+) -> None:
+    """Augment platform packages with locally-discovered TRT packages.
+
+    Best-effort: a corrupt local cache must never break loading of a model that
+    has valid platform packages.
+    """
+    known_package_ids = {package.package_id for package in parsed_model_packages}
+    # Discover the resolved (canonical) id first: that is where the compiler
+    # installs engines, so it wins over any same-id package under the alias dir.
+    discovery_model_ids = [resolved_model_id]
+    if requested_model_id != resolved_model_id:
+        discovery_model_ids.append(requested_model_id)
+    for discovery_model_id in discovery_model_ids:
+        try:
+            local_packages = discover_local_trt_packages(model_id=discovery_model_id)
+        except Exception as error:
+            LOGGER.warning(
+                "Skipping local TRT discovery for model_id=%s due to error: %s",
+                discovery_model_id,
+                error,
+            )
+            continue
+        for local_package in local_packages:
+            if local_package.package_id in known_package_ids:
+                continue
+            parsed_model_packages.append(local_package)
+            known_package_ids.add(local_package.package_id)
 
 
 def roboflow_secure_gateway_proxy_url_builder(
@@ -425,44 +472,6 @@ def parse_onnx_model_package(
     )
 
 
-class JetsonMachineSpecsV1(BaseModel):
-    type: Literal["jetson-machine-specs-v1"]
-    l4t_version: str = Field(alias="l4tVersion")
-    device_name: str = Field(alias="deviceName")
-    driver_version: str = Field(alias="driverVersion")
-
-
-class GPUServerSpecsV1(BaseModel):
-    type: Literal["gpu-server-specs-v1"]
-    driver_version: str = Field(alias="driverVersion")
-    os_version: str = Field(alias="osVersion")
-
-
-class TrtModelPackageV1(BaseModel):
-    type: Literal["trt-model-package-v1"]
-    backend_type: Literal["trt"] = Field(alias="backendType")
-    dynamic_batch_size: bool = Field(alias="dynamicBatchSize", default=False)
-    static_batch_size: Optional[int] = Field(alias="staticBatchSize", default=None)
-    min_batch_size: Optional[int] = Field(alias="minBatchSize", default=None)
-    opt_batch_size: Optional[int] = Field(alias="optBatchSize", default=None)
-    max_batch_size: Optional[int] = Field(alias="maxBatchSize", default=None)
-    quantization: Quantization
-    cuda_device_type: str = Field(alias="cudaDeviceType")
-    cuda_device_cc: str = Field(alias="cudaDeviceCC")
-    cuda_version: str = Field(alias="cudaVersion")
-    trt_version: str = Field(alias="trtVersion")
-    same_cc_compatible: bool = Field(alias="sameCCCompatible", default=False)
-    trt_forward_compatible: bool = Field(alias="trtForwardCompatible", default=False)
-    trt_lean_runtime_excluded: bool = Field(
-        alias="trtLeanRuntimeExcluded", default=False
-    )
-    machine_type: Literal["gpu-server", "jetson"] = Field(alias="machineType")
-    machine_specs: Annotated[
-        Union[JetsonMachineSpecsV1, GPUServerSpecsV1],
-        Discriminator(discriminator="type"),
-    ] = Field(alias="machineSpecs")
-
-
 def parse_trt_model_package(
     metadata: RoboflowModelPackageV1,
     proxy_url_builder: ProxyUrlBuilder = None,
@@ -682,31 +691,6 @@ def parse_torch_script_model_package(
     )
 
 
-class MediapipeModelPackageV1(BaseModel):
-    type: Literal["mediapipe-model-package-v1"]
-    backend_type: Literal["mediapipe"] = Field(alias="backendType")
-
-
-def parse_mediapipe_model_package(
-    metadata: RoboflowModelPackageV1,
-    proxy_url_builder: ProxyUrlBuilder = None,
-) -> ModelPackageMetadata:
-    _ = MediapipeModelPackageV1.model_validate(metadata.package_manifest)
-    package_artefacts = parse_package_artefacts(
-        package_artefacts=metadata.package_files,
-        proxy_url_builder=proxy_url_builder,
-    )
-    return ModelPackageMetadata(
-        package_id=metadata.package_id,
-        backend=BackendType.MEDIAPIPE,
-        package_artefacts=package_artefacts,
-        quantization=Quantization.UNKNOWN,
-        trusted_source=metadata.trusted_source,
-        model_features=metadata.model_features,
-        recommended_parameters=metadata.recommended_parameters,
-    )
-
-
 def validate_batch_settings(
     dynamic_batch_size: bool, static_batch_size: Optional[int]
 ) -> None:
@@ -760,17 +744,4 @@ MODEL_PACKAGE_PARSERS: Dict[
     "hf-model-package-v1": parse_hf_model_package,
     "ultralytics-model-package-v1": parse_ultralytics_model_package,
     "torch-script-model-package-v1": parse_torch_script_model_package,
-    "mediapipe-model-package-v1": parse_mediapipe_model_package,
 }
-
-
-def as_version(value: str) -> Version:
-    try:
-        return Version(value)
-    except InvalidVersion as error:
-        raise ModelMetadataConsistencyError(
-            message="Roboflow API returned model package manifest that is expected to provide valid version specification for "
-            "one of the field of package manifest, but instead provides value that cannot be parsed. This is most "
-            "likely Roboflow API bug - contact Roboflow to solve the problem.",
-            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelmetadataconsistencyerror",
-        ) from error

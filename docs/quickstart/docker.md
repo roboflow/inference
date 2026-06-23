@@ -1,3 +1,7 @@
+---
+description: Install and run the Roboflow Inference Server with Docker, then choose a self-hosted, managed, or cloud deployment path.
+---
+
 # About Inference Server
 
 The Inference Server is a standalone microservice that wraps the [Inference](../start/overview.md) Python package and exposes it over an HTTP API.

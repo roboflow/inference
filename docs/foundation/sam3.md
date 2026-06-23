@@ -3,8 +3,9 @@
 [Segment Anything 3 (SAM 3)](https://ai.meta.com/sam3) is a unified foundation model for promptable segmentation in images and videos. It builds upon SAM 2 by introducing the ability to exhaustively segment all instances of an open-vocabulary concept specified by a short text phrase or exemplars.
 
 SAM 3 can detect, segment, and track objects using:
-- **Text prompts** (e.g., "a person", "red car")
-- **Visual prompts** (boxes, points)
+- **Text prompts** (e.g., "a person", "red car") — segment every instance of a concept
+- **Exemplar box prompts** — box one example object and segment every similar instance, optionally combined with text and with negative exemplars to exclude lookalikes
+- **Interactive visual prompts** (points, boxes) — segment one specific object, SAM 2 style
 
 ## How to Use SAM 3 with Inference
 
@@ -43,10 +44,29 @@ model = SegmentAnything3(model_id="sam3/sam3_final")
 image_path = "path/to/your/image.jpg"
 
 # Define prompts
-# SAM 3 supports both text and visual prompts
+# SAM 3 supports text prompts, exemplar box prompts, and combinations of both
 prompts = [
+    # Text prompt: segment every instance of a concept
     Sam3Prompt(type="text", text="person"),
-    Sam3Prompt(type="text", text="car")
+    # Exemplar prompt: box one example object (absolute pixels, top-left
+    # anchored XYWH) and segment every similar instance in the image.
+    # box_labels is required: 1 = positive exemplar, 0 = negative exemplar.
+    Sam3Prompt(
+        type="visual",
+        boxes=[Sam3Prompt.Box(x=1409, y=705, width=112, height=183)],
+        box_labels=[1],
+    ),
+    # Combined prompt: text narrowed by exemplars. Here the negative
+    # exemplar suppresses instances similar to the second box.
+    Sam3Prompt(
+        type="visual",
+        text="car",
+        boxes=[
+            Sam3Prompt.BoxXYXY(x0=100, y0=200, x1=300, y1=400),
+            Sam3Prompt.BoxXYXY(x0=500, y0=200, x1=700, y1=400),
+        ],
+        box_labels=[1, 0],
+    ),
 ]
 
 # Run inference
@@ -106,9 +126,9 @@ SAM 3 exposes two main modes via API:
 docker run -it --rm -p 9001:9001 --gpus=all roboflow/inference-server:latest
 ```
 
-#### 2. Concept Segmentation (Text Prompts)
+#### 2. Concept Segmentation (Text and Exemplar Prompts)
 
-This is the most common usage for SAM 3, allowing you to segment objects by text description.
+This is the most common usage for SAM 3, allowing you to segment all instances of a concept. Concepts can be described by text:
 
 ```bash
 curl -X POST 'http://localhost:9001/sam3/concept_segment?api_key=<YOUR_API_KEY>' \
@@ -121,6 +141,30 @@ curl -X POST 'http://localhost:9001/sam3/concept_segment?api_key=<YOUR_API_KEY>'
     "prompts": [
         { "type": "text", "text": "cat" },
         { "type": "text", "text": "dog" }
+    ]
+  }'
+```
+
+Concepts can also be described by exemplar boxes — box one example object and SAM 3 segments every similar instance. Boxes use absolute pixel coordinates, either top-left anchored XYWH (`{"x", "y", "width", "height"}`) or corner form (`{"x0", "y0", "x1", "y1"}`). `box_labels` is required alongside `boxes`: `1` marks a positive exemplar, `0` a negative exemplar to exclude lookalikes. Text and exemplars can be combined in one prompt:
+
+```bash
+curl -X POST 'http://localhost:9001/sam3/concept_segment?api_key=<YOUR_API_KEY>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "image": {
+      "type": "url",
+      "value": "https://media.roboflow.com/inference/sample.jpg"
+    },
+    "prompts": [
+        {
+          "type": "visual",
+          "text": "dog",
+          "boxes": [
+            { "x": 100, "y": 200, "width": 150, "height": 120 },
+            { "x0": 400, "y0": 200, "x1": 550, "y1": 320 }
+          ],
+          "box_labels": [1, 0]
+        }
     ]
   }'
 ```
@@ -143,7 +187,7 @@ curl -X POST 'http://localhost:9001/sam3/embed_image?api_key=<YOUR_API_KEY>' \
 # Returns an "image_id"
 ```
 
-**Step 2: Segment with Points**
+**Step 2: Segment with Points and/or a Box**
 
 ```bash
 curl -X POST 'http://localhost:9001/sam3/visual_segment?api_key=<YOUR_API_KEY>' \
@@ -151,18 +195,25 @@ curl -X POST 'http://localhost:9001/sam3/visual_segment?api_key=<YOUR_API_KEY>' 
   -d '{
     "image_id": "<IMAGE_ID_FROM_STEP_1>",
     "prompts": [
-      { "points": [ { "x": 100, "y": 100, "positive": true } ] }
-    ]
+      {
+        "points": [ { "x": 100, "y": 100, "positive": true } ],
+        "box": { "x": 100, "y": 100, "width": 200, "height": 150 }
+      }
+    ],
+    "multimask_output": false
   }'
 ```
 
+A prompt can contain `points`, a `box`, or both. Positive points include the clicked region; negative points (`"positive": false`) exclude it — add points to iteratively refine the mask. Note that the PVS `box` is **center-anchored** XYWH (`x`, `y` is the box center), unlike concept segmentation boxes which are top-left anchored.
+
+The response contains the single highest-confidence mask for the prompt: `multimask_output` controls how many internal mask proposals the model generates (three when `true`), but the best proposal is always selected for the response. Send one prompt per request — multiple prompts in one request currently return only one prediction.
+
 ## Workflow Integration
 
-SAM 3 is fully integrated into [Inference Workflows](https://inference.roboflow.com/workflows/core_steps/). You can use the **SAM 3** block to add zero-shot instance segmentation to your pipeline.
+SAM 3 is fully integrated into [Inference Workflows](https://inference.roboflow.com/workflows/core_steps/). Two blocks are available:
 
-The Workflow block allows you to:
-- Use **Text Prompts** to segment objects by class name.
-- Use **Box Prompts** from other detection models (like YOLO) to generate precise masks for detected objects.
+- The **SAM 3** block runs concept segmentation: use **Text Prompts** to segment all instances of a class by name.
+- The **SAM 3 Interactive** block runs promptable visual segmentation (PVS): use **Point Prompts** (positive/negative clicks) and/or **Box Prompts** from other detection models (like YOLO) to segment specific objects.
 
 ### Example: Text Prompting in Workflows
 
@@ -170,6 +221,81 @@ The Workflow block allows you to:
 2. Connect an image input.
 3. In the `class_names` field, enter the classes you want to segment (e.g., `["person", "vehicle"]`).
 4. The block will output instance segmentation predictions compatible with other workflow steps.
+
+### Example: Point Prompting in Workflows
+
+1. Add a **SAM 3 Interactive** block to your workflow.
+2. Connect an image input.
+3. In the `points` field, provide labeled points (or connect a workflow input of kind `labeled_points`), e.g. `[{"x": 320, "y": 240, "positive": true}, {"x": 100, "y": 100, "positive": false}]`. Positive points mark the object to segment; negative points exclude regions to refine the mask.
+4. Optionally connect detections from another model to the `boxes` field - each box becomes a separate prompt and its class name is forwarded to the predicted mask.
+
+## Video Tracking in Workflows
+
+The **SAM3 Video Tracker** workflow block (`roboflow_core/sam3_video@v1`) runs
+SAM3's streaming *concept tracker* frame by frame: you provide the concepts to
+track as text in `class_names`, and the model runs fused detection and
+tracking on every frame. Objects matching a concept keep a stable
+`tracker_id` across frames, and — unlike detector-seeded tracking — objects
+that enter the scene mid-stream are picked up automatically, with no
+re-prompting and no upstream detection model required. Each emitted mask
+carries the concept it matched as its class name and the model's detection
+score as its confidence (filter with `threshold`, default `0.5`).
+
+Key properties:
+
+- **Stateful and local-only.** The block keeps one tracking session per
+  `video_metadata.video_identifier` and requires
+  `WORKFLOWS_STEP_EXECUTION_MODE=local`; drive it with `InferencePipeline`,
+  which delivers frames one at a time with video metadata attached. A GPU is
+  required.
+- **No prompt scheduling.** Concept prompts are registered on the session
+  once; the session is only re-seeded when the stream restarts or
+  `class_names` changes. For detector-driven (box-prompted) video tracking,
+  use the SAM2 Video Tracker block instead (see the
+  [SAM 2 documentation](sam2.md)) — it also accepts `sam3trackervideo` as
+  `model_id` to run SAM3's visually prompted tracker, which shares the
+  `sam3video` weights package.
+- **Model.** `model_id` defaults to `sam3video`, the HuggingFace transformers
+  port of SAM3 video, which exposes the frame-by-frame streaming interface
+  (the native `sam3` package's video predictor requires the whole video
+  upfront and cannot be used for live streams).
+
+### Example
+
+```python
+from inference import InferencePipeline
+from inference.core.interfaces.stream.sinks import render_boxes
+
+WORKFLOW = {
+    "version": "1.0",
+    "inputs": [{"type": "InferenceImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "roboflow_core/sam3_video@v1",
+            "name": "tracker",
+            "images": "$inputs.image",
+            "class_names": ["person", "forklift"],
+            "threshold": 0.5,
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.tracker.predictions",
+        }
+    ],
+}
+
+pipeline = InferencePipeline.init_with_workflow(
+    video_reference="path/to/video.mp4",  # or an RTSP URL / camera id
+    workflow_specification=WORKFLOW,
+    on_prediction=render_boxes,
+    api_key="<YOUR-API-KEY>",
+)
+pipeline.start()
+pipeline.join()
+```
 
 ## Capabilities & Features
 
@@ -253,7 +379,41 @@ cv.waitKey(0)
 cv.destroyAllWindows()
 ```
 
-### 2. SAM3 raw API
+### 2. SAM3 via the Inference SDK
+
+The `inference-sdk` client wraps both SAM3 endpoints. Prompt dicts take the same shape as the HTTP payloads, so text, exemplar, and combined prompts all work:
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+client = InferenceHTTPClient(
+    api_url="https://serverless.roboflow.com",
+    api_key="<YOUR_ROBOFLOW_API_KEY>",
+)
+
+# Concept segmentation: text, exemplar boxes, or both per prompt
+result = client.sam3_concept_segment(
+    inference_input="https://media.roboflow.com/inference/people-walking.jpg",
+    prompts=[
+        {"type": "text", "text": "person"},
+        {
+            "type": "visual",
+            "boxes": [{"x": 1409, "y": 705, "width": 112, "height": 183}],
+            "box_labels": [1],
+        },
+    ],
+    output_prob_thresh=0.5,
+)
+
+# Interactive visual segmentation: points and/or a center-anchored box
+result = client.sam3_visual_segment(
+    inference_input="https://media.roboflow.com/inference/people-walking.jpg",
+    prompts=[{"points": [{"x": 1465, "y": 796, "positive": True}]}],
+    multimask_output=False,
+)
+```
+
+### 3. SAM3 raw API
 
 For direct API access to SAM3 without workflows, you can use Roboflow's serverless endpoint.
 This approach gives you raw segmentation results that you can process however you need.

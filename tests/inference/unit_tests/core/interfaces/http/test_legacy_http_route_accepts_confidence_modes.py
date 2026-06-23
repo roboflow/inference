@@ -8,6 +8,7 @@ in remote workflow execution mode where the v3 model blocks select the v0 API
 with a mocked model manager and confirms each task type accepts the same
 confidence-mode values the v3 blocks send.
 """
+
 from typing import Optional, Union
 from unittest.mock import AsyncMock, MagicMock
 
@@ -52,15 +53,14 @@ def _build_interface(monkeypatch, task_type: str):
 
 # task_type -> set of confidence values the corresponding request entity is
 # expected to accept. "best"/"default" are the two non-float modes v3 blocks
-# can serialize; semseg and keypoint-detection reject "best" via field
-# validators because model eval doesn't yet produce thresholds for those
-# tasks.
+# can serialize; keypoint-detection rejects "best" via a field validator
+# because model eval doesn't yet produce thresholds for that task.
 _ACCEPTED_CONFIDENCE_MODES = {
     "object-detection": ["best", "default", 0.5],
     "instance-segmentation": ["best", "default", 0.5],
     "keypoint-detection": ["default", 0.5],
     "classification": ["best", "default", 0.5],
-    "semantic-segmentation": ["default", 0.5],
+    "semantic-segmentation": ["best", "default", 0.5],
 }
 
 
@@ -98,7 +98,7 @@ def test_legacy_route_accepts_confidence_mode(
 
 @pytest.mark.parametrize(
     "task_type",
-    ["semantic-segmentation", "keypoint-detection"],
+    ["keypoint-detection"],
 )
 def test_legacy_route_rejects_best_confidence_for_unsupported_tasks(
     monkeypatch,

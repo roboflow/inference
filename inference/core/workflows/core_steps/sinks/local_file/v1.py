@@ -7,6 +7,7 @@ from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator
 
+from inference.core.env import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -15,6 +16,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -164,6 +168,48 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        restrictions = [
+            RuntimeRestriction(
+                severity=Severity.SOFT,
+                note=(
+                    "Files are persisted on the deployment's volume but are "
+                    "not retrievable through the Roboflow API; treat as "
+                    "internal-only logs."
+                ),
+                applies_to_runtimes=[Runtime.DEDICATED_DEPLOYMENT],
+            ),
+        ]
+        if not ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE:
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.HARD,
+                    note=(
+                        "Block raises RuntimeError when ALLOW_WORKFLOW_BLOCKS_"
+                        "ACCESSING_LOCAL_STORAGE is False."
+                    ),
+                    applies_to_runtimes=[
+                        Runtime.HOSTED_SERVERLESS,
+                        Runtime.DEDICATED_DEPLOYMENT,
+                    ],
+                )
+            )
+        else:
+            restrictions.append(
+                RuntimeRestriction(
+                    severity=Severity.SOFT,
+                    note=(
+                        "Container disk is ephemeral, so files are lost when "
+                        "the worker scales down; if there's more than one replica "
+                        "consuming workflow requests the result will be non "
+                        "deterministic.."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                )
+            )
+        return restrictions
 
 
 class LocalFileSinkBlockV1(WorkflowBlock):

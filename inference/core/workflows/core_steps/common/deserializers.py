@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
 import cv2
@@ -542,6 +542,44 @@ def deserialize_point_kind(parameter: str, value: Any) -> Tuple[AnyNumber, AnyNu
             context="workflow_execution | runtime_input_validation",
         )
     return value
+
+
+def deserialize_labeled_points_kind(parameter: str, value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"list of labeled points, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    result = []
+    for raw_point in value:
+        if isinstance(raw_point, dict):
+            if "x" not in raw_point or "y" not in raw_point:
+                raise RuntimeInputError(
+                    public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+                    f"list of labeled points, but at least one point misses `x` or `y` coordinate.",
+                    context="workflow_execution | runtime_input_validation",
+                )
+            x, y = raw_point["x"], raw_point["y"]
+            positive = raw_point.get("positive", True)
+        elif isinstance(raw_point, (list, tuple)) and len(raw_point) in {2, 3}:
+            x, y = raw_point[0], raw_point[1]
+            positive = raw_point[2] if len(raw_point) == 3 else True
+        else:
+            raise RuntimeInputError(
+                public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+                f"list of labeled points, but at least one element is neither a dict with "
+                f"`x` and `y` keys nor a sequence of (x, y) or (x, y, positive).",
+                context="workflow_execution | runtime_input_validation",
+            )
+        if not _is_number(x) or not _is_number(y):
+            raise RuntimeInputError(
+                public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+                f"list of labeled points, but at least one point coordinate is not a number.",
+                context="workflow_execution | runtime_input_validation",
+            )
+        result.append({"x": x, "y": y, "positive": bool(positive)})
+    return result
 
 
 def deserialize_zone_kind(

@@ -27,6 +27,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -57,7 +58,12 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
+    STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    STILL_IMAGE_INPUT_SOFT_RESTRICTION,
     BlockResult,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -135,15 +141,20 @@ class BlockManifest(WorkflowBlockManifest):
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default="sam2video/small",
         description=(
-            "Streaming SAM2 model id resolved by `inference_models`.  "
+            "Streaming video tracker model id resolved by `inference_models`.  "
             "The `sam2video` family ships four Hiera backbone sizes; "
-            "`small` is the default trade-off between speed and quality."
+            "`small` is the default trade-off between speed and quality.  "
+            "`sam3trackervideo` is SAM3's visually prompted tracker — the "
+            "same prompt contract with a larger backbone, markedly better "
+            "at identity retention on long videos and crowded scenes, at "
+            "higher compute cost."
         ),
         examples=[
             "sam2video/tiny",
             "sam2video/small",
             "sam2video/base-plus",
             "sam2video/large",
+            "sam3trackervideo",
         ],
     )
     prompt_mode: Literal["first_frame", "every_n_frames", "every_frame"] = Field(
@@ -188,17 +199,40 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [
+            STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+            RuntimeRestriction(
+                severity=Severity.HARD,
+                note="Requires a GPU; the streaming SAM2 video model needs CUDA.",
+                applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+                applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
+            ),
+            STILL_IMAGE_INPUT_SOFT_RESTRICTION,
+        ]
+
+    @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         return [
             "sam2video/small",
             "sam2video/tiny",
             "sam2video/base-plus",
             "sam2video/large",
+            "sam3trackervideo",
         ]
 
 
 class SegmentAnything2VideoBlockV1(WorkflowBlock):
     """Stateful SAM2 streaming video tracking block."""
+
+    _REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE = (
+        "SAM2 Video Tracker only supports LOCAL workflow step "
+        "execution.  Remote execution would ship each frame to a "
+        "separate process and break the per-video SAM2 session "
+        "that holds the temporal memory.  Set "
+        "WORKFLOWS_STEP_EXECUTION_MODE=local (or run on a "
+        "dedicated deployment) to use this block."
+    )
 
     def __init__(
         self,
@@ -206,15 +240,6 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
-        if step_execution_mode is not StepExecutionMode.LOCAL:
-            raise NotImplementedError(
-                "SAM2 Video Tracker only supports LOCAL workflow step "
-                "execution.  Remote execution would ship each frame to a "
-                "separate process and break the per-video SAM2 session "
-                "that holds the temporal memory.  Set "
-                "WORKFLOWS_STEP_EXECUTION_MODE=local (or run on a "
-                "dedicated deployment) to use this block."
-            )
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
@@ -234,9 +259,11 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
         if self._model is None or self._current_model_id != model_id:
             from inference_models import AutoModel
 
+            extra_weights_provider_headers = get_extra_weights_provider_headers()
             self._model = AutoModel.from_pretrained(
                 model_id_or_path=model_id,
                 api_key=self._api_key,
+                weights_provider_extra_headers=extra_weights_provider_headers,
             )
             self._current_model_id = model_id
             # Switching model invalidates every session we held.
@@ -252,6 +279,8 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
         prompt_interval: int,
         threshold: float,
     ) -> BlockResult:
+        if self._step_execution_mode is not StepExecutionMode.LOCAL:
+            raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
         model = self._get_model(model_id=model_id)
         if boxes is None:
             boxes = [None] * len(images)

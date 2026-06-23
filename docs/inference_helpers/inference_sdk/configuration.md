@@ -88,7 +88,7 @@ _ = CLIENT.infer(image_url, model_id="another-model/1")
 
 ## Details about client configuration
 
-`inference-client` provides `InferenceConfiguration` dataclass to hold whole configuration.
+`InferenceHTTPClient` provides the `InferenceConfiguration` dataclass to hold the full configuration.
 
 ```python
 from inference_sdk import InferenceConfiguration

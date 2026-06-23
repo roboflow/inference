@@ -1,5 +1,139 @@
 # Changelog
 
+
+## `0.29.6`
+
+### Added
+
+- Opt-in Triton RF-DETR instance-segmentation RLE post-processing. Set
+  `INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED=True` to generate COCO RLE
+  masks directly from sparse interpolated mask regions on supported CUDA
+  inputs.
+- Opt-in Triton RF-DETR instance-segmentation preprocessing for the TensorRT
+  backend. Set `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=True` to run the
+  supported resize and normalize path on CUDA.
+- Opt-in Triton RF-DETR instance-segmentation pipelining. Set
+  `RFDETR_PIPELINE_DEPTH=2`.
+
+## `0.29.4`
+
+### Fixed
+
+- Security issues patch, 19.06.2026 - `bleach>=6.4.0` and `tornado>=6.5.7` in `docs` extras.
+
+
+## `0.29.4`
+
+### Fixed
+
+- Fixed GLM-OCR dtype mismatch on Jetson by casting HuggingFace processor floating-point
+inputs to the model dtype resolved for the target device (bfloat16 on supported CUDA hardware,
+otherwise float16).
+
+---
+
+## `0.29.3`
+
+### Fixed
+
+- Incompatibility with `supervision==0.29.0` due to init param in `sv.KeyPoints(...)`
+
+---
+
+## `0.29.2`
+
+### Fixed
+
+- Transitive dependency vulnerability patched - `idna>=3.15` required by the package
+
+---
+## `0.29.1`
+
+### Fixed
+
+- SAM3 point-prompting feature
+
+---
+## `0.29.0`
+
+### Added
+
+- Added RF-DETR preview keypoint support (ONNX backend).
+- Added support for fine-tuned YOLO26 semantic segmentation models.
+
+---
+
+## `0.28.7`
+
+### Added
+- Added YOLO26 semantic segmentation support (ONNX, TorchScript, and TensorRT backends).
+
+---
+
+## `0.28.6`
+
+### Fixed
+
+- torch.jit.load/script share a process-global which is not thread-safe, introduced lock to prevent race conditions when loading SAM3 and other torchscript models
+- `0.28.5` yanked
+
+---
+
+## `0.28.4`
+
+### Added
+- Ported SAM3 to inference_models
+
+### Fixed
+
+- There were issues with dependencies while introducing SAM3 hence versions `0.28.2` and `0.28.3`
+
+---
+
+## `0.28.1`
+
+### Fixed
+
+- Detections at image edges are now clipped to the image dimensions.
+
+---
+
+## `0.28.0`
+
+### Removed (BREAKING)
+
+- **MediaPipe is no longer supported.** The `mediapipe` extra and every
+  symbol coupled to it have been removed. Consumers comparing against
+  `BackendType.MEDIAPIPE` will hit `AttributeError`. Roboflow Universe
+  payloads of type `mediapipe-model-package-v1` are now silently filtered
+  by `MODEL_PACKAGE_PARSERS.get(...)`. Removed symbols:
+  - `inference_models.models.mediapipe_face_detection.MediaPipeFaceDetector`
+  - `inference_models.model_pipelines.face_and_gaze_detection.FaceAndGazeDetectionMPAndL2CS`
+  - `BackendType.MEDIAPIPE`
+  - `mediapipe_package_matches_runtime_environment` and its entry in
+    `MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS`
+  - Models registry entry for
+    `("mediapipe-face-detector", KEYPOINT_DETECTION_TASK, BackendType.MEDIAPIPE)`
+  - `BACKEND_PRIORITY[BackendType.MEDIAPIPE]`
+  - Pipelines registry's `face-and-gaze-detection` entry +
+    `mediapipe/face-detector` default parameter
+  - `MediapipeModelPackageV1`, `parse_mediapipe_model_package`, and the
+    `"mediapipe-model-package-v1"` entry in `MODEL_PACKAGE_PARSERS`
+  - `RuntimeXRayResult.mediapipe_available` and `is_mediapipe_available()`
+  - `INFERENCE_MODELS_MEDIAPIPE_FACE_DETECTOR_DEFAULT_CONFIDENCE`
+  - The `[project.optional-dependencies] mediapipe` extra in
+    `pyproject.toml`
+
+  The standalone `L2CSNetOnnx` (under `inference_models.models.l2cs`) is
+  unaffected and remains supported.
+
+### Fixed
+
+- RFDetr pre- and post-processing aligned with training transforms. Pre-processing replaced with a dedicated `PIL → F.resize → F.to_tensor → F.normalize` chain matching the training pipeline. For model packages with non-stretch `dataset_version_resize_dimensions`, the dataset-version resize (cv2 letterbox / center-crop) runs first, then the PIL stretch to `training_input_size`. Post-processing uses topk-flat across (queries × classes) via shared `select_topk_predictions`. Fixes a cross-backend divergence at low confidence thresholds.
+- Fixed a bug where 'best' and 'default' confidence modes were not correctly handled by `RoboflowInstantHF` models.
+
+---
+
 ## `0.27.2`
 
 ### Fixed
@@ -7,12 +141,15 @@
 - Temporarily disabled flash-attention in GLM-OCR for Jetsons, due to incompatibility detected
 before release.
 
+---
 
 ## `0.27.1`
 
 ### Added
 
 - Improved logging for auto-negotiation of model packages.
+
+---
 
 ## `0.27.0`
 

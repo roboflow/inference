@@ -26,7 +26,7 @@ import requests
 
 WORKSPACE_NAME = "workspace-name"
 WORKFLOW_ID = "workflow-id"
-INFERENCE_SERVER_URL = "https://detect.roboflow.com"
+INFERENCE_SERVER_URL = "https://serverless.roboflow.com"
 
 WORKFLOW_SCHEMA_ENDPOINT = f"{INFERENCE_SERVER_URL}/{WORKSPACE_NAME}/workflows/{WORKFLOW_ID}/describe_interface"
 ROBOFLOW_API_KEY = "Your Roboflow API Key"

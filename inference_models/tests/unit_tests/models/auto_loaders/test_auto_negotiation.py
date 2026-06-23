@@ -20,9 +20,9 @@ from inference_models.models.auto_loaders.auto_negotiation import (
     filter_model_packages_based_on_model_features,
     filter_model_packages_by_requested_batch_size,
     filter_model_packages_by_requested_quantization,
-    mediapipe_package_matches_runtime_environment,
     model_package_matches_batch_size_request,
     model_package_matches_runtime_environment,
+    negotiate_model_packages,
     onnx_package_matches_runtime_environment,
     parse_backend_type,
     parse_batch_size,
@@ -438,7 +438,6 @@ def test_trt_package_matches_runtime_environment_when_trt_not_detected_in_env() 
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
 
     # when
@@ -491,7 +490,6 @@ def test_trt_package_matches_runtime_environment_when_trt_python_package_not_det
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
 
     # when
@@ -536,7 +534,6 @@ def test_trt_package_matches_runtime_environment_when_environment_requirements_n
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -590,7 +587,6 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_version_not_declared_in
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -642,7 +638,6 @@ def test_trt_package_matches_runtime_for_jetson_when_cpu_device_declared() -> No
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -697,7 +692,6 @@ def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_doe
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -752,7 +746,6 @@ def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_doe
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -803,7 +796,6 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch() ->
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -855,7 +847,6 @@ def test_trt_package_matches_runtime_for_jetson_when_l4t_versions_missmatch() ->
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -909,7 +900,6 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_desp
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -964,7 +954,6 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_but_
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1020,7 +1009,6 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_forw
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1074,7 +1062,6 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_with
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1122,7 +1109,6 @@ def test_trt_package_matches_runtime_when_unknown_environment_requirements_decla
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1170,7 +1156,6 @@ def test_trt_package_matches_runtime_for_server_when_trt_version_not_declared() 
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1224,7 +1209,6 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1278,7 +1262,6 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1333,7 +1316,6 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1388,7 +1370,6 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1443,7 +1424,6 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1498,7 +1478,6 @@ def test_trt_package_matches_runtime_environment_for_server_when_no_trt_forward_
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1553,7 +1532,6 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1609,7 +1587,6 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1666,7 +1643,6 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1721,7 +1697,6 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         },
         hf_transformers_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1768,7 +1743,6 @@ def test_onnx_package_matches_runtime_environment_when_onnx_not_detected_in_envi
         },
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1808,7 +1782,6 @@ def test_onnx_package_matches_runtime_environment_when_no_available_onnx_ep() ->
         available_onnx_execution_providers=None,
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1850,7 +1823,6 @@ def test_onnx_package_matches_runtime_environment_when_no_onnx_package_details()
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1894,7 +1866,6 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1936,7 +1907,6 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1985,7 +1955,6 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
         },
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2032,7 +2001,6 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
         },
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2079,7 +2047,6 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
         },
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2124,7 +2091,6 @@ def test_onnx_package_matches_runtime_environment_when_opset_matches() -> None:
         },
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2169,7 +2135,6 @@ def test_onnx_package_matches_runtime_environment_when_opset_to_high() -> None:
         },
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2216,7 +2181,6 @@ def test_model_package_matches_runtime_environment_when_backend_is_not_registere
         },
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2258,7 +2222,6 @@ def test_model_package_matches_runtime_environment_when_package_should_be_allowe
         },
         hf_transformers_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2599,6 +2562,49 @@ def test_select_model_package_by_id_when_there_is_single_match() -> None:
     assert result.package_id == "my-package-id-2"
 
 
+def test_negotiate_rejects_explicit_untrusted_package_without_opt_in() -> None:
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="localtrtabc",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP16,
+            static_batch_size=1,
+            package_artefacts=[],
+            trusted_source=False,
+        ),
+    ]
+
+    with pytest.raises(NoModelPackagesAvailableError):
+        negotiate_model_packages(
+            model_architecture="rfdetr",
+            task_type="object-detection",
+            model_packages=model_packages,
+            requested_model_package_id="localtrtabc",
+            allow_untrusted_packages=False,
+        )
+
+
+def test_negotiate_allows_explicit_untrusted_package_with_opt_in() -> None:
+    package = ModelPackageMetadata(
+        package_id="localtrtabc",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP16,
+        static_batch_size=1,
+        package_artefacts=[],
+        trusted_source=False,
+    )
+
+    result = negotiate_model_packages(
+        model_architecture="rfdetr",
+        task_type="object-detection",
+        model_packages=[package],
+        requested_model_package_id="localtrtabc",
+        allow_untrusted_packages=True,
+    )
+
+    assert [p.package_id for p in result] == ["localtrtabc"]
+
+
 def test_remove_untrusted_packages() -> None:
     # given
     model_packages = [
@@ -2751,7 +2757,6 @@ def test_determine_default_allowed_quantization_for_cuda_device_detected_in_runt
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     determine_default_allowed_quantization.cache_clear()
 
@@ -2794,7 +2799,6 @@ def test_determine_default_allowed_quantization_for_no_cuda_device_detected_in_r
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     determine_default_allowed_quantization.cache_clear()
 
@@ -2940,7 +2944,6 @@ def test_torch_script_package_matches_runtime_environment_when_no_torch_availabl
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -2993,7 +2996,6 @@ def test_torch_script_package_matches_runtime_environment_when_no_torch_script_p
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3042,7 +3044,6 @@ def test_torch_script_package_matches_runtime_environment_when_device_not_availa
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3095,7 +3096,6 @@ def test_torch_script_package_matches_runtime_environment_when_device_not_suppor
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3148,7 +3148,6 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_not
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3201,7 +3200,6 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_doe
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3254,7 +3252,6 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_equ
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3307,7 +3304,6 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_hig
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3360,7 +3356,6 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3413,7 +3408,6 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3466,7 +3460,6 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3519,7 +3512,6 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
         },
         hf_transformers_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -4370,107 +4362,3 @@ def test_filter_model_packages_based_on_model_features_when_package_not_should_b
     # then
     assert len(remaining_packages) == 1
     assert len(discarded_packages) == 0
-
-
-def test_mediapipe_package_matches_runtime_environment_when_mediapipe_not_found() -> (
-    None
-):
-    # given
-    runtime_xray = RuntimeXRayResult(
-        gpu_available=True,
-        gpu_devices=["nvidia-l4"],
-        gpu_devices_cc=[Version("8.7")],
-        driver_version=Version("510.0.4"),
-        cuda_version=Version("12.6"),
-        trt_version=None,
-        jetson_type=None,
-        l4t_version=Version("36.4.0"),
-        os_version="ubuntu-20.04",
-        torch_available=True,
-        torch_version=Version("2.6.0"),
-        torchvision_version=None,
-        onnxruntime_version=Version("1.21.0"),
-        available_onnx_execution_providers={
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        },
-        hf_transformers_available=True,
-        trt_python_package_available=False,
-        mediapipe_available=False,
-    )
-    model_package = ModelPackageMetadata(
-        package_id="my-package-id",
-        backend=BackendType.TORCH_SCRIPT,
-        dynamic_batch_size_supported=False,
-        static_batch_size=2,
-        package_artefacts=[],
-        quantization=Quantization.FP32,
-        trusted_source=True,
-        torch_script_package_details=TorchScriptPackageDetails(
-            supported_device_types={"cuda", "cpu", "mps"},
-            torch_version=Version("2.6.0"),
-            torch_vision_version=Version("0.22.0"),
-        ),
-    )
-
-    # when
-    result = mediapipe_package_matches_runtime_environment(
-        model_package=model_package,
-        runtime_x_ray=runtime_xray,
-        device=torch.device("cpu"),
-    )
-
-    # then
-    assert result[0] is False
-    assert result[1] is not None
-
-
-def test_mediapipe_package_matches_runtime_environment_when_mediapipe_found() -> None:
-    # given
-    runtime_xray = RuntimeXRayResult(
-        gpu_available=True,
-        gpu_devices=["nvidia-l4"],
-        gpu_devices_cc=[Version("8.7")],
-        driver_version=Version("510.0.4"),
-        cuda_version=Version("12.6"),
-        trt_version=None,
-        jetson_type=None,
-        l4t_version=Version("36.4.0"),
-        os_version="ubuntu-20.04",
-        torch_available=True,
-        torch_version=Version("2.6.0"),
-        torchvision_version=None,
-        onnxruntime_version=Version("1.21.0"),
-        available_onnx_execution_providers={
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        },
-        hf_transformers_available=True,
-        trt_python_package_available=False,
-        mediapipe_available=True,
-    )
-    model_package = ModelPackageMetadata(
-        package_id="my-package-id",
-        backend=BackendType.TORCH_SCRIPT,
-        dynamic_batch_size_supported=False,
-        static_batch_size=2,
-        package_artefacts=[],
-        quantization=Quantization.FP32,
-        trusted_source=True,
-        torch_script_package_details=TorchScriptPackageDetails(
-            supported_device_types={"cuda", "cpu", "mps"},
-            torch_version=Version("2.6.0"),
-            torch_vision_version=Version("0.22.0"),
-        ),
-    )
-
-    # when
-    result = mediapipe_package_matches_runtime_environment(
-        model_package=model_package,
-        runtime_x_ray=runtime_xray,
-        device=torch.device("cpu"),
-    )
-
-    # then
-    assert result[0] is True
-    assert result[1] is None
