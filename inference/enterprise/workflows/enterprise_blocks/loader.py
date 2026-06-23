@@ -16,12 +16,12 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.opc_writer.v1 import
 from inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1 import (
     ModbusTCPBlockV1,
 )
-from inference.enterprise.workflows.enterprise_blocks.sinks.PLCethernetIP.v1 import (
-    PLCBlockV1,
-)
 from inference.enterprise.workflows.enterprise_blocks.sinks.plc_relay.v1 import (
     PLCRelayReaderBlockV1,
     PLCRelayWriterBlockV1,
+)
+from inference.enterprise.workflows.enterprise_blocks.sinks.PLCethernetIP.v1 import (
+    PLCBlockV1,
 )
 
 
