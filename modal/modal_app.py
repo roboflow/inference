@@ -98,8 +98,8 @@ def get_inference_image():
     cloud=WEBEXEC_DEPLOY_CLOUD,
     region=WEBEXEC_DEPLOY_REGION,
     buffer_containers=1,
-    allow_concurrent_inputs=10,
 )
+@modal.concurrent(max_inputs=10)
 class Executor:
     """Parameterized Modal class for executing custom Python blocks via web endpoint."""
 
