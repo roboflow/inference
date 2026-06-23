@@ -19,6 +19,10 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1 import
 from inference.enterprise.workflows.enterprise_blocks.sinks.PLCethernetIP.v1 import (
     PLCBlockV1,
 )
+from inference.enterprise.workflows.enterprise_blocks.sinks.plc_relay.v1 import (
+    PLCRelayReaderBlockV1,
+    PLCRelayWriterBlockV1,
+)
 
 
 def load_enterprise_blocks() -> List[Type[WorkflowBlock]]:
@@ -26,6 +30,8 @@ def load_enterprise_blocks() -> List[Type[WorkflowBlock]]:
         OPCWriterSinkBlockV1,
         MQTTWriterSinkBlockV1,
         PLCBlockV1,
+        PLCRelayReaderBlockV1,
+        PLCRelayWriterBlockV1,
         ModbusTCPBlockV1,
         MicrosoftSQLServerSinkBlockV1,
         EventWriterSinkBlockV1,
