@@ -123,11 +123,12 @@ def _compute_code_hash(code_str: str, imports: Optional[list]) -> str:
 
 
 def _serialise_image_for_webexec(image: Any) -> dict:
-    """Encode an image at the webexec JPEG quality (default 75) instead of the
-    WorkflowImageData default of 95.  For a 1080p frame this saves ~60-70 %
-    of the base64 payload with negligible visual loss in a preview scenario."""
+    """Encode an image at the configured WEBEXEC_JPEG_QUALITY (default 95)."""
     from inference.core.env import WEBEXEC_JPEG_QUALITY
     from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+    from inference.core.workflows.core_steps.common.serializers import (
+        serialize_video_metadata_kind,
+    )
     from inference.core.workflows.execution_engine.entities.base import (
         ParentOrigin,
     )
@@ -137,10 +138,14 @@ def _serialise_image_for_webexec(image: Any) -> dict:
         encode_image_to_jpeg_bytes(numpy_image, jpeg_quality=WEBEXEC_JPEG_QUALITY)
     ).decode("ascii")
 
+    video_metadata = None
+    if image.video_metadata:
+        video_metadata = serialize_video_metadata_kind(image.video_metadata)
+
     result: Dict[str, Any] = {
         "type": "base64",
         "value": b64,
-        "video_metadata": image.video_metadata.dict() if image.video_metadata else None,
+        "video_metadata": video_metadata,
     }
 
     parent_metadata = image.parent_metadata
@@ -611,6 +616,9 @@ def _serialize_image_for_msgpack(image: Any) -> dict:
     """Encode a WorkflowImageData as a dict with raw JPEG bytes (no base64)."""
     from inference.core.env import WEBEXEC_JPEG_QUALITY
     from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+    from inference.core.workflows.core_steps.common.serializers import (
+        serialize_video_metadata_kind,
+    )
     from inference.core.workflows.execution_engine.entities.base import ParentOrigin
 
     jpeg_bytes: bytes = encode_image_to_jpeg_bytes(
@@ -626,7 +634,7 @@ def _serialize_image_for_msgpack(image: Any) -> dict:
     if image.video_metadata:
         result["video_metadata"] = {
             "_type": "video_metadata",
-            **image.video_metadata.dict(),
+            **serialize_video_metadata_kind(image.video_metadata),
         }
 
     parent_metadata = image.parent_metadata
