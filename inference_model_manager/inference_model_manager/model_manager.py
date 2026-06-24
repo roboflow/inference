@@ -354,6 +354,11 @@ class ModelManager:
             on_empty=self._retire_shared_owner,
         )
 
+    def shared_owners(self) -> Dict[str, Any]:
+        """Snapshot of live shared-base owners by base_key (for VRAM/pid attribution)."""
+        with self._lifecycle_lock:
+            return dict(self._shared_workers)
+
     def has_shared_base(self, base_key: str) -> bool:
         """True if a LIVE shared-base owner exists for ``base_key`` — same liveness as
         the load reservation (rejects a dead-but-still-cached owner), so callers don't
