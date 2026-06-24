@@ -52,7 +52,8 @@ class WebRTCWorkerRequest(BaseModel):
     requested_plan: Optional[str] = "webrtc-gpu-small"
     # TODO: replaced with requested_plan
     requested_gpu: Optional[str] = None
-    # must be valid region: https://modal.com/docs/guide/region-selection#region-options
+    # Deprecated compatibility field kept so older deployed Modal workers
+    # that still log/access requested_region do not crash before startup.
     requested_region: Optional[str] = None
 
     workspace_id: Optional[str] = None

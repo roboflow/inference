@@ -62,10 +62,6 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
-from inference.core.interfaces.webrtc_worker.region_presets import (
-    WEBRTC_REGION_PRESETS,
-    resolve_region_preset,
-)
 from inference.core.interfaces.webrtc_worker.utils import (
     warmup_cuda,
     workflow_contains_instant_model,
@@ -357,7 +353,6 @@ if modal is not None:
             logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
             logger.info("watchdog_timeout: %s", WEBRTC_MODAL_WATCHDOG_TIMEMOUT)
             logger.info("requested_plan: %s", webrtc_request.requested_plan)
-            logger.info("requested_region: %s", webrtc_request.requested_region)
             logger.info(
                 "ICE servers: %s",
                 len(
@@ -676,34 +671,6 @@ if modal is not None:
             cls_with_options = cls_with_options.with_options(
                 gpu=requested_gpu,
             )
-        if webrtc_request.requested_region:
-            preset = resolve_region_preset(webrtc_request.requested_region)
-            if preset is not None:
-                logger.info(
-                    "Spawning webrtc modal function pinned to cloud=%s "
-                    "region=%s (preset %s)",
-                    preset.cloud,
-                    preset.region,
-                    webrtc_request.requested_region,
-                )
-                cls_with_options = cls_with_options.with_options(
-                    cloud=preset.cloud,
-                    region=preset.region,
-                )
-            else:
-                # Unknown key: fall back to legacy behavior (treat the
-                # value as a raw Modal region alias). Modal may place the
-                # container on any cloud, in which case the in-container
-                # webexec resolver will fall back to legacy ``webexec``.
-                logger.warning(
-                    "Unknown region preset %r (known: %s); falling back to "
-                    "raw Modal region. webexec may not co-locate.",
-                    webrtc_request.requested_region,
-                    sorted(WEBRTC_REGION_PRESETS),
-                )
-                cls_with_options = cls_with_options.with_options(
-                    region=webrtc_request.requested_region,
-                )
         if requested_ram_mb is not None:
             logger.info(
                 "Spawning webrtc modal function with ram %s",
