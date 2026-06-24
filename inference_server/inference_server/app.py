@@ -10,16 +10,11 @@ Per-process state (ZMQ, SHM, protocol helpers) lives in state.py.
 
 from __future__ import annotations
 
-import logging
 import os
-import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response
 
-from inference_model_manager.benchmark_trace import log as trace_log
-from inference_model_manager.benchmark_trace import ms as trace_ms
-from inference_model_manager.benchmark_trace import sampled as trace_sampled
 from inference_server import configuration as _cfg
 from inference_server.auth import extract_bearer, validate_api_key
 from inference_server.errors import AuthBackendUnavailable
@@ -27,8 +22,6 @@ from inference_server.proxies.base import ModelManagerProxy
 from inference_server.proxies.mm_wrapper import MMWrapper
 from inference_server.proxies.mmp_client import MMPClient
 from inference_server.routers import infer, v2_models, v2_server
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Lifespan — initialize per-process ZMQ + SHM
@@ -120,8 +113,6 @@ class _AuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        trace = trace_sampled()
-        t0 = time.monotonic()
         # Extract Bearer token from headers
         headers = dict(
             (k.decode("latin-1").lower(), v.decode("latin-1"))
@@ -130,15 +121,6 @@ class _AuthMiddleware:
         token = extract_bearer(headers.get("authorization", ""))
 
         if not token:
-            if trace:
-                trace_log(
-                    logger,
-                    "auth",
-                    path=path,
-                    status=401,
-                    header_count=len(headers),
-                    auth_ms=trace_ms(t0),
-                )
             response = Response(
                 status_code=401,
                 content=b"Authorization: Bearer <api_key> header required",
@@ -149,15 +131,6 @@ class _AuthMiddleware:
         try:
             valid, _ = await validate_api_key(token)
         except AuthBackendUnavailable:
-            if trace:
-                trace_log(
-                    logger,
-                    "auth",
-                    path=path,
-                    status=503,
-                    header_count=len(headers),
-                    auth_ms=trace_ms(t0),
-                )
             response = Response(
                 status_code=503,
                 headers={"Retry-After": "5"},
@@ -166,28 +139,10 @@ class _AuthMiddleware:
             await response(scope, receive, send)
             return
         if not valid:
-            if trace:
-                trace_log(
-                    logger,
-                    "auth",
-                    path=path,
-                    status=403,
-                    header_count=len(headers),
-                    auth_ms=trace_ms(t0),
-                )
             response = Response(status_code=403, content=b"Invalid API key")
             await response(scope, receive, send)
             return
 
-        if trace:
-            trace_log(
-                logger,
-                "auth",
-                path=path,
-                status=200,
-                header_count=len(headers),
-                auth_ms=trace_ms(t0),
-            )
         await self.app(scope, receive, send)
 
 
