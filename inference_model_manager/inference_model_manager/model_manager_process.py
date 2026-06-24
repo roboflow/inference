@@ -1214,16 +1214,26 @@ class ModelManagerProcess:
                 model_id_or_path, api_key, device, self._shared_metadata_cache
             ),
         )
-        # When the base worker is already resident, the head's marginal VRAM is small
-        # and the base was admitted with the first head — skip re-admission so the base
-        # is counted once. First head / non-shared loads admit normally.
+        # The base counts once: when its worker is already resident, admit the head on
+        # its marginal footprint (whole-model minus the resident base), not the full
+        # model. First head / non-shared loads admit on the full footprint.
         base_resident = resolution is not None and self._manager.has_shared_base(
             resolution.base_key
         )
 
-        if self._vram_admission and not base_resident:
+        # A loading head must never evict the base it is about to share.
+        shared_exclude = (
+            {resolution.base_key} if resolution is not None else None
+        )
+
+        if self._vram_admission:
+            need_mb = None
+            if base_resident:
+                need_mb = await loop.run_in_executor(
+                    None, self._shared_head_marginal_mb, resolution, model_id_or_path, api_key
+                )
             decision, victims, deficit = await self._vram_admission_plan(
-                model_id, api_key
+                model_id, api_key, need_mb=need_mb, exclude=shared_exclude
             )
             if decision == "no_capacity":
                 logger.warning(
@@ -1239,7 +1249,9 @@ class ModelManagerProcess:
                     model_id,
                     deficit,
                 )
-                secured = await self._execute_eviction_plan(victims, deficit)
+                secured = await self._execute_eviction_plan(
+                    victims, deficit, exclude=shared_exclude
+                )
                 if not secured:
                     logger.warning(
                         "MMP: VRAM admission aborted for '%s' — capacity lost mid-evict",
@@ -1316,8 +1328,10 @@ class ModelManagerProcess:
                     self._fail_load(model_id, fs, _ERR_LOAD_FAILED)
                     return
 
-                # CUDA OOM — try to evict a cold model and retry
-                candidate = self._pick_eviction_candidate()
+                # CUDA OOM — evict a cold unit and retry. For a shared head, never
+                # evict the base it is loading onto (head-load OOM must free OTHER
+                # units, not the dependency this load needs).
+                candidate = self._pick_eviction_candidate(exclude=shared_exclude)
                 if candidate is None:
                     logger.error(
                         "MMP: OOM loading '%s' — all models hot, cannot evict",
@@ -1327,11 +1341,13 @@ class ModelManagerProcess:
                     return
 
                 logger.warning(
-                    "MMP: OOM loading '%s' — evicting cold model '%s' and retrying",
+                    "MMP: OOM loading '%s' — evicting cold unit '%s' and retrying",
                     model_id,
                     candidate,
                 )
-                await self._evict_model(candidate)
+                # candidate may be a shared base key — _evict_target drops all its
+                # heads so the worker (and its VRAM) is actually reclaimed.
+                await self._evict_target(candidate)
 
                 # Force-clear partial load so next attempt doesn't hit "already loaded"
                 try:
@@ -1511,13 +1527,14 @@ class ModelManagerProcess:
             )
             return
         logger.warning(
-            "MMP: GPU %.0f%% > %.0f%% threshold — evicting cold model '%s'",
+            "MMP: GPU %.0f%% > %.0f%% threshold — evicting cold unit '%s'",
             gpu_frac * 100,
             self._evict_threshold * 100,
             candidate,
         )
-        # Drain runs in executor inside _evict_model; only this loop task waits.
-        await self._evict_model(candidate)
+        # candidate may be a base key — _evict_target drops all its heads so the
+        # worker's VRAM is actually reclaimed (_evict_model would KeyError on it).
+        await self._evict_target(candidate)
 
     def _unload_blocking(self, model_id: str) -> bool:
         """Drain + unload via ModelManager. BLOCKING (up to drain timeout) —
@@ -1567,11 +1584,17 @@ class ModelManagerProcess:
             window.append(mb)
 
     def _footprint_mb(self, flavor: str) -> float:
-        """Resolved VRAM footprint of a loaded model.
+        """Resolved VRAM footprint of a loaded model or shared base worker.
 
         Measured peak (max of sliding window) wins; falls back to the static
         per-batch figure from MemoryProfile; 0 when neither is known.
+
+        A shared head reports 0 — its VRAM lives in the shared base worker and is
+        reclaimed only by tearing the whole worker down (keyed by base_key), never by
+        dropping one head.
         """
+        if flavor in self._head_base_key:
+            return 0.0
         window = self._vram_window.get(flavor)
         if window:
             return max(window)
@@ -1634,49 +1657,134 @@ class ModelManagerProcess:
             return None
         return info.free / 1024 / 1024
 
-    def _plan_evictions(self, deficit_mb: float) -> Optional[list]:
-        """Pick coldest loaded models whose combined footprint covers deficit_mb.
+    def _is_shared_head(self, flavor: str) -> bool:
+        return flavor in self._head_base_key
 
-        Excludes hot (idle <= cutoff), in-flight, and already-unloading models.
-        Coldest-first by (oldest last access, fewest recent inferences).
-        Returns the ordered victim list, or None if the cold set cannot cover it.
+    def _is_base_key(self, key: str) -> bool:
+        return key in self._shared_heads
+
+    def _evictable_units(self) -> list:
+        """Eviction units: normal models (excluding shared heads) plus shared base
+        keys. Evicting a base key reclaims its whole worker's VRAM; a single head
+        reclaims nothing, so heads are never units."""
+        units = [f for f in self._models if not self._is_shared_head(f)]
+        units.extend(self._shared_heads.keys())
+        return units
+
+    def _flavor_loaded_idle(
+        self, flavor: str, now: float, in_flight: set, cutoff_s: float
+    ) -> bool:
+        fs = self._models.get(flavor)
+        return bool(
+            fs
+            and fs.loaded
+            and flavor not in in_flight
+            and flavor not in self._unloading
+            and (now - self._model_access.get(flavor, 0.0)) > cutoff_s
+        )
+
+    def _unit_evictable(
+        self, key: str, now: float, in_flight: set, cutoff_s: float
+    ) -> bool:
+        if self._is_base_key(key):
+            heads = self._shared_heads.get(key, set())
+            return bool(heads) and all(
+                self._flavor_loaded_idle(h, now, in_flight, cutoff_s) for h in heads
+            )
+        return self._flavor_loaded_idle(key, now, in_flight, cutoff_s)
+
+    def _unit_access(self, key: str) -> float:
+        if self._is_base_key(key):
+            heads = self._shared_heads.get(key, set())
+            return max((self._model_access.get(h, 0.0) for h in heads), default=0.0)
+        return self._model_access.get(key, 0.0)
+
+    def _unit_recent(self, key: str, window_s: float) -> int:
+        if self._is_base_key(key):
+            return sum(
+                self._recent_count(h, window_s)
+                for h in self._shared_heads.get(key, set())
+            )
+        return self._recent_count(key, window_s)
+
+    async def _evict_target(self, key: str) -> bool:
+        """Evict one unit. A base key drops every head (the last drop reaps the worker
+        and frees its VRAM); a normal model unloads directly."""
+        if self._is_base_key(key):
+            ok = True
+            for head in list(self._shared_heads.get(key, set())):
+                ok = await self._evict_model(head) and ok
+            return ok
+        return await self._evict_model(key)
+
+    def _plan_evictions(
+        self, deficit_mb: float, exclude: Optional[set] = None
+    ) -> Optional[list]:
+        """Pick coldest eviction units whose combined footprint covers deficit_mb.
+
+        Excludes hot (idle <= cutoff), in-flight, and already-unloading units, plus any
+        in ``exclude`` (e.g. the base a loading head depends on). A shared base key is
+        evictable only when ALL its heads are cold/idle/free. Coldest-first by (oldest
+        last access, fewest recent inferences). Returns the ordered victim list, or
+        None if the cold set cannot cover it.
         """
         now = time.monotonic()
         in_flight = {mid for _, _, mid in self._pending.values()}
-        evictable = [
-            f
-            for f, fs in self._models.items()
-            if fs.loaded
-            and f not in in_flight
-            and f not in self._unloading
-            and (now - self._model_access.get(f, 0.0)) > self._vram_idle_cutoff_s
+        exclude = exclude or set()
+        units = [
+            u
+            for u in self._evictable_units()
+            if u not in exclude
+            and self._unit_evictable(u, now, in_flight, self._vram_idle_cutoff_s)
         ]
-        evictable.sort(
-            key=lambda f: (
-                self._model_access.get(f, 0.0),
-                self._recent_count(f, self._vram_recent_window_s),
+        units.sort(
+            key=lambda u: (
+                self._unit_access(u),
+                self._unit_recent(u, self._vram_recent_window_s),
             )
         )
         plan = []
         secured = 0.0
-        for flavor in evictable:
-            plan.append(flavor)
-            secured += self._footprint_mb(flavor)
+        for unit in units:
+            plan.append(unit)
+            secured += self._footprint_mb(unit)
             if secured >= deficit_mb:
                 return plan
         return None
 
-    async def _vram_admission_plan(self, model_id: str, api_key: str = "") -> tuple:
+    def _shared_head_marginal_mb(
+        self, resolution: Any, head_model_id: str, api_key: str
+    ) -> int:
+        """Marginal VRAM of a head joining a RESIDENT base: the whole-model footprint
+        minus the base's own footprint. Clamped at 0; the OOM-retry loop backstops any
+        under-estimate from noisy metadata."""
+        whole = self._required_mb(head_model_id, api_key)
+        base = self._required_mb(resolution.dep_model_id, api_key)
+        return max(0, whole - base)
+
+    async def _vram_admission_plan(
+        self,
+        model_id: str,
+        api_key: str = "",
+        need_mb: Optional[int] = None,
+        exclude: Optional[set] = None,
+    ) -> tuple:
         """Decide admission for an incoming model without mutating state.
 
         Returns (decision, victims, deficit_mb); decision is "admit" | "evict"
-        | "no_capacity". Admits unconditionally when the model has no
-        footprint data (need == 0) or GPU telemetry is unavailable — the
-        OOM-retry loop in _load_model is the backstop. Metadata fetch (HTTP)
-        and GPU probe run in the executor, never on the event loop.
+        | "no_capacity". ``need_mb`` overrides the metadata footprint (used to admit a
+        shared head on its marginal cost); ``exclude`` keeps planning from evicting the
+        base a loading head depends on. Admits unconditionally when need == 0 or GPU
+        telemetry is unavailable — the OOM-retry loop in _load_model is the backstop.
+        Metadata fetch (HTTP) and GPU probe run in the executor, never on the loop.
         """
         loop = asyncio.get_running_loop()
-        need = await loop.run_in_executor(None, self._required_mb, model_id, api_key)
+        if need_mb is not None:
+            need = need_mb
+        else:
+            need = await loop.run_in_executor(
+                None, self._required_mb, model_id, api_key
+            )
         free_mb = await loop.run_in_executor(None, self._gpu_free_mb)
         if free_mb is None or need == 0:
             return "admit", [], 0.0
@@ -1684,75 +1792,64 @@ class ModelManagerProcess:
         if free >= need:
             return "admit", [], 0.0
         deficit = need - free
-        plan = self._plan_evictions(deficit)
+        plan = self._plan_evictions(deficit, exclude=exclude)
         if plan is None:
             return "no_capacity", [], deficit
         return "evict", plan, deficit
 
-    def _is_still_evictable(self, flavor: str) -> bool:
-        """Re-validation used mid-plan: model still loaded, idle, and not in-flight."""
-        fs = self._models.get(flavor)
-        if not fs or not fs.loaded:
-            return False
-        in_flight = {mid for _, _, mid in self._pending.values()}
-        if flavor in in_flight:
-            return False
-        idle = time.monotonic() - self._model_access.get(flavor, 0.0)
-        return idle > self._vram_idle_cutoff_s
-
-    async def _execute_eviction_plan(self, plan: list, deficit_mb: float) -> bool:
+    async def _execute_eviction_plan(
+        self, plan: list, deficit_mb: float, exclude: Optional[set] = None
+    ) -> bool:
         """Unload victims one at a time, re-validating each step (revocable).
 
         If a planned victim turned hot/in-flight, drop it and elect a replacement
-        covering the remaining deficit. If no replacement exists, abort (leaving
-        already-unloaded victims unloaded) and return False.
+        covering the remaining deficit (honouring ``exclude``). If no replacement
+        exists, abort (leaving already-unloaded victims unloaded) and return False.
         Returns True once secured >= deficit_mb.
         """
-        loop = asyncio.get_running_loop()
         secured = 0.0
         queue = list(plan)
         while secured < deficit_mb and queue:
             victim = queue.pop(0)
-            if not self._is_still_evictable(victim):
-                replacement = self._plan_evictions(deficit_mb - secured)
+            now = time.monotonic()
+            in_flight = {mid for _, _, mid in self._pending.values()}
+            if not self._unit_evictable(
+                victim, now, in_flight, self._vram_idle_cutoff_s
+            ):
+                replacement = self._plan_evictions(
+                    deficit_mb - secured, exclude=exclude
+                )
                 if replacement is None:
                     return False
                 queue = replacement
                 continue
             footprint = self._footprint_mb(victim)
-            ok = await self._evict_model(victim)
+            ok = await self._evict_target(victim)
             if ok:
                 secured += footprint
         return secured >= deficit_mb
 
-    def _pick_eviction_candidate(self) -> Optional[str]:
-        """Pick best model to evict. Cold models first, then LRU among warm.
+    def _pick_eviction_candidate(self, exclude: Optional[set] = None) -> Optional[str]:
+        """Pick best eviction unit (cold-first, LRU). ``exclude`` skips units a caller
+        must not evict (e.g. the base a loading head depends on).
 
-        Returns None if no evictable model (all hot and in-flight, or nothing loaded).
+        Returns None if no evictable unit (all hot and in-flight, or nothing loaded).
         """
         now = time.monotonic()
         in_flight = {mid for _, _, mid in self._pending.values()}
-        candidates = [
-            f
-            for f, fs in self._models.items()
-            if fs.loaded and f not in in_flight and f not in self._unloading
-        ]
-        if not candidates:
-            return None
-
-        # Partition into cold (idle > timeout) and hot
+        # Cold eviction units (a shared base key counts only when all its heads are
+        # cold). ``exclude`` protects a base a loading head still needs. Oldest last
+        # access first; all-hot → None.
+        exclude = exclude or set()
         cold = [
-            f
-            for f in candidates
-            if (now - self._model_access.get(f, 0.0)) > self._idle_timeout_s
+            u
+            for u in self._evictable_units()
+            if u not in exclude
+            and self._unit_evictable(u, now, in_flight, self._idle_timeout_s)
         ]
-
-        if cold:
-            # Among cold models, evict the one with oldest last access (most stale)
-            return min(cold, key=lambda f: self._model_access.get(f, 0.0))
-
-        # All candidates are hot — return None (caller decides: error or force-evict)
-        return None
+        if not cold:
+            return None
+        return min(cold, key=self._unit_access)
 
     # ------------------------------------------------------------------
     # Monitoring loop
@@ -1792,12 +1889,20 @@ class ModelManagerProcess:
         except Exception:
             pass
 
-        # Build pid→flavor map from registered backends for per-model GPU attribution
+        # Build pid→flavor map from registered backends for per-model GPU attribution.
         pid_to_flavor: dict[int, str] = {}
         for model_id, backend in list(self._backends.items()):
             pid = getattr(backend, "worker_pid", None)
             if pid is not None:
                 pid_to_flavor[pid] = model_id
+
+        # Shared heads report worker_pid=None — their base worker's whole VRAM
+        # (base + every head, one process) is attributed to the base_key instead.
+        if self._manager is not None:
+            for base_key, owner in self._manager.shared_owners().items():
+                pid = getattr(owner, "worker_pid", None)
+                if pid is not None:
+                    pid_to_flavor[pid] = base_key
 
         gpu_stats = _collect_gpu_stats(pid_to_flavor)
         s.update(gpu_stats)
