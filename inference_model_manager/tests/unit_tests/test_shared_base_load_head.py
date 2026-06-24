@@ -24,6 +24,7 @@ class _FakeOwner:
         self.dropped = []
         self._inflight = 0
         self._retired = False
+        self._dead = False
         self._on_empty = None
         self.unloaded = False
 
@@ -31,8 +32,12 @@ class _FakeOwner:
     def retired(self):
         return self._retired
 
+    @property
+    def alive(self):
+        return not self._retired and not self._dead
+
     def begin_load(self):
-        if self._retired:
+        if not self.alive:
             return False
         self._inflight += 1
         return True
@@ -230,3 +235,19 @@ def test_fresh_owner_dead_after_init_is_not_published(monkeypatch):
     assert mm._shared_loading_keys == set()   # sentinel released
     assert mm._loading_ids == set()
     assert owner.unloaded is True             # dead worker torn down
+
+
+def test_has_shared_base():
+    mm = _mm()
+    assert mm.has_shared_base("bk-1") is False
+
+    owner = _FakeOwner("bk-1")
+    mm._shared_workers["bk-1"] = owner
+    assert mm.has_shared_base("bk-1") is True
+
+    owner._retired = True
+    assert mm.has_shared_base("bk-1") is False  # retired owner is not resident
+
+    owner._retired = False
+    owner._dead = True
+    assert mm.has_shared_base("bk-1") is False  # dead-but-cached owner is not resident

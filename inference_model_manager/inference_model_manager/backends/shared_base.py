@@ -455,14 +455,23 @@ class SharedBaseSubprocessBackend:
 
     # ---- head lifecycle (called by ModelManager.load_shared_head / views) ----
 
+    @property
+    def alive(self) -> bool:
+        """Usable for a new head: not retired, recv thread not flagged dead, AND the
+        worker process still running. _recv_dead lags the actual exit (the recv thread
+        only notices on its next poll), so the process check closes that window —
+        callers must not reserve / count a base whose worker has already exited."""
+        if self._retired or self._recv_dead:
+            return False
+        worker = getattr(self, "_worker", None)
+        return worker is None or worker.is_alive()
+
     def begin_load(self) -> bool:
-        """Reserve an in-flight load. Returns False if the owner is retired OR its
-        worker has died (death sets _recv_dead before the cache entry is popped, so a
-        reservation here would otherwise reserve a dead worker) — the caller must
-        obtain a fresh owner. Held until end_load() so the worker is never reaped
-        between obtaining it and calling load_head()."""
+        """Reserve an in-flight load. Returns False if the owner is not alive — the
+        caller must obtain a fresh owner. Held until end_load() so the worker is never
+        reaped between obtaining it and calling load_head()."""
         with self._load_lock:
-            if self._retired or self._recv_dead:
+            if not self.alive:
                 return False
             self._inflight_loads += 1
             return True

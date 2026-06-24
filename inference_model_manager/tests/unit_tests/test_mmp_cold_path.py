@@ -60,6 +60,8 @@ def _bare_mmp(**attrs) -> ModelManagerProcess:
     mmp._vram_recent_window_s = 60.0
     mmp._idle_timeout_s = 300.0
     mmp._rejects_pool_full = 0
+    mmp._shared_heads = {}
+    mmp._head_base_key = {}
     for k, v in attrs.items():
         setattr(mmp, k, v)
     return mmp
