@@ -3,6 +3,7 @@
 import importlib
 import sys
 from contextlib import nullcontext
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Generator
 from unittest.mock import MagicMock, patch
@@ -13,6 +14,12 @@ import torch
 
 ADAPTER_MODULE = "inference.models.sam2.segment_anything2_inference_models"
 SAM2_TORCH_MODULE = "inference_models.models.sam2.sam2_torch"
+
+LOCAL_INFERENCE_MODELS_PATH = str(
+    Path(__file__).resolve().parents[4] / "inference_models"
+)
+if LOCAL_INFERENCE_MODELS_PATH not in sys.path:
+    sys.path.insert(0, LOCAL_INFERENCE_MODELS_PATH)
 
 
 def _build_sam2_stubs() -> dict:
