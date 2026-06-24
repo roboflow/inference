@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 from inference_model_manager import configuration as cfg
 from inference_model_manager.backends.base import Backend
@@ -96,6 +96,9 @@ class ModelManager:
         self._shared_workers: Dict[str, Any] = {}
         self._shared_loading_keys: set[str] = set()
         self._shared_cv = threading.Condition(self._lifecycle_lock)
+        # Optional hook (set by MMP) invoked on shared-base worker death, after the
+        # cache entry is dropped, so the wrapper can clean up its hosted heads.
+        self._shared_death_hook: Optional[Callable[[str], None]] = None
 
         # Shared SHM pool for subprocess backends — created lazily
         self._pool: Optional[Any] = None  # SHMPool, created on first subprocess load
@@ -351,9 +354,22 @@ class ModelManager:
             on_empty=self._retire_shared_owner,
         )
 
+    def has_shared_base(self, base_key: str) -> bool:
+        """True if a LIVE shared-base owner exists for ``base_key`` — same liveness as
+        the load reservation (rejects a dead-but-still-cached owner), so callers don't
+        skip admission for a base that is about to be respawned."""
+        with self._lifecycle_lock:
+            owner = self._shared_workers.get(base_key)
+            return owner is not None and owner.alive
+
     def _on_shared_worker_death(self, base_key: str) -> None:
         with self._lifecycle_lock:
             self._shared_workers.pop(base_key, None)
+        if self._shared_death_hook is not None:
+            try:
+                self._shared_death_hook(base_key)
+            except Exception:
+                logger.exception("shared-base death hook raised for '%s'", base_key)
 
     def _retire_shared_owner(self, base_key: str, owner: Any) -> None:
         # Drop the cache entry only if it is still this owner — a freshly created
