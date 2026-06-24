@@ -22,6 +22,14 @@ if LOCAL_INFERENCE_MODELS_PATH not in sys.path:
     sys.path.insert(0, LOCAL_INFERENCE_MODELS_PATH)
 
 
+def _drop_inference_models_modules() -> None:
+    for module_name in list(sys.modules):
+        if module_name == "inference_models" or module_name.startswith(
+            "inference_models."
+        ):
+            sys.modules.pop(module_name, None)
+
+
 def _build_sam2_stubs() -> dict:
     sam2 = ModuleType("sam2")
     sam2.__path__ = []
@@ -64,15 +72,15 @@ def _build_sam2_stubs() -> dict:
 @pytest.fixture()
 def adapter_module() -> Generator[ModuleType, None, None]:
     with patch.dict(sys.modules, _build_sam2_stubs()):
+        _drop_inference_models_modules()
         sys.modules.pop(ADAPTER_MODULE, None)
-        sys.modules.pop(SAM2_TORCH_MODULE, None)
         yield importlib.import_module(ADAPTER_MODULE)
 
 
 @pytest.fixture()
 def sam2_torch_module() -> Generator[ModuleType, None, None]:
     with patch.dict(sys.modules, _build_sam2_stubs()):
-        sys.modules.pop(SAM2_TORCH_MODULE, None)
+        _drop_inference_models_modules()
         yield importlib.import_module(SAM2_TORCH_MODULE)
 
 
