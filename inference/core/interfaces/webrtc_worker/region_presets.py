@@ -52,13 +52,8 @@ class RegionPreset(NamedTuple):
 WEBRTC_REGION_PRESETS: Dict[str, RegionPreset] = {
     # Short, user-friendly keys.
     "us": RegionPreset(cloud="aws", region="us-east-1"),
-    "eu": RegionPreset(cloud="oci", region="eu-frankfurt-1"),
-    "ap": RegionPreset(cloud="oci", region="ap-tokyo-1"),
-    # Specific cloud+region keys (callers who care). Each entry MUST be
-    # a (cloud, region) Modal supports for the GPUs you spawn.
-    "aws-us-east-1": RegionPreset(cloud="aws", region="us-east-1"),
-    "oci-eu-frankfurt-1": RegionPreset(cloud="oci", region="eu-frankfurt-1"),
-    "oci-ap-tokyo-1": RegionPreset(cloud="oci", region="ap-tokyo-1"),
+    "eu": RegionPreset(cloud="aws", region="eu-west-1"),
+    "ap": RegionPreset(cloud="aws", region="ap-tokyo-1"),
 }
 
 
