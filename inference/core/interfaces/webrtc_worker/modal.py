@@ -351,6 +351,7 @@ if modal is not None:
             logger.info("declared_fps: %s", webrtc_request.declared_fps)
             logger.info("rtsp_url: %s", webrtc_request.rtsp_url)
             logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
+            logger.info("requested_region: %s", webrtc_request.requested_region)
             logger.info("watchdog_timeout: %s", WEBRTC_MODAL_WATCHDOG_TIMEMOUT)
             logger.info("requested_plan: %s", webrtc_request.requested_plan)
             logger.info(
@@ -671,6 +672,14 @@ if modal is not None:
             cls_with_options = cls_with_options.with_options(
                 gpu=requested_gpu,
             )
+        if webrtc_request.requested_region:
+            logger.info(
+                "Spawning webrtc modal function with region %s",
+                webrtc_request.requested_region,
+            )
+            cls_with_options = cls_with_options.with_options(
+                region=webrtc_request.requested_region,
+            )
         if requested_ram_mb is not None:
             logger.info(
                 "Spawning webrtc modal function with ram %s",
@@ -711,11 +720,6 @@ if modal is not None:
                 )
             except Empty:
                 logger.error("Modal function call timed out, cancelling function call")
-                # Modal rejects terminate_containers=True for async (spawn) calls.
-                # cancel() sends InputCancellation to the container, which is caught
-                # by run_rtc_peer_connection_with_watchdog (line ~271). The function
-                # returns, the container becomes idle, and scales down after
-                # WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW (default 3s).
                 function_call.cancel()
                 raise RoboflowAPITimeoutError("Modal function call timed out")
             except Exception as exc:
