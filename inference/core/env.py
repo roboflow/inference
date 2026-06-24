@@ -724,13 +724,8 @@ WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "95"))
 # eliminating per-request HTTP overhead and base64 encoding.
 WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "websocket").lower().strip()
 
-# Opt-in region-aware routing for webexec. When true, the client dials the
-# regional app ``webexec-<MODAL_REGION>`` (so workers hit a same-region
-# webexec), and the deploy script names the app ``webexec-<region>`` instead
-# of ``webexec``. When false (default), behavior is the single legacy
-# ``webexec`` deploy in ``us-east-1``. Flip to true only after deploying
-# webexec to every region a worker may spawn in; otherwise unknown regions
-# will 404.
+# Legacy compatibility flag. Webexec now always uses the single ``webexec``
+# app name regardless of region, so this env var is effectively ignored.
 WEBEXEC_REGIONAL = str2bool(os.getenv("WEBEXEC_REGIONAL", False))
 
 # Strip quotes from Modal credentials in case users include them
