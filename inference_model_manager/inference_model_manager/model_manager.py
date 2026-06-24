@@ -90,6 +90,13 @@ class ModelManager:
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
 
+        # Shared-base owners by base_key (NOT in _backends — referenced by head views).
+        # The sentinel + condition serialize first-creation so concurrent first heads
+        # for one base_key spawn a single base worker, not two.
+        self._shared_workers: Dict[str, Any] = {}
+        self._shared_loading_keys: set[str] = set()
+        self._shared_cv = threading.Condition(self._lifecycle_lock)
+
         # Shared SHM pool for subprocess backends — created lazily
         self._pool: Optional[Any] = None  # SHMPool, created on first subprocess load
 
@@ -203,6 +210,157 @@ class ModelManager:
             b.state,
             b.device,
         )
+
+    def load_shared_head(
+        self,
+        head_id: str,
+        api_key: str,
+        resolution: Any,
+        *,
+        device: Optional[str] = None,
+        batch_max_size: int = 0,
+        batch_max_delay_ms: float = 10.0,
+        decoder: str = "imagecodecs",
+    ) -> None:
+        """Load ``head_id`` as a head sharing the base worker keyed by
+        ``resolution.base_key``. Reuses the owner if present, else creates it once.
+
+        On head-load failure this raises (the caller must NOT silently fall back to a
+        normal subproc load — that would spawn a duplicate base). A failed first head
+        tears the just-created base worker back down so it does not orphan.
+        """
+        base_key = resolution.base_key
+        with self._lifecycle_lock:
+            if head_id in self._backends or head_id in self._loading_ids:
+                raise ValueError(f"Model '{head_id}' is already loaded")
+            self._loading_ids.add(head_id)
+        try:
+            # The owner is returned with a load reservation already held (begin_load),
+            # so it cannot reap itself between here and load_head even if a concurrent
+            # head load for the same base fails. Released in end_load below.
+            owner = self._get_or_create_owner(
+                base_key,
+                resolution,
+                api_key,
+                device=device,
+                batch_max_size=batch_max_size,
+                batch_max_delay_ms=batch_max_delay_ms,
+                decoder=decoder,
+            )
+            try:
+                metadata = owner.load_head(head_id, api_key)
+
+                from inference_model_manager.registry_defaults import (
+                    lazy_register_by_names,
+                )
+
+                if metadata.model_mro_names:
+                    lazy_register_by_names(metadata.model_mro_names)
+                from inference_model_manager.backends.shared_base import (
+                    SharedHeadBackend,
+                )
+
+                view = SharedHeadBackend(owner, head_id, metadata)
+                with self._lifecycle_lock:
+                    self._backends[head_id] = view
+            finally:
+                # Releases the reservation; reaps the worker if this left it empty.
+                owner.end_load()
+        finally:
+            self._loading_ids.discard(head_id)
+
+    def _get_or_create_owner(
+        self,
+        base_key: str,
+        resolution: Any,
+        api_key: str,
+        *,
+        device: Optional[str],
+        batch_max_size: int,
+        batch_max_delay_ms: float,
+        decoder: str,
+    ) -> Any:
+        with self._shared_cv:
+            while True:
+                owner = self._shared_workers.get(base_key)
+                # begin_load atomically reserves against a concurrent retire; if it
+                # loses (owner retired under us), fall through to create a fresh one.
+                if owner is not None and owner.begin_load():
+                    return owner
+                if base_key not in self._shared_loading_keys:
+                    self._shared_loading_keys.add(base_key)
+                    break
+                self._shared_cv.wait()  # another thread is creating it
+        try:
+            owner = self._make_shared_owner(
+                base_key,
+                resolution,
+                api_key,
+                device=device,
+                batch_max_size=batch_max_size,
+                batch_max_delay_ms=batch_max_delay_ms,
+                decoder=decoder,
+            )
+            # Reserve before publishing. begin_load can still fail if the brand-new
+            # worker died between __init__ and here — tear it down rather than publish
+            # a dead owner.
+            if not owner.begin_load():
+                owner.unload()
+                raise RuntimeError(
+                    f"shared-base worker for {base_key!r} died during startup"
+                )
+        except Exception:
+            with self._shared_cv:
+                self._shared_loading_keys.discard(base_key)
+                self._shared_cv.notify_all()
+            raise
+        with self._shared_cv:
+            self._shared_workers[base_key] = owner
+            self._shared_loading_keys.discard(base_key)
+            self._shared_cv.notify_all()
+        return owner
+
+    def _make_shared_owner(
+        self,
+        base_key: str,
+        resolution: Any,
+        api_key: str,
+        *,
+        device: Optional[str],
+        batch_max_size: int,
+        batch_max_delay_ms: float,
+        decoder: str,
+    ) -> Any:
+        from inference_model_manager.backends.shared_base import (
+            SharedBaseSubprocessBackend,
+        )
+
+        pool = self._ensure_pool()
+        return SharedBaseSubprocessBackend(
+            base_key,
+            resolution,
+            api_key,
+            shm_pool_name=pool.name,
+            n_slots=self._n_slots,
+            input_mb=self._input_mb,
+            device=device,
+            batch_max_size=batch_max_size,
+            batch_max_delay_ms=batch_max_delay_ms,
+            decoder=decoder,
+            on_shared_worker_death=self._on_shared_worker_death,
+            on_empty=self._retire_shared_owner,
+        )
+
+    def _on_shared_worker_death(self, base_key: str) -> None:
+        with self._lifecycle_lock:
+            self._shared_workers.pop(base_key, None)
+
+    def _retire_shared_owner(self, base_key: str, owner: Any) -> None:
+        # Drop the cache entry only if it is still this owner — a freshly created
+        # replacement for the same base_key must survive.
+        with self._lifecycle_lock:
+            if self._shared_workers.get(base_key) is owner:
+                del self._shared_workers[base_key]
 
     def _ensure_pool(self) -> Any:
         """Lazily create shared SHM pool on first subprocess backend load."""
