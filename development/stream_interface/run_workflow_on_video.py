@@ -20,15 +20,94 @@ Examples:
         --model-id yolov8n-640
 """
 import argparse
+import json
 import os
 import sys
 import time
-from typing import Any, Optional
+from collections import deque
+from typing import Any, List, Optional
 
 import supervision as sv
 
 from inference import InferencePipeline
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
+
+# Modules whose module-level globals we patch to wire in the workflow profiler.
+# Both functions read these names as module globals at call time, so patching the
+# attribute after import is enough to steer the behaviour.
+import inference.core.interfaces.stream.inference_pipeline as _ip_module
+import inference.core.interfaces.stream.utils as _ip_utils
+from inference.core.workflows.execution_engine.profiling.core import (
+    BaseWorkflowsProfiler,
+)
+
+
+def _write_trace(path: str, trace: List[dict]) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(trace, f)
+
+
+class _FirstNRunsProfiler(BaseWorkflowsProfiler):
+    """Captures only the FIRST `max_runs_in_buffer` workflow runs (~ first N frames),
+    then freezes: every later event is dropped, so the trace stays small and stable
+    no matter how long the pipeline keeps running.
+
+    Unlike the stock profiler (a rolling `deque` that keeps the *last* N runs), this
+    keeps the *first* N. It is flushed to disk the moment it freezes — so a later hard
+    kill still keeps the trace — and again on pipeline end via `on_pipeline_end`.
+    """
+
+    # Set by `_enable_workflow_profiler` before the pipeline starts.
+    _trace_path: Optional[str] = None
+
+    @classmethod
+    def init(cls, max_runs_in_buffer: int = 50, **kwargs) -> "_FirstNRunsProfiler":
+        inst = cls(runs_buffer=deque())  # unbounded; we cap ourselves by freezing
+        inst._max_runs = max_runs_in_buffer
+        inst._frozen = False
+        return inst
+
+    def start_workflow_run(self) -> None:
+        if self._frozen:
+            return
+        super().start_workflow_run()
+
+    def end_workflow_run(self) -> None:
+        if self._frozen:
+            return
+        super().end_workflow_run()
+        if len(self._runs_buffer) >= self._max_runs:
+            self._frozen = True
+            self._current_run_events = []
+            if self._trace_path is not None:
+                _write_trace(self._trace_path, self.export_trace())
+                print(
+                    f"[profiler] captured first {self._max_runs} frame(s) -> "
+                    f"{self._trace_path}",
+                    flush=True,
+                )
+
+    def _add_event(self, *args, **kwargs) -> None:
+        if self._frozen:
+            return
+        super()._add_event(*args, **kwargs)
+
+
+def _enable_workflow_profiler(trace_path: str, max_frames: int) -> None:
+    """Turn on the workflow profiler so `init_with_workflow` builds our first-N-runs
+    profiler and dumps the Chrome trace to the exact `trace_path` we ask for."""
+    _FirstNRunsProfiler._trace_path = trace_path
+    # `init_with_workflow` reads these two as module globals at call time.
+    _ip_module.ENABLE_WORKFLOWS_PROFILING = True
+    _ip_module.WORKFLOWS_PROFILER_BUFFER_SIZE = max_frames
+    _ip_module.BaseWorkflowsProfiler = _FirstNRunsProfiler
+    # `on_pipeline_end` (in utils) gates on this flag and calls this save function on
+    # shutdown — point it at our exact path instead of the timestamped default name.
+    _ip_utils.ENABLE_WORKFLOWS_PROFILING = True
+    _ip_utils.save_workflows_profiler_trace = (
+        lambda directory, profiler_trace: _write_trace(trace_path, profiler_trace)
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,6 +161,22 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=30,
         help="Print a rolling FPS line every N processed frames (0 to disable).",
+    )
+    parser.add_argument(
+        "--profile-trace",
+        default=None,
+        metavar="PATH",
+        help="Enable the workflow profiler and dump a Chrome trace (JSON) to this exact "
+        "file path (e.g. ./traces/my_run.json). View it in chrome://tracing or "
+        "https://ui.perfetto.dev. Leave unset to disable profiling.",
+    )
+    parser.add_argument(
+        "--profile-frames",
+        type=int,
+        default=50,
+        help="Number of leading frames (workflow runs) to capture before the profiler "
+        "freezes. Keeps the trace small; later frames are not recorded. Only used when "
+        "--profile-trace is given.",
     )
     return parser.parse_args()
 
@@ -145,6 +240,16 @@ def main() -> None:
         raise SystemExit(f"Video file not found: {args.video}")
     if args.n < 1:
         raise SystemExit("--n must be >= 1")
+    if args.profile_trace:
+        if args.profile_frames < 1:
+            raise SystemExit("--profile-frames must be >= 1")
+        _enable_workflow_profiler(
+            trace_path=args.profile_trace, max_frames=args.profile_frames
+        )
+        print(
+            f"Profiler enabled: capturing first {args.profile_frames} frame(s) -> "
+            f"'{args.profile_trace}'"
+        )
 
     # Multiply the same video into N concurrent sources. A single reference keeps the
     # exact legacy behaviour; a list makes InferencePipeline run one VideoSource per copy.
@@ -192,6 +297,11 @@ def main() -> None:
     print(f"frames processed     : {counter.frames}  (aggregate across streams)")
     print(f"total wall time      : {elapsed:.2f} s (includes model load / warm-up)")
     print(f"average processing FPS: {counter.overall_fps:.2f} aggregate{per_stream}")
+    if args.profile_trace:
+        print(
+            f"profiler trace        : {os.path.abspath(args.profile_trace)} "
+            f"(first {args.profile_frames} frame(s))"
+        )
 
 
 if __name__ == "__main__":
