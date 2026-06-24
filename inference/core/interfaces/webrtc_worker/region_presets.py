@@ -6,8 +6,6 @@ and each maps to one specific cloud + region pair so that:
 
 * The WebRTC GPU container always lands on a known cloud/region (no more
   "I asked for ``eu`` and Modal placed me on OCI Frankfurt").
-* The matching ``webexec-<cloud>-<region>`` app can be pre-deployed for
-  same-region Custom Python Block execution.
 
 Usage
 -----
@@ -16,10 +14,6 @@ Frontend / SDK callers should send ``requested_region`` set to one of the
 keys in :data:`WEBRTC_REGION_PRESETS`. The dispatcher resolves it via
 :func:`resolve_region_preset` and pins ``cloud=`` + ``region=`` on the
 Modal class.
-
-If you add a new preset here, also deploy a webexec for it (see
-``inference/modal/deploy_modal_app.py`` and
-``inference/modal/deploy_all_webexecs.py``).
 """
 
 from typing import Dict, NamedTuple, Optional
@@ -46,9 +40,7 @@ class RegionPreset(NamedTuple):
 # exists. See https://modal.com/docs/guide/gpu#gpu-availability.
 #
 # Long keys (``oci-eu-frankfurt-1`` etc.) let advanced callers pick a
-# specific cloud+region directly. They're also what
-# :func:`_resolve_webexec_app_name` reconstructs from
-# ``MODAL_CLOUD_PROVIDER`` + ``MODAL_REGION`` to find the matching app.
+# specific cloud+region directly.
 WEBRTC_REGION_PRESETS: Dict[str, RegionPreset] = {
     # Short, user-friendly keys.
     "us": RegionPreset(cloud="aws", region="us-east-1"),
@@ -69,8 +61,3 @@ def resolve_region_preset(key: Optional[str]) -> Optional[RegionPreset]:
     if not key:
         return None
     return WEBRTC_REGION_PRESETS.get(key)
-
-
-def webexec_app_name_for(preset: RegionPreset) -> str:
-    """Return the webexec app name that backs a given preset."""
-    return f"webexec-{preset.cloud}-{preset.region}"
