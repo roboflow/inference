@@ -340,6 +340,12 @@ class ModelManagerProcess:
             input_mb=input_mb,
             max_pinned_memory_mb=max_pinned_memory_mb,
         )
+        self._manager._shared_death_hook = self._on_shared_worker_death
+
+        # Shared-base bookkeeping.
+        self._shared_metadata_cache: dict = {}
+        self._shared_heads: dict[str, set[str]] = {}  # base_key → head_ids
+        self._head_base_key: dict[str, str] = {}  # head_id → base_key
 
         self._pool: Optional[SHMPool] = None
         self._router: Optional[zmq.asyncio.Socket] = None
@@ -446,6 +452,41 @@ class ModelManagerProcess:
         logger.warning("MMP: backend '%s' died, scheduling reload", model_id)
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self._schedule_reload, model_id)
+
+    def _on_shared_worker_death(self, base_key: str) -> None:
+        """Called (off-loop) when a shared-base worker dies, taking all its heads
+        with it. Schedules per-head cleanup on the event loop."""
+        logger.warning("MMP: shared-base worker '%s' died", base_key)
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._cleanup_dead_shared_base, base_key)
+
+    def _untrack_shared_head(self, model_id: str) -> None:
+        """Drop a head from shared-base bookkeeping on graceful unload/eviction."""
+        base_key = self._head_base_key.pop(model_id, None)
+        if base_key is None:
+            return
+        heads = self._shared_heads.get(base_key)
+        if heads is not None:
+            heads.discard(model_id)
+            if not heads:
+                self._shared_heads.pop(base_key, None)
+
+    def _cleanup_dead_shared_base(self, base_key: str) -> None:
+        """Mark every head hosted by a dead shared-base worker not-loaded and drop its
+        state. Heads reload lazily on their next request via the normal cold path
+        (which re-resolves the base and spawns a fresh worker). Runs on the loop."""
+        head_ids = self._shared_heads.pop(base_key, set())
+        for head_id in head_ids:
+            self._head_base_key.pop(head_id, None)
+            fs = self._models.get(head_id)
+            if fs is not None:
+                fs.loaded = False
+                fs.loading = False
+            for slot_id in [s for s, m in self._inflight.items() if m == head_id]:
+                del self._inflight[slot_id]
+            self._backends.pop(head_id, None)
+            # Owner is already torn down; drop the dead view directly.
+            self._manager._backends.pop(head_id, None)
 
     def _schedule_reload(self, model_id: str) -> None:
         """Mark model as loading and trigger _load_model. Runs on event loop."""
@@ -881,6 +922,7 @@ class ModelManagerProcess:
                     None, lambda: self._manager.unload(model_id, drain=True)
                 )
             self._backends.pop(model_id, None)
+            self._untrack_shared_head(model_id)
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
         except Exception:
             logger.exception("MMP: T_UNLOAD '%s' failed", model_id)
@@ -1160,7 +1202,26 @@ class ModelManagerProcess:
             self._stub_load(model_id, fs)
             return
 
-        if self._vram_admission:
+        model_id_or_path = model_id.rsplit(":", 1)[0]
+
+        # Detect a shareable head before admission (detect-before-admit). Resolution is
+        # a cached, weight-free provider lookup; failure falls back to a normal load.
+        from inference_model_manager.shared_base_resolution import resolve_shared_base
+
+        resolution = await loop.run_in_executor(
+            None,
+            lambda: resolve_shared_base(
+                model_id_or_path, api_key, device, self._shared_metadata_cache
+            ),
+        )
+        # When the base worker is already resident, the head's marginal VRAM is small
+        # and the base was admitted with the first head — skip re-admission so the base
+        # is counted once. First head / non-shared loads admit normally.
+        base_resident = resolution is not None and self._manager.has_shared_base(
+            resolution.base_key
+        )
+
+        if self._vram_admission and not base_resident:
             decision, victims, deficit = await self._vram_admission_plan(
                 model_id, api_key
             )
@@ -1187,7 +1248,6 @@ class ModelManagerProcess:
                     self._fail_load(model_id, fs, _ERR_SERVER_FULL)
                     return
 
-        model_id_or_path = model_id.rsplit(":", 1)[0]
         max_retries = self._load_oom_max_evictions  # safety cap — never loop forever
 
         # Reload after worker death/unhealthy leaves a stale entry in the
@@ -1208,21 +1268,42 @@ class ModelManagerProcess:
                 attempt + 1,
             )
             try:
-                await loop.run_in_executor(
-                    None,
-                    lambda: self._manager.load(
-                        model_id,
-                        api_key,
-                        model_id_or_path=model_id_or_path,
-                        backend="subprocess",
-                        device=device or None,
-                        decoder=self._decoder,
-                        batch_max_size=self._batch_max_size,
-                        batch_max_delay_ms=self._batch_max_wait_ms,
-                    ),
-                )
+                if resolution is not None:
+                    await loop.run_in_executor(
+                        None,
+                        lambda: self._manager.load_shared_head(
+                            model_id,
+                            api_key,
+                            resolution,
+                            device=device or None,
+                            batch_max_size=self._batch_max_size,
+                            batch_max_delay_ms=self._batch_max_wait_ms,
+                            decoder=self._decoder,
+                        ),
+                    )
+                else:
+                    await loop.run_in_executor(
+                        None,
+                        lambda: self._manager.load(
+                            model_id,
+                            api_key,
+                            model_id_or_path=model_id_or_path,
+                            backend="subprocess",
+                            device=device or None,
+                            decoder=self._decoder,
+                            batch_max_size=self._batch_max_size,
+                            batch_max_delay_ms=self._batch_max_wait_ms,
+                        ),
+                    )
                 backend = self._manager.get_backend(model_id)
                 if backend is not None and hasattr(backend, "signal_slot"):
+                    # Track BEFORE register_backend exposes the head as loaded, so a
+                    # worker death can never see an untracked-but-loaded head.
+                    if resolution is not None:
+                        self._shared_heads.setdefault(
+                            resolution.base_key, set()
+                        ).add(model_id)
+                        self._head_base_key[model_id] = resolution.base_key
                     self.register_backend(model_id, backend)
                     return
                 # Loaded but no backend — fall through to stub
@@ -1467,6 +1548,7 @@ class ModelManagerProcess:
             self._unloading.discard(model_id)
         if ok:
             self._backends.pop(model_id, None)
+            self._untrack_shared_head(model_id)
             self._model_access.pop(model_id, None)
             self._model_request_times.pop(model_id, None)
         return ok

@@ -326,3 +326,26 @@ def test_refresh_worker_stats_returns_cached_when_dead():
     owner._worker_stats = {"throughput_fps": 7.0}
 
     assert owner.refresh_worker_stats() == {"throughput_fps": 7.0}
+
+
+def test_alive_false_when_dead_or_retired():
+    owner = _owner_without_worker()
+    assert owner.alive is True
+    owner._recv_dead = True
+    assert owner.alive is False  # recv thread flagged dead
+    owner._recv_dead = False
+    owner._retired = True
+    assert owner.alive is False
+
+
+def test_alive_false_when_worker_process_exited():
+    # Process can exit before the recv thread sets _recv_dead — alive must catch it.
+    owner = _owner_without_worker()
+
+    class _DeadProc:
+        def is_alive(self):
+            return False
+
+    owner._worker = _DeadProc()
+    assert owner._recv_dead is False
+    assert owner.alive is False
