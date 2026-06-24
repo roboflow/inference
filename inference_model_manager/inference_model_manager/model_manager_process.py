@@ -255,6 +255,8 @@ class ModelState:
     # Persisted load config — reused by _schedule_reload after worker death.
     api_key: str = ""
     device: str = ""
+    # Admin-loaded (preload): never evicted; survives respawn via persisted state.
+    pinned: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -834,6 +836,7 @@ class ModelManagerProcess:
             api_key = frame[off + 2 : off + 2 + klen].decode(errors="replace")
 
         fs = self._models.setdefault(model_id, ModelState())
+        fs.pinned = True  # admin/preload load is non-evictable
         if fs.loaded:
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
             return
@@ -1607,6 +1610,7 @@ class ModelManagerProcess:
         return bool(
             fs
             and fs.loaded
+            and not fs.pinned
             and flavor not in in_flight
             and flavor not in self._unloading
             and (now - self._model_access.get(flavor, 0.0)) > cutoff_s
