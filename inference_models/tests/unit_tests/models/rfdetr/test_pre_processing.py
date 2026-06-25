@@ -101,6 +101,24 @@ def _reference_pipeline(
     return tensor.unsqueeze(0)
 
 
+def _reference_pipeline_tensor(
+    image_hwc_uint8: np.ndarray, target_h: int, target_w: int
+) -> torch.Tensor:
+    """Mirrors `_pre_process_tensor`'s STRETCH_TO chain: float CHW in [0, 1] →
+    tensor TF.resize(antialias=True) → F.normalize. STRETCH_TO now resizes on the
+    tensor engine (not PIL), so the stretch references diff against this rather
+    than `_reference_pipeline`'s PIL chain — the two engines are not byte-equal."""
+    tensor = (
+        torch.from_numpy(np.ascontiguousarray(image_hwc_uint8))
+        .permute(2, 0, 1)
+        .to(torch.float32)
+        .div(255.0)
+    )
+    tensor = TF.resize(tensor, (target_h, target_w), antialias=True)
+    tensor = TF.normalize(tensor, mean=list(_IMAGENET_MEAN), std=list(_IMAGENET_STD))
+    return tensor.unsqueeze(0)
+
+
 def _build_network_input(
     training_h: int,
     training_w: int,
@@ -144,7 +162,7 @@ def test_one_step_stretch_tensor_matches_reference_pipeline() -> None:
         input_color_format="rgb",
     )
 
-    expected = _reference_pipeline(Image.fromarray(image), target_h=64, target_w=64)
+    expected = _reference_pipeline_tensor(image, target_h=64, target_w=64)
     torch.testing.assert_close(actual_tensor, expected, atol=1e-6, rtol=0)
 
 
@@ -325,7 +343,7 @@ def test_batched_4d_torch_tensor_unbinds_into_per_image_processing() -> None:
     )
     assert tuple(batch_tensor.shape) == (2, 3, 64, 64)
     assert len(batch_meta) == 2
-    expected = _reference_pipeline(Image.fromarray(img_np), target_h=64, target_w=64)
+    expected = _reference_pipeline_tensor(img_np, target_h=64, target_w=64)
     torch.testing.assert_close(batch_tensor[0], expected.squeeze(0), atol=1e-6, rtol=0)
     torch.testing.assert_close(batch_tensor[1], expected.squeeze(0), atol=1e-6, rtol=0)
 
@@ -352,8 +370,8 @@ def test_batched_input_produces_per_image_metadata() -> None:
     assert tuple(batch_tensor.shape) == (2, 3, 64, 64)
     assert len(batch_meta) == 2
 
-    expected_a = _reference_pipeline(Image.fromarray(img_a), target_h=64, target_w=64)
-    expected_b = _reference_pipeline(Image.fromarray(img_b), target_h=64, target_w=64)
+    expected_a = _reference_pipeline_tensor(img_a, target_h=64, target_w=64)
+    expected_b = _reference_pipeline_tensor(img_b, target_h=64, target_w=64)
     torch.testing.assert_close(
         batch_tensor[0], expected_a.squeeze(0), atol=1e-6, rtol=0
     )
