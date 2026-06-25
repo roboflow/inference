@@ -261,14 +261,30 @@ class TestAdmissionPlan:
         decision, victims, _ = asyncio.run(mmp._vram_admission_plan("m"))
         assert decision == "no_capacity"
 
-    def test_need_zero_admits_unconditionally(self):
-        # No footprint data → planner cannot reason; admit and rely on the
-        # OOM-retry backstop (headroom floor intentionally skipped).
+    def test_need_zero_admits_when_headroom_available(self):
         mmp = _mmp(vram_headroom_mb=4096.0)
         mmp._vram_meta_cache["m"] = 0
-        mmp._gpu_free_mb = lambda: 0.0
+        mmp._gpu_free_mb = lambda: 5000.0
         decision, _, _ = asyncio.run(mmp._vram_admission_plan("m"))
         assert decision == "admit"
+
+    def test_need_zero_evicts_to_restore_headroom_floor(self):
+        mmp = _mmp(vram_headroom_mb=4096.0)
+        mmp._vram_meta_cache["m"] = 0
+        _loaded(mmp, "old", access=1.0, footprint=1000)
+        mmp._gpu_free_mb = lambda: 3500.0
+        decision, victims, deficit = asyncio.run(mmp._vram_admission_plan("m"))
+        assert decision == "evict"
+        assert victims == ["old"]
+        assert deficit == 596.0
+
+    def test_need_zero_denies_when_headroom_floor_unrecoverable(self):
+        mmp = _mmp(vram_headroom_mb=4096.0)
+        mmp._vram_meta_cache["m"] = 0
+        mmp._gpu_free_mb = lambda: 3500.0
+        decision, _, deficit = asyncio.run(mmp._vram_admission_plan("m"))
+        assert decision == "no_capacity"
+        assert deficit == 596.0
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +341,7 @@ class TestLoadModelGate:
         mmp = _mmp(vram_admission=True)
         mmp._manager = object()  # non-None: skip stub path, reach gate
 
-        async def _plan(model_id, api_key=""):
+        async def _plan(model_id, api_key="", **kwargs):
             return ("no_capacity", [], 0.0)
 
         mmp._vram_admission_plan = _plan
@@ -338,12 +354,12 @@ class TestLoadModelGate:
         mmp = _mmp(vram_admission=True)
         mmp._manager = object()
 
-        async def _plan(model_id, api_key=""):
+        async def _plan(model_id, api_key="", **kwargs):
             return ("evict", ["v"], 1000.0)
 
         mmp._vram_admission_plan = _plan
 
-        async def _abort(plan, deficit_mb):
+        async def _abort(plan, deficit_mb, **kwargs):
             return False
 
         mmp._execute_eviction_plan = _abort
@@ -381,3 +397,131 @@ class TestLoadModelGate:
         asyncio.run(mmp._load_model("m"))
         assert called == []  # gate never consulted
         assert mmp._models["m"].loaded is True
+
+    def test_post_load_headroom_breach_unloads_model(self):
+        mmp = _mmp(vram_admission=True, vram_headroom_mb=2048.0)
+
+        async def _plan(model_id, api_key="", **kwargs):
+            return ("admit", [], 0.0)
+
+        mmp._vram_admission_plan = _plan
+        mmp._gpu_free_mb = lambda: 30.0
+        fake_backend = type("B", (), {"signal_slot": lambda *a, **k: None})()
+
+        class FakeMgr:
+            def __init__(self):
+                self.unloaded = []
+
+            def load(self, *a, **k):
+                return None
+
+            def get_backend(self, model_id):
+                return fake_backend
+
+            def unload(self, model_id, **kw):
+                self.unloaded.append(model_id)
+
+            def __contains__(self, model_id):
+                return False
+
+        mmp._manager = FakeMgr()
+        failed = []
+        mmp._fail_load = lambda model_id, fs, err: failed.append(err)
+
+        asyncio.run(mmp._load_model("m"))
+
+        assert mmp._manager.unloaded == ["m"]
+        assert failed == [_ERR_SERVER_FULL]
+        assert "m" not in mmp._backends
+
+    def test_post_load_headroom_breach_evicts_cold_model_first(self):
+        mmp = _mmp(vram_admission=True, vram_headroom_mb=2048.0)
+
+        async def _plan(model_id, api_key="", **kwargs):
+            return ("admit", [], 0.0)
+
+        mmp._vram_admission_plan = _plan
+        free = [1500.0, 2100.0]
+        mmp._gpu_free_mb = lambda: free.pop(0)
+        _loaded(mmp, "old", access=1.0, footprint=600)
+        evicted = _stub_evict(mmp)
+        fake_backend = type("B", (), {"signal_slot": lambda *a, **k: None})()
+
+        class FakeMgr:
+            def __init__(self):
+                self.unloaded = []
+
+            def load(self, *a, **k):
+                return None
+
+            def get_backend(self, model_id):
+                return fake_backend
+
+            def unload(self, model_id, **kw):
+                self.unloaded.append(model_id)
+
+            def __contains__(self, model_id):
+                return False
+
+        mmp._manager = FakeMgr()
+        failed = []
+        mmp._fail_load = lambda model_id, fs, err: failed.append(err)
+
+        asyncio.run(mmp._load_model("m"))
+
+        assert evicted == ["old"]
+        assert mmp._manager.unloaded == []
+        assert failed == []
+        assert mmp._models["m"].loaded is True
+
+    def test_post_load_shared_head_excludes_resident_base(self):
+        mmp = _mmp(vram_admission=True, vram_headroom_mb=2048.0)
+        mmp._gpu_free_mb = iter([1500.0, 2100.0]).__next__
+        mmp._shared_heads["base"] = {"old_head"}
+        mmp._head_base_key["old_head"] = "base"
+        mmp._models["old_head"] = ModelState(loaded=True)
+        mmp._model_access["old_head"] = 1.0
+        mmp._vram_meta_cache["base"] = 1000
+        _loaded(mmp, "cold", access=2.0, footprint=600)
+        evicted = []
+
+        async def _evict_target(key):
+            evicted.append(key)
+            return True
+
+        mmp._evict_target = _evict_target
+
+        ok = asyncio.run(
+            mmp._enforce_vram_headroom_after_load(
+                "new_head", None, exclude={"base"}
+            )
+        )
+
+        assert ok is True
+        assert evicted == ["cold"]
+
+    def test_base_preload_rollback_failure_cleans_preload_entry(self):
+        mmp = _mmp(vram_admission=True, vram_headroom_mb=2048.0)
+        mmp._gpu_free_mb = lambda: 30.0
+
+        class FakeMgr:
+            def __init__(self):
+                self._shared_base_preloads = {"preload": object()}
+                self._backends = {}
+
+            def unload_shared_base(self, model_id):
+                raise RuntimeError("boom")
+
+        mmp._manager = FakeMgr()
+        failed = []
+        mmp._fail_load = lambda model_id, fs, err: failed.append(err)
+
+        ok = asyncio.run(
+            mmp._enforce_vram_headroom_after_load(
+                "preload", None, is_shared_base_preload=True
+            )
+        )
+
+        assert ok is False
+        assert mmp._manager._shared_base_preloads == {}
+        assert failed == [_ERR_SERVER_FULL]

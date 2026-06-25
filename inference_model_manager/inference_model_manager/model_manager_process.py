@@ -1278,6 +1278,13 @@ class ModelManagerProcess:
                             decoder=self._decoder,
                         ),
                     )
+                    if not await self._enforce_vram_headroom_after_load(
+                        model_id,
+                        fs,
+                        is_shared_base_preload=True,
+                        exclude=shared_exclude,
+                    ):
+                        return
                     self._preloaded_shared_bases[model_id] = (
                         base_preload_resolution.base_key
                     )
@@ -1301,6 +1308,10 @@ class ModelManagerProcess:
                             batch_max_delay_ms=self._batch_max_wait_ms,
                         ),
                     )
+                if not await self._enforce_vram_headroom_after_load(
+                    model_id, fs, exclude=shared_exclude
+                ):
+                    return
                 backend = self._manager.get_backend(model_id)
                 if backend is not None and hasattr(backend, "signal_slot"):
                     # Track BEFORE register_backend exposes the head as loaded, so a
@@ -1650,6 +1661,73 @@ class ModelManagerProcess:
         self._vram_meta_cache[metadata_model_id] = mb
         return mb
 
+    async def _enforce_vram_headroom_after_load(
+        self,
+        model_id: str,
+        fs: Optional[ModelState],
+        *,
+        is_shared_base_preload: bool = False,
+        exclude: Optional[set] = None,
+    ) -> bool:
+        """Rollback a successful load if it violated the configured free-VRAM floor."""
+        if not self._vram_admission or self._vram_headroom_mb <= 0:
+            return True
+        free_mb = await asyncio.get_running_loop().run_in_executor(
+            None, self._gpu_free_mb
+        )
+        if free_mb is None or free_mb >= self._vram_headroom_mb:
+            return True
+        deficit = self._vram_headroom_mb - free_mb
+        exclude = set(exclude or ())
+        exclude.add(model_id)
+        plan = self._plan_evictions(deficit, exclude=exclude)
+        if plan is not None:
+            logger.warning(
+                "MMP: load '%s' left %.0f MB free below %.0f MB headroom — "
+                "evicting %s",
+                model_id,
+                free_mb,
+                self._vram_headroom_mb,
+                plan,
+            )
+            if await self._execute_eviction_plan(
+                plan, deficit, exclude=exclude
+            ):
+                free_mb = await asyncio.get_running_loop().run_in_executor(
+                    None, self._gpu_free_mb
+                )
+                if free_mb is None or free_mb >= self._vram_headroom_mb:
+                    return True
+
+        logger.warning(
+            "MMP: load '%s' left %.0f MB free below %.0f MB headroom — unloading",
+            model_id,
+            free_mb,
+            self._vram_headroom_mb,
+        )
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: (
+                    self._manager.unload_shared_base(model_id)
+                    if is_shared_base_preload
+                    else self._manager.unload(model_id)
+                ),
+            )
+        except Exception:
+            logger.warning(
+                "MMP: failed to rollback '%s' after VRAM headroom breach",
+                model_id,
+                exc_info=True,
+            )
+            if is_shared_base_preload:
+                self._manager._shared_base_preloads.pop(model_id, None)
+            else:
+                self._manager._backends.pop(model_id, None)
+        self._preloaded_shared_bases.pop(model_id, None)
+        self._fail_load(model_id, fs, _ERR_SERVER_FULL)
+        return False
+
     def _recent_count(self, flavor: str, window_s: float) -> int:
         """Number of inferences for a model within the last ``window_s`` seconds."""
         times = self._model_request_times.get(flavor)
@@ -1789,8 +1867,9 @@ class ModelManagerProcess:
         Returns (decision, victims, deficit_mb); decision is "admit" | "evict"
         | "no_capacity". ``need_mb`` overrides the metadata footprint (used to admit a
         shared head on its marginal cost); ``exclude`` keeps planning from evicting the
-        base a loading head depends on. Admits unconditionally when need == 0 or GPU
-        telemetry is unavailable — the OOM-retry loop in _load_model is the backstop.
+        base a loading head depends on. Missing footprint data (need == 0) still
+        enforces the headroom floor; GPU telemetry unavailable admits and lets the
+        OOM-retry loop in _load_model backstop.
         Metadata fetch (HTTP) and GPU probe run in the executor, never on the loop.
         """
         loop = asyncio.get_running_loop()
@@ -1801,9 +1880,17 @@ class ModelManagerProcess:
                 None, self._required_mb, model_id, api_key
             )
         free_mb = await loop.run_in_executor(None, self._gpu_free_mb)
-        if free_mb is None or need == 0:
+        if free_mb is None:
             return "admit", [], 0.0
         free = free_mb - self._vram_headroom_mb
+        if need == 0:
+            if free >= 0:
+                return "admit", [], 0.0
+            deficit = -free
+            plan = self._plan_evictions(deficit, exclude=exclude)
+            if plan is None:
+                return "no_capacity", [], deficit
+            return "evict", plan, deficit
         if free >= need:
             return "admit", [], 0.0
         deficit = need - free
