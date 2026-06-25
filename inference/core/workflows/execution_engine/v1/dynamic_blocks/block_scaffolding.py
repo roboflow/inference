@@ -54,8 +54,6 @@ IMPORTS_LINES = [
 # Shared globals dict for all custom python blocks in local mode
 _LOCAL_SHARED_GLOBALS = {}
 
-# Cache of ModalExecutor instances keyed by workspace_id so that the
-# persistent HTTP session and code-hash set survive across frames.
 _MODAL_EXECUTOR_CACHE: Dict[str, Any] = {}
 
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
