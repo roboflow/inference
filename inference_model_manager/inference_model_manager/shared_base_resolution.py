@@ -153,3 +153,54 @@ def resolve_shared_base(
         resolved_package_id=resolved_package_id,
         base_key=base_key,
     )
+
+
+def resolve_shared_base_model(
+    model_id: str,
+    api_key: str,
+    device: str,
+    metadata_cache: Dict[MetadataCacheKey, ModelMetadata],
+    *,
+    provider: str = "roboflow",
+    supported_bases: frozenset = SUPPORTED_SHARED_BASES,
+) -> Optional[SharedBaseResolution]:
+    """Resolve a top-level base model for admin preload."""
+    resolved_device = _resolve_device(device)
+    try:
+        metadata = _fetch_metadata(model_id, api_key, provider, metadata_cache)
+        if metadata.model_architecture not in supported_bases:
+            return None
+        dep_name = "feature_extractor"
+        packages = negotiate_model_packages(
+            model_architecture=metadata.model_architecture,
+            task_type=metadata.task_type,
+            model_packages=metadata.model_packages,
+            requested_model_package_id=None,
+            device=resolved_device,
+        )
+        if len(packages) != 1:
+            return None
+        resolved_package_id = packages[0].package_id
+    except UnauthorizedModelAccessError:
+        raise
+    except Exception:
+        logger.debug(
+            "MMP: shared-base preload resolution failed for '%s'",
+            model_id,
+            exc_info=True,
+        )
+        return None
+    base_key = derive_base_key(
+        metadata.model_id,
+        resolved_package_id,
+        resolved_device,
+        api_key=api_key,
+        dep_model_architecture=metadata.model_architecture,
+    )
+    return SharedBaseResolution(
+        dep_name=dep_name,
+        dep_model_id=metadata.model_id,
+        dep_metadata_package_id=None,
+        resolved_package_id=resolved_package_id,
+        base_key=base_key,
+    )

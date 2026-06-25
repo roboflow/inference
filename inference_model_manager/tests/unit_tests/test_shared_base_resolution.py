@@ -11,6 +11,7 @@ from inference_model_manager.shared_base_resolution import (
     SharedBaseResolution,
     derive_base_key,
     resolve_shared_base,
+    resolve_shared_base_model,
 )
 
 
@@ -85,9 +86,7 @@ def test_resolves_shared_base(monkeypatch):
         monkeypatch,
         {"head/1": _head_metadata([_owlv2_dep()]), "owlv2": _base_metadata()},
     )
-    _patch_negotiate(
-        monkeypatch, [SimpleNamespace(package_id="owlv2-pkg-a")], recorder
-    )
+    _patch_negotiate(monkeypatch, [SimpleNamespace(package_id="owlv2-pkg-a")], recorder)
 
     detection = resolve_shared_base("head/1", "key", "cpu", {})
 
@@ -112,9 +111,7 @@ def test_resolves_shared_base_by_dependency_architecture_not_id(monkeypatch):
             base_id: _base_metadata(model_id=base_id, model_architecture="owlv2"),
         },
     )
-    _patch_negotiate(
-        monkeypatch, [SimpleNamespace(package_id="owlv2-pkg-a")], recorder
-    )
+    _patch_negotiate(monkeypatch, [SimpleNamespace(package_id="owlv2-pkg-a")], recorder)
 
     detection = resolve_shared_base("head/1", "tenant-a", "cpu", {})
 
@@ -122,6 +119,65 @@ def test_resolves_shared_base_by_dependency_architecture_not_id(monkeypatch):
     assert detection.dep_model_id == base_id
     assert detection.resolved_package_id == "owlv2-pkg-a"
     assert recorder["model_architecture"] == "owlv2"
+
+
+def test_resolves_top_level_shared_base_model(monkeypatch):
+    recorder = {}
+    model_id = "google/owlv2-large-patch14-ensemble"
+    _patch_provider(monkeypatch, {model_id: _base_metadata(model_id=model_id)})
+    _patch_negotiate(monkeypatch, [SimpleNamespace(package_id="owlv2-pkg-a")], recorder)
+
+    detection = resolve_shared_base_model(model_id, "key", "cpu", {})
+
+    assert isinstance(detection, SharedBaseResolution)
+    assert detection.dep_name == "feature_extractor"
+    assert detection.dep_model_id == model_id
+    assert detection.dep_metadata_package_id is None
+    assert detection.resolved_package_id == "owlv2-pkg-a"
+    assert recorder["requested_model_package_id"] is None
+
+
+def test_top_level_shared_base_key_matches_head_when_package_is_deterministic(
+    monkeypatch,
+):
+    model_id = "google/owlv2-large-patch14-ensemble"
+    package = SimpleNamespace(package_id="owlv2-pkg-a")
+    _patch_provider(
+        monkeypatch,
+        {
+            "head/1": _head_metadata(
+                [_owlv2_dep(package_id=package.package_id, model_id=model_id)]
+            ),
+            model_id: _base_metadata(model_id=model_id),
+        },
+    )
+    _patch_negotiate(monkeypatch, [package])
+
+    head = resolve_shared_base("head/1", "key", "cpu", {})
+    base = resolve_shared_base_model(model_id, "key", "cpu", {})
+
+    assert head.base_key == base.base_key
+
+
+def test_top_level_shared_base_model_returns_none_when_package_ambiguous(monkeypatch):
+    model_id = "google/owlv2-large-patch14-ensemble"
+    _patch_provider(monkeypatch, {model_id: _base_metadata(model_id=model_id)})
+    _patch_negotiate(
+        monkeypatch,
+        [
+            SimpleNamespace(package_id="owlv2-pkg-a"),
+            SimpleNamespace(package_id="owlv2-pkg-b"),
+        ],
+    )
+
+    assert resolve_shared_base_model(model_id, "key", "cpu", {}) is None
+
+
+def test_top_level_shared_base_model_returns_none_for_non_base(monkeypatch):
+    _patch_provider(monkeypatch, {"m": _head_metadata(None)})
+    _patch_negotiate(monkeypatch, [])
+
+    assert resolve_shared_base_model("m", "key", "cpu", {}) is None
 
 
 def test_resolve_returns_none_when_negotiation_yields_no_package(monkeypatch):

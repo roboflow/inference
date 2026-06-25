@@ -62,6 +62,7 @@ def _bare_mmp(**attrs) -> ModelManagerProcess:
     mmp._rejects_pool_full = 0
     mmp._shared_heads = {}
     mmp._head_base_key = {}
+    mmp._preloaded_shared_bases = {}
     for k, v in attrs.items():
         setattr(mmp, k, v)
     return mmp
