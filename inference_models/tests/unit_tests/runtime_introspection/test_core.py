@@ -125,11 +125,14 @@ def test_get_available_gpu_devices_cc(torch_mock: MagicMock) -> None:
     assert result == [Version("7.5"), Version("8.9")]
 
 
+@mock.patch("torch.version.cuda", new=None)
 @mock.patch.object(core, "subprocess")
 def test_get_cuda_version_when_sub_process_raise_error(
     subprocess_mock: MagicMock,
 ) -> None:
     # given
+    # Pin torch.version.cuda to None so the torch fallback is also exhausted; otherwise
+    # this asserts against whatever CUDA the test env's torch build happens to report.
     subprocess_mock.run.side_effect = Exception()
     get_cuda_version.cache_clear()
 
@@ -143,6 +146,7 @@ def test_get_cuda_version_when_sub_process_raise_error(
     assert result is None
 
 
+@mock.patch("torch.version.cuda", new=None)
 @mock.patch.object(core, "subprocess")
 def test_get_cuda_version_when_sub_process_return_error_code(
     subprocess_mock: MagicMock,
@@ -164,6 +168,7 @@ def test_get_cuda_version_when_sub_process_return_error_code(
     assert result is None
 
 
+@mock.patch("torch.version.cuda", new=None)
 @mock.patch.object(core, "subprocess")
 def test_get_cuda_version_when_sub_process_return_not_parsable_output(
     subprocess_mock: MagicMock,
@@ -189,6 +194,115 @@ def test_get_cuda_version_when_sub_process_return_parsable_output(
     subprocess_mock: MagicMock,
 ) -> None:
     # given
+    subprocess_mock.run.return_value = CompletedProcess(
+        args=(),
+        returncode=0,
+        stdout="""
+ii  cuda-cudart-12-6                           12.6.68-1                                   arm64        CUDA Runtime native Libraries
+ii  cuda-cudart-dev-12-6                       12.6.68-1                                   arm64        CUDA Runtime native dev links, headers
+""",
+    )
+    get_cuda_version.cache_clear()
+
+    # when
+    try:
+        result = get_cuda_version()
+    finally:
+        get_cuda_version.cache_clear()
+
+    # then
+    assert result == Version("12.6.68.post1")
+
+
+@mock.patch("torch.version.cuda", new="12.6")
+@mock.patch.object(core, "subprocess")
+def test_get_cuda_version_when_dpkg_returns_error_code_falls_back_to_torch(
+    subprocess_mock: MagicMock,
+) -> None:
+    # given
+    # Jetson/Tegra: CUDA is provided by the host BSP, not dpkg, so the probe exits
+    # non-zero and we fall back to the CUDA version torch was built against.
+    subprocess_mock.run.return_value = CompletedProcess(args=(), returncode=1)
+    get_cuda_version.cache_clear()
+
+    # when
+    try:
+        result = get_cuda_version()
+    finally:
+        get_cuda_version.cache_clear()
+
+    # then
+    assert result == Version("12.6")
+
+
+@mock.patch("torch.version.cuda", new="12.4")
+@mock.patch.object(core, "subprocess")
+def test_get_cuda_version_when_subprocess_raises_falls_back_to_torch(
+    subprocess_mock: MagicMock,
+) -> None:
+    # given
+    subprocess_mock.run.side_effect = Exception()
+    get_cuda_version.cache_clear()
+
+    # when
+    try:
+        result = get_cuda_version()
+    finally:
+        get_cuda_version.cache_clear()
+
+    # then
+    assert result == Version("12.4")
+
+
+@mock.patch("torch.version.cuda", new="12.6")
+@mock.patch.object(core, "subprocess")
+def test_get_cuda_version_when_dpkg_output_not_parsable_falls_back_to_torch(
+    subprocess_mock: MagicMock,
+) -> None:
+    # given
+    # The dpkg parse raises InvalidVersion, which is swallowed, so we still fall
+    # through to the torch fallback rather than returning None.
+    subprocess_mock.run.return_value = CompletedProcess(
+        args=(), returncode=0, stdout="This is some\nInvalid output"
+    )
+    get_cuda_version.cache_clear()
+
+    # when
+    try:
+        result = get_cuda_version()
+    finally:
+        get_cuda_version.cache_clear()
+
+    # then
+    assert result == Version("12.6")
+
+
+@mock.patch("torch.version.cuda", new=None)
+@mock.patch.object(core, "subprocess")
+def test_get_cuda_version_when_dpkg_and_torch_both_unavailable_returns_none(
+    subprocess_mock: MagicMock,
+) -> None:
+    # given
+    subprocess_mock.run.return_value = CompletedProcess(args=(), returncode=1)
+    get_cuda_version.cache_clear()
+
+    # when
+    try:
+        result = get_cuda_version()
+    finally:
+        get_cuda_version.cache_clear()
+
+    # then
+    assert result is None
+
+
+@mock.patch("torch.version.cuda", new="11.8")
+@mock.patch.object(core, "subprocess")
+def test_get_cuda_version_prefers_dpkg_over_torch_fallback(
+    subprocess_mock: MagicMock,
+) -> None:
+    # given
+    # When dpkg resolves a version it wins; the torch fallback must not override it.
     subprocess_mock.run.return_value = CompletedProcess(
         args=(),
         returncode=0,
