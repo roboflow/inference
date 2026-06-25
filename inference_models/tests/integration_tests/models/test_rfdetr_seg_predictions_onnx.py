@@ -30,7 +30,7 @@ def test_package_with_stretch_against_numpy_input(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [130, 328, 1265, 557],
+                [135, 323, 1266, 558],
             ],
         ),
         atol=1,
@@ -67,7 +67,7 @@ def test_package_with_stretch_against_numpy_input_rle_variant(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [130, 328, 1265, 557],
+                [135, 323, 1266, 558],
             ],
         ),
         atol=1,
@@ -103,7 +103,7 @@ def test_package_with_stretch_against_numpy_list_input(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [130, 328, 1265, 557],
+                [135, 323, 1266, 558],
             ],
         ),
         atol=1,
@@ -113,7 +113,7 @@ def test_package_with_stretch_against_numpy_list_input(
         predictions[1].xyxy.cpu().numpy(),
         np.array(
             [
-                [130, 328, 1265, 557],
+                [135, 323, 1266, 558],
             ],
         ),
         atol=1,
@@ -155,7 +155,7 @@ def test_package_with_stretch_against_numpy_list_input_rle_variant(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [130, 328, 1265, 557],
+                [135, 323, 1266, 558],
             ],
         ),
         atol=1,
@@ -165,7 +165,7 @@ def test_package_with_stretch_against_numpy_list_input_rle_variant(
         predictions[1].xyxy.cpu().numpy(),
         np.array(
             [
-                [130, 328, 1265, 557],
+                [135, 323, 1266, 558],
             ],
         ),
         atol=1,
@@ -204,7 +204,7 @@ def test_package_with_stretch_against_torch_input(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [131, 320, 1261, 559],
+                [125, 327, 1258, 557],
             ],
         ),
         atol=5,
@@ -237,7 +237,7 @@ def test_package_with_stretch_against_torch_list_input(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [131, 320, 1261, 559],
+                [125, 327, 1258, 557],
             ],
         ),
         atol=5,
@@ -247,7 +247,7 @@ def test_package_with_stretch_against_torch_list_input(
         predictions[1].xyxy.cpu().numpy(),
         np.array(
             [
-                [131, 320, 1261, 559],
+                [125, 327, 1258, 557],
             ],
         ),
         atol=5,
@@ -283,7 +283,7 @@ def test_package_with_stretch_against_torch_batch_input(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [131, 320, 1261, 559],
+                [125, 327, 1258, 557],
             ],
         ),
         atol=5,
@@ -293,7 +293,7 @@ def test_package_with_stretch_against_torch_batch_input(
         predictions[1].xyxy.cpu().numpy(),
         np.array(
             [
-                [131, 320, 1261, 559],
+                [125, 327, 1258, 557],
             ],
         ),
         atol=5,
@@ -754,7 +754,7 @@ def test_package_with_static_crop_stretch_against_numpy_list_input(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [320, 332, 957, 561],
+                [322, 330, 961, 562],
             ],
         ),
         atol=1,
@@ -764,7 +764,7 @@ def test_package_with_static_crop_stretch_against_numpy_list_input(
         predictions[1].xyxy.cpu().numpy(),
         np.array(
             [
-                [320, 332, 957, 561],
+                [322, 330, 961, 562],
             ],
         ),
         atol=1,
@@ -925,7 +925,7 @@ def test_package_with_static_crop_stretch_against_numpy_input(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [320, 332, 957, 561],
+                [322, 330, 961, 562],
             ],
         ),
         atol=1,

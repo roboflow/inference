@@ -110,13 +110,15 @@ def pre_process_network_input(
                 if isinstance(img, torch.Tensor)
                 else _ensure_hwc_uint8(img)
             )
-            if _needs_two_step_resize(network_input):
-                # Non-stretch dataset-version resize (letterbox / center-crop /
-                # fit / letterbox-reflect) must be replayed on the PIL path to
-                # match training pixels, and it sets nonsquare_intermediate_size
-                # — which post-processing needs to map boxes back. The tensor
-                # path only does a single stretch and sets neither, so keep the
-                # PIL two-step path for these models.
+            if network_input.resize_mode != ResizeMode.STRETCH_TO:
+                # Only STRETCH_TO is accelerated on the GPU tensor path. Every
+                # other resize mode (letterbox / center-crop / fit and their
+                # static-crop variants) stays on the PIL chain so production
+                # pixels match training. Tensor F.resize is not byte-equivalent
+                # to PIL F.resize, and for modes that carry
+                # dataset_version_resize_dimensions the PIL chain also runs the
+                # two-step resize that sets nonsquare_intermediate_size, which
+                # post-processing needs to map boxes back.
                 tensor, meta = _pre_process_numpy(
                     image=np_img,
                     image_pre_processing=image_pre_processing,
@@ -126,14 +128,15 @@ def pre_process_network_input(
                     pre_processing_overrides=pre_processing_overrides,
                 )
             else:
-                # Stretch case: run the uint8/numpy frame through the tensor path
-                # — upload to the target device as a float CHW tensor in [0, 1]
-                # and reuse _pre_process_tensor, so the channel-swap +
-                # F.resize(antialias) + normalize run on-device with no host
-                # round-trip. Avoids the CPU PIL chain (numpy reverse-copy +
-                # Pillow resize) that dominated per-frame latency on edge/Jetson,
-                # and uses the same resize semantics as the float-tensor input
-                # branch (and predict()).
+                # STRETCH_TO collapses to a single resize with no padding, so run
+                # the uint8/numpy frame through the tensor path — upload to the
+                # target device as a float CHW tensor in [0, 1] and reuse
+                # _pre_process_tensor, so the channel-swap + F.resize(antialias)
+                # + normalize run on-device with no host round-trip. Avoids the
+                # CPU PIL chain (numpy reverse-copy + Pillow resize) that
+                # dominated per-frame latency on edge/Jetson, and uses the same
+                # resize semantics as the float-tensor input branch (and
+                # predict()).
                 gpu_img = (
                     torch.from_numpy(np.ascontiguousarray(np_img))
                     .to(target_device)
