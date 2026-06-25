@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import requests
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Literal
 
 from inference.core.workflows.execution_engine.entities.base import (
@@ -90,6 +90,18 @@ PLC_UI_MANIFEST_BASE = {
 def _is_selector(value: object) -> bool:
     """True if value is a workflow selector reference ($inputs.X / $steps.X.Y)."""
     return isinstance(value, str) and value.startswith("$")
+
+
+def _check_positive_request_timeout(value):
+    """Reject a literal non-positive relay timeout (selectors resolve at runtime).
+
+    `requests` raises a plain ``ValueError`` for a non-positive (connect, read) timeout
+    before sending, so a literal `0` / negative is caught here at validation time. A
+    selector value is a string and skipped (the relay client guards it at runtime).
+    """
+    if isinstance(value, int) and value <= 0:
+        raise ValueError("request_timeout must be a positive number of seconds.")
+    return value
 
 
 def _connection_mode_field() -> Field:
@@ -353,6 +365,10 @@ class PLCReaderBlockManifest(WorkflowBlockManifest):
         _modbus_unit_id_field()
     )
 
+    _validate_request_timeout = field_validator("request_timeout")(
+        _check_positive_request_timeout
+    )
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -470,6 +486,10 @@ class PLCWriterBlockManifest(WorkflowBlockManifest):
         description="If True, skip the write to the PLC and return an empty result.",
         examples=[False, "$inputs.disable_plc_writer"],
         json_schema_extra={"additional_section": True},
+    )
+
+    _validate_request_timeout = field_validator("request_timeout")(
+        _check_positive_request_timeout
     )
 
     @model_validator(mode="after")

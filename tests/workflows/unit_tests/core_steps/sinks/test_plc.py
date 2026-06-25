@@ -11,6 +11,7 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.plc.direct import (
     _parse_modbus_tag,
 )
 from inference.enterprise.workflows.enterprise_blocks.sinks.plc.v1 import (
+    PLCReaderBlockManifest,
     PLCReaderBlockV1,
     PLCWriterBlockManifest,
     PLCWriterBlockV1,
@@ -264,6 +265,21 @@ def test_relay_read_connection_error(v1_requests, client_requests):
 @pytest.mark.timeout(10)
 @patch(f"{CLIENT}.requests")
 @patch(f"{V1}.requests")
+def test_relay_read_value_error_timeout_marks_failure(v1_requests, client_requests):
+    # A non-positive timeout (e.g. a selector resolving to 0) makes requests raise a plain
+    # ValueError before sending; it must be reported as a failure, not crash the step.
+    session = _relay_session(v1_requests, client_requests)
+    session.post.side_effect = ValueError(
+        "Timeout value connect was 0, but it must be > 0"
+    )
+    result = PLCReaderBlockV1().run(tags_to_read=["t"], request_timeout=0)
+    assert result["tag_values"]["t"] == "ReadFailure"
+    assert result["error_status"] is True
+
+
+@pytest.mark.timeout(10)
+@patch(f"{CLIENT}.requests")
+@patch(f"{V1}.requests")
 def test_relay_read_empty_makes_no_call(v1_requests, client_requests):
     session = _relay_session(v1_requests, client_requests)
     result = PLCReaderBlockV1().run(tags_to_read=[])
@@ -466,7 +482,11 @@ def test_modbus_write_rejects_invalid_values_without_coercing(mock_cls):
     # at manifest validation; a selector could still resolve to one of these at runtime.)
     block = PLCWriterBlockV1()
     common = dict(depends_on=None, connection_mode="modbus")
-    for tag, value in [("holding:100", 2.9), ("coil:0", "False"), ("holding:200", 70000)]:
+    for tag, value in [
+        ("holding:100", 2.9),
+        ("coil:0", "False"),
+        ("holding:200", 70000),
+    ]:
         result = block.run(tag=tag, value=value, **common)
         assert result["write_result"] == "WriteFailure"
         assert result["error_status"] is True
@@ -649,6 +669,36 @@ def test_manifest_allows_selector_value_for_all_modes():
             _writer_manifest_kwargs(connection_mode=mode, value="$steps.counter.count")
         )
         assert m.value == "$steps.counter.count"
+
+
+@pytest.mark.timeout(10)
+def test_manifest_rejects_non_positive_request_timeout():
+    # A literal 0 / negative relay timeout would make requests raise before sending, so both
+    # blocks reject it at validation time; a selector is still allowed (guarded at runtime).
+    for bad in (0, -1):
+        with pytest.raises(ValidationError):
+            PLCReaderBlockManifest.model_validate(
+                {
+                    "type": "roboflow_core/plc_reader@v1",
+                    "name": "r",
+                    "request_timeout": bad,
+                }
+            )
+        with pytest.raises(ValidationError):
+            PLCWriterBlockManifest.model_validate(
+                _writer_manifest_kwargs(request_timeout=bad)
+            )
+    # A selector and a positive literal are both accepted.
+    assert (
+        PLCReaderBlockManifest.model_validate(
+            {
+                "type": "roboflow_core/plc_reader@v1",
+                "name": "r",
+                "request_timeout": "$inputs.timeout",
+            }
+        ).request_timeout
+        == "$inputs.timeout"
+    )
 
 
 # ============================ dispatch / registration ========================

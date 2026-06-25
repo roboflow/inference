@@ -75,7 +75,10 @@ def read_tags(
             json={"tags": tags},
             timeout=_request_timeout(timeout),
         )
-    except requests.exceptions.RequestException as e:
+    except (requests.exceptions.RequestException, ValueError) as e:
+        # ValueError covers a non-positive (connect, read) timeout, which `requests`
+        # rejects before sending; treat it like any other relay failure rather than
+        # letting it crash the step.
         logger.error("Failed to reach PLC Relay while reading tags %s: %s", tags, e)
         return _all_failed(tags, READ_FAILURE), True
 
@@ -140,7 +143,10 @@ def write_tags(
             json={"writes": writes},
             timeout=_request_timeout(timeout),
         )
-    except requests.exceptions.RequestException as e:
+    except (requests.exceptions.RequestException, ValueError) as e:
+        # ValueError covers a non-positive (connect, read) timeout, which `requests`
+        # rejects before sending; treat it like any other relay failure rather than
+        # letting it crash the step.
         logger.error("Failed to reach PLC Relay while writing tags %s: %s", names, e)
         return _all_failed(names, WRITE_FAILURE), True
 
