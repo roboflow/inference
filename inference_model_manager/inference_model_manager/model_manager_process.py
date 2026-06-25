@@ -1118,25 +1118,6 @@ class ModelManagerProcess:
     async def _load_model_inner(
         self, model_id: str, api_key: str = "", device: str = ""
     ) -> None:
-        """Time + log _load_model_inner; finally guarantees an outcome line even
-        on an unexpected exception before any explicit return."""
-        _t_load_start = time.monotonic()
-        outcome = "unknown"
-        try:
-            outcome = await self._load_model_inner_impl(
-                model_id, api_key=api_key, device=device
-            )
-        finally:
-            logger.info(
-                "MMP: load '%s' _load_model_inner=%.2fs outcome=%s",
-                model_id,
-                time.monotonic() - _t_load_start,
-                outcome or "unknown",
-            )
-
-    async def _load_model_inner_impl(
-        self, model_id: str, api_key: str = "", device: str = ""
-    ) -> str:
         """Load model via ModelManager with reactive admission loop.
 
         On CUDA OOM: evicts coldest model, retries. Repeats until success,
@@ -1144,8 +1125,6 @@ class ModelManagerProcess:
 
         model_id is the full routing key (may include ":instance" suffix).
         model_id_or_path strips the suffix to fetch the correct weights.
-
-        Returns an outcome string for the timing log in _load_model_inner.
         """
         loop = asyncio.get_running_loop()
         fs = self._models.get(model_id)
@@ -1153,7 +1132,7 @@ class ModelManagerProcess:
         if self._manager is None:
             # Stub mode: no manager
             self._stub_load(model_id, fs)
-            return "stub"
+            return
 
         model_id_or_path = model_id.rsplit(":", 1)[0]
 
@@ -1194,7 +1173,7 @@ class ModelManagerProcess:
                     model_id,
                 )
                 self._fail_load(model_id, fs, _ERR_SERVER_FULL)
-                return "server_full_admission"
+                return
             if decision == "evict":
                 logger.warning(
                     "MMP: VRAM admission evicting %s to load '%s' (deficit=%.0f MB)",
@@ -1211,7 +1190,7 @@ class ModelManagerProcess:
                         model_id,
                     )
                     self._fail_load(model_id, fs, _ERR_SERVER_FULL)
-                    return "server_full_evict"
+                    return
 
         max_retries = self._load_oom_max_evictions  # safety cap — never loop forever
 
@@ -1270,10 +1249,7 @@ class ModelManagerProcess:
                         ).add(model_id)
                         self._head_base_key[model_id] = resolution.base_key
                     self.register_backend(model_id, backend)
-                    return (
-                        f"loaded(attempt={attempt + 1},"
-                        f"shared_base={resolution is not None})"
-                    )
+                    return
                 # Loaded but no backend — fall through to stub
                 break
 
@@ -1282,7 +1258,7 @@ class ModelManagerProcess:
                     # Non-OOM failure — don't retry
                     logger.exception("MMP: load '%s' failed (non-OOM)", model_id)
                     self._fail_load(model_id, fs, _ERR_LOAD_FAILED)
-                    return "load_failed"
+                    return
 
                 # CUDA OOM — evict a cold unit and retry. For a shared head, never
                 # evict the base it is loading onto (head-load OOM must free OTHER
@@ -1294,7 +1270,7 @@ class ModelManagerProcess:
                         model_id,
                     )
                     self._fail_load(model_id, fs, _ERR_SERVER_FULL)
-                    return "server_full_oom"
+                    return
 
                 logger.warning(
                     "MMP: OOM loading '%s' — evicting cold unit '%s' and retrying",
@@ -1317,7 +1293,6 @@ class ModelManagerProcess:
         # Exhausted retries — should not normally reach here
         logger.error("MMP: load '%s' exhausted %d retries", model_id, max_retries)
         self._fail_load(model_id, fs, _ERR_LOAD_FAILED)
-        return "load_failed_retries"
 
     def _stub_load(self, model_id: str, fs: Optional[ModelState]) -> None:
         """Mark model as stub-loaded (no real backend). Flushes waiters."""
