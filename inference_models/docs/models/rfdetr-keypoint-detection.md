@@ -104,6 +104,8 @@ Returns: `Tuple[List[KeyPoints], Optional[List[Detections]]]` (one element per i
 
 Pass to `EdgeAnnotator`: `sv.EdgeAnnotator(edges=model.skeletons[0])` or omit for auto-detection.
 
+**Supervision fields**: `to_supervision()` populates `keypoint_confidence` (per-keypoint), `visible` (derived from `keypoint_confidence > 0`), `detection_confidence` (per-instance object score), and — for RF-DETR — `data["covariance"]` (see below). Requires `supervision>=0.29`.
+
 ## Keypoint Uncertainty (Covariance)
 
 Unlike most keypoint detectors, RF-DETR predicts how *certain* it is about each keypoint's

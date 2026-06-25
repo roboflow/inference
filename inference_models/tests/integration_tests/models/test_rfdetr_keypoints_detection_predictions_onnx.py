@@ -58,11 +58,25 @@ def test_rfdetr_keypoints_onnx_glue_sticks_numpy(
     assert torch.allclose(covariance[..., 0, 1], covariance[..., 1, 0])
     assert (covariance[..., 0, 0] > 0).all()
     assert (covariance[..., 1, 1] > 0).all()
-    # to_supervision() exposes the covariance under data["covariance"] for the
-    # Supervision ellipse annotators.
+    # Per-instance object confidence is carried alongside the keypoints.
+    assert key_points.detection_confidence is not None
+    assert torch.allclose(
+        key_points.detection_confidence.cpu(),
+        detections_list[0].confidence.cpu(),
+    )
+    # to_supervision() exposes covariance/detection_confidence/visible for the
+    # Supervision ellipse and label annotators.
     sv_key_points = key_points.to_supervision()
     assert "covariance" in sv_key_points.data
     assert sv_key_points.data["covariance"].shape == tuple(key_points.covariance.shape)
+    assert np.allclose(
+        sv_key_points.detection_confidence,
+        key_points.detection_confidence.cpu().numpy(),
+    )
+    # visible mirrors keypoint_confidence > 0.
+    assert np.array_equal(
+        sv_key_points.visible, key_points.confidence.cpu().numpy() > 0
+    )
 
     assert detections_list is not None
     detections = detections_list[0]

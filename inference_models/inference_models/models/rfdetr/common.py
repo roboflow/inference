@@ -721,6 +721,7 @@ def post_process_keypoint_detection_results(
                 class_id=top_classes.int(),
                 confidence=selected_keypoints_conf,
                 covariance=covariance,
+                detection_confidence=predicted_confidence,
             )
         )
 
