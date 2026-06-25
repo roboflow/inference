@@ -24,7 +24,7 @@ from inference_models.weights_providers.entities import ModelDependency, ModelMe
 
 logger = logging.getLogger(__name__)
 
-# Bases whose instance may be shared by heads. Gated by value, not literal.
+# Base architectures whose instance may be shared by heads.
 SUPPORTED_SHARED_BASES = frozenset({"owlv2"})
 # Public bases safe to share across tenants — base_key excludes api_key/access scope
 # only for these. A supported-but-not-whitelisted base keeps per-tenant base_keys.
@@ -65,21 +65,13 @@ def _fetch_metadata(
     return metadata_cache[key]
 
 
-def _select_supported_dependency(
-    metadata: ModelMetadata, supported_bases: frozenset
-) -> Optional[ModelDependency]:
-    for dependency in metadata.model_dependencies or []:
-        if dependency.model_id in supported_bases:
-            return dependency
-    return None
-
-
 def derive_base_key(
     dep_model_id: str,
     resolved_package_id: str,
     device: torch.device,
     *,
     api_key: str,
+    dep_model_architecture: Optional[str] = None,
 ) -> str:
     content = {
         "dep_model_id": dep_model_id,
@@ -88,7 +80,11 @@ def derive_base_key(
         "backend": None,
         "quantization": None,
     }
-    if dep_model_id not in WHITELISTED_SHARED_BASES:
+    share_across_tenants = (
+        dep_model_architecture in WHITELISTED_SHARED_BASES
+        or dep_model_id in WHITELISTED_SHARED_BASES
+    )
+    if not share_across_tenants:
         content["api_key"] = api_key or ""
     return hash_dict_content(content=content)
 
@@ -112,12 +108,18 @@ def resolve_shared_base(
     resolved_device = _resolve_device(device)
     try:
         head_metadata = _fetch_metadata(model_id, api_key, provider, metadata_cache)
-        dependency = _select_supported_dependency(head_metadata, supported_bases)
-        if dependency is None:
+        dependency = None
+        dep_metadata = None
+        for candidate in head_metadata.model_dependencies or []:
+            candidate_metadata = _fetch_metadata(
+                candidate.model_id, api_key, provider, metadata_cache
+            )
+            if candidate_metadata.model_architecture in supported_bases:
+                dependency = candidate
+                dep_metadata = candidate_metadata
+                break
+        if dependency is None or dep_metadata is None:
             return None
-        dep_metadata = _fetch_metadata(
-            dependency.model_id, api_key, provider, metadata_cache
-        )
         packages = negotiate_model_packages(
             model_architecture=dep_metadata.model_architecture,
             task_type=dep_metadata.task_type,
@@ -142,6 +144,7 @@ def resolve_shared_base(
         resolved_package_id,
         resolved_device,
         api_key=api_key,
+        dep_model_architecture=dep_metadata.model_architecture,
     )
     return SharedBaseResolution(
         dep_name=dependency.name,
