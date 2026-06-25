@@ -483,9 +483,16 @@ class SharedBaseSubprocessBackend:
         # hands back a base with no heads. A concurrent reservation keeps it alive.
         self._maybe_retire()
 
-    def load_head(self, head_id: str, api_key: str) -> HeadMetadata:
+    def load_head(
+        self, head_id: str, api_key: str, model_id_or_path: Optional[str] = None
+    ) -> HeadMetadata:
         return self._control.load_head(
-            head_id, {"api_key": api_key, "device": self._device_str}
+            head_id,
+            {
+                "api_key": api_key,
+                "device": self._device_str,
+                "model_id_or_path": model_id_or_path or head_id,
+            },
         )
 
     def drop_head(self, head_id: str) -> None:
