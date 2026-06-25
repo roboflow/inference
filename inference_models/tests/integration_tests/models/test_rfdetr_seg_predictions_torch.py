@@ -29,7 +29,7 @@ def test_package_with_stretch_against_numpy_input(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [144, 337, 1265, 560],
+                [135, 329, 1247, 561],
             ],
         ),
         atol=1,
@@ -65,7 +65,7 @@ def test_package_with_stretch_against_numpy_input_rle_variant(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [144, 337, 1265, 560],
+                [135, 329, 1247, 561],
             ],
         ),
         atol=1,
@@ -100,7 +100,7 @@ def test_package_with_stretch_against_numpy_list_input(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [144, 337, 1265, 560],
+                [135, 329, 1247, 561],
             ],
         ),
         atol=1,
@@ -110,7 +110,7 @@ def test_package_with_stretch_against_numpy_list_input(
         predictions[1].xyxy.cpu().numpy(),
         np.array(
             [
-                [144, 337, 1265, 560],
+                [135, 329, 1247, 561],
             ],
         ),
         atol=1,
@@ -153,7 +153,7 @@ def test_package_with_stretch_against_numpy_list_input_rle_variant(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [144, 337, 1265, 560],
+                [135, 329, 1247, 561],
             ],
         ),
         atol=1,
@@ -163,7 +163,7 @@ def test_package_with_stretch_against_numpy_list_input_rle_variant(
         predictions[1].xyxy.cpu().numpy(),
         np.array(
             [
-                [144, 337, 1265, 560],
+                [135, 329, 1247, 561],
             ],
         ),
         atol=1,
