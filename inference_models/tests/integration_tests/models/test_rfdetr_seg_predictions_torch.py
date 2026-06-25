@@ -34,7 +34,7 @@ def test_package_with_stretch_against_numpy_input(
         ),
         atol=1,
     )
-    assert 204890 <=np.sum(predictions[0].mask.cpu().numpy()) <= 205890
+    assert 204890 <= np.sum(predictions[0].mask.cpu().numpy()) <= 205890
 
 
 @pytest.mark.slow
@@ -70,7 +70,7 @@ def test_package_with_stretch_against_numpy_input_rle_variant(
         ),
         atol=1,
     )
-    assert 204890 <=np.sum(decoded_mask.cpu().numpy()) <= 205890
+    assert 204890 <= np.sum(decoded_mask.cpu().numpy()) <= 205890
     assert np.allclose(
         decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
@@ -105,7 +105,7 @@ def test_package_with_stretch_against_numpy_list_input(
         ),
         atol=1,
     )
-    assert 204890 <=np.sum(predictions[0].mask.cpu().numpy()) <= 205890
+    assert 204890 <= np.sum(predictions[0].mask.cpu().numpy()) <= 205890
     assert np.allclose(
         predictions[1].xyxy.cpu().numpy(),
         np.array(
@@ -115,7 +115,7 @@ def test_package_with_stretch_against_numpy_list_input(
         ),
         atol=1,
     )
-    assert 204890 <=np.sum(predictions[1].mask.cpu().numpy()) <= 205890
+    assert 204890 <= np.sum(predictions[1].mask.cpu().numpy()) <= 205890
 
 
 @pytest.mark.slow
@@ -158,7 +158,7 @@ def test_package_with_stretch_against_numpy_list_input_rle_variant(
         ),
         atol=1,
     )
-    assert 204890 <=np.sum(decoded_mask_1.cpu().numpy()) <= 205890
+    assert 204890 <= np.sum(decoded_mask_1.cpu().numpy()) <= 205890
     assert np.allclose(
         predictions[1].xyxy.cpu().numpy(),
         np.array(
@@ -168,7 +168,7 @@ def test_package_with_stretch_against_numpy_list_input_rle_variant(
         ),
         atol=1,
     )
-    assert 204890 <=np.sum(decoded_mask_2.cpu().numpy()) <= 205890
+    assert 204890 <= np.sum(decoded_mask_2.cpu().numpy()) <= 205890
     assert np.allclose(
         decoded_mask_1.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
