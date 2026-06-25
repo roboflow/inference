@@ -27,6 +27,8 @@ import time
 from collections import deque
 from typing import Any, List, Optional
 
+import cv2
+import numpy as np
 import supervision as sv
 
 from inference import InferencePipeline
@@ -178,6 +180,26 @@ def parse_args() -> argparse.Namespace:
         "freezes. Keeps the trace small; later frames are not recorded. Only used when "
         "--profile-trace is given.",
     )
+    parser.add_argument(
+        "--output-video",
+        default=None,
+        metavar="PATH",
+        help="Optionally write the visualization video for source [0] to this exact path "
+        "(e.g. ./out.mp4). Requires --output-key. Only the first stream is captured.",
+    )
+    parser.add_argument(
+        "--output-key",
+        default=None,
+        help="Name of the workflow output field that holds the visualization image "
+        "(e.g. 'label_visualization_output'). Required when --output-video is given.",
+    )
+    parser.add_argument(
+        "--output-fps",
+        type=float,
+        default=None,
+        help="FPS for the written output video. Defaults to the source video's FPS "
+        "(falling back to 30 if it cannot be read). Only used with --output-video.",
+    )
     return parser.parse_args()
 
 
@@ -209,16 +231,118 @@ class FPSCounter:
         return self.frames / elapsed if elapsed > 0 else 0.0
 
 
-def build_sink(counter: FPSCounter, report_every: int):
+class VisualizationVideoWriter:
+    """Lazily opens a ``cv2.VideoWriter`` on the first frame (so it can size itself to
+    the visualization output) and writes subsequent BGR frames to a video file.
+
+    Frame size is fixed at the first frame; any later frame of a different size is
+    resized to match (cv2 requires a constant frame size).
+    """
+
+    def __init__(self, path: str, fps: float) -> None:
+        self._path = path
+        self._fps = fps if fps and fps > 0 else 30.0
+        self._writer: Optional[cv2.VideoWriter] = None
+        self._size: Optional[tuple] = None
+        self.frames_written = 0
+
+    def write(self, image_bgr: np.ndarray) -> None:
+        height, width = image_bgr.shape[:2]
+        if self._writer is None:
+            os.makedirs(os.path.dirname(os.path.abspath(self._path)) or ".", exist_ok=True)
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            self._writer = cv2.VideoWriter(
+                self._path, fourcc, self._fps, (width, height)
+            )
+            if not self._writer.isOpened():
+                raise SystemExit(
+                    f"Could not open a VideoWriter for '{self._path}' "
+                    f"({width}x{height} @ {self._fps:.2f} fps). Check the path/extension "
+                    "(try .mp4) and codec availability."
+                )
+            self._size = (width, height)
+        elif (width, height) != self._size:
+            image_bgr = cv2.resize(image_bgr, self._size)
+        self._writer.write(np.ascontiguousarray(image_bgr, dtype=np.uint8))
+        self.frames_written += 1
+
+    def release(self) -> None:
+        if self._writer is not None:
+            self._writer.release()
+            self._writer = None
+
+
+def _to_bgr_image(value: Any) -> Optional[np.ndarray]:
+    """Extract an HWC BGR uint8 image from a workflow output value.
+
+    Visualization outputs arrive (unserialized) as ``WorkflowImageData`` whose
+    ``.numpy_image`` is HWC BGR uint8 (cv2-native, exactly what VideoWriter wants);
+    a bare ndarray is taken as-is. Anything else returns ``None``.
+    """
+    numpy_image = getattr(value, "numpy_image", None)
+    if numpy_image is not None:
+        return numpy_image
+    if isinstance(value, np.ndarray):
+        return value
+    return None
+
+
+class OutputCapture:
+    """Pulls the named visualization output out of each source-[0] workflow result and
+    feeds it to the video writer. Warns once (then stays quiet) on a missing key or a
+    non-image value so a misconfigured run is obvious without spamming per frame."""
+
+    def __init__(self, writer: VisualizationVideoWriter, output_key: str) -> None:
+        self.writer = writer
+        self.output_key = output_key
+        self._warned_missing = False
+        self._warned_type = False
+
+    def handle(self, prediction: Any) -> None:
+        if not isinstance(prediction, dict):
+            return
+        if self.output_key not in prediction:
+            if not self._warned_missing:
+                self._warned_missing = True
+                print(
+                    f"[output-capture] WARNING: output '{self.output_key}' not found in "
+                    f"the workflow result. Available outputs: {sorted(prediction.keys())}. "
+                    "No video will be written.",
+                    flush=True,
+                )
+            return
+        image = _to_bgr_image(prediction[self.output_key])
+        if image is None:
+            if not self._warned_type:
+                self._warned_type = True
+                print(
+                    f"[output-capture] WARNING: output '{self.output_key}' is "
+                    f"{type(prediction[self.output_key]).__name__}, not an image; "
+                    "cannot write video.",
+                    flush=True,
+                )
+            return
+        self.writer.write(image)
+
+
+def build_sink(
+    counter: FPSCounter,
+    report_every: int,
+    capture: Optional[OutputCapture] = None,
+):
     def sink(predictions: Any, video_frames: Any) -> None:
         # A single video source delivers one (prediction, frame) per call; the list
         # form is used for multi-source pipelines. Normalise to a list either way.
         if not isinstance(predictions, list):
             predictions, video_frames = [predictions], [video_frames]
-        for _prediction, frame in zip(predictions, video_frames):
+        for prediction, frame in zip(predictions, video_frames):
             if frame is None:
                 continue
             counter.tick()
+            # Capture only the first stream: source_id is 0 for multi-source and None
+            # for a single source.
+            if capture is not None and getattr(frame, "source_id", None) in (None, 0):
+                capture.handle(prediction)
             if report_every and counter.frames % report_every == 0:
                 print(
                     f"[{counter.frames:>7} frames] rolling FPS: {counter.rolling_fps:6.1f} "
@@ -227,6 +351,13 @@ def build_sink(counter: FPSCounter, report_every: int):
                 )
 
     return sink
+
+
+def _source_video_fps(video_path: str) -> Optional[float]:
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    cap.release()
+    return fps if fps and fps > 0 else None
 
 
 def main() -> None:
@@ -251,6 +382,26 @@ def main() -> None:
             f"'{args.profile_trace}'"
         )
 
+    # Optional capture of the visualization output from source [0].
+    capture: Optional[OutputCapture] = None
+    if args.output_video:
+        if not args.output_key:
+            raise SystemExit(
+                "--output-key (the workflow output field holding the visualization "
+                "image) is required when --output-video is given."
+            )
+        out_fps = args.output_fps or _source_video_fps(args.video) or 30.0
+        capture = OutputCapture(
+            writer=VisualizationVideoWriter(args.output_video, out_fps),
+            output_key=args.output_key,
+        )
+        print(
+            f"Capturing workflow output '{args.output_key}' from source [0] -> "
+            f"'{args.output_video}' @ {out_fps:.2f} fps"
+        )
+    elif args.output_key:
+        raise SystemExit("--output-key requires --output-video to also be given.")
+
     # Multiply the same video into N concurrent sources. A single reference keeps the
     # exact legacy behaviour; a list makes InferencePipeline run one VideoSource per copy.
     video_reference = args.video if args.n == 1 else [args.video] * args.n
@@ -270,7 +421,7 @@ def main() -> None:
         api_key=args.api_key,
         image_input_name=args.image_input_name,
         workflows_parameters=workflows_parameters,
-        on_prediction=build_sink(counter, args.report_every),
+        on_prediction=build_sink(counter, args.report_every, capture),
         max_fps=args.max_fps,  # None => run as fast as the workflow allows
         watchdog=watchdog,
     )
@@ -283,12 +434,17 @@ def main() -> None:
     )
     wall_start = time.monotonic()
     try:
-        pipeline.start()  # blocks (use_main_thread) until the video file is exhausted
-        pipeline.join()
-    except KeyboardInterrupt:
-        print("\nInterrupted — terminating pipeline...")
-        pipeline.terminate()
-        pipeline.join()
+        try:
+            pipeline.start()  # blocks (use_main_thread) until the video file is exhausted
+            pipeline.join()
+        except KeyboardInterrupt:
+            print("\nInterrupted — terminating pipeline...")
+            pipeline.terminate()
+            pipeline.join()
+    finally:
+        # Always finalise the output video — even on interrupt — so it stays playable.
+        if capture is not None:
+            capture.writer.release()
     elapsed = time.monotonic() - wall_start
 
     per_stream = f"  ({counter.overall_fps / args.n:.2f}/stream)" if args.n > 1 else ""
@@ -301,6 +457,11 @@ def main() -> None:
         print(
             f"profiler trace        : {os.path.abspath(args.profile_trace)} "
             f"(first {args.profile_frames} frame(s))"
+        )
+    if capture is not None:
+        print(
+            f"output video          : {os.path.abspath(args.output_video)} "
+            f"({capture.writer.frames_written} frame(s) from source [0])"
         )
 
 
