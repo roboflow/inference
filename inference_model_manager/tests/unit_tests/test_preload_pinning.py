@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections import deque
+from types import SimpleNamespace
 
 from inference_model_manager.model_manager_process import (
     T_OK,
@@ -13,6 +14,7 @@ def _pmmp():
     p = ModelManagerProcess.__new__(ModelManagerProcess)
     p._shared_heads = {}
     p._head_base_key = {}
+    p._preloaded_shared_bases = {}
     p._models = {}
     p._backends = {}
     p._pending = {}
@@ -51,7 +53,9 @@ def test_pinned_model_excluded_from_pick():
     old = time.monotonic() - 10_000
     p._models["pinned"] = ModelState(loaded=True, pinned=True)
     p._model_access["pinned"] = old
-    assert p._pick_eviction_candidate() is None  # only unit is pinned → nothing to evict
+    assert (
+        p._pick_eviction_candidate() is None
+    )  # only unit is pinned → nothing to evict
 
 
 def test_pinned_model_not_in_eviction_plan():
@@ -138,3 +142,54 @@ def test_t_load_pins_already_loaded_model():
 
 def test_model_state_default_unpinned():
     assert ModelState().pinned is False
+
+
+def test_pinned_top_level_base_uses_shared_base_preload(monkeypatch):
+    import inference_model_manager.shared_base_resolution as resolver
+
+    resolution = SimpleNamespace(base_key="bk-1")
+    monkeypatch.setattr(resolver, "resolve_shared_base", lambda *a, **k: None)
+    monkeypatch.setattr(
+        resolver, "resolve_shared_base_model", lambda *a, **k: resolution
+    )
+
+    p = _pmmp()
+    p._shared_metadata_cache = {}
+    p._vram_admission = False
+    p._load_oom_max_evictions = 1
+    p._batch_max_size = 0
+    p._batch_max_wait_ms = 5.0
+    p._decoder = "imagecodecs"
+    p._models["google/owlv2-large-patch14-ensemble"] = ModelState(
+        loading=True, pinned=True
+    )
+    p._flush_load_waiters = lambda model_id: None
+
+    calls = []
+
+    class _Manager:
+        def __contains__(self, model_id):
+            return False
+
+        def has_shared_base(self, base_key):
+            return False
+
+        def load_shared_base(self, *args, **kwargs):
+            calls.append((args, kwargs))
+
+    p._manager = _Manager()
+
+    asyncio.run(
+        p._load_model_inner(
+            "google/owlv2-large-patch14-ensemble", api_key="k", device="cpu"
+        )
+    )
+
+    assert calls
+    assert calls[0][0][:3] == (
+        "google/owlv2-large-patch14-ensemble",
+        "k",
+        resolution,
+    )
+    assert p._preloaded_shared_bases == {"google/owlv2-large-patch14-ensemble": "bk-1"}
+    assert p._models["google/owlv2-large-patch14-ensemble"].loaded is True

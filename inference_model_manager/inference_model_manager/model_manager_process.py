@@ -345,6 +345,7 @@ class ModelManagerProcess:
         self._shared_metadata_cache: dict = {}
         self._shared_heads: dict[str, set[str]] = {}  # base_key → head_ids
         self._head_base_key: dict[str, str] = {}  # head_id → base_key
+        self._preloaded_shared_bases: dict[str, str] = {}  # model_id → base_key
 
         self._pool: Optional[SHMPool] = None
         self._router: Optional[zmq.asyncio.Socket] = None
@@ -474,6 +475,14 @@ class ModelManagerProcess:
         state. Heads reload lazily on their next request via the normal cold path
         (which re-resolves the base and spawns a fresh worker). Runs on the loop."""
         head_ids = self._shared_heads.pop(base_key, set())
+        for model_id, preload_base_key in list(self._preloaded_shared_bases.items()):
+            if preload_base_key != base_key:
+                continue
+            self._preloaded_shared_bases.pop(model_id, None)
+            fs = self._models.get(model_id)
+            if fs is not None:
+                fs.loaded = False
+                fs.loading = False
         for head_id in head_ids:
             self._head_base_key.pop(head_id, None)
             fs = self._models.get(head_id)
@@ -880,10 +889,16 @@ class ModelManagerProcess:
         self._unloading.add(model_id)
         try:
             if self._manager is not None:
-                await loop.run_in_executor(
-                    None, lambda: self._manager.unload(model_id, drain=True)
-                )
+                if model_id in self._preloaded_shared_bases:
+                    await loop.run_in_executor(
+                        None, lambda: self._manager.unload_shared_base(model_id)
+                    )
+                else:
+                    await loop.run_in_executor(
+                        None, lambda: self._manager.unload(model_id, drain=True)
+                    )
             self._backends.pop(model_id, None)
+            self._preloaded_shared_bases.pop(model_id, None)
             self._untrack_shared_head(model_id)
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
         except Exception:
@@ -985,6 +1000,15 @@ class ModelManagerProcess:
                     logger.debug(
                         "MMP: failed to get class_names for '%s'", f, exc_info=True
                     )
+            if f in self._preloaded_shared_bases and self._manager is not None:
+                base_key = self._preloaded_shared_bases[f]
+                owner = self._manager.shared_owners().get(base_key)
+                entry["backend_type"] = "shared-base"
+                entry["base_key"] = base_key
+                if owner is not None:
+                    entry["worker_alive"] = owner.is_healthy
+                    entry["worker_pid"] = getattr(owner, "worker_pid", None)
+                    entry["device"] = owner.device
             model_stats[f] = entry
 
         snapshot.update(
@@ -1138,7 +1162,10 @@ class ModelManagerProcess:
 
         # Detect a shareable head before admission (detect-before-admit). Resolution is
         # a cached, weight-free provider lookup; failure falls back to a normal load.
-        from inference_model_manager.shared_base_resolution import resolve_shared_base
+        from inference_model_manager.shared_base_resolution import (
+            resolve_shared_base,
+            resolve_shared_base_model,
+        )
 
         resolution = await loop.run_in_executor(
             None,
@@ -1146,6 +1173,14 @@ class ModelManagerProcess:
                 model_id_or_path, api_key, device, self._shared_metadata_cache
             ),
         )
+        base_preload_resolution = None
+        if resolution is None and fs is not None and fs.pinned:
+            base_preload_resolution = await loop.run_in_executor(
+                None,
+                lambda: resolve_shared_base_model(
+                    model_id_or_path, api_key, device, self._shared_metadata_cache
+                ),
+            )
         # The base counts once: when its worker is already resident, admit the head on
         # its marginal footprint (whole-model minus the resident base), not the full
         # model. First head / non-shared loads admit on the full footprint.
@@ -1154,15 +1189,20 @@ class ModelManagerProcess:
         )
 
         # A loading head must never evict the base it is about to share.
+        shared_resolution = resolution or base_preload_resolution
         shared_exclude = (
-            {resolution.base_key} if resolution is not None else None
+            {shared_resolution.base_key} if shared_resolution is not None else None
         )
 
         if self._vram_admission:
             need_mb = None
             if base_resident:
                 need_mb = await loop.run_in_executor(
-                    None, self._shared_head_marginal_mb, resolution, model_id_or_path, api_key
+                    None,
+                    self._shared_head_marginal_mb,
+                    resolution,
+                    model_id_or_path,
+                    api_key,
                 )
             decision, victims, deficit = await self._vram_admission_plan(
                 model_id, api_key, need_mb=need_mb, exclude=shared_exclude
@@ -1225,6 +1265,28 @@ class ModelManagerProcess:
                             decoder=self._decoder,
                         ),
                     )
+                elif base_preload_resolution is not None:
+                    await loop.run_in_executor(
+                        None,
+                        lambda: self._manager.load_shared_base(
+                            model_id,
+                            api_key,
+                            base_preload_resolution,
+                            device=device or None,
+                            batch_max_size=self._batch_max_size,
+                            batch_max_delay_ms=self._batch_max_wait_ms,
+                            decoder=self._decoder,
+                        ),
+                    )
+                    self._preloaded_shared_bases[model_id] = (
+                        base_preload_resolution.base_key
+                    )
+                    fs = self._models.setdefault(model_id, ModelState())
+                    fs.loading = False
+                    fs.loaded = True
+                    self._model_access[model_id] = time.monotonic()
+                    self._flush_load_waiters(model_id)
+                    return
                 else:
                     await loop.run_in_executor(
                         None,
@@ -1244,9 +1306,9 @@ class ModelManagerProcess:
                     # Track BEFORE register_backend exposes the head as loaded, so a
                     # worker death can never see an untracked-but-loaded head.
                     if resolution is not None:
-                        self._shared_heads.setdefault(
-                            resolution.base_key, set()
-                        ).add(model_id)
+                        self._shared_heads.setdefault(resolution.base_key, set()).add(
+                            model_id
+                        )
                         self._head_base_key[model_id] = resolution.base_key
                     self.register_backend(model_id, backend)
                     return
@@ -1284,11 +1346,17 @@ class ModelManagerProcess:
                 # Force-clear partial load so next attempt doesn't hit "already loaded"
                 try:
                     await loop.run_in_executor(
-                        None, lambda: self._manager.unload(model_id)
+                        None,
+                        lambda: (
+                            self._manager.unload_shared_base(model_id)
+                            if base_preload_resolution is not None
+                            else self._manager.unload(model_id)
+                        ),
                     )
                 except Exception:
                     # unload failed — force-remove from backends dict
                     self._manager._backends.pop(model_id, None)
+                    self._preloaded_shared_bases.pop(model_id, None)
 
         # Exhausted retries — should not normally reach here
         logger.error("MMP: load '%s' exhausted %d retries", model_id, max_retries)
@@ -1324,6 +1392,15 @@ class ModelManagerProcess:
                 )
         # Clean up any partial state
         self._backends.pop(model_id, None)
+        if model_id in self._preloaded_shared_bases and self._manager is not None:
+            loop = self._loop
+            if loop is not None and loop.is_running():
+                loop.run_in_executor(
+                    None, lambda: self._manager.unload_shared_base(model_id)
+                )
+            else:
+                self._manager.unload_shared_base(model_id)
+        self._preloaded_shared_bases.pop(model_id, None)
         self._model_access.pop(model_id, None)
         self._model_request_times.pop(model_id, None)
 
@@ -1595,6 +1672,9 @@ class ModelManagerProcess:
     def _is_base_key(self, key: str) -> bool:
         return key in self._shared_heads
 
+    def _is_preloaded_base_key(self, key: str) -> bool:
+        return key in self._preloaded_shared_bases.values()
+
     def _evictable_units(self) -> list:
         """Eviction units: normal models (excluding shared heads) plus shared base
         keys. Evicting a base key reclaims its whole worker's VRAM; a single head
@@ -1620,6 +1700,8 @@ class ModelManagerProcess:
         self, key: str, now: float, in_flight: set, cutoff_s: float
     ) -> bool:
         if self._is_base_key(key):
+            if self._is_preloaded_base_key(key):
+                return False
             heads = self._shared_heads.get(key, set())
             return bool(heads) and all(
                 self._flavor_loaded_idle(h, now, in_flight, cutoff_s) for h in heads

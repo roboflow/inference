@@ -89,6 +89,8 @@ def _mm():
     mm._lifecycle_lock = threading.Lock()
     mm._shared_workers = {}
     mm._shared_loading_keys = set()
+    mm._shared_base_preloads = {}
+    mm._shared_death_hook = None
     mm._shared_cv = threading.Condition(mm._lifecycle_lock)
     return mm
 
@@ -231,10 +233,10 @@ def test_fresh_owner_dead_after_init_is_not_published(monkeypatch):
     with pytest.raises(RuntimeError, match="died during startup"):
         mm.load_shared_head("head/1", "k", _resolution("bk-1"))
 
-    assert "bk-1" not in mm._shared_workers   # never published
-    assert mm._shared_loading_keys == set()   # sentinel released
+    assert "bk-1" not in mm._shared_workers  # never published
+    assert mm._shared_loading_keys == set()  # sentinel released
     assert mm._loading_ids == set()
-    assert owner.unloaded is True             # dead worker torn down
+    assert owner.unloaded is True  # dead worker torn down
 
 
 def test_has_shared_base():
@@ -251,3 +253,35 @@ def test_has_shared_base():
     owner._retired = False
     owner._dead = True
     assert mm.has_shared_base("bk-1") is False  # dead-but-cached owner is not resident
+
+
+def test_load_shared_base_retains_owner_until_unload():
+    mm = _mm()
+    owners = {}
+    _patch_factory(mm, owners)
+
+    mm.load_shared_base("google/owlv2-large-patch14-ensemble", "k", _resolution())
+
+    owner = owners["bk-1"]
+    assert mm.shared_base_preloads() == {"google/owlv2-large-patch14-ensemble": "bk-1"}
+    assert "bk-1" in mm._shared_workers
+    assert owner.unloaded is False
+
+    mm.unload_shared_base("google/owlv2-large-patch14-ensemble")
+
+    assert mm.shared_base_preloads() == {}
+    assert owner.unloaded is True
+    assert "bk-1" not in mm._shared_workers
+
+
+def test_shared_worker_death_drops_base_preload_without_release():
+    mm = _mm()
+    owner = _FakeOwner("bk-1")
+    mm._shared_workers["bk-1"] = owner
+    mm._shared_base_preloads["base"] = ("bk-1", owner)
+
+    mm._on_shared_worker_death("bk-1")
+
+    assert mm._shared_workers == {}
+    assert mm._shared_base_preloads == {}
+    assert owner.unloaded is False  # worker is already dead; do not call end_load()
