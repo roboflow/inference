@@ -48,6 +48,22 @@ def test_rfdetr_keypoints_onnx_glue_sticks_numpy(
     )
     assert key_points.class_id.cpu().tolist() == [0, 0]
 
+    # Covariance: pixel-space per-keypoint (N, K, 2, 2), matching xy's (N, K, *) layout.
+    assert key_points.covariance is not None
+    assert key_points.covariance.shape == key_points.xy.shape[:2] + (2, 2)
+    covariance = key_points.covariance.cpu()
+    # All keypoints here are above threshold, so every covariance is finite.
+    assert torch.isfinite(covariance).all()
+    # Each covariance is symmetric with positive variances on the diagonal.
+    assert torch.allclose(covariance[..., 0, 1], covariance[..., 1, 0])
+    assert (covariance[..., 0, 0] > 0).all()
+    assert (covariance[..., 1, 1] > 0).all()
+    # to_supervision() exposes the covariance under data["covariance"] for the
+    # Supervision ellipse annotators.
+    sv_key_points = key_points.to_supervision()
+    assert "covariance" in sv_key_points.data
+    assert sv_key_points.data["covariance"].shape == tuple(key_points.covariance.shape)
+
     assert detections_list is not None
     detections = detections_list[0]
     assert torch.allclose(
