@@ -221,6 +221,7 @@ class ModelManager:
         api_key: str,
         resolution: Any,
         *,
+        model_id_or_path: Optional[str] = None,
         device: Optional[str] = None,
         batch_max_size: int = 0,
         batch_max_delay_ms: float = 10.0,
@@ -252,7 +253,7 @@ class ModelManager:
                 decoder=decoder,
             )
             try:
-                metadata = owner.load_head(head_id, api_key)
+                metadata = owner.load_head(head_id, api_key, model_id_or_path)
 
                 from inference_model_manager.registry_defaults import (
                     lazy_register_by_names,

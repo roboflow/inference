@@ -27,6 +27,7 @@ class _FakeOwner:
         self._dead = False
         self._on_empty = None
         self.unloaded = False
+        self.loaded = []
 
     @property
     def retired(self):
@@ -50,7 +51,8 @@ class _FakeOwner:
             if self._on_empty is not None:
                 self._on_empty(self.base_key, self)
 
-    def load_head(self, head_id, api_key):
+    def load_head(self, head_id, api_key, model_id_or_path=None):
+        self.loaded.append((head_id, model_id_or_path))
         idx = self._next
         self._next += 1
         meta = HeadMetadata(head_index=idx, model_mro_names=["H"], max_batch_size=4)
@@ -110,6 +112,21 @@ def test_load_shared_head_registers_view(monkeypatch):
     assert isinstance(view, SharedHeadBackend)
     assert "bk-1" in mm._shared_workers
     assert owners["bk-1"].has_head("head/1")
+
+
+def test_load_shared_head_uses_stripped_model_id_for_owner(monkeypatch):
+    monkeypatch.setattr(
+        "inference_model_manager.registry_defaults.lazy_register_by_names",
+        lambda names: None,
+    )
+    mm = _mm()
+    owners = {}
+    _patch_factory(mm, owners)
+
+    mm.load_shared_head("head/1:3", "k", _resolution(), model_id_or_path="head/1")
+
+    assert "head/1:3" in mm._backends
+    assert owners["bk-1"].loaded == [("head/1:3", "head/1")]
 
 
 def test_two_heads_same_base_reuse_one_owner(monkeypatch):
@@ -175,7 +192,7 @@ def test_first_head_load_failure_reaps_owner(monkeypatch):
     mm = _mm()
 
     class _FailingHeadOwner(_FakeOwner):
-        def load_head(self, head_id, api_key):
+        def load_head(self, head_id, api_key, model_id_or_path=None):
             raise RuntimeError("CUDA OOM")
 
     owner = _FailingHeadOwner("bk-1")
