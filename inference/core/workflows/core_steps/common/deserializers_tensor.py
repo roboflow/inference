@@ -45,6 +45,34 @@ DEFAULT_OBJECT_DETECTION_PREDICTION_TYPE = "object-detection"
 DEFAULT_INSTANCE_SEGMENTATION_PREDICTION_TYPE = "instance-segmentation"
 
 
+#: Channel counts treated as a "channels" axis when sniffing tensor layout.
+_CHANNEL_AXIS_SIZES = (1, 3, 4)
+
+
+def _ensure_chw_layout(image: torch.Tensor) -> torch.Tensor:
+    """Normalise a single-image tensor to the `WorkflowImageData` CHW contract.
+
+    `WorkflowImageData.tensor_image` is defined as CHW (RGB), but some producers
+    hand us a channels-last HWC tensor — e.g. the Jetson NVDEC producer wraps the
+    `jetson_utils` cudaImage (HWC `rgb8`) zero-copy. Stored as-is, the model
+    survives (its preprocessing auto-permutes channels-last input), but
+    `numpy_image` blindly does `permute(1, 2, 0)` and produces a `(W, C, H)`
+    canvas, which breaks every CHW-assuming consumer (annotators, shape reads).
+
+    Detect channels-last with the same heuristic the model preprocessing uses
+    (`pre_processing.py`: channels not at the front but present at the back) and
+    permute HWC -> CHW. CHW input (front axis is the channels axis) is returned
+    untouched. Non-3D tensors are left alone.
+    """
+    if image.ndim != 3:
+        return image
+    channels_first = image.shape[0] in _CHANNEL_AXIS_SIZES
+    channels_last = image.shape[2] in _CHANNEL_AXIS_SIZES
+    if channels_last and not channels_first:
+        return image.permute(2, 0, 1).contiguous()
+    return image
+
+
 def deserialize_image_kind(
     parameter: str,
     image: Any,
@@ -59,7 +87,7 @@ def deserialize_image_kind(
         return WorkflowImageData(
             parent_metadata=parent_metadata,
             workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
-            tensor_image=image,
+            tensor_image=_ensure_chw_layout(image),
             video_metadata=video_metadata,
         )
     if isinstance(image, dict) and image.get("type") == "tensor":
@@ -79,7 +107,7 @@ def deserialize_image_kind(
         return WorkflowImageData(
             parent_metadata=parent_metadata,
             workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
-            tensor_image=value,
+            tensor_image=_ensure_chw_layout(value),
             video_metadata=video_metadata,
         )
     return _deserialize_image_kind_numpy(
