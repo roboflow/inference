@@ -48,7 +48,10 @@ class ModbusTCPBlockManifest(WorkflowBlockManifest):
             "block_type": "analytics",
             "deprecated": True,
             "deprecation_message": "This block is deprecated. Use the PLC Reader / PLC Writer "
-            "blocks (set Connection mode to 'Direct - Modbus') instead.",
+            "blocks (set Connection mode to 'Direct - Modbus') instead. Note the outputs differ: "
+            "instead of a single `modbus_results` list, the PLC Reader returns `tag_values` "
+            "(a tag->value dict) and the PLC Writer returns `write_result`, each alongside an "
+            "`error_status` flag.",
             "ui_manifest": {
                 "section": "industrial",
                 "icon": "fal fa-network-wired",
