@@ -207,6 +207,9 @@ from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
 from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.action_recognition.v1 import (
+    ActionRecognitionBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     AnthropicClaudeBlockV1,
 )
@@ -998,6 +1001,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Qwen36OpenRouterBlockV1,
         QwenVlmBlockV1,
         OpenAICompatibleBlockV1,
+        ActionRecognitionBlockV1,
         KimiOpenRouterBlockV1,
         KimiOpenrouterBlockV2,
         OpenRouterBlockV1,
