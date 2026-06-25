@@ -1,8 +1,10 @@
 from dataclasses import dataclass, field
 
 from inference_model_manager.model_manager import ModelManager
-from inference_model_manager.model_manager_process import ModelManagerProcess, ModelState
-
+from inference_model_manager.model_manager_process import (
+    ModelManagerProcess,
+    ModelState,
+)
 
 # ----- ModelManager death hook plumbing -----
 
@@ -13,6 +15,7 @@ def test_manager_death_pops_cache_and_calls_hook():
 
     mm._lifecycle_lock = threading.Lock()
     mm._shared_workers = {"bk-1": object()}
+    mm._shared_base_preloads = {}
     called = []
     mm._shared_death_hook = called.append
 
@@ -28,6 +31,7 @@ def test_manager_death_without_hook_just_pops():
 
     mm._lifecycle_lock = threading.Lock()
     mm._shared_workers = {"bk-1": object()}
+    mm._shared_base_preloads = {}
     mm._shared_death_hook = None
 
     mm._on_shared_worker_death("bk-1")  # no hook → no error
@@ -42,6 +46,7 @@ def _mmp():
     p = ModelManagerProcess.__new__(ModelManagerProcess)
     p._shared_heads = {}
     p._head_base_key = {}
+    p._preloaded_shared_bases = {}
     p._models = {}
     p._inflight = {}
     p._backends = {}
@@ -100,6 +105,18 @@ def test_cleanup_dead_shared_base_marks_all_heads_not_loaded():
     assert p._inflight == {12: "other"}
 
 
+def test_cleanup_dead_shared_base_marks_preloaded_base_not_loaded():
+    p = _mmp()
+    p._preloaded_shared_bases["base"] = "bk-1"
+    p._models["base"] = ModelState(loaded=True, pinned=True)
+
+    p._cleanup_dead_shared_base("bk-1")
+
+    assert p._preloaded_shared_bases == {}
+    assert p._models["base"].loaded is False
+    assert p._models["base"].loading is False
+
+
 def test_cleanup_unknown_base_is_noop():
     p = _mmp()
     p._cleanup_dead_shared_base("ghost")  # no error
@@ -115,6 +132,7 @@ def _vmmp():
     p = ModelManagerProcess.__new__(ModelManagerProcess)
     p._shared_heads = {}
     p._head_base_key = {}
+    p._preloaded_shared_bases = {}
     p._models = {}
     p._backends = {}
     p._pending = {}
@@ -173,6 +191,18 @@ def test_base_key_evictable_only_when_all_heads_cold():
 
     p._model_access["head/2"] = old  # now both cold
     assert p._unit_evictable("bk-1", now, set(), p._vram_idle_cutoff_s) is True
+
+
+def test_preloaded_base_key_not_evictable_even_when_heads_cold():
+    p = _vmmp()
+    old = time.monotonic() - 10_000
+    _load_head(p, "bk-1", "head/1", access=old)
+    _load_head(p, "bk-1", "head/2", access=old)
+    p._preloaded_shared_bases["base"] = "bk-1"
+
+    now = time.monotonic()
+    assert p._unit_evictable("bk-1", now, set(), p._vram_idle_cutoff_s) is False
+    assert p._plan_evictions(1.0) is None
 
 
 def test_plan_evictions_uses_base_key_footprint():
@@ -237,7 +267,7 @@ def test_collect_stats_attributes_owner_pid_to_base_key(monkeypatch):
 def test_shared_head_marginal_mb_subtracts_base():
     p = _vmmp()
     p._vram_meta_cache["head/1"] = 5000  # whole model (base + head)
-    p._vram_meta_cache["owlv2"] = 4200   # base alone
+    p._vram_meta_cache["owlv2"] = 4200  # base alone
     res = type("R", (), {"dep_model_id": "owlv2"})()
 
     assert p._shared_head_marginal_mb(res, "head/1", "k") == 800
@@ -321,4 +351,6 @@ def test_check_and_evict_uses_evict_target_for_base_key(monkeypatch):
     p._evict_target = fake_target
     asyncio.run(p._check_and_evict())
 
-    assert targeted == ["bk-1"]  # base key routed through _evict_target, not _evict_model
+    assert targeted == [
+        "bk-1"
+    ]  # base key routed through _evict_target, not _evict_model

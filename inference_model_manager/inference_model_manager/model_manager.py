@@ -95,6 +95,7 @@ class ModelManager:
         # for one base_key spawn a single base worker, not two.
         self._shared_workers: Dict[str, Any] = {}
         self._shared_loading_keys: set[str] = set()
+        self._shared_base_preloads: Dict[str, tuple[str, Any]] = {}
         self._shared_cv = threading.Condition(self._lifecycle_lock)
         # Optional hook (set by MMP) invoked on shared-base worker death, after the
         # cache entry is dropped, so the wrapper can clean up its hosted heads.
@@ -272,6 +273,63 @@ class ModelManager:
         finally:
             self._loading_ids.discard(head_id)
 
+    def load_shared_base(
+        self,
+        model_id: str,
+        api_key: str,
+        resolution: Any,
+        *,
+        device: Optional[str] = None,
+        batch_max_size: int = 0,
+        batch_max_delay_ms: float = 10.0,
+        decoder: str = "imagecodecs",
+    ) -> None:
+        """Preload and retain a shared-base owner without loading a head."""
+        base_key = resolution.base_key
+        with self._lifecycle_lock:
+            if (
+                model_id in self._backends
+                or model_id in self._loading_ids
+                or model_id in self._shared_base_preloads
+            ):
+                raise ValueError(f"Model '{model_id}' is already loaded")
+            self._loading_ids.add(model_id)
+        try:
+            owner = self._get_or_create_owner(
+                base_key,
+                resolution,
+                api_key,
+                device=device,
+                batch_max_size=batch_max_size,
+                batch_max_delay_ms=batch_max_delay_ms,
+                decoder=decoder,
+            )
+            with self._lifecycle_lock:
+                self._shared_base_preloads[model_id] = (base_key, owner)
+        finally:
+            self._loading_ids.discard(model_id)
+
+    def unload_shared_base(self, model_id: str) -> None:
+        """Release a retained base-only preload."""
+        with self._lifecycle_lock:
+            preload = self._shared_base_preloads.pop(model_id, None)
+        if preload is None:
+            return
+        _base_key, owner = preload
+        try:
+            owner.end_load()
+        except Exception:
+            logger.warning(
+                "Error releasing shared base preload '%s'", model_id, exc_info=True
+            )
+
+    def shared_base_preloads(self) -> Dict[str, str]:
+        with self._lifecycle_lock:
+            return {
+                model_id: base_key
+                for model_id, (base_key, _) in self._shared_base_preloads.items()
+            }
+
     def _get_or_create_owner(
         self,
         base_key: str,
@@ -370,6 +428,11 @@ class ModelManager:
     def _on_shared_worker_death(self, base_key: str) -> None:
         with self._lifecycle_lock:
             self._shared_workers.pop(base_key, None)
+            for model_id, (preload_base_key, _owner) in list(
+                self._shared_base_preloads.items()
+            ):
+                if preload_base_key == base_key:
+                    del self._shared_base_preloads[model_id]
         if self._shared_death_hook is not None:
             try:
                 self._shared_death_hook(base_key)
@@ -835,6 +898,16 @@ class ModelManager:
             except Exception:
                 logger.warning(
                     "Error unloading '%s' during shutdown", model_id, exc_info=True
+                )
+
+        for model_id in list(self.shared_base_preloads()):
+            try:
+                self.unload_shared_base(model_id)
+            except Exception:
+                logger.warning(
+                    "Error unloading shared base '%s' during shutdown",
+                    model_id,
+                    exc_info=True,
                 )
 
         self._executor.shutdown(wait=True, cancel_futures=True)
