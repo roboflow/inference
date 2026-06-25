@@ -1259,6 +1259,7 @@ class ModelManagerProcess:
                             model_id,
                             api_key,
                             resolution,
+                            model_id_or_path=model_id_or_path,
                             device=device or None,
                             batch_max_size=self._batch_max_size,
                             batch_max_delay_ms=self._batch_max_wait_ms,

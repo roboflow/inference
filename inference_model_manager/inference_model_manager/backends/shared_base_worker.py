@@ -116,7 +116,7 @@ def make_head_loader(
             )
         }
         model = AutoModel.from_pretrained(
-            payload["head_id"],
+            payload.get("model_id_or_path") or payload["head_id"],
             api_key=payload.get("api_key") or None,
             device=device,
             preloaded_model_dependencies=preloaded,
