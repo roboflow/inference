@@ -89,13 +89,18 @@ def negotiate_model_packages(
             help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
         )
     if requested_model_package_id is not None:
-        return [
-            select_model_package_by_id(
-                model_packages=model_packages,
-                requested_model_package_id=requested_model_package_id,
-                verbose=verbose,
+        selected_package = select_model_package_by_id(
+            model_packages=model_packages,
+            requested_model_package_id=requested_model_package_id,
+            verbose=verbose,
+        )
+        if not allow_untrusted_packages and not selected_package.trusted_source:
+            raise NoModelPackagesAvailableError(
+                message=f"Model package `{requested_model_package_id}` comes from an untrusted "
+                f"source and cannot be loaded while `allow_untrusted_packages=False`.",
+                help_url="https://inference-models.roboflow.com/errors/package-negotiation/#nomodelpackagesavailableerror",
             )
-        ]
+        return [selected_package]
     model_packages, discarded_packages = remove_packages_not_matching_implementation(
         model_architecture=model_architecture,
         task_type=task_type,

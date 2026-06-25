@@ -62,14 +62,8 @@ GEMINI_MODELS = [
         "supports_native_code_execution": True,
     },
     {
-        "id": "gemini-3.1-flash-lite-preview",
+        "id": "gemini-3.1-flash-lite",
         "name": "Gemini 3.1 Flash-Lite",
-        "supports_thinking_level": True,
-        "supports_native_code_execution": True,
-    },
-    {
-        "id": "gemini-3-pro-preview",
-        "name": "Gemini 3 Pro",
         "supports_thinking_level": True,
         "supports_native_code_execution": True,
     },
@@ -268,9 +262,9 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]),
         Literal[tuple(MODEL_VERSION_IDS)],
     ] = Field(
-        default="gemini-3-pro-preview",
+        default="gemini-3.1-pro-preview",
         description="Model to be used",
-        examples=["gemini-3-pro-preview", "$inputs.gemini_model"],
+        examples=["gemini-3.1-pro-preview", "$inputs.gemini_model"],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },

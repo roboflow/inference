@@ -52,6 +52,7 @@ from .decorator_helpers import (
     get_request_api_key_from_kwargs,
     get_request_resource_details_from_kwargs,
     get_request_resource_id_from_kwargs,
+    get_source_info_from_kwargs,
     get_workflow_api_key_from_kwargs,
     get_workflow_resource_details_from_kwargs,
 )
@@ -656,6 +657,10 @@ class UsageCollector:
         else:
             resource_id = "unknown"
             category = "unknown"
+
+        source_info = get_source_info_from_kwargs(func_kwargs)
+        if source_info:
+            resource_details["source_info"] = source_info
 
         source = None
         runtime_parameters = func_kwargs.get("runtime_parameters")

@@ -18,6 +18,7 @@ from inference.core.env import (
     API_KEY,
     DISABLED_INFERENCE_MODELS_BACKENDS,
     MAX_DETECTIONS,
+    OWLV2_CACHE_SEND_TO_CPU,
     OWLV2_COMPILE_MODEL,
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
@@ -65,11 +66,11 @@ class Owlv2AdapterSingleton:
         if huggingface_id not in cls._instances:
             owlv2_class_embeddings_cache = InMemoryOwlV2ClassEmbeddingsCache.init(
                 size_limit=OWLV2_MODEL_CACHE_SIZE,
-                send_to_cpu=True,
+                send_to_cpu=OWLV2_CACHE_SEND_TO_CPU,
             )
             owlv2_images_embeddings_cache = InMemoryOwlV2ImageEmbeddingsCache.init(
                 size_limit=OWLV2_IMAGE_CACHE_SIZE,
-                send_to_cpu=True,
+                send_to_cpu=OWLV2_CACHE_SEND_TO_CPU,
             )
             weights_provider_extra_headers = get_extra_weights_provider_headers()
             if (
