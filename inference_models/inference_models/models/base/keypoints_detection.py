@@ -27,6 +27,9 @@ class KeyPoints:
     key_points_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of instances
     )
+    covariance: Optional[torch.Tensor] = (
+        None  # if given, pixel-space per-keypoint covariance (instances, instance_key_points, 2, 2)
+    )
 
     def to_supervision(self) -> sv.KeyPoints:
         """Convert keypoints to Supervision KeyPoints format.
@@ -44,6 +47,11 @@ class KeyPoints:
                 - class_id: Class IDs as NumPy array (N,)
 
                 - confidence: Keypoint confidence scores as NumPy array (N, K)
+
+                - data["covariance"]: Pixel-space per-keypoint covariance matrices
+                  as NumPy array (N, K, 2, 2), only present when the model predicts
+                  keypoint localization uncertainty (e.g. RF-DETR). Consumed by
+                  Supervision's covariance ellipse annotators.
 
         Examples:
             Convert and visualize keypoints:
@@ -84,6 +92,8 @@ class KeyPoints:
             kwargs["confidence"] = confidence_array
         else:
             kwargs["keypoint_confidence"] = confidence_array
+        if self.covariance is not None:
+            kwargs["data"] = {"covariance": self.covariance.cpu().numpy()}
         return sv.KeyPoints(**kwargs)
 
 

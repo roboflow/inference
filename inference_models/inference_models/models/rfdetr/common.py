@@ -443,6 +443,65 @@ def cxcywh_to_xyxy(boxes):
     return boxes
 
 
+def keypoint_precision_cholesky_to_pixel_covariance(
+    precision_cholesky: torch.Tensor,  # [N, K, 3] = (log_l11, l21, log_l22)
+    width: float,
+    height: float,
+) -> torch.Tensor:  # [N, K, 2, 2]
+    """Convert per-keypoint precision-Cholesky params into pixel-space covariances.
+
+    RF-DETR's keypoint head predicts a lower-triangular precision-Cholesky factor
+    ``L = [[l11, 0], [l21, l22]]`` in normalized image coordinates, where the
+    precision matrix is ``P = L @ L.T`` and the keypoint covariance is ``Σ = P^-1``.
+    This inverts the precision (closed-form 2x2 inverse) and rescales it to pixel
+    space using the per-axis factors that map normalized coordinates onto the
+    original image (``width`` for x, ``height`` for y).
+
+    Degenerate (det -> 0) or non-finite keypoints are filled with NaN, matching the
+    behaviour of Supervision's covariance ellipse annotators.
+
+    Args:
+        precision_cholesky: ``(N, K, 3)`` tensor of ``(log_l11, l21, log_l22)``.
+        width: Pixels-per-normalized-unit along x.
+        height: Pixels-per-normalized-unit along y.
+
+    Returns:
+        ``(N, K, 2, 2)`` pixel-space covariance tensor.
+    """
+    log_l11 = precision_cholesky[..., 0]
+    l21 = precision_cholesky[..., 1]
+    log_l22 = precision_cholesky[..., 2]
+    finite_input = torch.isfinite(precision_cholesky).all(dim=-1)
+    l11 = torch.exp(log_l11)
+    l22 = torch.exp(log_l22)
+    # det(P) = det(L)^2 = (l11 * l22)^2; closed-form inverse of P = L @ L.T.
+    inv_det = 1.0 / (l11 * l11 * l22 * l22)
+    cov00 = inv_det * (l21 * l21 + l22 * l22)
+    cov01 = inv_det * (-l11 * l21)
+    cov11 = inv_det * (l11 * l11)
+    # diag([width, height]) @ Σ @ diag([width, height]) maps to pixel space.
+    px00 = width * width * cov00
+    px01 = width * height * cov01
+    px11 = height * height * cov11
+    covariances = torch.empty(
+        (*precision_cholesky.shape[:2], 2, 2),
+        dtype=precision_cholesky.dtype,
+        device=precision_cholesky.device,
+    )
+    covariances[..., 0, 0] = px00
+    covariances[..., 0, 1] = px01
+    covariances[..., 1, 0] = px01
+    covariances[..., 1, 1] = px11
+    finite_all = (
+        finite_input
+        & torch.isfinite(px00)
+        & torch.isfinite(px01)
+        & torch.isfinite(px11)
+    )
+    covariances[~finite_all] = float("nan")
+    return covariances
+
+
 def post_process_keypoint_detection_results(
     bboxes: torch.Tensor,     # [B, N_q, 4] cxcywh, normalized [0, 1]
     out_logits: torch.Tensor,     # [B, N_q, C]
@@ -515,7 +574,13 @@ def post_process_keypoint_detection_results(
     # normalize
     scores = scores / (1 + scores)
 
-    keypoints_final = torch.cat([keypoints_xy, keypoints_conf], dim=-1)  # [B, num_select, K_per_class, 3]
+    # Carry the per-keypoint precision-Cholesky params (log_l11, l21, log_l22) alongside
+    # xy/conf so they survive the per-image filtering/sorting below and can be converted
+    # into pixel-space covariances for KeyPoints (consumed by Supervision ellipse annotators).
+    keypoints_cholesky = keypoints_sel[..., 4:7]  # [B, num_select, K_per_class, 3]
+    keypoints_final = torch.cat(
+        [keypoints_xy, keypoints_conf, keypoints_cholesky], dim=-1
+    )  # [B, num_select, K_per_class, 6]
 
     # iterate over batch and collect detections above thresholds
     all_key_points, detections = [], []
@@ -558,8 +623,9 @@ def post_process_keypoint_detection_results(
         top_classes = top_classes[sorted_indices]
         selected_boxes_xyxy_pct = selected_boxes[sorted_indices]
         selected_keypoints_xy_pct_conf = selected_keypoints[sorted_indices]
-        selected_keypoints_xy_pct = selected_keypoints_xy_pct_conf[:, :, :2] 
+        selected_keypoints_xy_pct = selected_keypoints_xy_pct_conf[:, :, :2]
         selected_keypoints_conf = selected_keypoints_xy_pct_conf[:, :, 2]
+        selected_keypoints_cholesky = selected_keypoints_xy_pct_conf[:, :, 3:6]
 
         denorm_size = (
             image_meta.nonsquare_intermediate_size or image_meta.inference_size
@@ -637,11 +703,24 @@ def post_process_keypoint_detection_results(
         mask = invalid_slot_keypoints | keypoints_below_threshold
         selected_keypoints_xy[mask] = 0.0
         selected_keypoints_conf[mask] = 0.0
+
+        # Convert the predicted precision-Cholesky params into pixel-space covariances.
+        # Normalized keypoints map onto the original image with per-axis pixel factors
+        # denorm_size / scale (the same linear transform applied to selected_keypoints_xy
+        # above; translations do not affect covariance). Masked-out keypoints get NaN.
+        covariance = keypoint_precision_cholesky_to_pixel_covariance(
+            precision_cholesky=selected_keypoints_cholesky,
+            width=float(denorm_size.width) / float(image_meta.scale_width),
+            height=float(denorm_size.height) / float(image_meta.scale_height),
+        )
+        covariance[mask] = float("nan")
+
         all_key_points.append(
             KeyPoints(
-                xy=selected_keypoints_xy.round().int(), 
+                xy=selected_keypoints_xy.round().int(),
                 class_id=top_classes.int(),
                 confidence=selected_keypoints_conf,
+                covariance=covariance,
             )
         )
 
