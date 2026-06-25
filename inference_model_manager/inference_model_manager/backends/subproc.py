@@ -246,6 +246,8 @@ def _worker_main(
     Loads model, attaches SHMPool, signals READY, then greedy-batches
     T_SLOT_READY messages and sends T_RESULT per completed slot.
     """
+    _t_entry = time.monotonic()
+    _entry_wall = time.time()  # wall clock — comparable across the process boundary
     if os.environ.get(cfg.ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV) is None:
         os.environ[cfg.ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV] = (
             cfg.ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_DEFAULT
@@ -253,6 +255,7 @@ def _worker_main(
 
     from inference_models.models.auto_loaders.core import AutoModel  # noqa: PLC0415
 
+    _t_import = time.monotonic()
     _log = logging.getLogger(f"{__name__}.worker")
     pool = sock = zmq_ctx = model = None
 
@@ -261,6 +264,7 @@ def _worker_main(
             gpu_device if (use_gpu and gpu_device) else ("cuda:0" if use_gpu else "cpu")
         )
         _log.info("Worker(%s): loading on %s", model_id, device)
+        _t_model0 = time.monotonic()
         if get_boolean_from_env(cfg.DEBUG_PASSTHROUGH_MODEL_ENV, default=False):
             from inference_model_manager.backends.passthrough_model import (
                 PassthroughModel,
@@ -274,8 +278,11 @@ def _worker_main(
             )
             _log.info("Worker(%s): model ready (%s)", model_id, type(model).__name__)
 
+        _t_model1 = time.monotonic()
         batch_decode_fn = make_batch_decoder(device, decoder=decoder)
+        _t_dec = time.monotonic()
         pool = SHMPool.attach(shm_pool_name, n_slots=n_slots, input_mb=input_mb)
+        _t_shm = time.monotonic()
 
         from inference_model_manager.backends.base import detect_max_batch_size
 
@@ -291,6 +298,7 @@ def _worker_main(
             batch_max_size,
         )
 
+        _t_setup = time.monotonic()
         setup_pipe.send(
             {
                 "status": "READY",
@@ -298,6 +306,17 @@ def _worker_main(
                 "max_batch_size": model_max_bs,
                 "model_class_name": type(model).__name__,
                 "model_mro_names": [cls.__name__ for cls in type(model).__mro__],
+                "timings_s": {
+                    "worker_imports": _t_import - _t_entry,
+                    "device_resolve": _t_model0 - _t_import,
+                    "model_load": _t_model1 - _t_model0,
+                    "decoder_setup": _t_dec - _t_model1,
+                    "worker_shm_attach": _t_shm - _t_dec,
+                    "batch_size_detect": _t_setup - _t_shm,
+                    "worker_total": _t_setup - _t_entry,
+                    "entry_wall": _entry_wall,
+                    "ready_send_wall": time.time(),
+                },
             }
         )
 
@@ -886,6 +905,7 @@ class SubprocessBackend(Backend):
         worker_start_timeout: float = cfg.INFERENCE_WORKER_START_TIMEOUT_S,
         **kwargs,
     ) -> None:
+        _t_init_start = time.monotonic()
         self._model_id = model_id
         self._state_value: str = "loading"
 
@@ -898,6 +918,7 @@ class SubprocessBackend(Backend):
             )
 
         # ── Device resolution ────────────────────────────────────────
+        _t_dev0 = time.monotonic()
         if device is not None and device.startswith("cuda"):
             use_gpu = True
         if use_gpu is None:
@@ -914,7 +935,9 @@ class SubprocessBackend(Backend):
         )
 
         # ── SHMPool (always attach — never create) ─────────────────
+        _t_pshm0 = time.monotonic()
         self._pool = SHMPool.attach(shm_pool_name, n_slots=n_slots, input_mb=input_mb)
+        _t_pshm1 = time.monotonic()
 
         logger.info(
             "SubprocessBackend(%s): device=%s pool=%s slots=%d "
@@ -929,6 +952,7 @@ class SubprocessBackend(Backend):
         )
 
         # ── ZMQ PAIR ─────────────────────────────────────────────────
+        _t_sock0 = time.monotonic()
         self._zmq_ctx = zmq.Context()
         self._zmq_sock = self._zmq_ctx.socket(zmq.PAIR)
         self._zmq_sock.setsockopt(zmq.LINGER, 0)
@@ -949,6 +973,7 @@ class SubprocessBackend(Backend):
             self._zmq_addr = self._zmq_sock.getsockopt_string(zmq.LAST_ENDPOINT)
 
         # ── Spawn worker ─────────────────────────────────────────────
+        _t_sock_done = time.monotonic()
         import multiprocessing as mp  # noqa: PLC0415
 
         ctx = mp.get_context("spawn")
@@ -973,7 +998,10 @@ class SubprocessBackend(Backend):
             ),
             daemon=True,
         )
+        _t_spawn0 = time.monotonic()
         self._worker.start()
+        _t_spawn1 = time.monotonic()  # process_start_call = _t_spawn1 - _t_spawn0
+        _spawn_return_wall = time.time()  # after start() — avoids double-counting it
 
         if not parent_pipe.poll(timeout=worker_start_timeout):
             self._worker.kill()
@@ -993,7 +1021,9 @@ class SubprocessBackend(Backend):
         self._max_batch_size_model = msg.get("max_batch_size")
         self._model_class_name = msg.get("model_class_name")
         self._model_mro_names = msg.get("model_mro_names", [])
-        self._last_worker_activity = time.monotonic()
+        _t_ready = time.monotonic()
+        _ready_recv_wall = time.time()  # comparable to child's ready_send_wall
+        self._last_worker_activity = _t_ready
 
         logger.info(
             "SubprocessBackend(%s): worker ready (pid=%d, device=%s)",
@@ -1025,6 +1055,59 @@ class SubprocessBackend(Backend):
         self._recv_thread.start()
 
         self._state_value = "loaded"
+
+        # ── Cold-path timing breakdown ────────────────────────────────
+        _t_loaded = time.monotonic()
+        wt = msg.get("timings_s", {})
+        # Cross-process spans (suffix _approx) use wall clock: per-process
+        # monotonic origins are not comparable. Wall-clock steps (NTP) can
+        # distort these — rough host-local signal only, not precise evidence.
+        # Start from _spawn_return_wall (after start()) so process_start_call,
+        # which is measured separately, is not double-counted here.
+        spawn_to_worker_entry = max(
+            0.0, wt.get("entry_wall", _spawn_return_wall) - _spawn_return_wall
+        )
+        ready_pipe_latency = max(
+            0.0, _ready_recv_wall - wt.get("ready_send_wall", _ready_recv_wall)
+        )
+        self._init_timings_s = {
+            "parent_device_resolution": _t_pshm0 - _t_dev0,
+            "parent_shm_attach": _t_pshm1 - _t_pshm0,
+            "socket_setup": _t_sock_done - _t_sock0,
+            "process_start_call": _t_spawn1 - _t_spawn0,
+            "spawn_to_worker_entry_approx": spawn_to_worker_entry,
+            "worker_imports": wt.get("worker_imports", 0.0),
+            "worker_device_resolve": wt.get("device_resolve", 0.0),
+            "model_load": wt.get("model_load", 0.0),
+            "worker_decoder_setup": wt.get("decoder_setup", 0.0),
+            "worker_shm_attach": wt.get("worker_shm_attach", 0.0),
+            "worker_batch_size_detect": wt.get("batch_size_detect", 0.0),
+            "ready_pipe_latency_approx": ready_pipe_latency,
+            "ready_to_recv_thread_started": _t_loaded - _t_ready,
+            "spawn_to_ready": _t_ready - _t_spawn0,
+            "init_total": _t_loaded - _t_init_start,
+        }
+        logger.info(
+            "SubprocessBackend(%s) cold-path timings (s): total=%.2f | "
+            "parent[dev=%.3f shm=%.3f sock=%.3f start=%.3f] | "
+            "spawn_to_entry~%.2f worker_imports=%.2f model_load=%.2f "
+            "decoder=%.3f worker_shm=%.3f batch_detect=%.3f | "
+            "ready_pipe~%.3f recv_start=%.3f  (~ = wall-clock approx)",
+            model_id,
+            self._init_timings_s["init_total"],
+            self._init_timings_s["parent_device_resolution"],
+            self._init_timings_s["parent_shm_attach"],
+            self._init_timings_s["socket_setup"],
+            self._init_timings_s["process_start_call"],
+            self._init_timings_s["spawn_to_worker_entry_approx"],
+            self._init_timings_s["worker_imports"],
+            self._init_timings_s["model_load"],
+            self._init_timings_s["worker_decoder_setup"],
+            self._init_timings_s["worker_shm_attach"],
+            self._init_timings_s["worker_batch_size_detect"],
+            self._init_timings_s["ready_pipe_latency_approx"],
+            self._init_timings_s["ready_to_recv_thread_started"],
+        )
 
     # ------------------------------------------------------------------
     # Orchestrated-mode API (called by MMP)
