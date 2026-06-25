@@ -39,6 +39,28 @@ WORKFLOW_PLC_READER_TO_WRITER = {
 }
 
 
+# A writer with no upstream step and no `depends_on`: tag and value come straight from
+# workflow inputs. This is the input-driven case that a required `depends_on` would block.
+WORKFLOW_PLC_WRITER_INPUT_DRIVEN = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "tag_to_write"},
+        {"type": "WorkflowParameter", "name": "value_to_write"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/plc_writer@v1",
+            "name": "plc_writer",
+            "tag": "$inputs.tag_to_write",
+            "value": "$inputs.value_to_write",
+        }
+    ],
+    "outputs": [
+        {"type": "JsonField", "name": "writer", "selector": "$steps.plc_writer.*"},
+    ],
+}
+
+
 def _http_response(json_body):
     resp = MagicMock(spec=requests.Response)
     resp.status_code = 200
@@ -98,4 +120,38 @@ def test_workflow_with_plc_reader_feeding_writer() -> None:
     ][0]
     assert write_call.kwargs["json"] == {
         "writes": [{"name": "camera_fault", "value": False}]
+    }
+
+
+@pytest.mark.timeout(30)
+def test_workflow_with_input_driven_writer_and_no_depends_on() -> None:
+    # A writer whose tag/value come only from inputs (no upstream step, no depends_on) must
+    # compile and run - depends_on is optional.
+    session = MagicMock()
+    session.post.side_effect = _relay_post
+    with patch(f"{V1}.requests") as v1_requests, patch(
+        f"{CLIENT}.requests"
+    ) as client_requests:
+        v1_requests.Session.return_value = session
+        client_requests.exceptions = requests.exceptions
+
+        execution_engine = ExecutionEngine.init(
+            workflow_definition=WORKFLOW_PLC_WRITER_INPUT_DRIVEN,
+            init_parameters={},
+            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        )
+        result = execution_engine.run(
+            runtime_parameters={"tag_to_write": "camera_fault", "value_to_write": 7}
+        )
+
+    assert len(result) == 1
+    assert result[0]["writer"] == {
+        "write_result": "WriteSuccess",
+        "error_status": False,
+    }
+    write_call = [
+        c for c in session.post.call_args_list if c.args[0].endswith("/write_batch")
+    ][0]
+    assert write_call.kwargs["json"] == {
+        "writes": [{"name": "camera_fault", "value": 7}]
     }

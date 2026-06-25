@@ -455,8 +455,12 @@ class PLCWriterBlockManifest(WorkflowBlockManifest):
         json_schema_extra={"always_visible": True},
     )
 
-    depends_on: Selector() = Field(
-        description="Reference to the step output this block depends on.",
+    depends_on: Optional[Selector()] = Field(
+        default=None,
+        description="Optional reference to a step this write should run after, for when the "
+        "write order matters but the tag/value are not themselves derived from that step. "
+        "Dependencies are otherwise inferred from selector-valued `tag` / `value`, so this is "
+        "not needed for input- or step-driven writes.",
         examples=["$steps.some_previous_step"],
     )
 
@@ -532,7 +536,7 @@ class PLCWriterBlockV1(_PLCConnectionMixin, WorkflowBlock):
         self,
         tag: str,
         value: Union[bool, int, float, str],
-        depends_on: any,
+        depends_on: Optional[Any] = None,
         ip_address: str = "127.0.0.1",
         connection_mode: str = "relay",
         relay_port: int = DEFAULT_RELAY_PORT,

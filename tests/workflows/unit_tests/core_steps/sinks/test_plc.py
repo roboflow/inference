@@ -672,6 +672,16 @@ def test_manifest_allows_selector_value_for_all_modes():
 
 
 @pytest.mark.timeout(10)
+def test_manifest_allows_writer_without_depends_on():
+    # depends_on is optional: an input-/literal-driven write needs no step dependency, and a
+    # writer-only workflow may have no other step to reference at all.
+    kwargs = _writer_manifest_kwargs(tag="$inputs.tag", value="$inputs.value")
+    kwargs.pop("depends_on")
+    m = PLCWriterBlockManifest.model_validate(kwargs)
+    assert m.depends_on is None
+
+
+@pytest.mark.timeout(10)
 def test_manifest_rejects_non_positive_request_timeout():
     # A literal 0 / negative relay timeout would make requests raise before sending, so both
     # blocks reject it at validation time; a selector is still allowed (guarded at runtime).
