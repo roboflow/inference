@@ -71,7 +71,9 @@ def read_tags(
 
     try:
         response = session.post(
-            f"{base_url}/read_batch", json={"tags": tags}, timeout=_request_timeout(timeout)
+            f"{base_url}/read_batch",
+            json={"tags": tags},
+            timeout=_request_timeout(timeout),
         )
     except requests.exceptions.RequestException as e:
         logger.error("Failed to reach PLC Relay while reading tags %s: %s", tags, e)

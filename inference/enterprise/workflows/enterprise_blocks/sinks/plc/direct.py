@@ -201,13 +201,17 @@ def _coerce_register_value(value: Any) -> int:
     non-integral floats (e.g. ``2.9``) are rejected rather than silently truncated.
     """
     if isinstance(value, bool):
-        raise ValueError(f"register value must be an integer in 0..65535, got {value!r}")
+        raise ValueError(
+            f"register value must be an integer in 0..65535, got {value!r}"
+        )
     if isinstance(value, int):
         int_value = value
     elif isinstance(value, float) and value.is_integer():
         int_value = int(value)
     else:
-        raise ValueError(f"register value must be an integer in 0..65535, got {value!r}")
+        raise ValueError(
+            f"register value must be an integer in 0..65535, got {value!r}"
+        )
     if not 0 <= int_value <= 0xFFFF:
         raise ValueError(
             f"register value {int_value} out of range for a 16-bit register (0..65535)"
