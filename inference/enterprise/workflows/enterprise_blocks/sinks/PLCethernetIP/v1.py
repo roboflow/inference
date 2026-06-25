@@ -57,6 +57,9 @@ class PLCBlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Roboflow Enterprise License",
             "block_type": "sinks",
+            "deprecated": True,
+            "deprecation_message": "This block is deprecated. Use the PLC Reader / PLC Writer "
+            "blocks (set Connection mode to 'Direct - EtherNet/IP') instead.",
             "ui_manifest": {
                 "section": "industrial",
                 "icon": "fal fa-microchip",

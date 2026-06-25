@@ -46,6 +46,9 @@ class ModbusTCPBlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "analytics",
+            "deprecated": True,
+            "deprecation_message": "This block is deprecated. Use the PLC Reader / PLC Writer "
+            "blocks (set Connection mode to 'Direct - Modbus') instead.",
             "ui_manifest": {
                 "section": "industrial",
                 "icon": "fal fa-network-wired",

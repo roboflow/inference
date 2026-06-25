@@ -22,10 +22,35 @@ import requests
 from inference.core.logger import logger
 
 DEFAULT_RELAY_URL = "http://localhost:8007"
+DEFAULT_RELAY_PORT = 8007
+
+# Connecting to the on-device relay is near-instant, so cap the connect phase tightly to
+# fail fast when the relay process is down. The caller-supplied ``timeout`` is the *read*
+# budget: it must cover the relay's synchronous PLC batch transaction, which can run for
+# seconds against a slow or disconnected PLC. Splitting them means a down relay still
+# fails fast even when the read budget is large.
+RELAY_CONNECT_TIMEOUT = 3
 
 READ_FAILURE = "ReadFailure"
 WRITE_FAILURE = "WriteFailure"
 WRITE_SUCCESS = "WriteSuccess"
+
+
+def _request_timeout(read_timeout: int) -> Tuple[int, int]:
+    """Build the (connect, read) timeout tuple passed to ``requests``."""
+    return (RELAY_CONNECT_TIMEOUT, read_timeout)
+
+
+def relay_base_url(ip_address: str, relay_port: int) -> str:
+    """Build the relay base URL from a host/IP and port.
+
+    Accepts a bare host/IP (``192.168.1.10`` -> ``http://192.168.1.10:<port>``) or a
+    full URL (``http://host:8007``), which is used as-is.
+    """
+    addr = str(ip_address).strip()
+    if addr.startswith("http://") or addr.startswith("https://"):
+        return addr.rstrip("/")
+    return f"http://{addr}:{relay_port}"
 
 
 def read_tags(
@@ -46,7 +71,7 @@ def read_tags(
 
     try:
         response = session.post(
-            f"{base_url}/read_batch", json={"tags": tags}, timeout=timeout
+            f"{base_url}/read_batch", json={"tags": tags}, timeout=_request_timeout(timeout)
         )
     except requests.exceptions.RequestException as e:
         logger.error("Failed to reach PLC Relay while reading tags %s: %s", tags, e)
@@ -109,7 +134,9 @@ def write_tags(
 
     try:
         response = session.post(
-            f"{base_url}/write_batch", json={"writes": writes}, timeout=timeout
+            f"{base_url}/write_batch",
+            json={"writes": writes},
+            timeout=_request_timeout(timeout),
         )
     except requests.exceptions.RequestException as e:
         logger.error("Failed to reach PLC Relay while writing tags %s: %s", names, e)
