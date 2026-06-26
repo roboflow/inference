@@ -4,8 +4,8 @@ from typing import List, Optional, Tuple, Union
 import cv2 as cv
 import numpy as np
 import supervision as sv
-from supervision.config import ORIENTED_BOX_COORDINATES
 from pydantic import AliasChoices, ConfigDict, Field
+from supervision.config import ORIENTED_BOX_COORDINATES
 from typing_extensions import Literal, Type
 
 from inference.core.workflows.execution_engine.constants import (
