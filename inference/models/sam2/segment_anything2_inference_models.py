@@ -53,6 +53,7 @@ from inference.core.env import (
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_bgr
 from inference.usage_tracking.collector import usage_collector
+from inference_models.errors import ModelInputError
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -275,7 +276,6 @@ class InferenceModelsSAM2Adapter(Model):
             load_logits_from_cache and not DISABLE_SAM2_LOGITS_CACHE
         )
         save_logits_to_cache = save_logits_to_cache and not DISABLE_SAM2_LOGITS_CACHE
-        loaded_image = self.preproc_image(image)
         if prompts is not None:
             if type(prompts) is dict:
                 prompts = Sam2PromptSet(**prompts)
@@ -293,9 +293,8 @@ class InferenceModelsSAM2Adapter(Model):
             args["box"] = np.array(args["box"])
         if mask_input is not None and isinstance(mask_input, list):
             mask_input = np.array(mask_input)
-        prediction = self._model.segment_images(
-            images=loaded_image,
-            image_hashes=image_id,
+
+        segment_kwargs = dict(
             point_coordinates=args["point_coords"],
             point_labels=args["point_labels"],
             boxes=args["box"],
@@ -306,7 +305,23 @@ class InferenceModelsSAM2Adapter(Model):
             save_to_mask_input_cache=save_logits_to_cache,
             use_embeddings_cache=True,
             return_logits=True,
-        )[0]
+        )
+
+        prediction = None
+        if image_id is not None:
+            try:
+                prediction = self._model.segment_images(
+                    images=None, image_hashes=image_id, **segment_kwargs
+                )[0]
+            except ModelInputError as error:
+                if "no embeddings were found in the cache" not in str(error):
+                    raise
+                prediction = None
+        if prediction is None:
+            loaded_image = self.preproc_image(image)
+            prediction = self._model.segment_images(
+                images=loaded_image, image_hashes=image_id, **segment_kwargs
+            )[0]
         return choose_most_confident_sam_prediction(
             masks=prediction.masks.cpu().numpy(),
             scores=prediction.scores.cpu().numpy(),
