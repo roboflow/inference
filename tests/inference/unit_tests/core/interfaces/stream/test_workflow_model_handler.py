@@ -32,13 +32,14 @@ def test_workflow_runner_preserves_zero_source_id_as_video_identifier():
         ),
     ]
 
-    WorkflowRunner().run_workflow(
-        video_frames=frames,
+    runner = WorkflowRunner(
         workflows_parameters={},
         execution_engine=engine,
         image_input_name="image",
         video_metadata_input_name="video_metadata",
     )
+
+    runner(frames)
 
     assert [
         metadata.video_identifier
