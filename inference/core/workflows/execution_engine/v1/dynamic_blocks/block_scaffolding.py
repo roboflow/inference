@@ -56,12 +56,6 @@ _LOCAL_SHARED_GLOBALS = {}
 
 _MODAL_EXECUTOR_CACHE: Dict[str, Any] = {}
 
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
-    capture_output,
-    create_dynamic_block_code_error,
-    extract_code_snippet,
-)
-
 
 def _current_workflow_execution_id() -> Optional[str]:
     """Return the current workflow execution id, sourced from the existing
