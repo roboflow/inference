@@ -695,6 +695,39 @@ def test_serverless_auth_middleware_caches_payment_required_response(
     model_manager.infer_from_request_sync.assert_not_called()
 
 
+def test_serverless_auth_middleware_fails_closed_on_unexpected_upstream_status(
+    monkeypatch,
+) -> None:
+    interface, model_manager, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(status_code=503),
+    )
+
+    with TestClient(interface.app) as client:
+        first_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        second_response = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert first_response.status_code == 503
+    assert second_response.status_code == 503
+    assert (
+        first_response.json()["message"]
+        == "Authorization service temporarily unavailable. Please retry."
+    )
+    assert WORKSPACE_ID_HEADER not in first_response.headers
+    # Unexpected upstream statuses must not be cached, so every request re-queries.
+    assert usage_check_mock.await_count == 2
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
 def test_serverless_auth_middleware_adds_observability_headers_and_logs_on_denial(
     monkeypatch,
 ) -> None:
