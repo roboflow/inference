@@ -5,7 +5,9 @@ we inject a fake model on the instance so tests don't touch
 ``inference_models`` or the real SAM2 weights.
 """
 
+import sys
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -13,6 +15,9 @@ import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.models.foundation.segment_anything2_video import (
+    v1 as sam2_video_module,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
     BlockManifest,
     SegmentAnything2VideoBlockV1,
@@ -192,6 +197,39 @@ def test_block_rejects_remote_execution_mode_at_runtime():
             prompt_interval=30,
             threshold=0.0,
         )
+
+
+# ---------------------------------------------------------------------------
+# Model loading
+# ---------------------------------------------------------------------------
+
+
+def test_model_loader_forwards_extra_weight_provider_headers(monkeypatch):
+    from_pretrained = MagicMock(return_value=object())
+    headers = {"x-temporary-auth-token": "token"}
+    monkeypatch.setitem(
+        sys.modules,
+        "inference_models",
+        SimpleNamespace(AutoModel=SimpleNamespace(from_pretrained=from_pretrained)),
+    )
+    monkeypatch.setattr(
+        sam2_video_module,
+        "get_extra_weights_provider_headers",
+        MagicMock(return_value=headers),
+    )
+    block = SegmentAnything2VideoBlockV1(
+        model_manager=MagicMock(),
+        api_key="rf-test",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    block._get_model(model_id="sam2video/small")
+
+    from_pretrained.assert_called_once_with(
+        model_id_or_path="sam2video/small",
+        api_key="rf-test",
+        weights_provider_extra_headers=headers,
+    )
 
 
 # ---------------------------------------------------------------------------

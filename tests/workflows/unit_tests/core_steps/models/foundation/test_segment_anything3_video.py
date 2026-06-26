@@ -9,8 +9,10 @@ with detection scores and the prompt→object-ids mapping (which may grow
 mid-stream as new matching objects enter the scene).
 """
 
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Dict, List
 from unittest.mock import MagicMock
 
@@ -18,6 +20,9 @@ import numpy as np
 import pytest
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_video import (
+    v1 as sam3_video_module,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
     BlockManifest,
     SegmentAnything3VideoBlockV1,
@@ -195,6 +200,39 @@ def test_block_rejects_remote_execution_mode_at_runtime():
             model_id="sam3video",
             threshold=0.5,
         )
+
+
+# ---------------------------------------------------------------------------
+# Model loading
+# ---------------------------------------------------------------------------
+
+
+def test_model_loader_forwards_extra_weight_provider_headers(monkeypatch):
+    from_pretrained = MagicMock(return_value=object())
+    headers = {"x-temporary-auth-token": "token"}
+    monkeypatch.setitem(
+        sys.modules,
+        "inference_models",
+        SimpleNamespace(AutoModel=SimpleNamespace(from_pretrained=from_pretrained)),
+    )
+    monkeypatch.setattr(
+        sam3_video_module,
+        "get_extra_weights_provider_headers",
+        MagicMock(return_value=headers),
+    )
+    block = SegmentAnything3VideoBlockV1(
+        model_manager=MagicMock(),
+        api_key="rf-test",
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    block._get_model(model_id="sam3video")
+
+    from_pretrained.assert_called_once_with(
+        model_id_or_path="sam3video",
+        api_key="rf-test",
+        weights_provider_extra_headers=headers,
+    )
 
 
 # ---------------------------------------------------------------------------

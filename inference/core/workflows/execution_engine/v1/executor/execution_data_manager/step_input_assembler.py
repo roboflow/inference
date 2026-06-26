@@ -24,6 +24,11 @@ from inference.core.workflows.execution_engine.v1.executor.execution_data_manage
 from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.execution_cache import (
     ExecutionCache,
 )
+from inference.core.workflows.execution_engine.v1.executor.utils import (
+    contains_future,
+    maybe_resolve_futures,
+    resolve_futures,
+)
 
 T = TypeVar("T")
 
@@ -38,6 +43,24 @@ class BatchModeSIMDStepInput:
 class NonBatchModeSIMDStepInput:
     index: DynamicBatchIndex
     parameters: Dict[str, Any]
+
+
+def _resolve_step_output_futures(value: Any) -> Any:
+    return resolve_futures(
+        value=value,
+        context="workflow_execution | step_input_assembling",
+    )
+
+
+def _step_output_contains_future(value: Any) -> bool:
+    return contains_future(value=value)
+
+
+def _maybe_resolve_step_output_futures(value: Any) -> Any:
+    return maybe_resolve_futures(
+        value=value,
+        context="workflow_execution | step_input_assembling",
+    )
 
 
 def construct_non_simd_step_input(
@@ -210,6 +233,7 @@ def construct_non_simd_step_non_compound_input(
         step_output = execution_cache.get_non_batch_output(
             selector=parameter_spec.selector
         )
+        step_output = _maybe_resolve_step_output_futures(step_output)
         return step_output, step_output is None
     parameter_spec: StaticStepInputDefinition = parameter_spec  # type: ignore
     return parameter_spec.value, False
@@ -635,6 +659,7 @@ def get_non_compound_parameter_value(
             value = execution_cache.get_non_batch_output(
                 selector=input_parameter.selector
             )
+            value = _maybe_resolve_step_output_futures(value)
             if not requested_as_batch:
                 return value, None, value is None
             else:
@@ -713,6 +738,7 @@ def get_non_compound_parameter_value(
             batch_elements_indices=lineage_indices,
             mask=mask_for_dimension,
         )
+        batch_input = _maybe_resolve_step_output_futures(batch_input)
     if step_execution_dimensionality == parameter_dimensionality:
         return Batch(batch_input, lineage_indices), lineage_indices, False
     if step_execution_dimensionality > parameter_dimensionality:
