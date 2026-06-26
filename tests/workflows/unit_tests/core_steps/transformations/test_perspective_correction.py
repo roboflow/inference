@@ -2,6 +2,7 @@ import cv2 as cv
 import numpy as np
 import pytest
 import supervision as sv
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
@@ -385,6 +386,41 @@ def test_correct_detections_with_keypoints():
         dtype="object",
     )
     assert corrected_detections == expected_detections
+
+
+def test_correct_detections_with_oriented_box_corners():
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[10, 10, 20, 20]], dtype=np.float32),
+        data={
+            ORIENTED_BOX_COORDINATES: np.array(
+                [[[10, 10], [20, 10], [20, 20], [10, 20]]], dtype=np.float32
+            )
+        },
+    )
+    src_polygon = np.array([[5, 5], [25, 5], [25, 25], [5, 25]]).astype(
+        dtype=np.float32
+    )
+    dst_polygon = np.array([[0, 0], [100, 0], [100, 100], [0, 100]]).astype(
+        dtype=np.float32
+    )
+    transformer = cv.getPerspectiveTransform(src=src_polygon, dst=dst_polygon)
+
+    # when
+    corrected_detections = correct_detections(
+        detections=detections,
+        perspective_transformer=transformer,
+        transformed_rect_width=100,
+        transformed_rect_height=100,
+    )
+
+    # then: the oriented corners are warped to the new space, not left stale
+    expected_corners = np.array(
+        [[[25, 25], [75, 25], [75, 75], [25, 75]]], dtype=np.float32
+    )
+    assert np.array_equal(
+        corrected_detections.data[ORIENTED_BOX_COORDINATES], expected_corners
+    )
 
 
 def test_warp_image():
