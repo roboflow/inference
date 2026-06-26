@@ -1222,3 +1222,44 @@ def test_empty_local_whitelist_alone_does_not_enable_middleware(monkeypatch) -> 
 
     assert response.status_code == 200
     workspace_lookup_mock.assert_not_awaited()
+
+
+def test_resolve_workflow_workspace_id_prefers_explicit_workspace() -> None:
+    from inference.core.interfaces.http.http_api import resolve_workflow_workspace_id
+
+    assert (
+        resolve_workflow_workspace_id(workspace_id="my-workspace")
+        == "my-workspace"
+    )
+
+
+def test_resolve_workflow_workspace_id_falls_back_to_local() -> None:
+    from inference.core.interfaces.http.http_api import resolve_workflow_workspace_id
+
+    assert resolve_workflow_workspace_id(workspace_id=None) == "local"
+
+
+def test_resolve_workflow_execution_session_id_generates_fresh_session() -> None:
+    from inference.core.interfaces.http.http_api import (
+        resolve_workflow_execution_session_id,
+    )
+
+    first_session = resolve_workflow_execution_session_id(execution_session_id=None)
+    second_session = resolve_workflow_execution_session_id(execution_session_id=None)
+
+    assert first_session.startswith("http-")
+    assert second_session.startswith("http-")
+    assert first_session != second_session
+
+
+def test_resolve_workflow_execution_session_id_prefers_explicit_session() -> None:
+    from inference.core.interfaces.http.http_api import (
+        resolve_workflow_execution_session_id,
+    )
+
+    assert (
+        resolve_workflow_execution_session_id(
+            execution_session_id="client-session",
+        )
+        == "client-session"
+    )
