@@ -141,6 +141,11 @@ class Model(BaseInference):
         """
         t1 = perf_counter()
         kwargs = request.dict()
+        stream_pipeline_context_id = getattr(
+            request, "stream_pipeline_context_id", None
+        )
+        if stream_pipeline_context_id is not None:
+            kwargs["stream_pipeline_context_id"] = stream_pipeline_context_id
         confidence = kwargs.get("confidence")
         if isinstance(confidence, str) and not USE_INFERENCE_MODELS:
             logger.warning(

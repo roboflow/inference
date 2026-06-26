@@ -94,6 +94,12 @@ def filter_out_invalid_polygons(predictions: List[dict]) -> List[dict]:
     ]
 
 
+def _get_or_create_detection_id(prediction: dict) -> object:
+    if DETECTION_ID_KEY in prediction:
+        return prediction[DETECTION_ID_KEY]
+    return str(uuid.uuid4())
+
+
 def attach_prediction_type_info_to_sv_detections_batch(
     predictions: List[sv.Detections],
     prediction_type: str,
@@ -117,9 +123,7 @@ def convert_inference_detections_batch_to_sv_detections(
         if len(detections) != len(raw_predictions):
             raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
         parent_ids = [d.get(PARENT_ID_KEY, "") for d in raw_predictions]
-        detection_ids = [
-            d.get(DETECTION_ID_KEY, str(uuid.uuid4())) for d in raw_predictions
-        ]
+        detection_ids = [_get_or_create_detection_id(d) for d in raw_predictions]
         detections[DETECTION_ID_KEY] = np.array(detection_ids)
         detections[PARENT_ID_KEY] = np.array(parent_ids)
         detections[IMAGE_DIMENSIONS_KEY] = np.array([[height, width]] * len(detections))
@@ -127,6 +131,7 @@ def convert_inference_detections_batch_to_sv_detections(
             detections[INFERENCE_ID_KEY] = np.array(
                 [p[INFERENCE_ID_KEY]] * len(detections)
             )
+
         rle_masks = [
             d.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE) or d.get("rle")
             for d in raw_predictions
@@ -296,6 +301,11 @@ def sv_detections_to_root_coordinates(
         for keypoints in detections_copy[keypoints_key]:
             if len(keypoints):
                 keypoints += [shift_x, shift_y]
+    if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
+        polygon_shift = np.asarray([shift_x, shift_y])
+        detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] = (
+            detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] + polygon_shift
+        )
     if detections_copy.mask is not None:
         origin_mask_base = np.full((origin_height, origin_width), False)
         new_anchored_masks = np.array(
@@ -455,9 +465,7 @@ def post_process_ocr_result(
         prediction["predictions"] = sv.Detections.from_inference(prediction)
         if len(prediction["predictions"]) != len(raw_predictions):
             raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
-        detection_ids = [
-            p.get("detection_id", str(uuid.uuid4())) for p in raw_predictions
-        ]
+        detection_ids = [_get_or_create_detection_id(p) for p in raw_predictions]
         prediction["predictions"]["detection_id"] = detection_ids
         prediction[PREDICTION_TYPE_KEY] = "ocr"
         prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id

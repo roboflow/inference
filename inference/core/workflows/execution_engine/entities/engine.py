@@ -31,5 +31,7 @@ class BaseExecutionEngine(ABC):
         fps: float = 0,
         _is_preview: bool = False,
         serialize_results: bool = False,
+        defer_stream_pipeline_flush: bool = False,
+        resolve_output_futures: bool = True,
     ) -> List[Dict[str, Any]]:
         pass
