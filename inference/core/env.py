@@ -729,8 +729,12 @@ WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "websocket").lower().strip()
 WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS = int(
     os.getenv("WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS", "30")
 )
+# Set slightly above the server's 700s execution budget (modal_app.py Executor
+# timeout) so that when a block hits the server limit, the server's error frame
+# arrives before the client read times out. Equal values race and surface an
+# ambiguous "connection lost after send" instead of the real server error.
 WEBEXEC_WS_READ_TIMEOUT_SECONDS = int(
-    os.getenv("WEBEXEC_WS_READ_TIMEOUT_SECONDS", "700")
+    os.getenv("WEBEXEC_WS_READ_TIMEOUT_SECONDS", "720")
 )
 
 # Strip quotes from Modal credentials in case users include them
