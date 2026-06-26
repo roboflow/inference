@@ -499,6 +499,11 @@ def validate_code_in_modal(
 ) -> bool:
     """Validate Python code syntax in a Modal sandbox via web endpoint.
 
+    Validation intentionally uses the HTTP ``execute-block`` endpoint even when
+    ``WEBEXEC_TRANSPORT=websocket`` for execution. Deployments that use
+    websocket execution must keep both Modal methods deployed: ``execute-block``
+    for validation and ``wsapp`` for execution.
+
     Args:
         python_code: The Python code to validate
         workspace_id: The workspace ID for Modal App
@@ -552,6 +557,8 @@ def validate_syntax():
         init_function_name="init",
     )
 
+    # Keep validation on HTTP. It is a control-plane check, while websocket is
+    # only the execution fast path.
     executor = ModalExecutor(workspace_id=workspace)
 
     try:

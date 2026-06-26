@@ -81,16 +81,29 @@ try:
                 # Remove query params to get base URL
                 http_base_url = actual_url.split("?")[0]
                 print(f"  HTTP:      {http_base_url}")
-                print("             Set MODAL_WEB_ENDPOINT_URL for HTTP transport.")
+                print(
+                    "             Set MODAL_WEB_ENDPOINT_URL for HTTP transport "
+                    "and Modal validation."
+                )
         if hasattr(instance, "wsapp") and hasattr(instance.wsapp, "get_web_url"):
             actual_ws_url = instance.wsapp.get_web_url()
             if actual_ws_url:
                 ws_base_url = actual_ws_url.split("?")[0]
                 print(f"  WebSocket: {ws_base_url}")
-                print("             Set MODAL_WS_ENDPOINT_URL for websocket transport.")
+                print("             Set MODAL_WS_ENDPOINT_URL for websocket execution.")
 
         if not http_base_url and not ws_base_url:
             raise Exception("Could not get web URL from methods")
+
+        print(
+            "\nNote: keep both Modal methods deployed. The websocket transport uses "
+            "wsapp for execution, and code validation still uses the HTTP "
+            "execute-block endpoint."
+        )
+        print(
+            "      Custom endpoint deployments should set both "
+            "MODAL_WEB_ENDPOINT_URL and MODAL_WS_ENDPOINT_URL."
+        )
 
         if http_base_url:
             print("\n📝 Example test command:")
@@ -109,8 +122,10 @@ curl -X POST "{http_base_url}?workspace_id=test" \\
         print(
             f"  Expected format: https://roboflow--{app.name}-executor-{{truncated}}.modal.run"
         )
+        print("\n  Keep both execute-block (HTTP) and wsapp (websocket) deployed.")
         print(
-            "\n  Set MODAL_WEB_ENDPOINT_URL for HTTP or MODAL_WS_ENDPOINT_URL for websocket."
+            "  Set MODAL_WEB_ENDPOINT_URL for validation/HTTP and "
+            "MODAL_WS_ENDPOINT_URL for websocket execution."
         )
 
     print("\n✅ Ready for production use!")

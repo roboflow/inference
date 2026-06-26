@@ -719,7 +719,9 @@ WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
 # shrink payloads significantly for WebRTC preview with minimal visual impact.
 WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "95"))
 
-# Transport protocol for webexec communication: "http" or "websocket".
+# Transport protocol for webexec execution: "http" or "websocket".
+# Modal code validation always uses the HTTP execute-block endpoint, so
+# websocket deployments must keep both execute-block and wsapp deployed.
 WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "websocket").lower().strip()
 
 # Websocket transport timeouts. Keep connection establishment fast, but allow
