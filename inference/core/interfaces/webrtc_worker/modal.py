@@ -62,6 +62,9 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.interfaces.webrtc_worker.request_utils import (
+    resolve_workspace_id_for_webrtc_request,
+)
 from inference.core.interfaces.webrtc_worker.utils import (
     warmup_cuda,
     workflow_contains_instant_model,
@@ -70,10 +73,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
 from inference.core.interfaces.webrtc_worker.watchdog import Watchdog
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.core.roboflow_api import (
-    get_roboflow_workspace,
-    get_workflow_specification,
-)
+from inference.core.roboflow_api import get_workflow_specification
 from inference.core.version import __version__
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.owlv2.owlv2 import PRELOADED_HF_MODELS, preload_owlv2_model
@@ -293,7 +293,7 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
-            _workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
+            _workspace_id = resolve_workspace_id_for_webrtc_request(webrtc_request)
 
             workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
@@ -608,10 +608,7 @@ if modal is not None:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client, tag=docker_tag)
 
-        workspace_id = webrtc_request.workflow_configuration.workspace_name
-        if not workspace_id:
-            workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
-            webrtc_request.workflow_configuration.workspace_name = workspace_id
+        workspace_id = resolve_workspace_id_for_webrtc_request(webrtc_request)
         if not webrtc_request.workflow_configuration.workflow_specification:
             webrtc_request.workflow_configuration.workflow_specification = get_workflow_specification(
                 api_key=webrtc_request.api_key,
