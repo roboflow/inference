@@ -2120,6 +2120,21 @@ hide:
 
 
 
+            <a href="roboflow_visual_search">
+              <div class="block">
+                
+                <div class="block_name"> <i class="far fa-search" > </i>  Roboflow Visual Search</div>
+                <div class="block_description">Find visually similar image candidates in a Roboflow project.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
             <a href="expression">
               <div class="block">
                 
@@ -2474,11 +2489,11 @@ hide:
 
 
 
-            <a href="plc_ethernet_ip">
+            <a href="plc_reader">
               <div class="block">
                 
-                <div class="block_name"> <i class="fal fa-microchip" > </i>  PLC EthernetIP</div>
-                <div class="block_description">Generic PLC read/write block using pylogix over Ethernet/IP.</div>
+                <div class="block_name"> <i class="fal fa-microchip" > </i>  PLC Reader</div>
+                <div class="block_description">Read PLC tag values via the PLC Relay or a direct EtherNet/IP / Modbus connection.</div>
                 <!-- <div class="block_license">ROBOFLOW ENTERPRISE LICENSE</div> -->
               </div>
             </a>
@@ -2489,12 +2504,12 @@ hide:
 
 
 
-            <a href="plc_modbus_tcp">
+            <a href="plc_writer">
               <div class="block">
                 
-                <div class="block_name"> <i class="fal fa-network-wired" > </i>  PLC ModbusTCP</div>
-                <div class="block_description">Generic Modbus TCP read/write block using pymodbus.</div>
-                <!-- <div class="block_license">APACHE-2.0</div> -->
+                <div class="block_name"> <i class="fal fa-microchip" > </i>  PLC Writer</div>
+                <div class="block_description">Write PLC tag values via the PLC Relay or a direct EtherNet/IP / Modbus connection.</div>
+                <!-- <div class="block_license">ROBOFLOW ENTERPRISE LICENSE</div> -->
               </div>
             </a>
 

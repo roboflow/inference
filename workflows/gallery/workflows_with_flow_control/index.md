@@ -13,7 +13,7 @@ way of making sure that bboxes contain only single objects).
 Only if that condition is true, we run classification model - to
 classify dog breed.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiVVRtZDhBWEhtNXN1OUhDYzZhb1kiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ2MDh9.5gMIkjs4vwaShYEdSHyfAgpdoNX3zmHj34uNlzfbaAM?showGraph=true" loading="lazy" title="Roboflow Workflow for flow control nested batches" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiVVRtZDhBWEhtNXN1OUhDYzZhb1kiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI0ODAwNDh9.K2066lVVlxf0s3V59wfX7il0dvuzDT7Lyivh1N4PbhQ?showGraph=true" loading="lazy" title="Roboflow Workflow for flow control nested batches" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -119,7 +119,7 @@ If statement is effectively applied on input parameter that would determine path
 all data passed in `image` input. When the value matches expectation - all dependent steps
 will be executed, otherwise only the independent ones.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoieHh1dWtIWThaNnFXYWExQ0R2OEoiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ2MDh9.C0uSGf0AhnkkrYorqrvlnPBAID8nm193kFrE32eonEA?showGraph=true" loading="lazy" title="Roboflow Workflow for flow control on parameter" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoieHh1dWtIWThaNnFXYWExQ0R2OEoiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI0ODAwNDl9.bwSRpEEVWVehITsNI3fa3tirYs7_pQsZad8zQkqwvY0?showGraph=true" loading="lazy" title="Roboflow Workflow for flow control on parameter" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -224,7 +224,7 @@ The stop_delay parameter allows the conditional branch to continue executing for
 specified duration after the condition becomes false, enabling graceful degradation
 and delayed termination scenarios.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoidm11OHZxWWxQbW1JZXpxWW5WZU8iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODE5MDQ2MDl9.RsDb4_9EC8Lw7O6U2PiZFZNE3UBORo3vfMQywJh6Mdw?showGraph=true" loading="lazy" title="Roboflow Workflow for continue if stop delay" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoidm11OHZxWWxQbW1JZXpxWW5WZU8iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI0ODAwNTB9.qemtqdq1Pkx68AAj4P6xlPAX7N2FHp9d3vIas1DToQM?showGraph=true" loading="lazy" title="Roboflow Workflow for continue if stop delay" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

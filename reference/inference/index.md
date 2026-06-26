@@ -544,6 +544,14 @@ Parallel HTTP inference via Celery workers for high-throughput deployments.
 
 ::: inference.enterprise.workflows.enterprise_blocks.sinks.opc_writer.v1
 
+## `enterprise/workflows/enterprise_blocks/sinks/plc`
+
+::: inference.enterprise.workflows.enterprise_blocks.sinks.plc.client
+
+::: inference.enterprise.workflows.enterprise_blocks.sinks.plc.direct
+
+::: inference.enterprise.workflows.enterprise_blocks.sinks.plc.v1
+
 ## `models/clip`
 
 ::: inference.models.clip.clip_inference_models
@@ -669,6 +677,24 @@ Parallel HTTP inference via Celery workers for high-throughput deployments.
 ## `models/vit`
 
 ::: inference.models.vit.vit_classification
+
+## `models/vllm_proxy`
+
+::: inference.models.vllm_proxy.adapter_manager
+
+::: inference.models.vllm_proxy.adapter_patch
+
+::: inference.models.vllm_proxy.config
+
+::: inference.models.vllm_proxy.errors
+
+::: inference.models.vllm_proxy.qwen3_5_vllm
+
+::: inference.models.vllm_proxy.qwen3vl_vllm
+
+::: inference.models.vllm_proxy.qwen_vllm_base
+
+::: inference.models.vllm_proxy.vllm_client
 
 ## `models/yolact`
 
