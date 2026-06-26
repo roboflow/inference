@@ -8,7 +8,7 @@ Below you can find example workflows you can use as inspiration to build your ap
 
 Use Depth Estimation to estimate the depth of an image.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiUER4dWx4U3RtTGpzU1I4N2ZvakQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI0ODAwMzR9.ZDfdZNOYxcqFofP__I10FrVZTsKzzDt6GmLiIJql2cg?showGraph=true" loading="lazy" title="Roboflow Workflow for depth_estimation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiUER4dWx4U3RtTGpzU1I4N2ZvakQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI0ODE5MjJ9.58wpG5Sr8y6PBF2hjgmRZSY0r18-f5hKMJXgdMTmmmQ?showGraph=true" loading="lazy" title="Roboflow Workflow for depth_estimation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -46,7 +46,7 @@ Use Depth Estimation to estimate the depth of an image.
 
 Use Depth Estimation to estimate the depth of an image.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiUER4dWx4U3RtTGpzU1I4N2ZvakQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI0ODAwMzV9.5ikyI2zYVU0gHOzRIY-ZNyRjvwcKutv6L8ptNehNwL0?showGraph=true" loading="lazy" title="Roboflow Workflow for depth_estimation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiUER4dWx4U3RtTGpzU1I4N2ZvakQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI0ODE5MjN9.dIgzFTSxTIf2s6T9iDj8ogYl5ZDAK55tG-KgnpbTMKI?showGraph=true" loading="lazy" title="Roboflow Workflow for depth_estimation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

@@ -17,6 +17,7 @@
     var PROJECT_COLOR = "#6405C9";
     var LOGO_URL = "https://media.roboflow.com/chat.png";
     var LAUNCHER_CLASS = "rf-kapa-launcher";
+    var STYLE_ID = "rf-kapa-launcher-style";
 
     var loadState = "idle"; // idle -> loading -> ready
 
@@ -68,7 +69,12 @@
     }
 
     function injectStyles() {
+        if (document.getElementById(STYLE_ID)) {
+            return;
+        }
+
         var style = document.createElement("style");
+        style.id = STYLE_ID;
         style.textContent =
             "." + LAUNCHER_CLASS + "{position:fixed;bottom:24px;right:24px;z-index:1000;" +
             "display:flex;align-items:center;justify-content:center;" +
@@ -83,6 +89,11 @@
 
     function createLauncher() {
         injectStyles();
+
+        var existingLauncher = document.querySelector("." + LAUNCHER_CLASS);
+        if (existingLauncher) {
+            return;
+        }
 
         var button = document.createElement("button");
         button.type = "button";
@@ -99,5 +110,20 @@
         document.body.appendChild(button);
     }
 
-    document.addEventListener("DOMContentLoaded", createLauncher);
+    function mountLauncher() {
+        createLauncher();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", mountLauncher);
+    } else {
+        mountLauncher();
+    }
+
+    // MkDocs Material's instant navigation swaps parts of the document without
+    // firing DOMContentLoaded again, and can remove styles injected into <head>.
+    // Re-assert our launcher styles after each virtual page load.
+    if (window.document$ && typeof window.document$.subscribe === "function") {
+        window.document$.subscribe(mountLauncher);
+    }
 })();
