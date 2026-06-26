@@ -43,12 +43,14 @@ from inference.core.env import (
     WEBRTC_MODAL_PRELOAD_MODELS,
     WEBRTC_MODAL_RESPONSE_TIMEOUT,
     WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
+    WEBRTC_MODAL_ROUTING_REGION,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
     WEBRTC_MODAL_SHUTDOWN_RESERVE,
     WEBRTC_MODAL_TOKEN_ID,
     WEBRTC_MODAL_TOKEN_SECRET,
     WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
+    WEBRTC_MODAL_VOLUME_NAME,
     WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
     WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS,
     WEBRTC_SESSION_HEARTBEAT_URL,
@@ -129,7 +131,9 @@ if modal is not None:
     )
 
     # https://modal.com/docs/reference/modal.Volume
-    rfcache_volume = modal.Volume.from_name("rfcache", create_if_missing=True)
+    rfcache_volume = modal.Volume.from_name(
+        WEBRTC_MODAL_VOLUME_NAME, create_if_missing=True
+    )
 
     # https://modal.com/docs/reference/modal.App
     app = modal.App(
@@ -224,6 +228,11 @@ if modal is not None:
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
+
+    # with_options() cannot set routing_region, so it must be baked into the
+    # class decorator at deploy time
+    if WEBRTC_MODAL_ROUTING_REGION:
+        decorator_kwargs["routing_region"] = WEBRTC_MODAL_ROUTING_REGION
 
     async def run_rtc_peer_connection_with_watchdog(
         webrtc_request: WebRTCWorkerRequest,

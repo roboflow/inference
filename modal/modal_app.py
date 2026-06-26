@@ -40,6 +40,10 @@ app = modal.App("webexec")
 
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
 
+WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
+WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
+WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
+
 
 def get_inference_image():
     """Get the Modal Image for inference."""
@@ -73,16 +77,21 @@ def get_inference_image():
     return image
 
 
-@app.cls(
-    image=get_inference_image(),
-    restrict_modal_access=True,  # Restrict Modal access for security
-    timeout=20,
-    enable_memory_snapshot=True,  # Enable memory snapshotting for faster cold starts
-    scaledown_window=60,
-    cloud="aws",
-    region="us-east-1",
-    buffer_containers=1,
-)
+_executor_decorator_kwargs = {
+    "image": get_inference_image(),
+    "restrict_modal_access": True,  # Restrict Modal access for security
+    "timeout": 20,
+    "enable_memory_snapshot": True,  # Enable memory snapshotting for faster cold starts
+    "scaledown_window": 60,
+    "cloud": WEBEXEC_MODAL_CLOUD,
+    "region": WEBEXEC_MODAL_REGION,
+    "buffer_containers": 1,
+}
+if WEBEXEC_MODAL_ROUTING_REGION:
+    _executor_decorator_kwargs["routing_region"] = WEBEXEC_MODAL_ROUTING_REGION
+
+
+@app.cls(**_executor_decorator_kwargs)
 class Executor:
     """Parameterized Modal class for executing custom Python blocks via web endpoint."""
 
