@@ -871,6 +871,7 @@ class WebSocketModalExecutor:
             inputs,
             workspace,
             msgpack,
+            workflow_context or {},
         )
 
     def _send_recv_with_retry(
@@ -920,6 +921,7 @@ class WebSocketModalExecutor:
         inputs: Dict[str, Any],
         workspace: str,
         msgpack: Any,
+        workflow_context: Dict[str, Any],
     ) -> BlockResult:
         t0 = _time.monotonic()
 
@@ -943,6 +945,7 @@ class WebSocketModalExecutor:
             code_hash=code_hash,
             send_full_code=send_full_code,
             msgpack=msgpack,
+            workflow_context=workflow_context,
         )
         t_pack = _time.monotonic()
 
@@ -970,6 +973,7 @@ class WebSocketModalExecutor:
                 code_hash=code_hash,
                 send_full_code=True,
                 msgpack=msgpack,
+                workflow_context=workflow_context,
             )
             resp_bytes = self._send_recv_with_retry(retry_frame, workspace)
             result = msgpack.unpackb(resp_bytes, raw=False)
@@ -1011,6 +1015,7 @@ class WebSocketModalExecutor:
         code_hash: str,
         send_full_code: bool,
         msgpack: Any,
+        workflow_context: Dict[str, Any],
     ) -> bytes:
         """Pack a msgpack frame, optionally omitting ``code_str``/``imports``.
 
@@ -1021,6 +1026,7 @@ class WebSocketModalExecutor:
             "code_hash": code_hash,
             "run_function_name": python_code.run_function_name,
             "inputs": packed_inputs,
+            "workflow_context": workflow_context,
         }
         if send_full_code:
             payload["code_str"] = python_code.run_function_code

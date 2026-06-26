@@ -6,7 +6,7 @@ in sandboxes. It's separated from the main executor to avoid requiring Modal
 as a dependency for the main inference package.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import asyncio
 import base64
 import gzip
@@ -461,6 +461,7 @@ from datetime import datetime
         run_function_name: str,
         inputs: dict,
         client_code_hash: str = "",
+        workflow_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Execute user code for the WebSocket transport.
 
@@ -538,12 +539,15 @@ from datetime import datetime
         sig = inspect.signature(user_function)
         params = list(sig.parameters.keys())
 
+        _workflow_context = workflow_context or {}
+
         try:
             with capture_output() as (stdout_buf, stderr_buf):
                 if params and params[0] == "self":
 
                     class BlockSelf:
-                        pass
+                        def get_workflow_context(self) -> Dict[str, Any]:
+                            return dict(_workflow_context)
 
                     block_self = BlockSelf()
                     result = user_function(block_self, **inputs)
@@ -758,6 +762,7 @@ from datetime import datetime
                     run_function_name = request.get("run_function_name", "")
                     inputs_raw = request.get("inputs", {})
                     client_code_hash = request.get("code_hash", "")
+                    workflow_context = request.get("workflow_context") or {}
 
                     inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
                     resp = await asyncio.to_thread(
@@ -768,6 +773,7 @@ from datetime import datetime
                         run_function_name,
                         inputs,
                         client_code_hash,
+                        workflow_context,
                     )
 
                     if resp.get("success"):
