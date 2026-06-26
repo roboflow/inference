@@ -1,5 +1,15 @@
 # Changelog
 
+## `0.29.7`
+
+### Added
+
+- Enriched `KeyPoints` representation to expose `covariance` and 
+`detection_confidence` to streamline changes in `supervision`
+
+- Align changes in RF-DETR model to expose pixel-space `covariance`, 
+following up on https://github.com/roboflow/rf-detr/releases/tag/1.8.0.
+- 
 
 ## `0.29.6`
 

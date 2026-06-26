@@ -1051,6 +1051,14 @@ HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS = int(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS", "16")
 )
 
+# Size of the anyio thread pool serving synchronous HTTP handlers.
+# Default is None, which leaves the anyio default (40 threads) untouched.
+HTTP_API_THREADPOOL_WORKERS = os.getenv("HTTP_API_THREADPOOL_WORKERS")
+if HTTP_API_THREADPOOL_WORKERS:
+    HTTP_API_THREADPOOL_WORKERS = int(HTTP_API_THREADPOOL_WORKERS)
+else:
+    HTTP_API_THREADPOOL_WORKERS = None
+
 # Workflow block filtering configuration
 # Comma-separated list of block type categories to disable (e.g., "sink,model")
 WORKFLOW_DISABLED_BLOCK_TYPES = os.getenv("WORKFLOW_DISABLED_BLOCK_TYPES", "")
