@@ -23,6 +23,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -238,9 +239,11 @@ class SegmentAnything3VideoBlockV1(WorkflowBlock):
         if self._model is None or self._current_model_id != model_id:
             from inference_models import AutoModel
 
+            extra_weights_provider_headers = get_extra_weights_provider_headers()
             self._model = AutoModel.from_pretrained(
                 model_id_or_path=model_id,
                 api_key=self._api_key,
+                weights_provider_extra_headers=extra_weights_provider_headers,
             )
             self._current_model_id = model_id
             # Switching model invalidates every session we held.

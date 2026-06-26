@@ -3,6 +3,8 @@ import multiprocessing
 import uuid
 
 from inference.core.env import (
+    WEBRTC_MODAL_ENFORCE_REGION,
+    WEBRTC_MODAL_REQUIRED_REGION,
     WEBRTC_MODAL_TOKEN_ID,
     WEBRTC_MODAL_TOKEN_SECRET,
     WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
@@ -10,7 +12,11 @@ from inference.core.env import (
     WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED,
     WEBRTC_WORKSPACE_STREAM_TTL_SECONDS,
 )
-from inference.core.exceptions import CreditsExceededError, WorkspaceStreamQuotaError
+from inference.core.exceptions import (
+    CreditsExceededError,
+    WebRTCConfigurationError,
+    WorkspaceStreamQuotaError,
+)
 from inference.core.interfaces.webrtc_worker.cpu import rtc_peer_connection_process
 from inference.core.interfaces.webrtc_worker.entities import (
     RTCIceServer,
@@ -20,6 +26,8 @@ from inference.core.interfaces.webrtc_worker.entities import (
 )
 from inference.core.logger import logger
 from inference.core.roboflow_api import get_roboflow_workspace
+
+ALLOWED_EU_REGIONS = {"eu", "eu-west", "eu-north", "eu-south"}
 
 
 async def start_worker(
@@ -96,6 +104,15 @@ async def start_worker(
             session_id,
             workspace_id,
         )
+
+        if WEBRTC_MODAL_ENFORCE_REGION:
+            if WEBRTC_MODAL_REQUIRED_REGION not in ALLOWED_EU_REGIONS:
+                raise WebRTCConfigurationError(
+                    f"WEBRTC_MODAL_REQUIRED_REGION must be one of "
+                    f"{sorted(ALLOWED_EU_REGIONS)} when WEBRTC_MODAL_ENFORCE_REGION "
+                    f"is enabled, got {WEBRTC_MODAL_REQUIRED_REGION!r}"
+                )
+            webrtc_request.requested_region = WEBRTC_MODAL_REQUIRED_REGION
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(

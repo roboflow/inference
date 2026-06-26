@@ -374,7 +374,7 @@ class SAM2Torch:
                         f"invalid integration.",
                         help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
                     )
-                embeddings.append(cache_content)
+                embeddings.append(cache_content.to(device=self._device))
         else:
             embeddings = maybe_wrap_in_list(value=embeddings)
         image_hashes = [e.image_hash for e in embeddings]
@@ -914,7 +914,12 @@ def find_prior_prompt_in_cache(
 ) -> Optional[torch.Tensor]:
     maxed_size = 0
     best_match: Optional[SAM2MaskCacheEntry] = None
-    desired_size = len(serialized_prompt) - 1
+    num_points = (
+        0 if not serialized_prompt else len(serialized_prompt[0].get("points", []))
+    )
+    if num_points <= 1:
+        return None
+    desired_size = num_points - 1
     for cache_entry in matching_cache_entries[::-1]:
         is_viable = is_prompt_strict_subset(
             assumed_sub_set_prompt=(
@@ -927,13 +932,18 @@ def find_prior_prompt_in_cache(
             continue
 
         # short circuit search if we find prompt with one less point (most recent possible mask)
-        current_cache_entry_prompt_size = len(cache_entry.serialized_prompt)
+        cached_prompt = cache_entry.serialized_prompt
+        current_cache_entry_prompt_size = (
+            0 if not cached_prompt else len(cached_prompt[0].get("points", []))
+        )
         if current_cache_entry_prompt_size == desired_size:
             return cache_entry.mask.to(device=device)
         if current_cache_entry_prompt_size >= maxed_size:
             maxed_size = current_cache_entry_prompt_size
             best_match = cache_entry
-    return best_match.mask.to(device=device)
+    if best_match is not None:
+        return best_match.mask.to(device=device)
+    return None
 
 
 def is_prompt_strict_subset(

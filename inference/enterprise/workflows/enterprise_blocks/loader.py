@@ -13,6 +13,10 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.mqtt_writer.v1 impor
 from inference.enterprise.workflows.enterprise_blocks.sinks.opc_writer.v1 import (
     OPCWriterSinkBlockV1,
 )
+from inference.enterprise.workflows.enterprise_blocks.sinks.plc.v1 import (
+    PLCReaderBlockV1,
+    PLCWriterBlockV1,
+)
 from inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1 import (
     ModbusTCPBlockV1,
 )
@@ -26,6 +30,8 @@ def load_enterprise_blocks() -> List[Type[WorkflowBlock]]:
         OPCWriterSinkBlockV1,
         MQTTWriterSinkBlockV1,
         PLCBlockV1,
+        PLCReaderBlockV1,
+        PLCWriterBlockV1,
         ModbusTCPBlockV1,
         MicrosoftSQLServerSinkBlockV1,
         EventWriterSinkBlockV1,
