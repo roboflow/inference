@@ -6,7 +6,6 @@ in sandboxes. It's separated from the main executor to avoid requiring Modal
 as a dependency for the main inference package.
 """
 
-from typing import Any, Dict, Optional, Tuple
 import asyncio
 import base64
 import gzip
@@ -16,10 +15,11 @@ import json
 import os
 import threading
 import traceback
+from typing import Any, Dict, Optional, Tuple
 
-import modal
 from starlette.requests import Request
 
+import modal
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     capture_output,
 )
@@ -43,8 +43,17 @@ class _NoopDebugTraces:
 #
 # The executor app name stays fixed at ``webexec``. Cloud / region env vars
 # still control where that single executor is deployed.
-WEBEXEC_DEPLOY_CLOUD = os.getenv("WEBEXEC_DEPLOY_CLOUD", "aws").lower().strip()
-WEBEXEC_DEPLOY_REGION = os.getenv("WEBEXEC_DEPLOY_REGION", "us-east-1")
+WEBEXEC_DEPLOY_CLOUD = (
+    (os.getenv("WEBEXEC_DEPLOY_CLOUD") or os.getenv("WEBEXEC_MODAL_CLOUD", "aws"))
+    .lower()
+    .strip()
+)
+WEBEXEC_DEPLOY_REGION = os.getenv("WEBEXEC_DEPLOY_REGION") or os.getenv(
+    "WEBEXEC_MODAL_REGION", "us-east-1"
+)
+WEBEXEC_DEPLOY_ROUTING_REGION = os.getenv("WEBEXEC_DEPLOY_ROUTING_REGION") or os.getenv(
+    "WEBEXEC_MODAL_ROUTING_REGION"
+)
 
 app = modal.App("webexec")
 
@@ -84,16 +93,21 @@ def get_inference_image():
     return image
 
 
-@app.cls(
-    image=get_inference_image(),
-    restrict_modal_access=True,  # Restrict Modal access for security
-    timeout=700,
-    enable_memory_snapshot=True,  # Enable memory snapshotting for faster cold starts
-    scaledown_window=60,
-    cloud=WEBEXEC_DEPLOY_CLOUD,
-    region=WEBEXEC_DEPLOY_REGION,
-    buffer_containers=1,
-)
+_executor_decorator_kwargs = {
+    "image": get_inference_image(),
+    "restrict_modal_access": True,  # Restrict Modal access for security
+    "timeout": 700,
+    "enable_memory_snapshot": True,  # Enable memory snapshotting for faster cold starts
+    "scaledown_window": 60,
+    "cloud": WEBEXEC_DEPLOY_CLOUD,
+    "region": WEBEXEC_DEPLOY_REGION,
+    "buffer_containers": 1,
+}
+if WEBEXEC_DEPLOY_ROUTING_REGION:
+    _executor_decorator_kwargs["routing_region"] = WEBEXEC_DEPLOY_ROUTING_REGION
+
+
+@app.cls(**_executor_decorator_kwargs)
 @modal.concurrent(max_inputs=10)
 class Executor:
     """Parameterized Modal class for executing custom Python blocks via web endpoint."""
@@ -202,8 +216,8 @@ from datetime import datetime
         import numpy as np
 
         from inference.core.workflows.core_steps.common.deserializers import (
-            deserialize_image_kind,
             deserialize_detections_kind,
+            deserialize_image_kind,
             deserialize_video_metadata_kind,
         )
 
@@ -257,16 +271,18 @@ from datetime import datetime
             # we should import serialize_for_modal_remote_execution and deserialize_for_modal_remote_execution
             # from inference package, but need to have them included in the modal build for that
             # so just copy pasted for now
-            from inference.core.workflows.prototypes.block import BlockResult
             from datetime import datetime
+
             from inference.core.workflows.core_steps.common.deserializers import (
-                deserialize_image_kind,
                 deserialize_detections_kind,
+                deserialize_image_kind,
                 deserialize_video_metadata_kind,
             )
+            from inference.core.workflows.prototypes.block import BlockResult
 
             def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
                 from datetime import datetime
+
                 import numpy as np
 
                 class InputJSONEncoder(json.JSONEncoder):
@@ -297,14 +313,15 @@ from datetime import datetime
                 def patch_for_modal_serialization(value):
                     """Serialize value and add _type markers for Modal deserialization."""
                     import supervision as sv
-                    from inference.core.workflows.execution_engine.entities.base import (
-                        WorkflowImageData,
-                        VideoMetadata,
-                    )
+
                     from inference.core.workflows.core_steps.common.serializers import (
-                        serialize_video_metadata_kind,
-                        serialise_sv_detections,
                         serialise_image,
+                        serialise_sv_detections,
+                        serialize_video_metadata_kind,
+                    )
+                    from inference.core.workflows.execution_engine.entities.base import (
+                        VideoMetadata,
+                        WorkflowImageData,
                     )
 
                     # Apply standard serialization and add type markers based on original type
@@ -679,17 +696,19 @@ from datetime import datetime
         adding _type markers for WorkflowImageData, sv.Detections, and
         VideoMetadata so the client can reconstruct them.
         """
-        import numpy as np
         from datetime import datetime
+
+        import numpy as np
         import supervision as sv
-        from inference.core.workflows.execution_engine.entities.base import (
-            WorkflowImageData,
-            VideoMetadata,
-        )
+
         from inference.core.workflows.core_steps.common.serializers import (
-            serialise_sv_detections,
             serialise_image,
+            serialise_sv_detections,
             serialize_video_metadata_kind,
+        )
+        from inference.core.workflows.execution_engine.entities.base import (
+            VideoMetadata,
+            WorkflowImageData,
         )
 
         def _encode(obj):
