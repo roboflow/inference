@@ -6,24 +6,10 @@ using web endpoints for better security and no size limitations.
 
 Two transport modes are available, controlled by ``WEBEXEC_TRANSPORT``:
 
-* **http** (default) — JSON POST with gzip compression and persistent
-  ``requests.Session``.
-* **websocket** — persistent WebSocket connection with msgpack binary frames.
+* **http** — JSON POST with gzip compression and persistent ``requests.Session``.
+* **websocket** (default) — persistent WebSocket connection with msgpack binary frames.
   Eliminates per-request HTTP overhead and base64 image encoding.
 
-Performance notes
------------------
-- A persistent ``requests.Session`` (http) or ``websocket`` (ws) connection
-  is reused across frames.
-- Images are re-encoded at ``WEBEXEC_JPEG_QUALITY`` (default 75).
-- In websocket mode, images are sent as raw JPEG bytes inside msgpack
-  (no base64), saving ~33 % payload size and CPU.
-- User code is shipped only on the first frame for a given code hash. The
-  server caches the compiled namespace keyed by hash, so subsequent frames
-  send ``code_hash`` only and skip server-side ``compile()``/``exec()``.
-  On cache miss (container restart, HTTP load-balanced to a new replica)
-  the server returns ``UnknownCodeHash`` and the client retries once with
-  the full code.
 """
 
 import base64
@@ -259,23 +245,12 @@ def deserialize_for_modal_remote_execution(json_str: str) -> BlockResult:
 
 
 class ModalExecutor:
-    """Manages execution of Custom Python Blocks in Modal sandboxes via web endpoints.
-
-    Optimizations over a naive per-frame ``requests.post``:
-    * **Persistent session** – reuses TCP + TLS connection across frames.
-    * **Lower JPEG quality** – images are re-encoded at ``WEBEXEC_JPEG_QUALITY``
-      (default 75 vs 95) to shrink payloads significantly.
-    * **Executor caching** – a single instance is kept per workspace in
-      ``block_scaffolding._MODAL_EXECUTOR_CACHE`` so the session survives
-      across frames.
-    """
+    """Manages execution of Custom Python Blocks in Modal sandboxes via web endpoints."""
 
     def __init__(self, workspace_id: Optional[str] = None):
         self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
         self._base_url: Optional[str] = None
         self._session: Optional[requests.Session] = None
-        # Hashes we believe the server has cached. HTTP requests can land on
-        # any replica so a miss may still happen; we retry with full code.
         self._known_code_hashes: set = set()
 
     def _get_session(self) -> requests.Session:
@@ -576,11 +551,6 @@ def validate_syntax():
         )
 
 
-# ======================================================================
-# WebSocket + msgpack transport (optional, enabled via WEBEXEC_TRANSPORT)
-# ======================================================================
-
-
 def _serialize_image_for_msgpack(image: Any) -> dict:
     """Encode a WorkflowImageData as a dict with raw JPEG bytes (no base64)."""
     from inference.core.env import WEBEXEC_JPEG_QUALITY
@@ -718,17 +688,7 @@ def _deserialize_msgpack_result(result: Any) -> Any:
 
 
 class WebSocketModalExecutor:
-    """Executes Custom Python Blocks via a persistent WebSocket + msgpack.
-
-    Keep-alive strategy
-    -------------------
-    We intentionally do **not** ping on every frame: ``websocket-client``
-    ``ping()`` is a synchronous write that adds work to every RTT. Instead we
-    trust ``self._ws`` on the hot path and only reconnect on an actual
-    ``send`` / ``recv`` failure. A lightweight daemon thread pings the
-    connection when it has been idle for ``_KEEPALIVE_IDLE_SECONDS`` so NATs
-    and proxies don't silently close the channel during quiet periods.
-    """
+    """Executes Custom Python Blocks via a persistent WebSocket + msgpack."""
 
     _KEEPALIVE_IDLE_SECONDS = 25.0
 
@@ -736,12 +696,7 @@ class WebSocketModalExecutor:
         self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
         self._ws: Any = None
         self._ws_url: Optional[str] = None
-        # Hashes already sent over the current WS connection. A single WS
-        # is pinned to one container, so anything in this set is guaranteed
-        # cached server-side until the connection drops.
         self._hashes_sent_on_ws: set = set()
-        # Serialize hot-path send/recv with the keepalive ping so they don't
-        # step on each other on the same socket.
         self._io_lock = threading.Lock()
         self._last_activity: float = 0.0
         self._keepalive_stop: Optional[threading.Event] = None

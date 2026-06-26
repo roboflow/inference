@@ -1,5 +1,7 @@
 uvicorn[standard]<=0.34.0
 python-multipart==0.0.32
+msgpack>=1.0.0
+websocket-client>=1.0.0
 fastapi-cprofile<=0.0.2
 orjson>=3.11.6,<4.0.0
 asgi_correlation_id~=4.3.1
