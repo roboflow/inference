@@ -963,6 +963,16 @@ WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
     os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
 )
 
+# When enabled, force the Modal region to WEBRTC_MODAL_REQUIRED_REGION regardless of
+# the client-requested region (e.g. to enforce EU data residency)
+WEBRTC_MODAL_ENFORCE_REGION = str2bool(
+    os.getenv("WEBRTC_MODAL_ENFORCE_REGION", "False")
+)
+WEBRTC_MODAL_REQUIRED_REGION = os.getenv("WEBRTC_MODAL_REQUIRED_REGION")
+WEBRTC_MODAL_VOLUME_NAME = os.getenv("WEBRTC_MODAL_VOLUME_NAME", "rfcache")
+# Baked into the Modal class decorator at deploy time since with_options cannot set it
+WEBRTC_MODAL_ROUTING_REGION = os.getenv("WEBRTC_MODAL_ROUTING_REGION")
+
 #
 # Workspace stream quota
 #
@@ -1024,6 +1034,14 @@ HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS = int(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS", "16")
 )
+
+# Size of the anyio thread pool serving synchronous HTTP handlers.
+# Default is None, which leaves the anyio default (40 threads) untouched.
+HTTP_API_THREADPOOL_WORKERS = os.getenv("HTTP_API_THREADPOOL_WORKERS")
+if HTTP_API_THREADPOOL_WORKERS:
+    HTTP_API_THREADPOOL_WORKERS = int(HTTP_API_THREADPOOL_WORKERS)
+else:
+    HTTP_API_THREADPOOL_WORKERS = None
 
 # Workflow block filtering configuration
 # Comma-separated list of block type categories to disable (e.g., "sink,model")

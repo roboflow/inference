@@ -863,6 +863,37 @@ def batch_update_image_metadata_at_roboflow(
     return response.json()
 
 
+def search_project_images_at_roboflow(
+    api_key: str,
+    workspace: str,
+    project: str,
+    image_base64: str,
+    limit: int,
+    fields: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    payload = {
+        "image_base64": image_base64,
+        "limit": limit,
+        "fields": fields
+        or [
+            "id",
+            "name",
+            "filename",
+            "url",
+            "user_metadata",
+            "tags",
+            "width",
+            "height",
+            "aspectRatio",
+        ],
+    }
+    return post_to_roboflow_api(
+        endpoint=f"{workspace}/{project}/search",
+        api_key=api_key,
+        payload=payload,
+    )
+
+
 @wrap_roboflow_api_errors()
 def get_roboflow_labeling_batches(
     api_key: str, workspace_id: WorkspaceID, dataset_id: str

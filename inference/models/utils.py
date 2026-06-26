@@ -63,6 +63,7 @@ from inference.models import (
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
 )
+from inference.models.vllm_proxy import VLLM_PROXY_ENABLED
 from inference.models.yolo26.yolo26_keypoints_detection import YOLO26KeypointsDetection
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 from inference.models.yolov11.yolov11_keypoints_detection import (
@@ -469,12 +470,20 @@ except:
 
 try:
     if QWEN_3_ENABLED:
-        from inference.models import LoRAQwen3VL, Qwen3VL
+        if VLLM_PROXY_ENABLED:
+            from inference.models.vllm_proxy.qwen3vl_vllm import Qwen3VLVLLMProxy
 
-        qwen3vl_models = {
-            ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VL,
-            ("text-image-pairs", "qwen3vl-2b-instruct-peft"): LoRAQwen3VL,
-        }
+            qwen3vl_models = {
+                ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VLVLLMProxy,
+                ("text-image-pairs", "qwen3vl-2b-instruct-peft"): Qwen3VLVLLMProxy,
+            }
+        else:
+            from inference.models import LoRAQwen3VL, Qwen3VL
+
+            qwen3vl_models = {
+                ("text-image-pairs", "qwen3vl-2b-instruct"): Qwen3VL,
+                ("text-image-pairs", "qwen3vl-2b-instruct-peft"): LoRAQwen3VL,
+            }
         ROBOFLOW_MODEL_TYPES.update(qwen3vl_models)
 except:
     warnings.warn(
@@ -812,24 +821,30 @@ if USE_INFERENCE_MODELS:
                     InferenceModelsQwen25VLAdapter
                 )
             elif variant.startswith("qwen3vl-"):
-                from inference.models.qwen3vl.qwen3vl_inference_models import (
-                    InferenceModelsQwen3VLAdapter,
-                )
+                if VLLM_PROXY_ENABLED:
+                    from inference.models.vllm_proxy.qwen3vl_vllm import (
+                        Qwen3VLVLLMProxy as _Qwen3VLModelClass,
+                    )
+                else:
+                    from inference.models.qwen3vl.qwen3vl_inference_models import (
+                        InferenceModelsQwen3VLAdapter as _Qwen3VLModelClass,
+                    )
 
-                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen3VLAdapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "qwen3vl")] = InferenceModelsQwen3VLAdapter
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = _Qwen3VLModelClass
+                ROBOFLOW_MODEL_TYPES[("vlm", "qwen3vl")] = _Qwen3VLModelClass
             elif variant.startswith("qwen3_5"):
-                from inference.models.qwen3_5vl.qwen3_5vl_inference_models import (
-                    InferenceModelsQwen35VLAdapter,
-                )
+                if VLLM_PROXY_ENABLED:
+                    from inference.models.vllm_proxy.qwen3_5_vllm import (
+                        Qwen35VLLMProxy as _Qwen35ModelClass,
+                    )
+                else:
+                    from inference.models.qwen3_5vl.qwen3_5vl_inference_models import (
+                        InferenceModelsQwen35VLAdapter as _Qwen35ModelClass,
+                    )
 
-                ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsQwen35VLAdapter
-                ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = (
-                    InferenceModelsQwen35VLAdapter
-                )
-                ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = (
-                    InferenceModelsQwen35VLAdapter
-                )
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = _Qwen35ModelClass
+                ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = _Qwen35ModelClass
+                ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = _Qwen35ModelClass
             elif task == "embed" and variant == "sam":
                 from inference.models.sam.segment_anything_inference_models import (
                     InferenceModelsSAMAdapter,
@@ -1123,9 +1138,14 @@ if USE_INFERENCE_MODELS:
 
     # inference-models only, needs to be added here
     if QWEN_3_5_ENABLED:
-        from inference.models.qwen3_5vl.qwen3_5vl_inference_models import (
-            InferenceModelsQwen35VLAdapter,
-        )
+        if VLLM_PROXY_ENABLED:
+            from inference.models.vllm_proxy.qwen3_5_vllm import (
+                Qwen35VLLMProxy as _Qwen35ExplicitModelClass,
+            )
+        else:
+            from inference.models.qwen3_5vl.qwen3_5vl_inference_models import (
+                InferenceModelsQwen35VLAdapter as _Qwen35ExplicitModelClass,
+            )
 
         for variant in [
             "qwen3_5-0.8b",
@@ -1134,12 +1154,12 @@ if USE_INFERENCE_MODELS:
             "qwen3_5-0.8b-peft",
             "qwen3_5-2b-peft",
         ]:
-            ROBOFLOW_MODEL_TYPES[("lmm", variant)] = InferenceModelsQwen35VLAdapter
+            ROBOFLOW_MODEL_TYPES[("lmm", variant)] = _Qwen35ExplicitModelClass
             ROBOFLOW_MODEL_TYPES[("text-image-pairs", variant)] = (
-                InferenceModelsQwen35VLAdapter
+                _Qwen35ExplicitModelClass
             )
-        ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = InferenceModelsQwen35VLAdapter
-        ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = InferenceModelsQwen35VLAdapter
+        ROBOFLOW_MODEL_TYPES[("vlm", "qwen_3_5")] = _Qwen35ExplicitModelClass
+        ROBOFLOW_MODEL_TYPES[("vlm", "qwen3_5")] = _Qwen35ExplicitModelClass
 
     if GLM_OCR_ENABLED:
         from inference.models.glm_ocr.glm_ocr_inference_models import (

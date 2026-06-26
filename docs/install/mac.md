@@ -9,7 +9,7 @@ Simply download the latest DMS disk image from the latest release on Github.
 
 ### OSX Installation Steps
  - [Download the Roboflow Inference DMG](https://github.com/roboflow/inference/releases) disk image
- - Mount hte disk image by double clicking it
+ - Mount the disk image by double clicking it
  - Drag the Roboflow Inference App to the Application Folder
  - Go to your Application Folder and double click the Roboflow Inference App to start the server
 
