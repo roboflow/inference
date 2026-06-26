@@ -6,7 +6,7 @@ in sandboxes. It's separated from the main executor to avoid requiring Modal
 as a dependency for the main inference package.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 import asyncio
 import base64
 import gzip
@@ -14,6 +14,7 @@ import hashlib
 import inspect
 import json
 import os
+import threading
 import traceback
 
 import modal
@@ -113,12 +114,79 @@ class Executor:
         # Initialize the namespaces dict and shared globals
         self._code_namespaces = {}
         self._shared_globals = {}
+        self._namespace_lock = threading.RLock()
 
     def _get_code_hash(self, code_str: str, imports: list) -> str:
         """Compute a stable hash for the code to identify unique blocks."""
         # Combine code and imports to create a unique identifier
         content = code_str + "\n" + "\n".join(imports if imports else [])
         return hashlib.md5(content.encode()).hexdigest()
+
+    def _get_namespace_lock(self) -> threading.RLock:
+        namespace_lock = getattr(self, "_namespace_lock", None)
+        if namespace_lock is None:
+            namespace_lock = threading.RLock()
+            self._namespace_lock = namespace_lock
+        return namespace_lock
+
+    def _get_cached_namespace(self, code_hash: str) -> Optional[dict]:
+        namespace = self._code_namespaces.get(code_hash)
+        if namespace is not None:
+            return namespace
+        with self._get_namespace_lock():
+            return self._code_namespaces.get(code_hash)
+
+    def _get_or_initialize_namespace(
+        self, code_hash: str, code_str: str, imports: list
+    ) -> Tuple[Optional[dict], Optional[Dict[str, Any]]]:
+        namespace = self._code_namespaces.get(code_hash)
+        if namespace is not None:
+            return namespace, None
+
+        with self._get_namespace_lock():
+            namespace = self._code_namespaces.get(code_hash)
+            if namespace is not None:
+                return namespace, None
+
+            namespace = {
+                "__name__": "__main__",
+                "globals": self._shared_globals,
+                # Mirror local execution, where block_scaffolding injects
+                # `debug_traces` via IMPORTS_LINES. Here it is a no-op because
+                # the debug trace ContextVar is not propagated into the sandbox.
+                "debug_traces": _NoopDebugTraces(),
+            }
+            import_code = "\n".join(imports) if imports else ""
+            full_imports = f"""
+from typing import Any, List, Dict, Set, Optional
+import supervision as sv
+import numpy as np
+import math
+import time
+import json
+import os
+import requests
+import cv2
+import shapely
+from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData
+from inference.core.workflows.prototypes.block import BlockResult
+
+{import_code}
+
+from datetime import datetime
+"""
+            try:
+                exec(full_imports, namespace)
+                exec(code_str, namespace)
+            except Exception as e:
+                return None, {
+                    "success": False,
+                    "error": f"Code initialization failed: {str(e)}",
+                    "error_type": type(e).__name__,
+                }
+
+            self._code_namespaces[code_hash] = namespace
+            return namespace, None
 
     @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
     async def execute_block(self, raw_request: Request) -> Dict[str, Any]:
@@ -158,9 +226,17 @@ class Executor:
         #      ``UnknownCodeHash`` so the client retries with the full code.
         if code_str:
             code_hash = self._get_code_hash(code_str, imports)
+            namespace, error_response = self._get_or_initialize_namespace(
+                code_hash=code_hash,
+                code_str=code_str,
+                imports=imports,
+            )
+            if error_response is not None:
+                return error_response
         elif client_code_hash:
             code_hash = client_code_hash
-            if code_hash not in self._code_namespaces:
+            namespace = self._get_cached_namespace(code_hash)
+            if namespace is None:
                 return {
                     "success": False,
                     "error": (
@@ -176,56 +252,6 @@ class Executor:
                 "error": "Request must include either 'code_str' or 'code_hash'.",
                 "error_type": "InvalidRequest",
             }
-
-        # Check if we already have a namespace for this code
-        if code_hash not in self._code_namespaces:
-            # Create a new namespace for this code block
-            self._code_namespaces[code_hash] = {
-                "__name__": "__main__",
-                "globals": self._shared_globals,  # Inject the shared globals dict
-                # Mirror local execution, where block_scaffolding injects
-                # `debug_traces` via IMPORTS_LINES. Here it is a no-op because
-                # the debug trace ContextVar is not propagated into the sandbox.
-                "debug_traces": _NoopDebugTraces(),
-            }
-
-            # Execute imports and code in the namespace to initialize it
-            import_code = "\n".join(imports) if imports else ""
-            full_imports = f"""
-from typing import Any, List, Dict, Set, Optional
-import supervision as sv
-import numpy as np
-import math
-import time
-import json
-import os
-import requests
-import cv2
-import shapely
-from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData
-from inference.core.workflows.prototypes.block import BlockResult
-
-{import_code}
-
-from datetime import datetime
-"""
-            try:
-                # Execute imports in this namespace
-                exec(full_imports, self._code_namespaces[code_hash])
-
-                # Execute the user code to define functions in this namespace
-                exec(code_str, self._code_namespaces[code_hash])
-            except Exception as e:
-                # If there's an error in code initialization, remove the namespace
-                del self._code_namespaces[code_hash]
-                return {
-                    "success": False,
-                    "error": f"Code initialization failed: {str(e)}",
-                    "error_type": type(e).__name__,
-                }
-
-        # Get the namespace for this code
-        namespace = self._code_namespaces[code_hash]
 
         try:
             # we should import serialize_for_modal_remote_execution and deserialize_for_modal_remote_execution
@@ -471,9 +497,17 @@ from datetime import datetime
         """
         if code_str:
             code_hash = executor._get_code_hash(code_str, imports)
+            namespace, error_response = executor._get_or_initialize_namespace(
+                code_hash=code_hash,
+                code_str=code_str,
+                imports=imports,
+            )
+            if error_response is not None:
+                return error_response
         elif client_code_hash:
             code_hash = client_code_hash
-            if code_hash not in executor._code_namespaces:
+            namespace = executor._get_cached_namespace(code_hash)
+            if namespace is None:
                 return {
                     "success": False,
                     "error": (
@@ -489,44 +523,6 @@ from datetime import datetime
                 "error": "Request must include either 'code_str' or 'code_hash'.",
                 "error_type": "InvalidRequest",
             }
-
-        if code_hash not in executor._code_namespaces:
-            executor._code_namespaces[code_hash] = {
-                "__name__": "__main__",
-                "globals": executor._shared_globals,
-                "debug_traces": _NoopDebugTraces(),
-            }
-            import_code = "\n".join(imports) if imports else ""
-            full_imports = f"""
-from typing import Any, List, Dict, Set, Optional
-import supervision as sv
-import numpy as np
-import math
-import time
-import json
-import os
-import requests
-import cv2
-import shapely
-from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData
-from inference.core.workflows.prototypes.block import BlockResult
-
-{import_code}
-
-from datetime import datetime
-"""
-            try:
-                exec(full_imports, executor._code_namespaces[code_hash])
-                exec(code_str, executor._code_namespaces[code_hash])
-            except Exception as e:
-                del executor._code_namespaces[code_hash]
-                return {
-                    "success": False,
-                    "error": f"Code initialization failed: {str(e)}",
-                    "error_type": type(e).__name__,
-                }
-
-        namespace = executor._code_namespaces[code_hash]
 
         if run_function_name not in namespace:
             return {
