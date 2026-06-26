@@ -20,7 +20,7 @@ This Workflow was created to achieve few ends:
     Copy the template into your Roboflow app, start `inference` server and use video preview 
     to get the results.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZWhZSUQzdTNkVEZZcFpFdmlHVjUiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI0ODE5MjF9.Q-EGq8-uVb8qsqXFzmBEmv5LJKBr--lwkmKbMJrQ9ms?showGraph=true" loading="lazy" title="Roboflow Workflow for file sink for data aggregation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiZWhZSUQzdTNkVEZZcFpFdmlHVjUiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI1MDgxNTl9.Xm6tiQZBWsNAUz78_TiJaRkLSa6HgNvZfOy3OWzYW0g?showGraph=true" loading="lazy" title="Roboflow Workflow for file sink for data aggregation" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
