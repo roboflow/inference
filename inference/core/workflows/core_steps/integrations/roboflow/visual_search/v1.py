@@ -6,6 +6,7 @@ from typing_extensions import Annotated
 from inference.core.roboflow_api import search_project_images_at_roboflow
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
+    ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -26,10 +27,11 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Find visually similar images in a Roboflow project."
+SHORT_DESCRIPTION = "Find visually similar image candidates in a Roboflow project."
 
 LONG_DESCRIPTION = """
-Search a Roboflow project for images that look similar to an input image and return the best match plus metadata.
+Search a Roboflow project for images that look similar to an input image and return
+the nearest candidate plus metadata.
 
 ## How This Block Works
 
@@ -38,9 +40,11 @@ This block uses the existing Roboflow project image search API:
 1. Receives an input image from the workflow
 2. Sends the image to Roboflow project search as `image_base64`
 3. Requests useful fields such as image URL, tags, and user metadata
-4. Returns the best match and the top matches list
+4. Returns the best candidate, best candidate image, metadata, tags, and the top candidates list
 
-The target project should already contain uploaded images. Roboflow indexes those images for visual search using the platform's existing image indexing pipeline. This block does not create images, update metadata, or manage the index.
+The target project should already contain uploaded images. Roboflow indexes those
+images for visual search using the platform's existing image indexing pipeline.
+This block does not create images, update metadata, or manage the index.
 """
 
 TopK = Annotated[int, Field(ge=1, le=50)]
@@ -78,7 +82,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
     top_k: Union[TopK, Selector(kind=[INTEGER_KIND])] = Field(
         default=1,
-        description="Number of visually similar images to return. Use 1 when you only need the best match.",
+        description=(
+            "Number of visually similar image candidates to return. Use 1 when you "
+            "only need the nearest candidate."
+        ),
         examples=[1, 5, "$inputs.top_k"],
     )
 
@@ -93,11 +100,14 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="matched", kind=[BOOLEAN_KIND]),
-            OutputDefinition(name="match", kind=[DICTIONARY_KIND]),
-            OutputDefinition(name="matches", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(name="candidate_found", kind=[BOOLEAN_KIND]),
+            OutputDefinition(name="best_candidate", kind=[DICTIONARY_KIND]),
+            OutputDefinition(name="candidates", kind=[LIST_OF_VALUES_KIND]),
             OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
             OutputDefinition(name="message", kind=[STRING_KIND]),
+            OutputDefinition(name="best_candidate_image", kind=[IMAGE_KIND]),
+            OutputDefinition(name="best_candidate_metadata", kind=[DICTIONARY_KIND]),
+            OutputDefinition(name="best_candidate_tags", kind=[LIST_OF_VALUES_KIND]),
         ]
 
     @classmethod
@@ -127,7 +137,8 @@ class RoboflowVisualSearchBlockV1(WorkflowBlock):
         if self._api_key is None:
             raise ValueError(
                 "Roboflow Visual Search block cannot run without a Roboflow API key. "
-                "Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve one."
+                "Visit https://docs.roboflow.com/api-reference/authentication"
+                "#retrieve-an-api-key to learn how to retrieve one."
             )
 
         if isinstance(image, Batch):
@@ -163,44 +174,73 @@ class RoboflowVisualSearchBlockV1(WorkflowBlock):
                 image_base64=image.base64_image,
                 limit=top_k,
             )
-            matches = [_format_match(match) for match in response.get("results", [])]
-            if not matches:
+            candidates = [
+                _format_candidate(candidate)
+                for candidate in response.get("results", [])
+            ]
+            if not candidates:
                 return {
-                    "matched": False,
-                    "match": {},
-                    "matches": [],
+                    "candidate_found": False,
+                    "best_candidate": {},
+                    "candidates": [],
                     "error_status": False,
                     "message": "No visually similar images found.",
+                    "best_candidate_image": None,
+                    "best_candidate_metadata": {},
+                    "best_candidate_tags": [],
                 }
 
+            best_candidate = candidates[0]
             return {
-                "matched": True,
-                "match": matches[0],
-                "matches": matches,
+                "candidate_found": True,
+                "best_candidate": best_candidate,
+                "candidates": candidates,
                 "error_status": False,
                 "message": "Visual search completed.",
+                "best_candidate_image": _build_best_candidate_image(best_candidate),
+                "best_candidate_metadata": best_candidate["metadata"],
+                "best_candidate_tags": best_candidate["tags"],
             }
         except Exception as error:
             return {
-                "matched": False,
-                "match": {},
-                "matches": [],
+                "candidate_found": False,
+                "best_candidate": {},
+                "candidates": [],
                 "error_status": True,
                 "message": f"Visual search failed: {error}",
+                "best_candidate_image": None,
+                "best_candidate_metadata": {},
+                "best_candidate_tags": [],
             }
 
 
-def _format_match(match: Dict[str, Any]) -> Dict[str, Any]:
-    filename = match.get("filename") or match.get("name")
+def _format_candidate(candidate: Dict[str, Any]) -> Dict[str, Any]:
+    filename = candidate.get("filename") or candidate.get("name")
     return {
-        "image_id": match.get("id"),
-        "score": match.get("score"),
-        "image_url": match.get("url"),
-        "name": match.get("name") or filename,
+        "image_id": candidate.get("id"),
+        "image_url": candidate.get("url"),
+        "name": candidate.get("name") or filename,
         "filename": filename,
-        "metadata": match.get("user_metadata") or {},
-        "tags": match.get("tags") or [],
-        "width": match.get("width"),
-        "height": match.get("height"),
-        "aspect_ratio": match.get("aspectRatio"),
+        "metadata": candidate.get("user_metadata") or {},
+        "tags": candidate.get("tags") or [],
+        "width": candidate.get("width"),
+        "height": candidate.get("height"),
+        "aspect_ratio": candidate.get("aspectRatio"),
     }
+
+
+def _build_best_candidate_image(
+    candidate: Dict[str, Any],
+) -> Optional[WorkflowImageData]:
+    image_url = candidate.get("image_url")
+    if not image_url:
+        return None
+    parent_id = (
+        candidate.get("image_id")
+        or candidate.get("filename")
+        or "visual_search_candidate"
+    )
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id=str(parent_id)),
+        image_reference=image_url,
+    )

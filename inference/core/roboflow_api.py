@@ -879,7 +879,6 @@ def search_project_images_at_roboflow(
             "id",
             "name",
             "filename",
-            "score",
             "url",
             "user_metadata",
             "tags",
