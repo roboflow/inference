@@ -22,6 +22,7 @@ import threading
 import time as _time
 from datetime import datetime
 from typing import Any, Dict, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import numpy as np
 import requests
@@ -59,11 +60,54 @@ from inference.core.workflows.core_steps.common.deserializers import (
 )
 
 _DEFAULT_WEBEXEC_APP_NAME = "webexec"
+_WEBEXEC_EXECUTOR_CLASS_LABEL = "executor"
+_WEBEXEC_HTTP_METHOD_LABEL = "execute-block"
+_WEBEXEC_WS_METHOD_LABEL = "wsapp"
 
 
 def _resolve_webexec_app_name() -> str:
     """Return the single legacy webexec app name."""
     return _DEFAULT_WEBEXEC_APP_NAME
+
+
+def _build_webexec_endpoint_base(method_label: str) -> str:
+    workspace = MODAL_WORKSPACE_NAME
+    app_name = _resolve_webexec_app_name()
+    label = f"{app_name}-{_WEBEXEC_EXECUTOR_CLASS_LABEL}-{method_label}"
+    if len(label) > 56:
+        hash_str = hashlib.sha256(label.encode()).hexdigest()[:6]
+        label = f"{label[:56]}-{hash_str}"
+    return f"https://{workspace}--{label}.modal.run"
+
+
+def _coerce_http_endpoint_to_ws_endpoint(endpoint_url: str) -> str:
+    """Map a legacy execute_block endpoint URL to the wsapp endpoint URL."""
+    parts = urlsplit(endpoint_url.rstrip("/"))
+    netloc = parts.netloc.replace(
+        f"-{_WEBEXEC_HTTP_METHOD_LABEL}.modal.run",
+        f"-{_WEBEXEC_WS_METHOD_LABEL}.modal.run",
+        1,
+    )
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
+def _as_ws_endpoint_url(endpoint_url: str, workspace_id: str) -> str:
+    parts = urlsplit(endpoint_url.rstrip("/"))
+    scheme = parts.scheme.replace("https", "wss", 1).replace("http", "ws", 1)
+    path = parts.path.rstrip("/")
+    if not path.endswith("/ws"):
+        path = f"{path}/ws"
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["workspace_id"] = workspace_id
+    return urlunsplit(
+        (
+            scheme,
+            parts.netloc,
+            path,
+            urlencode(query),
+            parts.fragment,
+        )
+    )
 
 
 def _compute_code_hash(code_str: str, imports: Optional[list]) -> str:
@@ -270,17 +314,9 @@ class ModalExecutor:
             if env_url:
                 self._base_url = env_url
             else:
-                workspace = MODAL_WORKSPACE_NAME
-                app_name = _resolve_webexec_app_name()
-                class_name = "executor"
-                method_name = "execute-block"
-
-                label = f"{app_name}-{class_name}-{method_name}"
-                if len(label) > 56:
-                    hash_str = hashlib.sha256(label.encode()).hexdigest()[:6]
-                    label = f"{label[:56]}-{hash_str}"
-
-                self._base_url = f"https://{workspace}--{label}.modal.run"
+                self._base_url = _build_webexec_endpoint_base(
+                    method_label=_WEBEXEC_HTTP_METHOD_LABEL
+                )
 
         return f"{self._base_url}?workspace_id={workspace_id}"
 
@@ -701,20 +737,19 @@ class WebSocketModalExecutor:
         if self._ws_url is not None:
             return self._ws_url
 
-        env_url = os.environ.get("MODAL_WEB_ENDPOINT_URL", "")
-        if env_url:
-            base = env_url.rstrip("/")
+        explicit_ws_url = os.environ.get("MODAL_WS_ENDPOINT_URL", "")
+        if explicit_ws_url:
+            base = explicit_ws_url.rstrip("/")
         else:
-            workspace = MODAL_WORKSPACE_NAME
-            app_name = _resolve_webexec_app_name()
-            label = f"{app_name}-executor-wsapp"
-            if len(label) > 56:
-                h = hashlib.sha256(label.encode()).hexdigest()[:6]
-                label = f"{label[:56]}-{h}"
-            base = f"https://{workspace}--{label}.modal.run"
+            legacy_http_url = os.environ.get("MODAL_WEB_ENDPOINT_URL", "")
+            if legacy_http_url:
+                base = _coerce_http_endpoint_to_ws_endpoint(legacy_http_url)
+            else:
+                base = _build_webexec_endpoint_base(
+                    method_label=_WEBEXEC_WS_METHOD_LABEL
+                )
 
-        ws_base = base.replace("https://", "wss://").replace("http://", "ws://")
-        self._ws_url = f"{ws_base}/ws?workspace_id={workspace_id}"
+        self._ws_url = _as_ws_endpoint_url(base, workspace_id)
         return self._ws_url
 
     def _connect(self, workspace_id: str) -> None:

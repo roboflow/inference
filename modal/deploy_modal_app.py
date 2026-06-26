@@ -13,10 +13,10 @@ Usage:
     # Option 1: Set environment variables
     export MODAL_TOKEN_ID="your_token_id"
     export MODAL_TOKEN_SECRET="your_token_secret"
-    
+
     # Option 2: Use credentials from ~/.modal.toml (automatic fallback)
     # You can set this up by running `modal setup`.
-    
+
     # Then deploy
     python modal/deploy_modal_app.py
 """
@@ -63,37 +63,44 @@ try:
     print(f"  Name: {deployed_app.name}")
     print(f"  App ID: {deployed_app.app_id}")
 
-    # Try to get the actual URL from the deployed app
-    print("\n📡 Web Endpoint URL:")
+    # Try to get the actual URLs from the deployed app
+    print("\n📡 Web Endpoint URLs:")
     try:
         # Get the Executor class
         cls = modal.Cls.from_name(app.name, "Executor")
         # Create an instance to get the method
         instance = cls(workspace_id="test")
         # Get the execute_block method's web URL
+        http_base_url = None
+        ws_base_url = None
         if hasattr(instance, "execute_block") and hasattr(
             instance.execute_block, "get_web_url"
         ):
             actual_url = instance.execute_block.get_web_url()
             if actual_url:
                 # Remove query params to get base URL
-                base_url = actual_url.split("?")[0]
-                print(f"  {base_url}")
+                http_base_url = actual_url.split("?")[0]
+                print(f"  HTTP:      {http_base_url}")
+                print("             Set MODAL_WEB_ENDPOINT_URL for HTTP transport.")
+        if hasattr(instance, "wsapp") and hasattr(instance.wsapp, "get_web_url"):
+            actual_ws_url = instance.wsapp.get_web_url()
+            if actual_ws_url:
+                ws_base_url = actual_ws_url.split("?")[0]
+                print(f"  WebSocket: {ws_base_url}")
+                print("             Set MODAL_WS_ENDPOINT_URL for websocket transport.")
 
-                print("\n📝 Example test command:")
-                print(
-                    f"""
-curl -X POST "{base_url}?workspace_id=test" \\
+        if not http_base_url and not ws_base_url:
+            raise Exception("Could not get web URL from methods")
+
+        if http_base_url:
+            print("\n📝 Example test command:")
+            print(f"""
+curl -X POST "{http_base_url}?workspace_id=test" \\
   -H "Content-Type: application/json" \\
   -H "Modal-Key: {token_id}" \\
   -H "Modal-Secret: {token_secret}" \\
   -d '{{"code_str": "def run(): return {{\\"test\\": \\"ok\\"}}", "run_function_name": "run", "inputs_json": "{{}}"}}'
-"""
-                )
-            else:
-                raise Exception("Could not get web URL from method")
-        else:
-            raise Exception("Method does not have get_web_url")
+""")
     except Exception as e:
         print(f"  Could not retrieve actual URL dynamically: {e}")
         print(
@@ -103,7 +110,7 @@ curl -X POST "{base_url}?workspace_id=test" \\
             f"  Expected format: https://roboflow--{app.name}-executor-{{truncated}}.modal.run"
         )
         print(
-            "\n  Set the MODAL_WEB_ENDPOINT_URL environment variable with the actual URL."
+            "\n  Set MODAL_WEB_ENDPOINT_URL for HTTP or MODAL_WS_ENDPOINT_URL for websocket."
         )
 
     print("\n✅ Ready for production use!")
