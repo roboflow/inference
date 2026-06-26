@@ -310,15 +310,6 @@ class ModalExecutor:
                 python_code.imports,
             )
 
-            # Prepare request payload
-            request_payload = {
-                "code_str": python_code.run_function_code,
-                "imports": python_code.imports or [],
-                "run_function_name": python_code.run_function_name,
-                "inputs_json": inputs_json,
-                "workflow_context": workflow_context or {},
-            }
-
             if (
                 not workspace
                 or workspace == "anonymous"
@@ -345,6 +336,7 @@ class ModalExecutor:
                 inputs_json=inputs_json,
                 code_hash=code_hash,
                 send_full_code=send_full_code,
+                workflow_context=workflow_context or {},
             )
 
             if (
@@ -360,6 +352,7 @@ class ModalExecutor:
                     inputs_json=inputs_json,
                     code_hash=code_hash,
                     send_full_code=True,
+                    workflow_context=workflow_context or {},
                 )
 
             if result.get("success", False):
@@ -423,6 +416,7 @@ class ModalExecutor:
         inputs_json: str,
         code_hash: str,
         send_full_code: bool,
+        workflow_context: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Build the gzip-JSON request and POST it. Returns the parsed JSON.
 
@@ -433,6 +427,7 @@ class ModalExecutor:
             "code_hash": code_hash,
             "run_function_name": python_code.run_function_name,
             "inputs_json": inputs_json,
+            "workflow_context": workflow_context,
         }
         if send_full_code:
             request_payload["code_str"] = python_code.run_function_code
