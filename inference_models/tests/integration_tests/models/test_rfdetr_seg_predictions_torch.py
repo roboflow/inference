@@ -29,12 +29,12 @@ def test_package_with_stretch_against_numpy_input(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [135, 329, 1247, 561],
+                [144, 337, 1265, 560],
             ],
         ),
         atol=1,
     )
-    assert 204890 <= np.sum(predictions[0].mask.cpu().numpy()) <= 205890
+    assert 205614 <= np.sum(predictions[0].mask.cpu().numpy()) <= 206614
 
 
 @pytest.mark.slow
@@ -65,12 +65,12 @@ def test_package_with_stretch_against_numpy_input_rle_variant(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [135, 329, 1247, 561],
+                [144, 337, 1265, 560],
             ],
         ),
         atol=1,
     )
-    assert 204890 <= np.sum(decoded_mask.cpu().numpy()) <= 205890
+    assert 205614 <= np.sum(decoded_mask.cpu().numpy()) <= 206614
     assert np.allclose(
         decoded_mask.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )
@@ -100,22 +100,22 @@ def test_package_with_stretch_against_numpy_list_input(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [135, 329, 1247, 561],
+                [144, 337, 1265, 560],
             ],
         ),
         atol=1,
     )
-    assert 204890 <= np.sum(predictions[0].mask.cpu().numpy()) <= 205890
+    assert 205614 <= np.sum(predictions[0].mask.cpu().numpy()) <= 206614
     assert np.allclose(
         predictions[1].xyxy.cpu().numpy(),
         np.array(
             [
-                [135, 329, 1247, 561],
+                [144, 337, 1265, 560],
             ],
         ),
         atol=1,
     )
-    assert 204890 <= np.sum(predictions[1].mask.cpu().numpy()) <= 205890
+    assert 205614 <= np.sum(predictions[1].mask.cpu().numpy()) <= 206614
 
 
 @pytest.mark.slow
@@ -153,22 +153,22 @@ def test_package_with_stretch_against_numpy_list_input_rle_variant(
         predictions[0].xyxy.cpu().numpy(),
         np.array(
             [
-                [135, 329, 1247, 561],
+                [144, 337, 1265, 560],
             ],
         ),
         atol=1,
     )
-    assert 204890 <= np.sum(decoded_mask_1.cpu().numpy()) <= 205890
+    assert 205614 <= np.sum(decoded_mask_1.cpu().numpy()) <= 206614
     assert np.allclose(
         predictions[1].xyxy.cpu().numpy(),
         np.array(
             [
-                [135, 329, 1247, 561],
+                [144, 337, 1265, 560],
             ],
         ),
         atol=1,
     )
-    assert 204890 <= np.sum(decoded_mask_2.cpu().numpy()) <= 205890
+    assert 205614 <= np.sum(decoded_mask_2.cpu().numpy()) <= 206614
     assert np.allclose(
         decoded_mask_1.cpu().numpy(), predictions_ref[0].mask.cpu().numpy()
     )

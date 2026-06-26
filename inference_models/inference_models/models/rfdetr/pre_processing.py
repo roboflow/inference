@@ -128,21 +128,10 @@ def pre_process_network_input(
                     pre_processing_overrides=pre_processing_overrides,
                 )
             else:
-                # STRETCH_TO collapses to a single resize with no padding, so run
-                # the uint8/numpy frame through the tensor path — upload to the
-                # target device as a float CHW tensor in [0, 1] and reuse
-                # _pre_process_tensor, so the channel-swap + F.resize(antialias)
-                # + normalize run on-device with no host round-trip. Avoids the
-                # CPU PIL chain (numpy reverse-copy + Pillow resize) that
-                # dominated per-frame latency on edge/Jetson, and uses the same
-                # resize semantics as the float-tensor input branch (and
-                # predict()).
                 gpu_img = (
                     torch.from_numpy(np.ascontiguousarray(np_img))
                     .to(target_device)
                     .permute(2, 0, 1)
-                    .to(torch.float32)
-                    .div_(255.0)
                 )
                 tensor, meta = _pre_process_tensor(
                     image=gpu_img,
@@ -289,10 +278,6 @@ def _pre_process_tensor(
     input_color_mode: Optional[ColorMode],
     pre_processing_overrides: Optional[PreProcessingOverrides],
 ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
-    """Float-tensor branch: tensor F.resize matching predict()'s tensor branch.
-    Skips PIL round-trip; assumes input is float CHW (or NCHW with N=1) in
-    [0, 1]. Tensor F.resize bilinear is NOT byte-equivalent to PIL F.resize
-    bilinear — predict() already accepts that on its tensor path."""
     if image.ndim == 3:
         image = image.unsqueeze(0)
     if image.shape[1] not in (1, 3) and image.shape[-1] in (1, 3):
