@@ -5,6 +5,7 @@ import cv2 as cv
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from supervision.config import ORIENTED_BOX_COORDINATES
 from typing_extensions import Literal, Type
 
 from inference.core.workflows.execution_engine.constants import (
@@ -729,6 +730,17 @@ def correct_detections(
             ).reshape(-1, 2)
             detection[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = np.array(
                 [np.around(corrected_key_points).astype(np.int32)], dtype="object"
+            )
+        if ORIENTED_BOX_COORDINATES in detection.data:
+            corrected_obb: np.ndarray = cv.perspectiveTransform(
+                src=np.array(
+                    [detection.data[ORIENTED_BOX_COORDINATES][0]],
+                    dtype=np.float32,
+                ),
+                m=perspective_transformer,
+            ).reshape(-1, 2)
+            detection[ORIENTED_BOX_COORDINATES] = np.array(
+                [np.around(corrected_obb).astype(np.float32)]
             )
         corrected_detections.append(detection)
     return sv.Detections.merge(corrected_detections)
