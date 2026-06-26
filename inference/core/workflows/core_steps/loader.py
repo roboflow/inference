@@ -562,6 +562,10 @@ from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v
 from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
     TrackClassLockBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.tracklet_recognition.v1 import (
+    TrackletRecognitionCacheBlockV1,
+    TrackletRecognitionGateBlockV1,
+)
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
@@ -937,6 +941,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         StabilityAIImageGenBlockV1,
         StabilityAIOutpaintingBlockV1,
         StabilizeTrackedDetectionsBlockV1,
+        TrackletRecognitionGateBlockV1,
+        TrackletRecognitionCacheBlockV1,
         StitchImagesBlockV1,
         StitchOCRDetectionsBlockV2,
         StitchOCRDetectionsBlockV1,

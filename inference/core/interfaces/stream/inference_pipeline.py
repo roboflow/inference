@@ -6,6 +6,7 @@ from functools import partial
 from queue import Queue
 from threading import Thread
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
+from uuid import uuid4
 
 from inference.core import logger
 from inference.core.active_learning.middlewares import (
@@ -652,6 +653,17 @@ class InferencePipeline:
             workflow_init_parameters["workflows_core.api_key"] = api_key
             workflow_init_parameters["workflows_core.thread_pool_executor"] = (
                 thread_pool_executor
+            )
+            workflow_init_parameters.setdefault(
+                "workflows_core.workspace_id", workspace_name or "local"
+            )
+            workflow_init_parameters.setdefault(
+                "workflows_core.workflow_id",
+                workflow_id or workflow_specification.get("id") or "local_workflow",
+            )
+            workflow_init_parameters.setdefault(
+                "workflows_core.execution_session_id",
+                f"inference_pipeline-{uuid4().hex}",
             )
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,

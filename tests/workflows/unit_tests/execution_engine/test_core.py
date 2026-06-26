@@ -88,3 +88,20 @@ def test_execution_engine_init_with_invalid_step_error_handler() -> None:
             workflow_definition={},
             step_error_handler="invalid",
         )
+
+
+@mock.patch("inference.core.workflows.execution_engine.v1.core.compile_workflow")
+def test_execution_engine_v1_init_does_not_mutate_caller_init_parameters(
+    compile_workflow_mock: mock.MagicMock,
+) -> None:
+    from inference.core.workflows.execution_engine.v1.core import ExecutionEngineV1
+
+    compile_workflow_mock.return_value = mock.Mock()
+    caller_init_parameters = {"workflows_core.api_key": "test-key"}
+
+    _ = ExecutionEngineV1.init(
+        workflow_definition={"version": "1.0"},
+        init_parameters=caller_init_parameters,
+    )
+
+    assert caller_init_parameters == {"workflows_core.api_key": "test-key"}
