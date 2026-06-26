@@ -239,6 +239,7 @@ class ModalExecutor:
         python_code: PythonCode,
         inputs: Dict[str, Any],
         workspace_id: Optional[str] = None,
+        workflow_context: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
         """Execute a Custom Python Block in a Modal sandbox via web endpoint.
 
@@ -278,6 +279,7 @@ class ModalExecutor:
                 "imports": python_code.imports or [],
                 "run_function_name": python_code.run_function_name,
                 "inputs_json": inputs_json,
+                "workflow_context": workflow_context or {},
             }
 
             if (

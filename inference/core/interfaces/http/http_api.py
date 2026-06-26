@@ -5,6 +5,7 @@ import os
 import re
 import warnings
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import partial
 from threading import Lock, Thread
@@ -172,6 +173,7 @@ from inference.core.env import (
     GET_MODEL_REGISTRY_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED,
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS,
+    HTTP_API_THREADPOOL_WORKERS,
     INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
@@ -323,6 +325,9 @@ from inference.core.workflows.execution_engine.profiling.core import (
 from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     get_workflow_schema_description,
     parse_workflow_definition,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
+    register_debug_session,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
@@ -1341,11 +1346,48 @@ class HttpInterface(BaseInterface):
             is_preview = False
             if hasattr(workflow_request, "is_preview"):
                 is_preview = workflow_request.is_preview
-            workflow_results = execution_engine.run(
-                runtime_parameters=workflow_request.inputs,
-                serialize_results=True,
-                _is_preview=is_preview,
-            )
+            # Capture python-block stdout/stderr only when the caller explicitly
+            # opts in via `debug=True` (clients must set the flag - preview runs
+            # do not enable it implicitly).
+            debug_requested = getattr(workflow_request, "debug", False)
+            if debug_requested:
+                # Session state is published via ContextVars; the execution engine
+                # re-binds them inside every worker thread spawned by its
+                # ThreadPoolExecutor (see `safe_execute_step`).
+                debug_ctx = register_debug_session()
+            else:
+                debug_ctx = nullcontext()
+            with debug_ctx as debug_session:
+                try:
+                    workflow_results = execution_engine.run(
+                        runtime_parameters=workflow_request.inputs,
+                        serialize_results=True,
+                        _is_preview=is_preview,
+                    )
+                except Exception as error:
+                    # The error response is built outside this route (see
+                    # `with_route_exceptions`), after the session ContextVars
+                    # scope is gone - so carry snapshots on the exception to
+                    # surface debug output from steps that ran before the failure.
+                    if debug_session is not None:
+                        logs_snapshot = debug_session.output_streams.snapshot()
+                        if logs_snapshot:
+                            error.python_blocks_output_streams = logs_snapshot
+                        trace_entries = debug_session.debug_traces.snapshot()
+                        if trace_entries:
+                            error.python_blocks_debug_traces = trace_entries
+                    raise
+                # Empty snapshots serialize as null in the response.
+                python_blocks_output_streams = (
+                    debug_session.output_streams.snapshot()
+                    if debug_requested and debug_session is not None
+                    else None
+                ) or None
+                python_blocks_debug_traces = (
+                    debug_session.debug_traces.snapshot()
+                    if debug_requested and debug_session is not None
+                    else None
+                ) or None
             with profiler.profile_execution_phase(
                 name="workflow_results_filtering",
                 categories=["inference_package_operation"],
@@ -1358,6 +1400,8 @@ class HttpInterface(BaseInterface):
             response = WorkflowInferenceResponse(
                 outputs=outputs,
                 profiler_trace=profiler_trace,
+                python_blocks_output_streams=python_blocks_output_streams,
+                python_blocks_debug_traces=python_blocks_debug_traces,
             )
             return orjson_response(response=response)
 
@@ -2575,6 +2619,20 @@ class HttpInterface(BaseInterface):
                 )
                 startup_thread.start()
                 logger.info("Model initialization started in the background.")
+
+        if HTTP_API_THREADPOOL_WORKERS:
+
+            @app.on_event("startup")
+            async def adjust_http_threadpool_size():
+                """Resize the anyio thread pool serving sync HTTP handlers."""
+                import anyio.to_thread
+
+                limiter = anyio.to_thread.current_default_thread_limiter()
+                limiter.total_tokens = HTTP_API_THREADPOOL_WORKERS
+                logger.info(
+                    "HTTP API thread pool resized to %s threads",
+                    HTTP_API_THREADPOOL_WORKERS,
+                )
 
         # Attach health/readiness endpoints
         @app.get("/readiness", status_code=200)
