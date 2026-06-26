@@ -33,7 +33,7 @@ from inference.core.workflows.execution_engine.v1.step_error_handlers import (
     legacy_step_error_handler,
 )
 
-EXECUTION_ENGINE_V1_VERSION = Version("1.12.0")
+EXECUTION_ENGINE_V1_VERSION = Version("1.13.0")
 
 DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER = os.getenv(
     "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "extended_roboflow_errors"
@@ -63,6 +63,11 @@ class ExecutionEngineV1(BaseExecutionEngine):
     ) -> "ExecutionEngineV1":
         if init_parameters is None:
             init_parameters = {}
+        else:
+            # Literal deepcopy is risky here because init params can contain ThreadPoolExecutor,
+            # model managers, FastAPI BackgroundTasks, etc.
+            # We still want to avoid mutating top-level keys, so shallow copy is the correct fix.
+            init_parameters = dict(init_parameters)
         if isinstance(step_error_handler, str):
             if step_error_handler not in REGISTERED_STEP_ERROR_HANDLERS:
                 raise WorkflowEnvironmentConfigurationError(
