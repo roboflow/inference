@@ -928,40 +928,43 @@ class WebSocketModalExecutor:
         """
         last_exc: Optional[Exception] = None
         for attempt in range(2):
+            sent_ok = False
             try:
                 self._ensure_connection(workspace)
+                # Hold the lock across send+recv so concurrent callers sharing
+                # this executor's socket can't interleave a request/response.
                 with self._io_lock:
                     self._ws.send_binary(frame_bytes)
+                    sent_ok = True
+                    resp_bytes = self._ws.recv()
+                self._last_activity = _time.monotonic()
+                return resp_bytes
             except Exception as e:
+                self._drop_ws_connection()
+                if sent_ok:
+                    # recv failed after the frame was sent; the remote may have
+                    # already executed user code, so we don't resend and risk
+                    # duplicate side effects.
+                    logger.warning(
+                        "[webexec-ws] response receive failed after frame was "
+                        "sent; not retrying to avoid duplicate execution: %s",
+                        e,
+                    )
+                    raise DynamicBlockError(
+                        public_message=(
+                            "WebSocket connection to Modal endpoint lost after "
+                            "the request was sent. The custom Python block may "
+                            "have already executed, so the frame was not retried."
+                        ),
+                        context="modal_executor | websocket_response",
+                    )
                 last_exc = e
                 logger.warning(
                     "[webexec-ws] connect/send failed (attempt %d/2): %s",
                     attempt + 1,
                     e,
                 )
-                self._drop_ws_connection()
                 continue
-
-            try:
-                with self._io_lock:
-                    resp_bytes = self._ws.recv()
-                self._last_activity = _time.monotonic()
-                return resp_bytes
-            except Exception as e:
-                logger.warning(
-                    "[webexec-ws] response receive failed after frame was sent; "
-                    "not retrying to avoid duplicate execution: %s",
-                    e,
-                )
-                self._drop_ws_connection()
-                raise DynamicBlockError(
-                    public_message=(
-                        "WebSocket connection to Modal endpoint lost after the "
-                        "request was sent. The custom Python block may have "
-                        "already executed, so the frame was not retried."
-                    ),
-                    context="modal_executor | websocket_response",
-                )
 
         raise DynamicBlockError(
             public_message=f"WebSocket connection to Modal endpoint failed after retry: {last_exc}",
