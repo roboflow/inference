@@ -33,7 +33,10 @@ from inference.core.models.stubs import (
     KeypointsDetectionModelStub,
     ObjectDetectionModelStub,
 )
-from inference.core.registries.roboflow import get_model_type
+from inference.core.registries.roboflow import (
+    LOCAL_INFERENCE_MODELS_MODEL_TYPE,
+    get_model_type,
+)
 from inference.core.warnings import InferenceModelsStackMissing, ModelDependencyMissing
 from inference.models import (
     YOLACT,
@@ -1144,3 +1147,17 @@ if USE_INFERENCE_MODELS:
         )
 
         ROBOFLOW_MODEL_TYPES[("vlm", "glm-ocr")] = InferenceModelsGLMOCRAdapter
+
+    # Models loaded directly from a local directory (ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES).
+    # Task type is read from the local model_config.json; the adapter forwards the path to
+    # AutoModel.from_pretrained with allow_direct_local_storage_loading=True.
+    for local_task, local_adapter in [
+        ("object-detection", InferenceModelsObjectDetectionAdapter),
+        ("instance-segmentation", InferenceModelsInstanceSegmentationAdapter),
+        ("keypoint-detection", InferenceModelsKeyPointsDetectionAdapter),
+        ("classification", InferenceModelsClassificationAdapter),
+        ("semantic-segmentation", InferenceModelsSemanticSegmentationAdapter),
+    ]:
+        ROBOFLOW_MODEL_TYPES[(local_task, LOCAL_INFERENCE_MODELS_MODEL_TYPE)] = (
+            local_adapter
+        )
