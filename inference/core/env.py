@@ -736,6 +736,9 @@ WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS = int(
 WEBEXEC_WS_READ_TIMEOUT_SECONDS = int(
     os.getenv("WEBEXEC_WS_READ_TIMEOUT_SECONDS", "720")
 )
+WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
+    os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
+)
 
 # Strip quotes from Modal credentials in case users include them
 _modal_token_id = os.getenv("MODAL_TOKEN_ID")
