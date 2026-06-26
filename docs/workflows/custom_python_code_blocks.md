@@ -404,3 +404,38 @@ as if that was normal block exposed through static plugin:
     "class_y": "dog"
 }
 ```
+
+## Debugging dynamic blocks
+
+Set `debug=True` on the `/workflows/run` request to capture diagnostics from custom Python
+blocks. It is opt-in (preview runs do not enable it implicitly).
+
+**Capturing stdout/stderr.** Anything your block prints is captured per step.
+
+**Emitting structured traces.** A `debug_traces` helper is available in your `run(...)` code
+(injected as a baseline symbol, alongside the standard imports). Append any JSON-serialisable
+value; pass `add_timestamp=True` to stamp the entry:
+
+```python
+def run(self, value: int) -> BlockResult:
+    debug_traces.append({"received": value})
+    debug_traces.append(value * 2, add_timestamp=True)
+    return {"result": value * 2}
+```
+
+When `debug` is not enabled (or under Modal / OCI sandbox execution), `debug_traces.append(...)`
+is a safe no-op and is not collected.
+
+**Successful run (HTTP 200).** The response carries:
+
+- `python_blocks_output_streams` — captured stdout/stderr keyed by step name, e.g.
+  `{"my_step": [{"stdout": "...", "stderr": null}]}`.
+- `python_blocks_debug_traces` — appended entries in execution order, e.g.
+  `[{"step": "my_step", "value": {"received": 7}, "timestamp": "...", "timestamp_timezone": "UTC"}]`
+  (`timestamp*` present only when `add_timestamp=True`).
+
+Both are `null` when `debug` is off or nothing was captured. Only populated for local execution.
+
+**Failed run (HTTP 400).** The error response carries the **same two fields** with the partial
+output/traces produced by steps that ran (and printed/appended) before the failure, plus
+`blocks_errors[].block_traceback` with the failing step's own stdout/stderr.
