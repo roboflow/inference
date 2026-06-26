@@ -1,5 +1,7 @@
 import io
+import ipaddress
 import pickle
+import socket
 from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
@@ -35,6 +37,18 @@ from inference.core.utils.image_utils import (
     load_image_with_inferred_type,
     load_image_with_known_type,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_image_url_dns(monkeypatch) -> None:
+    def getaddrinfo(host, *args, **kwargs):
+        try:
+            resolved = str(ipaddress.ip_address(host.split("%", 1)[0]))
+        except ValueError:
+            resolved = "93.184.216.34"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (resolved, 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
 
 
 @pytest.mark.parametrize(
@@ -184,6 +198,7 @@ def test_load_image_from_url_when_locations_not_whitelisted(url: str) -> None:
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
 @mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_TO_PRIVATE_NETWORKS", True)
 @mock.patch.object(
     image_utils,
     "WHITELISTED_DESTINATIONS_FOR_URL_INPUT",
@@ -244,6 +259,70 @@ def test_load_image_from_url_rejects_backslash_userinfo_allowlist_bypass() -> No
             _ = load_image_from_url(value="https://localhost:6666\\@www.roboflow.com")
 
     requests_get.assert_not_called()
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+def test_load_image_from_url_rejects_redirect_to_metadata_address(
+    requests_mock: Mocker,
+    image_as_png_bytes: bytes,
+) -> None:
+    public_url = "https://some.com/image.png"
+    metadata_url = "http://169.254.169.254/latest/meta-data"
+    requests_mock.get(
+        public_url,
+        status_code=302,
+        headers={"Location": metadata_url},
+    )
+    requests_mock.get(metadata_url, content=image_as_png_bytes)
+
+    with pytest.raises(InputImageLoadError, match="redirects"):
+        _ = load_image_from_url(value=public_url)
+
+    assert [request.url for request in requests_mock.request_history] == [public_url]
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+def test_load_image_from_url_rejects_hostname_resolving_to_metadata_address(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", 0))
+        ],
+    )
+    with mock.patch.object(
+        image_utils.requests,
+        "get",
+        side_effect=AssertionError("requests.get must not be called"),
+    ) as requests_get:
+        with pytest.raises(InputImageLoadError, match="non-public"):
+            _ = load_image_from_url(value="https://some.com/image.png")
+
+    requests_get.assert_not_called()
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_TO_PRIVATE_NETWORKS", True)
+def test_load_image_from_url_allows_private_address_when_enabled(
+    requests_mock: Mocker,
+    image_as_numpy: np.ndarray,
+    image_as_png_bytes: bytes,
+) -> None:
+    resource_url = "https://127.0.0.1/image.png"
+    requests_mock.get(resource_url, content=image_as_png_bytes)
+
+    result = load_image_from_url(value=resource_url)
+
+    assert image_as_numpy.shape == result.shape
+    assert np.allclose(image_as_numpy, result)
 
 
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
