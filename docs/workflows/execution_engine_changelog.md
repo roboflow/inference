@@ -2,16 +2,6 @@
 
 Below you can find the changelog for Execution Engine.
 
-## Execution Engine `v1.13.0` | inference `v1.3.2`
-
-**What changed**
-
-* **Workflow context init parameters** — `ExecutionEngine.init` now injects default
-  `workflows_core.workspace_id`, `workflows_core.workflow_id`, and
-  `workflows_core.execution_session_id` values when callers omit them. Stateful
-  workflow blocks can rely on this platform context during step initialisation.
-  Caller-provided init parameter dicts are no longer mutated in place.
-
 ## Execution Engine `v1.12.0` | inference `v1.3.2`
 
 **What changed**
