@@ -407,34 +407,86 @@ as if that was normal block exposed through static plugin:
 
 ## Debugging dynamic blocks
 
-Set `debug=True` on the `/workflows/run` request to capture diagnostics from custom Python
-blocks. It is opt-in (preview runs do not enable it implicitly).
+Debug capture is available when running against a **local inference server** or a
+**dedicated deployment**. It is not collected for Modal / OCI sandbox (cloud) execution.
 
-**Capturing stdout/stderr.** Anything your block prints is captured per step.
+### Enabling debug mode
 
-**Emitting structured traces.** A `debug_traces` helper is available in your `run(...)` code
-(injected as a baseline symbol, alongside the standard imports). Append any JSON-serialisable
-value; pass `add_timestamp=True` to stamp the entry:
+**In the Roboflow app:** turn on **Show All Block Outputs** in the workflow preview
+(or use the block **Test** panel, which always runs with debug enabled). This sends
+`debug=True` on the run request.
+
+**Via API:** set `debug=True` on `/workflows/run`.
+
+When debug is off (or on cloud sandbox execution), `debug_traces.append(...)` is a
+safe no-op and stdout/stderr are not collected.
+
+### Capturing stdout/stderr
+
+Anything your block prints is captured per step:
+
+```python
+def run(self, value: int) -> BlockResult:
+    print("processing", value)
+    return {"result": value}
+```
+
+### Emitting structured traces (shared across all Python blocks)
+
+A workflow-scoped `debug_traces` helper is injected alongside the standard imports.
+Append any JSON-serialisable value from any Python block in the run; entries from all
+blocks appear in one chronological list:
 
 ```python
 def run(self, value: int) -> BlockResult:
     debug_traces.append({"received": value})
-    debug_traces.append(value * 2, add_timestamp=True)
+    debug_traces.append(
+        {"doubled": value * 2},
+        add_timestamp=True,
+        timezone="UTC",
+    )
     return {"result": value * 2}
 ```
 
-When `debug` is not enabled (or under Modal / OCI sandbox execution), `debug_traces.append(...)`
-is a safe no-op and is not collected.
+When `add_timestamp=True`, each entry includes `timestamp` (ISO-8601) and
+`timestamp_timezone`.
 
-**Successful run (HTTP 200).** The response carries:
+### Inspecting workflow context
 
-- `python_blocks_output_streams` — captured stdout/stderr keyed by step name, e.g.
+Each block instance exposes execution metadata via `self.get_workflow_context()`:
+
+```python
+def run(self, value: int) -> BlockResult:
+    ctx = self.get_workflow_context()
+    # step_name, step_selector, block_type, workflow_execution_id
+    debug_traces.append({"context": ctx}, add_timestamp=True)
+    return {"result": value}
+```
+
+| Field | Description |
+|-------|-------------|
+| `step_name` | Step name from the workflow definition |
+| `step_selector` | Reference selector (e.g. `$steps.my_step`) |
+| `block_type` | Block type identifier |
+| `workflow_execution_id` | Unique ID for this workflow run |
+
+### Where to view debug output
+
+**In the app:**
+
+- Workflow preview → output panel (when **Show All Block Outputs** is on)
+- Python block editor → **Test** panel → **Data out** tab
+- Collapsible sections: *Python block output streams* and *Python block debug traces*
+
+**In the API response:**
+
+- `python_blocks_output_streams` — stdout/stderr keyed by step name, e.g.
   `{"my_step": [{"stdout": "...", "stderr": null}]}`.
-- `python_blocks_debug_traces` — appended entries in execution order, e.g.
+- `python_blocks_debug_traces` — structured trace entries in execution order, e.g.
   `[{"step": "my_step", "value": {"received": 7}, "timestamp": "...", "timestamp_timezone": "UTC"}]`
   (`timestamp*` present only when `add_timestamp=True`).
 
-Both are `null` when `debug` is off or nothing was captured. Only populated for local execution.
+Both are `null` when debug is off or nothing was captured. Only populated for local execution.
 
 **Failed run (HTTP 400).** The error response carries the **same two fields** with the partial
 output/traces produced by steps that ran (and printed/appended) before the failure, plus
