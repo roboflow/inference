@@ -1018,6 +1018,23 @@ class HttpInterface(BaseInterface):
                                         workspace_id=usage_check_result.workspace_id,
                                         cache_hit=False,
                                     )
+                                else:
+                                    logger.warning(
+                                        "Unexpected status %s from serverless usage check; "
+                                        "failing closed without caching.",
+                                        usage_check_result.status_code,
+                                    )
+                                    if auth_span is not None:
+                                        auth_span.set_attribute("http.status_code", 503)
+                                        auth_span.set_attribute(
+                                            "auth.result",
+                                            "serverless_usage_check_unavailable",
+                                        )
+                                    return _authorization_error_response(
+                                        503,
+                                        "Authorization service temporarily unavailable. Please retry.",
+                                        cache_hit=False,
+                                    )
 
                         if auth_span is not None:
                             auth_span.set_attribute("http.status_code", 200)
