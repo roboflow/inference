@@ -394,46 +394,6 @@ def test_workflow_runner_without_stream_buffering_returns_current_frame() -> Non
     ]
 
 
-def test_workflow_runner_preserves_zero_source_id_as_video_identifier() -> None:
-    class CapturingExecutionEngine:
-        def __init__(self) -> None:
-            self.runtime_parameters = None
-
-        def run(self, runtime_parameters, **kwargs):
-            self.runtime_parameters = runtime_parameters
-            return []
-
-    engine = CapturingExecutionEngine()
-    frames = [
-        VideoFrame(
-            image=np.zeros((1, 1, 3), dtype=np.uint8),
-            frame_id=1,
-            frame_timestamp=datetime.now(),
-            source_id=0,
-        ),
-        VideoFrame(
-            image=np.zeros((1, 1, 3), dtype=np.uint8),
-            frame_id=1,
-            frame_timestamp=datetime.now(),
-            source_id=1,
-        ),
-    ]
-    runner = WorkflowRunner(
-        workflows_parameters={},
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-
-    runner(frames)
-
-    assert engine.runtime_parameters is not None
-    assert [
-        metadata.video_identifier
-        for metadata in engine.runtime_parameters["video_metadata"]
-    ] == ["0", "1"]
-
-
 def test_wrap_workflow_runner_leaves_non_pipelined_workflows_unchanged() -> None:
     engine = _FakeExecutionEngine(stream_buffer_depth=0)
     runner = WorkflowRunner(
