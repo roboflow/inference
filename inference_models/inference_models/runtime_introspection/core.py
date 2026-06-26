@@ -257,13 +257,10 @@ def get_cuda_version() -> Optional[Version]:
 
 
 def _get_runtime_cuda_version() -> Optional[Version]:
-    """CUDA runtime / toolkit version the app links or ships: the ``cuda-cudart``
-    package (``dpkg``), else the loaded ``cudaRuntimeGetVersion``, else
-    ``torch.version.cuda``."""
-    cuda_version = _get_cuda_version_with_dpkg()
+    cuda_version = _get_cuda_version_loading_shared_library()
     if cuda_version is not None:
         return cuda_version
-    cuda_version = _get_cuda_version_loading_shared_library()
+    cuda_version = _get_cuda_version_with_dpkg()
     if cuda_version is not None:
         return cuda_version
     return _get_cuda_version_from_torch()
