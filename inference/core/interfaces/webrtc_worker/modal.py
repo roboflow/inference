@@ -719,8 +719,8 @@ if modal is not None:
                     q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
                 )
             except Empty:
-                logger.error("Modal function call timed out, terminating containers")
-                function_call.cancel(terminate_containers=True)
+                logger.error("Modal function call timed out, cancelling function call")
+                function_call.cancel()
                 raise RoboflowAPITimeoutError("Modal function call timed out")
             except Exception as exc:
                 logger.error(exc)
