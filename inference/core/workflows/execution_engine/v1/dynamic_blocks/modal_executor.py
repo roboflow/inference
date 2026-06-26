@@ -849,6 +849,15 @@ class WebSocketModalExecutor:
             except Exception:
                 pass
 
+    def _drop_ws_connection(self) -> None:
+        try:
+            if self._ws is not None:
+                self._ws.close()
+        except Exception:
+            pass
+        self._ws = None
+        self._hashes_sent_on_ws = set()
+
     def execute_remote(
         self,
         block_type_name: str,
@@ -909,11 +918,13 @@ class WebSocketModalExecutor:
         frame_bytes: bytes,
         workspace: str,
     ) -> bytes:
-        """Send frame and receive response, reconnecting once on socket failure.
+        """Send frame and receive response, reconnecting once before execution.
 
-        On the first send/recv exception we drop the connection, reconnect,
-        and resend. If the retry also fails we wrap the error in
-        ``DynamicBlockError`` to match the HTTP path's behavior.
+        We retry connection/send failures because the frame has not been
+        accepted by the websocket client. Once ``send_binary`` succeeds, the
+        remote may already be executing user code; a later ``recv`` failure has
+        an ambiguous outcome, so we do not resend the frame and risk duplicate
+        side effects.
         """
         last_exc: Optional[Exception] = None
         for attempt in range(2):
@@ -921,23 +932,36 @@ class WebSocketModalExecutor:
                 self._ensure_connection(workspace)
                 with self._io_lock:
                     self._ws.send_binary(frame_bytes)
+            except Exception as e:
+                last_exc = e
+                logger.warning(
+                    "[webexec-ws] connect/send failed (attempt %d/2): %s",
+                    attempt + 1,
+                    e,
+                )
+                self._drop_ws_connection()
+                continue
+
+            try:
+                with self._io_lock:
                     resp_bytes = self._ws.recv()
                 self._last_activity = _time.monotonic()
                 return resp_bytes
             except Exception as e:
-                last_exc = e
                 logger.warning(
-                    "[webexec-ws] send/recv failed (attempt %d/2): %s",
-                    attempt + 1,
+                    "[webexec-ws] response receive failed after frame was sent; "
+                    "not retrying to avoid duplicate execution: %s",
                     e,
                 )
-                try:
-                    if self._ws is not None:
-                        self._ws.close()
-                except Exception:
-                    pass
-                self._ws = None
-                self._hashes_sent_on_ws = set()
+                self._drop_ws_connection()
+                raise DynamicBlockError(
+                    public_message=(
+                        "WebSocket connection to Modal endpoint lost after the "
+                        "request was sent. The custom Python block may have "
+                        "already executed, so the frame was not retried."
+                    ),
+                    context="modal_executor | websocket_response",
+                )
 
         raise DynamicBlockError(
             public_message=f"WebSocket connection to Modal endpoint failed after retry: {last_exc}",
