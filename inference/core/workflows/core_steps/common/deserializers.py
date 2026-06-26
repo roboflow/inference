@@ -9,7 +9,6 @@ import pybase64
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.env import MAX_IMAGE_URL_REDIRECTS
 from inference.core.utils.image_utils import (
     attempt_loading_image_from_string,
     load_image_from_url,
@@ -119,10 +118,7 @@ def deserialize_image_kind(
             image_reference = None
             if image.startswith("http://") or image.startswith("https://"):
                 image_reference = image
-                image = load_image_from_url(
-                    value=image,
-                    max_redirects=MAX_IMAGE_URL_REDIRECTS,
-                )
+                image = load_image_from_url(value=image)
             elif not prevent_local_images_loading and os.path.exists(image):
                 # prevent_local_images_loading is introduced to eliminate
                 # server vulnerability - namely it prevents local server

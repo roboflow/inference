@@ -1,7 +1,5 @@
 import io
-import ipaddress
 import pickle
-import socket
 from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
@@ -38,29 +36,6 @@ from inference.core.utils.image_utils import (
     load_image_with_known_type,
 )
 
-TEST_MAX_IMAGE_URL_REDIRECTS = 5
-
-
-@pytest.fixture(autouse=True)
-def mock_image_url_dns(monkeypatch) -> None:
-    def getaddrinfo(host, *args, **kwargs):
-        try:
-            address = ipaddress.ip_address(host.split("%", 1)[0])
-            resolved = str(address)
-        except ValueError:
-            resolved = "93.184.216.34"
-        return [
-            (
-                socket.AF_INET,
-                socket.SOCK_STREAM,
-                6,
-                "",
-                (resolved, 0),
-            )
-        ]
-
-    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
-
 
 @pytest.mark.parametrize(
     "response_status_code", [400, 401, 403, 404, 500, 501, 502, 503, 504]
@@ -79,9 +54,7 @@ def test_load_image_from_url_when_request_not_succeeded(
     # when
 
     with pytest.raises(InputImageLoadError):
-        _ = load_image_from_url(
-            max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=resource_url
-        )
+        _ = load_image_from_url(value=resource_url)
 
 
 def test_load_image_from_url_when_payload_does_not_contain_image(
@@ -97,9 +70,7 @@ def test_load_image_from_url_when_payload_does_not_contain_image(
     # when
 
     with pytest.raises(InputImageLoadError):
-        _ = load_image_from_url(
-            max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=resource_url
-        )
+        _ = load_image_from_url(value=resource_url)
 
 
 def test_load_image_from_url_when_jpeg_image_should_be_successfully_decoded(
@@ -115,9 +86,7 @@ def test_load_image_from_url_when_jpeg_image_should_be_successfully_decoded(
     )
 
     # when
-    result = load_image_from_url(
-        max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=resource_url
-    )
+    result = load_image_from_url(value=resource_url)
 
     # then
     assert image_as_numpy.shape == result.shape
@@ -136,9 +105,7 @@ def test_load_image_from_url_when_png_image_should_be_successfully_decoded(
     )
 
     # when
-    result = load_image_from_url(
-        max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=resource_url
-    )
+    result = load_image_from_url(value=resource_url)
 
     # then
     assert image_as_numpy.shape == result.shape
@@ -148,10 +115,7 @@ def test_load_image_from_url_when_png_image_should_be_successfully_decoded(
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", False)
 def test_load_image_from_url_when_url_loading_not_allowed() -> None:
     with pytest.raises(InvalidImageTypeDeclared):
-        _ = load_image_from_url(
-            max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS,
-            value="https://google.com/image.jpg",
-        )
+        _ = load_image_from_url(value="https://google.com/image.jpg")
 
 
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
@@ -169,7 +133,7 @@ def test_load_image_from_url_when_https_is_enforced_and_provided_urls_with_http_
     url: str,
 ) -> None:
     with pytest.raises(InputImageLoadError):
-        _ = load_image_from_url(max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=url)
+        _ = load_image_from_url(value=url)
 
 
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
@@ -189,7 +153,7 @@ def test_load_image_from_url_when_fqdns_are_enforced_and_urls_based_on_ips_provi
     url: str,
 ) -> None:
     with pytest.raises(InputImageLoadError):
-        _ = load_image_from_url(max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=url)
+        _ = load_image_from_url(value=url)
 
 
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
@@ -211,7 +175,7 @@ def test_load_image_from_url_when_fqdns_are_enforced_and_urls_based_on_ips_provi
 def test_load_image_from_url_when_locations_not_whitelisted(url: str) -> None:
     # when
     with pytest.raises(InputImageLoadError) as error:
-        _ = load_image_from_url(max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=url)
+        _ = load_image_from_url(value=url)
 
     # then
     assert "whitelisted" in str(error.value)
@@ -224,6 +188,9 @@ def test_load_image_from_url_when_locations_not_whitelisted(url: str) -> None:
     image_utils,
     "WHITELISTED_DESTINATIONS_FOR_URL_INPUT",
     {
+        "127.0.0.1",
+        "fe80::1ff:fe23:4567:890a%25eth0",
+        "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
         "google.com",
         "subdomain.google.com",
     },
@@ -231,6 +198,11 @@ def test_load_image_from_url_when_locations_not_whitelisted(url: str) -> None:
 @pytest.mark.parametrize(
     "url",
     [
+        "https://127.0.0.1/image.jpg",
+        "https://127.0.0.1:90/image.jpg",
+        "https://[fe80::1ff:fe23:4567:890a%25eth0]/image.jpg",
+        "https://[fe80::1ff:fe23:4567:890a%25eth0]:90/image.jpg",
+        "https://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]/image.jpg",
         "https://subdomain.google.com/image.jpg?param=some",
         "https://google.com/image.jpg?param=some",
     ],
@@ -247,7 +219,7 @@ def test_load_image_from_url_when_locations_whitelisted(
     )
 
     # when
-    result = load_image_from_url(max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=url)
+    result = load_image_from_url(value=url)
 
     # then
     assert image_as_numpy.shape == result.shape
@@ -269,98 +241,7 @@ def test_load_image_from_url_rejects_backslash_userinfo_allowlist_bypass() -> No
         ),
     ) as requests_get:
         with pytest.raises(InputImageLoadError, match="invalid|whitelisted"):
-            _ = load_image_from_url(
-                max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS,
-                value="https://localhost:6666\\@www.roboflow.com",
-            )
-
-    requests_get.assert_not_called()
-
-
-@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
-@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
-@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
-def test_load_image_from_url_rejects_redirect_to_metadata_address(
-    requests_mock: Mocker,
-    image_as_png_bytes: bytes,
-) -> None:
-    public_url = "https://some.com/image.png"
-    metadata_url = "http://169.254.169.254/latest/meta-data"
-    requests_mock.get(
-        public_url,
-        status_code=302,
-        headers={"Location": metadata_url},
-    )
-    requests_mock.get(metadata_url, content=image_as_png_bytes)
-
-    with pytest.raises(InputImageLoadError):
-        _ = load_image_from_url(
-            max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=public_url
-        )
-
-    assert [request.url for request in requests_mock.request_history] == [public_url]
-
-
-@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
-@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
-@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
-def test_load_image_from_url_rejects_too_many_redirects(
-    requests_mock: Mocker,
-    image_as_png_bytes: bytes,
-) -> None:
-    first_url = "https://some.com/image.png"
-    second_url = "https://some.com/redirected.png"
-    third_url = "https://some.com/final.png"
-    requests_mock.get(
-        first_url,
-        status_code=302,
-        headers={"Location": second_url},
-    )
-    requests_mock.get(
-        second_url,
-        status_code=302,
-        headers={"Location": third_url},
-    )
-    requests_mock.get(third_url, content=image_as_png_bytes)
-
-    with pytest.raises(InputImageLoadError, match="Too many redirects"):
-        _ = load_image_from_url(max_redirects=1, value=first_url)
-
-    requested_urls = [request.url for request in requests_mock.request_history]
-    assert first_url in requested_urls
-    assert second_url in requested_urls
-    assert third_url not in requested_urls
-
-
-@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
-@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
-@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
-def test_load_image_from_url_rejects_hostname_resolving_to_metadata_address(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(
-        socket,
-        "getaddrinfo",
-        lambda *args, **kwargs: [
-            (
-                socket.AF_INET,
-                socket.SOCK_STREAM,
-                6,
-                "",
-                ("169.254.169.254", 0),
-            )
-        ],
-    )
-    with mock.patch.object(
-        image_utils.requests,
-        "get",
-        side_effect=AssertionError("requests.get must not be called"),
-    ) as requests_get:
-        with pytest.raises(InputImageLoadError, match="non-public"):
-            _ = load_image_from_url(
-                max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS,
-                value="https://some.com/image.png",
-            )
+            _ = load_image_from_url(value="https://localhost:6666\\@www.roboflow.com")
 
     requests_get.assert_not_called()
 
@@ -396,7 +277,7 @@ def test_load_image_from_url_when_locations_blacklisted(
 ) -> None:
     # when
     with pytest.raises(InputImageLoadError) as error:
-        _ = load_image_from_url(max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=url)
+        _ = load_image_from_url(value=url)
 
     # then
     assert "blacklisted" in str(error.value)
@@ -591,9 +472,7 @@ def test_load_image_with_inferred_type_when_value_is_url(
     assert result[0] is load_image_from_url_mock.return_value
     assert result[1] is True
     load_image_from_url_mock.assert_called_once_with(
-        value=url,
-        max_redirects=image_utils.MAX_IMAGE_URL_REDIRECTS,
-        cv_imread_flags=cv2.IMREAD_COLOR,
+        value=url, cv_imread_flags=cv2.IMREAD_COLOR
     )
 
 

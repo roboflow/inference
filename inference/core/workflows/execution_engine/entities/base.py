@@ -21,7 +21,6 @@ import numpy as np
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, Literal
 
-from inference.core.env import MAX_IMAGE_URL_REDIRECTS
 from inference.core.utils.image_utils import (
     attempt_loading_image_from_string,
     encode_image_to_jpeg_bytes,
@@ -425,10 +424,7 @@ class WorkflowImageData:
         if self._image_reference.startswith(
             "http://"
         ) or self._image_reference.startswith("https://"):
-            self._numpy_image = load_image_from_url(
-                value=self._image_reference,
-                max_redirects=MAX_IMAGE_URL_REDIRECTS,
-            )
+            self._numpy_image = load_image_from_url(value=self._image_reference)
         else:
             self._numpy_image = cv2.imread(self._image_reference)
         return self._numpy_image
