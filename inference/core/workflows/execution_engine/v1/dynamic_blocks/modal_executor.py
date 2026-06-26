@@ -32,6 +32,8 @@ from inference.core.env import (
     MODAL_TOKEN_ID,
     MODAL_TOKEN_SECRET,
     MODAL_WORKSPACE_NAME,
+    WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS,
+    WEBEXEC_WS_READ_TIMEOUT_SECONDS,
 )
 from inference.core.logger import logger
 from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
@@ -764,8 +766,9 @@ class WebSocketModalExecutor:
         self._ws = ws_lib.create_connection(
             url,
             header=[f"{k}: {v}" for k, v in headers.items()],
-            timeout=30,
+            timeout=WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS,
         )
+        self._ws.settimeout(WEBEXEC_WS_READ_TIMEOUT_SECONDS)
         # New container -> no compiled namespaces cached yet.
         self._hashes_sent_on_ws = set()
         self._last_activity = _time.monotonic()

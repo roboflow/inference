@@ -722,6 +722,15 @@ WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "95"))
 # Transport protocol for webexec communication: "http" or "websocket".
 WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "websocket").lower().strip()
 
+# Websocket transport timeouts. Keep connection establishment fast, but allow
+# reads to wait for Modal's custom block execution budget.
+WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS", "30")
+)
+WEBEXEC_WS_READ_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_READ_TIMEOUT_SECONDS", "700")
+)
+
 # Strip quotes from Modal credentials in case users include them
 _modal_token_id = os.getenv("MODAL_TOKEN_ID")
 _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
