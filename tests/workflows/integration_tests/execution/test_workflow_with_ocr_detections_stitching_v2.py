@@ -23,11 +23,12 @@ WORKFLOW_STITCHING_OCR_DETECTIONS_TOLERANCE = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "ocr_detection",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/stitch_ocr_detections@v2",
@@ -65,11 +66,12 @@ WORKFLOW_STITCHING_OCR_DETECTIONS_OTSU = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "ocr_detection",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/stitch_ocr_detections@v2",
@@ -107,11 +109,12 @@ WORKFLOW_STITCHING_OCR_DETECTIONS_COLLIMATE = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "ocr_detection",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/stitch_ocr_detections@v2",

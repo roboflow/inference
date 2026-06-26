@@ -1,6 +1,10 @@
+---
+description: Compare Roboflow Inference with Triton, TorchServe, ComfyUI, Node-RED, Edge Impulse, and DeepStream to choose the right deployment stack.
+---
+
 # Inference vs Alternatives
 
-With its wide aperature of functionality, Inference's features overlap
+With its wide aperture of functionality, Inference's features overlap
 with many other pieces of software. This guide aims to help readers
 understand when they should (and should not) choose Inference over
 other tools.
@@ -44,11 +48,11 @@ integrations with other tools.
 tasks and were previously considering rolling your own server but want
 a more featureful starting point.
 
-### Tensorflow Serving
+### TensorFlow Serving
 
-If you're deeply engrained in the Tensorflow ecosystem and want to deploy a
-variety of Tensorflow models in different modalities like NLP, recommender
-systems, and audio in addition to CV models, Tensorflow Serving may be a
+If you're deeply ingrained in the TensorFlow ecosystem and want to deploy a
+variety of TensorFlow models in different modalities like NLP, recommender
+systems, and audio in addition to CV models, TensorFlow Serving may be a
 good choice.
 
 It can be complex to setup and maintain and lacks features many users would
@@ -56,22 +60,22 @@ consider table stakes (like pre- and post-processing which in many cases will
 need to be custom coded). Like several of the other servers listed here, it
 lacks depth in vision-specific functionality.
 
-**Choose Tensorflow Serving if:** the Tensorflow ecosystem is very important
+**Choose TensorFlow Serving if:** the TensorFlow ecosystem is very important
 to you and you're willing to put in the legwork to take advantage of its
 advanced feature set.
 
 ### TorchServe
 
-The PyTorch ecosystem's equivalent of Tensorflow Serving is TorchServe. It's
+The PyTorch ecosystem's equivalent of TensorFlow Serving is TorchServe. It's
 optimized for serving PyTorch models across several domains including vision,
 NLP, tabular data, and audio.
 
-Like Tensorflow Serving, it is designed for large-scale cloud deployments and
+Like TensorFlow Serving, it is designed for large-scale cloud deployments and
 can require custom configuration for things like pre- and post-processing and
 deploying multiple models. Because of its wide mandate it lacks many
 vision-specific features (like video streaming).
 
-**Chose TorchServe if:** you're looking for a way to scale and customize the
+**Choose TorchServe if:** you're looking for a way to scale and customize the
 deployment of your PyTorch models and don't need vision-specific functionality.
 
 ### FastAPI or Flask
@@ -101,7 +105,7 @@ Workflows Block and a YOLO ComfyUI Node), but the ecosystem of nodes and the
 community focus of Comfy is squarely centered around generative models while
 Inference is focused on interfacing with the real-world.
 
-**Chose ComfyUI if:** you're mainly interested in using generative image and video
+**Choose ComfyUI if:** you're mainly interested in using generative image and video
 models like Flux and don't need to use custom fine-tuned models in your pipeline
 to do things like selectively replacing specific objects.
 
@@ -136,7 +140,7 @@ requires some familiarity with embedded systems. It does not offer an equivalent
 Workflows to create complex logic and integrate with other systems and typically
 requires custom coding your application logic to run on the embedded board.
 
-**Chose Edge Impulse if:** you're working on an IoT or wearable device that's not
+**Choose Edge Impulse if:** you're working on an IoT or wearable device that's not
 capable of running more powerful models, framework, and logic.
 
 ### NVIDIA DeepStream

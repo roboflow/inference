@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Jetson 7.1.0 with PyTorch/OpenCV compiled from source for numpy 2.x support
 # Stage 1: Builder - Compile everything from source
 FROM ubuntu:24.04 AS builder
@@ -6,14 +7,21 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG CMAKE_VERSION=4.2.0
 ARG PYTORCH_VERSION=2.10.0
 ARG TORCHVISION_VERSION=0.25.0
+ARG TRITON_VERSION=3.6.0
 ARG OPENCV_VERSION=4.10.0
 ARG ONNXRUNTIME_VERSION=1.24.2
 ENV LANG=en_US.UTF-8
 
 WORKDIR /build
 
-# Add NVIDIA Jetson repositories for r38.4
-RUN apt-get update -y && \
+# Add NVIDIA Jetson repositories for r38.4.
+# Disable docker-clean and keep downloaded .debs; cache mounts on /var/cache/apt
+# and /var/lib/apt persist across Depot builds.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp71-builder-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update -y && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     gnupg \
@@ -24,7 +32,9 @@ RUN apt-get update -y && \
     && apt-get update -y
 
 # Install NVIDIA JetPack components and build dependencies
-RUN apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-builder-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp71-builder-${TARGETARCH} \
+    apt-get install -y --no-install-recommends \
     cuda-toolkit-13-0 \
     libcudnn9-cuda-13 \
     libcudnn9-dev-cuda-13 \
@@ -68,7 +78,7 @@ RUN apt-get install -y --no-install-recommends \
     libsnappy-dev \
     libprotobuf-dev \
     protobuf-compiler \
-    && rm -rf /var/lib/apt/lists/*
+    libxml2-dev
 
 # Install CMake
 RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.sh && \
@@ -98,9 +108,14 @@ ENV CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
-# Compile PyTorch from source with Jetson Thor optimizations
+# Compile PyTorch from source with Jetson Thor optimizations.
+# Clone in its own RUN so the build/ cache mount overlays cleanly (mount would
+# otherwise auto-create the parent and break git clone).
 WORKDIR /build/pytorch
-RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch && \
+RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorch/pytorch
+# build/ is cache-mounted (Thor = sm 11.0); cache id includes version + arch.
+RUN --mount=type=cache,target=/build/pytorch/pytorch/build,sharing=locked,id=pytorch-build-${PYTORCH_VERSION}-${TARGETARCH}-sm110 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
     cd pytorch && \
     python3 -m pip install --break-system-packages -r requirements.txt && \
     export USE_CUDA=1 USE_CUDNN=1 CUDA_HOME=/usr/local/cuda && \
@@ -120,11 +135,14 @@ RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorc
     python3 setup.py bdist_wheel && \
     python3 -m pip install --break-system-packages dist/torch-*.whl
 
-# Compile torchvision from source (with retry for transient GitHub issues)
+# Compile torchvision from source (with retry for transient GitHub issues).
+# Clone in its own RUN so build/ cache mount overlays cleanly.
 WORKDIR /build/torchvision
 RUN for i in 1 2 3; do \
         git clone --branch v${TORCHVISION_VERSION} https://github.com/pytorch/vision && break || sleep 60; \
-    done && \
+    done
+RUN --mount=type=cache,target=/build/torchvision/vision/build,sharing=locked,id=torchvision-build-${TORCHVISION_VERSION}-${TARGETARCH}-sm110 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
     cd vision && \
     export BUILD_VERSION=${TORCHVISION_VERSION} TORCH_CUDA_ARCH_LIST="11.0" && \
     export FORCE_CUDA=1 CMAKE_BUILD_TYPE=Release USE_PRIORITIZED_TEXT_FOR_LD=1 && \
@@ -136,7 +154,9 @@ RUN for i in 1 2 3; do \
 # No prebuilt ARM64 CUDA 13 packages available - must build from source
 # Parallel jobs limited to 8 to prevent OOM during flash attention CUDA kernel compilation
 WORKDIR /build/onnxruntime
-RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git && \
+RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/microsoft/onnxruntime.git
+RUN --mount=type=cache,target=/build/onnxruntime/onnxruntime/build/Linux,sharing=locked,id=ort-build-${ONNXRUNTIME_VERSION}-${TARGETARCH}-sm110-cu130 \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
     cd onnxruntime && \
     python3 -m pip install --break-system-packages -r requirements-dev.txt && \
     ./build.sh --config Release --update --build --parallel 8 \
@@ -155,11 +175,47 @@ RUN git clone --recursive --branch v${ONNXRUNTIME_VERSION} https://github.com/mi
             onnxruntime_BUILD_UNIT_TESTS=OFF && \
     python3 -m pip install --break-system-packages build/Linux/Release/dist/onnxruntime_gpu*.whl
 
-# Install flash-attn package (requires CUDA-enabled PyTorch already installed)
-# Limit MAX_JOBS to 1 to prevent resource starvation that kills the Depot gRPC connection
+# Install flash-attn package (requires CUDA-enabled PyTorch already installed).
+# MAX_JOBS=2: middle ground between the historical MAX_JOBS=4 that starved the
+# Depot BuildKit gRPC connection (#2068) and the safe-but-slow MAX_JOBS=1.
+# flash-attn nvcc instances peak ~3-4 GB each against PyTorch 2.10 headers,
+# so 2 fits comfortably on a 32 GB Depot arm builder while halving the wall time.
 # Using 2.8.3 - removed legacy features (rotary, xentropy, fused_softmax, ft_attention) for faster builds
-RUN export MAX_JOBS=1 && \
+RUN export MAX_JOBS=2 && \
     python3 -m pip install --break-system-packages --no-build-isolation flash-attn==2.8.3
+
+# Build Triton from source. Torch 2.10.0 on JP7.1 pairs with Triton ${TRITON_VERSION}.
+# Done in the main builder (not runtime) to reuse build deps. Clone + wheel build
+# share one RUN: cache-mounted src is not persisted across RUN instructions.
+# Triton 3.6 wheels from the repo root (not python/ subdir).
+WORKDIR /build/triton
+RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${TRITON_VERSION}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.triton/llvm,sharing=locked,id=triton-llvm-${TRITON_VERSION}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-cache-jp71-${TARGETARCH} \
+    set -eux; \
+    if [ ! -d src/.git ]; then \
+        git clone --depth 1 --branch v${TRITON_VERSION} https://github.com/triton-lang/triton.git src; \
+    else \
+        git -C src fetch --depth 1 origin tag v${TRITON_VERSION} && \
+        git -C src checkout v${TRITON_VERSION}; \
+    fi; \
+    git -C src submodule update --init --recursive; \
+    mkdir -p /tmp/triton-wheels; \
+    python3 -m pip install --break-system-packages --no-cache-dir \
+        -r /build/triton/src/python/requirements.txt; \
+    MAX_JOBS=4 python3 -m pip wheel --no-cache-dir \
+        --no-build-isolation \
+        --no-deps \
+        /build/triton/src \
+        --wheel-dir /tmp/triton-wheels; \
+    set -- /tmp/triton-wheels/triton-${TRITON_VERSION}*.whl; \
+    if [ ! -e "$1" ]; then \
+        echo "Expected source-built Triton wheel for ${TRITON_VERSION} was not found" >&2; \
+        exit 1; \
+    fi; \
+    python3 -m pip install --break-system-packages --no-cache-dir "$1"; \
+    rm -rf /tmp/triton-wheels; \
+    python3 -c "import triton; print('triton', triton.__version__)"
 
 # Copy requirements files (done after compilation to improve cache efficiency)
 WORKDIR /build/reqs
@@ -168,7 +224,6 @@ COPY requirements/_requirements.txt \
      requirements/requirements.clip.txt \
      requirements/requirements.transformers.txt \
      requirements/requirements.sam.txt \
-     requirements/requirements.gaze.txt \
      requirements/requirements.groundingdino.txt \
      requirements/requirements.yolo_world.txt \
      requirements/requirements.doctr.txt \
@@ -188,7 +243,6 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     -r requirements.clip.txt \
     -r requirements.transformers.txt \
     -r requirements.sam.txt \
-    -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
     -r requirements.doctr.txt \
@@ -197,6 +251,7 @@ RUN echo "torch==${PYTORCH_VERSION}" > /tmp/overrides.txt && \
     -r requirements.jetson.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
     "setuptools<=75.5.0" \
+    "transformers>=4.57.3,<5.9.0" \
     packaging \
     && rm -rf ~/.cache/uv /tmp/overrides.txt
 
@@ -236,8 +291,12 @@ ENV LANG=en_US.UTF-8
 
 WORKDIR /app
 
-# Add NVIDIA Jetson repositories for r38.4
-RUN apt-get update -y && \
+# Add NVIDIA Jetson repositories for r38.4 (runtime stage cache id differs from builder).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-runtime-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp71-runtime-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt-get update -y && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
     gnupg \
@@ -250,9 +309,13 @@ RUN apt-get update -y && \
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 # Install runtime dependencies including NVIDIA packages
-RUN apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-runtime-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp71-runtime-${TARGETARCH} \
+    apt-get install -y --no-install-recommends \
     cuda-cudart-13-0 \
     cuda-libraries-13-0 \
+    cuda-nvcc-13-0 \
+    # ptxas for sm_110a; Triton bundled ptxas-blackwell is CUDA 12.9
     libcudnn9-cuda-13 \
     tensorrt-libs \
     python3-libnvinfer \
@@ -286,7 +349,10 @@ RUN apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libatomic1 \
-    && rm -rf /var/lib/apt/lists/*
+    build-essential \
+    python3-dev \
+    zlib1g-dev \
+    libxml2-dev
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
@@ -300,8 +366,13 @@ ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 RUN ldconfig
 
+# build-essential/python3-dev/zlib1g-dev/libxml2-dev: required for Triton JIT kernel
+# compilation at runtime. Triton python pkg ships in dist-packages below.
+
 # Copy Python packages from builder
 COPY --from=builder /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
+COPY --from=builder /root/.triton/nvidia /root/.triton/nvidia
+COPY --from=builder /root/.triton/json /root/.triton/json
 
 # Copy TensorRT Python bindings (installed via apt in runtime stage, but ensure paths are correct)
 # Note: python3-libnvinfer packages install to /usr/lib/python3.12/dist-packages
@@ -314,11 +385,16 @@ COPY inference inference
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 RUN python -m pip install --break-system-packages --force-reinstall "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
 
 # Environment variables
-ENV NVIDIA_VISIBLE_DEVICES=all \
+ENV CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/cuda/bin:$PATH \
+    TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda/bin/ptxas \
+    NVIDIA_VISIBLE_DEVICES=all \
     VERSION_CHECK_MODE=once \
     CORE_MODEL_SAM2_ENABLED=True \
     NUM_WORKERS=1 \
@@ -344,4 +420,4 @@ LABEL org.opencontainers.image.description="Inference Server - Jetson 7.1.0 (PyT
 
 EXPOSE 9001
 
-ENTRYPOINT ["/bin/sh", "-c", "python3 -m uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT"]
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

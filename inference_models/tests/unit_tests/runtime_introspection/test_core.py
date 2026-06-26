@@ -526,8 +526,7 @@ def test_get_os_version_for_linux_when_etc_release_available(
     # given
     platform_mock.system.return_value = "Linux"
     get_os_version.cache_clear()
-    mocked_open_results = mock_open(
-        read_data="""
+    mocked_open_results = mock_open(read_data="""
 PRETTY_NAME="Ubuntu 22.04.5 LTS"
 NAME="Ubuntu"
 VERSION_ID="22.04"
@@ -539,8 +538,7 @@ HOME_URL="https://www.ubuntu.com/"
 SUPPORT_URL="https://help.ubuntu.com/"
 BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
 PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
-UBUNTU_CODENAME=jammy"""
-    )
+UBUNTU_CODENAME=jammy""")
     try:
         with mock.patch("builtins.open", mocked_open_results):
             # when
@@ -608,7 +606,9 @@ def test_get_driver_version_when_file_not_found() -> None:
     # given
     get_driver_version.cache_clear()
     try:
-        with mock.patch("builtins.open") as open_mock:
+        with mock.patch("builtins.open") as open_mock, mock.patch.object(
+            core, "is_running_on_jetson", return_value=False
+        ):
             open_mock.side_effect = FileNotFoundError()
             # when
             result = get_driver_version()
@@ -624,7 +624,9 @@ def test_get_driver_version_when_file_not_parsable() -> None:
     get_driver_version.cache_clear()
     mocked_open_results = mock_open(read_data="invalid")
     try:
-        with mock.patch("builtins.open", mocked_open_results):
+        with mock.patch("builtins.open", mocked_open_results), mock.patch.object(
+            core, "is_running_on_jetson", return_value=False
+        ):
             # when
             result = get_driver_version()
     finally:
@@ -651,6 +653,25 @@ GCC version:  collect2: error: ld returned 1 exit status
 
     # then
     assert result == Version("540.4.0")
+
+
+def test_get_driver_version_falls_back_to_l4t_version_on_jetson_when_file_missing() -> (
+    None
+):
+    # given
+    get_driver_version.cache_clear()
+    try:
+        with mock.patch("builtins.open") as open_mock, mock.patch.object(
+            core, "is_running_on_jetson", return_value=True
+        ), mock.patch.object(core, "get_l4t_version", return_value=Version("36.4.0")):
+            open_mock.side_effect = FileNotFoundError()
+            # when
+            result = get_driver_version()
+    finally:
+        get_driver_version.cache_clear()
+
+    # then
+    assert result == Version("36.4.0")
 
 
 def test_is_trt_python_package_available_when_trt_cannot_be_imported() -> None:

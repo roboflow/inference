@@ -2,6 +2,7 @@ import pytest
 
 from inference.core.exceptions import (
     CannotInitialiseModelDueToInputSizeError,
+    FeatureDeprecatedError,
     InferenceModelNotFound,
     InvalidModelIDError,
     ModelManagerLockAcquisitionError,
@@ -234,3 +235,35 @@ def test_extended_roboflow_errors_handler_when_new_inference_model_loading_faile
 
     # then
     assert error.value.status_code == 507
+
+
+def test_legacy_step_error_handler_translates_feature_deprecated_error_to_410() -> None:
+    # given
+    inner = FeatureDeprecatedError(feature="example/feature@v1", reason="gone")
+
+    # when
+    with pytest.raises(ClientCausedStepExecutionError) as captured:
+        legacy_step_error_handler("step-id", inner)
+
+    # then
+    assert captured.value.status_code == 410
+    assert captured.value.inner_error is inner
+    assert isinstance(captured.value.inner_error, FeatureDeprecatedError)
+    assert "feature_deprecated" in captured.value.context
+
+
+def test_extended_roboflow_errors_handler_translates_feature_deprecated_error_to_410() -> (
+    None
+):
+    # given
+    inner = FeatureDeprecatedError(feature="example/feature@v1", reason="gone")
+
+    # when
+    with pytest.raises(ClientCausedStepExecutionError) as captured:
+        extended_roboflow_errors_handler("step-id", inner)
+
+    # then
+    assert captured.value.status_code == 410
+    assert captured.value.inner_error is inner
+    assert isinstance(captured.value.inner_error, FeatureDeprecatedError)
+    assert "feature_deprecated" in captured.value.context

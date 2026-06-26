@@ -15,7 +15,9 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
+    COOLDOWN_HTTP_SOFT_RESTRICTION,
     BlockResult,
+    RuntimeRestriction,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -91,6 +93,9 @@ class RateLimiterManifest(WorkflowBlockManifest):
         examples=[1.0],
         default=1.0,
         ge=0.0,
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     depends_on: Selector() = Field(
         description="Reference to the workflow step that immediately precedes this rate limiter block. This establishes the dependency relationship - the rate limiter monitors when this step completes to determine if the cooldown period has elapsed since the last execution. The depends_on step can be any workflow block whose output triggers the rate-limited downstream processing.",
@@ -113,6 +118,10 @@ class RateLimiterManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [COOLDOWN_HTTP_SOFT_RESTRICTION]
 
 
 class RateLimiterBlockV1(WorkflowBlock):

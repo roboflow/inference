@@ -15,7 +15,7 @@ WORKFLOW_WITH_RATE_LIMITER = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "model",
             "images": "$inputs.image",
             "model_id": "yolov8n-640",

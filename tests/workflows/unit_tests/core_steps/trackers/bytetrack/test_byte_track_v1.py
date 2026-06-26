@@ -80,15 +80,16 @@ def test_byte_track_missing_fps() -> None:
     assert "already_seen_instances" in result
 
 
-
 def test_bytetrack_input_and_output_kinds_match() -> None:
     """Trackers are pass-through: output kinds must equal input kinds."""
-    input_kinds = manifest_accepted_kind_names(ByteTrackManifest, field_name="detections")
+    input_kinds = manifest_accepted_kind_names(
+        ByteTrackManifest, field_name="detections"
+    )
     for output_def in ByteTrackManifest.describe_outputs():
         output_kinds = {k.name for k in output_def.kind}
-        assert output_kinds == input_kinds, (
-            f"Output '{output_def.name}' kinds {output_kinds} != input kinds {input_kinds}"
-        )
+        assert (
+            output_kinds == input_kinds
+        ), f"Output '{output_def.name}' kinds {output_kinds} != input kinds {input_kinds}"
 
 
 def test_bytetrack_outputs_superset_of_predictions_visualization_kinds() -> None:
@@ -96,9 +97,7 @@ def test_bytetrack_outputs_superset_of_predictions_visualization_kinds() -> None
     for output_def in ByteTrackManifest.describe_outputs():
         tracker_kinds = {k.name for k in output_def.kind}
         missing = viz_kinds - tracker_kinds
-        assert not missing, (
-            f"Output '{output_def.name}' missing kinds {missing}"
-        )
+        assert not missing, f"Output '{output_def.name}' missing kinds {missing}"
 
 
 def test_byte_track_not_video_file() -> None:

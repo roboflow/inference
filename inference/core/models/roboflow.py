@@ -134,11 +134,15 @@ class RoboflowInferenceModel(Model):
         self.load_weights = load_weights
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
+        self.countinference: Optional[bool] = kwargs.get("countinference")
+        self.service_secret: Optional[str] = kwargs.get("service_secret")
         model_id = resolve_roboflow_model_alias(model_id=model_id)
         self.dataset_id, self.version_id = get_model_id_chunks(model_id=model_id)
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
-        self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
+        self.cache_dir = get_cache_dir(
+            model_id=self.endpoint, cache_dir_root=cache_dir_root
+        )
         self.keypoints_metadata: Optional[dict] = None
         initialise_cache(model_id=self.endpoint)
 
@@ -671,6 +675,8 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                 api_key=self.api_key,
                 model_id=self.endpoint,
                 endpoint_type=ModelEndpointType.CORE_MODEL,
+                countinference=self.countinference,
+                service_secret=self.service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {self.api_key} does not have access to model {self.endpoint}"
@@ -698,6 +704,8 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                     model_id=self.endpoint,
                     endpoint_type=ModelEndpointType.CORE_MODEL,
                     device_id=self.device_id,
+                    countinference=self.countinference,
+                    service_secret=self.service_secret,
                 )
                 if "weights" not in api_data:
                     raise ModelArtefactError(

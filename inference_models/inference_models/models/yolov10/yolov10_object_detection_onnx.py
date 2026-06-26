@@ -10,7 +10,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,
@@ -29,6 +29,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     rescale_image_detections,
 )
 from inference_models.models.common.roboflow.pre_processing import (
@@ -37,6 +38,7 @@ from inference_models.models.common.roboflow.pre_processing import (
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
@@ -65,6 +67,7 @@ class YOLOv10ForObjectDetectionOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv10ForObjectDetectionOnnx":
         if onnx_execution_providers is None:
@@ -129,6 +132,7 @@ class YOLOv10ForObjectDetectionOnnx(
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -139,6 +143,7 @@ class YOLOv10ForObjectDetectionOnnx(
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
+        recommended_parameters: Optional["RecommendedParameters"] = None,
     ):
         self._session = session
         self._input_name = input_name
@@ -147,6 +152,7 @@ class YOLOv10ForObjectDetectionOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -181,13 +187,27 @@ class YOLOv10ForObjectDetectionOnnx(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         max_detections: int = INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE,
+        )
+        threshold = confidence_filter.get_threshold(self.class_names)
+        if isinstance(threshold, torch.Tensor):
+            threshold = threshold.to(
+                dtype=model_results.dtype, device=model_results.device
+            )
         results = []
         for image_result, metadata in zip(model_results, pre_processing_meta):
-            mask = image_result[:, 4] > confidence
+            mask = image_result[:, 4] > (
+                threshold[image_result[:, 5].long()]
+                if isinstance(threshold, torch.Tensor)
+                else threshold
+            )
             filtered = image_result[mask][:max_detections]
             rescaled = rescale_image_detections(
                 image_detections=filtered,

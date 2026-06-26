@@ -20,6 +20,8 @@ from inference_cli.lib.enterprise.inference_compiler.utils.http import (
 )
 from inference_models.utils.download import download_files_to_directory
 
+logger = logging.getLogger("inference_cli.inference_compiler")
+
 TIMING_CACHE_ROOT = "/tmp/timing-cache"
 
 
@@ -57,24 +59,28 @@ class TimingCacheManager:
                 target_dir=self._cache_root,
                 files_specs=[(file_handle, download_url, md5_hash)],
             )
-            logging.info(
-                f"TRT Timing cache hit for compilation features: {self._compilation_features}"
+            logger.info(
+                "TRT timing cache hit for compilation features: %s",
+                self._compilation_features,
             )
             return read_bytes(download_results[file_handle])
         except RequestError as error:
             if error.status_code == 404:
-                logging.info(
-                    f"TRT Timing cache miss for compilation features: {self._compilation_features}"
+                logger.info(
+                    "TRT timing cache miss for compilation features: %s",
+                    self._compilation_features,
                 )
             else:
                 self._should_not_populate_private_cache = True
-                logging.warning(
-                    f"Could not retrieve TRT timing cache entry from RF API - status: {error.status_code}, message: {error}"
+                logger.warning(
+                    "Could not retrieve TRT timing cache entry from RF API: status=%s, message=%s",
+                    error.status_code,
+                    error,
                 )
             return b""
         except Exception:
             self._should_not_populate_private_cache = True
-            logging.exception(f"Error in retrieving TRT timing compilation cache")
+            logger.exception("Error retrieving TRT timing compilation cache")
             return b""
 
     def save_cache_for_features(self, cache: bytes) -> None:
@@ -103,14 +109,15 @@ class TimingCacheManager:
                     cache_key=registration_response.cache_key,
                     confirmation=confirmation,
                 )
-                logging.info(
-                    f"TRT timing cache saved for compilation features: {self._compilation_features}"
+                logger.info(
+                    "TRT timing cache saved for compilation features: %s",
+                    self._compilation_features,
                 )
         except RequestError as error:
             if error.status_code == 409:
                 return None
         except Exception:
-            logging.exception(f"Error in saving TRT timing compilation cache")
+            logger.exception("Error saving TRT timing compilation cache")
 
     def _attempt_getting_cache_entry(
         self,

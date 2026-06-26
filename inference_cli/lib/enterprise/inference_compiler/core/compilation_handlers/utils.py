@@ -19,6 +19,7 @@ from inference_cli.lib.enterprise.inference_compiler.core.compilation_handlers.t
 from inference_cli.lib.enterprise.inference_compiler.core.entities import (
     GPUServerSpecsV1,
     JetsonMachineSpecsV1,
+    PlatformRegistrationPolicy,
     TRTConfig,
     TRTMachineType,
     TRTModelPackageV1,
@@ -56,6 +57,8 @@ from inference_models.weights_providers.entities import (
     Quantization,
 )
 
+logger = logging.getLogger("inference_cli.inference_compiler")
+
 
 def safe_negotiate_model_packages(
     model_metadata: ModelMetadata,
@@ -84,14 +87,12 @@ def safe_negotiate_model_packages(
         raise error
     except NoModelPackagesAvailableError as error:
         raise LackOfSourcePackageError(
-            "Could not find model package which could serve as compilation source."
+            "Could not find a model package to use as a compilation source."
         ) from error
     except Exception as error:
-        logging.exception(
-            f"Error when selecting model packages for compilation - {error}"
-        )
+        logger.exception("Error selecting model packages for compilation")
         raise PackageNegotiationError(
-            "Error when selecting model packages for compilation."
+            "Error selecting model packages for compilation."
         ) from error
 
 
@@ -134,7 +135,7 @@ def download_model_package(
     }
     if any(f not in file_mapping for f in expected_files):
         raise CorruptedPackageError(
-            f"At least one of the files {expected_files} missing in model package {model_package.package_id}"
+            f"At least one of the required files {expected_files} is missing from model package {model_package.package_id}"
         )
     try:
         os.makedirs(package_dir, exist_ok=True)
@@ -144,11 +145,11 @@ def download_model_package(
             verbose=True,
         )
     except Exception as error:
-        logging.exception(
-            f"Error when downloading model package: {model_package.package_id}"
+        logger.exception(
+            "Error downloading model package: %s", model_package.package_id
         )
         raise PackageDownloadError(
-            f"Could not download model package - error {error}"
+            f"Could not download model package: {error}"
         ) from error
     if verify_model is not None:
         try:
@@ -164,7 +165,7 @@ def download_model_package(
             raise error
         except Exception as error:
             raise ModelVerificationError(
-                "Could not successfully verify correctness of model compilation"
+                "Could not verify compiled model correctness"
             ) from error
     return file_mapping
 
@@ -199,8 +200,20 @@ def execute_compilation(
     same_compute_compatibility: bool = False,
     registered_model_features: Optional[dict] = None,
     console: Optional[Console] = None,
-) -> Tuple[str, TRTConfig, ModelPackageRegistrationResponse]:
+    platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
+) -> Tuple[
+    str, TRTConfig, TRTModelPackageV1, Optional[ModelPackageRegistrationResponse]
+]:
     runtime_xray = x_ray_runtime_environment()
+    logger.info(
+        "Runtime environment: gpu=%s, cc=%s, cuda=%s, trt=%s, driver=%s, l4t=%s",
+        runtime_xray.gpu_devices[0] if runtime_xray.gpu_devices else "unknown",
+        runtime_xray.gpu_devices_cc[0] if runtime_xray.gpu_devices_cc else "unknown",
+        runtime_xray.cuda_version,
+        runtime_xray.trt_version,
+        runtime_xray.driver_version,
+        runtime_xray.l4t_version,
+    )
     os.makedirs(compilation_directory, exist_ok=True)
     engine_builder = EngineBuilder(workspace=workspace_size_gb)
     engine_builder.create_network(onnx_path=onnx_path)
@@ -265,8 +278,8 @@ def execute_compilation(
         machine_type=machine_type,
         machine_specs=machine_specs,
     )
+    skip_platform_registration = False
     try:
-        # stating the registration, to see if package already sealed
         _ = models_service_client.register_model_package(
             model_id=model_id,
             package_manifest=package_manifest.model_dump(
@@ -278,15 +291,30 @@ def execute_compilation(
     except RequestError as error:
         if error.status_code == 409:
             raise AlreadyCompiledError("Model package already compiled.")
-        logging.exception("Could not stat-create model package")
-        raise CompiledPackageRegistrationError(
-            f"Could not register model package - {error}"
-        ) from error
+        if platform_registration == PlatformRegistrationPolicy.REQUIRED:
+            logger.exception("Could not pre-register model package")
+            raise CompiledPackageRegistrationError(
+                f"Could not register model package: {error}"
+            ) from error
+        logger.warning(
+            "Pre-register failed for %s (status %s); continuing with local compile/install: %s",
+            model_id,
+            error.status_code,
+            error,
+        )
+        skip_platform_registration = True
     except Exception as error:
-        logging.exception("Error while registering model package")
-        raise CompiledPackageRegistrationError(
-            f"Could not register model package - {error}"
-        ) from error
+        if platform_registration == PlatformRegistrationPolicy.REQUIRED:
+            logger.exception("Error while registering model package")
+            raise CompiledPackageRegistrationError(
+                f"Could not register model package: {error}"
+            ) from error
+        logger.warning(
+            "Pre-register failed for %s; continuing with local compile/install: %s",
+            model_id,
+            error,
+        )
+        skip_platform_registration = True
     compilation_features = {
         "modelArchitecture": model_architecture,
         "taskType": task_type,
@@ -316,8 +344,19 @@ def execute_compilation(
         trt_version_compatible=trt_version_compatible,
         same_compute_compatibility=same_compute_compatibility,
     )
+    logger.info(
+        "TRT engine compiled for %s at %s (platform_registration=%s)",
+        model_id,
+        engine_path,
+        platform_registration.value,
+    )
+    if skip_platform_registration:
+        logger.info(
+            "Skipping platform registration for %s after compile; local install will follow",
+            model_id,
+        )
+        return engine_path, trt_config, package_manifest, None
     try:
-        # performing registration again, so that we have fresh upload URL
         registration_result = models_service_client.register_model_package(
             model_id=model_id,
             package_manifest=package_manifest.model_dump(
@@ -326,18 +365,41 @@ def execute_compilation(
             file_handles=file_handles_to_register,
             model_features=registered_model_features,
         )
-        return engine_path, trt_config, registration_result
+        return engine_path, trt_config, package_manifest, registration_result
     except RequestError as error:
         if error.status_code == 409:
+            # The engine is already built; under OPTIONAL keep it for local
+            # install rather than discarding the compilation work.
+            if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
+                logger.warning(
+                    "Post-compile register returned 409 for %s; local install will follow",
+                    model_id,
+                )
+                return engine_path, trt_config, package_manifest, None
             raise AlreadyCompiledError("Model package already compiled.")
-        logging.exception("Could not stat-create model package")
+        if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
+            logger.warning(
+                "Post-compile register failed for %s (status %s); local install will follow: %s",
+                model_id,
+                error.status_code,
+                error,
+            )
+            return engine_path, trt_config, package_manifest, None
+        logger.exception("Could not register model package after compilation")
         raise CompiledPackageRegistrationError(
-            f"Could not register model package - {error}"
+            f"Could not register model package: {error}"
         ) from error
     except Exception as error:
-        logging.exception("Error while registering model package")
+        if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
+            logger.warning(
+                "Post-compile register failed for %s; local install will follow: %s",
+                model_id,
+                error,
+            )
+            return engine_path, trt_config, package_manifest, None
+        logger.exception("Error while registering model package")
         raise CompiledPackageRegistrationError(
-            f"Could not register model package - {error}"
+            f"Could not register model package: {error}"
         ) from error
 
 
@@ -345,7 +407,8 @@ def register_model_package_artefacts(
     registration_response: ModelPackageRegistrationResponse,
     local_files_mapping: Dict[str, Tuple[str, str]],
     models_service_client: ModelsServiceClient,
-) -> None:
+    platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
+) -> bool:
     try:
         confirmations = []
         for file_upload_spec in registration_response.file_upload_specs:
@@ -367,14 +430,25 @@ def register_model_package_artefacts(
             confirmations=confirmations,
             seal_model_package=True,
         )
-        logging.info(
-            f"Registered package with id: {registration_response.model_package_id} "
-            f"for model: {registration_response.model_id}"
+        logger.info(
+            "Registered and uploaded package %s for model %s registered_platform=true uploaded_sealed=true",
+            registration_response.model_package_id,
+            registration_response.model_id,
         )
+        return True
     except Exception as error:
-        logging.exception(
-            f"Could not register artefacts for package {registration_response.model_package_id}"
+        logger.exception(
+            "Could not register artefacts for package %s",
+            registration_response.model_package_id,
         )
+        if platform_registration == PlatformRegistrationPolicy.OPTIONAL:
+            logger.warning(
+                "Platform upload failed for model %s package %s; local install remains usable: %s",
+                registration_response.model_id,
+                registration_response.model_package_id,
+                error,
+            )
+            return False
         raise CompiledPackageRegistrationError(
             f"Could not register artefacts for package {registration_response.model_package_id}"
         ) from error

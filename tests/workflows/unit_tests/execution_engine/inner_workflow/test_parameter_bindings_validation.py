@@ -87,7 +87,9 @@ def test_rejects_unknown_binding_keys() -> None:
             ),
         ],
     )
-    with pytest.raises(InnerWorkflowParameterBindingsUnknownInputError, match="unknown"):
+    with pytest.raises(
+        InnerWorkflowParameterBindingsUnknownInputError, match="unknown"
+    ):
         validate_parameter_bindings_against_child(
             bindings={"only": "$inputs.a", "extra": "$inputs.b"},
             child_parsed=child,

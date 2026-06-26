@@ -9,6 +9,7 @@ from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
     CreditsExceededError,
+    FeatureDeprecatedError,
     InferenceModelNotFound,
     InputImageLoadError,
     InvalidEnvironmentVariableError,
@@ -19,11 +20,13 @@ from inference.core.exceptions import (
     MissingApiKeyError,
     MissingServiceSecretError,
     ModelArtefactError,
+    ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
     OnnxProviderNotAvailable,
     PaymentRequiredError,
     PostProcessingError,
     PreProcessingError,
+    RequestDataContradiction,
     RoboflowAPIConnectionError,
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
@@ -121,6 +124,12 @@ def _build_execution_error_response(
                 block_traceback=error.block_traceback,
             ),
         ],
+        # Attached by the workflow-run route when `debug=True` and the run
+        # failed; carries logs of python blocks executed before the failure.
+        python_blocks_output_streams=getattr(
+            error, "python_blocks_output_streams", None
+        ),
+        python_blocks_debug_traces=getattr(error, "python_blocks_debug_traces", None),
     )
 
 
@@ -174,6 +183,14 @@ def with_route_exceptions(route):
                 content={
                     "message": f"Error with model input. Cause: {error}",
                     "help_url": error.help_url,
+                },
+            )
+        except RequestDataContradiction as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": str(error),
                 },
             )
         except InvalidModelIDError as error:
@@ -322,6 +339,12 @@ def with_route_exceptions(route):
                     "message": f"Could not negotiate model package - {error}",
                     "help_url": error.help_url,
                 },
+            )
+        except ModelDeploymentNotSupportedError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=501,
+                content={"message": str(error)},
             )
         except (
             InvalidEnvironmentVariableError,
@@ -483,6 +506,14 @@ def with_route_exceptions(route):
                         block_id=error.block_id,
                     ),
                 ],
+                # Attached by the workflow-run route when `debug=True` and the run
+                # failed; carries logs of python blocks executed before the failure.
+                python_blocks_output_streams=getattr(
+                    error, "python_blocks_output_streams", None
+                ),
+                python_blocks_debug_traces=getattr(
+                    error, "python_blocks_debug_traces", None
+                ),
             )
             resp = JSONResponse(
                 status_code=error.status_code,
@@ -505,6 +536,15 @@ def with_route_exceptions(route):
                     "context": error.context,
                     "inner_error_type": error.inner_error_type,
                     "inner_error_message": str(error.inner_error),
+                    # Attached by the workflow-run route when `debug=True` and the
+                    # run failed; carries logs of python blocks executed before the
+                    # failure.
+                    "python_blocks_output_streams": getattr(
+                        error, "python_blocks_output_streams", None
+                    ),
+                    "python_blocks_debug_traces": getattr(
+                        error, "python_blocks_debug_traces", None
+                    ),
                 },
             )
         except (
@@ -545,6 +585,16 @@ def with_route_exceptions(route):
                 content={
                     "message": str(error),
                     "error_type": "WorkspaceStreamQuotaError",
+                },
+            )
+        except FeatureDeprecatedError as error:
+            logger.warning("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=410,
+                content={
+                    "message": str(error),
+                    "error_type": "FeatureDeprecatedError",
+                    **error.get_structured_public_error_details(),
                 },
             )
         except Exception as error:
@@ -607,6 +657,14 @@ def with_route_exceptions_async(route):
                     "help_url": error.help_url,
                 },
             )
+        except RequestDataContradiction as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": str(error),
+                },
+            )
         except InvalidModelIDError as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -753,6 +811,12 @@ def with_route_exceptions_async(route):
                     "message": f"Could not negotiate model package - {error}",
                     "help_url": error.help_url,
                 },
+            )
+        except ModelDeploymentNotSupportedError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=501,
+                content={"message": str(error)},
             )
         except (
             InvalidEnvironmentVariableError,
@@ -914,6 +978,14 @@ def with_route_exceptions_async(route):
                         block_id=error.block_id,
                     ),
                 ],
+                # Attached by the workflow-run route when `debug=True` and the run
+                # failed; carries logs of python blocks executed before the failure.
+                python_blocks_output_streams=getattr(
+                    error, "python_blocks_output_streams", None
+                ),
+                python_blocks_debug_traces=getattr(
+                    error, "python_blocks_debug_traces", None
+                ),
             )
             resp = JSONResponse(
                 status_code=error.status_code,
@@ -936,6 +1008,15 @@ def with_route_exceptions_async(route):
                     "context": error.context,
                     "inner_error_type": error.inner_error_type,
                     "inner_error_message": str(error.inner_error),
+                    # Attached by the workflow-run route when `debug=True` and the
+                    # run failed; carries logs of python blocks executed before the
+                    # failure.
+                    "python_blocks_output_streams": getattr(
+                        error, "python_blocks_output_streams", None
+                    ),
+                    "python_blocks_debug_traces": getattr(
+                        error, "python_blocks_debug_traces", None
+                    ),
                 },
             )
         except (
@@ -976,6 +1057,16 @@ def with_route_exceptions_async(route):
                 content={
                     "message": str(error),
                     "error_type": "WorkspaceStreamQuotaError",
+                },
+            )
+        except FeatureDeprecatedError as error:
+            logger.warning("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=410,
+                content={
+                    "message": str(error),
+                    "error_type": "FeatureDeprecatedError",
+                    **error.get_structured_public_error_details(),
                 },
             )
         except Exception as error:

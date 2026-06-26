@@ -117,8 +117,8 @@ class ModelsServiceClient:
             api_key = ROBOFLOW_API_KEY
         if api_key is None:
             raise RuntimeConfigurationError(
-                "Could not initialise Models Service client without Roboflow API key. "
-                "Set the key explicitly or use environment variable `ROBOFLOW_API_KEY`. If you need help getting "
+                "Could not initialize Models Service client without a Roboflow API key. "
+                "Set the key explicitly or use the environment variable `ROBOFLOW_API_KEY`. If you need help finding "
                 "your Roboflow API key, "
                 "visit: https://docs.roboflow.com/developer/authentication/find-your-roboflow-api-key"
             )
@@ -162,7 +162,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return ModelPackageRegistrationResponse.model_validate(response.json())
 
@@ -193,7 +193,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return None
 
@@ -221,7 +221,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return ModelPackageRegistrationResponse.model_validate(response.json())  # type: ignore
 
@@ -249,7 +249,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return None
 
@@ -268,7 +268,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return None
 
@@ -290,7 +290,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return None
 
@@ -312,7 +312,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return None
 
@@ -334,7 +334,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return None
 
@@ -354,7 +354,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return ExternalPublicTRTTimingCompilationEntryV1.model_validate(  # type: ignore
             response.json()["cacheEntry"]
@@ -376,7 +376,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return ExternalPrivateTRTTimingCompilationEntryV1.model_validate(  # type: ignore
             response.json()["cacheEntry"]
@@ -399,7 +399,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return PrivateTRTTimingCacheEntryRegistrationResults.model_validate(  # type: ignore
             response.json()
@@ -425,7 +425,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return None
 
@@ -452,7 +452,7 @@ class ModelsServiceClient:
                 headers=self._add_auth_headers(),
             )
         except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-            raise RetryError(f"Connectivity error")
+            raise RetryError("Connectivity error")
         handle_response_errors(response=response)
         return PrivateTRTTimingCacheEntriesList.model_validate(response.json())  # type: ignore
 

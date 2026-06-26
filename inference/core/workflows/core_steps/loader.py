@@ -54,6 +54,9 @@ from inference.core.workflows.core_steps.classical_cv.camera_focus.v2 import (
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.contrast_enhancement.v1 import (
+    ContrastEnhancementBlock,
+)
 from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
     ContrastEqualizationBlockV1,
 )
@@ -75,8 +78,14 @@ from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 imp
 from inference.core.workflows.core_steps.classical_cv.mask_area_measurement.v1 import (
     MaskAreaMeasurementBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.mask_edge_snap.v1 import (
+    MaskEdgeSnapBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1 import (
     MorphologicalTransformationBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v2 import (
+    MorphologicalTransformationBlockV2,
 )
 from inference.core.workflows.core_steps.classical_cv.motion_detection.v1 import (
     MotionDetectionBlockV1,
@@ -110,6 +119,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_float_zero_to_one_kind,
     deserialize_image_kind,
     deserialize_integer_kind,
+    deserialize_labeled_points_kind,
     deserialize_list_of_values_kind,
     deserialize_numpy_array,
     deserialize_optional_string_kind,
@@ -143,7 +153,13 @@ from inference.core.workflows.core_steps.flow_control.inner_workflow.v1 import (
 from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
     RateLimiterBlockV1,
 )
+from inference.core.workflows.core_steps.flow_control.switch_case.v1 import (
+    SwitchCaseBlockV1,
+)
 from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
+from inference.core.workflows.core_steps.formatters.current_time.v1 import (
+    CurrentTimeBlockV1,
+)
 from inference.core.workflows.core_steps.formatters.expression.v1 import (
     ExpressionBlockV1,
 )
@@ -183,6 +199,10 @@ from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
 )
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
+)
+from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
+from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
+    OverlapAnalysisBlockV1,
 )
 from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
@@ -233,11 +253,26 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 impo
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
     GoogleGeminiBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemma.v1 import (
+    GoogleGemmaBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.google_gemma.v2 import (
+    GoogleGemmaBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v1 import (
+    KimiOpenRouterBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.kimi_openrouter.v2 import (
+    KimiOpenrouterBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
     LlamaVisionBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.llama_vision.v2 import (
+    LlamaVisionBlockV2,
 )
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
@@ -259,11 +294,26 @@ from inference.core.workflows.core_steps.models.foundation.openai.v3 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
     OpenAIBlockV4,
 )
+from inference.core.workflows.core_steps.models.foundation.openai_compatible.v1 import (
+    OpenAICompatibleBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import (
+    OpenRouterBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
+    Qwen35OpenRouterBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v1 import (
     Qwen35VLBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen3_5vl.v2 import (
+    Qwen35VLBlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen3_6_openrouter.v1 import (
+    Qwen36OpenRouterBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
     Qwen3VLBlockV1,
@@ -271,11 +321,17 @@ from inference.core.workflows.core_steps.models.foundation.qwen3vl.v1 import (
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen_vlm.v1 import (
+    QwenVlmBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
     SegPreviewBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything2_video.v1 import (
+    SegmentAnything2VideoBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
     SegmentAnything3BlockV1,
@@ -285,6 +341,15 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
     SegmentAnything3BlockV3,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
+    SegmentAnything3InteractiveBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
+    SegmentAnything3VideoBlockV1,
+)
+from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v4 import (
+    RoboflowInstanceSegmentationModelBlockV4,
 )
 
 if SAM3_3D_OBJECTS_ENABLED:
@@ -313,11 +378,17 @@ from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
     RoboflowInstanceSegmentationModelBlockV2,
 )
+from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v3 import (
+    RoboflowInstanceSegmentationModelBlockV3,
+)
 from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
     RoboflowKeypointDetectionModelBlockV1,
 )
 from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2 import (
     RoboflowKeypointDetectionModelBlockV2,
+)
+from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v3 import (
+    RoboflowKeypointDetectionModelBlockV3,
 )
 from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1 import (
     RoboflowClassificationModelBlockV1,
@@ -325,11 +396,17 @@ from inference.core.workflows.core_steps.models.roboflow.multi_class_classificat
 from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2 import (
     RoboflowClassificationModelBlockV2,
 )
+from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v3 import (
+    RoboflowClassificationModelBlockV3,
+)
 from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
     RoboflowMultiLabelClassificationModelBlockV1,
 )
 from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
     RoboflowMultiLabelClassificationModelBlockV2,
+)
+from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v3 import (
+    RoboflowMultiLabelClassificationModelBlockV3,
 )
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 import (
     RoboflowObjectDetectionModelBlockV1,
@@ -337,8 +414,14 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 imp
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
     RoboflowObjectDetectionModelBlockV2,
 )
+from inference.core.workflows.core_steps.models.roboflow.object_detection.v3 import (
+    RoboflowObjectDetectionModelBlockV3,
+)
 from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v1 import (
     RoboflowSemanticSegmentationModelBlockV1,
+)
+from inference.core.workflows.core_steps.models.roboflow.semantic_segmentation.v2 import (
+    RoboflowSemanticSegmentationModelBlockV2,
 )
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
@@ -363,6 +446,9 @@ from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
+from inference.core.workflows.core_steps.sinks.roboflow.asset_library_attributes.v1 import (
+    RoboflowAssetLibraryAttributesBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -389,6 +475,9 @@ from inference.core.workflows.core_steps.sinks.twilio.sms.v2 import (
     TwilioSMSNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
+from inference.core.workflows.core_steps.trackers.botsort.v1 import (
+    BoTSORTBlockV1 as TrackerBoTSORTBlockV1,
+)
 from inference.core.workflows.core_steps.trackers.bytetrack.v1 import (
     ByteTrackBlockV1 as TrackerByteTrackBlockV1,
 )
@@ -443,6 +532,9 @@ from inference.core.workflows.core_steps.transformations.image_slicer.v1 import 
 from inference.core.workflows.core_steps.transformations.image_slicer.v2 import (
     ImageSlicerBlockV2,
 )
+from inference.core.workflows.core_steps.transformations.per_class_confidence_filter.v1 import (
+    PerClassConfidenceFilterBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
 )
@@ -463,6 +555,9 @@ from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v
 )
 from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v2 import (
     StitchOCRDetectionsBlockV2,
+)
+from inference.core.workflows.core_steps.transformations.track_class_lock.v1 import (
+    TrackClassLockBlockV1,
 )
 
 # Visualizers
@@ -557,6 +652,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     CONTOURS_KIND,
     DETECTION_KIND,
+    DETECTIONS_OVERLAPS_KIND,
     DICTIONARY_KIND,
     EMBEDDING_KIND,
     FLOAT_KIND,
@@ -568,6 +664,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    LABELED_POINTS_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     NUMPY_ARRAY_KIND,
@@ -602,6 +699,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "update_attributes_offloader": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
@@ -647,6 +745,7 @@ KINDS_DESERIALIZERS = {
     SEMANTIC_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
     CLASSIFICATION_PREDICTION_KIND.name: deserialize_classification_prediction_kind,
     POINT_KIND.name: deserialize_point_kind,
+    LABELED_POINTS_KIND.name: deserialize_labeled_points_kind,
     ZONE_KIND.name: deserialize_zone_kind,
     RGB_COLOR_KIND.name: deserialize_rgb_color_kind,
     LANGUAGE_MODEL_OUTPUT_KIND.name: deserialize_string_kind,
@@ -711,26 +810,31 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
         DetectionOffsetBlockV1,
+        PerClassConfidenceFilterBlockV1,
         DepthEstimationBlockV1,
         ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
+        RoboflowAssetLibraryAttributesBlockV1,
         ContinueIfBlockV1,
         InnerWorkflowBlockV1,
         RateLimiterBlockV1,
+        SwitchCaseBlockV1,
         PerspectiveCorrectionBlockV1,
         DeltaFilterBlockV1,
         CameraCalibrationBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         BufferBlockV1,
+        ImageStackBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
         PropertyDefinitionBlockV1,
         DimensionCollapseBlockV1,
         DetectionsListRollUpBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
+        CurrentTimeBlockV1,
         AnthropicClaudeBlockV1,
         AnthropicClaudeBlockV2,
         AnthropicClaudeBlockV3,
@@ -759,6 +863,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CropVisualizationBlockV1,
         DetectionsConsensusBlockV1,
         DetectionsStitchBlockV1,
+        OverlapAnalysisBlockV1,
         DistanceMeasurementBlockV1,
         DominantColorBlockV1,
         DotVisualizationBlockV1,
@@ -817,9 +922,12 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV1,
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
+        SegmentAnything2VideoBlockV1,
         SegmentAnything3BlockV1,
         SegmentAnything3BlockV2,
         SegmentAnything3BlockV3,
+        SegmentAnything3InteractiveBlockV1,
+        SegmentAnything3VideoBlockV1,
         SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
@@ -832,6 +940,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TimeInZoneBlockV1,
         TimeInZoneBlockV2,
         TimeInZoneBlockV3,
+        TrackClassLockBlockV1,
         TriangleVisualizationBlockV1,
         TextDisplayVisualizationBlockV1,
         VLMAsClassifierBlockV1,
@@ -849,16 +958,24 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
         TrackerByteTrackBlockV1,
+        TrackerBoTSORTBlockV1,
         TrackerSORTBlockV1,
         TrackerOCSORTBlockV1,
         WebhookSinkBlockV1,
         VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
+        RoboflowInstanceSegmentationModelBlockV3,
+        RoboflowInstanceSegmentationModelBlockV4,
         RoboflowSemanticSegmentationModelBlockV1,
+        RoboflowSemanticSegmentationModelBlockV2,
         RoboflowKeypointDetectionModelBlockV2,
+        RoboflowKeypointDetectionModelBlockV3,
         RoboflowClassificationModelBlockV2,
+        RoboflowClassificationModelBlockV3,
         RoboflowMultiLabelClassificationModelBlockV2,
+        RoboflowMultiLabelClassificationModelBlockV3,
         RoboflowObjectDetectionModelBlockV2,
+        RoboflowObjectDetectionModelBlockV3,
         VLMAsClassifierBlockV2,
         VLMAsDetectorBlockV2,
         IdentifyOutliersBlockV1,
@@ -869,10 +986,21 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TwilioSMSNotificationBlockV2,
         GazeBlockV1,
         LlamaVisionBlockV1,
+        LlamaVisionBlockV2,
+        GoogleGemmaBlockV1,
+        GoogleGemmaBlockV2,
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
         Qwen3VLBlockV1,
         Qwen35VLBlockV1,
+        Qwen35VLBlockV2,
+        Qwen35OpenRouterBlockV1,
+        Qwen36OpenRouterBlockV1,
+        QwenVlmBlockV1,
+        OpenAICompatibleBlockV1,
+        KimiOpenRouterBlockV1,
+        KimiOpenrouterBlockV2,
+        OpenRouterBlockV1,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
@@ -883,6 +1011,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
         MaskAreaMeasurementBlockV1,
+        MaskEdgeSnapBlockV1,
+        ContrastEnhancementBlock,
+        MorphologicalTransformationBlockV2,
     ]
     if SAM3_3D_OBJECTS_ENABLED:
         blocks.append(SegmentAnything3_3D_ObjectsBlockV1)
@@ -915,7 +1046,9 @@ def load_kinds() -> List[Kind]:
         DICTIONARY_KIND,
         DETECTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
+        DETECTIONS_OVERLAPS_KIND,
         POINT_KIND,
+        LABELED_POINTS_KIND,
         ZONE_KIND,
         OBJECT_DETECTION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,

@@ -11,7 +11,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
 )
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     InvalidModelInitParameterError,
@@ -33,6 +33,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
@@ -52,6 +53,7 @@ from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     RFDETRXLargeConfig,
     build_model,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     torch.set_float32_matmul_precision("high")
@@ -87,6 +89,7 @@ class RFDetrForObjectDetectionTorch(
         labels: Optional[Union[str, List[str]]] = None,
         resolution: Optional[int] = None,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
         if os.path.isfile(model_name_or_path):
@@ -169,6 +172,7 @@ class RFDetrForObjectDetectionTorch(
             inference_config=inference_config,
             post_processor=post_processor,
             resolution=model_config.resolution,
+            recommended_parameters=recommended_parameters,
         )
 
     @classmethod
@@ -286,6 +290,7 @@ class RFDetrForObjectDetectionTorch(
         device: torch.device,
         post_processor: PostProcess,
         resolution: int,
+        recommended_parameters=None,
     ):
         self._model = model
         self._inference_config = inference_config
@@ -300,6 +305,7 @@ class RFDetrForObjectDetectionTorch(
         self._optimized_batch_size = None
         self._optimized_dtype = None
         self._lock = RLock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -407,9 +413,17 @@ class RFDetrForObjectDetectionTorch(
         self,
         model_results: dict,
         pre_processing_meta: List[PreProcessingMetadata],
-        confidence: float = INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        confidence: Confidence = "default",
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
+        )
+        threshold = confidence_filter.get_threshold(self.class_names)
+        if isinstance(threshold, torch.Tensor):
+            threshold = threshold.to(device=self._device)
         if (
             self._inference_config.network_input.resize_mode
             in RESIZE_MODES_TO_REVERT_PADDING
@@ -478,7 +492,22 @@ class RFDetrForObjectDetectionTorch(
                 scores = scores[remapping_mask]
                 labels = self._classes_re_mapping.class_mapping[labels[remapping_mask]]
                 boxes = boxes[remapping_mask]
-            keep = scores > confidence
+            score_thresholds = (
+                threshold.to(dtype=scores.dtype)
+                if isinstance(threshold, torch.Tensor)
+                else threshold
+            )
+            if self._classes_re_mapping is None:
+                # drop DETR no-object rows
+                named = labels < len(self.class_names)
+                scores = scores[named]
+                labels = labels[named]
+                boxes = boxes[named]
+            keep = scores > (
+                score_thresholds[labels.long()]
+                if isinstance(score_thresholds, torch.Tensor)
+                else score_thresholds
+            )
             scores = scores[keep]
             labels = labels[keep]
             boxes = boxes[keep]
@@ -512,10 +541,11 @@ class RFDetrForObjectDetectionTorch(
                     device=boxes.device,
                 )
                 boxes[:, :4].add_(static_crop_offsets)
-            detections = Detections(
-                xyxy=boxes.round().int(),
-                confidence=scores,
-                class_id=labels.int(),
+            detections_list.append(
+                Detections(
+                    xyxy=boxes.round().int(),
+                    confidence=scores,
+                    class_id=labels.int(),
+                )
             )
-            detections_list.append(detections)
         return detections_list

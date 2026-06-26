@@ -69,13 +69,14 @@ nav:
           - YOLOv8: models/yolov8-keypoint-detection.md
           - YOLOv11: models/yolov11-keypoint-detection.md
           - YOLO26: models/yolo26-keypoint-detection.md
-          - MediaPipe Face Detection: models/mediapipe-face.md
       - Interactive Segmentation:
           - SAM: models/sam-interactive-segmentation.md
           - SAM2: models/sam2-interactive-segmentation.md
           - SAM2 RT: models/sam2-rt-video-tracking.md
+          - SAM3 Video: models/sam3-video-concept-tracking.md
       - Vision-Language Models:
           - Florence-2: models/florence2.md
+          - Gemma 4: models/gemma4.md
           - PaliGemma: models/paligemma.md
           - Qwen2.5-VL: models/qwen25vl.md
           - Qwen3-VL: models/qwen3vl.md
@@ -85,6 +86,7 @@ nav:
           - CLIP: models/clip.md
           - Perception Encoder: models/perception-encoder.md
       - Semantic Segmentation:
+          - YOLO26: models/yolo26-semantic-segmentation.md
           - DeepLabV3+: models/deeplabv3plus.md
       - Open-Vocabulary Object Detection:
           - Grounding DINO: models/grounding-dino.md

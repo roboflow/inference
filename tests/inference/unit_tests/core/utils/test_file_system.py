@@ -7,6 +7,8 @@ import pytest
 from humanfriendly.testing import touch
 
 from inference.core.utils.file_system import (
+    MAX_PATH_BYTES,
+    MAX_PATH_SEGMENT_BYTES,
     AtomicPath,
     dump_bytes,
     dump_bytes_atomic,
@@ -16,6 +18,7 @@ from inference.core.utils.file_system import (
     dump_text_lines_atomic,
     ensure_parent_dir_exists,
     ensure_write_is_allowed,
+    path_fits_os_limits,
     read_json,
     read_text_file,
 )
@@ -339,6 +342,44 @@ def test_ensure_parent_dir_exists_when_dir_does_not_exist(empty_local_dir: str) 
 
     # then
     assert os.listdir(empty_local_dir) == ["some"]
+
+
+def test_path_fits_os_limits_when_path_is_within_limits(empty_local_dir: str) -> None:
+    # given
+    path = os.path.join(empty_local_dir, "workspace", "model_type.json")
+
+    # when
+    result = path_fits_os_limits(path=path)
+
+    # then
+    assert result is True
+
+
+def test_path_fits_os_limits_when_segment_exceeds_os_limit(
+    empty_local_dir: str,
+) -> None:
+    # given
+    path = os.path.join(empty_local_dir, "a" * (MAX_PATH_SEGMENT_BYTES + 1))
+
+    # when
+    result = path_fits_os_limits(path=path)
+
+    # then
+    assert result is False
+
+
+def test_path_fits_os_limits_when_total_path_exceeds_os_limit(
+    empty_local_dir: str,
+) -> None:
+    # given
+    segments_count = (MAX_PATH_BYTES // len("segment/")) + 1
+    long_path = os.path.join(empty_local_dir, *["segment"] * segments_count)
+
+    # when
+    result = path_fits_os_limits(path=long_path)
+
+    # then
+    assert result is False
 
 
 @pytest.mark.parametrize("allow_override", [True, False])

@@ -369,14 +369,11 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     scale=scale_ratio,
                 )
                 simplified_polygons.append(simplified_polygon.tolist())
-                updated_detection.mask = np.array(
-                    [
-                        sv.polygon_to_mask(
-                            polygon=simplified_polygon,
-                            resolution_wh=mask.shape[::-1],
-                        )
-                    ]
-                )
+                mask_bool = sv.polygon_to_mask(
+                    polygon=simplified_polygon,
+                    resolution_wh=mask.shape[::-1],
+                ).astype(bool)
+                updated_detection.mask = np.array([mask_bool])
                 updated_detections.append(updated_detection)
             result.append(
                 {

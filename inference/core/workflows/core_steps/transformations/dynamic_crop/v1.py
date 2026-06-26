@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -214,7 +215,7 @@ def crop_image(
     ):
         cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
         if not cropped_image.size:
-            crops.append({"crops": None})
+            crops.append({"crops": None, "predictions": None})
             continue
         if mask_opacity > 0 and detections.mask is not None:
             detection_mask = detections.mask[idx]
@@ -255,6 +256,14 @@ def crop_image(
         if POLYGON_KEY_IN_SV_DETECTIONS in detections.data:
             translated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = selected_detection[
                 POLYGON_KEY_IN_SV_DETECTIONS
+            ] - np.array([x_min, y_min])
+        if ORIENTED_BOX_COORDINATES in detections.data:
+            # OBB corners (shape (1, 4, 2) on a single-detection slice) get the
+            # same crop-local offset applied to xyxy / keypoints / polygon. Without
+            # this, OBB-aware downstream blocks see corners in the original image
+            # frame next to a crop-local xyxy.
+            translated_detection[ORIENTED_BOX_COORDINATES] = selected_detection[
+                ORIENTED_BOX_COORDINATES
             ] - np.array([x_min, y_min])
 
         crops.append(

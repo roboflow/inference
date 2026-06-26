@@ -1,3 +1,4 @@
+import logging
 import tempfile
 from functools import partial
 from typing import Optional
@@ -12,6 +13,8 @@ from inference_cli.lib.enterprise.inference_compiler.core.compilation_handlers.d
 )
 from inference_cli.lib.enterprise.inference_compiler.core.entities import (
     CompilationConfig,
+    CompilationPipelineResult,
+    PlatformRegistrationPolicy,
 )
 from inference_cli.lib.enterprise.inference_compiler.core.model_checks.default import (
     verify_auto_model,
@@ -25,6 +28,9 @@ from inference_cli.lib.enterprise.inference_compiler.utils.logging import (
 )
 from inference_models.weights_providers.core import get_model_from_provider
 from inference_models.weights_providers.entities import ModelMetadata
+
+logger = logging.getLogger("inference_cli.inference_compiler")
+
 
 REGISTERED_COMPILATION_HANDLERS = {
     "yolov8": partial(
@@ -114,15 +120,22 @@ def compile_model(
     trt_forward_compatible: bool = False,
     trt_same_cc_compatible: bool = False,
     console: Optional[Console] = None,
-) -> None:
+    platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
+) -> CompilationPipelineResult:
     print_to_console(
         message="Inference Compiler",
         justify="center",
         style="bold green4",
         console=console,
     )
+    logger.info(
+        "Starting compilation: model_id=%s, trt_forward_compatible=%s, trt_same_cc_compatible=%s",
+        model_id,
+        trt_forward_compatible,
+        trt_same_cc_compatible,
+    )
     models_service_client = ModelsServiceClient.init(api_key=api_key)
-    print_to_console(message="Retrieving Model metadata...", console=console)
+    print_to_console(message="Retrieving model metadata...", console=console)
     model_metadata = get_model_from_provider(
         model_id=model_id,
         provider="roboflow",
@@ -133,12 +146,13 @@ def compile_model(
         model_metadata=model_metadata,
         console=console,
     )
-    compile_and_register(
+    return compile_and_register(
         model_metadata=model_metadata,
         models_service_client=models_service_client,
         trt_forward_compatible=trt_forward_compatible,
         trt_same_cc_compatible=trt_same_cc_compatible,
         console=console,
+        platform_registration=platform_registration,
     )
 
 
@@ -148,18 +162,20 @@ def compile_and_register(
     trt_forward_compatible: bool,
     trt_same_cc_compatible: bool,
     console: Optional[Console] = None,
-) -> None:
+    platform_registration: PlatformRegistrationPolicy = PlatformRegistrationPolicy.REQUIRED,
+) -> CompilationPipelineResult:
     print_to_console(message="Model compilation in progress...", console=console)
     if model_metadata.model_architecture not in REGISTERED_COMPILATION_HANDLERS:
         raise ModelArchitectureNotSupportedError(
             f"Model architecture {model_metadata.model_architecture} not supported for compilation."
         )
     with tempfile.TemporaryDirectory() as compilation_directory:
-        REGISTERED_COMPILATION_HANDLERS[model_metadata.model_architecture](
+        return REGISTERED_COMPILATION_HANDLERS[model_metadata.model_architecture](
             model_metadata,
             models_service_client,
             compilation_directory,
             trt_forward_compatible,
             trt_same_cc_compatible,
             console,
+            platform_registration=platform_registration,
         )

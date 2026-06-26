@@ -255,6 +255,18 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.yolo26.yolo26_instance_segmentation_trt",
         class_name="YOLO26ForInstanceSegmentationTRT",
     ),
+    ("yolo26", SEMANTIC_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_onnx",
+        class_name="YOLO26ForSemanticSegmentationOnnx",
+    ),
+    ("yolo26", SEMANTIC_SEGMENTATION_TASK, BackendType.TORCH_SCRIPT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_torch_script",
+        class_name="YOLO26ForSemanticSegmentationTorchScript",
+    ),
+    ("yolo26", SEMANTIC_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_models.models.yolo26.yolo26_semantic_segmentation_trt",
+        class_name="YOLO26ForSemanticSegmentationTRT",
+    ),
     ("yololite", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_models.models.yololite.yololite_object_detection_onnx",
@@ -285,6 +297,10 @@ REGISTERED_MODELS: Dict[
     ("qwen3_5", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.qwen3_5.qwen3_5_hf",
         class_name="Qwen35HF",
+    ),
+    ("gemma-4", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.gemma4.gemma4_hf",
+        class_name="Gemma4HF",
     ),
     ("florence-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.florence2.florence2_hf",
@@ -346,6 +362,20 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_trt",
         class_name="RFDetrForInstanceSegmentationTRT",
     ),
+    ("rfdetr", KEYPOINT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_key_points_detection_onnx",
+            class_name="RFDetrForKeyPointsONNX",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
+    ),
     ("moondream2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.moondream2.moondream2_hf",
         class_name="MoonDream2HF",
@@ -406,6 +436,18 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.sam2_rt.sam2_pytorch",
         class_name="SAM2ForStream",
     ),
+    ("sam2video", INSTANCE_SEGMENTATION_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.sam2_video.sam2_video_hf",
+        class_name="SAM2Video",
+    ),
+    ("sam3video", INSTANCE_SEGMENTATION_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.sam3_video.sam3_video_hf",
+        class_name="SAM3Video",
+    ),
+    ("sam3trackervideo", INSTANCE_SEGMENTATION_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.sam3_tracker_video.sam3_tracker_video_hf",
+        class_name="SAM3TrackerVideo",
+    ),
     ("deep-lab-v3-plus", SEMANTIC_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_torch",
         class_name="DeepLabV3PlusForSemanticSegmentationTorch",
@@ -444,14 +486,6 @@ REGISTERED_MODELS: Dict[
     ("tr-ocr", TEXT_ONLY_OCR_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.trocr.trocr_hf",
         class_name="TROcrHF",
-    ),
-    (
-        "mediapipe-face-detector",
-        KEYPOINT_DETECTION_TASK,
-        BackendType.MEDIAPIPE,
-    ): LazyClass(
-        module_name="inference_models.models.mediapipe_face_detection.face_detection",
-        class_name="MediaPipeFaceDetector",
     ),
     ("l2cs-net", GAZE_DETECTION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.l2cs.l2cs_onnx",
@@ -520,6 +554,14 @@ REGISTERED_MODELS: Dict[
     ("sam2", INTERACTIVE_INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.sam2.sam2_torch",
         class_name="SAM2Torch",
+    ),
+    ("sam3", INTERACTIVE_INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_models.models.sam3.sam3_torch",
+        class_name="SAM3Torch",
+    ),
+    ("sam3", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_models.models.sam3.sam3_torch",
+        class_name="SAM3Torch",
     ),
 }
 

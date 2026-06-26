@@ -285,3 +285,30 @@ def test_multi_label_trt_package_torch_batch(
     # then
     assert abs(predictions[0].confidence[2].item() - 0.99951171875) < 1e-3
     assert abs(predictions[1].confidence[2].item() - 0.99951171875) < 1e-3
+
+
+@pytest.mark.slow
+@pytest.mark.trt_extras
+def test_multi_label_trt_per_class_confidence_blocks_specific_class(
+    resnet_multi_label_cls_trt_package: str,
+    dog_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_multi_label_trt_package_numpy` above) has class 2
+    confidence ~0.9995 on dog_image. Setting a 1.01 per-class threshold on
+    class 2 drops it from predictions."""
+    from inference_models.models.resnet.resnet_classification_trt import (
+        ResNetForMultiLabelClassificationTRT,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = ResNetForMultiLabelClassificationTRT.from_pretrained(
+        model_name_or_path=resnet_multi_label_cls_trt_package,
+        engine_host_code_allowed=True,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.5,
+        per_class_confidence={class_names[2]: 1.01},
+    )
+    predictions = model(dog_image_numpy, confidence="best")
+    assert 2 not in predictions[0].class_ids.cpu().tolist()

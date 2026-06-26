@@ -17,11 +17,17 @@ from inference_models.models.auto_loaders.entities import (
     TaskType,
 )
 from inference_models.utils.file_system import dump_json, read_json
-from inference_models.weights_providers.entities import ModelDependency
+from inference_models.weights_providers.entities import (
+    ModelDependency,
+    RecommendedParameters,
+)
 
 
 class AutoResolutionCacheEntry(BaseModel):
     model_id: str
+    # Model id whose on-disk cache directory holds the package. Differs from
+    # model_id for locally-discovered packages resolved under an alias.
+    cache_model_id: Optional[str] = Field(default=None)
     model_package_id: str
     resolved_files: List[str]
     model_architecture: Optional[ModelArchitecture]
@@ -30,6 +36,7 @@ class AutoResolutionCacheEntry(BaseModel):
     model_dependencies: Optional[List[ModelDependency]] = Field(default=None)
     created_at: datetime
     model_features: Optional[dict] = Field(default=None)
+    recommended_parameters: Optional[RecommendedParameters] = Field(default=None)
 
 
 class AutoResolutionCache(ABC):

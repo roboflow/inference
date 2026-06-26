@@ -25,6 +25,10 @@ class ModelLoadCollector:
         with self._lock:
             return len(self._entries) > 0
 
+    def snapshot_entries(self) -> list:
+        with self._lock:
+            return list(self._entries)
+
     def summarize(self, max_detail_bytes: int = 4096) -> Tuple[float, Optional[str]]:
         """Return (total_load_time, entries_json_or_none).
 
@@ -32,8 +36,7 @@ class ModelLoadCollector:
         entries.  If the JSON exceeds *max_detail_bytes*, the detail string
         is omitted (None).
         """
-        with self._lock:
-            entries = list(self._entries)
+        entries = self.snapshot_entries()
         total = sum(t for _, t in entries)
         detail = json.dumps([{"m": m, "t": t} for m, t in entries])
         if len(detail) > max_detail_bytes:

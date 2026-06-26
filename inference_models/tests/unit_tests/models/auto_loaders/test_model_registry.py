@@ -206,3 +206,17 @@ def test_model_implementation_exists_when_known_model_feature_requested() -> Non
 
     # then
     assert result is True
+
+
+def test_gemma4_family_architecture_resolves_to_gemma4_hf() -> None:
+    assert model_implementation_exists(
+        model_architecture="gemma-4",
+        task_type="vlm",
+        backend=BackendType.HF,
+    )
+    cls = resolve_model_class(
+        model_architecture="gemma-4",
+        task_type="vlm",
+        backend=BackendType.HF,
+    )
+    assert cls.__name__ == "Gemma4HF"

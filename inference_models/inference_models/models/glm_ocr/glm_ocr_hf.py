@@ -14,6 +14,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE,
     INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS,
+    RUNNING_ON_JETSON,
 )
 from inference_models.entities import ColorFormat
 
@@ -23,7 +24,13 @@ TABLE_RECOGNITION_PROMPT = "Table Recognition:"
 
 
 def _get_glm_ocr_attn_implementation(device: torch.device) -> str:
-    if is_flash_attn_2_available() and device and "cuda" in str(device):
+    # TODO: look into jetson builds, as flash-attention compiled for Jetsons does not cooperate
+    if (
+        is_flash_attn_2_available()
+        and device
+        and "cuda" in str(device)
+        and not RUNNING_ON_JETSON
+    ):
         try:
             import flash_attn  # noqa: F401
 
@@ -42,6 +49,14 @@ def _is_ampere_plus(device: torch.device) -> bool:
     return major >= 8
 
 
+def _resolve_default_dtype(device: torch.device) -> torch.dtype:
+    if device.type == "cuda":
+        if torch.cuda.is_bf16_supported():
+            return torch.bfloat16
+        return torch.float16
+    return torch.float32
+
+
 class GlmOcrHF:
     default_dtype = torch.bfloat16
 
@@ -55,7 +70,7 @@ class GlmOcrHF:
         quantization_config: Any = None,
         **kwargs,
     ) -> "GlmOcrHF":
-        dtype = cls.default_dtype
+        dtype = _resolve_default_dtype(device)
         attn_implementation = _get_glm_ocr_attn_implementation(device)
 
         model = (
@@ -93,6 +108,7 @@ class GlmOcrHF:
         self._model = model
         self._processor = processor
         self._device = device
+        self._torch_dtype = next(model.parameters()).dtype
         self._lock = Lock()
 
     def recognize_table(
@@ -201,7 +217,11 @@ class GlmOcrHF:
         )
 
         inputs = {
-            k: v.to(self._device)
+            k: (
+                v.to(self._device, dtype=self._torch_dtype)
+                if v.is_floating_point()
+                else v.to(self._device)
+            )
             for k, v in inputs.items()
             if isinstance(v, torch.Tensor)
         }

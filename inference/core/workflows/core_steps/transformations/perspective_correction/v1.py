@@ -687,17 +687,14 @@ def correct_detections(
             corrected_polygon: np.ndarray = cv.perspectiveTransform(
                 src=polygon, m=perspective_transformer
             ).reshape(-1, 2)
-            detection.mask = np.array(
-                [
-                    sv.polygon_to_mask(
-                        polygon=np.around(corrected_polygon).astype(np.int32),
-                        resolution_wh=(
-                            int(round(transformed_rect_width)),
-                            int(round(transformed_rect_height)),
-                        ),
-                    ).astype(bool)
-                ]
-            )
+            mask_bool = sv.polygon_to_mask(
+                polygon=np.around(corrected_polygon).astype(np.int32),
+                resolution_wh=(
+                    int(round(transformed_rect_width)),
+                    int(round(transformed_rect_height)),
+                ),
+            ).astype(bool)
+            detection.mask = np.array([mask_bool])
             detection.xyxy = np.array(
                 [
                     np.around(sv.polygon_to_xyxy(polygon=corrected_polygon)).astype(

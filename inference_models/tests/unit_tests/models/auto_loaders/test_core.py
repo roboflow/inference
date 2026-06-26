@@ -14,6 +14,7 @@ from inference_models.errors import (
     ModelLoadingError,
 )
 from inference_models.models.auto_loaders import core
+from inference_models.models.auto_loaders import model_cache_paths
 from inference_models.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCacheEntry,
 )
@@ -25,11 +26,13 @@ from inference_models.models.auto_loaders.core import (
     generate_model_package_cache_path,
     load_class_from_path,
     parse_model_config,
+    resolve_recommended_parameters,
 )
 from inference_models.models.auto_loaders.entities import (
     BackendType,
     InferenceModelConfig,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 def test_load_class_from_path_when_valid_python_module_provided(
@@ -151,7 +154,7 @@ def test_parse_model_config_when_full_config_provided(full_config_path: str) -> 
     )
 
 
-@mock.patch.object(core, "INFERENCE_HOME", "/some")
+@mock.patch.object(model_cache_paths, "INFERENCE_HOME", "/some")
 def test_generate_model_package_cache_path() -> None:
     # when
     result = generate_model_package_cache_path(
@@ -162,7 +165,7 @@ def test_generate_model_package_cache_path() -> None:
     assert result == "/some/models-cache/my-model-6fa11b0c/mypackage"
 
 
-@mock.patch.object(core, "INFERENCE_HOME", "/some")
+@mock.patch.object(model_cache_paths, "INFERENCE_HOME", "/some")
 def test_generate_model_package_cache_path_when_id_contains_forward_slash_at_front() -> (
     None
 ):
@@ -175,7 +178,7 @@ def test_generate_model_package_cache_path_when_id_contains_forward_slash_at_fro
     assert result == "/some/models-cache/-my-model-9651d483/mypackage"
 
 
-@mock.patch.object(core, "INFERENCE_HOME", "/some")
+@mock.patch.object(model_cache_paths, "INFERENCE_HOME", "/some")
 def test_generate_model_package_cache_path_when_id_contains_forward_slash_in_the_middle() -> (
     None
 ):
@@ -188,7 +191,7 @@ def test_generate_model_package_cache_path_when_id_contains_forward_slash_in_the
     assert result == "/some/models-cache/my-model-home-0b1d84f7/mypackage"
 
 
-@mock.patch.object(core, "INFERENCE_HOME", "/some")
+@mock.patch.object(model_cache_paths, "INFERENCE_HOME", "/some")
 def test_generate_model_package_cache_path_when_package_id_is_not_sanitized() -> None:
     # when
     with pytest.raises(InsecureModelIdentifierError):
@@ -258,6 +261,139 @@ def test_dump_auto_resolution_cache_when_cache_enabled(
             model_features={"some": "value"},
         ),
     )
+
+
+@mock.patch.object(core, "datetime")
+def test_dump_auto_resolution_cache_persists_cache_model_id(
+    datetime_mock: MagicMock,
+) -> None:
+    # For locally-discovered packages resolved under an alias, the cache entry
+    # must record the model id whose on-disk cache holds the package so cache
+    # hits rebuild the correct directory.
+    now = datetime.now()
+    auto_resolution_cache = MagicMock()
+    datetime_mock.now.return_value = now
+
+    dump_auto_resolution_cache(
+        use_auto_resolution_cache=True,
+        auto_resolution_cache=auto_resolution_cache,
+        auto_negotiation_hash="my-hash",
+        model_id="rfdetr-nano",
+        cache_model_id="workspace/coco-38",
+        model_package_id="localtrtabc123",
+        model_architecture="rfdetr",
+        task_type="object-detection",
+        backend_type=BackendType.TRT,
+        resolved_files={"some/file.txt"},
+        model_dependencies=None,
+        model_features=None,
+    )
+
+    registered_entry = auto_resolution_cache.register.call_args.kwargs["cache_entry"]
+    assert registered_entry.model_id == "rfdetr-nano"
+    assert registered_entry.cache_model_id == "workspace/coco-38"
+
+
+@mock.patch.object(core, "datetime")
+def test_dump_auto_resolution_cache_persists_recommended_parameters(
+    datetime_mock: MagicMock,
+) -> None:
+    # When recommended_parameters is provided at load time, the cache entry must
+    # store it so subsequent cache hits get the same value without re-fetching
+    # model metadata from the weights provider.
+
+    now = datetime.now()
+    auto_resolution_cache = MagicMock()
+    datetime_mock.now.return_value = now
+    recommended_parameters = RecommendedParameters(confidence=0.42)
+
+    dump_auto_resolution_cache(
+        use_auto_resolution_cache=True,
+        auto_resolution_cache=auto_resolution_cache,
+        auto_negotiation_hash="my-hash",
+        model_id="my-model",
+        model_package_id="my-package",
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        resolved_files={"some/file.txt"},
+        model_dependencies=None,
+        model_features=None,
+        recommended_parameters=recommended_parameters,
+    )
+
+    auto_resolution_cache.register.assert_called_once_with(
+        auto_negotiation_hash="my-hash",
+        cache_entry=AutoResolutionCacheEntry(
+            model_id="my-model",
+            model_package_id="my-package",
+            resolved_files={"some/file.txt"},
+            model_architecture="yolov8",
+            task_type="object-detection",
+            backend_type=BackendType.ONNX,
+            created_at=now,
+            model_features=None,
+            recommended_parameters=recommended_parameters,
+        ),
+    )
+
+
+@mock.patch.object(core, "datetime")
+def test_dump_auto_resolution_cache_omits_recommended_parameters_when_none(
+    datetime_mock: MagicMock,
+) -> None:
+    # The default for the kwarg is None, and that should round-trip cleanly through
+    # the cache entry. This guards the backward-compat path: model loads that don't
+    # have recommended_parameters work exactly as before.
+    now = datetime.now()
+    auto_resolution_cache = MagicMock()
+    datetime_mock.now.return_value = now
+
+    dump_auto_resolution_cache(
+        use_auto_resolution_cache=True,
+        auto_resolution_cache=auto_resolution_cache,
+        auto_negotiation_hash="my-hash",
+        model_id="my-model",
+        model_package_id="my-package",
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        resolved_files={"some/file.txt"},
+        model_dependencies=None,
+        model_features=None,
+    )
+
+    auto_resolution_cache.register.assert_called_once_with(
+        auto_negotiation_hash="my-hash",
+        cache_entry=AutoResolutionCacheEntry(
+            model_id="my-model",
+            model_package_id="my-package",
+            resolved_files={"some/file.txt"},
+            model_architecture="yolov8",
+            task_type="object-detection",
+            backend_type=BackendType.ONNX,
+            created_at=now,
+            model_features=None,
+            recommended_parameters=None,
+        ),
+    )
+
+
+def test_resolve_recommended_parameters_package_overrides_model() -> None:
+    package_params = RecommendedParameters(confidence=0.8)
+    model_params = RecommendedParameters(confidence=0.4)
+    assert (
+        resolve_recommended_parameters(package_params, model_params) is package_params
+    )
+
+
+def test_resolve_recommended_parameters_falls_back_to_model() -> None:
+    model_params = RecommendedParameters(confidence=0.4)
+    assert resolve_recommended_parameters(None, model_params) is model_params
+
+
+def test_resolve_recommended_parameters_none_when_both_absent() -> None:
+    assert resolve_recommended_parameters(None, None) is None
 
 
 def test_dump_model_config_for_offline_use_when_file_exists(
