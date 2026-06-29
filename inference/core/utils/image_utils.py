@@ -1,7 +1,9 @@
 import binascii
+import ipaddress
 import os
 import pickle
 import re
+import socket
 import urllib.parse
 from enum import Enum
 from io import BytesIO
@@ -24,6 +26,7 @@ from inference.core.env import (
     ALLOW_NON_HTTPS_URL_INPUT,
     ALLOW_NUMPY_INPUT,
     ALLOW_URL_INPUT,
+    ALLOW_URL_INPUT_TO_PRIVATE_NETWORKS,
     ALLOW_URL_INPUT_WITHOUT_FQDN,
     BLACKLISTED_DESTINATIONS_FOR_URL_INPUT,
     WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
@@ -426,8 +429,14 @@ def load_image_from_url(
     _ensure_location_matches_destination_blacklist(
         destination=address_parts_concatenated
     )
+    _ensure_url_resolves_to_allowed_address(hostname=parsed_url.hostname)
     try:
-        response = requests.get(prepared_url, stream=True)
+        response = requests.get(prepared_url, stream=True, allow_redirects=False)
+        if response.is_redirect:
+            raise InputImageLoadError(
+                message="Image URL redirects are not supported.",
+                public_message="Data pointed by URL could not be decoded into image.",
+            )
         api_key_safe_raise_for_status(response=response)
         return load_image_from_encoded_bytes(
             value=response.content, cv_imread_flags=cv_imread_flags
@@ -437,6 +446,35 @@ def load_image_from_url(
             message=f"Could not load image from url: {value}. Details: {error}",
             public_message="Data pointed by URL could not be decoded into image.",
         )
+
+
+def _ensure_url_resolves_to_allowed_address(hostname: Optional[str]) -> None:
+    if not hostname:
+        message = "Provided image URL is invalid"
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        )
+    if ALLOW_URL_INPUT_TO_PRIVATE_NETWORKS:
+        return None
+    try:
+        addresses = {
+            ipaddress.ip_address(result[4][0].split("%", 1)[0])
+            for result in socket.getaddrinfo(hostname, None)
+        }
+    except (OSError, ValueError) as error:
+        raise InputImageLoadError(
+            message=f"Could not resolve image URL host: {hostname}. Details: {error}",
+            public_message="Data pointed by URL could not be decoded into image.",
+        ) from error
+    if not addresses or any(
+        not address.is_global or address.is_multicast for address in addresses
+    ):
+        raise InputImageLoadError(
+            message="Image URL resolves to a non-public address.",
+            public_message="Data pointed by URL could not be decoded into image.",
+        )
+    return None
 
 
 def _ensure_url_input_allowed() -> None:
