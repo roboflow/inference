@@ -212,24 +212,31 @@ class _Owlv2Diagnostics:
         self.request = {
             "model_id": model_id,
             "image_count": image_count,
-            "training_examples": len(training_data),
-            "training_boxes": sum(
-                len(example.get("boxes", [])) for example in training_data
-            ),
-            "training_classes": len(
-                {
-                    box.get("cls")
-                    for example in training_data
-                    for box in example.get("boxes", [])
-                    if box.get("cls") is not None
-                }
-            ),
             "confidence": confidence,
             "iou_threshold": iou_threshold,
             "max_detections": max_detections,
             "compile_model": OWLV2_COMPILE_MODEL,
             "cache_send_to_cpu": OWLV2_CACHE_SEND_TO_CPU,
         }
+        try:
+            self.request.update(
+                {
+                    "training_examples": len(training_data),
+                    "training_boxes": sum(
+                        len(example.get("boxes", [])) for example in training_data
+                    ),
+                    "training_classes": len(
+                        {
+                            box.get("cls")
+                            for example in training_data
+                            for box in example.get("boxes", [])
+                            if box.get("cls") is not None
+                        }
+                    ),
+                }
+            )
+        except Exception as exc:
+            self.request["request_shape_error"] = str(exc)
 
     def __enter__(self) -> "_Owlv2Diagnostics":
         if not self.enabled:
