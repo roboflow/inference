@@ -209,6 +209,7 @@ class _Owlv2Diagnostics:
         self.phases: Dict[str, float] = {}
         self.start_cache: Dict[str, Any] = {}
         self.start_cuda: Dict[str, Any] = {}
+        self.capture_start_snapshot = False
         self.request = {
             "model_id": model_id,
             "image_count": image_count,
@@ -249,9 +250,11 @@ class _Owlv2Diagnostics:
         self.phase_logging = OWLV2_DIAGNOSTIC_PHASE_LOGGING and (
             self.sampled or self.pressure_sampled
         )
+        self.capture_start_snapshot = self.sampled or self.pressure_sampled
         self.start_time = time.perf_counter()
-        self.start_cache = _cache_snapshot(self.model, include_tensor_stats=False)
-        self.start_cuda = _cuda_memory_snapshot()
+        if self.capture_start_snapshot:
+            self.start_cache = _cache_snapshot(self.model, include_tensor_stats=False)
+            self.start_cuda = _cuda_memory_snapshot()
         if self.phase_logging:
             self.log(
                 "OWLv2 diagnostic request start",
@@ -284,6 +287,7 @@ class _Owlv2Diagnostics:
                 slow=total_ms >= OWLV2_DIAGNOSTIC_SLOW_MS,
                 sampled=self.sampled,
                 pressure_sampled=self.pressure_sampled,
+                start_snapshot_captured=self.capture_start_snapshot,
                 inflight_at_start=self.inflight_at_start,
                 inflight_after=inflight_after,
                 phases_ms=self.phases,
@@ -334,6 +338,9 @@ class _Owlv2DiagnosticPhase:
             self.diagnostics.phases.get(self.name, 0.0) + duration_ms
         )
         if self.diagnostics.phase_logging:
+            cache_fields = _cache_snapshot(
+                self.diagnostics.model, include_tensor_stats=False
+            )
             self.diagnostics.log(
                 "OWLv2 diagnostic phase end",
                 event_type="phase_end",
@@ -342,7 +349,7 @@ class _Owlv2DiagnosticPhase:
                 error_type=exc_type.__name__ if exc_type is not None else None,
                 error=str(exc) if exc is not None else None,
                 **self.metadata,
-                **_cache_snapshot(self.diagnostics.model, include_tensor_stats=False),
+                **cache_fields,
             )
         return None
 
