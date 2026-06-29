@@ -1,7 +1,10 @@
 import gc
+import random
 import time
 import weakref
-from typing import Any, List, Optional, Tuple
+from contextlib import nullcontext
+from threading import Lock
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -20,6 +23,12 @@ from inference.core.env import (
     MAX_DETECTIONS,
     OWLV2_CACHE_SEND_TO_CPU,
     OWLV2_COMPILE_MODEL,
+    OWLV2_DIAGNOSTIC_CUDA_SYNC,
+    OWLV2_DIAGNOSTIC_INFLIGHT_THRESHOLD,
+    OWLV2_DIAGNOSTIC_LOGGING,
+    OWLV2_DIAGNOSTIC_PHASE_LOGGING,
+    OWLV2_DIAGNOSTIC_SAMPLE_RATE,
+    OWLV2_DIAGNOSTIC_SLOW_MS,
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
     PRELOAD_HF_IDS,
@@ -49,6 +58,286 @@ from inference_models.models.owlv2.owlv2_hf import (
 )
 
 PRELOADED_HF_MODELS = {}
+_OWLV2_DIAGNOSTIC_LOCK = Lock()
+_OWLV2_DIAGNOSTIC_INFLIGHT = 0
+
+
+def _change_owlv2_diagnostic_inflight(delta: int) -> int:
+    global _OWLV2_DIAGNOSTIC_INFLIGHT
+    with _OWLV2_DIAGNOSTIC_LOCK:
+        _OWLV2_DIAGNOSTIC_INFLIGHT += delta
+        return _OWLV2_DIAGNOSTIC_INFLIGHT
+
+
+def _sync_cuda_for_diagnostics() -> None:
+    try:
+        if (
+            OWLV2_DIAGNOSTIC_CUDA_SYNC
+            and torch.cuda.is_available()
+            and torch.cuda.is_initialized()
+        ):
+            torch.cuda.synchronize()
+    except Exception:
+        return None
+
+
+def _cuda_memory_snapshot() -> Dict[str, Any]:
+    if not torch.cuda.is_available():
+        return {}
+    try:
+        _sync_cuda_for_diagnostics()
+        free_bytes, total_bytes = torch.cuda.mem_get_info()
+        return {
+            "cuda_allocated_mb": round(torch.cuda.memory_allocated() / (1024**2), 2),
+            "cuda_reserved_mb": round(torch.cuda.memory_reserved() / (1024**2), 2),
+            "cuda_max_allocated_mb": round(
+                torch.cuda.max_memory_allocated() / (1024**2), 2
+            ),
+            "cuda_free_mb": round(free_bytes / (1024**2), 2),
+            "cuda_total_mb": round(total_bytes / (1024**2), 2),
+        }
+    except Exception as exc:
+        return {"cuda_memory_error": str(exc)}
+
+
+def _cache_state(cache: Any) -> Optional[Any]:
+    state = getattr(cache, "_state", None)
+    if state is None:
+        return None
+    return state
+
+
+def _cache_len(cache: Any) -> Optional[int]:
+    state = _cache_state(cache)
+    if state is None:
+        return None
+    try:
+        return len(state)
+    except Exception:
+        return None
+
+
+def _tensor_stats(value: Any) -> Tuple[int, int, int]:
+    if isinstance(value, torch.Tensor):
+        bytes_count = value.nelement() * value.element_size()
+        return bytes_count, int(value.is_cuda), bytes_count if value.is_cuda else 0
+    if isinstance(value, dict):
+        return _sum_tensor_stats(value.values())
+    if isinstance(value, (list, tuple, set)):
+        return _sum_tensor_stats(value)
+    if hasattr(value, "__dict__"):
+        return _sum_tensor_stats(vars(value).values())
+    return 0, 0, 0
+
+
+def _sum_tensor_stats(values: Any) -> Tuple[int, int, int]:
+    total_bytes, cuda_tensors, cuda_bytes = 0, 0, 0
+    for value in values:
+        value_total, value_cuda_tensors, value_cuda_bytes = _tensor_stats(value)
+        total_bytes += value_total
+        cuda_tensors += value_cuda_tensors
+        cuda_bytes += value_cuda_bytes
+    return total_bytes, cuda_tensors, cuda_bytes
+
+
+def _cache_snapshot(model: OWLv2HF, include_tensor_stats: bool) -> Dict[str, Any]:
+    try:
+        image_cache = getattr(model, "_owlv2_images_embeddings_cache", None)
+        class_cache = getattr(model, "_owlv2_class_embeddings_cache", None)
+        result = {
+            "image_cache_size": _cache_len(image_cache),
+            "class_cache_size": _cache_len(class_cache),
+        }
+        if include_tensor_stats:
+            image_cache_state = _cache_state(image_cache)
+            if image_cache_state is not None:
+                total_bytes, cuda_tensors, cuda_bytes = _tensor_stats(image_cache_state)
+                result.update(
+                    {
+                        "image_cache_tensor_mb": round(total_bytes / (1024**2), 2),
+                        "image_cache_cuda_tensors": cuda_tensors,
+                        "image_cache_cuda_mb": round(cuda_bytes / (1024**2), 2),
+                    }
+                )
+            class_cache_state = _cache_state(class_cache)
+            if class_cache_state is not None:
+                total_bytes, cuda_tensors, cuda_bytes = _tensor_stats(class_cache_state)
+                result.update(
+                    {
+                        "class_cache_tensor_mb": round(total_bytes / (1024**2), 2),
+                        "class_cache_cuda_tensors": cuda_tensors,
+                        "class_cache_cuda_mb": round(cuda_bytes / (1024**2), 2),
+                    }
+                )
+        return result
+    except Exception as exc:
+        return {"cache_snapshot_error": str(exc)}
+
+
+def _log_owlv2_diagnostic(message: str, **payload: Any) -> None:
+    try:
+        logger.info(message, diagnostic_event="owlv2_diagnostic", **payload)
+    except TypeError:
+        try:
+            logger.info("%s %s", message, payload)
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+
+class _Owlv2Diagnostics:
+    def __init__(
+        self,
+        *,
+        model_id: str,
+        model: OWLv2HF,
+        training_data: List[dict],
+        image_count: int,
+        confidence: float,
+        iou_threshold: float,
+        max_detections: int,
+    ):
+        self.model_id = model_id
+        self.model = model
+        self.enabled = OWLV2_DIAGNOSTIC_LOGGING
+        self.sampled = False
+        self.pressure_sampled = False
+        self.phase_logging = False
+        self.inflight_at_start = 0
+        self.start_time = 0.0
+        self.phases: Dict[str, float] = {}
+        self.start_cache: Dict[str, Any] = {}
+        self.start_cuda: Dict[str, Any] = {}
+        self.request = {
+            "model_id": model_id,
+            "image_count": image_count,
+            "training_examples": len(training_data),
+            "training_boxes": sum(
+                len(example.get("boxes", [])) for example in training_data
+            ),
+            "training_classes": len(
+                {
+                    box.get("cls")
+                    for example in training_data
+                    for box in example.get("boxes", [])
+                    if box.get("cls") is not None
+                }
+            ),
+            "confidence": confidence,
+            "iou_threshold": iou_threshold,
+            "max_detections": max_detections,
+            "compile_model": OWLV2_COMPILE_MODEL,
+            "cache_send_to_cpu": OWLV2_CACHE_SEND_TO_CPU,
+        }
+
+    def __enter__(self) -> "_Owlv2Diagnostics":
+        if not self.enabled:
+            return self
+        self.inflight_at_start = _change_owlv2_diagnostic_inflight(1)
+        self.sampled = random.random() < max(0.0, OWLV2_DIAGNOSTIC_SAMPLE_RATE)
+        self.pressure_sampled = (
+            self.inflight_at_start >= OWLV2_DIAGNOSTIC_INFLIGHT_THRESHOLD
+        )
+        self.phase_logging = OWLV2_DIAGNOSTIC_PHASE_LOGGING and (
+            self.sampled or self.pressure_sampled
+        )
+        self.start_time = time.perf_counter()
+        self.start_cache = _cache_snapshot(self.model, include_tensor_stats=False)
+        self.start_cuda = _cuda_memory_snapshot()
+        if self.phase_logging:
+            self.log(
+                "OWLv2 diagnostic request start",
+                event_type="request_start",
+                inflight=self.inflight_at_start,
+                **self.request,
+                **self.start_cache,
+                **self.start_cuda,
+            )
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        if not self.enabled:
+            return None
+        total_ms = round((time.perf_counter() - self.start_time) * 1000, 2)
+        inflight_after = _change_owlv2_diagnostic_inflight(-1)
+        should_log = (
+            exc is not None
+            or self.sampled
+            or self.pressure_sampled
+            or total_ms >= OWLV2_DIAGNOSTIC_SLOW_MS
+        )
+        if should_log:
+            end_cache = _cache_snapshot(self.model, include_tensor_stats=True)
+            end_cuda = _cuda_memory_snapshot()
+            self.log(
+                "OWLv2 diagnostic request summary",
+                event_type="request_summary",
+                total_ms=total_ms,
+                slow=total_ms >= OWLV2_DIAGNOSTIC_SLOW_MS,
+                sampled=self.sampled,
+                pressure_sampled=self.pressure_sampled,
+                inflight_at_start=self.inflight_at_start,
+                inflight_after=inflight_after,
+                phases_ms=self.phases,
+                error_type=exc_type.__name__ if exc_type is not None else None,
+                error=str(exc) if exc is not None else None,
+                cache_start=self.start_cache,
+                cache_end=end_cache,
+                cuda_start=self.start_cuda,
+                cuda_end=end_cuda,
+                **self.request,
+            )
+        return None
+
+    def phase(self, name: str, **metadata: Any):
+        if not self.enabled:
+            return nullcontext()
+        return _Owlv2DiagnosticPhase(self, name, metadata)
+
+    def log(self, message: str, **payload: Any) -> None:
+        _log_owlv2_diagnostic(message, **payload)
+
+
+class _Owlv2DiagnosticPhase:
+    def __init__(
+        self, diagnostics: _Owlv2Diagnostics, name: str, metadata: Dict[str, Any]
+    ):
+        self.diagnostics = diagnostics
+        self.name = name
+        self.metadata = metadata
+        self.start_time = 0.0
+
+    def __enter__(self):
+        _sync_cuda_for_diagnostics()
+        self.start_time = time.perf_counter()
+        if self.diagnostics.phase_logging:
+            self.diagnostics.log(
+                "OWLv2 diagnostic phase start",
+                event_type="phase_start",
+                phase=self.name,
+                **self.metadata,
+            )
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        _sync_cuda_for_diagnostics()
+        duration_ms = round((time.perf_counter() - self.start_time) * 1000, 2)
+        self.diagnostics.phases[self.name] = (
+            self.diagnostics.phases.get(self.name, 0.0) + duration_ms
+        )
+        if self.diagnostics.phase_logging:
+            self.diagnostics.log(
+                "OWLv2 diagnostic phase end",
+                event_type="phase_end",
+                phase=self.name,
+                duration_ms=duration_ms,
+                error_type=exc_type.__name__ if exc_type is not None else None,
+                error=str(exc) if exc is not None else None,
+                **self.metadata,
+                **_cache_snapshot(self.diagnostics.model, include_tensor_stats=False),
+            )
+        return None
 
 
 class Owlv2AdapterSingleton:
@@ -205,6 +494,7 @@ class InferenceModelsOwlV2Adapter(Model):
         self.api_key = api_key if api_key else API_KEY
 
         self.task_type = "object-detection"
+        self.model_id = model_id
         singleton_instance = Owlv2AdapterSingleton(model_id, api_key=self.api_key)
         self._model: OWLv2HF = singleton_instance.model
 
@@ -253,30 +543,86 @@ class InferenceModelsOwlV2Adapter(Model):
         max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
-        reference_examples = []
-        for example in training_data:
-            boxes = []
-            for box in example["boxes"]:
-                boxes.append(ReferenceBoundingBox.model_validate(box))
-            reference_examples.append(
-                ReferenceExample(
-                    image=example["image"]["value"],
-                    boxes=boxes,
-                )
-            )
-        if isinstance(image, list):
-            image_decoded = [load_image_bgr(i) for i in image]
-        else:
-            image_decoded = [load_image_bgr(image)]
-        image_sizes: List[Tuple[int, int]] = [i.shape[:2][::-1] for i in image_decoded]  # type: ignore
-        results = self._model.infer_with_reference_examples(
-            images=image_decoded,
-            reference_examples=reference_examples,
+        diagnostics = _Owlv2Diagnostics(
+            model_id=getattr(self, "model_id", "owlv2/owlv2-large-patch14-ensemble"),
+            model=self._model,
+            training_data=training_data,
+            image_count=len(image) if isinstance(image, list) else 1,
             confidence=confidence,
             iou_threshold=iou_threshold,
             max_detections=max_detections,
         )
-        return self.make_response(predictions=results, image_sizes=image_sizes)
+        with diagnostics:
+            with diagnostics.phase("build_reference_examples"):
+                reference_examples = []
+                for example in training_data:
+                    boxes = []
+                    for box in example["boxes"]:
+                        boxes.append(ReferenceBoundingBox.model_validate(box))
+                    reference_examples.append(
+                        ReferenceExample(
+                            image=example["image"]["value"],
+                            boxes=boxes,
+                        )
+                    )
+            with diagnostics.phase("load_target_images"):
+                if isinstance(image, list):
+                    image_decoded = [load_image_bgr(i) for i in image]
+                else:
+                    image_decoded = [load_image_bgr(image)]
+                image_sizes: List[Tuple[int, int]] = [
+                    i.shape[:2][::-1] for i in image_decoded
+                ]  # type: ignore
+
+            if not OWLV2_DIAGNOSTIC_LOGGING:
+                results = self._model.infer_with_reference_examples(
+                    images=image_decoded,
+                    reference_examples=reference_examples,
+                    confidence=confidence,
+                    iou_threshold=iou_threshold,
+                    max_detections=max_detections,
+                )
+                return self.make_response(predictions=results, image_sizes=image_sizes)
+
+            with diagnostics.phase("prepare_reference_embeddings"):
+                reference_embeddings = (
+                    self._model.prepare_reference_examples_embeddings(
+                        reference_examples=reference_examples,
+                        iou_threshold=iou_threshold,
+                    )
+                )
+            with diagnostics.phase("embed_target_images"):
+                images_embeddings, image_dimensions = self._model.embed_images(
+                    images=image_decoded, max_detections=max_detections
+                )
+            with diagnostics.phase(
+                "forward_precomputed_embeddings",
+                class_count=len(reference_embeddings.class_embeddings),
+            ):
+                images_predictions = (
+                    self._model.forward_pass_with_precomputed_embeddings(
+                        images_embeddings=images_embeddings,
+                        class_embeddings=reference_embeddings.class_embeddings,
+                        confidence=confidence,
+                        iou_threshold=iou_threshold,
+                    )
+                )
+            with diagnostics.phase("post_process_predictions"):
+                results = (
+                    self._model.post_process_predictions_for_precomputed_embeddings(
+                        predictions=images_predictions,
+                        images_dimensions=image_dimensions,
+                        max_detections=max_detections,
+                        iou_threshold=iou_threshold,
+                    )
+                )
+            with diagnostics.phase(
+                "make_response",
+                prediction_count=sum(
+                    prediction.xyxy.shape[0] for prediction in results
+                ),
+            ):
+                return self.make_response(predictions=results, image_sizes=image_sizes)
 
     def make_response(
         self,

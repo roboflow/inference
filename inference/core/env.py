@@ -124,6 +124,19 @@ OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 # OWLv2 compile model, default is True
 OWLV2_COMPILE_MODEL = str2bool(os.getenv("OWLV2_COMPILE_MODEL", True))
 
+# OWLv2 diagnostic logging, default is disabled. When enabled, slow requests and
+# a small sample of all requests emit structured timing/cache/GPU diagnostics.
+OWLV2_DIAGNOSTIC_LOGGING = str2bool(os.getenv("OWLV2_DIAGNOSTIC_LOGGING", False))
+OWLV2_DIAGNOSTIC_SAMPLE_RATE = float(os.getenv("OWLV2_DIAGNOSTIC_SAMPLE_RATE", "0.01"))
+OWLV2_DIAGNOSTIC_SLOW_MS = int(os.getenv("OWLV2_DIAGNOSTIC_SLOW_MS", "30000"))
+OWLV2_DIAGNOSTIC_INFLIGHT_THRESHOLD = int(
+    os.getenv("OWLV2_DIAGNOSTIC_INFLIGHT_THRESHOLD", "8")
+)
+OWLV2_DIAGNOSTIC_PHASE_LOGGING = str2bool(
+    os.getenv("OWLV2_DIAGNOSTIC_PHASE_LOGGING", True)
+)
+OWLV2_DIAGNOSTIC_CUDA_SYNC = str2bool(os.getenv("OWLV2_DIAGNOSTIC_CUDA_SYNC", False))
+
 # Preload comma separated list of Huggingface IDs for OWLv2 models
 # NOTE: this will result in ALL inference processes to preload the models
 #       (e.g. InferencePipelineManager, InferencePipeline, etc.)
