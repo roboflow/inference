@@ -86,7 +86,17 @@ Escalate only for genuinely difficult cases, unclear ownership or product
 intent, security-sensitive decisions, or when the contributor repeatedly does
 not address requested fixes. When escalation is needed, mention
 @PawelPeczek-Roboflow, @grzegorz-roboflow, and @dkosowski87 in the top-level
-PR comment with a short explanation of what needs maintainer judgment.
+PR comment with a plain-language escalation summary that helps a human reviewer
+get up to speed quickly.
+
+For escalations, include:
+
+- What the problem is.
+- Why it matters and who/what can hit it.
+- The runtime path or contract involved.
+- The recommended solution or decision needed.
+- A small Mermaid.js diagram, flowchart, or step-by-step flow when it helps
+  explain the situation faster than prose.
 
 ## Finding And Severity Rules
 
