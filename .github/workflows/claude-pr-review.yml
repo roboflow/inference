@@ -63,6 +63,12 @@ jobs:
       - name: Load review prompt
         id: review-prompt
         run: |
+          if [ ! -f .github/prompts/claude-pr-review.md ]; then
+            echo "prompt_available=false" >> "$GITHUB_OUTPUT"
+            echo "Trusted base branch does not contain .github/prompts/claude-pr-review.md; skipping Claude review."
+            exit 0
+          fi
+
           {
             echo "prompt<<EOF"
             echo "REPO: ${{ github.repository }}"
@@ -70,6 +76,7 @@ jobs:
             echo
             cat .github/prompts/claude-pr-review.md
             echo "EOF"
+            echo "prompt_available=true"
           } >> "$GITHUB_OUTPUT"
 
       - name: Checkout PR branch
@@ -80,6 +87,7 @@ jobs:
           persist-credentials: false
 
       - name: Claude review
+        if: steps.review-prompt.outputs.prompt_available == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.TMP_PAWELS_CLAUDE_API_KEY_USE_WISELY }}
