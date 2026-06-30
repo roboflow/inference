@@ -82,77 +82,90 @@ release-bound package behavior.
 
 Flag only high-confidence medium+ issues with concrete code evidence. Prioritize:
 
-- Correctness bugs and unhandled edge cases, such as empty input, malformed
-  payloads, race conditions, invalid model metadata, unexpected batch shapes, or
-  unsupported backend/device combinations.
+**Correctness And Public Contracts**
+
+- Correctness bugs and unhandled edge cases: empty input, malformed payloads,
+  race conditions, invalid model metadata, unexpected batch shapes, unsupported
+  backend/device combinations, or missing error handling that causes silent
+  failure, partial state, misleading success responses, or hard-to-debug runtime
+  errors.
+- Backward compatibility and contract breaks in public HTTP APIs, SDK behavior,
+  CLI commands, workflow block schemas, compiled workflow format,
+  `inference_models` public APIs, or persisted/cache formats.
 - Auth, permission, tenant-boundary, or secret-handling mistakes.
-- Workflow block contract mistakes, such as missing input/output kinds,
-  selector-vs-literal validation gaps, cross-field constraints that are only
-  enforced for direct values, incompatible schema/default changes, or missing
-  execution engine version updates.
-- Workflow runtime compatibility mistakes, such as missing or incorrect
-  restrictions for local vs remote step execution, hosted/serverless vs local
-  runtimes, LAN-only integrations, blocks that require same-process execution,
-  or blocks whose runtime compatibility metadata disagrees with actual behavior.
-- Stateful workflow/block mistakes, such as unbounded per-video or per-user
-  state, shared anonymous namespaces, TTL/reattach-window mismatches, missing
-  eviction, unsafe in-memory state for platform use, or state that survives
-  longer than intended.
-- Coordinate, mask, prediction-format, or response-shape regressions, including
-  crop/stitch/perspective coordinate transforms, oriented boxes, compact masks,
-  RLE/binary mask formats, keypoint confidence fields, and downstream
-  serialization compatibility.
-- Preprocessing/postprocessing parity mistakes, such as BGR/RGB confusion,
-  PIL-vs-CV2 numerical drift, reference-backend mismatches, threshold-sensitive
-  score changes, class/background-index conventions, or optimized kernels that
-  no longer match the reference implementation.
+
+**Workflow Semantics**
+
+- Workflow block contract mistakes: missing input/output kinds,
+  selector-vs-literal validation gaps, cross-field constraints that only apply
+  to direct values, incompatible schema/default changes, or missing execution
+  engine version updates.
+- Workflow runtime compatibility mistakes: missing or incorrect restrictions for
+  local vs remote step execution, hosted/serverless vs local runtimes, LAN-only
+  integrations, same-process requirements, or metadata that disagrees with
+  actual behavior.
+- Stateful workflow/block mistakes: unbounded per-video or per-user state,
+  shared anonymous namespaces, TTL/reattach-window mismatches, missing eviction,
+  unsafe in-memory state for platform use, or state that survives too long.
+
+**Model, Prediction, And Artifact Integrity**
+
+- Coordinate, mask, prediction-format, or response-shape regressions:
+  crop/stitch/perspective transforms, oriented boxes, compact masks, RLE/binary
+  masks, keypoint confidence fields, and downstream serialization compatibility.
+- Preprocessing/postprocessing parity mistakes: BGR/RGB confusion, PIL-vs-CV2
+  numerical drift, reference-backend mismatches, threshold-sensitive score
+  changes, class/background-index conventions, or optimized kernels diverging
+  from the reference implementation.
+- Cache, model lifecycle, or artifact-management mistakes: stale weights, wrong
+  device, failed cleanup, invalid locks, bad hash/cache keys, mismatched
+  compiled artifacts, non-atomic cache/artifact writes, partial directory
+  visibility across workers, missing file hash validation, unsafe temp directory
+  lifetimes, or package metadata that does not match installed artifacts.
+
+**Runtime, Concurrency, And Deployment Paths**
+
 - Resource leaks, unbounded memory/CPU, blocking I/O on hot paths, runaway
-  background work, or long-running stream/server lifecycle issues.
-- Missing synchronization around non-threadsafe runtimes, such as TorchScript,
+  background work, long-running stream/server lifecycle issues, or missing
+  synchronization around non-threadsafe runtimes such as TorchScript,
   CUDA/TensorRT state, shared model caches, filesystem cache replacement, or
   multi-worker load paths.
-- Missing error handling that causes silent failure, partial state, misleading
-  success responses, or hard-to-debug runtime errors.
-- Cache, model lifecycle, or artifact-management mistakes, such as stale
-  weights, wrong device, failed cleanup, invalid locks, bad hash/cache keys, or
-  mismatched compiled artifacts.
-- Non-atomic cache/artifact writes, partial directory visibility across workers,
-  missing file hash validation, unsafe temp directory lifetimes, or generated
-  model package metadata that does not match installed/registered artifacts.
 - Hosted vs local, serverless, `USE_INFERENCE_MODELS`, backend, CUDA, Jetson, or
   dependency-version routing mistakes where only one runtime path is fixed or
   tested.
+- Docker, packaging, dependency, or runtime regressions: missing deps, wrong
+  extras, broken startup, incorrect env defaults, CPU/GPU/Jetson mismatch,
+  dependency resolver conflicts after security/version bumps, or out-of-sync
+  version pins.
+
+**External Systems And Tooling**
+
 - Silent fallback or automatic conversion behavior that hides an unavailable or
   changed model/API instead of failing clearly when correctness depends on the
   exact requested model, backend, or platform contract.
-- Docker, packaging, dependency, or runtime regressions, such as missing deps,
-  wrong extras, broken startup, incorrect env defaults, CPU/GPU/Jetson mismatch,
-  dependency resolver conflicts after security/version bumps, or out-of-sync
-  version pins.
-- CLI/cloud-tooling input parsing and metadata mapping issues, such as option
-  alias collisions, malformed metadata aborting whole batches, file stem
-  collisions, empty mapping keys, or new parameters not wired into actual call
-  paths.
-- External/platform API contract drift, such as requesting fields not yet
-  deployed, using the wrong nested response shape, assuming companion PRs are
-  already deployed, or changing SDK/server behavior without matching the other
-  side of the contract.
-- Template/rendering mistakes in docs, generated HTML, or generated metadata,
-  such as using the wrong template context object, breaking sitemap/structured
-  data generation, or interpolating URLs/metadata without HTML/JS-safe escaping.
-- Test isolation mistakes, such as global monkeypatches or module stubs leaking
-  across tests, tests that only cover literal parameters while runtime selectors
-  remain unchecked, or GPU-only tests that never run in the intended CI path.
+- External/platform API contract drift: requesting fields not yet deployed,
+  using the wrong nested response shape, assuming companion PRs are already
+  deployed, or changing SDK/server behavior without matching the other side of
+  the contract.
+- CLI/cloud-tooling input parsing and metadata mapping issues: option alias
+  collisions, malformed metadata aborting whole batches, file stem collisions,
+  empty mapping keys, or new parameters not wired into actual call paths.
+
+**Docs, Release, And Test Hygiene**
+
 - Missing docs, changelog, version, or dependency-pin updates for user-visible,
   developer-visible, breaking, or release-bound changes. Check `docs/`,
   package-specific docs such as `inference_models/docs/`, changelog entries such
   as `inference_models/docs/changelog.md`, `inference/core/version.py`,
   `inference_models/pyproject.toml`, `EXECUTION_ENGINE_V1_VERSION`, and
   `requirements/requirements.*.txt` pins for `inference-models`.
-- Backward compatibility and contract breaks in public HTTP APIs, SDK behavior,
-  CLI commands, workflow block schemas, compiled workflow format,
-  `inference_models` public APIs, or persisted/cache formats.
-- Test gaps that leave core changed behavior unverified.
+- Template/rendering mistakes in docs, generated HTML, or generated metadata:
+  wrong template context object, broken sitemap/structured data generation, or
+  URL/metadata interpolation without HTML/JS-safe escaping.
+- Test isolation mistakes: global monkeypatches or module stubs leaking across
+  tests, tests that only cover literal parameters while runtime selectors remain
+  unchecked, GPU-only tests that never run in the intended CI path, or test gaps
+  that leave core changed behavior unverified.
 
 Do not report:
 
