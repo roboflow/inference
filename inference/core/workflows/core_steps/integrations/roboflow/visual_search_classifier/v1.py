@@ -218,10 +218,7 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
                 fields=VISUAL_SEARCH_CLASSIFIER_FIELDS,
             )
             candidates = [
-                format_visual_search_candidate(
-                    candidate=candidate,
-                    extra_fields=["score", "classification"],
-                )
+                _format_visual_search_classifier_candidate(candidate=candidate)
                 for candidate in response.get("results", [])
             ]
             if not candidates:
@@ -260,7 +257,9 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
                     candidate=best_candidate,
                     fallback_parent_id="visual_search_classifier_candidate",
                 ),
-                "visual_search_score": best_candidate["score"],
+                "visual_search_score": _normalise_visual_search_score(
+                    score=best_candidate.get("score")
+                ),
                 "error_status": False,
                 "message": "Visual search classification completed.",
             }
@@ -332,12 +331,32 @@ def _build_multi_label_classification_prediction(
     }
 
 
-def _normalise_visual_search_confidence(score: Any) -> float:
+def _format_visual_search_classifier_candidate(
+    candidate: Dict[str, Any]
+) -> Dict[str, Any]:
+    formatted_candidate = format_visual_search_candidate(
+        candidate=candidate,
+        extra_fields=["score", "classification"],
+    )
+    formatted_candidate["score"] = _normalise_visual_search_score(
+        score=formatted_candidate.get("score")
+    )
+    return formatted_candidate
+
+
+def _normalise_visual_search_score(score: Any) -> Optional[float]:
     try:
         raw_score = float(score)
     except (TypeError, ValueError):
-        return 0.0
+        return None
     if not math.isfinite(raw_score):
+        return None
+    return raw_score
+
+
+def _normalise_visual_search_confidence(score: Any) -> float:
+    raw_score = _normalise_visual_search_score(score=score)
+    if raw_score is None:
         return 0.0
     # Visual search scores are cosine similarity-derived and shifted into [0, 2].
     return max(0.0, min(1.0, raw_score / 2.0))
@@ -378,7 +397,9 @@ def _candidate_without_class_result(
             candidate=best_candidate,
             fallback_parent_id="visual_search_classifier_candidate",
         ),
-        "visual_search_score": best_candidate["score"],
+        "visual_search_score": _normalise_visual_search_score(
+            score=best_candidate.get("score")
+        ),
         "error_status": True,
         "message": (
             "Best visual search candidate does not include a classification "

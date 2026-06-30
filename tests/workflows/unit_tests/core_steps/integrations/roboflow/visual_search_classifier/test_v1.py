@@ -4,6 +4,9 @@ import math
 import numpy as np
 import pytest
 
+from inference.core.workflows.core_steps.common.query_language.operations.core import (
+    execute_operations,
+)
 from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier import (
     v1,
 )
@@ -47,7 +50,7 @@ def make_candidate(
     image_id: str = "img-1",
     class_name: str = "widget-a",
     class_id: int = 7,
-    score: float = 1.74,
+    score: object = 1.74,
 ) -> dict:
     return {
         "id": image_id,
@@ -199,6 +202,38 @@ def test_run_returns_multi_label_predictions_when_candidate_has_multiple_classes
     }
 
 
+def test_run_returns_multi_label_predictions_compatible_with_all_classes_extraction() -> (
+    None
+):
+    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    candidate = make_candidate()
+    candidate["classification"] = {
+        "predictions": {},
+        "predicted_classes": ["widget-a", "fragile"],
+    }
+
+    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+        search_mock.return_value = {"results": [candidate]}
+
+        result = block.run(
+            image=make_image(),
+            workspace="my-workspace",
+            target_project="reference-images",
+        )
+
+    extracted_classes = execute_operations(
+        value=result["predictions"],
+        operations=[
+            {
+                "type": "ClassificationPropertyExtract",
+                "property_name": "all_classes",
+            }
+        ],
+    )
+
+    assert extracted_classes == ["widget-a", "fragile"]
+
+
 def test_run_returns_prediction_with_zero_confidence_when_candidate_has_no_score() -> (
     None
 ):
@@ -223,6 +258,29 @@ def test_run_returns_prediction_with_zero_confidence_when_candidate_has_no_score
     assert result["predictions"]["predictions"][0]["confidence"] == 0.0
 
 
+def test_run_returns_numeric_visual_search_score_when_candidate_score_is_string() -> (
+    None
+):
+    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+
+    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+        search_mock.return_value = {"results": [make_candidate(score="1.74")]}
+
+        result = block.run(
+            image=make_image(),
+            workspace="my-workspace",
+            target_project="reference-images",
+        )
+
+    assert result["candidate_found"] is True
+    assert result["class_found"] is True
+    assert result["error_status"] is False
+    assert result["visual_search_score"] == 1.74
+    assert result["best_candidate"]["score"] == 1.74
+    assert result["candidates"][0]["score"] == 1.74
+    assert result["predictions"]["confidence"] == 0.87
+
+
 def test_run_returns_zero_confidence_when_candidate_score_is_not_finite() -> None:
     block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
 
@@ -238,6 +296,9 @@ def test_run_returns_zero_confidence_when_candidate_score_is_not_finite() -> Non
     assert result["candidate_found"] is True
     assert result["class_found"] is True
     assert result["error_status"] is False
+    assert result["visual_search_score"] is None
+    assert result["best_candidate"]["score"] is None
+    assert result["candidates"][0]["score"] is None
     assert result["predictions"]["confidence"] == 0.0
     assert result["predictions"]["predictions"][0]["confidence"] == 0.0
 
