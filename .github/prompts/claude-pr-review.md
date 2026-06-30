@@ -12,7 +12,8 @@ You may use local runner tools to improve review quality:
 - Read and search repository files.
 - Create temporary scripts or tests for analysis, preferably under
   `/tmp/claude-pr-review`.
-- Install missing Python test dependencies when needed.
+- Use the preinstalled Python review dependencies when possible.
+- Install missing Python test dependencies only when needed for a focused check.
 - Run focused tests, type checks, lint checks, compile checks, or small
   reproduction scripts that are relevant to the PR.
 
