@@ -63,11 +63,46 @@ This is published as `inference-models` on PyPI.
   `inference_models/docs/changelog.md`.
 - Tests: `inference_models/tests/`.
 
-`inference_models` is the selectable backend engine. `inference/` integrates it
-via adapter wrappers such as `inference/models/*/*_inference_models.py` that
-delegate to `inference_models.AutoModel` and related APIs. Workflow model blocks
-may call into either legacy inference models or `inference_models` adapters;
-trace the path when a block's implementation changes.
+`inference_models` is the selectable backend engine. Review it as several
+separate but connected components:
+
+- **Public loading API:** `AutoModel.from_pretrained()` and
+  `AutoModel.describe_*()` in
+  `inference_models/inference_models/models/auto_loaders/core.py`.
+- **Auto-loading and backend negotiation:** model metadata retrieval, package
+  filtering/ranking, backend selection, installed-backend detection, hardware
+  compatibility, quantization, batch size, and user-requested backend handling.
+- **Model registry:** entries in
+  `inference_models/inference_models/models/auto_loaders/models_registry.py`
+  mapping `(architecture, task, backend)` to implementation classes. New models
+  or new backends usually require registry coverage.
+- **Weights providers and model packages:**
+  `inference_models/inference_models/weights_providers/` and
+  `inference_models/inference_models/models/common/roboflow/model_packages.py`.
+  Check metadata parsing, package manifests, file download specs, hash/cache
+  behavior, access control, dependency models, and Roboflow provider contracts.
+- **Model implementations:** files under
+  `inference_models/inference_models/models/<family>/`. Check
+  `from_pretrained()`, preprocessing, forward/inference, postprocessing, return
+  types, task interfaces, device handling, batch handling, class names,
+  prediction parameters, and error messages.
+- **TensorRT runtime:** `*_trt.py` implementations and
+  `inference_models/inference_models/models/common/trt.py`. Check engine/device
+  compatibility, binding shapes, dtype handling, CUDA graph caching, memory
+  ownership, thread safety, fallback behavior, and GPU-only conditions.
+- **TensorRT compilation and packaging:** development/compiler paths such as
+  `inference_models/development/compilation/`, Docker TRT workflows, and
+  `inference_cli/lib/enterprise/inference_compiler/`. Check generated engine
+  compatibility with runtime loaders, package manifests, target GPU/backend
+  assumptions, and whether compiled artifacts match registration metadata.
+- **Runtime introspection and developer tools:** runtime/backend reporting,
+  package detail display, and diagnostics used to debug model loading.
+
+`inference/` integrates `inference_models` via adapter wrappers such as
+`inference/models/*/*_inference_models.py` that delegate to
+`inference_models.AutoModel` and related APIs. Workflow model blocks may call
+into either legacy inference models or `inference_models` adapters; trace the
+path when a block's implementation changes.
 
 Root `requirements/requirements.*.txt` files pin `inference-models~=X.Y.Z`.
 Keep these pins in sync across CPU, GPU, Jetson, and VINO requirements. Flag PRs
@@ -80,6 +115,49 @@ that bump `inference_models` version without updating these pins.
   (`tests/inference_sdk/`).
 - `docker/` - CPU/GPU image definitions.
 - `docs/` - mkdocs for the main inference project.
+
+Additional high-impact surfaces to consider:
+
+- **HTTP API and server lifecycle:** `inference/core/interfaces/http/` and
+  `inference_cli/server.py`. Review route wiring, request/response entities,
+  middleware, error handlers, metrics, worker startup, and env-driven behavior.
+- **Legacy model lifecycle and adapters:** `inference/models/`,
+  `inference/core/models/`, and `inference/core/registries/`. Review model
+  loading, caching, locks, device selection, preprocessing/postprocessing,
+  batching, adapter wrappers, model ID resolution, and legacy vs
+  `inference_models` parity.
+- **Streaming, camera, UDP, stream manager, and WebRTC:** 
+  `inference/core/interfaces/stream*`,
+  `inference/core/interfaces/camera/`,
+  `inference/core/interfaces/udp/`, and
+  `inference/core/interfaces/webrtc_worker/`. Review lifecycle, backpressure,
+  frame ordering, reconnect/error behavior, sink side effects, serialization,
+  and long-running resource cleanup.
+- **Active learning, cache, telemetry, and managers:**
+  `inference/core/active_learning/`, `inference/core/cache/`, and
+  `inference/core/managers/`. Review sampling criteria, persistence/cache
+  invalidation, usage tracking, metrics, concurrency, and background side
+  effects.
+- **Enterprise and deployment surfaces:** `inference/enterprise/`, Helm charts,
+  parallel inference, enterprise workflow blocks, PLC/MQTT/SQL/event sinks, and
+  enterprise stream management. Review deployment defaults, external side
+  effects, credentials, network boundaries, scaling assumptions, and hosted vs
+  local behavior.
+- **CLI, Roboflow Cloud, benchmarking, and compiler tooling:**
+  `inference_cli/lib/`. Review command contracts, cloud API interactions,
+  batch/data staging behavior, benchmark assumptions, TensorRT compiler
+  workflows, generated artifacts, and local vs remote execution paths.
+- **SDK client contracts:** `inference_sdk/http/` and `inference_sdk/webrtc/`.
+  Review request construction, encoding/preprocessing, postprocessing, error
+  mapping, async/concurrency helpers, aliases, and compatibility with server
+  response schemas.
+- **Docker, build, and packaging:** `docker/`, `.github/workflows/`,
+  package metadata, requirements files, and OS bundle builders. Review base
+  images, extras, dependency pins, startup commands, ports, env defaults, CPU vs
+  GPU vs Jetson differences, and release/publish implications.
+- **Docs and examples:** `docs/`, `examples/`, and package-specific docs. Treat
+  docs as secondary evidence, but flag missing or misleading docs when behavior
+  visible to users or contributors changes.
 
 Target Python: 3.10 for `inference_models` (`>=3.10,<3.13`); 3.8+ minimum for
 `inference`. Style: Black (88 columns), isort, and flake8 via
