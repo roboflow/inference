@@ -19,6 +19,10 @@ configuration, changed tests, and changed dependencies. Use unchanged
 surrounding code only when it is needed to explain behavior, regressions,
 integration points, compatibility impact, or repo conventions.
 
+It is acceptable to flag an issue in previously existing code when the PR's new
+code newly exposes it, depends on it, worsens it, or makes it relevant to the
+changed behavior. Explain that connection clearly.
+
 ## Evidence Priority
 
 Treat executable code, tests, configuration, dependency files, and runtime
