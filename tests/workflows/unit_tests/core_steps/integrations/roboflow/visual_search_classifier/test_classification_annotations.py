@@ -44,17 +44,25 @@ def test_parse_multi_label_annotation() -> None:
     }
 
 
-def test_parse_multi_label_annotation_defaults_missing_class_id() -> None:
+def test_parse_multi_label_annotation_assigns_stable_ids_for_missing_class_ids() -> (
+    None
+):
     result = parse_classification_annotation(
         classification={
-            "predicted_classes": ["widget-a"],
-            "predictions": {},
+            "predicted_classes": ["widget-a", "fragile", "oversized"],
+            "predictions": {
+                "fragile": {"class_id": 1},
+            },
         }
     )
 
     assert result == {
         "type": "multi_label",
-        "classes": [{"class": "widget-a", "class_id": -1}],
+        "classes": [
+            {"class": "widget-a", "class_id": 0},
+            {"class": "fragile", "class_id": 1},
+            {"class": "oversized", "class_id": 2},
+        ],
     }
 
 
@@ -69,6 +77,20 @@ def test_parse_multi_label_annotation_deduplicates_classes() -> None:
     assert result == {
         "type": "multi_label",
         "classes": [{"class": "widget-a", "class_id": 7}],
+    }
+
+
+def test_parse_multi_label_annotation_ignores_malformed_prediction_entries() -> None:
+    result = parse_classification_annotation(
+        classification={
+            "predicted_classes": ["widget-a"],
+            "predictions": {"widget-a": ["not", "a", "dict"]},
+        }
+    )
+
+    assert result == {
+        "type": "multi_label",
+        "classes": [{"class": "widget-a", "class_id": 0}],
     }
 
 

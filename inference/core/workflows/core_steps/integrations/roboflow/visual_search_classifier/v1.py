@@ -1,3 +1,4 @@
+import math
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 from uuid import uuid4
 
@@ -335,6 +336,8 @@ def _normalise_visual_search_confidence(score: Any) -> float:
     try:
         raw_score = float(score)
     except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(raw_score):
         return 0.0
     # Visual search scores are cosine similarity-derived and shifted into [0, 2].
     return max(0.0, min(1.0, raw_score / 2.0))

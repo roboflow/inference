@@ -32,7 +32,8 @@ def _parse_multi_label_annotation(
         predictions = {}
     classes = []
     seen_class_names = set()
-    for class_name in predicted_classes:
+    used_class_ids = set()
+    for fallback_class_id, class_name in enumerate(predicted_classes):
         if (
             not isinstance(class_name, str)
             or not class_name
@@ -40,13 +41,22 @@ def _parse_multi_label_annotation(
         ):
             continue
         prediction = predictions.get(class_name) or {}
+        if not isinstance(prediction, dict):
+            prediction = {}
+        class_id = _normalise_class_id(prediction.get("class_id"))
+        if class_id < 0 or class_id in used_class_ids:
+            class_id = _next_available_class_id(
+                preferred_class_id=fallback_class_id,
+                used_class_ids=used_class_ids,
+            )
         classes.append(
             {
                 "class": class_name,
-                "class_id": _normalise_class_id(prediction.get("class_id")),
+                "class_id": class_id,
             }
         )
         seen_class_names.add(class_name)
+        used_class_ids.add(class_id)
     if not classes:
         return None
     return {
@@ -69,3 +79,12 @@ def _normalise_class_id(class_id: Any) -> int:
         return int(class_id)
     except (TypeError, ValueError):
         return -1
+
+
+def _next_available_class_id(
+    preferred_class_id: int,
+    used_class_ids: set,
+) -> int:
+    while preferred_class_id in used_class_ids:
+        preferred_class_id += 1
+    return preferred_class_id

@@ -1,5 +1,6 @@
 from unittest import mock
 
+import math
 import numpy as np
 import pytest
 
@@ -198,6 +199,49 @@ def test_run_returns_multi_label_predictions_when_candidate_has_multiple_classes
     }
 
 
+def test_run_returns_prediction_with_zero_confidence_when_candidate_has_no_score() -> (
+    None
+):
+    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    candidate = make_candidate()
+    del candidate["score"]
+
+    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+        search_mock.return_value = {"results": [candidate]}
+
+        result = block.run(
+            image=make_image(),
+            workspace="my-workspace",
+            target_project="reference-images",
+        )
+
+    assert result["candidate_found"] is True
+    assert result["class_found"] is True
+    assert result["error_status"] is False
+    assert result["visual_search_score"] is None
+    assert result["predictions"]["confidence"] == 0.0
+    assert result["predictions"]["predictions"][0]["confidence"] == 0.0
+
+
+def test_run_returns_zero_confidence_when_candidate_score_is_not_finite() -> None:
+    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+
+    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+        search_mock.return_value = {"results": [make_candidate(score=math.nan)]}
+
+        result = block.run(
+            image=make_image(),
+            workspace="my-workspace",
+            target_project="reference-images",
+        )
+
+    assert result["candidate_found"] is True
+    assert result["class_found"] is True
+    assert result["error_status"] is False
+    assert result["predictions"]["confidence"] == 0.0
+    assert result["predictions"]["predictions"][0]["confidence"] == 0.0
+
+
 def test_run_returns_no_prediction_when_api_returns_no_results() -> None:
     block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
 
@@ -239,6 +283,32 @@ def test_run_returns_error_when_best_candidate_has_no_class_annotation() -> None
     assert result["class_found"] is False
     assert result["predictions"] is None
     assert result["visual_search_score"] == 1.74
+    assert result["error_status"] is True
+    assert (
+        result["message"]
+        == "Best visual search candidate does not include a classification annotation."
+    )
+
+
+def test_run_returns_missing_class_error_when_candidate_has_no_score_or_class() -> None:
+    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    candidate = make_candidate()
+    del candidate["score"]
+    candidate["classification"] = None
+
+    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+        search_mock.return_value = {"results": [candidate]}
+
+        result = block.run(
+            image=make_image(),
+            workspace="my-workspace",
+            target_project="reference-images",
+        )
+
+    assert result["candidate_found"] is True
+    assert result["class_found"] is False
+    assert result["predictions"] is None
+    assert result["visual_search_score"] is None
     assert result["error_status"] is True
     assert (
         result["message"]
