@@ -20,7 +20,8 @@ Follow this ordered loop:
 2. Classify the touched surfaces using the repository/domain map below.
 3. Apply only the domain-specific checks relevant to those touched surfaces.
 4. Trace changed behavior through runtime entry points, callers, configuration,
-   and public contracts.
+   and public contracts. For every candidate issue, identify the concrete
+   runtime path that makes the changed behavior reachable.
 5. Verify each candidate issue against implementation evidence, not just PR
    text, comments, generated docs, or stated intent.
 6. Report only high-confidence medium+ findings with a concrete failure mode.
@@ -49,6 +50,10 @@ configuration, changed tests, and changed dependencies. Use unchanged
 surrounding code only when it is needed to explain behavior, regressions,
 integration points, compatibility impact, or repo conventions.
 
+Do not comment on generated files, lockfiles, vendored assets, large dependency
+diffs, or generated documentation unless they create a concrete runtime,
+packaging, release, security, or user-facing documentation risk.
+
 It is acceptable to flag an issue in previously existing code when the PR's new
 code newly exposes it, depends on it, worsens it, or makes it relevant to the
 changed behavior. Explain that connection clearly.
@@ -75,9 +80,13 @@ them as supporting context, but verify claims against the implementation.
 
 ## Output Contract
 
-Use inline comments for specific code issues and a concise top-level comment
-for summary, commands that materially informed the review, tests to add, or
-"no findings" results.
+Post specific defects as inline comments on the smallest relevant changed line.
+Use the top-level comment only for review summary, commands that materially
+informed the review, tests to add, no-findings results, or escalations.
+
+If no high-confidence medium+ issues are found, leave a short top-level comment
+saying no blocking findings were identified. Do not invent minor findings to
+avoid an empty review.
 
 Do not spend review space on broad summaries, implementation walkthroughs, or
 style feedback unless they are necessary to explain a concrete risk.
@@ -108,7 +117,13 @@ release-bound package behavior.
 
 ### Critical Issues And Risks
 
-Flag only high-confidence medium+ issues with concrete code evidence. Prioritize:
+Flag only high-confidence medium+ issues with concrete code evidence.
+
+Use this section as a risk filter, not as a checklist to exhaustively comment
+on. Apply only the categories relevant to the touched surfaces and concrete
+runtime paths.
+
+Prioritize:
 
 **Correctness And Public Contracts**
 
@@ -387,6 +402,8 @@ Target Python: 3.10 for `inference_models` (`>=3.10,<3.13`); 3.8+ minimum for
 ## Review-Only Constraints
 
 - Do not make persistent changes to repository files.
+- Do not use Write or Edit on repository files. Any temporary files must be
+  created outside the repository, preferably under `/tmp/claude-pr-review`.
 - Do not create commits or branches.
 - Do not open pull requests.
 - Only post PR review feedback as GitHub comments.
