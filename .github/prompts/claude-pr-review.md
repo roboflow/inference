@@ -8,6 +8,11 @@ compatibility, operational risk, documentation completeness, security,
 performance regressions, and meaningful test gaps. Prioritize actionable bugs
 and contract risks over style preferences.
 
+Review introduced code and behavior first: added code, modified code, changed
+configuration, changed tests, and changed dependencies. Use unchanged
+surrounding code only when it is needed to explain behavior, regressions,
+integration points, compatibility impact, or repo conventions.
+
 Escalate only for genuinely difficult cases, unclear ownership or product
 intent, security-sensitive decisions, or when the contributor repeatedly does
 not address requested fixes. When escalation is needed, mention
