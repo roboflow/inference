@@ -51,7 +51,10 @@ from inference_models.models.yolonas.nms import run_yolonas_nms_for_object_detec
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt_lean as trt
+    except ImportError:
+        import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running YOLO-NAS model with TRT backend on GPU requires pycuda installation, which is brought with "

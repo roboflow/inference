@@ -328,7 +328,10 @@ def get_trt_version() -> Optional[Version]:
     if trt_version is not None:
         return trt_version
     try:
-        import tensorrt as trt
+        try:
+            import tensorrt_lean as trt
+        except ImportError:
+            import tensorrt as trt
 
         return Version(trt.__version__)
     except Exception:
@@ -475,7 +478,10 @@ def get_driver_version() -> Optional[Version]:
 @cache
 def is_trt_python_package_available() -> bool:
     try:
-        import tensorrt
+        try:
+            import tensorrt_lean as tensorrt  # noqa: F401
+        except ImportError:
+            import tensorrt  # noqa: F401
 
         return True
     except ImportError:
@@ -531,7 +537,7 @@ def get_onnxruntime_info() -> Optional[Tuple[Version, Set[str]]]:
 
         available_providers = onnxruntime.get_available_providers()
         return Version(onnxruntime.__version__), available_providers
-    except ImportError:
+    except (ImportError, AttributeError):
         return None
 
 

@@ -1,3 +1,22 @@
+[project]
+name = "inference-workspace"
+version = "0.0.0"
+requires-python = ">=3.10,<3.13"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+  "inference_models",
+  "inference_model_manager",
+  "inference_server",
+]
+
+[tool.uv.sources]
+inference-models = { workspace = true }
+inference-model-manager = { workspace = true }
+
 [tool.codeflash]
 # All paths are relative to this pyproject.toml's directory.
 module-root = "inference"

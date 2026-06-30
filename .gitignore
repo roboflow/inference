@@ -218,3 +218,10 @@ inference_testing
 
 openspec*/
 opsx/
+
+# Test-downloaded model artifacts
+inference_model_manager/tests/integration_tests/assets/
+
+# Private CLAUDE context
+CLAUDE.local.md
+

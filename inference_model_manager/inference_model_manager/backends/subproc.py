@@ -1,0 +1,1399 @@
+"""SubprocessBackend v2 — SHMPool + worker-side greedy batching.
+
+Transport:
+  Input:  raw bytes written to SHMPool.data_memoryview(slot_id)
+  Output: pickled Python object written to same SHMPool.data_memoryview(slot_id)
+  Signal: ZMQ PAIR — parent sends T_SLOT_READY per request;
+          worker sends T_RESULT per completed slot
+
+Thread-safety (ZMQ):
+  ZMQ sockets are not thread-safe.  All socket operations run in _recv_thread.
+  signal_slot() and unload() enqueue work to _outbound (Queue); the recv
+  thread drains _outbound before polling for inbound messages.
+
+Usage:
+  SubprocessBackend always attaches to an externally-owned SHMPool
+  (created by ModelManager or MMP). The owner allocates a slot, writes
+  input, then calls signal_slot(slot_id, req_id, params_bytes). The recv
+  thread invokes on_result_callback when T_RESULT arrives.
+
+Input formats (both modes):
+  - bytes / bytearray / memoryview:  written directly.
+  - numpy ndarray:  serialised with np.save() (magic b'\\x93NUMPY').
+  Worker detects format by inspecting the first 6 bytes of the slot.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import dataclasses
+import io
+import json
+import logging
+import os
+import pickle
+import queue
+import struct
+import threading
+import time
+import uuid
+from collections import deque
+from concurrent.futures import Future
+from typing import Any, Callable, Dict, List, Optional
+
+import numpy as np
+import zmq
+
+from inference_model_manager import configuration as cfg
+from inference_model_manager.backends.base import Backend
+from inference_model_manager.backends.decode import (
+    Decoder,
+    estimate_decoded_bytes,
+    make_batch_decoder,
+)
+from inference_model_manager.backends.utils.image_headers import image_pixels
+from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
+from inference_model_manager.backends.utils.transport import default_transport
+from inference_model_manager.dispatch import invoke_task
+from inference_models.utils.environment import get_boolean_from_env
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# PAIR protocol constants (parent ↔ worker)
+# ---------------------------------------------------------------------------
+
+_MSG_SLOT_READY = b"\x01"  # parent→worker: struct.pack(">IQ", slot_id, req_id)  [12 B]
+_MSG_RESULT = (
+    b"\x02"  # worker→parent: struct.pack(">QII", req_id, slot_id, result_sz) [16 B]
+)
+_MSG_HEARTBEAT = b"\x03"  # worker→parent: keepalive + JSON stats payload
+_MSG_SHUTDOWN = b"\x04"  # parent→worker: stop gracefully (no payload)
+_MSG_STATS_REQ = b"\x05"  # parent→worker: force stats refresh (no payload)
+
+_STATS_SENTINEL = "STATS"  # sentinel for outbound queue → sends _MSG_STATS_REQ
+
+_HEARTBEAT_INTERVAL_S = cfg.INFERENCE_WORKER_HEARTBEAT_INTERVAL_S
+_WORKER_HEARTBEAT_TIMEOUT = (
+    cfg.INFERENCE_WORKER_HEARTBEAT_TIMEOUT_S
+)  # silence → unhealthy
+_WORKER_BUSY_TIMEOUT = (
+    cfg.INFERENCE_WORKER_BUSY_TIMEOUT_S
+)  # silence while work outstanding
+_EMPTY_CACHE_EVERY_N_BATCHES = cfg.INFERENCE_WORKER_EMPTY_CACHE_EVERY_N_BATCHES
+_EMPTY_CACHE_CHECK_INTERVAL_S = cfg.INFERENCE_WORKER_EMPTY_CACHE_CHECK_INTERVAL_S
+_EMPTY_CACHE_MIN_FREE_BYTES = cfg.INFERENCE_WORKER_EMPTY_CACHE_MIN_FREE_BYTES
+_SEND_TIMEOUT_MS = 5000  # parent PAIR sends must never block forever
+
+_BATCH_SIZE_FALLBACK = 8
+
+# Optional resolution reject gate: max decoded pixels per image (0 = off).
+_MAX_DECODED_PIXELS = (
+    int(cfg.INFERENCE_MAX_DECODED_MEGAPIXELS * 1_000_000)
+    if cfg.INFERENCE_MAX_DECODED_MEGAPIXELS > 0
+    else 0
+)
+
+
+# ---------------------------------------------------------------------------
+# Input serialisation helper (parent side)
+# ---------------------------------------------------------------------------
+
+_NP_MAGIC = b"\x93NUMPY"  # first 6 bytes of every np.save() file
+
+
+class _InferenceError:
+    """Sentinel for failed inference — distinguishes from legitimate None result."""
+
+    __slots__ = ("message",)
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+
+
+def _write_error_to_slot(pool: "SHMPool", slot_id: int, message: str) -> None:
+    """Write error detail to DATA area before mark_error, so app.py can read it."""
+    err_bytes = message.encode("utf-8", errors="replace")[:1024]  # cap at 1KB
+    mv = pool.data_memoryview(slot_id)
+    mv[: len(err_bytes)] = err_bytes
+    mv.release()
+    pool.mark_error(slot_id, error_code=1, error_size=len(err_bytes))
+
+
+def _to_bytes(raw_input: Any) -> bytes:
+    """Serialise any input value to bytes for writing to the SHMPool input slot.
+
+    Returns:
+        bytes, bytearray, memoryview  →  bytes (zero-copy when possible)
+        numpy ndarray                 →  numpy .npy bytes (magic b'\\x93NUMPY')
+        anything else                 →  pickle
+    """
+    if isinstance(raw_input, (bytes, bytearray)):
+        return bytes(raw_input)
+    if isinstance(raw_input, memoryview):
+        return bytes(raw_input)
+    if isinstance(raw_input, np.ndarray):
+        buf = io.BytesIO()
+        np.save(buf, raw_input, allow_pickle=False)
+        return buf.getvalue()
+    return pickle.dumps(raw_input)
+
+
+# Resolved once on first result (in the worker); the parent stays torch-free.
+_torch = None
+
+
+def _tensors_to_numpy(result: Any) -> Any:
+    """Convert every torch.Tensor in a result to CPU numpy, in place.
+
+    Pickling numpy is ~10x faster than pickling torch tensors, and keeps CUDA
+    tensors off the wire so the receiver needs no GPU. Walks any result shape:
+    dataclass, list/tuple, dict, bare tensor; everything else passes through.
+    """
+    global _torch
+    if _torch is None:
+        import torch  # noqa: PLC0415
+
+        _torch = torch
+    Tensor = _torch.Tensor
+
+    def _walk(obj: Any) -> Any:
+        if isinstance(obj, Tensor):
+            return obj.detach().cpu().numpy()
+        if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+            for f in dataclasses.fields(obj):
+                setattr(obj, f.name, _walk(getattr(obj, f.name)))
+            return obj
+        if isinstance(obj, list):
+            return [_walk(x) for x in obj]
+        if isinstance(obj, tuple):
+            return tuple(_walk(x) for x in obj)
+        if isinstance(obj, dict):
+            return {k: _walk(v) for k, v in obj.items()}
+        return obj
+
+    return _walk(result)
+
+
+def _maybe_empty_cuda_cache(
+    batch_count: int,
+    last_check_ts: float,
+    now: float,
+    every_n_batches: int,
+    every_n_seconds: float,
+    min_free_bytes: int,
+    log,
+) -> float:
+    batch_due = (
+        every_n_batches > 0
+        and batch_count > 0
+        and batch_count % every_n_batches == 0
+    )
+    time_due = every_n_seconds > 0 and now - last_check_ts >= every_n_seconds
+    if not batch_due and not time_due:
+        return last_check_ts
+    try:
+        import torch  # noqa: PLC0415
+
+        if not torch.cuda.is_available():
+            return now
+        allocated = sum(
+            torch.cuda.memory_allocated(i) for i in range(torch.cuda.device_count())
+        )
+        reserved = sum(
+            torch.cuda.memory_reserved(i) for i in range(torch.cuda.device_count())
+        )
+        cached_slack = reserved - allocated
+        if cached_slack > min_free_bytes:
+            torch.cuda.empty_cache()
+            log.debug(
+                "Worker: torch.cuda.empty_cache() after %d batches "
+                "(reserved=%d allocated=%d slack=%d threshold=%d)",
+                batch_count,
+                reserved,
+                allocated,
+                cached_slack,
+                min_free_bytes,
+            )
+    except Exception:
+        log.debug("Worker: torch.cuda.empty_cache() check failed", exc_info=True)
+    return now
+
+
+# ---------------------------------------------------------------------------
+# Worker subprocess
+# ---------------------------------------------------------------------------
+
+
+def _worker_main(
+    model_id: str,
+    api_key: str,
+    setup_pipe: Any,
+    zmq_addr: str,
+    use_gpu: bool,
+    gpu_device: Optional[str],
+    shm_pool_name: str,
+    n_slots: int,
+    input_mb: float,
+    batch_max_size: int,
+    batch_max_wait_ms: float,
+    decoder: Decoder,
+    model_kwargs: dict,
+) -> None:
+    """Worker subprocess entry point.
+
+    Loads model, attaches SHMPool, signals READY, then greedy-batches
+    T_SLOT_READY messages and sends T_RESULT per completed slot.
+    """
+    if os.environ.get(cfg.ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV) is None:
+        os.environ[cfg.ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV] = (
+            cfg.ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_DEFAULT
+        )
+
+    from inference_models.models.auto_loaders.core import AutoModel  # noqa: PLC0415
+
+    _log = logging.getLogger(f"{__name__}.worker")
+    pool = sock = zmq_ctx = model = None
+
+    try:
+        device = (
+            gpu_device if (use_gpu and gpu_device) else ("cuda:0" if use_gpu else "cpu")
+        )
+        _log.info("Worker(%s): loading on %s", model_id, device)
+        if get_boolean_from_env(cfg.DEBUG_PASSTHROUGH_MODEL_ENV, default=False):
+            from inference_model_manager.backends.passthrough_model import (
+                PassthroughModel,
+            )
+
+            model = PassthroughModel()
+            _log.info("Worker(%s): using PassthroughModel (benchmark mode)", model_id)
+        else:
+            model = AutoModel.from_pretrained(
+                model_id, api_key=api_key, device=device, **model_kwargs
+            )
+            _log.info("Worker(%s): model ready (%s)", model_id, type(model).__name__)
+
+        batch_decode_fn = make_batch_decoder(device, decoder=decoder)
+        pool = SHMPool.attach(shm_pool_name, n_slots=n_slots, input_mb=input_mb)
+
+        from inference_model_manager.backends.base import detect_max_batch_size
+
+        model_max_bs = detect_max_batch_size(model)
+        effective_bs = model_max_bs if batch_max_size <= 0 else batch_max_size
+        if model_max_bs is not None and effective_bs > model_max_bs:
+            effective_bs = model_max_bs
+        _log.info(
+            "Worker(%s): batch_max_size=%s (model=%s, configured=%s)",
+            model_id,
+            effective_bs,
+            model_max_bs,
+            batch_max_size,
+        )
+
+        setup_pipe.send(
+            {
+                "status": "READY",
+                "class_names": getattr(model, "class_names", None),
+                "max_batch_size": model_max_bs,
+                "model_class_name": type(model).__name__,
+                "model_mro_names": [cls.__name__ for cls in type(model).__mro__],
+            }
+        )
+
+        zmq_ctx = zmq.Context()
+        sock = zmq_ctx.socket(zmq.PAIR)
+        sock.setsockopt(zmq.LINGER, 0)
+        sock.connect(zmq_addr)
+
+        decode_budget_fn = None
+        if device.startswith("cuda"):
+            import torch  # noqa: PLC0415
+
+            def decode_budget_fn() -> int:
+                try:
+                    free, _ = torch.cuda.mem_get_info()
+                except Exception:
+                    return 0
+                return _decode_bytes_budget(
+                    free,
+                    cfg.INFERENCE_DECODE_VRAM_HEADROOM_MB,
+                    cfg.INFERENCE_DECODE_VRAM_SCRATCH_FACTOR,
+                )
+
+        _worker_loop(
+            model,
+            pool,
+            sock,
+            batch_decode_fn,
+            effective_bs or _BATCH_SIZE_FALLBACK,
+            batch_max_wait_ms,
+            _log,
+            decode_budget_fn=decode_budget_fn,
+        )
+
+    except KeyboardInterrupt:
+        pass  # clean exit on Ctrl+C
+    except Exception as exc:
+        try:
+            setup_pipe.send({"status": f"ERROR: {exc}"})
+        except Exception:
+            pass
+    finally:
+        if pool:
+            pool.close()
+        if sock:
+            sock.close()
+        if zmq_ctx:
+            zmq_ctx.term()
+        del model
+
+
+def _worker_loop(
+    model,
+    pool: SHMPool,
+    sock,
+    batch_decode_fn,
+    batch_max_size: int,
+    batch_max_wait_ms: float,
+    log,
+    decode_budget_fn: Optional[Callable[[], int]] = None,
+) -> None:
+    """Greedy batch loop — accumulate T_SLOT_READY, fire on size-or-timeout."""
+    poller = zmq.Poller()
+    poller.register(sock, zmq.POLLIN)
+
+    batch_max_wait_s = batch_max_wait_ms / 1000.0
+    pending: list[tuple[int, int, bytes]] = []  # (slot_id, req_id, params_bytes)
+    batch_start = 0.0
+    last_heartbeat = time.monotonic()
+
+    # Worker-side stats — updated by _process_slots, read by _MSG_STATS_REQ
+    worker_stats: dict[str, Any] = {
+        "inference_count": 0,
+        "error_count": 0,
+        "batch_count": 0,
+        "latencies": deque(maxlen=1000),  # end-to-end per-batch (seconds)
+        "batch_sizes": deque(maxlen=1000),
+        "decode_ms": deque(maxlen=1000),
+        "infer_ms": deque(maxlen=1000),
+        "write_ms": deque(maxlen=1000),
+        "start_ts": time.monotonic(),
+        "last_empty_cache_check_ts": 0.0,
+    }
+
+    while True:
+        # Compute poll timeout
+        now = time.monotonic()
+        if pending:
+            wait_left = batch_start + batch_max_wait_s - now
+            timeout_ms = max(0, int(wait_left * 1000))
+        else:
+            hb_due = last_heartbeat + _HEARTBEAT_INTERVAL_S
+            timeout_ms = max(1, int((hb_due - now) * 1000))
+
+        events = dict(poller.poll(timeout=timeout_ms))
+
+        if sock in events:
+            try:
+                frames = sock.recv_multipart()
+            except zmq.ZMQError:
+                break
+
+            msg = frames[0]
+            if msg == _MSG_SHUTDOWN:
+                break
+            elif msg == _MSG_SLOT_READY and len(frames) > 1 and len(frames[1]) >= 12:
+                slot_id, req_id = struct.unpack(">IQ", frames[1][:12])
+                params_bytes = frames[2] if len(frames) > 2 else b"{}"
+                try:
+                    pool.touch_slot(slot_id)
+                except Exception:
+                    pass
+                if not pending:
+                    batch_start = time.monotonic()
+                pending.append((slot_id, req_id, params_bytes))
+            elif msg == _MSG_STATS_REQ:
+                try:
+                    sock.send_multipart(
+                        [
+                            _MSG_HEARTBEAT,
+                            _build_worker_stats_payload(worker_stats),
+                        ]
+                    )
+                except zmq.ZMQError:
+                    break
+        else:
+            # Timeout while idle → heartbeat with stats
+            if not pending:
+                now = time.monotonic()
+                if now - last_heartbeat >= _HEARTBEAT_INTERVAL_S:
+                    try:
+                        sock.send_multipart(
+                            [
+                                _MSG_HEARTBEAT,
+                                _build_worker_stats_payload(worker_stats),
+                            ]
+                        )
+                    except zmq.ZMQError:
+                        break
+                    last_heartbeat = now
+
+        # Fire batch when ready
+        now = time.monotonic()
+        if pending and (
+            len(pending) >= batch_max_size or (now - batch_start) >= batch_max_wait_s
+        ):
+            try:
+                if now - last_heartbeat >= _HEARTBEAT_INTERVAL_S:
+                    sock.send_multipart(
+                        [_MSG_HEARTBEAT, _build_worker_stats_payload(worker_stats)]
+                    )
+                    last_heartbeat = now
+                else:
+                    sock.send_multipart([_MSG_HEARTBEAT, b""])
+            except zmq.ZMQError:
+                pass
+            decode_max_bytes = decode_budget_fn() if decode_budget_fn else 0
+            for chunk in _split_batch_by_decoded_bytes(pool, pending, decode_max_bytes):
+                if len(chunk) < len(pending):
+                    log.info(
+                        "Worker: decoded-bytes cap split batch of %d — "
+                        "processing chunk of %d",
+                        len(pending),
+                        len(chunk),
+                    )
+                try:
+                    _process_slots(
+                        model, pool, chunk, sock, batch_decode_fn, log, worker_stats
+                    )
+                except Exception:
+                    # A batch-level crash must not kill the worker: error out
+                    # every slot we still own and keep serving.
+                    log.exception("Worker: _process_slots crashed — erroring batch")
+                    for slot_id, req_id, _ in chunk:
+                        if not _slot_owned(pool, slot_id, req_id):
+                            continue
+                        try:
+                            _write_error_to_slot(
+                                pool, slot_id, "batch processing crashed"
+                            )
+                            sock.send_multipart(
+                                [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
+                            )
+                        except Exception:
+                            pass
+            pending.clear()
+            batch_start = 0.0
+
+
+def _build_worker_stats_payload(worker_stats: dict) -> bytes:
+    """Build JSON stats payload for heartbeat."""
+    lats = list(worker_stats["latencies"])
+    lats.sort()
+    bs = list(worker_stats["batch_sizes"])
+    uptime = time.monotonic() - worker_stats["start_ts"]
+    infer_count = worker_stats["inference_count"]
+
+    def _pct(p: float) -> float:
+        if not lats:
+            return 0.0
+        idx = min(int(len(lats) * p / 100), len(lats) - 1)
+        return lats[idx] * 1000
+
+    bc = worker_stats["batch_count"]
+
+    def _avg_ms(key: str) -> float:
+        vals = worker_stats[key]
+        return sum(vals) / len(vals) if vals else 0.0
+
+    return json.dumps(
+        {
+            "inference_count": infer_count,
+            "error_count": worker_stats["error_count"],
+            "batch_count": bc,
+            "throughput_fps": infer_count / max(uptime, 1e-6),
+            "latency_p50_ms": _pct(50),
+            "latency_p95_ms": _pct(95),
+            "latency_p99_ms": _pct(99),
+            "avg_batch_size": sum(bs) / len(bs) if bs else 0.0,
+            "avg_decode_ms": _avg_ms("decode_ms"),
+            "avg_infer_ms": _avg_ms("infer_ms"),
+            "avg_write_ms": _avg_ms("write_ms"),
+            "uptime_s": round(uptime, 1),
+        }
+    ).encode()
+
+
+def _decode_bytes_budget(
+    free_vram_bytes: int, headroom_mb: float, scratch_factor: float
+) -> int:
+    """Decoded-bytes budget for one decode batch, from free VRAM right now.
+
+    Reserves ``headroom_mb`` for inference itself and divides the rest by
+    ``scratch_factor`` (nvjpeg working buffers exceed the output tensors).
+    Floors at 1 byte: a starved GPU degrades to one-image chunks, never to
+    an uncapped batch (0 means cap disabled to the splitter).
+    """
+    return max(1, int((free_vram_bytes - headroom_mb * 1024 * 1024) / scratch_factor))
+
+
+def _split_batch_by_decoded_bytes(
+    pool: SHMPool,
+    batch: list[tuple[int, int, bytes]],
+    max_bytes: int,
+) -> list[list[tuple[int, int, bytes]]]:
+    """Split a batch into chunks whose summed estimated decoded size stays
+    under ``max_bytes``. Estimation reads only slot header bytes (JPEG SOF /
+    PNG IHDR) — no decode. A single image over the cap gets its own chunk;
+    nothing is ever dropped. ``max_bytes <= 0`` disables splitting.
+    """
+    if max_bytes <= 0 or len(batch) <= 1:
+        return [batch]
+
+    chunks: list[list[tuple[int, int, bytes]]] = []
+    chunk: list[tuple[int, int, bytes]] = []
+    chunk_bytes = 0
+    for item in batch:
+        slot_id = item[0]
+        try:
+            hdr = pool.read_header(slot_id)
+            mv = pool.data_memoryview(slot_id)[: min(hdr.input_size, 65536)]
+            est = estimate_decoded_bytes(mv, hdr.input_size)
+            mv.release()
+        except Exception:
+            est = 0
+        if chunk and chunk_bytes + est > max_bytes:
+            chunks.append(chunk)
+            chunk = []
+            chunk_bytes = 0
+        chunk.append(item)
+        chunk_bytes += est
+    if chunk:
+        chunks.append(chunk)
+    return chunks
+
+
+def _slot_owned(pool: SHMPool, slot_id: int, req_id: int) -> bool:
+    """True if the slot header is still bound to req_id. Guards every write
+    against slots the reaper reclaimed and re-allocated mid-flight."""
+    try:
+        return pool.read_header(slot_id).request_id == req_id
+    except Exception:
+        return False
+
+
+def _process_slots(
+    model,
+    pool: SHMPool,
+    batch: list[tuple[int, int, bytes]],
+    sock,
+    batch_decode_fn,
+    log,
+    worker_stats: dict,
+) -> None:
+    """Process a batch of (slot_id, req_id, params_bytes), write results to SHM, send T_RESULT."""
+    t0 = time.monotonic()
+
+    # Ownership gate: drop slots whose header no longer matches the signalled
+    # req_id (reaper reclaimed + re-allocated between T_SLOT_READY and now) or
+    # that are not in WRITTEN state. Claim survivors as PROCESSING (refreshes
+    # the reaper timestamp).
+    owned: list[tuple[int, int, bytes]] = []
+    for slot_id, req_id, params_bytes in batch:
+        hdr = pool.read_header(slot_id)
+        if hdr.status != SlotStatus.WRITTEN or hdr.request_id != req_id:
+            log.warning(
+                "Worker: skipping slot %d — ownership lost "
+                "(status=%d hdr_req=%d signal_req=%d)",
+                slot_id,
+                hdr.status,
+                hdr.request_id,
+                req_id,
+            )
+            continue
+        pool.mark_processing(slot_id, os.getpid())
+        owned.append((slot_id, req_id, params_bytes))
+    if not owned:
+        return
+    batch = owned
+
+    # Parse per-slot params
+    slot_params: list[dict] = []
+    for _, _, params_bytes in batch:
+        slot_params.append(json.loads(params_bytes) if params_bytes else {})
+
+    # Gather memoryviews; classify as .npy (standalone numpy) vs raw bytes
+    mvs: list[Any] = []
+    is_npy: list[bool] = []
+    for slot_id, _, _ in batch:
+        hdr = pool.read_header(slot_id)
+        mv = pool.data_memoryview(slot_id)[: hdr.input_size]
+        mvs.append(mv)
+        is_npy.append(bytes(mv[:6]) == _NP_MAGIC)
+
+    images: list[Any] = [None] * len(batch)
+    decode_errors: list[bool] = [False] * len(batch)
+
+    # Guard: empty slots → mark as decode error immediately
+    for i, mv in enumerate(mvs):
+        if len(mv) == 0:
+            log.error("Worker: slot %d has 0 bytes — skipping", batch[i][0])
+            decode_errors[i] = True
+
+    # Resolution reject gate — drop oversized images by header dims, no decode.
+    if _MAX_DECODED_PIXELS:
+        for i, mv in enumerate(mvs):
+            if decode_errors[i] or is_npy[i] or len(mv) == 0:
+                continue
+            px = image_pixels(mv)
+            if px and px > _MAX_DECODED_PIXELS:
+                decode_errors[i] = True
+                log.warning(
+                    "Worker: slot %d rejected — image %.1fMP exceeds max %.0fMP",
+                    batch[i][0],
+                    px / 1e6,
+                    _MAX_DECODED_PIXELS / 1e6,
+                )
+
+    # .npy slots — standalone mode (numpy arrays serialised via np.save)
+    for i, (mv, npy) in enumerate(zip(mvs, is_npy)):
+        if npy:
+            try:
+                images[i] = np.load(io.BytesIO(bytes(mv)), allow_pickle=False)
+            except Exception:
+                log.exception("Worker: failed to load .npy slot %d", batch[i][0])
+                decode_errors[i] = True
+
+    # Raw image bytes (JPEG + non-JPEG) — single batch_decode_fn call
+    raw_indices = [
+        i for i, npy in enumerate(is_npy) if not npy and not decode_errors[i]
+    ]
+    if raw_indices:
+        try:
+            raw_decoded = batch_decode_fn([mvs[i] for i in raw_indices])
+            for i, img in zip(raw_indices, raw_decoded):
+                images[i] = img
+                if img is None:  # per-image decode failure (decoder contract)
+                    decode_errors[i] = True
+        except Exception:
+            log.exception(
+                "Worker: batch decode failed for %d slot(s)", len(raw_indices)
+            )
+            for i in raw_indices:
+                decode_errors[i] = True
+
+    # Release memoryviews
+    for mv in mvs:
+        try:
+            mv.release()
+        except Exception:
+            pass
+
+    t_decoded = time.monotonic()
+
+    # Short-circuit slots that failed to decode — send error without calling infer
+    error_indices = {i for i, err in enumerate(decode_errors) if err}
+    if error_indices:
+        for i in error_indices:
+            slot_id, req_id, _ = batch[i]
+            if not _slot_owned(pool, slot_id, req_id):
+                continue
+            _write_error_to_slot(pool, slot_id, "image decode failed")
+            try:
+                sock.send_multipart(
+                    [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
+                )
+            except zmq.ZMQError:
+                log.warning("Worker: ZMQ send failed for error slot %d", slot_id)
+        if len(error_indices) == len(batch):
+            return
+        # Filter to only successfully decoded slots for infer
+        good = [
+            (i, batch[i], images[i])
+            for i in range(len(batch))
+            if i not in error_indices
+        ]
+        good_batch = [b for _, b, _ in good]
+        good_images = [img for _, _, img in good]
+        good_params = [slot_params[i] for i, _, _ in good]
+    else:
+        good_batch = batch
+        good_images = images
+        good_params = slot_params
+
+    # Group by (task, params) so that slots with different tasks/params are
+    # processed in separate sub-batches instead of silently using only the
+    # first slot's params for the entire batch.
+    sub_batches: dict[str, list[int]] = {}
+    for idx, p in enumerate(good_params):
+        # Build a hashable key from the params dict (task + sorted remaining params)
+        key = json.dumps(p, sort_keys=True)
+        sub_batches.setdefault(key, []).append(idx)
+
+    results: list[Any] = [None] * len(good_batch)
+    for params_key, indices in sub_batches.items():
+        sub_params = json.loads(params_key)
+        task = sub_params.pop("task", None)
+        sub_images = [good_images[i] for i in indices]
+        try:
+            images_arg = sub_images[0] if len(sub_images) == 1 else sub_images
+            raw_out = invoke_task(model, task=task, images=images_arg, **sub_params)
+            sub_results = raw_out if isinstance(raw_out, list) else [raw_out]
+            for i, r in zip(indices, sub_results):
+                results[i] = r
+        except Exception as exc:
+            log.exception("Worker: invoke_task(task=%r) failed", task)
+            for i in indices:
+                results[i] = _InferenceError(str(exc))
+
+    t_infer = time.monotonic()
+
+    n_ok = 0
+    n_err = len(error_indices) if error_indices else 0
+
+    for (slot_id, req_id, _), result in zip(good_batch, results):
+        if not _slot_owned(pool, slot_id, req_id):
+            log.warning(
+                "Worker: dropping result for slot %d — ownership lost during "
+                "inference (req_id=%d)",
+                slot_id,
+                req_id,
+            )
+            continue
+        if result is None or isinstance(result, _InferenceError):
+            err_msg = (
+                result.message
+                if isinstance(result, _InferenceError)
+                else "inference returned None"
+            )
+            _write_error_to_slot(pool, slot_id, err_msg)
+            try:
+                sock.send_multipart(
+                    [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
+                )
+            except zmq.ZMQError:
+                return
+            n_err += 1
+            continue
+
+        # Tensors → CPU numpy before pickle: numpy pickles ~10x faster than torch
+        # tensors and keeps CUDA tensors off the wire (receiver needs no GPU).
+        try:
+            result = _tensors_to_numpy(result)
+            data = pickle.dumps(result)
+        except Exception as exc:
+            # Unserializable result (numpy fields without .cpu(), unpicklable
+            # objects) must error this slot, not kill the worker.
+            log.exception("Worker: result serialization failed for slot %d", slot_id)
+            _write_error_to_slot(pool, slot_id, f"result serialization failed: {exc}")
+            try:
+                sock.send_multipart(
+                    [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
+                )
+            except zmq.ZMQError:
+                return
+            n_err += 1
+            continue
+        mv = pool.data_memoryview(slot_id)
+        capacity = len(mv)
+        if len(data) > capacity:
+            log.error(
+                "Worker: result %d B exceeds slot capacity %d B for slot %d — marking error",
+                len(data),
+                capacity,
+                slot_id,
+            )
+            mv.release()
+            _write_error_to_slot(
+                pool,
+                slot_id,
+                f"result {len(data)}B exceeds slot capacity {capacity}B",
+            )
+            try:
+                sock.send_multipart(
+                    [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
+                )
+            except zmq.ZMQError:
+                pass
+            n_err += 1
+            continue
+        mv[: len(data)] = data
+        mv.release()
+        pool.mark_done(slot_id, len(data))
+        try:
+            sock.send_multipart(
+                [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, len(data))]
+            )
+        except zmq.ZMQError:
+            return
+        n_ok += 1
+
+    # Update worker stats
+    end = time.monotonic()
+    worker_stats["inference_count"] += n_ok
+    worker_stats["error_count"] += n_err
+    worker_stats["batch_count"] += 1
+    worker_stats["latencies"].append(end - t0)
+    worker_stats["batch_sizes"].append(len(batch))
+    worker_stats["decode_ms"].append((t_decoded - t0) * 1000)
+    worker_stats["infer_ms"].append((t_infer - t_decoded) * 1000)
+    worker_stats["write_ms"].append((end - t_infer) * 1000)
+    worker_stats["last_empty_cache_check_ts"] = _maybe_empty_cuda_cache(
+        worker_stats["batch_count"],
+        worker_stats.get("last_empty_cache_check_ts", 0.0),
+        end,
+        _EMPTY_CACHE_EVERY_N_BATCHES,
+        _EMPTY_CACHE_CHECK_INTERVAL_S,
+        _EMPTY_CACHE_MIN_FREE_BYTES,
+        log,
+    )
+
+
+# ---------------------------------------------------------------------------
+# SubprocessBackend
+# ---------------------------------------------------------------------------
+
+
+class SubprocessBackend(Backend):
+    """Inference backend running the model in a worker subprocess.
+
+    v2 transport: SHMPool for data, ZMQ PAIR for signals.
+    Worker accumulates slot signals and greedy-batches them.
+    """
+
+    def __init__(
+        self,
+        model_id: str,
+        api_key: str,
+        *,
+        # SHMPool (mandatory — pool is always created externally)
+        shm_pool_name: str,
+        n_slots: int,
+        input_mb: float,
+        # Worker batching
+        batch_max_size: int = 0,
+        batch_max_delay_ms: float = 0.0,
+        # Orchestrated-mode callbacks
+        on_result_callback: Optional[Callable] = None,
+        on_death_callback: Optional[Callable] = None,
+        # Device
+        device: Optional[str] = None,
+        use_gpu: Optional[bool] = None,
+        use_cuda_ipc: Optional[bool] = None,  # reserved, unused
+        # Misc
+        decoder: str = "imagecodecs",
+        worker_start_timeout: float = cfg.INFERENCE_WORKER_START_TIMEOUT_S,
+        **kwargs,
+    ) -> None:
+        self._model_id = model_id
+        self._state_value: str = "loading"
+
+        self._decoder = Decoder(decoder)
+        if self._decoder == Decoder.PASSTHROUGH and not get_boolean_from_env(
+            cfg.DEBUG_PASSTHROUGH_MODEL_ENV, default=False
+        ):
+            raise ValueError(
+                "decoder='passthrough' requires DEBUG_PASSTHROUGH_MODEL (debugging only)"
+            )
+
+        # ── Device resolution ────────────────────────────────────────
+        if device is not None and device.startswith("cuda"):
+            use_gpu = True
+        if use_gpu is None:
+            import torch  # noqa: PLC0415
+
+            use_gpu = (device is not None and device.startswith("cuda")) or (
+                device is None and torch.cuda.is_available()
+            )
+        self._use_gpu = use_gpu
+        self._device_str = (
+            (device if device and device.startswith("cuda") else "cuda:0")
+            if self._use_gpu
+            else "cpu"
+        )
+
+        # ── SHMPool (always attach — never create) ─────────────────
+        self._pool = SHMPool.attach(shm_pool_name, n_slots=n_slots, input_mb=input_mb)
+
+        logger.info(
+            "SubprocessBackend(%s): device=%s pool=%s slots=%d "
+            "input=%.0fMB batch=%d/%.0fms",
+            model_id,
+            self._device_str,
+            f"attached:{shm_pool_name[:8]}…",
+            n_slots,
+            input_mb,
+            batch_max_size,
+            batch_max_delay_ms,
+        )
+
+        # ── ZMQ PAIR ─────────────────────────────────────────────────
+        self._zmq_ctx = zmq.Context()
+        self._zmq_sock = self._zmq_ctx.socket(zmq.PAIR)
+        self._zmq_sock.setsockopt(zmq.LINGER, 0)
+        # PAIR sends block forever when the peer is gone — a dead worker must
+        # surface as worker death, not a hung recv thread.
+        self._zmq_sock.setsockopt(zmq.SNDTIMEO, _SEND_TIMEOUT_MS)
+
+        _transport = os.environ.get(
+            cfg.INFERENCE_ZMQ_TRANSPORT_ENV, default_transport()
+        )
+        _sock_id = f"sp_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+        if _transport == "ipc":
+            self._zmq_addr = f"ipc:///tmp/inference_{_sock_id}.ipc"
+        else:
+            self._zmq_addr = "tcp://127.0.0.1:*"
+        self._zmq_sock.bind(self._zmq_addr)
+        if _transport != "ipc":
+            self._zmq_addr = self._zmq_sock.getsockopt_string(zmq.LAST_ENDPOINT)
+
+        # ── Spawn worker ─────────────────────────────────────────────
+        import multiprocessing as mp  # noqa: PLC0415
+
+        ctx = mp.get_context("spawn")
+        parent_pipe, child_pipe = ctx.Pipe()
+
+        self._worker = ctx.Process(
+            target=_worker_main,
+            kwargs=dict(
+                model_id=model_id,
+                api_key=api_key,
+                setup_pipe=child_pipe,
+                zmq_addr=self._zmq_addr,
+                use_gpu=self._use_gpu,
+                gpu_device=self._device_str if self._use_gpu else None,
+                shm_pool_name=self._pool.name,
+                n_slots=n_slots,
+                input_mb=input_mb,
+                batch_max_size=batch_max_size,
+                batch_max_wait_ms=batch_max_delay_ms,
+                decoder=self._decoder,
+                model_kwargs=kwargs,
+            ),
+            daemon=True,
+        )
+        self._worker.start()
+
+        if not parent_pipe.poll(timeout=worker_start_timeout):
+            self._worker.kill()
+            self._worker.join(timeout=5)
+            raise RuntimeError(
+                f"SubprocessBackend({model_id!r}): worker timeout "
+                f"after {worker_start_timeout}s"
+            )
+
+        msg = parent_pipe.recv()
+        if not isinstance(msg, dict) or not msg.get("status", "").startswith("READY"):
+            err = msg if isinstance(msg, str) else msg.get("status", str(msg))
+            self._worker.join(timeout=10)
+            raise RuntimeError(f"SubprocessBackend({model_id!r}): {err}")
+
+        self._class_names = msg.get("class_names")
+        self._max_batch_size_model = msg.get("max_batch_size")
+        self._model_class_name = msg.get("model_class_name")
+        self._model_mro_names = msg.get("model_mro_names", [])
+        self._last_worker_activity = time.monotonic()
+
+        logger.info(
+            "SubprocessBackend(%s): worker ready (pid=%d, device=%s)",
+            model_id,
+            self._worker.pid,
+            self._device_str,
+        )
+
+        # ── Recv thread ───────────────────────────────────────────────
+        # All ZMQ socket I/O runs here.  Other threads communicate via _outbound.
+        self._outbound: queue.Queue = queue.Queue()
+        self._slot_futures: Dict[int, tuple] = {}  # slot_id → (req_id, Future)
+        self._slot_lock = threading.Lock()
+        # Signalled-but-unresulted slots — source of truth for queue_depth,
+        # drain, and busy-detection (slot_futures is empty in MMP mode).
+        self._outstanding = 0
+        self._death_handled = False
+        self._on_result_callback: Optional[Callable] = on_result_callback
+        self._on_death_callback: Optional[Callable] = on_death_callback
+        self._recv_running = True
+        self._recv_dead = False
+        self._worker_stats: dict[str, Any] = {}  # latest snapshot from worker
+        self._worker_stats_event: Optional[threading.Event] = None
+        self._recv_thread = threading.Thread(
+            target=self._recv_loop,
+            daemon=True,
+            name=f"subproc-recv-{model_id[:20]}",
+        )
+        self._recv_thread.start()
+
+        self._state_value = "loaded"
+
+    # ------------------------------------------------------------------
+    # Orchestrated-mode API (called by MMP)
+    # ------------------------------------------------------------------
+
+    def signal_slot(
+        self, slot_id: int, req_id: int, params_bytes: bytes = b"{}"
+    ) -> None:
+        """Enqueue T_SLOT_READY for the recv thread to send. Thread-safe."""
+        if self._recv_dead:
+            raise RuntimeError(
+                f"SubprocessBackend({self._model_id!r}): recv thread is dead, "
+                "cannot enqueue work"
+            )
+        with self._slot_lock:
+            self._outstanding += 1
+        self._outbound.put((slot_id, req_id, params_bytes))
+
+    def set_on_result_callback(self, callback: Callable[[int, int, int], None]) -> None:
+        """Set MMP callback: called on each T_RESULT from worker."""
+        self._on_result_callback = callback
+
+    def set_on_death_callback(self, callback: Callable[[str], None]) -> None:
+        """Set MMP callback: called with model_id when worker dies."""
+        self._on_death_callback = callback
+
+    def refresh_worker_stats(self, timeout_s: float = 1.0) -> dict[str, Any]:
+        """Request fresh stats from worker. Blocks up to timeout_s.
+
+        Returns latest worker stats dict (may be stale if worker is busy).
+        Thread-safe — sends via outbound queue, recv thread handles response.
+        """
+        if self._recv_dead:
+            return self._worker_stats
+        evt = threading.Event()
+        self._worker_stats_event = evt
+        # Enqueue stats request — recv thread sends _MSG_STATS_REQ
+        self._outbound.put(_STATS_SENTINEL)
+        evt.wait(timeout=timeout_s)
+        self._worker_stats_event = None
+        return self._worker_stats
+
+    # ------------------------------------------------------------------
+    # Recv thread — sole owner of _zmq_sock
+    # ------------------------------------------------------------------
+
+    def _recv_loop(self) -> None:
+        poller = zmq.Poller()
+        poller.register(self._zmq_sock, zmq.POLLIN)
+
+        while self._recv_running:
+            # Drain outbound queue first
+            while True:
+                try:
+                    item = self._outbound.get_nowait()
+                except queue.Empty:
+                    break
+                if item is None:  # shutdown sentinel
+                    try:
+                        self._zmq_sock.send_multipart([_MSG_SHUTDOWN, b""])
+                    except Exception:
+                        pass
+                    return
+                if item is _STATS_SENTINEL:
+                    try:
+                        self._zmq_sock.send_multipart([_MSG_STATS_REQ, b""])
+                    except zmq.ZMQError:
+                        self._handle_worker_death("stats send failed")
+                        return
+                    continue
+                slot_id, req_id, params_bytes = item
+                try:
+                    self._zmq_sock.send_multipart(
+                        [
+                            _MSG_SLOT_READY,
+                            struct.pack(">IQ", slot_id, req_id),
+                            params_bytes,
+                        ]
+                    )
+                except zmq.ZMQError:
+                    self._handle_worker_death("slot-ready send failed")
+                    return
+
+            # Poll with 10ms timeout so outbound queue drains promptly
+            events = dict(poller.poll(timeout=10))
+            if self._zmq_sock not in events:
+                if not self._worker.is_alive():
+                    self._handle_worker_death()
+                    return
+                continue
+
+            try:
+                frames = self._zmq_sock.recv_multipart()
+            except zmq.ZMQError:
+                self._handle_worker_death("zmq recv failed")
+                return
+
+            self._last_worker_activity = time.monotonic()
+            msg = frames[0]
+
+            if msg == _MSG_HEARTBEAT:
+                if len(frames) > 1 and frames[1]:
+                    try:
+                        self._worker_stats = json.loads(frames[1])
+                    except Exception:
+                        pass
+                    evt = self._worker_stats_event
+                    if evt is not None:
+                        evt.set()
+            elif msg == _MSG_RESULT and len(frames) > 1 and len(frames[1]) == 16:
+                req_id, slot_id, result_sz = struct.unpack(">QII", frames[1])
+                self._handle_result(req_id, slot_id, result_sz)
+
+    def _handle_worker_death(self, reason: str = "worker died") -> None:
+        """Abnormal-exit cleanup — EVERY abnormal recv-thread exit routes here.
+
+        Idempotent: rejects pending futures, notifies the owner per slot,
+        fires the death callback, and zeroes the outstanding counter.
+        """
+        if self._death_handled:
+            return
+        self._death_handled = True
+        logger.error(
+            "SubprocessBackend(%s): %s (pid=%s exitcode=%s)",
+            self._model_id,
+            reason,
+            self._worker.pid,
+            self._worker.exitcode,
+        )
+        self._state_value = "unhealthy"
+        self._recv_dead = True
+
+        with self._slot_lock:
+            pending = list(self._slot_futures.items())
+            self._slot_futures.clear()
+            self._outstanding = 0
+
+        for slot_id, (req_id, future) in pending:
+            # Reject pending futures
+            if future is not None and not future.done():
+                future.set_exception(
+                    RuntimeError(f"SubprocessBackend({self._model_id!r}): worker died")
+                )
+            # Notify owner (MMP or ModelManager) — result_sz=0 → error
+            if self._on_result_callback is not None:
+                try:
+                    self._on_result_callback(req_id, slot_id, 0)
+                except Exception:
+                    logger.exception(
+                        "SubprocessBackend(%s): on_result_callback raised "
+                        "during worker-death cleanup",
+                        self._model_id,
+                    )
+
+        # Notify MMP to trigger reload
+        if self._on_death_callback is not None:
+            try:
+                self._on_death_callback(self._model_id)
+            except Exception:
+                logger.exception(
+                    "SubprocessBackend(%s): on_death_callback raised",
+                    self._model_id,
+                )
+
+    def _handle_result(self, req_id: int, slot_id: int, result_sz: int) -> None:
+        """Called from recv thread on each T_RESULT."""
+        # Resolve Future if one exists (standalone submit path)
+        with self._slot_lock:
+            self._outstanding = max(0, self._outstanding - 1)
+            entry = self._slot_futures.pop(slot_id, None)
+        if entry is not None:
+            _, future = entry
+            if future is not None and not future.done():
+                if result_sz > 0:
+                    try:
+                        data = bytes(self._pool.data_memoryview(slot_id)[:result_sz])
+                        result = pickle.loads(data)
+                        future.set_result(result)
+                    except Exception as exc:
+                        future.set_exception(exc)
+                else:
+                    future.set_exception(RuntimeError("worker inference error"))
+
+        # Notify owner (MMP or ModelManager)
+        if self._on_result_callback is not None:
+            try:
+                self._on_result_callback(req_id, slot_id, result_sz)
+            except Exception:
+                logger.exception("SubprocessBackend: on_result_callback raised")
+
+    # ------------------------------------------------------------------
+    # Standalone inference
+    # ------------------------------------------------------------------
+
+    def submit_slot(
+        self,
+        slot_id: int,
+        req_id: int,
+        future: Optional[Future] = None,
+        params_bytes: bytes = b"{}",
+    ) -> None:
+        """Register a future for this slot and signal the worker.
+
+        Called by ModelManager after it writes input to the pool.
+        If ``future`` is provided, it will be resolved when the worker
+        sends T_RESULT for this slot.
+        """
+        with self._slot_lock:
+            self._slot_futures[slot_id] = (req_id, future)
+
+        self.signal_slot(slot_id, req_id, params_bytes)
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def drain_and_unload(self, timeout_s: float = 30.0) -> None:
+        """Stop accepting new work, wait for in-flight to finish, then unload."""
+        self._state_value = "draining"
+        logger.info(
+            "SubprocessBackend(%s): draining (timeout=%.1fs)", self._model_id, timeout_s
+        )
+
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            with self._slot_lock:
+                n = self._outstanding + len(self._slot_futures)
+            if n == 0:
+                break
+            logger.debug(
+                "SubprocessBackend(%s): %d slots still in-flight", self._model_id, n
+            )
+            time.sleep(0.1)
+        else:
+            with self._slot_lock:
+                n = self._outstanding + len(self._slot_futures)
+            if n > 0:
+                logger.warning(
+                    "SubprocessBackend(%s): drain timeout — %d slots still in-flight, force-unloading",
+                    self._model_id,
+                    n,
+                )
+
+        self.unload()
+
+    def unload(self) -> None:
+        self._state_value = "unhealthy"  # block new submits immediately
+
+        # Sentinel alone terminates the recv loop (it sends T_SHUTDOWN first).
+        # Clearing _recv_running before the sentinel raced the loop's top
+        # check — the thread could exit without ever sending T_SHUTDOWN.
+        self._outbound.put(None)  # None = shutdown sentinel
+        self._recv_thread.join(timeout=5.0)
+        if self._recv_thread.is_alive():
+            # Thread wedged (e.g. blocked in a send) — kill the worker to
+            # unblock it, stop the loop flag, and retry.
+            self._recv_running = False
+            self._worker.kill()
+            self._recv_thread.join(timeout=2.0)
+        self._recv_running = False
+
+        # Kill worker if still alive
+        if self._worker.is_alive():
+            self._worker.join(timeout=5)
+        if self._worker.is_alive():
+            self._worker.kill()
+
+        # Cancel pending futures
+        with self._slot_lock:
+            for slot_id, (_, future) in self._slot_futures.items():
+                if future is not None and not future.done():
+                    future.set_exception(RuntimeError("backend unloaded"))
+            self._slot_futures.clear()
+            self._outstanding = 0
+
+        if not self._recv_thread.is_alive():
+            self._zmq_sock.close(linger=0)
+            self._zmq_ctx.term()
+        else:
+            logger.warning(
+                "SubprocessBackend(%s): recv thread still alive after unload — "
+                "leaking ZMQ socket to avoid closing it under a live thread",
+                self._model_id,
+            )
+
+        # Pool is externally owned — never close/unlink here
+
+        if self._zmq_addr.startswith("ipc://"):
+            try:
+                os.unlink(self._zmq_addr[len("ipc://") :])
+            except OSError:
+                pass
+
+        logger.info("SubprocessBackend(%s): unloaded", self._model_id)
+
+    # ------------------------------------------------------------------
+    # Observability
+    # ------------------------------------------------------------------
+
+    @property
+    def device(self) -> str:
+        return self._device_str
+
+    @property
+    def state(self) -> str:
+        if not self._worker.is_alive():
+            return "unhealthy"
+        idle = time.monotonic() - self._last_worker_activity
+        if self._state_value == "loaded":
+            # Busy workers (long batch in flight) get a longer leash than the
+            # idle heartbeat timeout — but a hung worker with outstanding work
+            # still trips eventually.
+            limit = (
+                _WORKER_BUSY_TIMEOUT
+                if self._outstanding > 0
+                else _WORKER_HEARTBEAT_TIMEOUT
+            )
+            if idle > limit:
+                return "unhealthy"
+        return self._state_value
+
+    @property
+    def is_healthy(self) -> bool:
+        return self.state == "loaded"
+
+    @property
+    def is_accepting(self) -> bool:
+        return self.state == "loaded"
+
+    @property
+    def max_batch_size(self) -> Optional[int]:
+        return self._max_batch_size_model
+
+    @property
+    def queue_depth(self) -> int:
+        return self._outstanding
+
+    def stats(self) -> Dict[str, Any]:
+        ws = self._worker_stats
+        return {
+            "model_id": self._model_id,
+            "backend_type": "subprocess",
+            "device": self._device_str,
+            "transport": "shm_pool",
+            "state": self.state,
+            "is_accepting": self.is_accepting,
+            "queue_depth": self.queue_depth,
+            "max_batch_size": self.max_batch_size,
+            "throughput_fps": ws.get("throughput_fps", 0.0),
+            "latency_p50_ms": ws.get("latency_p50_ms", 0.0),
+            "latency_p95_ms": ws.get("latency_p95_ms", 0.0),
+            "latency_p99_ms": ws.get("latency_p99_ms", 0.0),
+            "inference_count": ws.get("inference_count", 0),
+            "error_count": ws.get("error_count", 0),
+            "batch_count": ws.get("batch_count", 0),
+            "avg_batch_size": ws.get("avg_batch_size", 0.0),
+            "avg_decode_ms": ws.get("avg_decode_ms", 0.0),
+            "avg_infer_ms": ws.get("avg_infer_ms", 0.0),
+            "avg_write_ms": ws.get("avg_write_ms", 0.0),
+            "worker_uptime_s": ws.get("uptime_s", 0.0),
+            "worker_alive": self._worker.is_alive(),
+            "shm_pool_name": self._pool.name,
+            "model_class_name": self._model_class_name,
+        }
+
+    @property
+    def worker_pid(self) -> Optional[int]:
+        return self._worker.pid if self._worker.is_alive() else None
+
+    @property
+    def class_names(self) -> Optional[List[str]]:
+        return self._class_names

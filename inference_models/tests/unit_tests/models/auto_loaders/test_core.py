@@ -18,6 +18,7 @@ from inference_models.models.auto_loaders import model_cache_paths
 from inference_models.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCacheEntry,
 )
+from inference_models.errors import InvalidParameterError
 from inference_models.models.auto_loaders.core import (
     attempt_loading_model_from_local_storage,
     create_symlinks_to_shared_blobs,
@@ -26,13 +27,18 @@ from inference_models.models.auto_loaders.core import (
     generate_model_package_cache_path,
     load_class_from_path,
     parse_model_config,
+    resolve_preloaded_dependency,
     resolve_recommended_parameters,
 )
 from inference_models.models.auto_loaders.entities import (
     BackendType,
     InferenceModelConfig,
+    SuppliedDependency,
 )
-from inference_models.weights_providers.entities import RecommendedParameters
+from inference_models.weights_providers.entities import (
+    ModelDependency,
+    RecommendedParameters,
+)
 
 
 def test_load_class_from_path_when_valid_python_module_provided(
@@ -555,6 +561,80 @@ def test_create_symlinks_to_shared_blobs_when_hooks_not_provided(
     assert _read_file(result["my_file_b.txt"]) == "b"
     assert _read_file(result["existing.txt"]) == "existing"
     assert _read_file(result["initially_broken.txt"]) == "b"
+
+
+def test_resolve_preloaded_dependency_when_none_supplied() -> None:
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+
+    assert resolve_preloaded_dependency(dependency, None) is None
+    assert resolve_preloaded_dependency(dependency, {}) is None
+
+
+def test_resolve_preloaded_dependency_when_dependency_not_supplied() -> None:
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    supplied = {"other": SuppliedDependency(model_id="x", model_package_id="y", instance=object())}
+
+    assert resolve_preloaded_dependency(dependency, supplied) is None
+
+
+def test_resolve_preloaded_dependency_when_identity_matches() -> None:
+    instance = object()
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    supplied = {
+        "feature_extractor": SuppliedDependency(
+            model_id="owlv2", model_package_id="pkg-1", instance=instance
+        )
+    }
+
+    assert resolve_preloaded_dependency(dependency, supplied) is instance
+
+
+def test_resolve_preloaded_dependency_when_metadata_package_unset_and_supplied_package_none() -> None:
+    instance = object()
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id=None)
+    supplied = {
+        "feature_extractor": SuppliedDependency(
+            model_id="owlv2", model_package_id=None, instance=instance
+        )
+    }
+
+    assert resolve_preloaded_dependency(dependency, supplied) is instance
+
+
+def test_resolve_preloaded_dependency_when_metadata_package_unset_but_supplied_concrete() -> None:
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id=None)
+    supplied = {
+        "feature_extractor": SuppliedDependency(
+            model_id="owlv2", model_package_id="pkg-a", instance=object()
+        )
+    }
+
+    with pytest.raises(InvalidParameterError):
+        resolve_preloaded_dependency(dependency, supplied)
+
+
+def test_resolve_preloaded_dependency_when_model_id_mismatches() -> None:
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    supplied = {
+        "feature_extractor": SuppliedDependency(
+            model_id="other-base", model_package_id="pkg-1", instance=object()
+        )
+    }
+
+    with pytest.raises(InvalidParameterError):
+        resolve_preloaded_dependency(dependency, supplied)
+
+
+def test_resolve_preloaded_dependency_when_package_id_mismatches() -> None:
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    supplied = {
+        "feature_extractor": SuppliedDependency(
+            model_id="owlv2", model_package_id="pkg-2", instance=object()
+        )
+    }
+
+    with pytest.raises(InvalidParameterError):
+        resolve_preloaded_dependency(dependency, supplied)
 
 
 def _create_file(path: str, content: str) -> None:

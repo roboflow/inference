@@ -31,7 +31,7 @@ on:
         default: false
       tag_suffix:
         type: string
-        description: "Postfix appended to image tag, e.g. -test → :gpu-0.1.0-test"
+        description: "Postfix appended after a dash, e.g. test → :gpu-0.1.0-test (no leading dash needed)"
         default: ""
       push:
         type: boolean
@@ -46,16 +46,23 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
-      version: ${{ steps.ver.outputs.version }}
+      server_version: ${{ steps.ver.outputs.server_version }}
+      manager_version: ${{ steps.ver.outputs.manager_version }}
+      models_version: ${{ steps.ver.outputs.models_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Read inference_server version
+      - name: Read package versions
         id: ver
         run: |
-          v=$(python -c "import tomllib; print(tomllib.load(open('inference_server/pyproject.toml','rb'))['project']['version'])")
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "inference_server version: $v"
+          get() { python -c "import tomllib,sys; print(tomllib.load(open(sys.argv[1],'rb'))['project']['version'])" "$1"; }
+          sv=$(get inference_server/pyproject.toml)
+          mv=$(get inference_model_manager/pyproject.toml)
+          iv=$(get inference_models/pyproject.toml)
+          echo "server_version=$sv"  >> "$GITHUB_OUTPUT"
+          echo "manager_version=$mv" >> "$GITHUB_OUTPUT"
+          echo "models_version=$iv"  >> "$GITHUB_OUTPUT"
+          echo "inference_server=$sv  inference_model_manager=$mv  inference_models=$iv"
       - name: Compute build matrix (none selected = all)
         id: set
         env:
@@ -115,4 +122,10 @@ jobs:
           platforms: ${{ matrix.platform }}
           pull: true
           push: ${{ inputs.push }}
-          tags: ${{ env.IMAGE }}:${{ matrix.name }}-${{ needs.setup.outputs.version }}${{ inputs.tag_suffix }}
+          tags: ${{ env.IMAGE }}:${{ matrix.name }}-${{ needs.setup.outputs.server_version }}${{ inputs.tag_suffix != '' && format('-{0}', inputs.tag_suffix) || '' }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.setup.outputs.server_version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.roboflow.inference_server.version=${{ needs.setup.outputs.server_version }}
+            com.roboflow.inference_model_manager.version=${{ needs.setup.outputs.manager_version }}
+            com.roboflow.inference_models.version=${{ needs.setup.outputs.models_version }}
