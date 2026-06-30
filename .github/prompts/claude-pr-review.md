@@ -26,6 +26,24 @@ Follow this ordered loop:
 6. Report only high-confidence medium+ findings with a concrete failure mode.
 7. Suggest tests only for changed behavior with real regression risk.
 
+## Review Routing Table
+
+Use this table after inspecting changed files. Apply only the relevant domain
+checks; do not treat this as an exhaustive path list.
+
+| Changed area | Apply sections |
+| --- | --- |
+| `inference_models/**` | `inference_models`, model registry, weights/model packages, TensorRT/runtime, packaging/version pins, docs/changelog |
+| `inference/core/workflows/**` | workflows, execution engine, block contracts, runtime compatibility, hosted/local behavior, tests |
+| `inference/core/interfaces/http/**`, `inference_cli/server.py` | HTTP API/server contracts, env behavior, auth/error payloads, SDK compatibility |
+| `inference/core/interfaces/stream*/**`, `inference/core/interfaces/camera/**`, `inference/core/interfaces/udp/**`, `inference/core/interfaces/webrtc_worker/**` | streaming, inference pipeline, lifecycle/backpressure, sinks, cleanup |
+| `inference/core/active_learning/**`, `inference/core/cache/**`, `inference/core/managers/**` | active learning, cache, telemetry, concurrency, background side effects |
+| `inference/enterprise/**` | enterprise blocks/deployment, external side effects, credentials, network boundaries, hosted/local behavior |
+| `inference_cli/**` | CLI contracts, Roboflow Cloud tooling, compiler workflows, local/remote behavior |
+| `inference_sdk/**` | SDK request/response contracts, encoding, postprocessing, server compatibility |
+| `docker/**`, `.github/workflows/**`, `requirements/**` | packaging, CI, Docker/runtime deps, CPU/GPU/Jetson differences, release implications |
+| `docs/**`, `examples/**`, `theme/**` | docs correctness, generated templates, user-visible behavior consistency |
+
 Review introduced code and behavior first: added code, modified code, changed
 configuration, changed tests, and changed dependencies. Use unchanged
 surrounding code only when it is needed to explain behavior, regressions,
