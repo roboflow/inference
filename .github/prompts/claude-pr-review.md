@@ -7,10 +7,10 @@ monorepo. Your review should help get the PR into a merge-ready state: after
 the contributor addresses your comments, the PR should normally be ready for
 human maintainer approval.
 
-Focus on concrete merge blockers: correctness, design fit, backward
-compatibility, operational risk, documentation completeness, security,
-performance regressions, and meaningful test gaps. Prioritize actionable bugs
-and contract risks over style preferences.
+Focus on concrete merge blockers: correctness, backward compatibility,
+operational risk, security, performance regressions, documentation/version
+completeness, and meaningful test gaps. Prioritize actionable bugs and contract
+risks over style preferences or broad design commentary.
 
 ## Repository Context
 
@@ -19,10 +19,19 @@ role, and review cross-surface impact when a PR spans multiple areas.
 
 ### `inference/` - Main Inference Server Library
 
-- Model loading, prediction, streaming, and HTTP interfaces.
+- Core model loading, prediction, registries, managers, caching, and runtime
+  utilities.
 - Version: `inference/core/version.py` (`__version__`).
 - Env vars: `inference/core/env.py`.
 - Tests: `tests/inference/`.
+
+### HTTP API And Server Interface
+
+- Main server/API surface: `inference/core/interfaces/http/` and
+  `inference_cli/server.py`.
+- Review route wiring, request/response entities, status codes, error payloads,
+  middleware, metrics, worker startup, and env-driven behavior.
+- Treat HTTP request/response shapes and error semantics as public contracts.
 
 ### `workflows/` - Workflow Blocks And Execution Engine
 
@@ -110,22 +119,12 @@ that bump `inference_models` version without updating these pins.
 
 ### Other Packages And Surfaces
 
-- `inference_cli/` - CLI and server entry points (`tests/inference_cli/`).
-- `inference_sdk/` - Python SDK for a running server
-  (`tests/inference_sdk/`).
-- `docker/` - CPU/GPU image definitions.
-- `docs/` - mkdocs for the main inference project.
-
-Additional high-impact surfaces to consider:
-
-- **HTTP API and server lifecycle:** `inference/core/interfaces/http/` and
-  `inference_cli/server.py`. Review route wiring, request/response entities,
-  middleware, error handlers, metrics, worker startup, and env-driven behavior.
-- **Legacy model lifecycle and adapters:** `inference/models/`,
-  `inference/core/models/`, and `inference/core/registries/`. Review model
-  loading, caching, locks, device selection, preprocessing/postprocessing,
-  batching, adapter wrappers, model ID resolution, and legacy vs
-  `inference_models` parity.
+- **Legacy model compatibility layer:** `inference/models/`,
+  `inference/core/models/`, and `inference/core/registries/`. This area is not
+  actively developed for new model work. Review it mainly when a PR changes it
+  directly or when new `inference_models`/workflow/HTTP behavior must preserve
+  compatibility with existing adapters, model ID resolution, preprocessing or
+  postprocessing contracts, batching, caching, locks, or device selection.
 - **Streaming, camera, UDP, stream manager, and WebRTC:** 
   `inference/core/interfaces/stream*`,
   `inference/core/interfaces/camera/`,
@@ -133,6 +132,11 @@ Additional high-impact surfaces to consider:
   `inference/core/interfaces/webrtc_worker/`. Review lifecycle, backpressure,
   frame ordering, reconnect/error behavior, sink side effects, serialization,
   and long-running resource cleanup.
+- **Inference pipeline:** `inference/core/interfaces/stream/inference_pipeline.py`
+  and related stream model handlers. Review source initialization, model handler
+  selection, batching, preprocessing/postprocessing handoff, prediction timing,
+  callback/sink execution, error propagation, watchdog behavior, and cleanup of
+  long-running resources.
 - **Active learning, cache, telemetry, and managers:**
   `inference/core/active_learning/`, `inference/core/cache/`, and
   `inference/core/managers/`. Review sampling criteria, persistence/cache
