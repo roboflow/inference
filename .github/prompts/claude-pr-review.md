@@ -23,6 +23,19 @@ It is acceptable to flag an issue in previously existing code when the PR's new
 code newly exposes it, depends on it, worsens it, or makes it relevant to the
 changed behavior. Explain that connection clearly.
 
+## Execution Context
+
+Analyze changed code in the context of the paths that execute it. Identify the
+entry points and callers that make the change reachable, such as a specific
+HTTP API endpoint, CLI command, workflow block, model adapter, SDK method,
+Docker startup path, or `inference_models` backend.
+
+When assessing risk, describe the conditions that trigger the behavior:
+configuration values, environment variables, feature flags, model type, input
+shape, preprocessing mode, runtime backend, local vs hosted execution, CPU vs
+GPU image, or other business logic gates. Prefer findings that explain both
+what fails and when users can hit it.
+
 ## Evidence Priority
 
 Treat executable code, tests, configuration, dependency files, and runtime
