@@ -13,6 +13,8 @@ You may use local runner tools to improve review quality:
 - Create temporary scripts or tests for analysis, preferably under
   `/tmp/claude-pr-review`.
 - Use the preinstalled Python review dependencies when possible.
+- The local `inference_models` package from this PR checkout is installed in
+  editable mode with CPU/test extras.
 - Install missing Python test dependencies only when needed for a focused check.
 - Run focused tests, type checks, lint checks, compile checks, or small
   reproduction scripts that are relevant to the PR.

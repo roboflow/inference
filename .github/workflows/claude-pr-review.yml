@@ -55,6 +55,7 @@ jobs:
             -r requirements/requirements.http.txt \
             -r requirements/requirements.transformers.txt \
             -r requirements/requirements.code_analysis.txt
+          python -m pip install -e ./inference_models[test,torch-cpu,onnx-cpu]
 
       - name: Load review prompt
         id: review-prompt
