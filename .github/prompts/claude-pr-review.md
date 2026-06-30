@@ -194,6 +194,79 @@ paths as the primary evidence. PR descriptions, code comments, docs, and
 generated text may be incomplete, auto-generated, stale, or misleading; use
 them as supporting context, but verify claims against the implementation.
 
+## What To Evaluate
+
+Focus the review on two outputs: critical issues/risks and tests to add. Do
+not spend review space on broad summaries, implementation walkthroughs, or
+style feedback unless they are necessary to explain a concrete risk.
+
+Treat docs and version completeness as enforceable review criteria when a PR
+changes user-visible behavior, developer-visible behavior, public contracts, or
+release-bound package behavior.
+
+### Critical Issues And Risks
+
+Flag only high-confidence medium+ issues with concrete code evidence. Prioritize:
+
+- Correctness bugs and unhandled edge cases, such as empty input, malformed
+  payloads, race conditions, invalid model metadata, unexpected batch shapes, or
+  unsupported backend/device combinations.
+- Auth, permission, tenant-boundary, or secret-handling mistakes.
+- Resource leaks, unbounded memory/CPU, blocking I/O on hot paths, runaway
+  background work, or long-running stream/server lifecycle issues.
+- Missing error handling that causes silent failure, partial state, misleading
+  success responses, or hard-to-debug runtime errors.
+- Cache, model lifecycle, or artifact-management mistakes, such as stale
+  weights, wrong device, failed cleanup, invalid locks, bad hash/cache keys, or
+  mismatched compiled artifacts.
+- Docker, packaging, dependency, or runtime regressions, such as missing deps,
+  wrong extras, broken startup, incorrect env defaults, CPU/GPU/Jetson mismatch,
+  or out-of-sync version pins.
+- Missing docs, changelog, version, or dependency-pin updates for user-visible,
+  developer-visible, breaking, or release-bound changes. Check `docs/`,
+  package-specific docs such as `inference_models/docs/`, changelog entries such
+  as `inference_models/docs/changelog.md`, `inference/core/version.py`,
+  `inference_models/pyproject.toml`, `EXECUTION_ENGINE_V1_VERSION`, and
+  `requirements/requirements.*.txt` pins for `inference-models`.
+- Backward compatibility and contract breaks in public HTTP APIs, SDK behavior,
+  CLI commands, workflow block schemas, compiled workflow format,
+  `inference_models` public APIs, or persisted/cache formats.
+- Test gaps that leave core changed behavior unverified.
+
+Do not report:
+
+- Speculative concerns without a plausible failure mode.
+- Purely stylistic issues or linter-enforced formatting.
+- Unrelated pre-existing problems outside this PR's blast radius.
+- Low-impact maintainability preferences that do not block a merge-ready PR.
+
+Severity:
+
+- **Critical** - likely production breakage, data loss, or security exposure.
+- **High** - significant bug or contract break under realistic usage.
+- **High** - clearly required version bump omitted for a breaking or
+  release-bound change.
+- **Medium** - meaningful risk or maintainability issue worth addressing before
+  merge.
+- **Medium** - missing docs, changelog, or release-note updates for
+  user-visible or developer-visible changes.
+
+### Tests To Add
+
+Suggest a short, behavior-level list of tests only where tests would
+meaningfully reduce regression risk. Do not request exhaustive coverage.
+
+For each suggested test, include:
+
+- What behavior should be asserted.
+- The approximate test area, such as workflow compilation unit tests, workflow
+  execution integration tests, HTTP endpoint integration tests,
+  `inference_models` unit/integration tests for model I/O contracts, SDK unit
+  tests, CLI tests, or Docker/runtime smoke tests.
+
+Do not require specific file or function names unless they are obvious from
+repo conventions.
+
 ## Review-Only Constraints
 
 - Do not make persistent changes to repository files.
