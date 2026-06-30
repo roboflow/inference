@@ -46,7 +46,7 @@ def make_candidate(
     image_id: str = "img-1",
     class_name: str = "widget-a",
     class_id: int = 7,
-    score: float = 1.87,
+    score: float = 0.87,
 ) -> dict:
     return {
         "id": image_id,
@@ -133,7 +133,7 @@ def test_run_calls_project_search_and_returns_predictions() -> None:
     assert result["class_found"] is True
     assert result["error_status"] is False
     assert result["message"] == "Visual search classification completed."
-    assert result["visual_search_score"] == 1.87
+    assert result["visual_search_score"] == 0.87
     assert result["best_candidate"]["image_id"] == "img-1"
     assert result["best_candidate"]["classification"] == {
         "class": "widget-a",
@@ -147,9 +147,9 @@ def test_run_calls_project_search_and_returns_predictions() -> None:
     predictions = result["predictions"]
     assert predictions == {
         "image": {"width": 6, "height": 4},
-        "predictions": [{"class": "widget-a", "class_id": 7, "confidence": 1.0}],
+        "predictions": [{"class": "widget-a", "class_id": 7, "confidence": 0.87}],
         "top": "widget-a",
-        "confidence": 1.0,
+        "confidence": 0.87,
         "prediction_type": "classification",
         "inference_id": result["inference_id"],
         "parent_id": "query-image",
@@ -187,8 +187,8 @@ def test_run_returns_multi_label_predictions_when_candidate_has_multiple_classes
     assert predictions == {
         "image": {"width": 6, "height": 4},
         "predictions": {
-            "widget-a": {"class_id": 7, "confidence": 1.0},
-            "fragile": {"class_id": 9, "confidence": 1.0},
+            "widget-a": {"class_id": 7, "confidence": 0.87},
+            "fragile": {"class_id": 9, "confidence": 0.87},
         },
         "predicted_classes": ["widget-a", "fragile"],
         "prediction_type": "classification",
@@ -238,7 +238,7 @@ def test_run_returns_error_when_best_candidate_has_no_class_annotation() -> None
     assert result["candidate_found"] is True
     assert result["class_found"] is False
     assert result["predictions"] is None
-    assert result["visual_search_score"] == 1.87
+    assert result["visual_search_score"] == 0.87
     assert result["error_status"] is True
     assert (
         result["message"]

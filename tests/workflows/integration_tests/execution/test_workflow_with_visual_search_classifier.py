@@ -57,7 +57,7 @@ def test_workflow_with_visual_search_classifier_and_property_definition() -> Non
                 {
                     "id": "img-1",
                     "url": "https://example.com/reference.jpg",
-                    "score": 1.5,
+                    "score": 0.82,
                     "classification": {
                         "predictions": {
                             "pass": {"class_id": 2},
@@ -83,7 +83,7 @@ def test_workflow_with_visual_search_classifier_and_property_definition() -> Non
         "review",
     ]
     assert visual_search_output["predictions"]["predictions"] == {
-        "pass": {"class_id": 2, "confidence": 1.0},
-        "review": {"class_id": 5, "confidence": 1.0},
+        "pass": {"class_id": 2, "confidence": 0.82},
+        "review": {"class_id": 5, "confidence": 0.82},
     }
     assert visual_search_output["predictions"]["image"] == {"width": 12, "height": 8}

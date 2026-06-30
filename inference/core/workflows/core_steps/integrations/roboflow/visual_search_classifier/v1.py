@@ -5,6 +5,13 @@ from pydantic import ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.roboflow_api import search_project_images_at_roboflow
+from inference.core.workflows.core_steps.integrations.roboflow.visual_search.helpers import (
+    build_visual_search_candidate_image,
+    format_visual_search_candidate,
+)
+from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.classification_annotations import (
+    parse_classification_annotation,
+)
 from inference.core.workflows.execution_engine.constants import (
     INFERENCE_ID_KEY,
     PARENT_ID_KEY,
@@ -13,7 +20,6 @@ from inference.core.workflows.execution_engine.constants import (
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
-    ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -46,7 +52,8 @@ Search a Roboflow classification project for the visually closest image and retu
 the matched image's classification annotation as a standard classification
 prediction. Single-label annotations are returned in single-label classification
 shape, and multi-label annotations are returned in multi-label classification
-shape.
+shape. Classification confidence is set to the best candidate's visual search
+score.
 
 ## How This Block Works
 
@@ -210,7 +217,10 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
                 fields=VISUAL_SEARCH_CLASSIFIER_FIELDS,
             )
             candidates = [
-                _format_candidate(candidate)
+                format_visual_search_candidate(
+                    candidate=candidate,
+                    extra_fields=["score", "classification"],
+                )
                 for candidate in response.get("results", [])
             ]
             if not candidates:
@@ -221,7 +231,7 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
                 )
 
             best_candidate = candidates[0]
-            classification = _normalise_classification_annotation(
+            classification = parse_classification_annotation(
                 classification=best_candidate.get("classification")
             )
             if classification is None:
@@ -236,13 +246,19 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
                     image=image,
                     classification=classification,
                     inference_id=inference_id,
+                    confidence=_normalise_visual_search_confidence(
+                        score=best_candidate.get("score")
+                    ),
                 ),
                 INFERENCE_ID_KEY: inference_id,
                 "candidate_found": True,
                 "class_found": True,
                 "best_candidate": best_candidate,
                 "candidates": candidates,
-                "best_candidate_image": _build_best_candidate_image(best_candidate),
+                "best_candidate_image": build_visual_search_candidate_image(
+                    candidate=best_candidate,
+                    fallback_parent_id="visual_search_classifier_candidate",
+                ),
                 "visual_search_score": best_candidate["score"],
                 "error_status": False,
                 "message": "Visual search classification completed.",
@@ -255,154 +271,11 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
             )
 
 
-def _format_candidate(candidate: Dict[str, Any]) -> Dict[str, Any]:
-    filename = candidate.get("filename") or candidate.get("name")
-    return {
-        "image_id": candidate.get("id"),
-        "image_url": candidate.get("url"),
-        "name": candidate.get("name") or filename,
-        "filename": filename,
-        "metadata": candidate.get("user_metadata") or {},
-        "tags": candidate.get("tags") or [],
-        "width": candidate.get("width"),
-        "height": candidate.get("height"),
-        "aspect_ratio": candidate.get("aspectRatio"),
-        "score": candidate.get("score"),
-        "classification": candidate.get("classification"),
-    }
-
-
-def _normalise_classification_annotation(
-    classification: Any,
-) -> Optional[Dict[str, Any]]:
-    if isinstance(classification, dict) and _has_single_label_annotation(
-        classification=classification
-    ):
-        return {
-            "type": "single_label",
-            "classes": [_normalise_class_entry(classification)],
-        }
-
-    class_entries = _extract_multi_label_class_entries(classification=classification)
-    if not class_entries:
-        return None
-
-    return {
-        "type": "multi_label",
-        "classes": class_entries,
-    }
-
-
-def _has_single_label_annotation(classification: Dict[str, Any]) -> bool:
-    return (
-        isinstance(classification.get("class"), str)
-        and len(classification["class"]) > 0
-    )
-
-
-def _extract_multi_label_class_entries(classification: Any) -> List[Dict[str, Any]]:
-    if isinstance(classification, list):
-        return _deduplicate_class_entries(
-            class_entries=[
-                class_entry
-                for raw_class_entry in classification
-                if (class_entry := _normalise_class_entry(raw_class_entry)) is not None
-            ]
-        )
-
-    if not isinstance(classification, dict):
-        return []
-
-    predictions = classification.get("predictions")
-    for classes_key in ("predicted_classes", "classes", "labels"):
-        classes = classification.get(classes_key)
-        if not isinstance(classes, list):
-            continue
-        class_entries = [
-            class_entry
-            for raw_class_entry in classes
-            if (
-                class_entry := _normalise_class_entry(
-                    raw_class_entry,
-                    prediction_details=_get_prediction_details(
-                        predictions=predictions,
-                        raw_class_entry=raw_class_entry,
-                    ),
-                )
-            )
-            is not None
-        ]
-        return _deduplicate_class_entries(class_entries=class_entries)
-
-    return []
-
-
-def _get_prediction_details(
-    predictions: Any,
-    raw_class_entry: Any,
-) -> Optional[Dict[str, Any]]:
-    if not isinstance(predictions, dict):
-        return None
-    class_name = _get_class_name(raw_class_entry=raw_class_entry)
-    if class_name is None:
-        return None
-    prediction_details = predictions.get(class_name)
-    if not isinstance(prediction_details, dict):
-        return None
-    return prediction_details
-
-
-def _normalise_class_entry(
-    raw_class_entry: Any,
-    prediction_details: Optional[Dict[str, Any]] = None,
-) -> Optional[Dict[str, Any]]:
-    class_name = _get_class_name(raw_class_entry=raw_class_entry)
-    if class_name is None:
-        return None
-    raw_class_id = None
-    if isinstance(raw_class_entry, dict):
-        raw_class_id = raw_class_entry.get("class_id")
-    if raw_class_id is None and prediction_details is not None:
-        raw_class_id = prediction_details.get("class_id")
-    return {
-        "class": class_name,
-        "class_id": _normalise_class_id(raw_class_id),
-    }
-
-
-def _get_class_name(raw_class_entry: Any) -> Optional[str]:
-    if isinstance(raw_class_entry, str) and raw_class_entry:
-        return raw_class_entry
-    if not isinstance(raw_class_entry, dict):
-        return None
-    class_name = (
-        raw_class_entry.get("class")
-        or raw_class_entry.get("class_name")
-        or raw_class_entry.get("name")
-    )
-    if not isinstance(class_name, str) or not class_name:
-        return None
-    return class_name
-
-
-def _deduplicate_class_entries(
-    class_entries: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    result = []
-    seen_classes = set()
-    for class_entry in class_entries:
-        class_name = class_entry["class"]
-        if class_name in seen_classes:
-            continue
-        result.append(class_entry)
-        seen_classes.add(class_name)
-    return result
-
-
 def _build_classification_prediction(
     image: WorkflowImageData,
     classification: Dict[str, Any],
     inference_id: str,
+    confidence: float,
 ) -> Dict[str, Any]:
     height, width = image.numpy_image.shape[:2]
     if classification["type"] == "multi_label":
@@ -412,6 +285,7 @@ def _build_classification_prediction(
             inference_id=inference_id,
             width=width,
             height=height,
+            confidence=confidence,
         )
 
     class_entry = classification["classes"][0]
@@ -419,9 +293,11 @@ def _build_classification_prediction(
     class_id = class_entry["class_id"]
     return {
         "image": {"width": width, "height": height},
-        "predictions": [{"class": class_name, "class_id": class_id, "confidence": 1.0}],
+        "predictions": [
+            {"class": class_name, "class_id": class_id, "confidence": confidence}
+        ],
         "top": class_name,
-        "confidence": 1.0,
+        "confidence": confidence,
         PREDICTION_TYPE_KEY: "classification",
         INFERENCE_ID_KEY: inference_id,
         PARENT_ID_KEY: image.parent_metadata.parent_id,
@@ -435,11 +311,12 @@ def _build_multi_label_classification_prediction(
     inference_id: str,
     width: int,
     height: int,
+    confidence: float,
 ) -> Dict[str, Any]:
     predictions = {
         class_entry["class"]: {
             "class_id": class_entry["class_id"],
-            "confidence": 1.0,
+            "confidence": confidence,
         }
         for class_entry in classification["classes"]
     }
@@ -454,30 +331,11 @@ def _build_multi_label_classification_prediction(
     }
 
 
-def _normalise_class_id(class_id: Any) -> int:
-    if class_id is None:
-        return -1
+def _normalise_visual_search_confidence(score: Any) -> float:
     try:
-        return int(class_id)
+        return float(score)
     except (TypeError, ValueError):
-        return -1
-
-
-def _build_best_candidate_image(
-    candidate: Dict[str, Any],
-) -> Optional[WorkflowImageData]:
-    image_url = candidate.get("image_url")
-    if not image_url:
-        return None
-    parent_id = (
-        candidate.get("image_id")
-        or candidate.get("filename")
-        or "visual_search_classifier_candidate"
-    )
-    return WorkflowImageData(
-        parent_metadata=ImageParentMetadata(parent_id=str(parent_id)),
-        image_reference=image_url,
-    )
+        return 0.0
 
 
 def _empty_result(
@@ -511,7 +369,10 @@ def _candidate_without_class_result(
         "class_found": False,
         "best_candidate": best_candidate,
         "candidates": candidates,
-        "best_candidate_image": _build_best_candidate_image(best_candidate),
+        "best_candidate_image": build_visual_search_candidate_image(
+            candidate=best_candidate,
+            fallback_parent_id="visual_search_classifier_candidate",
+        ),
         "visual_search_score": best_candidate["score"],
         "error_status": True,
         "message": (
