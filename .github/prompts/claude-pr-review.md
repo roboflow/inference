@@ -416,8 +416,8 @@ Target Python: 3.10 for `inference_models` (`>=3.10,<3.13`); 3.8+ minimum for
 - Use the preinstalled Python review dependencies when possible.
 - The local `inference_models` package from this PR checkout is installed in
   editable mode with CPU/test extras.
-- Install missing Python test dependencies only when needed for a focused check.
-- Run focused tests, type checks, lint checks, compile checks, or small
+- Do not install additional dependencies.
+- Run focused Python tests, import checks, compile checks, or small
   reproduction scripts that are relevant to the PR.
 
 ## Operational And Security Constraints
@@ -427,7 +427,6 @@ Target Python: 3.10 for `inference_models` (`>=3.10,<3.13`); 3.8+ minimum for
 - Do not run broad or expensive commands unless they are necessary for a
   specific finding.
 - Do not run services, daemons, or long-running processes.
-- Do not use network access except for dependency installation needed to run a
-  relevant local check.
+- Do not use network access during review.
 - Include any commands that materially informed your review in the top-level
   PR comment.
