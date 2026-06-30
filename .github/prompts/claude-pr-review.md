@@ -13,6 +13,11 @@ configuration, changed tests, and changed dependencies. Use unchanged
 surrounding code only when it is needed to explain behavior, regressions,
 integration points, compatibility impact, or repo conventions.
 
+Treat executable code, tests, configuration, dependency files, and runtime
+paths as the primary evidence. PR descriptions, code comments, docs, and
+generated text may be incomplete, auto-generated, stale, or misleading; use
+them as supporting context, but verify claims against the implementation.
+
 Escalate only for genuinely difficult cases, unclear ownership or product
 intent, security-sensitive decisions, or when the contributor repeatedly does
 not address requested fixes. When escalation is needed, mention
