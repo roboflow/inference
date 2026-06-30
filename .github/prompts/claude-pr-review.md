@@ -414,8 +414,11 @@ Target Python: 3.10 for `inference_models` (`>=3.10,<3.13`); 3.8+ minimum for
 - Create temporary scripts or tests for analysis, preferably under
   `/tmp/claude-pr-review`.
 - Use the preinstalled Python review dependencies when possible.
-- The local `inference_models` package from this PR checkout is installed in
-  editable mode with CPU/test extras.
+- Review dependencies and prompt instructions were loaded from the trusted base
+  branch before checking out PR code. The local `inference_models` package was
+  installed in editable mode with CPU/test extras before the PR checkout, so
+  imports resolve against the current workspace while install metadata came from
+  the trusted base branch.
 - Do not install additional dependencies.
 - Run focused Python tests, import checks, compile checks, or small
   reproduction scripts that are relevant to the PR.

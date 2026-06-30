@@ -19,15 +19,18 @@ jobs:
     name: Review pull request
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      !github.event.pull_request.draft
+      !github.event.pull_request.draft &&
+      github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
-      - name: Checkout PR branch
+      - name: Checkout trusted base branch
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Cache Python packages
         uses: actions/cache@v5
@@ -68,6 +71,13 @@ jobs:
             cat .github/prompts/claude-pr-review.md
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
 
       - name: Claude review
         uses: anthropics/claude-code-action@v1
