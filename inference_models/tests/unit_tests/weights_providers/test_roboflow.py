@@ -1895,6 +1895,34 @@ def test_proxy_uses_http_not_https():
     assert outer.scheme == "http"
 
 
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gateway.local")
+def test_scheme_qualified_gateway_is_used_verbatim():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/models/v1/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "gateway.local"
+    assert outer.path == "/proxy"
+
+    inner = urllib.parse.urlparse(_extract_proxied_url(result))
+    assert inner.netloc == "api.roboflow.com"
+    assert inner.path == "/models/v1/weights"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gateway.local:8443/")
+def test_scheme_qualified_gateway_keeps_port_and_strips_trailing_slash():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "gateway.local:8443"
+    assert outer.path == "/proxy"
+
+
 @patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
 def test_roundtrip_preserves_query_with_special_characters():
     result = roboflow_secure_gateway_proxy_url_builder(
