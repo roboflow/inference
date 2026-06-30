@@ -57,7 +57,7 @@ def test_workflow_with_visual_search_classifier_and_property_definition() -> Non
                 {
                     "id": "img-1",
                     "url": "https://example.com/reference.jpg",
-                    "score": 0.82,
+                    "score": 1.64,
                     "classification": {
                         "predictions": {
                             "pass": {"class_id": 2},

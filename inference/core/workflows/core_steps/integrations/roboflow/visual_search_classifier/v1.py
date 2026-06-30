@@ -52,8 +52,8 @@ Search a Roboflow classification project for the visually closest image and retu
 the matched image's classification annotation as a standard classification
 prediction. Single-label annotations are returned in single-label classification
 shape, and multi-label annotations are returned in multi-label classification
-shape. Classification confidence is set to the best candidate's visual search
-score.
+shape. Classification confidence is derived from the best candidate's visual
+search score.
 
 ## How This Block Works
 
@@ -333,9 +333,11 @@ def _build_multi_label_classification_prediction(
 
 def _normalise_visual_search_confidence(score: Any) -> float:
     try:
-        return float(score)
+        raw_score = float(score)
     except (TypeError, ValueError):
         return 0.0
+    # Visual search scores are cosine similarity-derived and shifted into [0, 2].
+    return max(0.0, min(1.0, raw_score / 2.0))
 
 
 def _empty_result(
