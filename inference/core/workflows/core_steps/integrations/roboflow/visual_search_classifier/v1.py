@@ -5,13 +5,16 @@ from uuid import uuid4
 from pydantic import ConfigDict, Field
 from typing_extensions import Annotated
 
-from inference.core.roboflow_api import search_project_images_at_roboflow
+from inference.core.roboflow_api import (
+    get_roboflow_workspace,
+    search_project_images_at_roboflow,
+)
 from inference.core.workflows.core_steps.integrations.roboflow.visual_search.helpers import (
     build_visual_search_candidate_image,
     format_visual_search_candidate,
 )
 from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.classification_annotations import (
-    parse_classification_annotation,
+    parse_visual_search_classification,
 )
 from inference.core.workflows.execution_engine.constants import (
     INFERENCE_ID_KEY,
@@ -62,7 +65,7 @@ This block uses Roboflow project image search:
 
 1. Receives an input image from the workflow
 2. Sends the image to Roboflow project search as `image_base64`
-3. Requests candidate image fields, visual search score, and classification annotation
+3. Requests candidate image fields and classification labels or annotations
 4. Uses the best candidate's annotation as the predicted class
 5. Returns the result through the standard `predictions` classification output
 
@@ -83,8 +86,8 @@ VISUAL_SEARCH_CLASSIFIER_FIELDS = [
     "width",
     "height",
     "aspectRatio",
-    "score",
-    "classification",
+    "labels",
+    "annotations",
 ]
 
 
@@ -111,13 +114,17 @@ class BlockManifest(WorkflowBlockManifest):
         description="Image to classify using visual search.",
         examples=["$inputs.image", "$steps.crop.crops"],
     )
-    workspace: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Roboflow workspace URL slug that owns the target project.",
-        examples=["my-workspace", "$inputs.workspace"],
-    )
     target_project: Union[Selector(kind=[ROBOFLOW_PROJECT_KIND]), str] = Field(
         description="Roboflow classification project URL slug to search.",
         examples=["reference-images", "$inputs.target_project"],
+    )
+    workspace: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
+        default=None,
+        description=(
+            "Optional Roboflow workspace URL slug that owns the target project. "
+            "If not provided, the workspace is resolved from the request API key."
+        ),
+        examples=["my-workspace", "$inputs.workspace"],
     )
     top_k: Union[TopK, Selector(kind=[INTEGER_KIND])] = Field(
         default=1,
@@ -171,8 +178,8 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
     def run(
         self,
         image: Union[WorkflowImageData, Batch[WorkflowImageData]],
-        workspace: str,
         target_project: str,
+        workspace: Optional[str] = None,
         top_k: int = 1,
     ) -> BlockResult:
         if self._api_key is None:
@@ -203,12 +210,13 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
     def _classify_single_image(
         self,
         image: WorkflowImageData,
-        workspace: str,
         target_project: str,
+        workspace: Optional[str],
         top_k: int,
     ) -> Dict[str, Any]:
         inference_id = f"{uuid4()}"
         try:
+            workspace = self._resolve_workspace(workspace=workspace)
             response = search_project_images_at_roboflow(
                 api_key=self._api_key,
                 workspace=workspace,
@@ -229,8 +237,8 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
                 )
 
             best_candidate = candidates[0]
-            classification = parse_classification_annotation(
-                classification=best_candidate.get("classification")
+            classification = parse_visual_search_classification(
+                candidate=best_candidate
             )
             if classification is None:
                 return _candidate_without_class_result(
@@ -269,6 +277,11 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
                 error_status=True,
                 message=f"Visual search classification failed: {error}",
             )
+
+    def _resolve_workspace(self, workspace: Optional[str]) -> str:
+        if workspace:
+            return workspace
+        return get_roboflow_workspace(api_key=self._api_key)
 
 
 def _build_classification_prediction(
@@ -336,12 +349,19 @@ def _format_visual_search_classifier_candidate(
 ) -> Dict[str, Any]:
     formatted_candidate = format_visual_search_candidate(
         candidate=candidate,
-        extra_fields=["score", "classification"],
+        extra_fields=_visual_search_classifier_extra_fields(candidate=candidate),
     )
     formatted_candidate["score"] = _normalise_visual_search_score(
         score=formatted_candidate.get("score")
     )
     return formatted_candidate
+
+
+def _visual_search_classifier_extra_fields(candidate: Dict[str, Any]) -> List[str]:
+    extra_fields = ["score", "labels", "annotations"]
+    if "classification" in candidate:
+        extra_fields.append("classification")
+    return extra_fields
 
 
 def _normalise_visual_search_score(score: Any) -> Optional[float]:
@@ -402,7 +422,7 @@ def _candidate_without_class_result(
         ),
         "error_status": True,
         "message": (
-            "Best visual search candidate does not include a classification "
-            "annotation."
+            "Best visual search candidate does not include classification labels "
+            "or annotations."
         ),
     }

@@ -63,7 +63,7 @@ def make_candidate(
         "height": 480,
         "aspectRatio": 1.3333,
         "score": score,
-        "classification": {"class": class_name, "class_id": class_id},
+        "labels": [{"class": class_name, "class_id": class_id}],
     }
 
 
@@ -72,7 +72,6 @@ def test_manifest_parsing_valid() -> None:
         "type": "roboflow_core/visual_search_classifier@v1",
         "name": "visual_search_classifier",
         "image": "$inputs.image",
-        "workspace": "my-workspace",
         "target_project": "reference-images",
         "top_k": 3,
     }
@@ -80,8 +79,8 @@ def test_manifest_parsing_valid() -> None:
     manifest = BlockManifest.model_validate(raw_manifest)
 
     assert manifest.image == "$inputs.image"
-    assert manifest.workspace == "my-workspace"
     assert manifest.target_project == "reference-images"
+    assert manifest.workspace is None
     assert manifest.top_k == 3
     assert BlockManifest.get_parameters_accepting_batches() == ["image"]
     outputs = {output.name: output.kind for output in BlockManifest.describe_outputs()}
@@ -129,8 +128,8 @@ def test_run_calls_project_search_and_returns_predictions() -> None:
             "width",
             "height",
             "aspectRatio",
-            "score",
-            "classification",
+            "labels",
+            "annotations",
         ],
     )
     assert result["candidate_found"] is True
@@ -139,10 +138,7 @@ def test_run_calls_project_search_and_returns_predictions() -> None:
     assert result["message"] == "Visual search classification completed."
     assert result["visual_search_score"] == 1.74
     assert result["best_candidate"]["image_id"] == "img-1"
-    assert result["best_candidate"]["classification"] == {
-        "class": "widget-a",
-        "class_id": 7,
-    }
+    assert result["best_candidate"]["labels"] == [{"class": "widget-a", "class_id": 7}]
     assert result["best_candidate_image"].to_inference_format() == {
         "type": "url",
         "value": "https://example.com/widget-a.jpg",
@@ -166,13 +162,10 @@ def test_run_returns_multi_label_predictions_when_candidate_has_multiple_classes
 ):
     block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
     candidate = make_candidate()
-    candidate["classification"] = {
-        "predictions": {
-            "widget-a": {"class_id": 7},
-            "fragile": {"class_id": "9"},
-        },
-        "predicted_classes": ["widget-a", "fragile"],
-    }
+    candidate["labels"] = [
+        {"class": "widget-a", "class_id": 7},
+        {"class": "fragile", "class_id": "9"},
+    ]
 
     with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
         search_mock.return_value = {"results": [candidate]}
@@ -207,10 +200,7 @@ def test_run_returns_multi_label_predictions_compatible_with_all_classes_extract
 ):
     block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
     candidate = make_candidate()
-    candidate["classification"] = {
-        "predictions": {},
-        "predicted_classes": ["widget-a", "fragile"],
-    }
+    candidate["labels"] = ["widget-a", "fragile"]
 
     with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
         search_mock.return_value = {"results": [candidate]}
@@ -256,6 +246,26 @@ def test_run_returns_prediction_with_zero_confidence_when_candidate_has_no_score
     assert result["visual_search_score"] is None
     assert result["predictions"]["confidence"] == 0.0
     assert result["predictions"]["predictions"][0]["confidence"] == 0.0
+
+
+def test_run_resolves_workspace_from_api_key_when_workspace_is_not_provided() -> None:
+    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+
+    with mock.patch.object(
+        v1, "get_roboflow_workspace", return_value="resolved-workspace"
+    ) as workspace_mock, mock.patch.object(
+        v1, "search_project_images_at_roboflow"
+    ) as search_mock:
+        search_mock.return_value = {"results": [make_candidate()]}
+
+        result = block.run(
+            image=make_image(),
+            target_project="reference-images",
+        )
+
+    workspace_mock.assert_called_once_with(api_key="api-key")
+    assert search_mock.call_args.kwargs["workspace"] == "resolved-workspace"
+    assert result["candidate_found"] is True
 
 
 def test_run_returns_numeric_visual_search_score_when_candidate_score_is_string() -> (
@@ -329,7 +339,7 @@ def test_run_returns_no_prediction_when_api_returns_no_results() -> None:
 def test_run_returns_error_when_best_candidate_has_no_class_annotation() -> None:
     block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
     candidate = make_candidate()
-    candidate["classification"] = None
+    del candidate["labels"]
 
     with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
         search_mock.return_value = {"results": [candidate]}
@@ -347,7 +357,8 @@ def test_run_returns_error_when_best_candidate_has_no_class_annotation() -> None
     assert result["error_status"] is True
     assert (
         result["message"]
-        == "Best visual search candidate does not include a classification annotation."
+        == "Best visual search candidate does not include classification labels "
+        "or annotations."
     )
 
 
@@ -355,7 +366,7 @@ def test_run_returns_missing_class_error_when_candidate_has_no_score_or_class() 
     block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
     candidate = make_candidate()
     del candidate["score"]
-    candidate["classification"] = None
+    del candidate["labels"]
 
     with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
         search_mock.return_value = {"results": [candidate]}
@@ -373,7 +384,8 @@ def test_run_returns_missing_class_error_when_candidate_has_no_score_or_class() 
     assert result["error_status"] is True
     assert (
         result["message"]
-        == "Best visual search candidate does not include a classification annotation."
+        == "Best visual search candidate does not include classification labels "
+        "or annotations."
     )
 
 

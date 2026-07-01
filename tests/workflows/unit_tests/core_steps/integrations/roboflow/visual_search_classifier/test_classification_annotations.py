@@ -1,5 +1,6 @@
 from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.classification_annotations import (
     parse_classification_annotation,
+    parse_visual_search_classification,
 )
 
 
@@ -108,3 +109,69 @@ def test_parse_annotation_rejects_empty_multi_label_annotations() -> None:
     )
 
     assert result is None
+
+
+def test_parse_visual_search_classification_reads_label_dicts() -> None:
+    result = parse_visual_search_classification(
+        candidate={
+            "labels": [
+                {"class": "widget-a", "class_id": "7"},
+                {"class": "fragile", "class_id": 9},
+            ]
+        }
+    )
+
+    assert result == {
+        "type": "multi_label",
+        "classes": [
+            {"class": "widget-a", "class_id": 7},
+            {"class": "fragile", "class_id": 9},
+        ],
+    }
+
+
+def test_parse_visual_search_classification_reads_label_strings() -> None:
+    result = parse_visual_search_classification(
+        candidate={"labels": ["widget-a", "fragile"]}
+    )
+
+    assert result == {
+        "type": "multi_label",
+        "classes": [
+            {"class": "widget-a", "class_id": 0},
+            {"class": "fragile", "class_id": 1},
+        ],
+    }
+
+
+def test_parse_visual_search_classification_reads_annotation_classes() -> None:
+    result = parse_visual_search_classification(
+        candidate={
+            "annotations": [
+                {"classes": ["widget-a"]},
+                {"classes": ["fragile", "widget-a"]},
+            ]
+        }
+    )
+
+    assert result == {
+        "type": "multi_label",
+        "classes": [
+            {"class": "widget-a", "class_id": 0},
+            {"class": "fragile", "class_id": 1},
+        ],
+    }
+
+
+def test_parse_visual_search_classification_prefers_explicit_classification() -> None:
+    result = parse_visual_search_classification(
+        candidate={
+            "classification": {"class": "explicit", "class_id": 3},
+            "labels": [{"class": "label", "class_id": 4}],
+        }
+    )
+
+    assert result == {
+        "type": "single_label",
+        "classes": [{"class": "explicit", "class_id": 3}],
+    }

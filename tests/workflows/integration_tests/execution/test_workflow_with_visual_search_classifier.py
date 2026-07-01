@@ -13,7 +13,6 @@ WORKFLOW_WITH_VISUAL_SEARCH_CLASSIFIER = {
             "type": "roboflow_core/visual_search_classifier@v1",
             "name": "visual_search_classifier",
             "image": "$inputs.image",
-            "workspace": "my-workspace",
             "target_project": "classification-reference",
         },
         {
@@ -49,6 +48,10 @@ def test_workflow_with_visual_search_classifier_and_property_definition() -> Non
 
     with mock.patch(
         "inference.core.workflows.core_steps.integrations.roboflow."
+        "visual_search_classifier.v1.get_roboflow_workspace",
+        return_value="my-workspace",
+    ) as workspace_mock, mock.patch(
+        "inference.core.workflows.core_steps.integrations.roboflow."
         "visual_search_classifier.v1.search_project_images_at_roboflow"
     ) as search_mock:
         search_mock.return_value = {
@@ -57,13 +60,10 @@ def test_workflow_with_visual_search_classifier_and_property_definition() -> Non
                     "id": "img-1",
                     "url": "https://example.com/reference.jpg",
                     "score": 1.64,
-                    "classification": {
-                        "predictions": {
-                            "pass": {"class_id": 2},
-                            "review": {"class_id": 5},
-                        },
-                        "predicted_classes": ["pass", "review"],
-                    },
+                    "labels": [
+                        {"class": "pass", "class_id": 2},
+                        {"class": "review", "class_id": 5},
+                    ],
                 }
             ]
         }
@@ -74,6 +74,7 @@ def test_workflow_with_visual_search_classifier_and_property_definition() -> Non
             }
         )
 
+    workspace_mock.assert_called_once_with(api_key="api-key")
     assert result[0]["top_class"] == ["pass", "review"]
     visual_search_output = result[0]["visual_search_output"]
     assert "classification_predictions" not in visual_search_output

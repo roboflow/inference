@@ -2093,7 +2093,7 @@ def test_search_project_images_at_roboflow_forwards_requested_fields(
         url=wrap_url(
             f"{API_BASE_URL}/my-workspace/my-project/search?api_key=my_api_key"
         ),
-        json={"results": [{"score": 1.87, "classification": {"class": "pass"}}]},
+        json={"results": [{"labels": [{"class": "pass"}], "annotations": []}]},
     )
 
     # when
@@ -2103,15 +2103,15 @@ def test_search_project_images_at_roboflow_forwards_requested_fields(
         project="my-project",
         image_base64="query-image",
         limit=1,
-        fields=["id", "score", "classification"],
+        fields=["id", "labels", "annotations"],
     )
 
     # then
-    assert result == {"results": [{"score": 1.87, "classification": {"class": "pass"}}]}
+    assert result == {"results": [{"labels": [{"class": "pass"}], "annotations": []}]}
     assert requests_mock.last_request.json() == {
         "image_base64": "query-image",
         "limit": 1,
-        "fields": ["id", "score", "classification"],
+        "fields": ["id", "labels", "annotations"],
     }
 
 
