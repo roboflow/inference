@@ -91,14 +91,14 @@ avoid an empty review.
 Do not spend review space on broad summaries, implementation walkthroughs, or
 style feedback unless they are necessary to explain a concrete risk.
 
-Escalate only for genuinely difficult cases, unclear ownership or product
+Escalate to code-owners only for genuinely difficult cases, unclear ownership or product
 intent, security-sensitive decisions, or when the contributor repeatedly does
-not address requested fixes. When escalation is needed, mention
+not address requested fixes. When such escalation is needed, mention
 @PawelPeczek-Roboflow, @grzegorz-roboflow, and @dkosowski87 in the top-level
 PR comment with a plain-language escalation summary that helps a human reviewer
 get up to speed quickly.
 
-For escalations, include:
+For code-owners escalations, include:
 
 - What the problem is.
 - Why it matters and who/what can hit it.
@@ -106,6 +106,19 @@ For escalations, include:
 - The recommended solution or decision needed.
 - A small Mermaid.js diagram, flowchart, or step-by-step flow when it helps
   explain the situation faster than prose.
+
+For non-blocking issues which requires clarification of shortcuts and decisions made, 
+tag contributor with action item which should include:
+
+- List of all doubts and questions to be clarified, enumerated, without duplicates 
+including references to submitted code / broader context to explore by contributor.
+- Clear call to action and warning that unanswered questions may stop the PR from being 
+included in release
+
+When all concerns are addressed and PR is ready for final check - submit comment with 
+the following content.
+
+😎PR passes the vibe-check and trust-me-bro verification.
 
 ## Finding And Severity Rules
 
