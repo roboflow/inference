@@ -267,31 +267,46 @@ def test_free_and_cancel_tasks_are_strongly_referenced():
 
 
 def test_start_rejects_shm_geometry_mismatch():
-    """Slot-size disagreement between client and MMP must fail at startup,
-    not silently corrupt neighboring slots at runtime."""
+    """If the geometry MMP reports over T_SHM_INFO does not match the actual
+    segment, start() must fail rather than silently corrupt neighboring slots."""
+    import struct
     from multiprocessing.shared_memory import SharedMemory
+
+    import inference_server.proxies.mmp_client as mod
 
     shm = SharedMemory(create=True, size=(64 + 1024) * 4)  # 4 slots of 1024
     try:
-        client = MMPClient(
-            mmp_addr="inproc://test",
-            shm_name=shm.name,
-            shm_data_size=2048,  # WRONG: MMP created 1024-byte slots
-        )
+        client = MMPClient(mmp_addr="inproc://test")
 
         async def _run():
             client._ctx = None
 
             class _Sock:
+                def __init__(self):
+                    self._q = asyncio.Queue()
+
                 def setsockopt(self, *a):
                     pass
 
                 def connect(self, *a):
                     pass
 
-            import inference_server.proxies.mmp_client as mod
+                def close(self):
+                    pass
 
-            # start() builds ctx/socket first — patch them out, keep SHM attach
+                async def send_multipart(self, parts):
+                    if parts[0] == mod.T_SHM_INFO:
+                        req_id = struct.unpack_from(">Q", parts[1])[0]
+                        name = shm.name.encode()
+                        # WRONG geometry: MMP claims 2048-byte slots, segment has 1024
+                        payload = (
+                            struct.pack(">QIQH", req_id, 4, 2048, len(name)) + name
+                        )
+                        await self._q.put([mod.T_SHM_INFO_RESP, payload])
+
+                async def recv_multipart(self):
+                    return await self._q.get()
+
             orig_ctx = mod.zmq.asyncio.Context
             with pytest.raises(RuntimeError, match="geometry mismatch"):
                 try:

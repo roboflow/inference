@@ -59,6 +59,7 @@ T_ENSURE_LOADED = b"\x09"
 T_LOAD = b"\x20"
 T_UNLOAD = b"\x21"
 T_STATS = b"\x30"
+T_SHM_INFO = b"\x31"
 
 # MMP -> uvicorn
 T_ALLOC_OK = b"\x11"
@@ -68,6 +69,7 @@ T_MODEL_READY = b"\x0a"
 T_LOAD_TIMEOUT = b"\x0b"
 T_OK = b"\x40"
 T_STATS_RESP = b"\x41"
+T_SHM_INFO_RESP = b"\x42"
 
 # Slot layout
 HEADER_SIZE = 64
@@ -160,6 +162,16 @@ class MMPClient:
         self._sock.setsockopt(zmq.LINGER, 0)
         self._sock.connect(self.mmp_addr)
 
+        self._recv_task = asyncio.create_task(self._recv_loop(), name="zmq-recv")
+
+        # MMP owns the pool — ask it for the shm name and geometry rather than
+        # relying on env agreement (the name is generated at pool creation).
+        info = await self._lifecycle_req(T_SHM_INFO, b"", timeout_s=5.0)
+        if info[0] != "shm_info":
+            raise RuntimeError(f"shm-info handshake failed: {info!r}")
+        _, self.n_slots, self.shm_data_size, self.shm_name = info
+        self.slot_total = HEADER_SIZE + self.shm_data_size
+
         self._shm = SharedMemory(name=self.shm_name, create=False)
         # OS rounds the mmap up to a page boundary, so the buffer holds n_slots
         # slots plus < 1 slot of trailing padding. Anything outside that range
@@ -171,10 +183,9 @@ class MMPClient:
                 f"SHM geometry mismatch: pool size {buf_size} does not hold "
                 f"{self.n_slots} slots of slot_total {self.slot_total} "
                 f"(expected {expected}..{expected + self.slot_total}) — "
-                "INFERENCE_SHM_DATA_SIZE / INFERENCE_N_SLOTS disagree with the "
-                "MMP that created the pool; writes would corrupt neighboring slots"
+                f"segment {self.shm_name!r} does not match the geometry MMP "
+                "reported over T_SHM_INFO"
             )
-        self._recv_task = asyncio.create_task(self._recv_loop(), name="zmq-recv")
 
     async def shutdown(self) -> None:
         if self._recv_task is not None:
@@ -490,6 +501,13 @@ class MMPClient:
                 req_id, json_len = struct.unpack_from(">QI", frames[0])
                 json_bytes = frames[0][12 : 12 + json_len]
                 self._resolve(req_id, ("stats", json_bytes))
+            elif msg_type == T_SHM_INFO_RESP:
+                req_id, n_slots, data_size, name_len = struct.unpack_from(
+                    ">QIQH", frames[0]
+                )
+                off = struct.calcsize(">QIQH")
+                name = frames[0][off : off + name_len].decode()
+                self._resolve(req_id, ("shm_info", n_slots, data_size, name))
             else:
                 logger.warning("_dispatch: unknown msg type %r", msg_type)
         except (struct.error, IndexError):
