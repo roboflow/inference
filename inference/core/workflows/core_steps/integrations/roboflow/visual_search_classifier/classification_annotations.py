@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 
 
 def parse_visual_search_classification(
-    candidate: Dict[str, Any]
+    candidate: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     classification = parse_classification_annotation(
         classification=candidate.get("classification")

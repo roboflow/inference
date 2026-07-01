@@ -346,7 +346,7 @@ def _build_multi_label_classification_prediction(
 
 
 def _format_visual_search_classifier_candidate(
-    candidate: Dict[str, Any]
+    candidate: Dict[str, Any],
 ) -> Dict[str, Any]:
     formatted_candidate = format_visual_search_candidate(
         candidate=candidate,
