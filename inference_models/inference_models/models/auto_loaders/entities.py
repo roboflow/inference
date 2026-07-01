@@ -7,7 +7,10 @@ from inference_models.models.base.classification import (
     MultiLabelClassificationModel,
 )
 from inference_models.models.base.depth_estimation import DepthEstimationModel
-from inference_models.models.base.documents_parsing import StructuredOCRModel
+from inference_models.models.base.documents_parsing import (
+    StructuredOCRModel,
+    TextOnlyOCRModel,
+)
 from inference_models.models.base.embeddings import TextImageEmbeddingModel
 from inference_models.models.base.instance_segmentation import InstanceSegmentationModel
 from inference_models.models.base.keypoints_detection import KeyPointsDetectionModel
@@ -43,6 +46,7 @@ AnyModel = Union[
     ObjectDetectionModel,
     OpenVocabularyObjectDetectionModel,
     SemanticSegmentationModel,
+    TextOnlyOCRModel,
 ]
 
 
