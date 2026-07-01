@@ -552,15 +552,27 @@ class RoboflowInferenceModel(Model):
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
                 preprocessed_image = preprocessed_image.astype(np.float32)
+                src_h, src_w = preprocessed_image.shape[:2]
+                # INTER_AREA averages over the full source region and avoids the
+                # aliasing bilinear produces on large downscales; keep bilinear
+                # when upscaling, where INTER_AREA degenerates to nearest.
+                interpolation = (
+                    cv2.INTER_AREA
+                    if self.img_size_w < src_w or self.img_size_h < src_h
+                    else cv2.INTER_LINEAR
+                )
                 resized = cv2.resize(
                     preprocessed_image,
                     (self.img_size_w, self.img_size_h),
+                    interpolation=interpolation,
                 )
             elif USE_PYTORCH_FOR_PREPROCESSING:
+                src_h, src_w = preprocessed_image.shape[-2:]
                 resized = torch.nn.functional.interpolate(
                     preprocessed_image,
                     size=(self.img_size_h, self.img_size_w),
                     mode="bilinear",
+                    antialias=self.img_size_w < src_w or self.img_size_h < src_h,
                 )
             else:
                 raise ValueError(
