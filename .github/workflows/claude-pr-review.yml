@@ -136,6 +136,8 @@ jobs:
             echo "prompt<<EOF"
             echo "REPO: ${{ github.repository }}"
             echo "PR NUMBER: ${{ steps.pr.outputs.number }}"
+            echo "BASE SHA: ${{ steps.pr.outputs.base_sha }}"
+            echo "HEAD SHA: ${{ steps.pr.outputs.head_sha }}"
             echo
             cat .github/prompts/claude-pr-review.md
             echo "EOF"
