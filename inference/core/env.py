@@ -115,6 +115,9 @@ OWLV2_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_IMAGE_CACHE_SIZE", 10000))
 # OWLv2 model cache size, default is 100 as memory is num_prompts * ~4kb and num_prompts is rarely above 1000 (but could be much higher)
 OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 100))
 
+# OWLv2 cache device placement, default sends cached embeddings to CPU to reduce GPU memory pressure
+OWLV2_CACHE_SEND_TO_CPU = str2bool(os.getenv("OWLV2_CACHE_SEND_TO_CPU", True))
+
 # OWLv2 CPU image cache size, default is 10000
 OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 
@@ -406,6 +409,8 @@ LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
 # Secure gateway address for air-gapped deployments.
 # Accepts SECURE_GATEWAY (preferred) or LICENSE_SERVER (legacy).
+# May be a bare host[:port] (proxied over http, legacy behaviour) or
+# scheme-qualified, e.g. https://gateway.local, for TLS gateways.
 _legacy_license_server = os.getenv("LICENSE_SERVER")
 SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
 if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
@@ -550,6 +555,9 @@ SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
 # SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
 SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_MAX_EMBEDDING_CACHE_SIZE", 100))
 SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM3_MAX_LOGITS_CACHE_SIZE", 1000))
+SAM3_INTERACTIVE_CACHE_SEND_TO_CPU = str2bool(
+    os.getenv("SAM3_INTERACTIVE_CACHE_SEND_TO_CPU", True)
+)
 DISABLE_SAM3_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM3_LOGITS_CACHE", False))
 
 # EasyOCR version ID, default is "english_g2"
@@ -778,6 +786,9 @@ DEDICATED_DEPLOYMENT_ID = os.getenv("DEDICATED_DEPLOYMENT_ID")
 
 ROBOFLOW_INTERNAL_SERVICE_SECRET = os.getenv("ROBOFLOW_INTERNAL_SERVICE_SECRET")
 ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv("ROBOFLOW_INTERNAL_SERVICE_NAME")
+ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN = os.getenv(
+    "ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN"
+) or os.getenv("ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN")
 
 # Preload Models
 PRELOAD_MODELS = (
@@ -860,6 +871,12 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 # 1600 -> ~10G
 # 2048 -> ~22G
 RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+
+# Timeout in seconds for resolving asynchronous workflow / RF-DETR stream
+# pipeline futures on the main execution path.
+WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT = float(
+    os.getenv("WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT", "60.0")
+)
 
 # Confidence lower bound to prevent OOM when inferring on instance segmentation models
 CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(
@@ -946,6 +963,16 @@ WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
     os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
 )
 
+# When enabled, force the Modal region to WEBRTC_MODAL_REQUIRED_REGION regardless of
+# the client-requested region (e.g. to enforce EU data residency)
+WEBRTC_MODAL_ENFORCE_REGION = str2bool(
+    os.getenv("WEBRTC_MODAL_ENFORCE_REGION", "False")
+)
+WEBRTC_MODAL_REQUIRED_REGION = os.getenv("WEBRTC_MODAL_REQUIRED_REGION")
+WEBRTC_MODAL_VOLUME_NAME = os.getenv("WEBRTC_MODAL_VOLUME_NAME", "rfcache")
+# Baked into the Modal class decorator at deploy time since with_options cannot set it
+WEBRTC_MODAL_ROUTING_REGION = os.getenv("WEBRTC_MODAL_ROUTING_REGION")
+
 #
 # Workspace stream quota
 #
@@ -1007,6 +1034,14 @@ HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS = int(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS", "16")
 )
+
+# Size of the anyio thread pool serving synchronous HTTP handlers.
+# Default is None, which leaves the anyio default (40 threads) untouched.
+HTTP_API_THREADPOOL_WORKERS = os.getenv("HTTP_API_THREADPOOL_WORKERS")
+if HTTP_API_THREADPOOL_WORKERS:
+    HTTP_API_THREADPOOL_WORKERS = int(HTTP_API_THREADPOOL_WORKERS)
+else:
+    HTTP_API_THREADPOOL_WORKERS = None
 
 # Workflow block filtering configuration
 # Comma-separated list of block type categories to disable (e.g., "sink,model")

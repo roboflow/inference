@@ -9,7 +9,7 @@ Choose the installation method that matches your platform:
 === ":fontawesome-brands-docker: Docker"
 
     The preferred way to use Inference is via Docker
-    (see [Why Docker](/understand/architecture.md#why-docker)).
+    (see [Why Docker](/understand/architecture#why-docker)).
     This works on Linux, macOS, Jetson, and other Docker-capable devices.
 
     [Install Docker](https://docs.docker.com/engine/install/) (and

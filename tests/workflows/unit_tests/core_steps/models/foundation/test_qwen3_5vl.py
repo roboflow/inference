@@ -35,9 +35,7 @@ def test_manifest_accepts_input_selector_prompts():
 
 def test_manifest_accepts_step_output_selector_prompt():
     """prompt must accept $steps.X.Y references."""
-    result = BlockManifest.model_validate(
-        {**BASE, "prompt": "$steps.some_step.output"}
-    )
+    result = BlockManifest.model_validate({**BASE, "prompt": "$steps.some_step.output"})
     assert result.prompt == "$steps.some_step.output"
 
 

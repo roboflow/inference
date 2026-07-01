@@ -2,6 +2,37 @@
 
 Below you can find the changelog for Execution Engine.
 
+## Execution Engine `v1.12.0` | inference `v1.3.2`
+
+**What changed**
+
+**Future resolution** - Some steps might now emit `Future` objects which defer output
+resolution to until outputs are needed by clients. For downstream blocks these futures
+are being resolved in the [step_input_assembler](inference/core/workflows/execution_engine/v1/executor/execution_data_manager/step_input_assembler.py)
+while for output construction in the [output_constructor](inference/core/workflows/execution_engine/v1/executor/output_constructor.py)
+along with coordinate conversion.
+
+## Execution Engine `v1.11.0` | inference `v1.3.1`
+
+**What changed**
+
+* **Per-case execution branches for dict step selectors** — When a flow-control block
+  declares step selectors inside a `Dict[str, StepSelector]` property (rather than a
+  `List[StepSelector]`), the compiler now creates a distinct execution branch per
+  dictionary key. Previously every selector in a single property shared one branch, so
+  a block could not route to its targets independently. Branch names now include the
+  dictionary key (e.g. `Branch[$steps.switch -> cases[red]]`). Selectors held in list
+  properties (such as `next_steps`) keep the prior shared-branch behavior, so existing
+  blocks are unaffected. This change is what enables the new
+  `roboflow_core/switch_case@v1` block (`graph_constructor.establish_control_flow_edge`).
+
+* **Fix: non-SIMD flow-control masks with repeated branch names** — A non-SIMD
+  flow-control step that selected more than one target through a single list property
+  raised `Attempted to re-register maks for execution branch`. Branch-mask registration
+  now deduplicates branch names before registering, fixing the crash (affected e.g.
+  `ContinueIf` with multiple `next_steps`;
+  `execution_data_manager.manager._register_control_flow_output_for_non_simd_step`).
+
 ## Execution Engine `v1.10.1` | inference `v1.2.12`
 
 **What changed**

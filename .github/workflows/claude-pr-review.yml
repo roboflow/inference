@@ -1,0 +1,167 @@
+name: Claude PR Review
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Same-repository PR number to review"
+        required: true
+        type: number
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Review pull request
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        !github.event.pull_request.draft &&
+        github.event.pull_request.user.type != 'Bot'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Resolve and validate PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            pr_number="${{ inputs.pr_number }}"
+          else
+            pr_number="${{ github.event.pull_request.number }}"
+          fi
+
+          pr_json="$(gh api "repos/${{ github.repository }}/pulls/${pr_number}")"
+
+          state="$(echo "$pr_json" | jq -r '.state')"
+          base_ref="$(echo "$pr_json" | jq -r '.base.ref')"
+          base_sha="$(echo "$pr_json" | jq -r '.base.sha')"
+          head_sha="$(echo "$pr_json" | jq -r '.head.sha')"
+          head_repo="$(echo "$pr_json" | jq -r '.head.repo.full_name')"
+          draft="$(echo "$pr_json" | jq -r '.draft')"
+          author_type="$(echo "$pr_json" | jq -r '.user.type')"
+
+          if [ "$state" != "open" ]; then
+            echo "::error::PR #${pr_number} is not open."
+            exit 1
+          fi
+
+          if [ "$base_ref" != "main" ]; then
+            echo "::error::PR #${pr_number} targets ${base_ref}, not main."
+            exit 1
+          fi
+
+          if [ "$head_repo" != "${{ github.repository }}" ]; then
+            echo "::error::PR #${pr_number} is from ${head_repo}; only same-repository PRs are reviewed."
+            exit 1
+          fi
+
+          if [ "$draft" = "true" ]; then
+            echo "::error::PR #${pr_number} is a draft."
+            exit 1
+          fi
+
+          if [ "$author_type" = "Bot" ]; then
+            echo "::error::PR #${pr_number} was opened by a bot."
+            exit 1
+          fi
+
+          {
+            echo "number=${pr_number}"
+            echo "base_sha=${base_sha}"
+            echo "head_sha=${head_sha}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout trusted base branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr.outputs.base_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Cache Python packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-claude-review-pip-3.10-${{ hashFiles('requirements/**') }}
+          restore-keys: |
+            ${{ runner.os }}-claude-review-pip-3.10-
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+          check-latest: true
+
+      - name: Install review dependencies
+        timeout-minutes: 15
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install \
+            -r requirements/_requirements.txt \
+            -r requirements/requirements.cpu.txt \
+            -r requirements/requirements.sdk.http.txt \
+            -r requirements/requirements.test.unit.txt \
+            -r requirements/requirements.http.txt \
+            -r requirements/requirements.transformers.txt \
+            -r requirements/requirements.code_analysis.txt
+          python -m pip install -e ./inference_models[test,torch-cpu,onnx-cpu]
+
+      - name: Load review prompt
+        id: review-prompt
+        run: |
+          if [ ! -f .github/prompts/claude-pr-review.md ]; then
+            echo "prompt_available=false" >> "$GITHUB_OUTPUT"
+            echo "Trusted base branch does not contain .github/prompts/claude-pr-review.md; skipping Claude review."
+            exit 0
+          fi
+
+          {
+            echo "prompt<<EOF"
+            echo "REPO: ${{ github.repository }}"
+            echo "PR NUMBER: ${{ steps.pr.outputs.number }}"
+            echo "BASE SHA: ${{ steps.pr.outputs.base_sha }}"
+            echo "HEAD SHA: ${{ steps.pr.outputs.head_sha }}"
+            echo
+            cat .github/prompts/claude-pr-review.md
+            echo "EOF"
+            echo "prompt_available=true"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr.outputs.head_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Claude review
+        if: steps.review-prompt.outputs.prompt_available == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.TMP_PAWELS_CLAUDE_API_KEY_USE_WISELY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          include_fix_links: false
+          display_report: false
+          show_full_output: false
+          prompt: ${{ steps.review-prompt.outputs.prompt }}
+          claude_args: |
+            --model claude-opus-4-8
+            --max-turns 50
+            --allowedTools "Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/*/*/issues/*/comments --paginate),Bash(gh api repos/*/*/pulls/*/comments --paginate),Bash(gh api repos/*/*/pulls/*/reviews --paginate),Bash(gh api repos/*/*/pulls/*/commits --paginate),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(python:*),Bash(python3:*),Bash(pytest:*)"

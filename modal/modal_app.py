@@ -19,11 +19,30 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     capture_output,
 )
 
+
+class _NoopDebugTraces:
+    """No-op stand-in for the workflow-scoped ``debug_traces`` proxy.
+
+    Debug traces rely on a ContextVar that is only bound in the local process
+    that drives the run; it is never propagated into the Modal sandbox. Without
+    this stand-in, user code calling ``debug_traces.append(...)`` would raise
+    ``NameError`` here even though it works locally. Injecting a no-op keeps the
+    namespace consistent with local execution while silently discarding traces.
+    """
+
+    def append(self, *args, **kwargs) -> None:
+        return None
+
+
 # Create the Modal App
 app = modal.App("webexec")
 
 
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
+
+WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
+WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
+WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
 
 
 def get_inference_image():
@@ -58,16 +77,21 @@ def get_inference_image():
     return image
 
 
-@app.cls(
-    image=get_inference_image(),
-    restrict_modal_access=True,  # Restrict Modal access for security
-    timeout=20,
-    enable_memory_snapshot=True,  # Enable memory snapshotting for faster cold starts
-    scaledown_window=60,
-    cloud="aws",
-    region="us-east-1",
-    buffer_containers=1,
-)
+_executor_decorator_kwargs = {
+    "image": get_inference_image(),
+    "restrict_modal_access": True,  # Restrict Modal access for security
+    "timeout": 20,
+    "enable_memory_snapshot": True,  # Enable memory snapshotting for faster cold starts
+    "scaledown_window": 60,
+    "cloud": WEBEXEC_MODAL_CLOUD,
+    "region": WEBEXEC_MODAL_REGION,
+    "buffer_containers": 1,
+}
+if WEBEXEC_MODAL_ROUTING_REGION:
+    _executor_decorator_kwargs["routing_region"] = WEBEXEC_MODAL_ROUTING_REGION
+
+
+@app.cls(**_executor_decorator_kwargs)
 class Executor:
     """Parameterized Modal class for executing custom Python blocks via web endpoint."""
 
@@ -125,6 +149,7 @@ class Executor:
         imports = request.get("imports", [])
         run_function_name = request.get("run_function_name", "")
         inputs_json = request.get("inputs_json", "{}")
+        workflow_context = request.get("workflow_context") or {}
 
         # Get the hash of this code to identify it uniquely
         code_hash = self._get_code_hash(code_str, imports)
@@ -135,6 +160,10 @@ class Executor:
             self._code_namespaces[code_hash] = {
                 "__name__": "__main__",
                 "globals": self._shared_globals,  # Inject the shared globals dict
+                # Mirror local execution, where block_scaffolding injects
+                # `debug_traces` via IMPORTS_LINES. Here it is a no-op because
+                # the debug trace ContextVar is not propagated into the sandbox.
+                "debug_traces": _NoopDebugTraces(),
             }
 
             # Execute imports and code in the namespace to initialize it
@@ -354,7 +383,8 @@ from datetime import datetime
                     if params and params[0] == "self":
 
                         class BlockSelf:
-                            pass
+                            def get_workflow_context(self) -> Dict[str, Any]:
+                                return dict(workflow_context)
 
                         block_self = BlockSelf()
                         result = user_function(block_self, **inputs)

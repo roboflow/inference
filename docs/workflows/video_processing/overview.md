@@ -1,7 +1,10 @@
 # Video Processing with Workflows
 
 We've begun our journey into video processing using Workflows. Over time, we've expanded the number of
-video-specific blocks — including object tracker blocks for **ByteTrack**, **SORT**, **OC-SORT** and **BoT-SORT** — and
+video-specific blocks — including object tracker blocks for **ByteTrack**, **SORT**, **OC-SORT** and **BoT-SORT**,
+plus the segmentation-based **SAM2 Video Tracker** (detector-box prompted, see the
+[SAM 2 docs](../../foundation/sam2.md)) and **SAM3 Video Tracker** (text-prompted, see the
+[SAM 3 docs](../../foundation/sam3.md)) — and
 continue to dedicate efforts toward improving their performance and robustness. The current state of this
 work is as follows:
 

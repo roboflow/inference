@@ -1,23 +1,104 @@
 # Changelog
 
+## `0.29.7`
+
+### Added
+
+- Enriched `KeyPoints` representation to expose `covariance` and 
+`detection_confidence` to streamline changes in `supervision`
+
+- Align changes in RF-DETR model to expose pixel-space `covariance`, 
+following up on https://github.com/roboflow/rf-detr/releases/tag/1.8.0.
+- 
+
+## `0.29.6`
+
+### Added
+
+- Opt-in Triton RF-DETR instance-segmentation RLE post-processing. Set
+  `INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED=True` to generate COCO RLE
+  masks directly from sparse interpolated mask regions on supported CUDA
+  inputs.
+- Opt-in Triton RF-DETR instance-segmentation preprocessing for the TensorRT
+  backend. Set `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=True` to run the
+  supported resize and normalize path on CUDA.
+- Opt-in Triton RF-DETR instance-segmentation pipelining. Set
+  `RFDETR_PIPELINE_DEPTH=2`.
+
+## `0.29.4`
+
+### Fixed
+
+- Security issues patch, 19.06.2026 - `bleach>=6.4.0` and `tornado>=6.5.7` in `docs` extras.
+
+
+## `0.29.4`
+
+### Fixed
+
+- Fixed GLM-OCR dtype mismatch on Jetson by casting HuggingFace processor floating-point
+inputs to the model dtype resolved for the target device (bfloat16 on supported CUDA hardware,
+otherwise float16).
+
+---
+
+## `0.29.3`
+
+### Fixed
+
+- Incompatibility with `supervision==0.29.0` due to init param in `sv.KeyPoints(...)`
+
+---
+
+## `0.29.2`
+
+### Fixed
+
+- Transitive dependency vulnerability patched - `idna>=3.15` required by the package
+
+---
+## `0.29.1`
+
+### Fixed
+
+- SAM3 point-prompting feature
+
+---
 ## `0.29.0`
+
+### Added
 
 - Added RF-DETR preview keypoint support (ONNX backend).
 - Added support for fine-tuned YOLO26 semantic segmentation models.
 
+---
+
 ## `0.28.7`
 
+### Added
 - Added YOLO26 semantic segmentation support (ONNX, TorchScript, and TensorRT backends).
 
+---
+
 ## `0.28.6`
+
+### Fixed
 
 - torch.jit.load/script share a process-global which is not thread-safe, introduced lock to prevent race conditions when loading SAM3 and other torchscript models
 - `0.28.5` yanked
 
+---
+
 ## `0.28.4`
 
+### Added
 - Ported SAM3 to inference_models
+
+### Fixed
+
 - There were issues with dependencies while introducing SAM3 hence versions `0.28.2` and `0.28.3`
+
+---
 
 ## `0.28.1`
 

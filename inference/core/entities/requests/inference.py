@@ -28,6 +28,14 @@ class BaseRequest(BaseModel):
     start: Optional[float] = None
     source: Optional[str] = None
     source_info: Optional[str] = None
+    stream_pipeline_context_id: Optional[str] = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+        description=(
+            "Internal stream-pipeline frame pairing id. Not part of the public API."
+        ),
+    )
     disable_model_monitoring: Optional[bool] = Field(
         default=False, description="If true, disables model monitoring for this request"
     )
@@ -264,25 +272,12 @@ class SemanticSegmentationInferenceRequest(CVInferenceRequest):
 
     confidence: Confidence = Field(
         default=0.4,
-        examples=[0.5, "default"],
+        examples=[0.5, "best", "default"],
         description=(
-            '"default" uses the model built-in threshold, or pass a float. '
-            '"best" (model-eval threshold) is not supported for semantic '
-            "segmentation yet."
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
         ),
     )
-
-    # TODO: drop this validator once model eval supports semantic segmentation.
-    @field_validator("confidence", mode="before")
-    @classmethod
-    def _reject_best_confidence(cls, value: Any) -> Any:
-        if value == "best":
-            raise ValueError(
-                'confidence="best" is not supported for semantic segmentation '
-                "— model eval does not yet produce per-class thresholds for "
-                'this task. Use a float or "default".'
-            )
-        return value
 
 
 class ClassificationInferenceRequest(CVInferenceRequest):

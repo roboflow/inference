@@ -31,3 +31,34 @@ def test_wrap_url_when_secure_gateway_is_not_provided() -> None:
 
     # then
     assert result == original_url
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", "https://gateway.local")
+def test_wrap_url_when_secure_gateway_is_scheme_qualified() -> None:
+    # given
+    original_url = "https://detection.roboflow.com/eye-detection/1?api_key=X"
+
+    # when
+    result = wrap_url(url=original_url)
+
+    # then
+    assert (
+        result
+        == "https://gateway.local/proxy?url=https%3A%2F%2Fdetection.roboflow.com%2Feye-detection%2F1%3Fapi_key%3DX"
+    )
+    assert parse_qs(urlparse(result).query)["url"][0] == original_url
+
+
+@mock.patch.object(url_utils, "SECURE_GATEWAY", "https://gateway.local/")
+def test_wrap_url_when_scheme_qualified_secure_gateway_has_trailing_slash() -> None:
+    # given
+    original_url = "https://detection.roboflow.com/eye-detection/1?api_key=X"
+
+    # when
+    result = wrap_url(url=original_url)
+
+    # then
+    assert (
+        result
+        == "https://gateway.local/proxy?url=https%3A%2F%2Fdetection.roboflow.com%2Feye-detection%2F1%3Fapi_key%3DX"
+    )

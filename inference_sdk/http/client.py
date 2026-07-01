@@ -1700,6 +1700,7 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: str = "depth-anything-v3/small",
+        model_id_in_path: bool = False,
     ) -> Union[dict, List[dict]]:
         """Run depth estimation on input image(s).
 
@@ -1714,6 +1715,10 @@ class InferenceHTTPClient:
                 - "depth-anything-v2/small"
                 - "depth-anything-v3/small"
                 - "depth-anything-v3/base"
+            model_id_in_path (bool, optional): If True, includes model_id in the URL path
+                (e.g., /infer/depth-estimation/depth-anything-v3/small), which enables
+                path-based routing. If False (default), model_id is only sent in the
+                request body.
 
         Returns:
             Union[dict, List[dict]]: Depth estimation results containing:
@@ -1725,9 +1730,13 @@ class InferenceHTTPClient:
             HTTPClientError: If there is an error with the server connection.
         """
         extra_payload = {"model_id": model_id}
+        if model_id_in_path:
+            endpoint = f"/infer/depth-estimation/{model_id}"
+        else:
+            endpoint = "/infer/depth-estimation"
         result = self._post_images(
             inference_input=inference_input,
-            endpoint="/infer/depth-estimation",
+            endpoint=endpoint,
             extra_payload=extra_payload,
         )
         return result
@@ -1737,6 +1746,7 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: str = "depth-anything-v3/small",
+        model_id_in_path: bool = False,
     ) -> Union[dict, List[dict]]:
         """Run depth estimation on input image(s) asynchronously.
 
@@ -1745,6 +1755,9 @@ class InferenceHTTPClient:
                 for depth estimation.
             model_id (str, optional): The depth estimation model to use. Defaults to
                 "depth-anything-v3/small".
+            model_id_in_path (bool, optional): If True, includes model_id in the URL path
+                for path-based routing. If False (default), model_id is only sent in the
+                request body.
 
         Returns:
             Union[dict, List[dict]]: Depth estimation results.
@@ -1754,9 +1767,13 @@ class InferenceHTTPClient:
             HTTPClientError: If there is an error with the server connection.
         """
         extra_payload = {"model_id": model_id}
+        if model_id_in_path:
+            endpoint = f"/infer/depth-estimation/{model_id}"
+        else:
+            endpoint = "/infer/depth-estimation"
         result = await self._post_images_async(
             inference_input=inference_input,
-            endpoint="/infer/depth-estimation",
+            endpoint=endpoint,
             extra_payload=extra_payload,
         )
         return result

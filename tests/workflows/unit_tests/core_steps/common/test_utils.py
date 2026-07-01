@@ -17,6 +17,9 @@ from inference.core.workflows.core_steps.common.utils import (
     scale_sv_detections,
     sv_detections_to_root_coordinates,
 )
+from inference.core.workflows.execution_engine.constants import (
+    POLYGON_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
@@ -185,6 +188,7 @@ def test_convert_inference_detections_batch_to_sv_detections() -> None:
     expected_mask = np.zeros((2, 200, 100), dtype=np.bool_)
     expected_mask[0, 80:121, 30:71] = True
     expected_mask[1, 170:191, 70:91] = True
+    assert isinstance(result[0].mask, np.ndarray)
     assert np.allclose(result[0].mask, expected_mask)
     assert result[0] == sv.Detections(
         xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
@@ -466,6 +470,12 @@ def test_sv_detections_to_root_coordinates_when_shift_is_needed() -> None:
             "keypoints_xy": np.array(
                 [np.array([[10, 20], [20, 30]]), np.array([])], dtype="object"
             ),
+            POLYGON_KEY_IN_SV_DETECTIONS: np.array(
+                [
+                    [[25, 50], [75, 50], [75, 150], [25, 150]],
+                    [[50, 125], [100, 125], [100, 225], [50, 225]],
+                ]
+            ),
         },
     )
 
@@ -543,6 +553,25 @@ def test_sv_detections_to_root_coordinates_when_shift_is_needed() -> None:
     assert (
         result["keypoints_xy"][1] == np.array([])
     ).all(), "Expected empty keypoints xy to be left as is"
+    assert np.allclose(
+        result[POLYGON_KEY_IN_SV_DETECTIONS],
+        np.array(
+            [
+                [
+                    [50 + 25, 100 + 50],
+                    [50 + 75, 100 + 50],
+                    [50 + 75, 100 + 150],
+                    [50 + 25, 100 + 150],
+                ],
+                [
+                    [50 + 50, 100 + 125],
+                    [50 + 100, 100 + 125],
+                    [50 + 100, 100 + 225],
+                    [50 + 50, 100 + 225],
+                ],
+            ]
+        ),
+    ), "Expected polygon metadata to be shifted into root coordinates"
 
 
 def test_sv_detections_to_root_coordinates_when_scale_and_shift_is_needed() -> None:
@@ -584,6 +613,12 @@ def test_sv_detections_to_root_coordinates_when_scale_and_shift_is_needed() -> N
                 [np.array([[10, 20], [20, 30]]), np.array([])], dtype="object"
             ),
             "image_dimensions": np.array([[200, 100], [200, 100]]),
+            POLYGON_KEY_IN_SV_DETECTIONS: np.array(
+                [
+                    [[25, 50], [75, 50], [75, 150], [25, 150]],
+                    [[50, 125], [100, 125], [100, 225], [50, 225]],
+                ]
+            ),
         },
     )
 
@@ -667,6 +702,25 @@ def test_sv_detections_to_root_coordinates_when_scale_and_shift_is_needed() -> N
     assert (
         result["keypoints_xy"][1] == np.array([])
     ).all(), "Expected empty keypoints xy to be left as is"
+    assert np.allclose(
+        result[POLYGON_KEY_IN_SV_DETECTIONS],
+        np.array(
+            [
+                [
+                    [50 + 2 * 25, 100 + 2 * 50],
+                    [50 + 2 * 75, 100 + 2 * 50],
+                    [50 + 2 * 75, 100 + 2 * 150],
+                    [50 + 2 * 25, 100 + 2 * 150],
+                ],
+                [
+                    [50 + 2 * 50, 100 + 2 * 125],
+                    [50 + 2 * 100, 100 + 2 * 125],
+                    [50 + 2 * 100, 100 + 2 * 225],
+                    [50 + 2 * 50, 100 + 2 * 225],
+                ],
+            ]
+        ),
+    ), "Expected polygon metadata to be scaled and shifted into root coordinates"
     assert np.allclose(
         result["image_dimensions"], np.array([[1024, 512], [1024, 512]])
     ), "Expected image dimensions to be root dimensions"

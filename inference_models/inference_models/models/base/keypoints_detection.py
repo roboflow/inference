@@ -13,15 +13,20 @@ from inference_models.models.base.types import (
     RawPrediction,
 )
 
-
 @dataclass
 class KeyPoints:
     xy: torch.Tensor  # (instances, instance_key_points, 2)
     class_id: torch.Tensor  # (instances, )
-    confidence: torch.Tensor  # (instances, instance_key_points)
+    confidence: torch.Tensor  # per-keypoint confidence (instances, instance_key_points)
     image_metadata: Optional[dict] = None
     key_points_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of instances
+    )
+    covariance: Optional[torch.Tensor] = (
+        None  # if given, pixel-space per-keypoint covariance (instances, instance_key_points, 2, 2)
+    )
+    detection_confidence: Optional[torch.Tensor] = (
+        None  # if given, per-instance object confidence (instances, )
     )
 
     def to_supervision(self) -> sv.KeyPoints:
@@ -39,7 +44,18 @@ class KeyPoints:
 
                 - class_id: Class IDs as NumPy array (N,)
 
-                - confidence: Keypoint confidence scores as NumPy array (N, K)
+                - keypoint_confidence: Per-keypoint confidence scores as NumPy array (N, K)
+
+                - visible: Per-keypoint visibility as boolean NumPy array (N, K),
+                  derived from ``keypoint_confidence > 0``
+
+                - detection_confidence: Per-instance object confidence as NumPy array (N,),
+                  only present when the model provides it (e.g. RF-DETR)
+
+                - data["covariance"]: Pixel-space per-keypoint covariance matrices
+                  as NumPy array (N, K, 2, 2), only present when the model predicts
+                  keypoint localization uncertainty (e.g. RF-DETR). Consumed by
+                  Supervision's covariance ellipse annotators.
 
         Examples:
             Convert and visualize keypoints:
@@ -71,11 +87,18 @@ class KeyPoints:
         See Also:
             - Supervision documentation: https://supervision.roboflow.com
         """
-        return sv.KeyPoints(
-            xy=self.xy.cpu().numpy(),
-            class_id=self.class_id.cpu().numpy(),
-            confidence=self.confidence.cpu().numpy(),
-        )
+        confidence_array = self.confidence.cpu().numpy()
+        kwargs = {
+            "xy": self.xy.cpu().numpy(),
+            "class_id": self.class_id.cpu().numpy(),
+            "keypoint_confidence": confidence_array,
+            "visible": confidence_array > 0,
+        }
+        if self.detection_confidence is not None:
+            kwargs["detection_confidence"] = self.detection_confidence.cpu().numpy()
+        if self.covariance is not None:
+            kwargs["data"] = {"covariance": self.covariance.cpu().numpy()}
+        return sv.KeyPoints(**kwargs)
 
 
 class KeyPointsDetectionModel(

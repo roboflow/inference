@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import contextvars
 import hashlib
 import json
 import os
@@ -51,6 +52,7 @@ from inference.core.env import (
     ROBOFLOW_API_EXTRA_HEADERS,
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_API_VERIFY_SSL,
+    ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
     SINGLE_TENANT_WORKFLOW_CACHE,
@@ -97,6 +99,12 @@ _EPHEMERAL_CACHE_UNAVAILABLE_EXCEPTIONS = (
 
 ENFORCE_CREDITS_VERIFICATION_HEADER = "x-enforce-credits-verification"
 ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER = "x-enforce-internal-artefacts-urls"
+ASSUME_IDENTITY_ACCESS_TOKEN_HEADER = "x-assume-identity-access-token"
+ASSUME_IDENTITY_AUTHORISED_WORKSPACE_HEADER = "x-assume-identity-authorised-workspace"
+
+assume_identity_authorised_workspace_db_id: contextvars.ContextVar[
+    Optional[WorkspaceID]
+] = contextvars.ContextVar("assume_identity_authorised_workspace_db_id", default=None)
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
@@ -121,6 +129,7 @@ API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
 class ServerlessUsageCheckResponse:
     status_code: int
     workspace_id: Optional[WorkspaceID] = None
+    workspace_db_id: Optional[WorkspaceID] = None
     under_cap: Optional[bool] = None
     error: Optional[str] = None
 
@@ -370,6 +379,7 @@ async def get_serverless_usage_check_async(
                     return ServerlessUsageCheckResponse(
                         status_code=402,
                         workspace_id=workspace,
+                        workspace_db_id=response_payload.get("workspaceId"),
                         under_cap=response_payload.get("underCap"),
                         error=response_payload.get("error"),
                     )
@@ -392,6 +402,7 @@ async def get_serverless_usage_check_async(
                 return ServerlessUsageCheckResponse(
                     status_code=200,
                     workspace_id=workspace_id,
+                    workspace_db_id=response_payload.get("workspaceId"),
                     under_cap=True,
                 )
     except (aiohttp.ClientConnectionError, ConnectionError) as error:
@@ -590,16 +601,14 @@ def get_roboflow_instant_model_data(
 
 @wrap_roboflow_api_errors()
 def get_model_metadata_from_inference_models_registry(
-    api_key: str,
+    api_key: Optional[str],
     model_id: ModelID,
     cache_prefix: str = "roboflow_api_data:inference_models_registry",
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
 ) -> dict:
-    # Watch out - this function should only be used to substitute get_roboflow_instant_model_data()
-    # and only in terms of getting model type and task type
-    # this is only stub to make sure auth works as it should for models which are not
-    # associated to project via version (for which old auth and metadata retrieval method work).
+    # This endpoint is only used for auth and model/task type lookup. Actual
+    # artifact downloads still go through the inference-models weights provider.
     api_data_cache_key = f"{cache_prefix}:{model_id}"
     api_data = None
     if not MODELS_CACHE_AUTH_ENABLED:
@@ -608,7 +617,9 @@ def get_model_metadata_from_inference_models_registry(
         logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
         return api_data
     query = [("modelId", model_id)]
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {}
+    if api_key is not None and api_key != LOCAL_API_KEY:
+        headers["Authorization"] = f"Bearer {api_key}"
     if GCP_SERVERLESS:
         headers[ENFORCE_INTERNAL_ARTIFACTS_URLS_HEADER] = "true"
     if ENFORCE_CREDITS_VERIFICATION:
@@ -621,14 +632,16 @@ def get_model_metadata_from_inference_models_registry(
             headers[ENFORCE_CREDITS_VERIFICATION_HEADER] = "true"
     if ROBOFLOW_INTERNAL_SERVICE_SECRET:
         headers["X-Roboflow-Internal-Service-Secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
+    _add_assume_identity_headers(headers=headers)
     api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/models/v1/external/weights",
+        url=f"{API_BASE_URL}/models/v1/external/stat",
         params=query,
     )
     raw_api_data = _get_from_url(url=api_url, headers=headers)
+    model_metadata = raw_api_data["modelMetadata"]
     api_data = {
-        "modelType": raw_api_data["modelMetadata"]["modelArchitecture"],
-        "taskType": raw_api_data["modelMetadata"]["taskType"],
+        "modelType": model_metadata["modelArchitecture"],
+        "taskType": model_metadata["taskType"],
     }
     cache.set(
         api_data_cache_key,
@@ -640,6 +653,18 @@ def get_model_metadata_from_inference_models_registry(
         f"and saved to cache with key: {api_data_cache_key}."
     )
     return api_data
+
+
+def _add_assume_identity_headers(headers: Dict[str, str]) -> None:
+    if not ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN:
+        return
+    authorised_workspace = assume_identity_authorised_workspace_db_id.get()
+    if not authorised_workspace:
+        return
+    headers[ASSUME_IDENTITY_ACCESS_TOKEN_HEADER] = (
+        ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN
+    )
+    headers[ASSUME_IDENTITY_AUTHORISED_WORKSPACE_HEADER] = authorised_workspace
 
 
 @wrap_roboflow_api_errors()
@@ -836,6 +861,37 @@ def batch_update_image_metadata_at_roboflow(
     )
     api_key_safe_raise_for_status(response=response)
     return response.json()
+
+
+def search_project_images_at_roboflow(
+    api_key: str,
+    workspace: str,
+    project: str,
+    image_base64: str,
+    limit: int,
+    fields: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    payload = {
+        "image_base64": image_base64,
+        "limit": limit,
+        "fields": fields
+        or [
+            "id",
+            "name",
+            "filename",
+            "url",
+            "user_metadata",
+            "tags",
+            "width",
+            "height",
+            "aspectRatio",
+        ],
+    }
+    return post_to_roboflow_api(
+        endpoint=f"{workspace}/{project}/search",
+        api_key=api_key,
+        payload=payload,
+    )
 
 
 @wrap_roboflow_api_errors()

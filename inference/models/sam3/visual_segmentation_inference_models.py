@@ -1,7 +1,7 @@
 import copy
 from io import BytesIO
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
@@ -26,6 +26,7 @@ from inference.core.env import (
     DEVICE,
     DISABLE_SAM3_LOGITS_CACHE,
     DISABLED_INFERENCE_MODELS_BACKENDS,
+    SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
     SAM3_MAX_EMBEDDING_CACHE_SIZE,
     SAM3_MAX_LOGITS_CACHE_SIZE,
     VALID_INFERENCE_MODELS_BACKENDS,
@@ -36,6 +37,7 @@ from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel
+from inference_models.errors import ModelInputError
 from inference_models.models.sam3.cache import (
     Sam3ImageEmbeddingsInMemoryCache,
     Sam3LowResolutionMasksInMemoryCache,
@@ -73,11 +75,11 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
 
         sam3_image_embeddings_cache = Sam3ImageEmbeddingsInMemoryCache.init(
             size_limit=embedding_cache_size,
-            send_to_cpu=True,
+            send_to_cpu=SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
         )
         sam3_low_resolution_masks_cache = Sam3LowResolutionMasksInMemoryCache.init(
             size_limit=low_res_logits_cache_size,
-            send_to_cpu=True,
+            send_to_cpu=SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
         )
         extra_weights_provider_headers = get_extra_weights_provider_headers(
             countinference=kwargs.get("countinference"),
@@ -170,7 +172,6 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
             load_logits_from_cache and not DISABLE_SAM3_LOGITS_CACHE
         )
         save_logits_to_cache = save_logits_to_cache and not DISABLE_SAM3_LOGITS_CACHE
-        loaded_image = self.preproc_image(image)
 
         if prompts is not None:
             if isinstance(prompts, dict):
@@ -188,9 +189,7 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
         if mask_input is not None and isinstance(mask_input, list):
             mask_input = np.array(mask_input)
 
-        prediction = self._model.segment_with_visual_prompts(
-            images=loaded_image,
-            image_hashes=image_id,
+        segment_kwargs = dict(
             point_coordinates=args["point_coords"],
             point_labels=args["point_labels"],
             boxes=args["box"],
@@ -200,11 +199,34 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
             load_from_mask_input_cache=load_logits_from_cache,
             save_to_mask_input_cache=save_logits_to_cache,
             use_embeddings_cache=True,
-        )[0]
-        return _choose_most_confident_sam_prediction(
-            masks=prediction.masks.cpu().numpy(),
-            scores=prediction.scores.cpu().numpy(),
-            low_resolution_logits=prediction.logits.cpu().numpy(),
+        )
+
+        prediction = None
+        if image_id is not None:
+            # Fast path: skip image decode/preproc when embeddings are already cached.
+            # NOTE: match the cache-miss message so other ModelInputErrors (bad prompt
+            # shape, invalid hash usage) propagate instead of silently re-decoding.
+            try:
+                prediction = self._model.segment_with_visual_prompts(
+                    images=None, image_hashes=image_id, **segment_kwargs
+                )[0]
+            except ModelInputError as error:
+                if "no embeddings were found in the cache" not in str(error):
+                    raise
+                prediction = None
+        if prediction is None:
+            loaded_image = self.preproc_image(image)
+            prediction = self._model.segment_with_visual_prompts(
+                images=loaded_image, image_hashes=image_id, **segment_kwargs
+            )[0]
+        # SAM3Torch already selects the most confident of the multimask proposals
+        # for each prompt, so masks/scores/logits arrive with exactly one entry
+        # per prompt. Reducing again here would collapse a multi-prompt request
+        # into a single prediction.
+        return (
+            prediction.masks.cpu().numpy(),
+            prediction.scores.cpu().numpy(),
+            prediction.logits.cpu().numpy(),
         )
 
 
@@ -224,28 +246,6 @@ def _pad_points(args: Dict[str, Any]) -> Dict[str, Any]:
                 "Can't have point labels without corresponding point coordinates"
             )
     return args
-
-
-def _choose_most_confident_sam_prediction(
-    masks: np.ndarray,
-    scores: np.ndarray,
-    low_resolution_logits: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    if masks.ndim == 3:
-        masks = np.expand_dims(masks, axis=0)
-        scores = np.expand_dims(scores, axis=0)
-        low_resolution_logits = np.expand_dims(low_resolution_logits, axis=0)
-    selected_masks, selected_scores, selected_logits = [], [], []
-    for mask, score, low_res in zip(masks, scores, low_resolution_logits):
-        max_idx = int(np.argsort(score)[-1])
-        selected_masks.append(mask[max_idx])
-        selected_scores.append(score[max_idx].item())
-        selected_logits.append(low_res[max_idx])
-    return (
-        np.asarray(selected_masks),
-        np.asarray(selected_scores),
-        np.asarray(selected_logits),
-    )
 
 
 def _build_polygon_response(
