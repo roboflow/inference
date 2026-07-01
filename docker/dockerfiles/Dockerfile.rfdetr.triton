@@ -3,7 +3,11 @@ FROM ${TRITON_BASE_IMAGE}
 
 WORKDIR /opt/roboflow/triton_comparison
 
-RUN python3 -m pip install --no-cache-dir click
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3-libnvinfer && \
+    rm -rf /var/lib/apt/lists/* && \
+    python3 -m pip install --no-cache-dir click && \
+    python3 -c "import tensorrt"
 
 COPY development/benchmark_scripts/triton_comparison/rfdetr_triton_server.py .
 
