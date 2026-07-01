@@ -301,8 +301,11 @@ def make_parallel_requests(
         try:
             return make_request_closure(rd)
         finally:
-            for var, tok in tokens:
-                var.reset(tok)
+            try:
+                _reset_thread_local_requests_session()
+            finally:
+                for var, tok in tokens:
+                    var.reset(tok)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         return list(executor.map(_run_in_parent_context, requests_data))

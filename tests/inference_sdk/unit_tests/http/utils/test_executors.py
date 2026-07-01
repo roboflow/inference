@@ -1,4 +1,5 @@
 import threading
+from typing import Generator
 from unittest import mock
 from unittest.mock import MagicMock, call
 
@@ -24,7 +25,7 @@ from inference_sdk.http.utils.request_building import RequestData
 
 
 @pytest.fixture(autouse=True)
-def reset_thread_local_requests_session() -> None:
+def reset_thread_local_requests_session() -> Generator[None, None, None]:
     executors._reset_thread_local_requests_session()
     yield
     executors._reset_thread_local_requests_session()
@@ -340,6 +341,40 @@ def test_make_parallel_requests_with_single_request_runs_on_current_thread(
     # then
     assert result == [response]
     assert seen_threads == [parent_thread]
+
+
+def test_make_parallel_requests_closes_worker_thread_sessions() -> None:
+    # given
+    created_sessions = []
+    request_data = RequestData(
+        url="https://some.com",
+        request_elements=1,
+        headers={"some": "header"},
+        data=None,
+        parameters={"a": "1"},
+        payload={"some": "value"},
+        image_scaling_factors=[None],
+    )
+
+    def session_factory() -> MagicMock:
+        response = Response()
+        response.status_code = 200
+        session = MagicMock()
+        session.post.return_value = response
+        created_sessions.append(session)
+        return session
+
+    # when
+    with mock.patch.object(executors.requests, "Session", side_effect=session_factory):
+        result = make_parallel_requests(
+            requests_data=[request_data, request_data],
+            request_method=RequestMethod.POST,
+        )
+
+    # then
+    assert len(result) == 2
+    assert len(created_sessions) == 2
+    assert all(session.close.called for session in created_sessions)
 
 
 def test_execute_requests_packages_when_api_call_error_occurs(
