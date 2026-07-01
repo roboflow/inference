@@ -34,6 +34,13 @@ coverage.xml
 .pytest_cache
 .hypothesis
 development
+!development/
+development/*
+!development/benchmark_scripts/
+development/benchmark_scripts/*
+!development/benchmark_scripts/triton_comparison/
+development/benchmark_scripts/triton_comparison/*
+!development/benchmark_scripts/triton_comparison/rfdetr_triton_server.py
 .pytest_cache
 cache-test
 scratch
