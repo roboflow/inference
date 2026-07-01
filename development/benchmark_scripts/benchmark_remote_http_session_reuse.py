@@ -77,7 +77,9 @@ def load_image(image_reference: str) -> Image.Image:
 
 def build_client(api_url: str, api_key: str) -> InferenceHTTPClient:
     client = InferenceHTTPClient(api_url=api_url.rstrip("/"), api_key=api_key)
-    if "roboflow.com" in api_url:
+    parsed_url = urlsplit(api_url if "://" in api_url else f"//{api_url}")
+    hostname = parsed_url.hostname or ""
+    if hostname == "roboflow.com" or hostname.endswith(".roboflow.com"):
         client.select_api_v0()
     return client.configure(
         inference_configuration=InferenceConfiguration(
