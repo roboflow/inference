@@ -13,8 +13,10 @@ import argparse
 import json
 import math
 import os
+import platform
 import statistics
 import time
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -24,6 +26,7 @@ import requests
 from PIL import Image
 
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+from inference_sdk import __version__ as inference_sdk_version
 from inference_sdk.http.utils import executors
 
 DEFAULT_API_URL = "https://serverless.roboflow.com"
@@ -63,6 +66,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=5,
         help="Untimed warmup requests per pass.",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Optional path to write the benchmark JSON.",
     )
     return parser.parse_args()
 
@@ -112,6 +121,36 @@ def summarize(durations: List[float]) -> Dict[str, Any]:
         "max_ms": max(durations) * 1000 if durations else None,
         "p90_ms": percentile(durations, 90) * 1000 if durations else None,
         "p95_ms": percentile(durations, 95) * 1000 if durations else None,
+    }
+
+
+def compare_modes(
+    fresh_session: Dict[str, Any],
+    reused_session: Dict[str, Any],
+) -> Dict[str, Optional[float]]:
+    fresh_avg_ms = fresh_session["avg_ms"]
+    reused_avg_ms = reused_session["avg_ms"]
+    fresh_fps = fresh_session["fps"]
+    reused_fps = reused_session["fps"]
+    return {
+        "avg_ms_delta": (
+            fresh_avg_ms - reused_avg_ms
+            if fresh_avg_ms is not None and reused_avg_ms is not None
+            else None
+        ),
+        "avg_ms_reduction_percent": (
+            ((fresh_avg_ms - reused_avg_ms) / fresh_avg_ms) * 100
+            if fresh_avg_ms
+            else None
+        ),
+        "fps_delta": (
+            reused_fps - fresh_fps
+            if reused_fps is not None and fresh_fps is not None
+            else None
+        ),
+        "fps_increase_percent": (
+            ((reused_fps - fresh_fps) / fresh_fps) * 100 if fresh_fps else None
+        ),
     }
 
 
@@ -176,6 +215,12 @@ def main() -> None:
 
     result = {
         "api_url": args.api_url,
+        "benchmark_started_at": datetime.now(timezone.utc).isoformat(),
+        "environment": {
+            "inference_sdk_version": inference_sdk_version,
+            "python": platform.python_version(),
+            "system": platform.platform(),
+        },
         "model_id": args.model_id,
         "image": {
             "source": redact_source(args.image),
@@ -188,8 +233,16 @@ def main() -> None:
             "fresh_session_per_request": fresh_session,
             "thread_local_session_reuse": reused_session,
         },
+        "comparison": compare_modes(
+            fresh_session=fresh_session,
+            reused_session=reused_session,
+        ),
     }
-    print(json.dumps(result, indent=2, sort_keys=True))
+    result_json = json.dumps(result, indent=2, sort_keys=True)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(result_json + "\n", encoding="utf-8")
+    print(result_json)
 
 
 if __name__ == "__main__":
