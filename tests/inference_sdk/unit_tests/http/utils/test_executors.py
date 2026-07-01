@@ -277,6 +277,61 @@ def test_make_request_reuses_thread_local_session() -> None:
     )
 
 
+def test_make_request_does_not_reuse_cookies_between_calls() -> None:
+    # given
+    expected_response = Response()
+    expected_response.status_code = 200
+    request_data = RequestData(
+        url="https://some.com",
+        request_elements=1,
+        headers={"some": "header"},
+        data=None,
+        parameters={"a": "1"},
+        payload={"some": "value"},
+        image_scaling_factors=[None],
+    )
+
+    class FakeCookies:
+        def __init__(self) -> None:
+            self.value = "preexisting-cookie"
+            self.clear_calls = 0
+
+        def clear(self) -> None:
+            self.value = None
+            self.clear_calls += 1
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.cookies = FakeCookies()
+            self.cookie_values_seen_by_requests = []
+
+        def post(self, *args: object, **kwargs: object) -> Response:
+            self.cookie_values_seen_by_requests.append(self.cookies.value)
+            self.cookies.value = "server-set-cookie"
+            return expected_response
+
+        def close(self) -> None:
+            pass
+
+    session = FakeSession()
+
+    # when
+    with mock.patch.object(executors.requests, "Session", return_value=session):
+        first = make_request(
+            request_data=request_data, request_method=RequestMethod.POST
+        )
+        second = make_request(
+            request_data=request_data, request_method=RequestMethod.POST
+        )
+
+    # then
+    assert first is expected_response
+    assert second is expected_response
+    assert session.cookie_values_seen_by_requests == [None, None]
+    assert session.cookies.value is None
+    assert session.cookies.clear_calls == 4
+
+
 @mock.patch.object(executors, "make_request")
 def test_make_parallel_requests(
     make_request_mock: MagicMock,

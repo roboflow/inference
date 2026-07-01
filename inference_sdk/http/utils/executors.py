@@ -355,13 +355,19 @@ def make_request(request_data: RequestData, request_method: RequestMethod) -> Re
     """
     session = _get_thread_local_requests_session()
     method = session.get if request_method is RequestMethod.GET else session.post
-    return method(
-        request_data.url,
-        headers=request_data.headers,
-        params=request_data.parameters,
-        data=request_data.data,
-        json=request_data.payload,
-    )
+    # Preserve the old requests.get/post cookie behavior while still reusing
+    # the session's connection pool.
+    session.cookies.clear()
+    try:
+        return method(
+            request_data.url,
+            headers=request_data.headers,
+            params=request_data.parameters,
+            data=request_data.data,
+            json=request_data.payload,
+        )
+    finally:
+        session.cookies.clear()
 
 
 async def execute_requests_packages_async(
