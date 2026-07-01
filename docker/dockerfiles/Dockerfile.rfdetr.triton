@@ -1,0 +1,20 @@
+ARG TRITON_BASE_IMAGE=nvcr.io/nvidia/tritonserver:24.12-py3
+FROM ${TRITON_BASE_IMAGE}
+
+WORKDIR /opt/roboflow/triton_comparison
+
+RUN python3 -m pip install --no-cache-dir click
+
+COPY development/benchmark_scripts/triton_comparison/rfdetr_triton_server.py .
+
+ENV MODEL_PACKAGE_DIR=/models/rfdetr-trt-package
+ENV TRITON_MODEL_REPOSITORY_DIR=/triton-model-repository
+ENV TRITON_MODEL_NAME=rfdetr
+ENV TRITON_INSTANCE_COUNT=1
+ENV TRITON_HTTP_PORT=8000
+ENV TRITON_GRPC_PORT=8001
+ENV TRITON_METRICS_PORT=8002
+
+EXPOSE 8000 8001 8002
+
+ENTRYPOINT ["python3", "-m", "rfdetr_triton_server"]
