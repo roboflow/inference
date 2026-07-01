@@ -56,8 +56,8 @@ Search a Roboflow classification project for the visually closest image and retu
 the matched image's classification annotation as a standard classification
 prediction. Single-label annotations are returned in single-label classification
 shape, and multi-label annotations are returned in multi-label classification
-shape. Classification confidence is derived from the best candidate's visual
-search score.
+shape. Classification confidence is derived from the best candidate's public
+Roboflow project search `score` field when present.
 
 ## How This Block Works
 
@@ -67,11 +67,12 @@ This block uses Roboflow project image search:
 2. Sends the image to Roboflow project search as `image_base64`
 3. Requests candidate image fields and classification labels or annotations
 4. Uses the best candidate's annotation as the predicted class
-5. Returns the result through the standard `predictions` classification output
+5. Maps the API `score` field to classification confidence when present
+6. Returns the result through the standard `predictions` classification output
 
 The target project must expose classification annotation data in visual search
-results. This block does not train a model, create annotations, or manage the
-visual search index.
+results. This block does not train a model, create annotations, consume raw
+search backend relevance scores, or manage the visual search index.
 """
 
 TopK = Annotated[int, Field(ge=1, le=50)]
@@ -353,16 +354,9 @@ def _format_visual_search_classifier_candidate(
         extra_fields=_visual_search_classifier_extra_fields(candidate=candidate),
     )
     formatted_candidate["score"] = _normalise_visual_search_score(
-        score=_extract_visual_search_score(candidate=candidate)
+        score=candidate.get("score")
     )
     return formatted_candidate
-
-
-def _extract_visual_search_score(candidate: Dict[str, Any]) -> Any:
-    score = candidate.get("score")
-    if score is not None:
-        return score
-    return candidate.get("_score")
 
 
 def _visual_search_classifier_extra_fields(candidate: Dict[str, Any]) -> List[str]:
@@ -386,7 +380,7 @@ def _normalise_visual_search_confidence(score: Any) -> float:
     raw_score = _normalise_visual_search_score(score=score)
     if raw_score is None:
         return 0.0
-    # Visual search scores are cosine similarity-derived and shifted into [0, 2].
+    # The project search API exposes visual similarity scores on a [0, 2] scale.
     return max(0.0, min(1.0, raw_score / 2.0))
 
 

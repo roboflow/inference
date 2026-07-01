@@ -249,7 +249,7 @@ def test_run_returns_prediction_with_zero_confidence_when_candidate_has_no_score
     assert result["predictions"]["predictions"][0]["confidence"] == 0.0
 
 
-def test_run_uses_elasticsearch_score_when_candidate_has_raw_score() -> None:
+def test_run_ignores_raw_search_engine_score_when_candidate_score_is_missing() -> None:
     block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
     candidate = make_candidate()
     del candidate["score"]
@@ -267,9 +267,9 @@ def test_run_uses_elasticsearch_score_when_candidate_has_raw_score() -> None:
     assert result["candidate_found"] is True
     assert result["class_found"] is True
     assert result["error_status"] is False
-    assert result["visual_search_score"] == 1.64
-    assert result["best_candidate"]["score"] == 1.64
-    assert result["predictions"]["confidence"] == 0.82
+    assert result["visual_search_score"] is None
+    assert result["best_candidate"]["score"] is None
+    assert result["predictions"]["confidence"] == 0.0
 
 
 def test_run_resolves_workspace_from_api_key_when_workspace_is_not_provided() -> None:
