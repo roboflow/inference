@@ -205,9 +205,11 @@ def roboflow_secure_gateway_proxy_url_builder(
         url = _add_query_params_to_url(url=url, query=query)
     if not SECURE_GATEWAY:
         return url
-    return f"http://{SECURE_GATEWAY}/proxy?url=" + urllib.parse.quote(
-        url, safe="~()*!'"
+    parts = urllib.parse.urlsplit(
+        SECURE_GATEWAY if "://" in SECURE_GATEWAY else f"http://{SECURE_GATEWAY}"
     )
+    gateway_base = f"{parts.scheme}://{parts.netloc}"
+    return f"{gateway_base}/proxy?url=" + urllib.parse.quote(url, safe="~()*!'")
 
 
 def get_model_metadata(
