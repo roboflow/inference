@@ -5,7 +5,6 @@ import numpy as np
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
-
 WORKFLOW_WITH_VISUAL_SEARCH_CLASSIFIER = {
     "version": "1.0",
     "inputs": [{"type": "WorkflowImage", "name": "image"}],

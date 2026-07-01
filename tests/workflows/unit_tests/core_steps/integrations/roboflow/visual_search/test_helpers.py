@@ -2,11 +2,11 @@ from unittest import mock
 
 import numpy as np
 
-from inference.core.workflows.execution_engine.entities import base
 from inference.core.workflows.core_steps.integrations.roboflow.visual_search.helpers import (
     build_visual_search_candidate_image,
     format_visual_search_candidate,
 )
+from inference.core.workflows.execution_engine.entities import base
 
 
 def test_format_visual_search_candidate_keeps_common_fields_only_by_default() -> None:

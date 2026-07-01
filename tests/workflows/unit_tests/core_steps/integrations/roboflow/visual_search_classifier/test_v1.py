@@ -1,6 +1,6 @@
+import math
 from unittest import mock
 
-import math
 import numpy as np
 import pytest
 
