@@ -331,13 +331,6 @@ class _TritonRunner:
             outputs=outputs,
             request_compression_algorithm=None,
             response_compression_algorithm=None,
-            headers=None,
-            query_params=None,
-            request_id=None,
-            sequence_id=0,
-            sequence_start=False,
-            sequence_end=False,
-            priority=0,
             timeout=self._timeout,
         )
         finished = perf_counter()
