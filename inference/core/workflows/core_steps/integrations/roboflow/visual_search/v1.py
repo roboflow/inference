@@ -4,9 +4,12 @@ from pydantic import ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.roboflow_api import search_project_images_at_roboflow
+from inference.core.workflows.core_steps.integrations.roboflow.visual_search.helpers import (
+    build_visual_search_candidate_image,
+    format_visual_search_candidate,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
-    ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -175,7 +178,7 @@ class RoboflowVisualSearchBlockV1(WorkflowBlock):
                 limit=top_k,
             )
             candidates = [
-                _format_candidate(candidate)
+                format_visual_search_candidate(candidate=candidate)
                 for candidate in response.get("results", [])
             ]
             if not candidates:
@@ -197,7 +200,10 @@ class RoboflowVisualSearchBlockV1(WorkflowBlock):
                 "candidates": candidates,
                 "error_status": False,
                 "message": "Visual search completed.",
-                "best_candidate_image": _build_best_candidate_image(best_candidate),
+                "best_candidate_image": build_visual_search_candidate_image(
+                    candidate=best_candidate,
+                    fallback_parent_id="visual_search_candidate",
+                ),
                 "best_candidate_metadata": best_candidate["metadata"],
                 "best_candidate_tags": best_candidate["tags"],
             }
@@ -212,35 +218,3 @@ class RoboflowVisualSearchBlockV1(WorkflowBlock):
                 "best_candidate_metadata": {},
                 "best_candidate_tags": [],
             }
-
-
-def _format_candidate(candidate: Dict[str, Any]) -> Dict[str, Any]:
-    filename = candidate.get("filename") or candidate.get("name")
-    return {
-        "image_id": candidate.get("id"),
-        "image_url": candidate.get("url"),
-        "name": candidate.get("name") or filename,
-        "filename": filename,
-        "metadata": candidate.get("user_metadata") or {},
-        "tags": candidate.get("tags") or [],
-        "width": candidate.get("width"),
-        "height": candidate.get("height"),
-        "aspect_ratio": candidate.get("aspectRatio"),
-    }
-
-
-def _build_best_candidate_image(
-    candidate: Dict[str, Any],
-) -> Optional[WorkflowImageData]:
-    image_url = candidate.get("image_url")
-    if not image_url:
-        return None
-    parent_id = (
-        candidate.get("image_id")
-        or candidate.get("filename")
-        or "visual_search_candidate"
-    )
-    return WorkflowImageData(
-        parent_metadata=ImageParentMetadata(parent_id=str(parent_id)),
-        image_reference=image_url,
-    )
