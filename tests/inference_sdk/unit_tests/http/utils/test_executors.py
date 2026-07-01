@@ -1,3 +1,5 @@
+import threading
+from typing import Generator
 from unittest import mock
 from unittest.mock import MagicMock, call
 
@@ -22,13 +24,20 @@ from inference_sdk.http.utils.executors import (
 from inference_sdk.http.utils.request_building import RequestData
 
 
+@pytest.fixture(autouse=True)
+def reset_thread_local_requests_session() -> Generator[None, None, None]:
+    executors._reset_thread_local_requests_session()
+    yield
+    executors._reset_thread_local_requests_session()
+
+
 @pytest.mark.slow
 @mock.patch.object(executors, "requests")
 def test_make_request_when_connection_error_occurs_and_does_not_recover(
     requests_mock: MagicMock,
 ) -> None:
     # given
-    requests_mock.get.side_effect = [
+    requests_mock.Session.return_value.get.side_effect = [
         ConnectionError(),
         ConnectionError(),
         ConnectionError("Third"),
@@ -60,7 +69,10 @@ def test_make_request_when_connection_error_occurs_and_recovers(
 ) -> None:
     # given
     expected_response = Response()
-    requests_mock.get.side_effect = [ConnectionError(), expected_response]
+    requests_mock.Session.return_value.get.side_effect = [
+        ConnectionError(),
+        expected_response,
+    ]
     request_data = RequestData(
         url="https://some.com",
         request_elements=1,
@@ -219,6 +231,107 @@ def test_make_request_when_successful_response_is_expected(
     ), "Parameters must be posted according to request specification"
 
 
+def test_make_request_reuses_thread_local_session() -> None:
+    # given
+    expected_response = Response()
+    expected_response.status_code = 200
+    session = MagicMock()
+    session.post.return_value = expected_response
+    request_data = RequestData(
+        url="https://some.com",
+        request_elements=1,
+        headers={"some": "header"},
+        data=None,
+        parameters={"a": "1"},
+        payload={"some": "value"},
+        image_scaling_factors=[None],
+    )
+
+    # when
+    with mock.patch.object(
+        executors.requests, "Session", return_value=session
+    ) as session_factory:
+        first = make_request(
+            request_data=request_data, request_method=RequestMethod.POST
+        )
+        second = make_request(
+            request_data=request_data, request_method=RequestMethod.POST
+        )
+
+    # then
+    assert first is expected_response
+    assert second is expected_response
+    session_factory.assert_called_once()
+    assert session.post.call_count == 2
+    session.post.assert_has_calls(
+        [
+            call(
+                "https://some.com",
+                headers={"some": "header"},
+                params={"a": "1"},
+                data=None,
+                json={"some": "value"},
+            )
+        ]
+        * 2
+    )
+
+
+def test_make_request_does_not_reuse_cookies_between_calls() -> None:
+    # given
+    expected_response = Response()
+    expected_response.status_code = 200
+    request_data = RequestData(
+        url="https://some.com",
+        request_elements=1,
+        headers={"some": "header"},
+        data=None,
+        parameters={"a": "1"},
+        payload={"some": "value"},
+        image_scaling_factors=[None],
+    )
+
+    class FakeCookies:
+        def __init__(self) -> None:
+            self.value = "preexisting-cookie"
+            self.clear_calls = 0
+
+        def clear(self) -> None:
+            self.value = None
+            self.clear_calls += 1
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.cookies = FakeCookies()
+            self.cookie_values_seen_by_requests = []
+
+        def post(self, *args: object, **kwargs: object) -> Response:
+            self.cookie_values_seen_by_requests.append(self.cookies.value)
+            self.cookies.value = "server-set-cookie"
+            return expected_response
+
+        def close(self) -> None:
+            pass
+
+    session = FakeSession()
+
+    # when
+    with mock.patch.object(executors.requests, "Session", return_value=session):
+        first = make_request(
+            request_data=request_data, request_method=RequestMethod.POST
+        )
+        second = make_request(
+            request_data=request_data, request_method=RequestMethod.POST
+        )
+
+    # then
+    assert first is expected_response
+    assert second is expected_response
+    assert session.cookie_values_seen_by_requests == [None, None]
+    assert session.cookies.value is None
+    assert session.cookies.clear_calls == 4
+
+
 @mock.patch.object(executors, "make_request")
 def test_make_parallel_requests(
     make_request_mock: MagicMock,
@@ -245,6 +358,78 @@ def test_make_parallel_requests(
     make_request_mock.assert_has_calls(
         [call(request_data, request_method=RequestMethod.GET)] * 4, any_order=True
     ), "Mock of request method must be invoked 4 times with proper parameters"
+
+
+def test_make_parallel_requests_with_single_request_runs_on_current_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    parent_thread = threading.get_ident()
+    seen_threads = []
+    response = Response()
+    response.status_code = 200
+    request_data = RequestData(
+        url="https://some.com",
+        request_elements=1,
+        headers={"some": "header"},
+        data=None,
+        parameters={"a": "1"},
+        payload={"some": "value"},
+        image_scaling_factors=[None],
+    )
+
+    def fake_make_request(
+        request_data: RequestData,
+        request_method: RequestMethod,
+    ) -> Response:
+        seen_threads.append(threading.get_ident())
+        return response
+
+    monkeypatch.setattr(executors, "make_request", fake_make_request)
+
+    # when
+    result = make_parallel_requests(
+        requests_data=[request_data],
+        request_method=RequestMethod.POST,
+    )
+
+    # then
+    assert result == [response]
+    assert seen_threads == [parent_thread]
+
+
+def test_make_parallel_requests_closes_worker_thread_sessions() -> None:
+    # given
+    created_sessions = []
+    request_data = RequestData(
+        url="https://some.com",
+        request_elements=1,
+        headers={"some": "header"},
+        data=None,
+        parameters={"a": "1"},
+        payload={"some": "value"},
+        image_scaling_factors=[None],
+    )
+
+    def session_factory() -> MagicMock:
+        response = Response()
+        response.status_code = 200
+        session = MagicMock()
+        session.post.return_value = response
+        created_sessions.append(session)
+        return session
+
+    # when
+    with mock.patch.object(executors.requests, "Session", side_effect=session_factory):
+        result = make_parallel_requests(
+            requests_data=[request_data, request_data],
+            request_method=RequestMethod.POST,
+        )
+
+    # then
+    assert len(result) == 2
+    assert len(created_sessions) == 2
+    assert all(session.close.called for session in created_sessions)
 
 
 def test_execute_requests_packages_when_api_call_error_occurs(
