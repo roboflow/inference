@@ -121,6 +121,12 @@ def _format_percentiles(percentiles: dict[str, Optional[float]]) -> str:
     return rendered_percentiles
 
 
+def _seconds_to_microseconds(timeout_s: float) -> int:
+    timeout_us = int(round(timeout_s * 1_000_000))
+
+    return timeout_us
+
+
 def _read_image_rgb(path: Path, resize_wh: tuple[int, int]) -> np.ndarray:
     image_bgr = cv2.imread(str(path), cv2.IMREAD_COLOR)
     if image_bgr is None:
@@ -289,7 +295,7 @@ class _TritonRunner:
         )
         self._model_name = model_name
         self._model_version = model_version
-        self._timeout = timeout
+        self._request_timeout_us = _seconds_to_microseconds(timeout)
         self._preprocessor = _RFDetrPackagePreprocessor(model_package_dir)
         metadata = self._client.get_model_metadata(
             model_name=model_name,
@@ -331,7 +337,7 @@ class _TritonRunner:
             outputs=outputs,
             request_compression_algorithm=None,
             response_compression_algorithm=None,
-            timeout=self._timeout,
+            timeout=self._request_timeout_us,
         )
         finished = perf_counter()
         timed_call = _TimedCall(
@@ -526,10 +532,12 @@ def _write_json(path: str, payload: dict[str, Any]) -> None:
 )
 @click.option(
     "--triton-timeout",
-    type=float,
+    type=click.FloatRange(
+        min=0.0,
+    ),
     default=60.0,
     show_default=True,
-    help="Triton request timeout in seconds.",
+    help="Triton client network timeout in seconds. Infer requests pass this to Triton in microseconds.",
 )
 @click.option(
     "--model-package-dir",
