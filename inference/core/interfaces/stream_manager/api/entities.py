@@ -37,6 +37,15 @@ class ConsumePipelineResponse(CommandResponse):
     frames_metadata: List[FrameMetadata]
 
 
+class LatestFrameResponse(CommandResponse):
+    frame_data: Optional[str] = Field(
+        default=None, description="Base64-encoded JPEG image"
+    )
+    frame_id: Optional[int] = Field(default=None)
+    frame_timestamp: Optional[datetime] = Field(default=None)
+    source_id: Optional[int] = Field(default=None)
+
+
 class InitializeWebRTCPipelineResponse(CommandResponse):
     sdp: str
     type: str
