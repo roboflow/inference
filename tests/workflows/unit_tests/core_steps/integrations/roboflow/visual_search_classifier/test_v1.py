@@ -128,6 +128,7 @@ def test_run_calls_project_search_and_returns_predictions() -> None:
             "width",
             "height",
             "aspectRatio",
+            "score",
             "labels",
             "annotations",
         ],
@@ -246,6 +247,29 @@ def test_run_returns_prediction_with_zero_confidence_when_candidate_has_no_score
     assert result["visual_search_score"] is None
     assert result["predictions"]["confidence"] == 0.0
     assert result["predictions"]["predictions"][0]["confidence"] == 0.0
+
+
+def test_run_uses_elasticsearch_score_when_candidate_has_raw_score() -> None:
+    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    candidate = make_candidate()
+    del candidate["score"]
+    candidate["_score"] = "1.64"
+
+    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+        search_mock.return_value = {"results": [candidate]}
+
+        result = block.run(
+            image=make_image(),
+            workspace="my-workspace",
+            target_project="reference-images",
+        )
+
+    assert result["candidate_found"] is True
+    assert result["class_found"] is True
+    assert result["error_status"] is False
+    assert result["visual_search_score"] == 1.64
+    assert result["best_candidate"]["score"] == 1.64
+    assert result["predictions"]["confidence"] == 0.82
 
 
 def test_run_resolves_workspace_from_api_key_when_workspace_is_not_provided() -> None:

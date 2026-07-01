@@ -86,6 +86,7 @@ VISUAL_SEARCH_CLASSIFIER_FIELDS = [
     "width",
     "height",
     "aspectRatio",
+    "score",
     "labels",
     "annotations",
 ]
@@ -352,9 +353,16 @@ def _format_visual_search_classifier_candidate(
         extra_fields=_visual_search_classifier_extra_fields(candidate=candidate),
     )
     formatted_candidate["score"] = _normalise_visual_search_score(
-        score=formatted_candidate.get("score")
+        score=_extract_visual_search_score(candidate=candidate)
     )
     return formatted_candidate
+
+
+def _extract_visual_search_score(candidate: Dict[str, Any]) -> Any:
+    score = candidate.get("score")
+    if score is not None:
+        return score
+    return candidate.get("_score")
 
 
 def _visual_search_classifier_extra_fields(candidate: Dict[str, Any]) -> List[str]:
