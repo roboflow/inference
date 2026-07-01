@@ -6,15 +6,20 @@ in sandboxes. It's separated from the main executor to avoid requiring Modal
 as a dependency for the main inference package.
 """
 
-from typing import Any, Dict
+import asyncio
 import base64
+import gzip
 import hashlib
 import inspect
+import json
 import os
+import threading
 import traceback
+from typing import Any, Dict, Optional, Tuple
+
+from starlette.requests import Request
 
 import modal
-
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     capture_output,
 )
@@ -34,15 +39,26 @@ class _NoopDebugTraces:
         return None
 
 
-# Create the Modal App
+# Deploy-time configuration.
+#
+# The executor app name stays fixed at ``webexec``. Cloud / region env vars
+# still control where that single executor is deployed.
+WEBEXEC_DEPLOY_CLOUD = (
+    (os.getenv("WEBEXEC_DEPLOY_CLOUD") or os.getenv("WEBEXEC_MODAL_CLOUD", "aws"))
+    .lower()
+    .strip()
+)
+WEBEXEC_DEPLOY_REGION = os.getenv("WEBEXEC_DEPLOY_REGION") or os.getenv(
+    "WEBEXEC_MODAL_REGION", "us-east-1"
+)
+WEBEXEC_DEPLOY_ROUTING_REGION = os.getenv("WEBEXEC_DEPLOY_ROUTING_REGION") or os.getenv(
+    "WEBEXEC_MODAL_ROUTING_REGION"
+)
+
 app = modal.App("webexec")
 
 
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
-
-WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
-WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
-WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
 
 
 def get_inference_image():
@@ -72,7 +88,7 @@ def get_inference_image():
             "wget",
         )
         .pip_install(inference_version)
-        .pip_install("fastapi[standard]")  # Add FastAPI for web endpoints
+        .pip_install("fastapi[standard]", "msgpack")
     )
     return image
 
@@ -80,18 +96,19 @@ def get_inference_image():
 _executor_decorator_kwargs = {
     "image": get_inference_image(),
     "restrict_modal_access": True,  # Restrict Modal access for security
-    "timeout": 20,
+    "timeout": 700,
     "enable_memory_snapshot": True,  # Enable memory snapshotting for faster cold starts
     "scaledown_window": 60,
-    "cloud": WEBEXEC_MODAL_CLOUD,
-    "region": WEBEXEC_MODAL_REGION,
+    "cloud": WEBEXEC_DEPLOY_CLOUD,
+    "region": WEBEXEC_DEPLOY_REGION,
     "buffer_containers": 1,
 }
-if WEBEXEC_MODAL_ROUTING_REGION:
-    _executor_decorator_kwargs["routing_region"] = WEBEXEC_MODAL_ROUTING_REGION
+if WEBEXEC_DEPLOY_ROUTING_REGION:
+    _executor_decorator_kwargs["routing_region"] = WEBEXEC_DEPLOY_ROUTING_REGION
 
 
 @app.cls(**_executor_decorator_kwargs)
+@modal.concurrent(max_inputs=10)
 class Executor:
     """Parameterized Modal class for executing custom Python blocks via web endpoint."""
 
@@ -111,6 +128,7 @@ class Executor:
         # Initialize the namespaces dict and shared globals
         self._code_namespaces = {}
         self._shared_globals = {}
+        self._namespace_lock = threading.RLock()
 
     def _get_code_hash(self, code_str: str, imports: list) -> str:
         """Compute a stable hash for the code to identify unique blocks."""
@@ -118,55 +136,40 @@ class Executor:
         content = code_str + "\n" + "\n".join(imports if imports else [])
         return hashlib.md5(content.encode()).hexdigest()
 
-    @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
-    def execute_block(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the custom block with the given inputs via web endpoint.
+    def _get_namespace_lock(self) -> threading.RLock:
+        namespace_lock = getattr(self, "_namespace_lock", None)
+        if namespace_lock is None:
+            namespace_lock = threading.RLock()
+            self._namespace_lock = namespace_lock
+        return namespace_lock
 
-        Args:
-            request: JSON request containing:
-                - code_str: The Python code to execute
-                - imports: List of import statements
-                - run_function_name: Name of the function to call
-                - inputs_json: JSON string of inputs
+    def _get_cached_namespace(self, code_hash: str) -> Optional[dict]:
+        namespace = self._code_namespaces.get(code_hash)
+        if namespace is not None:
+            return namespace
+        with self._get_namespace_lock():
+            return self._code_namespaces.get(code_hash)
 
-        Returns:
-            Dictionary with results or error information
-        """
-        import json
-        from datetime import datetime
+    def _get_or_initialize_namespace(
+        self, code_hash: str, code_str: str, imports: list
+    ) -> Tuple[Optional[dict], Optional[Dict[str, Any]]]:
+        namespace = self._code_namespaces.get(code_hash)
+        if namespace is not None:
+            return namespace, None
 
-        import numpy as np
+        with self._get_namespace_lock():
+            namespace = self._code_namespaces.get(code_hash)
+            if namespace is not None:
+                return namespace, None
 
-        # Import deserializers at the top level so they're available for decode_inputs
-        from inference.core.workflows.core_steps.common.deserializers import (
-            deserialize_image_kind,
-            deserialize_detections_kind,
-            deserialize_video_metadata_kind,
-        )
-
-        # Extract parameters from request
-        code_str = request.get("code_str", "")
-        imports = request.get("imports", [])
-        run_function_name = request.get("run_function_name", "")
-        inputs_json = request.get("inputs_json", "{}")
-        workflow_context = request.get("workflow_context") or {}
-
-        # Get the hash of this code to identify it uniquely
-        code_hash = self._get_code_hash(code_str, imports)
-
-        # Check if we already have a namespace for this code
-        if code_hash not in self._code_namespaces:
-            # Create a new namespace for this code block
-            self._code_namespaces[code_hash] = {
+            namespace = {
                 "__name__": "__main__",
-                "globals": self._shared_globals,  # Inject the shared globals dict
+                "globals": self._shared_globals,
                 # Mirror local execution, where block_scaffolding injects
                 # `debug_traces` via IMPORTS_LINES. Here it is a no-op because
                 # the debug trace ContextVar is not propagated into the sandbox.
                 "debug_traces": _NoopDebugTraces(),
             }
-
-            # Execute imports and code in the namespace to initialize it
             import_code = "\n".join(imports) if imports else ""
             full_imports = f"""
 from typing import Any, List, Dict, Set, Optional
@@ -187,37 +190,99 @@ from inference.core.workflows.prototypes.block import BlockResult
 from datetime import datetime
 """
             try:
-                # Execute imports in this namespace
-                exec(full_imports, self._code_namespaces[code_hash])
-
-                # Execute the user code to define functions in this namespace
-                exec(code_str, self._code_namespaces[code_hash])
+                exec(full_imports, namespace)
+                exec(code_str, namespace)
             except Exception as e:
-                # If there's an error in code initialization, remove the namespace
-                del self._code_namespaces[code_hash]
-                return {
+                return None, {
                     "success": False,
                     "error": f"Code initialization failed: {str(e)}",
                     "error_type": type(e).__name__,
                 }
 
-        # Get the namespace for this code
-        namespace = self._code_namespaces[code_hash]
+            self._code_namespaces[code_hash] = namespace
+            return namespace, None
+
+    @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
+    async def execute_block(self, raw_request: Request) -> Dict[str, Any]:
+        """Execute the custom block with the given inputs via web endpoint.
+
+        Accepts plain JSON or gzip-compressed JSON (Content-Encoding: gzip).
+
+        Returns:
+            Dictionary with results or error information
+        """
+        from datetime import datetime
+
+        import numpy as np
+
+        from inference.core.workflows.core_steps.common.deserializers import (
+            deserialize_detections_kind,
+            deserialize_image_kind,
+            deserialize_video_metadata_kind,
+        )
+
+        body = await raw_request.body()
+        if raw_request.headers.get("content-encoding") == "gzip":
+            body = gzip.decompress(body)
+        request = json.loads(body)
+
+        code_str = request.get("code_str", "")
+        imports = request.get("imports", [])
+        run_function_name = request.get("run_function_name", "")
+        inputs_json = request.get("inputs_json", "{}")
+        client_code_hash = request.get("code_hash")
+        workflow_context = request.get("workflow_context") or {}
+
+        # Resolve the effective code hash. Two request modes are supported:
+        #   1. Full code: ``code_str`` is present -> compute hash, compile if new.
+        #   2. Hash-only: ``code_str`` is empty but ``code_hash`` is provided ->
+        #      look up previously cached namespace; on miss return
+        #      ``UnknownCodeHash`` so the client retries with the full code.
+        if code_str:
+            code_hash = self._get_code_hash(code_str, imports)
+            namespace, error_response = self._get_or_initialize_namespace(
+                code_hash=code_hash,
+                code_str=code_str,
+                imports=imports,
+            )
+            if error_response is not None:
+                return error_response
+        elif client_code_hash:
+            code_hash = client_code_hash
+            namespace = self._get_cached_namespace(code_hash)
+            if namespace is None:
+                return {
+                    "success": False,
+                    "error": (
+                        f"Code not cached on this container for hash "
+                        f"{code_hash}; client must resend full code."
+                    ),
+                    "error_type": "UnknownCodeHash",
+                    "code_hash": code_hash,
+                }
+        else:
+            return {
+                "success": False,
+                "error": "Request must include either 'code_str' or 'code_hash'.",
+                "error_type": "InvalidRequest",
+            }
 
         try:
             # we should import serialize_for_modal_remote_execution and deserialize_for_modal_remote_execution
             # from inference package, but need to have them included in the modal build for that
             # so just copy pasted for now
-            from inference.core.workflows.prototypes.block import BlockResult
             from datetime import datetime
+
             from inference.core.workflows.core_steps.common.deserializers import (
-                deserialize_image_kind,
                 deserialize_detections_kind,
+                deserialize_image_kind,
                 deserialize_video_metadata_kind,
             )
+            from inference.core.workflows.prototypes.block import BlockResult
 
             def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
                 from datetime import datetime
+
                 import numpy as np
 
                 class InputJSONEncoder(json.JSONEncoder):
@@ -248,14 +313,15 @@ from datetime import datetime
                 def patch_for_modal_serialization(value):
                     """Serialize value and add _type markers for Modal deserialization."""
                     import supervision as sv
-                    from inference.core.workflows.execution_engine.entities.base import (
-                        WorkflowImageData,
-                        VideoMetadata,
-                    )
+
                     from inference.core.workflows.core_steps.common.serializers import (
-                        serialize_video_metadata_kind,
-                        serialise_sv_detections,
                         serialise_image,
+                        serialise_sv_detections,
+                        serialize_video_metadata_kind,
+                    )
+                    from inference.core.workflows.execution_engine.entities.base import (
+                        VideoMetadata,
+                        WorkflowImageData,
                     )
 
                     # Apply standard serialization and add type markers based on original type
@@ -425,3 +491,313 @@ from datetime import datetime
                 "error": str(e),
                 "error_type": type(e).__name__,
             }
+
+    # ------------------------------------------------------------------
+    # Transport 2: WebSocket + msgpack binary frames (opt-in)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _run_user_code_ws(
+        executor: Any,
+        code_str: str,
+        imports: list,
+        run_function_name: str,
+        inputs: dict,
+        client_code_hash: str = "",
+        workflow_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Execute user code for the WebSocket transport.
+
+        When ``code_str`` is empty but ``client_code_hash`` is provided, look up
+        a previously cached namespace on this container. On cache miss we return
+        ``UnknownCodeHash`` so the client resends the full code once.
+        """
+        if code_str:
+            code_hash = executor._get_code_hash(code_str, imports)
+            namespace, error_response = executor._get_or_initialize_namespace(
+                code_hash=code_hash,
+                code_str=code_str,
+                imports=imports,
+            )
+            if error_response is not None:
+                return error_response
+        elif client_code_hash:
+            code_hash = client_code_hash
+            namespace = executor._get_cached_namespace(code_hash)
+            if namespace is None:
+                return {
+                    "success": False,
+                    "error": (
+                        f"Code not cached on this container for hash "
+                        f"{code_hash}; client must resend full code."
+                    ),
+                    "error_type": "UnknownCodeHash",
+                    "code_hash": code_hash,
+                }
+        else:
+            return {
+                "success": False,
+                "error": "Request must include either 'code_str' or 'code_hash'.",
+                "error_type": "InvalidRequest",
+            }
+
+        if run_function_name not in namespace:
+            return {
+                "success": False,
+                "error": f"Function '{run_function_name}' not found in code",
+                "error_type": "NameError",
+            }
+
+        user_function = namespace[run_function_name]
+        sig = inspect.signature(user_function)
+        params = list(sig.parameters.keys())
+
+        _workflow_context = workflow_context or {}
+
+        try:
+            with capture_output() as (stdout_buf, stderr_buf):
+                if params and params[0] == "self":
+
+                    class BlockSelf:
+                        def get_workflow_context(self) -> Dict[str, Any]:
+                            return dict(_workflow_context)
+
+                    block_self = BlockSelf()
+                    result = user_function(block_self, **inputs)
+                else:
+                    result = user_function(**inputs)
+
+            return {
+                "success": True,
+                "result": result,
+                "stdout": stdout_buf.getvalue() or None,
+                "stderr": stderr_buf.getvalue() or None,
+            }
+        except Exception as e:
+            resp: Dict[str, Any] = {
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "stdout": stdout_buf.getvalue() or None,
+                "stderr": stderr_buf.getvalue() or None,
+            }
+            tb = traceback.extract_tb(e.__traceback__)
+            if tb:
+                frame = tb[-1]
+                resp["line_number"] = frame.lineno
+                resp["function_name"] = frame.name
+            return resp
+
+    @staticmethod
+    def _deserialize_msgpack_inputs(inputs_raw: dict) -> dict:
+        """Convert msgpack-decoded input dict into Python objects."""
+        import cv2
+        import numpy as np
+
+        from inference.core.workflows.core_steps.common.deserializers import (
+            deserialize_detections_kind,
+            deserialize_image_kind,
+            deserialize_video_metadata_kind,
+        )
+
+        def _decode(obj):
+            if isinstance(obj, dict):
+                _type = obj.get("_type")
+
+                if _type == "workflow_image" and "_jpeg_bytes" in obj:
+                    jpeg = obj["_jpeg_bytes"]
+                    arr = np.frombuffer(jpeg, dtype=np.uint8)
+                    numpy_image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    from inference.core.workflows.execution_engine.entities.base import (
+                        ImageParentMetadata,
+                        ParentOrigin,
+                        WorkflowImageData,
+                    )
+
+                    video_metadata = None
+                    if obj.get("video_metadata"):
+                        video_metadata = _decode(obj["video_metadata"])
+
+                    parent_id = obj.get("parent_id", "webexec")
+                    parent_origin = obj.get("parent_origin")
+                    root_parent_id = obj.get("root_parent_id")
+                    root_parent_origin = obj.get("root_parent_origin")
+
+                    parent_origin_coords = None
+                    if parent_origin:
+                        parsed_origin = ParentOrigin.model_validate(parent_origin)
+                        parent_origin_coords = (
+                            parsed_origin.to_origin_coordinates_system()
+                        )
+
+                    parent_metadata = ImageParentMetadata(
+                        parent_id=parent_id,
+                        origin_coordinates=parent_origin_coords,
+                    )
+
+                    workflow_root_ancestor_metadata = None
+                    if root_parent_id:
+                        root_origin_coords = None
+                        if root_parent_origin:
+                            parsed_root_origin = ParentOrigin.model_validate(
+                                root_parent_origin
+                            )
+                            root_origin_coords = (
+                                parsed_root_origin.to_origin_coordinates_system()
+                            )
+                        workflow_root_ancestor_metadata = ImageParentMetadata(
+                            parent_id=root_parent_id,
+                            origin_coordinates=root_origin_coords,
+                        )
+
+                    return WorkflowImageData(
+                        parent_metadata=parent_metadata,
+                        workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+                        numpy_image=numpy_image,
+                        video_metadata=video_metadata,
+                    )
+
+                if _type == "sv_detections":
+                    decoded = {k: _decode(v) for k, v in obj.items() if k != "_type"}
+                    return deserialize_detections_kind("input", decoded)
+                if _type == "video_metadata":
+                    decoded = {k: _decode(v) for k, v in obj.items() if k != "_type"}
+                    return deserialize_video_metadata_kind("input", decoded)
+                if _type == "workflow_image":
+                    decoded = {k: _decode(v) for k, v in obj.items() if k != "_type"}
+                    return deserialize_image_kind("input", decoded)
+                if _type == "datetime":
+                    from datetime import datetime
+
+                    return datetime.fromisoformat(obj["value"])
+                if _type == "ndarray":
+                    return np.array(obj["value"], dtype=obj["dtype"]).reshape(
+                        obj["shape"]
+                    )
+                if _type == "bytes":
+                    return (
+                        base64.b64decode(obj["value"])
+                        if isinstance(obj["value"], str)
+                        else obj["value"]
+                    )
+
+                return {k: _decode(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_decode(v) for v in obj]
+            return obj
+
+        return {k: _decode(v) for k, v in inputs_raw.items()}
+
+    @staticmethod
+    def _serialize_msgpack_result(result: Any) -> Any:
+        """Serialize a user-code return value for msgpack transport.
+
+        Mirrors the HTTP path's serialize_for_modal_remote_execution logic,
+        adding _type markers for WorkflowImageData, sv.Detections, and
+        VideoMetadata so the client can reconstruct them.
+        """
+        from datetime import datetime
+
+        import numpy as np
+        import supervision as sv
+
+        from inference.core.workflows.core_steps.common.serializers import (
+            serialise_image,
+            serialise_sv_detections,
+            serialize_video_metadata_kind,
+        )
+        from inference.core.workflows.execution_engine.entities.base import (
+            VideoMetadata,
+            WorkflowImageData,
+        )
+
+        def _encode(obj):
+            if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
+                return obj
+            if isinstance(obj, datetime):
+                return {"_type": "datetime", "value": obj.isoformat()}
+            if isinstance(obj, sv.Detections):
+                serialized = serialise_sv_detections(detections=obj)
+                serialized["_type"] = "sv_detections"
+                return _encode(serialized)
+            if isinstance(obj, WorkflowImageData):
+                serialized = serialise_image(image=obj)
+                serialized["_type"] = "workflow_image"
+                return _encode(serialized)
+            if isinstance(obj, VideoMetadata):
+                serialized = serialize_video_metadata_kind(obj)
+                serialized["_type"] = "video_metadata"
+                return _encode(serialized)
+            if isinstance(obj, np.ndarray):
+                return {
+                    "_type": "ndarray",
+                    "value": obj.tolist(),
+                    "dtype": str(obj.dtype),
+                    "shape": list(obj.shape),
+                }
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, np.floating):
+                return float(obj)
+            if isinstance(obj, dict):
+                return {k: _encode(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_encode(v) for v in obj]
+            return str(obj)
+
+        return _encode(result)
+
+    @modal.asgi_app(requires_proxy_auth=True)
+    def wsapp(self):
+        """Expose a FastAPI sub-application with a WebSocket route.
+
+        Each binary frame is a msgpack dict with the same fields as the HTTP
+        request (``code_str``, ``imports``, ``run_function_name``, ``inputs``).
+
+        Images arrive as raw JPEG ``bytes`` (no base64), keyed under
+        ``_jpeg_bytes`` inside image dicts.  The response is also msgpack.
+        """
+        import msgpack
+        from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+        ws_app = FastAPI()
+
+        executor_self = self
+
+        @ws_app.websocket("/ws")
+        async def ws_execute(websocket: WebSocket):
+            await websocket.accept()
+            try:
+                while True:
+                    raw = await websocket.receive_bytes()
+                    request = msgpack.unpackb(raw, raw=False)
+
+                    code_str = request.get("code_str", "")
+                    imports = request.get("imports", [])
+                    run_function_name = request.get("run_function_name", "")
+                    inputs_raw = request.get("inputs", {})
+                    client_code_hash = request.get("code_hash", "")
+                    workflow_context = request.get("workflow_context") or {}
+
+                    inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
+                    resp = await asyncio.to_thread(
+                        Executor._run_user_code_ws,
+                        executor_self,
+                        code_str,
+                        imports,
+                        run_function_name,
+                        inputs,
+                        client_code_hash,
+                        workflow_context,
+                    )
+
+                    if resp.get("success"):
+                        resp["result"] = Executor._serialize_msgpack_result(
+                            resp["result"]
+                        )
+
+                    await websocket.send_bytes(msgpack.packb(resp, use_bin_type=True))
+            except WebSocketDisconnect:
+                pass
+
+        return ws_app
