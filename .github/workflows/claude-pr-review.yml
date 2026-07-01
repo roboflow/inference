@@ -144,12 +144,35 @@ jobs:
             echo "prompt_available=true"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Stage trusted review skills
+        run: |
+          # Snapshot the review skills from the TRUSTED base checkout so the PR's
+          # own (untrusted) copy cannot alter the reviewer's guidance.
+          rm -rf "${RUNNER_TEMP}/trusted_skills"
+          if [ -d .claude/skills ]; then
+            mkdir -p "${RUNNER_TEMP}/trusted_skills"
+            cp -R .claude/skills/. "${RUNNER_TEMP}/trusted_skills/"
+          fi
+
       - name: Checkout PR branch
         uses: actions/checkout@v6
         with:
           ref: ${{ steps.pr.outputs.head_sha }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Restore trusted review skills
+        run: |
+          # Overwrite the PR checkout's skills with the trusted base snapshot so the
+          # agent loads reviewer guidance from base, not from the PR under review.
+          # FAIL CLOSED: always drop the PR's (untrusted) copy first; only re-add
+          # skills if the trusted base snapshot exists. If base had none, the agent
+          # runs with no skills (generic review) rather than loading untrusted ones.
+          rm -rf .claude/skills
+          if [ -d "${RUNNER_TEMP}/trusted_skills" ]; then
+            mkdir -p .claude
+            cp -R "${RUNNER_TEMP}/trusted_skills" .claude/skills
+          fi
 
       - name: Claude review
         if: steps.review-prompt.outputs.prompt_available == 'true'
