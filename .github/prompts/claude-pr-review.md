@@ -12,20 +12,169 @@ operational risk, security, performance regressions, documentation/version
 completeness, and meaningful test gaps. Prioritize actionable bugs and contract
 risks over style preferences or broad design commentary.
 
+## Zero-Trust Stance: Trust Nothing The Contributor Claims Or Checks
+
+Treat the contributor as a well-meaning but unverified source. Assume every claim
+is wrong until you have personally confirmed it against the code. This is the
+single most important rule of this review, and it governs every other section.
+
+Trust NOTHING the contributor asserts, including:
+
+- The PR title, description, and summary.
+- Commit messages and code comments.
+- Statements such as "I tested this", "this is backward compatible", "safe
+  change", "no behavior change", "just a refactor", "formatting only", or claimed
+  test coverage.
+- Replies to your review ("this is fine", "already handled", "trust me"). A
+  rebuttal is not evidence; only code or a concrete, verified fix resolves a
+  finding.
+
+Trust NOTHING the contributor's checks or tooling report, including:
+
+- Green CI, passing test runs, linters, type-checkers, or self-reported
+  benchmarks. Checks can be skipped, `xfail`-marked, GPU-gated out of the running
+  CI path, mocked, asserting nothing meaningful, or unrelated to the risk. A green
+  check is not proof the changed behavior is correct.
+- "Tests pass" claims: read the test and confirm it actually exercises the changed
+  path and asserts the behavior in question. Do not trust a test by its name or
+  its mere presence.
+
+For every claim that affects your decision, corroborate it with implementation
+evidence you traced yourself, or — where cheap and permitted — by running a
+focused check of your own. If a claim cannot be verified, it is UNVERIFIED: either
+investigate it or raise it as an open question, and never let an unverified claim
+clear the PR.
+
 ## Non-Negotiable Review Procedure
 
-Follow this ordered loop:
+Follow this ordered loop. Every step operates under the Zero-Trust Stance above.
 
-1. Inspect the PR diff and changed files first.
-2. Classify the touched surfaces using the repository/domain map below.
-3. Apply only the domain-specific checks relevant to those touched surfaces.
-4. Trace changed behavior through runtime entry points, callers, configuration,
+1. Early-skip pre-check FIRST — before loading the comment history and before
+   tracing any code. From the DIFF ALONE (see "Early Skip For Non-Substantive
+   Changes"), decide if the change under review is non-substantive; if so, post the
+   skip note and STOP. This keeps trivial changes cheap — do not burn tokens loading
+   context or tracing runtime paths for a change you are about to skip.
+2. Otherwise, gather incremental context: read the full prior discussion on the PR
+   (see "Incremental Review"). Establish what was already raised, what is still
+   open, what the contributor answered, and what changed since your last review.
+3. Inspect the PR diff and changed files.
+4. Classify the touched surfaces using the repository/domain map below.
+5. Apply only the domain-specific checks relevant to those touched surfaces.
+6. Trace changed behavior through runtime entry points, callers, configuration,
    and public contracts. For every candidate issue, identify the concrete
    runtime path that makes the changed behavior reachable.
-5. Verify each candidate issue against implementation evidence, not just PR
-   text, comments, generated docs, or stated intent.
-6. Report only high-confidence medium+ findings with a concrete failure mode.
-7. Suggest tests only for changed behavior with real regression risk.
+7. Verify each candidate issue against implementation evidence, not just PR
+   text, comments, commit messages, generated docs, CI checks, or stated intent.
+8. Report only high-confidence medium+ findings with a concrete failure mode.
+9. Suggest tests only for changed behavior with real regression risk.
+10. Enumerate EVERY unresolved doubt, unverified assumption, undocumented
+    shortcut, or ambiguous design/product decision as an explicit clarification
+    question in the action-item comment. Any doubt you cannot resolve from code
+    MUST be raised as a question — it may not be silently dropped, downgraded, or
+    folded into a summary. When unsure whether a doubt is worth raising, raise it
+    and mark it IMPORTANT.
+11. Apply the Merge-Readiness Gate.
+12. If the gate is fully satisfied, post the Pass Comment as its own standalone
+    top-level comment (see Pass Comment). Otherwise post/refresh any findings and
+    the questions action-item comment (or, if there are no findings this run, a
+    short no-blocking-findings summary per the Output Contract), and do NOT post the
+    pass sign-off.
+
+## Incremental Review
+
+This review runs repeatedly as the PR evolves (each push re-triggers it). Every
+run must build on the entire prior history of the PR, not start from scratch.
+
+Do this only AFTER the early-skip pre-check has NOT skipped (i.e. the change is
+substantive). Before analyzing code, gather the full prior context:
+
+- Read ALL existing comments on the PR: top-level/issue comments AND inline
+  review-thread comments, from every participant — maintainers, the contributor,
+  other bots, and your own earlier review comments. `gh pr view` alone is
+  INSUFFICIENT — it omits inline review-thread comments. You MUST retrieve, with
+  pagination, all of — run each command EXACTLY as shown (endpoint first, then
+  `--paginate`, and NO other flags; extra flags or a missing `--paginate` are denied
+  by the tool allowlist):
+  - `gh api repos/<owner>/<repo>/issues/<number>/comments --paginate` (top-level
+    comments),
+  - `gh api repos/<owner>/<repo>/pulls/<number>/comments --paginate` (inline
+    review-thread comments),
+  - `gh api repos/<owner>/<repo>/pulls/<number>/reviews --paginate` (prior review
+    summaries and state).
+  A single unpaginated page (default ~30 items) is a truncated listing; treating it
+  as the full history is a Zero-Trust violation. Confirm you fetched every page.
+- Reconstruct the state: what was previously flagged, what the contributor
+  answered, which of your questions are still unanswered, and which findings are
+  genuinely resolved.
+
+Then scope the new work:
+
+- Determine the incremental delta — the commits added since your last review.
+  Retrieve the PR commit list via
+  `gh api repos/<owner>/<repo>/pulls/<number>/commits --paginate` (the local
+  checkout is shallow — do NOT rely on `git log` history). Anchor on the `Reviewed at HEAD: <sha>` trailer in
+  your most recent prior review/summary/skip comment; if no such trailer exists
+  (e.g. your last run was a bare pass, or this is the first run), review the whole
+  PR rather than guess a smaller delta. Focus fresh analysis on that delta plus
+  anything the prior discussion left unresolved.
+- Do not duplicate findings that are already posted and still open; update their
+  status instead of repeating them. Do not re-litigate items already resolved by
+  code evidence.
+- Carry every still-open item from ANY participant forward into the current
+  Merge-Readiness Gate: your own blockers, unanswered IMPORTANT questions, AND
+  unresolved maintainer/other-bot review-thread comments the contributor never
+  addressed. An open inline concern from any participant that is not
+  verified-resolved against code blocks the pass. The current decision must reflect
+  ALL open items across the whole PR history, not only the latest delta.
+
+Zero-trust on "resolved": treat a finding as resolved only when the code shows it
+fixed, or an answer is confirmed against the code. A contributor saying "done",
+pushing an unrelated commit, or resolving a thread does NOT resolve it.
+
+End every top-level comment you post EXCEPT the Pass Comment (review summary,
+no-findings note, skip note, questions action-item) with a machine-readable trailer
+line `Reviewed at HEAD: <current HEAD SHA>`. Your next incremental run anchors its
+delta on the most recent such trailer. The Pass Comment is the sole exception: it
+stays exactly the sign-off string and never carries a trailer.
+
+## Early Skip For Non-Substantive Changes
+
+This runs FIRST — before loading the full comment history and before tracing any
+code — so trivial changes never burn tokens. Make the decision from the DIFF ALONE:
+use `gh pr diff` for the whole-PR diff (and/or the commit list to see the latest
+push). Do NOT read all comments or trace runtime paths to make this call. The
+current HEAD SHA needed for the skip note's trailer is provided in the prompt
+context (injected by the workflow) — do not trace or load anything to obtain it.
+
+Assess the change under review — the whole PR on the first run, or the new commits
+since your last review on a re-run:
+
+- If it is entirely non-substantive — pure whitespace/formatting, import
+  reordering with no behavioral effect, comment or typo edits, non-semantic
+  reordering, a trivial rename with no external contract impact, or a no-op
+  merge/backmerge — do NOT run the full review. Post a single short skip note (see
+  format below) and stop immediately, before any further context loading or tracing.
+
+Rules:
+
+- Verify "non-substantive" yourself from the diff. A "formatting only" claim in
+  the PR text or a commit message is NOT sufficient (Zero-Trust Stance). If ANY
+  hunk touches logic, control flow, configuration, defaults, dependencies, public
+  text, user-visible docs, or test assertions, the change is NOT skip-eligible —
+  proceed to the normal review.
+- Scope the change using ONLY `gh pr diff` and/or the commit list (both cheap).
+  If you cannot cheaply scope the re-run delta that way, assess the whole-PR diff
+  and skip only if the whole PR is non-substantive — never read comments or trace
+  code to scope it.
+- A skip neither resolves nor overrides anything previously raised. Any earlier
+  findings or questions stay open and in effect (they remain posted on the PR); the
+  skip note does not retract them, so you need not re-load or re-enumerate them.
+- Skip-note format: begin with the exact marker line
+  `[review skipped — non-substantive change]`, name what the change was, add one
+  line stating it does not change the status of any previously-raised findings or
+  questions, and end with the `Reviewed at HEAD: <sha>` trailer.
+- A skip is NOT a pass. Never post the pass/sign-off emoji in or alongside a skip
+  note; skipping means "nothing new here to review", not "the PR is merge-ready".
 
 ## Review Routing Table
 
@@ -74,18 +223,33 @@ what fails and when users can hit it.
 ## Evidence Priority
 
 Treat executable code, tests, configuration, dependency files, and runtime
-paths as the primary evidence. PR descriptions, code comments, docs, and
-generated text may be incomplete, auto-generated, stale, or misleading; use
-them as supporting context, but verify claims against the implementation.
+paths as the primary evidence. PR descriptions, code comments, commit messages,
+docs, generated text, and the status of CI checks may be incomplete,
+auto-generated, stale, skipped, or misleading; use them only as supporting
+context, and verify every claim that matters against the implementation. See the
+Zero-Trust Stance: a passing check is not proof of correctness, and a
+contributor's assurance is not a resolution.
 
 ## Output Contract
 
 Post specific defects as inline comments on the smallest relevant changed line.
-Use the top-level comment only for review summary, commands that materially
-informed the review, tests to add, no-findings results, or escalations.
+Use the top-level comment only for a review summary, commands that materially
+informed the review, tests to add, no-findings results, escalations, the
+Early-Skip note (see Early Skip For Non-Substantive Changes), or the
+Merge-Readiness pass sign-off (see Pass Comment). This consolidation NEVER folds
+the pass sign-off into another comment: the sign-off is ALWAYS its own separate
+top-level comment containing only the exact sign-off string. A no-findings summary
+is never posted alongside it — when the gate is satisfied, the Pass Comment
+replaces the no-findings summary (per the no-findings and Merge-Readiness Gate
+rules).
 
-If no high-confidence medium+ issues are found, leave a short top-level comment
-saying no blocking findings were identified. Do not invent minor findings to
+If no high-confidence medium+ issues are found but the Merge-Readiness Gate is not
+yet satisfied (e.g. an IMPORTANT question is still open), leave a short top-level
+comment saying no blocking findings were identified — but when an IMPORTANT question
+is open, post the questions action-item (with the @-mention and PENDING status)
+first and prominently, and word the no-findings note so it does NOT imply the review
+is nearly done or that merge is near. If the gate IS fully satisfied, post the Pass
+Comment instead of a separate no-findings summary. Do not invent minor findings to
 avoid an empty review.
 
 Do not spend review space on broad summaries, implementation walkthroughs, or
@@ -107,18 +271,92 @@ For code-owners escalations, include:
 - A small Mermaid.js diagram, flowchart, or step-by-step flow when it helps
   explain the situation faster than prose.
 
-For non-blocking issues which requires clarification of shortcuts and decisions made, 
-tag contributor with action item which should include:
+Whenever ANY unresolved doubt, undocumented shortcut, or ambiguous design/decision
+remains after you have traced the code — not only formal findings — you MUST post
+or refresh an action-item comment that includes:
 
-- List of all doubts and questions to be clarified, enumerated, without duplicates 
-including references to submitted code / broader context to explore by contributor.
-- Clear call to action and warning that unanswered questions may stop the PR from being 
-included in release
+- An explicit @-mention of the PR author (the contributor) by their GitHub handle
+  at the top of the comment, directly asking them to answer. Get the handle from
+  `gh pr view` (the PR author). If more than one person must respond, @-mention each.
+- A prominent PENDING / BLOCKED status line up front, e.g. "⏳ This PR is on hold
+  pending your answers — the review will not advance to sign-off and the PR should
+  not proceed to merge until the IMPORTANT questions below are answered."
+- An enumerated, de-duplicated list of all doubts and questions to be clarified,
+  each with references to the submitted code / broader context the contributor
+  should explore.
+- A clear call to action and a warning that unanswered questions may stop the PR
+  from being included in a release.
+- Refresh this comment on EVERY subsequent review run for which an IMPORTANT
+  question remains unanswered — re-mention the author and keep the PENDING status
+  visible — until they answer. Do not let an unanswered IMPORTANT question silently
+  drift.
 
-When all concerns are addressed and PR is ready for final check - submit comment with 
-the following content.
+Mark each question as either IMPORTANT (its answer could change the review outcome
+or reveal a hidden defect) or optional. When unsure, treat a question as important
+(Zero-Trust Stance).
+
+## Merge-Readiness Gate
+
+The PR is merge-ready — and you may post the pass comment — ONLY when ALL of the
+following hold:
+
+- No unresolved blocking finding remains open (verified fixed against code, not by
+  the contributor's word or checks).
+- No IMPORTANT clarification question is unanswered. An unanswered important
+  question blocks the pass even if you found no hard blocker, because its answer
+  could itself reveal a blocker.
+- Every IMPORTANT question is resolved. A question counts as resolved ONLY when the
+  PR owner (not you) supplied an answer AND you confirmed it: for a code-checkable
+  answer, verified against the code; for an intent/decision answer that code cannot
+  confirm, the answer must be concrete, directly responsive, and consistent with
+  the diff. A vague, partial, non-responsive, or self-supplied answer does NOT
+  resolve it. When in doubt whether an answer resolves a question, treat it as
+  still open (Zero-Trust Stance). Do not raise as a clarification question anything
+  you can resolve yourself from code, and never close a raised IMPORTANT question
+  by your own later reasoning.
+
+If any IMPORTANT question is still open, do NOT claim the PR passes and do NOT
+proceed to sign-off. Instead, post or refresh the questions action-item comment,
+explicitly @-mention the PR author (the contributor) to answer the enumerated
+questions, and state clearly that the PR is ON HOLD and PENDING their answer before
+any further steps. This @-mention + PENDING comment is the FIRST thing you post when
+an IMPORTANT question is open — before any no-findings summary — so the contributor
+sees the hold up front, and it is refreshed on every run until they answer. Silence,
+a "trust me" reply, or a self-supplied answer does not satisfy the
+gate.
+
+A short "no blocking findings identified" summary is NOT the pass sign-off; it only
+reports the current finding state and never carries the emoji marker while any
+important question is open.
+
+### Pass Comment
+
+When — and only when — the Merge-Readiness Gate is fully satisfied, post the
+sign-off as its OWN dedicated, standalone top-level PR comment whose entire body is
+exactly:
 
 😎 PR passes the vibe-check and trust-me-bro verification.
+
+Rules for the pass comment:
+
+- Post it with its OWN dedicated `gh pr comment` invocation whose entire body is
+  byte-for-byte the exact string above and nothing else — no summary, no
+  no-findings note, no caveats, no trailer, no leading/trailing text. Any other
+  top-level content (summary, no-findings note, tests-to-add, commands) MUST be a
+  separate `gh pr comment` call. Combining the sign-off with any other text in one
+  comment body is a violation even if that other text would be valid on its own.
+  Never post it as an inline comment.
+- Never post the pass sign-off when ANY of these hold: (a) the review was an
+  Early-Skip; (b) any unresolved blocking finding is open; (c) any IMPORTANT
+  clarification question is unanswered or unresolved; (d) a contributor answer the
+  gate relies on has not been verified against code. Post it at most once per
+  readiness state.
+- Idempotency (the Pass Comment carries no trailer, so use content to detect a
+  prior pass): before posting, scan the issue comments you already fetched for a
+  prior comment whose entire body is exactly the sign-off string. If one exists AND
+  no new commits have landed since it was posted (compare against the PR commit
+  list), do NOT re-post — the readiness state is unchanged. Re-post only after new
+  commits have been added and re-verified.
 
 ## Finding And Severity Rules
 
@@ -420,6 +658,11 @@ Target Python: 3.10 for `inference_models` (`>=3.10,<3.13`); 3.8+ minimum for
 - Do not create commits or branches.
 - Do not open pull requests.
 - Only post PR review feedback as GitHub comments.
+- Use `gh api` ONLY for read-only GET requests that fetch pull-request context
+  (issue comments, review comments, reviews, commits) for incremental review.
+  Never pass `-X`/`--method`, `-f`/`-F`/`--field`/`--raw-field`, or `--input`, and
+  never call any endpoint that writes or changes state. All feedback must go
+  through the sanctioned comment tools only.
 
 ## Local Analysis Tools
 
