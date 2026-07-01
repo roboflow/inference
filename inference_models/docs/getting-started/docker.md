@@ -30,8 +30,10 @@ Pre-built experimental Docker images are available on Docker Hub under the `robo
 
 | Image Tag | JetPack Version | Status |
 |-----------|----------------|--------|
-| `roboflow/roboflow-inference-server-jetson-5.1.1:0.62.5-experimental` | JetPack 5.1 (L4T 35.2.1) | ✋ Manual (experimental) |
-| `roboflow/inference-exp:jp61-*` | JetPack 6.1 (L4T 36.x) | 🚧 In development |
+| `roboflow/roboflow-inference-server-jetson-7.2.0:latest` | JetPack 7.2 (L4T 39, Orin & Thor) | ✅ Production |
+| `roboflow/roboflow-inference-server-jetson-6.2.0:latest` | JetPack 6.2 (L4T 36.4) — support ends 2027 | ✅ Production |
+| `roboflow/inference-exp:jp62-*` | JetPack 6.2 (L4T 36.x) — support ends 2027 | 🚧 In development |
+| `roboflow/roboflow-inference-server-jetson-5.1.1:0.62.5-experimental` | JetPack 5.1 (L4T 35.2.1) — **deprecated, removed 2027** | ✋ Manual (experimental) |
 
 !!! note "Image Status"
     - 🤖 **Automated** - Built automatically on releases and main branch pushes
@@ -52,17 +54,22 @@ docker run -it roboflow/inference-exp:cpu-latest python3
 docker run --gpus all -it roboflow/inference-exp:cu128-latest python3
 ```
 
-### Jetson (JetPack 5.1 - Experimental)
+### Jetson (JetPack 7.2 — recommended)
 
 ```bash
 docker run -it \
   --runtime nvidia \
-  roboflow/roboflow-inference-server-jetson-5.1.1:0.62.5-experimental \
+  roboflow/roboflow-inference-server-jetson-7.2.0:latest \
   python3
 ```
 
-!!! warning "Jetson 5.1 Experimental Build"
-    This is an experimental build that works but is not part of the automated pipeline. Future updates will be delivered later.
+JetPack 7.2 supports both Orin and Thor. For JetPack 6.2 use
+`roboflow/roboflow-inference-server-jetson-6.2.0:latest` (support ends 2027).
+
+!!! warning "JetPack 5.1 is deprecated"
+    The experimental `roboflow/roboflow-inference-server-jetson-5.1.1:0.62.5-experimental`
+    build still exists, but JetPack 5.1.x is deprecated and support will be removed in 2027.
+    Migrate to JetPack 7.2.
 
 ## 🔨 Building Custom Images
 
