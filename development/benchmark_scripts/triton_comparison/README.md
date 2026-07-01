@@ -86,6 +86,7 @@ docker run --rm --gpus all \
   -p 8000:8000 \
   -p 8001:8001 \
   -p 8002:8002 \
+  -e TRT_ENGINE_HOST_CODE_ALLOWED=True \
   -v "$MODEL_PACKAGE_DIR:/models/rfdetr-trt-package:ro" \
   rfdetr-triton-server:benchmark \
   --model-name rfdetr_small
@@ -93,6 +94,10 @@ docker run --rm --gpus all \
 
 The entrypoint creates `/triton-model-repository/rfdetr_small/1/model.plan`,
 writes `config.pbtxt`, then starts `tritonserver`.
+For forward-compatible TensorRT engines that include the lean runtime,
+`TRT_ENGINE_HOST_CODE_ALLOWED=True` allows local engine inspection and enables
+Triton's TensorRT `version-compatible` backend mode. Only enable it for trusted
+engine packages.
 
 Run the Triton benchmark from a Python environment that can import this repo's
 `inference_models` package and has `tritonclient[http]` installed:

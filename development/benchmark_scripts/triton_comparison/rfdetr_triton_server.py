@@ -35,11 +35,16 @@ def _read_json(path: Path) -> dict[str, Any]:
     return decoded_json
 
 
-def _load_trt_engine(engine_path: Path):
+def _load_trt_engine(
+    *,
+    engine_path: Path,
+    engine_host_code_allowed: bool,
+):
     import tensorrt as trt
 
     logger = trt.Logger(trt.Logger.WARNING)
     runtime = trt.Runtime(logger)
+    runtime.engine_host_code_allowed = engine_host_code_allowed
     engine_bytes = engine_path.read_bytes()
     engine = runtime.deserialize_cuda_engine(engine_bytes)
     if engine is None:
@@ -87,8 +92,15 @@ def _tensor_mode_name(engine: Any, tensor_name: str) -> str:
     return mode_name
 
 
-def _inspect_engine(engine_path: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    engine = _load_trt_engine(engine_path=engine_path)
+def _inspect_engine(
+    *,
+    engine_path: Path,
+    engine_host_code_allowed: bool,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    engine = _load_trt_engine(
+        engine_path=engine_path,
+        engine_host_code_allowed=engine_host_code_allowed,
+    )
     inputs: list[dict[str, Any]] = []
     outputs: list[dict[str, Any]] = []
     for index in range(engine.num_io_tensors):
@@ -216,6 +228,7 @@ def _prepare_model_repository(
     model_name: str,
     max_batch_size: Optional[int],
     instance_count: int,
+    engine_host_code_allowed: bool,
 ) -> Path:
     engine_path = model_package_dir / _PLAN_FILE_NAME
     trt_config_path = model_package_dir / "trt_config.json"
@@ -232,7 +245,10 @@ def _prepare_model_repository(
     version_dir.mkdir(parents=True, exist_ok=True)
 
     shutil.copy2(engine_path, version_dir / _TRITON_PLAN_FILE_NAME)
-    inputs, outputs = _inspect_engine(engine_path=engine_path)
+    inputs, outputs = _inspect_engine(
+        engine_path=engine_path,
+        engine_host_code_allowed=engine_host_code_allowed,
+    )
     resolved_max_batch_size = _configured_max_batch_size(
         trt_config=trt_config,
         inferred_input_dims=inputs[0]["dims"],
@@ -263,6 +279,7 @@ def _build_triton_command(
     grpc_port: int,
     metrics_port: int,
     log_verbose: int,
+    engine_host_code_allowed: bool,
     extra_args: tuple[str, ...],
 ) -> list[str]:
     strict_model_config_value = "true" if strict_model_config else "false"
@@ -276,6 +293,8 @@ def _build_triton_command(
     ]
     if log_verbose > 0:
         command.append(f"--log-verbose={log_verbose}")
+    if engine_host_code_allowed:
+        command.append("--backend-config=tensorrt,version-compatible=true")
     command.extend(extra_args)
 
     return command
@@ -376,6 +395,16 @@ def _serve_triton(command: list[str]) -> None:
     default=0,
     show_default=True,
 )
+@click.option(
+    "--engine-host-code-allowed/--no-engine-host-code-allowed",
+    envvar="TRT_ENGINE_HOST_CODE_ALLOWED",
+    default=False,
+    show_default=True,
+    help=(
+        "Allow trusted TensorRT plans to execute embedded host code. Required "
+        "for forward-compatible plans that include the TensorRT lean runtime."
+    ),
+)
 @click.pass_context
 def _main(
     ctx: click.Context,
@@ -389,6 +418,7 @@ def _main(
     grpc_port: int,
     metrics_port: int,
     log_verbose: int,
+    engine_host_code_allowed: bool,
 ) -> None:
     repository_dir = _prepare_model_repository(
         model_package_dir=Path(model_package_dir),
@@ -396,6 +426,7 @@ def _main(
         model_name=model_name,
         max_batch_size=max_batch_size,
         instance_count=instance_count,
+        engine_host_code_allowed=engine_host_code_allowed,
     )
     command = _build_triton_command(
         model_repository_dir=repository_dir,
@@ -404,6 +435,7 @@ def _main(
         grpc_port=grpc_port,
         metrics_port=metrics_port,
         log_verbose=log_verbose,
+        engine_host_code_allowed=engine_host_code_allowed,
         extra_args=tuple(ctx.args),
     )
     _serve_triton(command=command)
