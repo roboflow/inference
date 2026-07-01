@@ -23,6 +23,7 @@ TEXT_ONLY_OCR_TASK = "text-only-ocr"
 GAZE_DETECTION_TASK = "gaze-detection"
 OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
 INTERACTIVE_INSTANCE_SEGMENTATION_TASK = "interactive-instance-segmentation"
+IMAGE_EDITING_TASK = "image-editing"
 
 
 @dataclass(frozen=True)
@@ -297,6 +298,10 @@ REGISTERED_MODELS: Dict[
     ("qwen3_5", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.qwen3_5.qwen3_5_hf",
         class_name="Qwen35HF",
+    ),
+    ("qwen-image-edit", IMAGE_EDITING_TASK, BackendType.HF): LazyClass(
+        module_name="inference_models.models.qwen_image_edit.qwen_image_edit_hf",
+        class_name="QwenImageEditHF",
     ),
     ("gemma-4", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_models.models.gemma4.gemma4_hf",
