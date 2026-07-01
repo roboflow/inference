@@ -118,7 +118,7 @@ included in release
 When all concerns are addressed and PR is ready for final check - submit comment with 
 the following content.
 
-😎PR passes the vibe-check and trust-me-bro verification.
+😎 PR passes the vibe-check and trust-me-bro verification.
 
 ## Finding And Severity Rules
 
