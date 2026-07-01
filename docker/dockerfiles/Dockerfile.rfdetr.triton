@@ -3,11 +3,24 @@ FROM ${TRITON_BASE_IMAGE}
 
 WORKDIR /opt/roboflow/triton_comparison
 
+# The Triton base image ships the C++ TensorRT runtime (libnvinfer10, built for
+# this container's CUDA 12.6) but NOT the Python bindings. Install
+# python3-libnvinfer pinned to that SAME TensorRT version. Without a version pin,
+# apt resolves the newest TensorRT in the CUDA repo (11.x, built for CUDA 13.x),
+# which is incompatible with the container's CUDA 12.6 runtime and crashes at
+# CUDA init with "CUDA initialization failure with error: 35".
+# NOTE: keep TENSORRT_VERSION in sync with the libnvinfer version in the base
+# image (run `dpkg -l | grep libnvinfer10` in the base image after a bump).
+ARG TENSORRT_VERSION=10.7.0.23-1+cuda12.6
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3-libnvinfer && \
+    apt-get install -y --no-install-recommends \
+        python3-libnvinfer=${TENSORRT_VERSION} \
+        libnvinfer-plugin10=${TENSORRT_VERSION} \
+        libnvinfer-vc-plugin10=${TENSORRT_VERSION} \
+        libnvonnxparsers10=${TENSORRT_VERSION} && \
     rm -rf /var/lib/apt/lists/* && \
     python3 -m pip install --no-cache-dir click && \
-    python3 -c "import tensorrt"
+    python3 -c "import tensorrt as trt; assert trt.__version__.split('.')[0] == '10', 'unexpected TensorRT ' + trt.__version__; print('TensorRT', trt.__version__)"
 
 COPY development/benchmark_scripts/triton_comparison/rfdetr_triton_server.py .
 
