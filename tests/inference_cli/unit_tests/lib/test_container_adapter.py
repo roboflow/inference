@@ -287,6 +287,7 @@ JETSON_511 = "roboflow/roboflow-inference-server-jetson-5.1.1:latest"
 JETSON_600 = "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
 JETSON_620 = "roboflow/roboflow-inference-server-jetson-6.2.0:latest"
 JETSON_710 = "roboflow/roboflow-inference-server-jetson-7.1.0:latest"
+JETSON_720 = "roboflow/roboflow-inference-server-jetson-7.2.0:latest"
 
 
 class TestParseTegraRelease:
@@ -332,6 +333,8 @@ class TestImageForL4t:
             (36, 5, JETSON_620),
             (38, 0, JETSON_710),
             (38, 4, JETSON_710),
+            (39, 0, JETSON_720),
+            (39, 2, JETSON_720),
         ],
     )
     def test_l4t_to_image(self, l4t_major: int, l4t_minor: int, expected: str) -> None:
@@ -358,6 +361,9 @@ class TestGetJetpackImage:
             ("6.2.0", JETSON_620),
             ("7.1", JETSON_710),
             ("7.1.0", JETSON_710),
+            ("7.2", JETSON_720),
+            ("7.2.0", JETSON_720),
+            ("7.2-b187", JETSON_720),
         ],
     )
     def test_returns_correct_image(self, version: str, expected_image: str) -> None:
