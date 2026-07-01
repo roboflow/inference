@@ -76,10 +76,12 @@ T_ERROR = b"\xff"
 T_LOAD = b"\x20"
 T_UNLOAD = b"\x21"
 T_STATS = b"\x30"
+T_SHM_INFO = b"\x31"
 
 # Lifecycle replies (MMP → admin)
 T_OK = b"\x40"
 T_STATS_RESP = b"\x41"
+T_SHM_INFO_RESP = b"\x42"
 
 # Error codes embedded in T_ERROR payload byte
 _ERR_POOL_FULL = 1
@@ -671,6 +673,8 @@ class ModelManagerProcess:
                 await self._handle_unload(identity, data)
             elif msg_type == T_STATS:
                 await self._handle_stats(identity, data)
+            elif msg_type == T_SHM_INFO:
+                await self._handle_shm_info(identity, data)
             else:
                 logger.debug("MMP: unknown msg_type=%r from %r", msg_type, identity)
         except Exception:
@@ -1028,6 +1032,18 @@ class ModelManagerProcess:
             identity,
             T_STATS_RESP,
             struct.pack(">QI", req_id, len(payload)) + payload,
+        )
+
+    async def _handle_shm_info(self, identity: bytes, data: list[bytes]) -> None:
+        if not data or len(data[0]) < 8:
+            return
+        req_id = struct.unpack_from(">Q", data[0])[0]
+        name = (self.shm_name or "").encode()
+        data_size = int(self._input_mb * 1024 * 1024)
+        await self._send(
+            identity,
+            T_SHM_INFO_RESP,
+            struct.pack(">QIQH", req_id, self._n_slots, data_size, len(name)) + name,
         )
 
     # ------------------------------------------------------------------
