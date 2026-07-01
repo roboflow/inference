@@ -23,6 +23,9 @@ from inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1 import
 from inference.enterprise.workflows.enterprise_blocks.sinks.PLCethernetIP.v1 import (
     PLCBlockV1,
 )
+from inference.enterprise.workflows.enterprise_blocks.streams.set_stream_camera_parameters.v1 import (
+    SetStreamCameraParametersBlockV1,
+)
 
 
 def load_enterprise_blocks() -> List[Type[WorkflowBlock]]:
@@ -35,4 +38,5 @@ def load_enterprise_blocks() -> List[Type[WorkflowBlock]]:
         ModbusTCPBlockV1,
         MicrosoftSQLServerSinkBlockV1,
         EventWriterSinkBlockV1,
+        SetStreamCameraParametersBlockV1,
     ]
