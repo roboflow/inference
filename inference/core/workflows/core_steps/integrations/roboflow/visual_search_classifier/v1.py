@@ -1,3 +1,4 @@
+import base64
 import math
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 from uuid import uuid4
@@ -9,6 +10,8 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace,
     search_project_images_at_roboflow,
 )
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 from inference.core.workflows.core_steps.integrations.roboflow.visual_search.helpers import (
     build_visual_search_candidate_image,
     format_visual_search_candidate,
@@ -59,16 +62,23 @@ shape, and multi-label annotations are returned in multi-label classification
 shape. Classification confidence is derived from the best candidate's public
 Roboflow project search `score` field when present.
 
+This block performs an external visual search API call and is not intended for
+real-time or high-throughput workloads. To bound latency, query images are
+downscaled with aspect ratio preserved to a maximum side length of 224 pixels by
+default. Increase `max_image_size` when finer visual matching is more important
+than lower latency.
+
 ## How This Block Works
 
 This block uses Roboflow project image search:
 
 1. Receives an input image from the workflow
-2. Sends the image to Roboflow project search as `image_base64`
-3. Requests candidate image fields and classification labels or annotations
-4. Uses the best candidate's annotation as the predicted class
-5. Maps the API `score` field to classification confidence when present
-6. Returns the result through the standard `predictions` classification output
+2. Downscales the query image if its larger side exceeds `max_image_size`
+3. Sends the query image to Roboflow project search as `image_base64`
+4. Requests candidate image fields and classification labels or annotations
+5. Uses the best candidate's annotation as the predicted class
+6. Maps the API `score` field to classification confidence when present
+7. Returns the result through the standard `predictions` classification output
 
 The target project must expose classification annotation data in visual search
 results. This block does not train a model, create annotations, consume raw
@@ -76,6 +86,7 @@ search backend relevance scores, or manage the visual search index.
 """
 
 TopK = Annotated[int, Field(ge=1, le=50)]
+MaxImageSize = Annotated[int, Field(ge=1)]
 
 VISUAL_SEARCH_CLASSIFIER_FIELDS = [
     "id",
@@ -136,6 +147,16 @@ class BlockManifest(WorkflowBlockManifest):
         ),
         examples=[1, 5, "$inputs.top_k"],
     )
+    max_image_size: Union[MaxImageSize, Selector(kind=[INTEGER_KIND])] = Field(
+        default=224,
+        description=(
+            "Maximum side length, in pixels, for the visual search query image. "
+            "Images larger than this are downscaled with aspect ratio preserved "
+            "before search. Increase this value for finer matching at higher "
+            "latency."
+        ),
+        examples=[224, 640, "$inputs.max_image_size"],
+    )
 
     @classmethod
     def get_air_gapped_availability(cls) -> AirGappedAvailability:
@@ -183,6 +204,7 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
         target_project: str,
         workspace: Optional[str] = None,
         top_k: int = 1,
+        max_image_size: int = 224,
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
@@ -198,6 +220,7 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
                     workspace=workspace,
                     target_project=target_project,
                     top_k=top_k,
+                    max_image_size=max_image_size,
                 )
                 for single_image in image
             ]
@@ -207,6 +230,7 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
             workspace=workspace,
             target_project=target_project,
             top_k=top_k,
+            max_image_size=max_image_size,
         )
 
     def _classify_single_image(
@@ -215,6 +239,7 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
         target_project: str,
         workspace: Optional[str],
         top_k: int,
+        max_image_size: int,
     ) -> Dict[str, Any]:
         inference_id = f"{uuid4()}"
         try:
@@ -223,7 +248,9 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
                 api_key=self._api_key,
                 workspace=workspace,
                 project=target_project,
-                image_base64=image.base64_image,
+                image_base64=_prepare_query_image_base64(
+                    image=image, max_image_size=max_image_size
+                ),
                 limit=top_k,
                 fields=VISUAL_SEARCH_CLASSIFIER_FIELDS,
             )
@@ -284,6 +311,22 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
         if workspace:
             return workspace
         return get_roboflow_workspace(api_key=self._api_key)
+
+
+def _prepare_query_image_base64(
+    image: WorkflowImageData,
+    max_image_size: int,
+) -> str:
+    source_image = image.numpy_image
+    query_image = downscale_image_keeping_aspect_ratio(
+        image=source_image,
+        desired_size=(max_image_size, max_image_size),
+    )
+    if query_image.shape[:2] == source_image.shape[:2]:
+        return image.base64_image
+    return base64.b64encode(
+        encode_image_to_jpeg_bytes(query_image, jpeg_quality=95)
+    ).decode("ascii")
 
 
 def _build_classification_prediction(
@@ -380,7 +423,7 @@ def _normalise_visual_search_confidence(score: Any) -> float:
     raw_score = _normalise_visual_search_score(score=score)
     if raw_score is None:
         return 0.0
-    # The project search API exposes visual similarity scores on a [0, 2] scale.
+    # Convert the project-search match score into a bounded confidence-like value.
     return max(0.0, min(1.0, raw_score / 2.0))
 
 

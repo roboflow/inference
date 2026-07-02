@@ -4,6 +4,7 @@ from unittest import mock
 import numpy as np
 import pytest
 
+from inference.core.utils.image_utils import load_image_base64
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     execute_operations,
 )
@@ -37,6 +38,19 @@ def make_image(base64_image: str = "query-base64") -> WorkflowImageData:
         base64_image=base64_image,
         numpy_image=np.zeros((4, 6, 3), dtype=np.uint8),
     )
+
+
+def make_sized_image(height: int, width: int) -> WorkflowImageData:
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="query-image"),
+        numpy_image=np.zeros((height, width, 3), dtype=np.uint8),
+    )
+
+
+def image_size_from_base64(value: str) -> tuple[int, int]:
+    image = load_image_base64(value=value)
+    height, width = image.shape[:2]
+    return height, width
 
 
 def make_batch() -> Batch:
@@ -82,6 +96,7 @@ def test_manifest_parsing_valid() -> None:
     assert manifest.target_project == "reference-images"
     assert manifest.workspace is None
     assert manifest.top_k == 3
+    assert manifest.max_image_size == 224
     assert BlockManifest.get_parameters_accepting_batches() == ["image"]
     outputs = {output.name: output.kind for output in BlockManifest.describe_outputs()}
     assert outputs == {
@@ -97,6 +112,15 @@ def test_manifest_parsing_valid() -> None:
         "message": [STRING_KIND],
     }
     assert "classification_predictions" not in outputs
+
+
+def test_manifest_describes_visual_search_latency_and_resize_default() -> None:
+    schema_extra = BlockManifest.model_config["json_schema_extra"]
+    long_description = " ".join(schema_extra["long_description"].split())
+
+    assert "not intended for real-time" in long_description
+    assert "224" in long_description
+    assert "latency" in BlockManifest.model_fields["max_image_size"].description
 
 
 def test_run_calls_project_search_and_returns_predictions() -> None:
@@ -156,6 +180,59 @@ def test_run_calls_project_search_and_returns_predictions() -> None:
         "parent_id": "query-image",
         "root_parent_id": "query-image",
     }
+
+
+def test_run_downscales_query_image_to_default_max_size() -> None:
+    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+
+    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+        search_mock.return_value = {"results": [make_candidate()]}
+
+        result = block.run(
+            image=make_sized_image(height=800, width=1200),
+            workspace="my-workspace",
+            target_project="reference-images",
+        )
+
+    query_height, query_width = image_size_from_base64(
+        search_mock.call_args.kwargs["image_base64"]
+    )
+    assert (query_height, query_width) == (149, 224)
+    assert result["predictions"]["image"] == {"width": 1200, "height": 800}
+
+
+def test_run_honors_custom_query_image_max_size() -> None:
+    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+
+    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+        search_mock.return_value = {"results": [make_candidate()]}
+
+        block.run(
+            image=make_sized_image(height=800, width=1200),
+            workspace="my-workspace",
+            target_project="reference-images",
+            max_image_size=640,
+        )
+
+    query_height, query_width = image_size_from_base64(
+        search_mock.call_args.kwargs["image_base64"]
+    )
+    assert (query_height, query_width) == (426, 640)
+
+
+def test_run_does_not_reencode_image_when_it_is_smaller_than_resize_cap() -> None:
+    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+
+    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+        search_mock.return_value = {"results": [make_candidate()]}
+
+        block.run(
+            image=make_image(base64_image="small-query-base64"),
+            workspace="my-workspace",
+            target_project="reference-images",
+        )
+
+    assert search_mock.call_args.kwargs["image_base64"] == "small-query-base64"
 
 
 def test_run_returns_multi_label_predictions_when_candidate_has_multiple_classes() -> (
