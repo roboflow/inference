@@ -1,109 +1,99 @@
 ---
 name: review-legacy-models-registries
-description: Review guidance for PRs touching inference/models/**, inference/core/models/** and inference/core/registries/** — enforces the legacy (ORT/HF) model implementations, the base inference contract (preprocess/predict/postprocess/make_response), and the Roboflow model-type registry / model-id resolution standards, including required version bumps, adapter parity, and thread-safety/companion requirements.
+description: Load when a PR touches inference/models/** (legacy ORT/HF models, models/utils.py ROBOFLOW_MODEL_TYPES + get_roboflow_model, models/aliases.py), inference/core/models/** (base.py, roboflow.py CLASS_MAP parsing, *_base.py, stubs.py, inference_models_adapters.py), or inference/core/registries/** (get_model_type, GENERIC_MODELS). Diff signals: new ROBOFLOW_MODEL_TYPES key, resolve_roboflow_model_alias, _session_lock/_state_lock, ort_session.run, USE_INFERENCE_MODELS, no version.py bump.
 ---
 
 # Reviewing legacy-models-registries changes
 
 ## Scope
 Trigger this skill when a PR changes any of:
-- `inference/models/**` — concrete legacy model implementations (rfdetr, owlv2, sam/sam2/sam3, clip, gaze, yolo*, easy_ocr, doctr, florence2, paligemma, qwen*, etc.), `inference/models/utils.py` (the `ROBOFLOW_MODEL_TYPES` registry + `get_roboflow_model`), and `inference/models/aliases.py`.
+- `inference/models/**` — concrete legacy model implementations (rfdetr, owlv2, sam/sam2/sam3, clip, gaze, yolo*, easy_ocr, doctr, florence2, paligemma, qwen*, smolvlm, etc.), `inference/models/utils.py` (`ROBOFLOW_MODEL_TYPES` + `get_roboflow_model`), and `inference/models/aliases.py`.
 - `inference/core/models/**` — base contracts (`base.py`, `roboflow.py`), task bases (`object_detection_base.py`, `instance_segmentation_base.py`, `keypoints_detection_base.py`, `classification_base.py`, `semantic_segmentation_base.py`), `stubs.py`, and `inference_models_adapters.py` (the `USE_INFERENCE_MODELS` bridge adapters).
 - `inference/core/registries/**` — `base.py` (`ModelRegistry`) and `roboflow.py` (`get_model_type`, auth checks, metadata cache).
 
 OUT of scope (defer to other skills): Workflows blocks, HTTP API handlers (`inference/core/interfaces/**`), model managers (`inference/core/managers/**`), the standalone `inference_models` package itself, and the tensor-data-representation `_tensor` sibling effort.
 
-## What this surface is
-Two layers a reviewer must keep coherent:
-1. **Model implementations + base contract.** Every model is a `Model` (`inference/core/models/base.py`) whose `infer()` runs `preprocess → predict → postprocess` under telemetry spans, and whose `infer_from_request()` sets `response.time`, `inference_id`, and optional `visualization`. `@usage_collector("model")` wraps `BaseInference.infer`; models overriding `infer_from_request` (SAM2/SAM3) must re-apply the decorator (#1768). ONNX Roboflow models flow through `inference/core/models/roboflow.py` (artifact download → cache → `environment.json` parse → class names/colors/preproc).
-2. **Registry / id resolution.** `inference/core/registries/roboflow.py::get_model_type(model_id, api_key)` returns `(task_type, model_type)` by: resolving aliases, checking local `inference_models` dirs, `GENERIC_MODELS`, stub versions, then the Roboflow API; the `(task_type, model_type)` tuple keys into `ROBOFLOW_MODEL_TYPES` in `inference/models/utils.py` to pick a class.
+## Review checklist
+Severity-tagged. Each item points at its canonical rule in **Standards** below.
 
-CONTRACTS/INVARIANTS to protect:
-- `get_model_type` must return a non-null `(project_task_type, model_type)`; unknowns fall back via `MODEL_TYPE_DEFAULTS` (`inference/core/roboflow_api.py`) — never silently return `None` (`roboflow.py` raises `ModelArtefactError`).
-- A new `(task, variant)` entry in `ROBOFLOW_MODEL_TYPES` MUST have a corresponding class import guarded by its enablement flag; a missing entry silently produces `ModelNotRecognisedError` (#2128 added `rfdetr`/`rfdetr` seg keys that the NAS/inference-models backend needed).
-- Response schemas (`inference/core/entities/responses/inference.py`) are a public API — field additions must stay backward-compatible (default values, not `Optional`, because callers use `model_dump(exclude_none=True)`, #1036).
-- Alias resolution must happen once, up front, everywhere a raw `model_id` enters (#193, #1226, #225-adjacent).
+- **BLOCK** — behavioral change with no `__version__` bump in `inference/core/version.py`. (S1)
+- **BLOCK** — new model missing any leg of the wiring triple: env flag (`env.py`) + guarded `ROBOFLOW_MODEL_TYPES` entry (`utils.py`) + registry recognition (`GENERIC_MODELS` or API task type). (S3)
+- **BLOCK** — a served `(task, variant)` has no `ROBOFLOW_MODEL_TYPES` key → `ModelNotRecognisedError`. (S3)
+- **BLOCK** — a raw `model_id` reaches chunking / auth / weight fetch without `resolve_roboflow_model_alias` first. (S2)
+- **BLOCK** — `get_model_type` can return `None`; new branch drops the `MODEL_TYPE_DEFAULTS` fallback or `_ensure_model_supported_on_this_deployment` gating. (S4)
+- **BLOCK** — new `ort_session.run` / `run_session_via_iobinding` / shared per-image cache mutation without an instance `Lock`. (S5)
+- **BLOCK** — class-name / `environment.json` parsing indexes by `sorted(keys)` instead of numeric `str(i)`. (S6)
+- **BLOCK** — optional/deprecated model import not wrapped in try/except + `ModelDependencyMissing` warning (breaks slim-image `utils.py` load). (S3)
+- **FLAG** — response-schema field added as `Optional` instead of with a default (breaks `model_dump(exclude_none=True)` callers). (S7)
+- **FLAG** — new metadata/weight fetch path drops `countinference` / `service_secret`. (S8)
+- **FLAG** — `USE_INFERENCE_MODELS` adapter parity missing, or `backend=` ignores `DISABLED_INFERENCE_MODELS_BACKENDS` / `VALID_INFERENCE_MODELS_BACKENDS`. (S9)
+- **FLAG** — postprocess / NMS index math or empty-prediction handling changed without a covering test. (S10)
+- **FLAG** — `torch.compile` / monkey-patch / background-compilation / download-streaming change without explicit justification + tests (repeatedly reverted). (S11)
+- **FLAG** — model overriding `infer_from_request` (SAM2/SAM3) drops the `@usage_collector("model")` decorator. (S12)
+- **NIT** — per-inference logging above `debug`, or f-strings instead of lazy `%`-args in hot paths. (S13)
+- **NIT** — HF/transformer artifact download not guarded by `FileLock`. (S13)
 
-## Standards enforced here
-- **Version bump is mandatory on any behavioral change.** Nearly every merged PR bumps `inference/core/version.py` (#1920, #495, #225, #1036, #1848, #2105, #2270). A model/registry PR with no version bump is a block.
-- **Alias resolution first.** Call `resolve_roboflow_model_alias(model_id=...)` before `get_model_id_chunks`, before obtaining chunks/weights, and before auth checks. #1226 fixed a bug where alias resolution was missing before obtaining chunks in `_check_if_api_key_has_access_to_model`; #193 established the pattern in both the model layer and registry.
-- **New model wiring is a triple.** Adding a model requires: (a) an env enablement flag in `inference/core/env.py` (e.g. `QWEN_3_5_ENABLED`, #2105), (b) a guarded import + `ROBOFLOW_MODEL_TYPES` entry in `inference/models/utils.py`, and (c) registry recognition (`GENERIC_MODELS` or API task type). Missing any leg = block.
-- **Guard optional imports with try/except + `warnings.warn(category=ModelDependencyMissing)`.** Deprecated/optional models (Gaze) must not hard-crash import of `utils.py`; #2338 wrapped the Gaze import in `try/except` emitting a `ModelDependencyMissing` warning. New optional-model wiring must follow this or it breaks slim images.
-- **Thread-safety for stateful/session models.** ONNX sessions and cache-mutating models need instance-level `threading.Lock`. #1510 added `self._session_lock` around `run_session_via_iobinding`/`ort_session.run` for classification, clip (per visual/textual session), gaze, rfdetr. #1549 wrapped whole `infer_from_request` of SAM/SAM2 in a `self._state_lock` (renamed from `_ort_session_lock`) because embedding/cache state is shared. Any new ONNX `.run(...)` or mutable per-image cache without a lock is a finding.
-- **`environment.json` / `CLASS_MAP` parsing must be order-stable.** Class names come from `CLASS_MAP` indexed by integer string keys `str(i)` in order, NOT `sorted(keys())` (#225 fixed lexicographic sort mangling `"10"` before `"2"`). See `get_class_names_from_environment_file` in `inference/core/models/roboflow.py`.
-- **`USE_INFERENCE_MODELS` bridge parity.** When adding a legacy model that also has an inference-models backend, add the matching `InferenceModels*Adapter` swap in the `if USE_INFERENCE_MODELS:` block of `utils.py` and register local-dir task types (#2479, #2105). Adapters must respect `DISABLED_INFERENCE_MODELS_BACKENDS` / `VALID_INFERENCE_MODELS_BACKENDS` when computing `backend=` (#2096).
-- **`countinference` / `service_secret` threading.** Weight/metadata fetches accept and forward `countinference` and `service_secret` down to `get_roboflow_*`/`get_extra_weights_provider_headers` (#1382, #1575, #1768-adjacent). New fetch paths must plumb them through, not drop them.
-- **Logging is lazy and low-noise.** Use `logger.debug` for per-inference logs (#1793 moved OWLv2 per-inference from INFO→DEBUG) and `%`-style lazy args, not f-strings, in hot/logging paths (#1578).
-- **Concurrency-safe artifact download.** Downloading HF/transformer artifacts must be guarded by a `FileLock` to avoid races between workers (#1578).
-- **`postprocess`/NMS index math is load-bearing.** Padding-undo uses `infer_shape[1]` for x and `[0]` for y (#495); keypoint slicing is `pred[7:]` with class id at `pred[4 + len(class_names)]` (#216); `argpartition` must guard `len(logits_flat) > max_detections` or it raises (#1920); empty predictions per image append `[]` and `continue` (#387). Treat changes to these as high-scrutiny.
+### Not blocking
+- Do NOT demand a version bump for pure comment/docstring/test-only edits, or for a change that is itself the version bump.
+- Do NOT demand the full wiring triple when the PR only edits an existing model's internals (no new `(task, variant)`).
+- Do NOT demand a new adapter when the touched model has no `inference_models` backend.
+- Do NOT block on `Optional`-vs-default when the field is genuinely nullable in the response contract and callers do not use `exclude_none`.
+- Do NOT flag missing locks on stateless, read-only compute that never touches a shared ORT session or cache.
+
+## Standards
+
+**The base contract.** Every model is a `Model` (`inference/core/models/base.py`). `BaseInference.infer()` runs `preprocess → predict → postprocess` under telemetry spans and is wrapped by `@usage_collector("model")`. `make_response(...)` is a separate abstract method that builds the `InferenceResponse`. `Model.infer_from_request(request)` orchestrates: calls `infer(...)`, then stamps `response.time`, `response.inference_id`, and optional `visualization`. ONNX Roboflow models flow through `inference/core/models/roboflow.py` (artifact download → cache → `environment.json` parse → class names/colors/preproc).
+
+**Registry / id resolution.** `inference/core/registries/roboflow.py::get_model_type(model_id, api_key)` returns `(task_type, model_type)` by: resolving aliases, `GENERIC_MODELS` (whole `model_id` then `dataset_id`), `_get_local_model_type` (local `inference_models` dirs), stub versions, then the Roboflow API. The tuple keys into `ROBOFLOW_MODEL_TYPES` (`inference/models/utils.py`) to pick a class.
+
+- **S1 — Version bump is mandatory on any behavioral change.** Bump `__version__` in `inference/core/version.py` (every reference bugfix/feature PR does this — #1920, #495, #225, #1036, #1848, #2105, #2270).
+- **S2 — Alias resolution first.** Call `resolve_roboflow_model_alias(model_id)` (`inference/models/aliases.py`) before `get_model_id_chunks`, before obtaining chunks/weights, and before auth checks (missing before chunk-fetch in `_check_if_api_key_has_access_to_model` broke aliased-model authorization, #1226; pattern established in both model and registry layers, #193).
+- **S3 — New model wiring is a triple.** (a) env enablement flag in `inference/core/env.py` (e.g. `QWEN_3_5_ENABLED`, `CORE_MODEL_*_ENABLED`, #2105); (b) guarded import + `ROBOFLOW_MODEL_TYPES` entry in `inference/models/utils.py`; (c) registry recognition via `GENERIC_MODELS` or API task type. A registry key must exist for every served variant name (missing bare `("object-detection","rfdetr")` / `("instance-segmentation","rfdetr")` keys yielded `ModelNotRecognisedError` even though the inference-models backend served the variant, #2128). Optional/deprecated imports (Gaze) must be wrapped in try/except emitting a `warnings.warn(category=ModelDependencyMissing)`, or a crash at import breaks the whole `utils.py` load in slim images (#2338).
+- **S4 — `get_model_type` never returns `None`.** Unknowns fall back via `MODEL_TYPE_DEFAULTS` (`inference/core/roboflow_api.py`); `_ensure_model_supported_on_this_deployment` still gates. A silent `None` surfaces downstream as `ModelArtefactError`.
+- **S5 — Thread-safety for stateful/session models.** ONNX sessions and cache-mutating models need an instance-level `threading.Lock`. `self._session_lock` (initialized in `inference/core/models/roboflow.py`) guards `run_session_via_iobinding` / `ort_session.run` in classification, clip, gaze, rfdetr, yolo* (#1510). SAM/SAM2 wrap the whole `infer_from_request` in `self._state_lock` (renamed from `_ort_session_lock`) because embedding/cache state is shared (#1549). Any new `.run(...)` or mutable per-image cache without a lock is a finding.
+- **S6 — `environment.json` / `CLASS_MAP` parsing must be order-stable.** Class names come from `CLASS_MAP` indexed by integer string keys `str(i)` in numeric order, NOT `sorted(keys())` — lexicographic sort put `"10"` before `"2"` and scrambled classes (#225). See `get_class_names_from_environment_file` in `inference/core/models/roboflow.py`.
+- **S7 — Response-schema additions ship a default, not `Optional`.** Schemas in `inference/core/entities/responses/inference.py` are public API; callers use `model_dump(exclude_none=True)`, so a new field needs a concrete default. Classification also keeps `top`/`confidence` defaulting to `""`/`0.0` when the filtered list is empty — watch for `results[0]` IndexError on empty predictions (#1036; earlier #873 dropped `**kwargs` on classification `infer`).
+- **S8 — `countinference` / `service_secret` threading.** Weight/metadata fetches accept and forward `countinference` and `service_secret` down to `get_roboflow_*` / `get_extra_weights_provider_headers` (#1382, #1575). New fetch paths must plumb them through, not drop them.
+- **S9 — `USE_INFERENCE_MODELS` bridge parity.** When adding a legacy model that also has an inference-models backend, add the matching `InferenceModels*Adapter` swap in the `if USE_INFERENCE_MODELS:` block of `utils.py` and register local-dir task types (#2479, #2105). Adapters must respect `DISABLED_INFERENCE_MODELS_BACKENDS` / `VALID_INFERENCE_MODELS_BACKENDS` (`inference/core/env.py`) when computing `backend=` (#2096).
+- **S10 — Postprocess / NMS index math is load-bearing.** Padding-undo uses `infer_shape[1]` for x and `[0]` for y (x/y swap shifted every box, #495); keypoint slicing is `pred[7:]` with class id at `pred[4 + len(class_names)]` (#216); `np.argpartition(-logits_flat, max_detections)` must guard `max_detections < len(logits_flat)` or it raises (`inference/models/rfdetr/rfdetr.py`, #1920); empty per-image predictions append `[]` and `continue` rather than indexing an empty array (#387). Treat changes as high-scrutiny.
+- **S11 — Compile / download-mode changes are high-risk.** OWLv2 `torch.compile` monkey-patching, background compilation, precomputed-embeddings, and streaming-download changes were repeatedly reverted (#2270/#2271/#1046/#976/#943/#1329/#1196/#1787). Also: `ModelArtefactError`-wrapping retry loops around cache reads hid corrupt-download handling — treat corruption at the root cache layer (#1404); don't gate on `"torch" in dir()` (#1054). Expect a revert plan and strong test evidence.
+- **S12 — `@usage_collector("model")` must survive an override.** `BaseInference.infer` carries the decorator; models overriding `infer_from_request` (SAM2/SAM3) must re-apply `@usage_collector("model")` themselves (#1768).
+- **S13 — Logging is lazy and low-noise; downloads are race-safe.** Use `logger.debug` for per-inference logs (OWLv2 moved INFO→DEBUG, #1793) and `%`-style lazy args, not f-strings, in hot paths (#1578). Guard HF/transformer artifact downloads with `FileLock` to avoid worker races (#1578).
 
 ## Required companions
-- **`inference/core/version.py`** — bump `__version__` on any behavioral change (every reference bugfix/feature PR does this).
-- **Env flag in `inference/core/env.py`** — for any new model or new global toggle (`*_ENABLED`, `DISABLED_INFERENCE_MODELS_BACKENDS`); #2096, #2105, #2338.
-- **`inference/models/utils.py` registry entry** — new `(task, variant)` → class mapping, guarded by the enablement flag and try/except; plus the `USE_INFERENCE_MODELS` adapter swap when a backend exists.
+- **`inference/core/version.py`** — bump `__version__` on any behavioral change.
+- **`inference/core/env.py`** — env flag for any new model or global toggle (`*_ENABLED`, `DISABLED_INFERENCE_MODELS_BACKENDS`).
+- **`inference/models/utils.py`** — new `(task, variant)` → class mapping, guarded by the enablement flag and try/except, plus the `USE_INFERENCE_MODELS` adapter swap when a backend exists.
 - **`GENERIC_MODELS` in `inference/core/registries/roboflow.py`** — for foundation/core models keyed by whole `model_id` or `dataset_id`.
-- **Tests.** Registry/id changes → `tests/inference/unit_tests/core/registries/test_roboflow.py`; base/adapter changes → `tests/inference/unit_tests/core/models/test_roboflow.py`, `test_inference_models_adapters.py`, `test_stubs.py`; aliases → `tests/inference/unit_tests/models/test_aliases.py`; concrete models → `tests/inference/unit_tests/models/test_*` and prediction/latency tests under `tests/inference/models_predictions_tests/`. Reference PRs add matching tests (#2479, #193, #1036).
-- **Docs.** New foundation model → `docs/foundation/<model>.md`; new fine-tuned family → `docs/fine-tuned/<model>.md` (#193 documented pretrained YOLOv8 ids; #141 added stubs doc; #562 documented `ONNXRUNTIME_EXECUTION_PROVIDERS`).
-- **Response schema defaults** — schema field additions in `inference/core/entities/responses/inference.py` must ship a default, not `Optional` (#1036).
-
-## Common pitfalls & past regressions
-- **#2128** — a new model variant works via inference-models backend but the *old* `ROBOFLOW_MODEL_TYPES` registry lacks the bare `("object-detection","rfdetr")` / `("instance-segmentation","rfdetr")` keys → `ModelNotRecognisedError`. Check registry keys cover every served variant name.
-- **#1226** — alias not resolved before obtaining chunks in the auth check → aliased models fail authorization. Verify `resolve_roboflow_model_alias` precedes any `get_model_id_chunks`/API call.
-- **#225** — `sorted(CLASS_MAP.keys())` sorts lexicographically (`"10"` < `"2"`), scrambling class order. Must index by `str(i)` in numeric range.
-- **#1036 / #873** — confidence threshold not applied to classification (#873 dropped `**kwargs` on `infer`; #1036 must filter scores AND keep `top`/`confidence` defaulting to `""`/`0.0` when the filtered list is empty). Watch for empty-list `results[0]` IndexError.
-- **#1510 / #1549** — concurrent GPU/ONNX session access and shared embedding caches corrupt state without a lock. Any new `ort_session.run` or per-image cache mutation needs a lock.
-- **#495** — swapped x/y in padding-undo (`pad_x`/`pad_y`) shifts every box; also `width_remainder` reuse. Check dimension indexing in preprocess/postprocess.
-- **#216** — keypoint index math off by class-count; `process_inference_request` must be `await`ed (async regression).
-- **#1920** — `np.argpartition(-x, k)` raises when `k >= len(x)`; guard with the length check.
-- **#387** — empty per-image predictions in instance segmentation must append `[]`/`continue`, not index into an empty array.
-- **#2338** — an optional/deprecated model import (Gaze) crashing at module import breaks the whole `utils.py` load in slim images; must be try/except-guarded.
-- **#2270 / #2271 / #1046 / #976 / #943 / #1329 / #1196 / #1787** — OWLv2 `torch.compile` monkey-patching and "background compilation" / precomputed-embeddings / streaming-download changes were repeatedly reverted. Treat `torch.compile`, monkey-patching, background compilation, and download-mode changes as high-risk; expect a revert plan and strong test evidence.
-- **#1404** — over-eager `ModelArtefactError` wrapping and retry loops around cache reads hid corrupt-download handling; corruption should be treated at the root cache layer.
-- **#1054** — checking `torch` presence via `dir()` is unreliable; don't gate on `"torch" in dir()`.
-
-## Review checklist
-1. Version bumped in `inference/core/version.py`? (block if a behavioral change lacks it.)
-2. New model? Confirm the triple: env flag (`env.py`) + guarded `ROBOFLOW_MODEL_TYPES` entry (`utils.py`) + registry recognition (`GENERIC_MODELS` or task-type mapping). Optional imports wrapped in try/except with `ModelDependencyMissing` warning.
-3. Every raw `model_id` entry point calls `resolve_roboflow_model_alias` before chunking/auth/weight fetch.
-4. `get_model_type` cannot return `None`; new branches keep `MODEL_TYPE_DEFAULTS` fallback and `_ensure_model_supported_on_this_deployment` gating intact.
-5. Any new `ort_session.run` / `run_session_via_iobinding` / shared cache mutation is wrapped in an instance `Lock`.
-6. Class-name/`environment.json` parsing indexes by numeric `str(i)`, not `sorted(keys)`.
-7. Response schema additions use defaults (backward-compat with `model_dump(exclude_none=True)`), not `Optional`.
-8. `countinference` and `service_secret` are threaded through new metadata/weight fetch paths.
-9. `USE_INFERENCE_MODELS` adapter parity: matching `InferenceModels*Adapter` swap added; `backend` respects `DISABLED_INFERENCE_MODELS_BACKENDS`.
-10. Postprocess/NMS index math and empty-prediction handling unchanged unless intentionally fixed with a test.
-11. Logging in hot paths is `debug` + lazy `%` args; artifact downloads use `FileLock`.
-12. Tests added/updated in the matching area; docs added for new foundation/fine-tuned models.
-13. `torch.compile` / monkey-patch / background-compilation / download-streaming changes carry explicit justification and tests (revert history).
+- **Tests.** Registry/id changes → `tests/inference/unit_tests/core/registries/test_roboflow.py`; base/adapter changes → `tests/inference/unit_tests/core/models/test_roboflow.py`, `test_inference_models_adapters.py`, `test_stubs.py`; aliases → `tests/inference/unit_tests/models/test_aliases.py`; concrete models → `tests/inference/unit_tests/models/test_*` and `tests/inference/models_predictions_tests/`.
+- **Docs.** New foundation model → `docs/foundation/<model>.md`; new fine-tuned family → `docs/fine-tuned/<model>.md`.
 
 ## Key files & entry points
-- `inference/core/registries/roboflow.py` — `get_model_type`, `_check_if_api_key_has_access_to_model`, `GENERIC_MODELS`, metadata cache.
+- `inference/core/registries/roboflow.py` — `get_model_type`, `_get_local_model_type`, `_check_if_api_key_has_access_to_model`, `_ensure_model_supported_on_this_deployment`, `GENERIC_MODELS`.
 - `inference/models/utils.py` — `ROBOFLOW_MODEL_TYPES`, `get_roboflow_model`, `USE_INFERENCE_MODELS` swap block, per-model enablement wiring.
-- `inference/core/models/base.py` — `BaseInference`/`Model` contract, `@usage_collector`, `infer_from_request`.
-- `inference/core/models/roboflow.py` — ONNX artifact download/cache, `environment.json` + `CLASS_MAP` parsing, `get_class_names_from_environment_file`.
-- `inference/core/models/inference_models_adapters.py` — inference-models bridge adapters.
+- `inference/core/models/base.py` — `BaseInference`/`Model`, `infer`, `infer_from_request`, `make_response`, `@usage_collector`.
+- `inference/core/models/roboflow.py` — ONNX artifact download/cache, `get_class_names_from_environment_file`, `_session_lock`, `FileLock`.
+- `inference/core/models/inference_models_adapters.py` — `InferenceModels{ObjectDetection,InstanceSegmentation,KeyPointsDetection,Classification,SemanticSegmentation}Adapter`.
 - `inference/models/aliases.py` — `resolve_roboflow_model_alias`, `REGISTERED_ALIASES`.
 - `inference/core/models/{object_detection,instance_segmentation,keypoints_detection,classification,semantic_segmentation}_base.py`, `stubs.py`.
 - `inference/core/env.py` (flags), `inference/core/version.py`, `inference/core/roboflow_api.py` (`MODEL_TYPE_DEFAULTS`).
 
 ## Reference PRs
-- [#2105](https://github.com/roboflow/inference/pull/2105) — redirect versionless model auth/metadata to new registry via `USE_INFERENCE_MODELS` (feature; flag + registry + version bump).
+- [#2105](https://github.com/roboflow/inference/pull/2105) — redirect versionless model auth/metadata to new registry via `USE_INFERENCE_MODELS`.
 - [#2479](https://github.com/roboflow/inference/pull/2479) — load locally-stored `inference_models` packages via registry (`_get_local_model_type`, adapter wiring, tests).
-- [#2128](https://github.com/roboflow/inference/pull/2128) — add missing `ROBOFLOW_MODEL_TYPES` keys so RFDETR/NAS works with inference-models backend (registry-completeness bugfix).
-- [#2338](https://github.com/roboflow/inference/pull/2338) — try/except-guard Gaze import with `ModelDependencyMissing` warning (optional-import safety).
-- [#1510](https://github.com/roboflow/inference/pull/1510) — per-instance ONNX session `Lock` to avoid GPU concurrency corruption.
-- [#1549](https://github.com/roboflow/inference/pull/1549) — wrap state-sensitive SAM/SAM2 handlers in `_state_lock` for thread safety.
+- [#2128](https://github.com/roboflow/inference/pull/2128) — add missing `ROBOFLOW_MODEL_TYPES` keys so RFDETR/NAS works with inference-models backend.
+- [#2338](https://github.com/roboflow/inference/pull/2338) — try/except-guard Gaze import with `ModelDependencyMissing` warning.
+- [#1510](https://github.com/roboflow/inference/pull/1510) — per-instance ONNX `_session_lock` against GPU concurrency corruption.
+- [#1549](https://github.com/roboflow/inference/pull/1549) — wrap SAM/SAM2 handlers in `_state_lock`.
 - [#1036](https://github.com/roboflow/inference/pull/1036) — apply confidence to classification + backward-compatible response defaults.
-- [#225](https://github.com/roboflow/inference/pull/225) — fix `CLASS_MAP` ordering (numeric `str(i)` not `sorted`).
-- [#193](https://github.com/roboflow/inference/pull/193) — introduce model aliases + resolve at model and registry layers (+ docs + tests).
-- [#495](https://github.com/roboflow/inference/pull/495) — fix x/y swap in padding-undo for predicted boxes.
-- [#1920](https://github.com/roboflow/inference/pull/1920) — guard `argpartition` when `max_detections >= len(logits)` in RF-DETR postprocess.
-- [#2270](https://github.com/roboflow/inference/pull/2270) / [#1046](https://github.com/roboflow/inference/pull/1046) — OWLv2 `torch.compile` monkey-patch fix / background-compilation revert (high-risk compile changes).
+- [#225](https://github.com/roboflow/inference/pull/225) — fix `CLASS_MAP` ordering (numeric `str(i)`, not `sorted`).
+- [#193](https://github.com/roboflow/inference/pull/193) — introduce model aliases + resolve at model and registry layers.
+- [#495](https://github.com/roboflow/inference/pull/495) — fix x/y swap in padding-undo.
+- [#1920](https://github.com/roboflow/inference/pull/1920) — guard `argpartition` when `max_detections >= len(logits_flat)`.
+- [#2270](https://github.com/roboflow/inference/pull/2270) / [#1046](https://github.com/roboflow/inference/pull/1046) — OWLv2 `torch.compile` monkey-patch / background-compilation reverts.
 
 ## Related topic skills
-
 When the PR also exhibits these cross-cutting concerns, load the matching topic skill too (see each skill's `description` for the trigger):
-
 - `review-topic-prediction-integrity`
 - `review-topic-concurrency-and-resource-safety`
 - `review-topic-backward-compat-and-versioning`
