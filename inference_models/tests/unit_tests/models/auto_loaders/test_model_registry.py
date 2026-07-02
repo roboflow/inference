@@ -236,3 +236,19 @@ def test_pp_ocrv6_recognition_is_registered_as_onnx_text_only_ocr() -> None:
         == "inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx"
     )
     assert lazy_class._class_name == "PPOCRv6RecognitionOnnx"
+
+
+def test_pp_ocrv6_detection_is_registered_as_onnx_object_detection() -> None:
+    assert model_implementation_exists(
+        model_architecture="pp-ocrv6-det",
+        task_type="object-detection",
+        backend=BackendType.ONNX,
+    )
+    lazy_class = models_registry.REGISTERED_MODELS[
+        ("pp-ocrv6-det", "object-detection", BackendType.ONNX)
+    ]
+    assert (
+        lazy_class._module_name
+        == "inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx"
+    )
+    assert lazy_class._class_name == "PPOCRv6DetectionOnnx"
