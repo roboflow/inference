@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inference Server vs Triton: Latency Root Cause</title>
+    <style>
+      :root {
+        --bg: #0f1117;
+        --panel: #171a22;
+        --panel-2: #1d2230;
+        --text: #f2f4f8;
+        --muted: #a8b0bf;
+        --subtle: #747d8f;
+        --stroke: #2c3342;
+        --server: #f0b85a;
+        --triton: #6ccf8d;
+        --danger: #f07070;
+        --info: #78a8ff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.45;
+      }
+
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 32px 24px 48px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 8px;
+        font-size: 28px;
+      }
+
+      h2 {
+        margin: 28px 0 12px;
+        font-size: 20px;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 15px;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      .grid-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid-wide {
+        grid-template-columns: 1.05fr 0.95fr;
+      }
+
+      .card,
+      .callout,
+      table {
+        border: 1px solid var(--stroke);
+        border-radius: 12px;
+        background: var(--panel);
+      }
+
+      .card {
+        overflow: hidden;
+      }
+
+      .card-header {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--stroke);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .card-body {
+        padding: 16px;
+      }
+
+      .callout {
+        margin: 18px 0;
+        padding: 16px;
+        border-color: color-mix(in srgb, var(--info) 45%, var(--stroke));
+        background: color-mix(in srgb, var(--info) 10%, var(--panel));
+      }
+
+      .callout strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .stat {
+        padding: 14px;
+        border: 1px solid var(--stroke);
+        border-radius: 12px;
+        background: var(--panel);
+      }
+
+      .stat-value {
+        font-size: 24px;
+        font-weight: 750;
+      }
+
+      .stat-label {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .success {
+        color: var(--triton);
+      }
+
+      .warning {
+        color: var(--server);
+      }
+
+      .danger {
+        color: var(--danger);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        overflow: hidden;
+      }
+
+      th,
+      td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--stroke);
+        text-align: left;
+        vertical-align: top;
+        font-size: 13px;
+      }
+
+      th {
+        color: var(--muted);
+        background: var(--panel-2);
+        font-weight: 650;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      td.num,
+      th.num {
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .chart {
+        display: grid;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: 112px 1fr 64px;
+        gap: 10px;
+        align-items: center;
+        font-size: 12px;
+      }
+
+      .track {
+        height: 12px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #252b38;
+      }
+
+      .bar {
+        height: 100%;
+        border-radius: inherit;
+      }
+
+      .server {
+        background: var(--server);
+      }
+
+      .triton {
+        background: var(--triton);
+      }
+
+      .danger-bg {
+        background: var(--danger);
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .legend span::before {
+        content: "";
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        margin-right: 6px;
+        border-radius: 2px;
+        vertical-align: -1px;
+      }
+
+      .legend .server-key::before {
+        background: var(--server);
+      }
+
+      .legend .triton-key::before {
+        background: var(--triton);
+      }
+
+      .legend .danger-key::before {
+        background: var(--danger);
+      }
+
+      code {
+        color: var(--text);
+        background: #252b38;
+        border-radius: 4px;
+        padding: 1px 4px;
+      }
+
+      @media print {
+        :root {
+          --bg: #ffffff;
+          --panel: #ffffff;
+          --panel-2: #f2f4f7;
+          --text: #111827;
+          --muted: #4b5563;
+          --subtle: #6b7280;
+          --stroke: #d1d5db;
+        }
+
+        main {
+          max-width: none;
+          padding: 20px;
+        }
+
+        .card,
+        .callout,
+        table,
+        .stat {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Inference Server vs Triton: Latency Root Cause</h1>
+        <p class="muted">
+          Sources: <code>inference-server-detailed.json</code> and
+          <code>triton-comparison-rfdetr-trt-results/triton.json</code>. Both
+          process 704 frames from the London 1080p video with benchmark frame
+          resize 512x512.
+        </p>
+      </header>
+
+      <section class="grid grid-4">
+        <div class="stat">
+          <div class="stat-value success">2.10x</div>
+          <div class="stat-label">Triton throughput vs detailed server run</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value warning">27.0 ms</div>
+          <div class="stat-label">Server higher p50 total latency</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value warning">21.9 ms</div>
+          <div class="stat-label">Server RF-DETR postprocess p50</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value danger">3</div>
+          <div class="stat-label">Server samples over 200 ms</div>
+        </div>
+      </section>
+
+      <section class="callout">
+        <strong>Root cause summary</strong>
+        Triton measures client RF-DETR preprocessing plus Triton tensor
+        HTTP/raw-output inference. Inference Server measures the API path:
+        client JPEG/base64 preparation, request parsing, server RF-DETR
+        preprocessing, TensorRT predict, RF-DETR postprocess, response
+        materialization, and client JSON parsing. Server TensorRT predict itself
+        is stable at about 10.0 ms p50.
+      </section>
+
+      <section class="grid grid-2">
+        <article class="card">
+          <div class="card-header">Total Latency Percentiles</div>
+          <div class="card-body">
+            <h3>End-to-end total latency</h3>
+            <p class="muted">
+              X-axis: percentile. Y-axis: latency in milliseconds. Legend:
+              Inference Server detailed total vs Triton total.
+            </p>
+            <div class="chart" aria-label="Total latency bar chart">
+              <div class="bar-row">
+                <span>Server p50</span>
+                <span class="track"><span class="bar server" style="display:block;width:77.2%"></span></span>
+                <span>53.6 ms</span>
+              </div>
+              <div class="bar-row">
+                <span>Triton p50</span>
+                <span class="track"><span class="bar triton" style="display:block;width:38.4%"></span></span>
+                <span>26.7 ms</span>
+              </div>
+              <div class="bar-row">
+                <span>Server p95</span>
+                <span class="track"><span class="bar server" style="display:block;width:90.6%"></span></span>
+                <span>63.0 ms</span>
+              </div>
+              <div class="bar-row">
+                <span>Triton p95</span>
+                <span class="track"><span class="bar triton" style="display:block;width:41.8%"></span></span>
+                <span>29.0 ms</span>
+              </div>
+              <div class="bar-row">
+                <span>Server p99</span>
+                <span class="track"><span class="bar server" style="display:block;width:100%"></span></span>
+                <span>69.4 ms</span>
+              </div>
+              <div class="bar-row">
+                <span>Triton p99</span>
+                <span class="track"><span class="bar triton" style="display:block;width:44.7%"></span></span>
+                <span>31.1 ms</span>
+              </div>
+            </div>
+            <div class="legend">
+              <span class="server-key">Inference Server</span>
+              <span class="triton-key">Triton</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">Request Latency Percentiles</div>
+          <div class="card-body">
+            <h3>Request timing comparison</h3>
+            <p class="muted">
+              X-axis: percentile. Y-axis: latency in milliseconds. Legend:
+              Inference Server request timing and Triton request timing.
+            </p>
+            <div class="chart" aria-label="Request latency bar chart">
+              <div class="bar-row">
+                <span>Server p50</span>
+                <span class="track"><span class="bar server" style="display:block;width:76.7%"></span></span>
+                <span>51.3 ms</span>
+              </div>
+              <div class="bar-row">
+                <span>Triton p50</span>
+                <span class="track"><span class="bar triton" style="display:block;width:32.9%"></span></span>
+                <span>22.0 ms</span>
+              </div>
+              <div class="bar-row">
+                <span>Server p95</span>
+                <span class="track"><span class="bar server" style="display:block;width:90.3%"></span></span>
+                <span>60.4 ms</span>
+              </div>
+              <div class="bar-row">
+                <span>Triton p95</span>
+                <span class="track"><span class="bar triton" style="display:block;width:35.9%"></span></span>
+                <span>24.0 ms</span>
+              </div>
+              <div class="bar-row">
+                <span>Server p99</span>
+                <span class="track"><span class="bar server" style="display:block;width:100%"></span></span>
+                <span>66.9 ms</span>
+              </div>
+              <div class="bar-row">
+                <span>Triton p99</span>
+                <span class="track"><span class="bar triton" style="display:block;width:37.9%"></span></span>
+                <span>25.3 ms</span>
+              </div>
+            </div>
+            <div class="legend">
+              <span class="server-key">Inference Server</span>
+              <span class="triton-key">Triton</span>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <h2>Headline Comparison</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th class="num">Inference Server detailed</th>
+            <th class="num">Triton</th>
+            <th>Readout</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Aggregate throughput</td><td class="num">17.8 fps</td><td class="num">37.4 fps</td><td>Triton 2.10x / +109.8%</td></tr>
+          <tr><td>Elapsed wall time</td><td class="num">39.52 s</td><td class="num">18.84 s</td><td>Triton -20.68 s</td></tr>
+          <tr><td>Total p50</td><td class="num">53.6 ms</td><td class="num">26.7 ms</td><td>Server +27.0 ms</td></tr>
+          <tr><td>Total p95</td><td class="num">63.0 ms</td><td class="num">29.0 ms</td><td>Server +33.9 ms</td></tr>
+          <tr><td>Total p99</td><td class="num">69.4 ms</td><td class="num">31.1 ms</td><td>Server +38.4 ms</td></tr>
+          <tr><td>Samples over 200 ms</td><td class="num">3</td><td class="num">0</td><td>Server has three postprocess spikes</td></tr>
+        </tbody>
+      </table>
+
+      <section class="grid grid-wide">
+        <div>
+          <h2>Why The Gap Exists</h2>
+          <p>
+            The p50 total gap is 27.0 ms. Inference Server's measured RF-DETR
+            postprocess alone is 21.9 ms, which explains most of the normal-case
+            difference by itself.
+          </p>
+          <p>
+            Triton is not doing the same output work. It returns raw model
+            tensors from a <code>[1, 3, 384, 384]</code> network input path,
+            while Inference Server turns those outputs into API predictions and
+            serializes a JSON response. That response is also parsed by the
+            benchmark client.
+          </p>
+          <p>
+            A rough p50 sum of server-side surfaces absent or different in the
+            Triton run - server preprocess, postprocess, request parse, response
+            preparation, and client JPEG/base64 prepare - is 38.4 ms. These
+            components overlap with end-to-end timers, so this is not an
+            additive latency model, but it shows where the missing work lives.
+          </p>
+        </div>
+
+        <article class="card">
+          <div class="card-header">P50 Component Surfaces</div>
+          <div class="card-body">
+            <h3>What each run is timing</h3>
+            <p class="muted">
+              X-axis: component. Y-axis: p50 latency in milliseconds. Zero means
+              that component is not measured in that run.
+            </p>
+            <div class="chart" aria-label="P50 component bar chart">
+              <div class="bar-row"><span>Server TRT predict</span><span class="track"><span class="bar server" style="display:block;width:45.7%"></span></span><span>10.0 ms</span></div>
+              <div class="bar-row"><span>Triton request</span><span class="track"><span class="bar triton" style="display:block;width:100%"></span></span><span>22.0 ms</span></div>
+              <div class="bar-row"><span>Server preprocess</span><span class="track"><span class="bar server" style="display:block;width:47.5%"></span></span><span>10.4 ms</span></div>
+              <div class="bar-row"><span>Triton prepare</span><span class="track"><span class="bar triton" style="display:block;width:21.2%"></span></span><span>4.7 ms</span></div>
+              <div class="bar-row"><span>Server postprocess</span><span class="track"><span class="bar server" style="display:block;width:99.6%"></span></span><span>21.9 ms</span></div>
+              <div class="bar-row"><span>Request parse</span><span class="track"><span class="bar server" style="display:block;width:12.1%"></span></span><span>2.7 ms</span></div>
+              <div class="bar-row"><span>Response prep</span><span class="track"><span class="bar server" style="display:block;width:4.2%"></span></span><span>0.9 ms</span></div>
+            </div>
+            <div class="legend">
+              <span class="server-key">Server component</span>
+              <span class="triton-key">Triton component</span>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <h2>Root Cause Details</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Factor</th>
+            <th class="num">P50</th>
+            <th>Why it matters</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>RF-DETR postprocess</td><td class="num">21.9 ms</td><td>Missing from Triton benchmark. Largest normal-case difference.</td></tr>
+          <tr><td>Inference Server preprocess</td><td class="num">10.4 ms</td><td>Server-side image-to-network tensor work. Triton performs similar prep on client.</td></tr>
+          <tr><td>Triton client preprocess</td><td class="num">4.7 ms</td><td>Included in Triton total, but lower than server preprocess plus API input handling.</td></tr>
+          <tr><td>Raw Triton request</td><td class="num">22.0 ms</td><td>Includes Triton HTTP, TensorRT execution, and raw output transfer.</td></tr>
+          <tr><td>Server TRT predict</td><td class="num">10.0 ms</td><td>Stable and much lower than Triton request because it excludes Triton HTTP/raw transfer.</td></tr>
+          <tr><td>Response preparation</td><td class="num">0.9 ms</td><td>Small measured server-side response materialization cost.</td></tr>
+          <tr><td>Request parsing/routing</td><td class="num">2.7 ms</td><td>Small API framework overhead before handler body.</td></tr>
+        </tbody>
+      </table>
+
+      <section class="grid grid-2">
+        <article class="card">
+          <div class="card-header">Inference Server Model Path</div>
+          <div class="card-body">
+            <h3>Server RF-DETR stages at p50</h3>
+            <p class="muted">
+              X-axis: model stage. Y-axis: p50 latency in milliseconds. Source:
+              detailed server stage timings.
+            </p>
+            <div class="chart" aria-label="Server RF-DETR stages at p50">
+              <div class="bar-row"><span>Preprocess</span><span class="track"><span class="bar server" style="display:block;width:47.7%"></span></span><span>10.4 ms</span></div>
+              <div class="bar-row"><span>Predict</span><span class="track"><span class="bar server" style="display:block;width:45.9%"></span></span><span>10.0 ms</span></div>
+              <div class="bar-row"><span>Postprocess</span><span class="track"><span class="bar server" style="display:block;width:100%"></span></span><span>21.9 ms</span></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">Tail Root Cause</div>
+          <div class="card-body">
+            <h3>Tail latency and max</h3>
+            <p class="muted">
+              X-axis: percentile or max. Y-axis: latency in milliseconds. Server
+              max follows postprocess spikes; Triton remains bounded.
+            </p>
+            <div class="chart" aria-label="Tail latency bar chart">
+              <div class="bar-row"><span>Server total max</span><span class="track"><span class="bar server" style="display:block;width:100%"></span></span><span>469.8 ms</span></div>
+              <div class="bar-row"><span>Server post max</span><span class="track"><span class="bar danger-bg" style="display:block;width:93.3%"></span></span><span>438.5 ms</span></div>
+              <div class="bar-row"><span>Triton total max</span><span class="track"><span class="bar triton" style="display:block;width:7.1%"></span></span><span>33.2 ms</span></div>
+              <div class="bar-row"><span>Server total p99</span><span class="track"><span class="bar server" style="display:block;width:14.8%"></span></span><span>69.4 ms</span></div>
+              <div class="bar-row"><span>Triton total p99</span><span class="track"><span class="bar triton" style="display:block;width:6.6%"></span></span><span>31.1 ms</span></div>
+            </div>
+            <div class="legend">
+              <span class="server-key">Server total</span>
+              <span class="danger-key">Server postprocess</span>
+              <span class="triton-key">Triton total</span>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="grid grid-wide">
+        <div>
+          <h2>TensorRT Is Not The Apparent Bottleneck</h2>
+          <p>
+            Inference Server <code>model_predict</code> is 10.0 ms p50 and
+            stays near 10.3 ms at p99. Triton request p50 is 22.0 ms, which is
+            11.9 ms higher because it includes Triton HTTP/raw tensor transfer
+            around execution.
+          </p>
+          <p>
+            The server tail is instead tied to RF-DETR postprocess: server max
+            total latency is 469.8 ms, and server max postprocess is 438.5 ms.
+            Triton max total latency is only 33.2 ms because it stops before
+            that postprocess/API response path.
+          </p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Interpretation</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Not apples-to-apples</td><td>Triton returns raw tensors; Inference Server returns API predictions.</td></tr>
+            <tr><td>Output coordinate work</td><td>Inference Server postprocess maps raw RF-DETR outputs back into prediction objects.</td></tr>
+            <tr><td>Serialization path</td><td>Inference Server includes JSON response materialization and client JSON parsing; Triton does not produce the same JSON payload.</td></tr>
+            <tr><td>Tail behavior</td><td>Inference Server max latency tracks postprocess spikes; Triton max remains near 33 ms.</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </body>
+</html>

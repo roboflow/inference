@@ -82,7 +82,7 @@ python development/benchmark_scripts/triton_comparison/rfdetr-trt-inference-serv
   --model-id /models/rfdetr-trt-package \
   --task object_detection \
   --inference-server-url http://localhost:9001 \
-  --result-out "$OUTPUT_DIR/inference-server.json"
+  --result-out "$OUTPUT_DIR/inference-server-detailed.json"
 ```
 
 If you are benchmarking instance segmentation, use
