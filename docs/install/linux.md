@@ -95,6 +95,7 @@ If you are using Docker Compose for your application, the equivalent yaml is:
       inference-server:
         container_name: inference-server
         image: roboflow/roboflow-inference-server-cpu:latest
+        restart: unless-stopped
     
         read_only: true
         ports:
@@ -102,6 +103,13 @@ If you are using Docker Compose for your application, the equivalent yaml is:
 
         volumes:
           - "${HOME}/.inference/cache:/tmp:rw"
+    
+        healthcheck:
+          test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9001/healthz', timeout=5).status==200 else 1)"]
+          interval: 30s
+          timeout: 10s
+          retries: 3
+          start_period: 60s
     
         security_opt:
           - no-new-privileges
@@ -119,6 +127,7 @@ If you are using Docker Compose for your application, the equivalent yaml is:
       inference-server:
         container_name: inference-server
         image: roboflow/roboflow-inference-server-gpu:latest
+        restart: unless-stopped
     
         read_only: true
         ports:
@@ -134,6 +143,13 @@ If you are using Docker Compose for your application, the equivalent yaml is:
                 - driver: nvidia
                   count: all
                   capabilities: [gpu]
+    
+        healthcheck:
+          test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9001/healthz', timeout=5).status==200 else 1)"]
+          interval: 30s
+          timeout: 10s
+          retries: 3
+          start_period: 60s
     
         security_opt:
           - no-new-privileges
@@ -151,6 +167,7 @@ If you are using Docker Compose for your application, the equivalent yaml is:
       inference-server:
         container_name: inference-server
         image: roboflow/roboflow-inference-server-gpu:latest
+        restart: unless-stopped
     
         read_only: true
         ports:
@@ -170,6 +187,13 @@ If you are using Docker Compose for your application, the equivalent yaml is:
         environment:
           ONNXRUNTIME_EXECUTION_PROVIDERS: "[TensorrtExecutionProvider,CUDAExecutionProvider,OpenVINOExecutionProvider,CPUExecutionProvider]"
 
+        healthcheck:
+          test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9001/healthz', timeout=5).status==200 else 1)"]
+          interval: 30s
+          timeout: 10s
+          retries: 3
+          start_period: 60s
+
         security_opt:
           - no-new-privileges
         cap_drop:
@@ -177,6 +201,14 @@ If you are using Docker Compose for your application, the equivalent yaml is:
         cap_add:
           - NET_BIND_SERVICE
     ```
+
+Two additions relative to the `docker run` commands above: `restart: unless-stopped`
+brings the server back after a crash or host reboot, and the `healthcheck` lets
+`docker ps` and `depends_on: condition: service_healthy` consumers see whether the
+API is answering (probed with `python3` because the images do not ship `curl`).
+Note that `/healthz` reports healthy once the HTTP server is up, before any model
+weights are loaded; the first request for each model still pays its one-time load
+cost.
 
 ## Using Your New Server
 
