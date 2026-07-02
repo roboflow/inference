@@ -3,12 +3,10 @@ import numpy as np
 import pytest
 import torch
 
-from inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx import (
-    PPOCRv6DetectionOnnx,
-)
-from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx import (
-    PPOCRv6RecognitionOnnx,
-)
+# The PP-OCRv6 model classes require onnxruntime (the onnx-* extra). Import them
+# lazily inside each test — like the other `*_predictions_onnx.py` integration
+# tests — so this module still collects in the torch-only jobs (e.g.
+# `torch_models`), where these `onnx_extras`-marked tests are deselected.
 
 TEXT_LINES = ["hello world", "goodbye 123"]
 
@@ -38,9 +36,14 @@ def _crops_in_reading_order(image: np.ndarray, detections) -> list:
 
 
 @pytest.mark.slow
+@pytest.mark.onnx_extras
 def test_pp_ocrv6_detection_finds_text_lines(
     pp_ocrv6_tiny_det_onnx_package: str,
 ) -> None:
+    from inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx import (
+        PPOCRv6DetectionOnnx,
+    )
+
     model = PPOCRv6DetectionOnnx.from_pretrained(
         pp_ocrv6_tiny_det_onnx_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -55,9 +58,14 @@ def test_pp_ocrv6_detection_finds_text_lines(
 
 
 @pytest.mark.slow
+@pytest.mark.onnx_extras
 def test_pp_ocrv6_recognition_reads_text_line(
     pp_ocrv6_tiny_rec_onnx_package: str,
 ) -> None:
+    from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx import (
+        PPOCRv6RecognitionOnnx,
+    )
+
     model = PPOCRv6RecognitionOnnx.from_pretrained(
         pp_ocrv6_tiny_rec_onnx_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -70,11 +78,16 @@ def test_pp_ocrv6_recognition_reads_text_line(
 
 
 @pytest.mark.slow
+@pytest.mark.onnx_extras
 def test_pp_ocrv6_recognition_unit_range_float_tensor_matches_uint8(
     pp_ocrv6_tiny_rec_onnx_package: str,
 ) -> None:
     # Regression: float [0, 1] tensors were previously interpreted as
     # near-black images and produced garbage text with no error raised.
+    from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx import (
+        PPOCRv6RecognitionOnnx,
+    )
+
     model = PPOCRv6RecognitionOnnx.from_pretrained(
         pp_ocrv6_tiny_rec_onnx_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -91,10 +104,18 @@ def test_pp_ocrv6_recognition_unit_range_float_tensor_matches_uint8(
 
 
 @pytest.mark.slow
+@pytest.mark.onnx_extras
 def test_pp_ocrv6_two_stage_pipeline_transcribes_all_lines(
     pp_ocrv6_tiny_det_onnx_package: str,
     pp_ocrv6_tiny_rec_onnx_package: str,
 ) -> None:
+    from inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx import (
+        PPOCRv6DetectionOnnx,
+    )
+    from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx import (
+        PPOCRv6RecognitionOnnx,
+    )
+
     detector = PPOCRv6DetectionOnnx.from_pretrained(
         pp_ocrv6_tiny_det_onnx_package,
         onnx_execution_providers=["CPUExecutionProvider"],
