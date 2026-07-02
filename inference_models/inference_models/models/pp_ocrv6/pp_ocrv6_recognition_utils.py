@@ -1,10 +1,42 @@
-import ast
-from typing import List, Tuple
+from typing import Any, List, Optional, Tuple
 
 import cv2
 import numpy as np
+import yaml
 
 from inference_models.errors import ModelInputError
+
+DEFAULT_MAX_TEXT_LINE_WIDTH = 3200
+
+
+def preprocess_text_lines(
+    images: List[np.ndarray],
+    target_height: int,
+    min_width: int,
+    max_width: int = DEFAULT_MAX_TEXT_LINE_WIDTH,
+) -> np.ndarray:
+    max_wh_ratio = min_width / float(target_height)
+    for image in images:
+        height, width = image.shape[:2]
+        if height <= 0 or width <= 0:
+            raise ModelInputError(
+                message="Cannot run PP-OCRv6 recognition on an empty image.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
+        max_wh_ratio = max(max_wh_ratio, width / float(height))
+    target_width = int(np.ceil(target_height * max_wh_ratio))
+    target_width = min(max(target_width, min_width), max_width)
+    return np.stack(
+        [
+            resize_and_pad_text_line(
+                image=image,
+                target_height=target_height,
+                target_width=target_width,
+            )
+            for image in images
+        ],
+        axis=0,
+    )
 
 
 def resize_and_pad_text_line(
@@ -19,11 +51,11 @@ def resize_and_pad_text_line(
     resized_width = int(np.ceil(target_height * width / float(height)))
     resized_width = max(1, min(resized_width, target_width))
     resized = cv2.resize(image, (resized_width, target_height))
-    padded = np.zeros((target_height, target_width, image.shape[2]), dtype=np.uint8)
-    padded[:, :resized_width, :] = resized
-    normalized = padded.astype("float32") / 255.0
-    normalized = (normalized - 0.5) / 0.5
-    return np.transpose(normalized, (2, 0, 1))
+    normalized = (resized.astype("float32") / 255.0 - 0.5) / 0.5
+    normalized = np.transpose(normalized, (2, 0, 1))
+    padded = np.zeros((image.shape[2], target_height, target_width), dtype="float32")
+    padded[:, :, :resized_width] = normalized
+    return padded
 
 
 def ctc_decode(
@@ -53,25 +85,11 @@ def ctc_decode(
 
 
 def load_inference_config(config_path: str) -> Tuple[Tuple[int, int, int], List[str]]:
-    image_shape = None
-    characters = []
     with open(config_path, "r", encoding="utf-8") as config_file:
-        lines = config_file.readlines()
+        config = yaml.safe_load(config_file)
 
-    for idx, line in enumerate(lines):
-        if line.strip() == "image_shape:":
-            image_shape = (
-                int(lines[idx + 1].strip().lstrip("-").strip()),
-                int(lines[idx + 2].strip().lstrip("-").strip()),
-                int(lines[idx + 3].strip().lstrip("-").strip()),
-            )
-        if line.strip() == "character_dict:":
-            for character_line in lines[idx + 1 :]:
-                stripped = character_line.strip()
-                if not stripped.startswith("- "):
-                    break
-                characters.append(parse_yaml_scalar(stripped[2:].strip()))
-            break
+    image_shape = _extract_image_shape(config)
+    characters = _extract_characters(config)
 
     if image_shape is None:
         raise ModelInputError(
@@ -86,11 +104,21 @@ def load_inference_config(config_path: str) -> Tuple[Tuple[int, int, int], List[
     return image_shape, characters
 
 
-def parse_yaml_scalar(value: str) -> str:
-    if value == "''''":
-        return "'"
-    if (value.startswith("'") and value.endswith("'")) or (
-        value.startswith('"') and value.endswith('"')
-    ):
-        return ast.literal_eval(value)
-    return value
+def _extract_image_shape(config: Any) -> Optional[Tuple[int, int, int]]:
+    if not isinstance(config, dict):
+        return None
+    transform_ops = (config.get("PreProcess") or {}).get("transform_ops") or []
+    for op in transform_ops:
+        if not isinstance(op, dict) or "RecResizeImg" not in op:
+            continue
+        image_shape = (op["RecResizeImg"] or {}).get("image_shape")
+        if image_shape and len(image_shape) == 3:
+            return tuple(int(value) for value in image_shape)
+    return None
+
+
+def _extract_characters(config: Any) -> List[str]:
+    if not isinstance(config, dict):
+        return []
+    character_dict = (config.get("PostProcess") or {}).get("character_dict") or []
+    return [str(character) for character in character_dict]

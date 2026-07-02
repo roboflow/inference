@@ -14,7 +14,7 @@ from inference_models.models.common.onnx import set_onnx_execution_provider_defa
 from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_utils import (
     ctc_decode,
     load_inference_config,
-    resize_and_pad_text_line,
+    preprocess_text_lines,
 )
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
@@ -115,16 +115,10 @@ class PPOCRv6RecognitionOnnx(TextOnlyOCRModel[np.ndarray, np.ndarray]):
             images=images,
             input_color_format=input_color_format,
         )
-        return np.stack(
-            [
-                resize_and_pad_text_line(
-                    image=image,
-                    target_height=self._input_height,
-                    target_width=self._input_width,
-                )
-                for image in images
-            ],
-            axis=0,
+        return preprocess_text_lines(
+            images=images,
+            target_height=self._input_height,
+            min_width=self._input_width,
         )
 
     def forward(self, pre_processed_images: np.ndarray, **kwargs) -> np.ndarray:
