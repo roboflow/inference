@@ -1,4 +1,5 @@
 import threading
+from contextlib import nullcontext
 from typing import List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -67,6 +68,13 @@ from inference_models.models.rfdetr.triton_preprocess_runtime import (
     FastPreprocessRuntime,
 )
 from inference_models.weights_providers.entities import RecommendedParameters
+
+try:
+    from inference.core.perf_counters import profile_request_stage
+except ImportError:
+
+    def profile_request_stage(stage: str):
+        return nullcontext()
 
 try:
     import tensorrt as trt
@@ -262,30 +270,32 @@ class RFDetrForInstanceSegmentationTRT(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        fast = None
-        if self._fast_preprocess_enabled:
-            fast = self._fast_preprocess_runtime.try_preprocess(
-                images=images,
-                input_color_format=input_color_format,
-                image_size=image_size,
-                image_pre_processing=self._inference_config.image_pre_processing,
-                network_input=self._inference_config.network_input,
-                stream=self._pre_process_stream,
-            )
-        if fast is not None:
-            self._fast_preproc_event = fast.ready_event
-            return fast.tensor, fast.metadata
-        with torch.cuda.stream(self._pre_process_stream):
-            pre_processed_images, pre_processing_meta = pre_process_network_input(
-                images=images,
-                image_pre_processing=self._inference_config.image_pre_processing,
-                network_input=self._inference_config.network_input,
-                target_device=self._device,
-                input_color_format=input_color_format,
-                image_size_wh=image_size,
-                pre_processing_overrides=pre_processing_overrides,
-            )
-        self._pre_process_stream.synchronize()
+        with profile_request_stage("rfdetr_preprocess"):
+            fast = None
+            if self._fast_preprocess_enabled:
+                fast = self._fast_preprocess_runtime.try_preprocess(
+                    images=images,
+                    input_color_format=input_color_format,
+                    image_size=image_size,
+                    image_pre_processing=self._inference_config.image_pre_processing,
+                    network_input=self._inference_config.network_input,
+                    stream=self._pre_process_stream,
+                )
+            if fast is not None:
+                self._fast_preproc_event = fast.ready_event
+                return fast.tensor, fast.metadata
+            with torch.cuda.stream(self._pre_process_stream):
+                pre_processed_images, pre_processing_meta = pre_process_network_input(
+                    images=images,
+                    image_pre_processing=self._inference_config.image_pre_processing,
+                    network_input=self._inference_config.network_input,
+                    target_device=self._device,
+                    input_color_format=input_color_format,
+                    image_size_wh=image_size,
+                    pre_processing_overrides=pre_processing_overrides,
+                )
+            self._pre_process_stream.synchronize()
+
         if self._stream_pipeline_enabled:
             setattr(
                 pre_processed_images,
@@ -301,27 +311,29 @@ class RFDetrForInstanceSegmentationTRT(
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
-        preproc_event = getattr(self, "_fast_preproc_event", None)
-        if preproc_event is not None:
-            # The Triton preprocess fast path runs on a separate CUDA stream.
-            # TensorRT consumes that tensor on `_inference_stream`, so record an
-            # explicit stream dependency instead of synchronizing the host.
-            self._inference_stream.wait_event(preproc_event)
-            self._fast_preproc_event = None
-        with self._lock:
-            with use_cuda_context(context=self._cuda_context):
-                detections, labels, masks = infer_from_trt_engine(
-                    pre_processed_images=pre_processed_images,
-                    trt_config=self._trt_config,
-                    engine=self._engine,
-                    context=self._execution_context,
-                    device=self._device,
-                    input_name=self._input_name,
-                    outputs=self._output_names,
-                    stream=self._inference_stream,
-                    trt_cuda_graph_cache=cache,
-                )
-                return detections, labels, masks
+        with profile_request_stage("rfdetr_infer"):
+            preproc_event = getattr(self, "_fast_preproc_event", None)
+            if preproc_event is not None:
+                # The Triton preprocess fast path runs on a separate CUDA stream.
+                # TensorRT consumes that tensor on `_inference_stream`, so record an
+                # explicit stream dependency instead of synchronizing the host.
+                self._inference_stream.wait_event(preproc_event)
+                self._fast_preproc_event = None
+            with self._lock:
+                with use_cuda_context(context=self._cuda_context):
+                    detections, labels, masks = infer_from_trt_engine(
+                        pre_processed_images=pre_processed_images,
+                        trt_config=self._trt_config,
+                        engine=self._engine,
+                        context=self._execution_context,
+                        device=self._device,
+                        input_name=self._input_name,
+                        outputs=self._output_names,
+                        stream=self._inference_stream,
+                        trt_cuda_graph_cache=cache,
+                    )
+
+        return detections, labels, masks
 
     def forward_async(
         self,
@@ -426,72 +438,76 @@ class RFDetrForInstanceSegmentationTRT(
         mask_format: InstanceSegmentationMaskFormat = "dense",
         **kwargs,
     ) -> List[InstanceDetections]:
-        if mask_format not in self.supported_mask_formats:
-            raise ModelInputError(
-                message=f"RFDetr Instance Segmentation models support the following mask "
-                f"formats: {self.supported_mask_formats}. Requested format: {mask_format} "
-                f"is not supported. If you see this error while running on Roboflow platform, "
-                f"contact support or raise an issue at https://github.com/roboflow/inference/issues. "
-                f"When running locally - please verify your integration to make sure that appropriate "
-                f"value of `mask_format` parameter is set.",
-                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        with profile_request_stage("rfdetr_postprocess"):
+            if mask_format not in self.supported_mask_formats:
+                raise ModelInputError(
+                    message=f"RFDetr Instance Segmentation models support the following mask "
+                    f"formats: {self.supported_mask_formats}. Requested format: {mask_format} "
+                    f"is not supported. If you see this error while running on Roboflow platform, "
+                    f"contact support or raise an issue at https://github.com/roboflow/inference/issues. "
+                    f"When running locally - please verify your integration to make sure that appropriate "
+                    f"value of `mask_format` parameter is set.",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+                )
+            confidence_filter = ConfidenceFilter(
+                confidence=confidence,
+                recommended_parameters=self.recommended_parameters,
+                default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
             )
-        confidence_filter = ConfidenceFilter(
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
-        )
-        produce_event = getattr(model_results[0], "_trt_produce_event", None)
-        graph_state = getattr(model_results[0], "_trt_graph_state", None)
-        with torch.cuda.stream(self._post_process_stream):
-            if produce_event is not None:
-                self._post_process_stream.wait_event(produce_event)
-            for result_element in model_results:
-                result_element.record_stream(self._post_process_stream)
-            bboxes, logits, masks = model_results
-            if mask_format == "dense":
-                results = post_process_instance_segmentation_results(
-                    bboxes=bboxes,
-                    logits=logits,
-                    masks=masks,
-                    pre_processing_meta=pre_processing_meta,
-                    threshold=confidence_filter.get_threshold(self.class_names),
-                    num_classes=len(self.class_names),
-                    classes_re_mapping=self._classes_re_mapping,
-                )
-            else:
-                results = post_process_instance_segmentation_results_to_rle_masks(
-                    bboxes=bboxes,
-                    logits=logits,
-                    masks=masks,
-                    pre_processing_meta=pre_processing_meta,
-                    threshold=confidence_filter.get_threshold(self.class_names),
-                    num_classes=len(self.class_names),
-                    classes_re_mapping=self._classes_re_mapping,
-                    defer_postprocess_sync=kwargs.get("defer_postprocess_sync", False),
-                )
-            if graph_state is not None:
-                output_consumed_events = [
-                    get_trt_outputs_consumed_event(result) for result in results
-                ]
-                if output_consumed_events and all(
-                    event is not None for event in output_consumed_events
-                ):
-                    graph_state.consumer_done_event = output_consumed_events[-1]
+            produce_event = getattr(model_results[0], "_trt_produce_event", None)
+            graph_state = getattr(model_results[0], "_trt_graph_state", None)
+            with torch.cuda.stream(self._post_process_stream):
+                if produce_event is not None:
+                    self._post_process_stream.wait_event(produce_event)
+                for result_element in model_results:
+                    result_element.record_stream(self._post_process_stream)
+                bboxes, logits, masks = model_results
+                if mask_format == "dense":
+                    results = post_process_instance_segmentation_results(
+                        bboxes=bboxes,
+                        logits=logits,
+                        masks=masks,
+                        pre_processing_meta=pre_processing_meta,
+                        threshold=confidence_filter.get_threshold(self.class_names),
+                        num_classes=len(self.class_names),
+                        classes_re_mapping=self._classes_re_mapping,
+                    )
                 else:
-                    consumer_done = graph_state.consumer_done_event
-                    if consumer_done is None:
-                        consumer_done = torch.cuda.Event()
-                        graph_state.consumer_done_event = consumer_done
-                    consumer_done.record(self._post_process_stream)
-        should_sync = True
-        if kwargs.get("defer_postprocess_sync", False):
-            should_sync = not all(
-                get_deferred_postprocess_done_event(result) is not None
-                for result in results
-            )
-        if should_sync:
-            self._post_process_stream.synchronize()
+                    results = post_process_instance_segmentation_results_to_rle_masks(
+                        bboxes=bboxes,
+                        logits=logits,
+                        masks=masks,
+                        pre_processing_meta=pre_processing_meta,
+                        threshold=confidence_filter.get_threshold(self.class_names),
+                        num_classes=len(self.class_names),
+                        classes_re_mapping=self._classes_re_mapping,
+                        defer_postprocess_sync=kwargs.get(
+                            "defer_postprocess_sync", False
+                        ),
+                    )
+                if graph_state is not None:
+                    output_consumed_events = [
+                        get_trt_outputs_consumed_event(result) for result in results
+                    ]
+                    if output_consumed_events and all(
+                        event is not None for event in output_consumed_events
+                    ):
+                        graph_state.consumer_done_event = output_consumed_events[-1]
+                    else:
+                        consumer_done = graph_state.consumer_done_event
+                        if consumer_done is None:
+                            consumer_done = torch.cuda.Event()
+                            graph_state.consumer_done_event = consumer_done
+                        consumer_done.record(self._post_process_stream)
+            should_sync = True
+            if kwargs.get("defer_postprocess_sync", False):
+                should_sync = not all(
+                    get_deferred_postprocess_done_event(result) is not None
+                    for result in results
+                )
+            if should_sync:
+                self._post_process_stream.synchronize()
+
         return results
 
     @property

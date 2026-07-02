@@ -36,6 +36,8 @@ _TASK_TO_INFERENCE_ENDPOINT = {
     "instance_segmentation": "/infer/instance_segmentation",
 }
 _IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
+_SERVER_PROFILE_REQUEST_HEADER = "X-Inference-Profile"
+_SERVER_STAGE_TIMINGS_HEADER = "X-Inference-Stage-Timings"
 
 
 @dataclass
@@ -43,6 +45,7 @@ class _TimedCall:
     total_latency_ms: float
     request_latency_ms: float
     client_prepare_ms: float
+    server_stage_timings_ms: dict[str, float]
 
 
 @dataclass
@@ -54,9 +57,11 @@ class _BenchmarkResult:
     total_latency_ms: dict[str, Optional[float]]
     request_latency_ms: dict[str, Optional[float]]
     client_prepare_ms: dict[str, Optional[float]]
+    server_stage_timing_ms: dict[str, dict[str, Optional[float]]]
     total_latency_reads_ms: list[float]
     request_latency_reads_ms: list[float]
     client_prepare_reads_ms: list[float]
+    server_stage_timing_reads_ms: dict[str, list[float]]
     metadata: dict[str, Any]
 
     def as_dict(self) -> dict[str, Any]:
@@ -69,9 +74,11 @@ class _BenchmarkResult:
             "total_latency_ms": self.total_latency_ms,
             "request_latency_ms": self.request_latency_ms,
             "client_prepare_ms": self.client_prepare_ms,
+            "server_stage_timing_ms": self.server_stage_timing_ms,
             "total_latency_reads_ms": self.total_latency_reads_ms,
             "request_latency_reads_ms": self.request_latency_reads_ms,
             "client_prepare_reads_ms": self.client_prepare_reads_ms,
+            "server_stage_timing_reads_ms": self.server_stage_timing_reads_ms,
             "metadata": self.metadata,
         }
 
@@ -236,6 +243,28 @@ def _load_json_object(value: Optional[str]) -> dict[str, Any]:
     return loaded
 
 
+def _load_server_stage_timings(response: requests.Response) -> dict[str, float]:
+    header_value = response.headers.get(_SERVER_STAGE_TIMINGS_HEADER)
+    if not header_value:
+        return {}
+
+    try:
+        decoded = json.loads(header_value)
+    except json.JSONDecodeError:
+        return {}
+
+    if not isinstance(decoded, dict):
+        return {}
+
+    stage_timings = {
+        str(stage): float(duration_ms)
+        for stage, duration_ms in decoded.items()
+        if isinstance(duration_ms, (int, float))
+    }
+
+    return stage_timings
+
+
 class _InferenceServerRunner:
     def __init__(
         self,
@@ -283,7 +312,12 @@ class _InferenceServerRunner:
         payload.update(self._extra_payload)
 
         prepared = perf_counter()
-        response = self._session.post(self._url, json=payload, timeout=self._timeout)
+        response = self._session.post(
+            self._url,
+            json=payload,
+            headers={_SERVER_PROFILE_REQUEST_HEADER: "1"},
+            timeout=self._timeout,
+        )
         response.raise_for_status()
         # Force response parsing so serialization/deserialization cost is included.
         response.json()
@@ -292,6 +326,7 @@ class _InferenceServerRunner:
             total_latency_ms=(finished - start) * 1000.0,
             request_latency_ms=(finished - prepared) * 1000.0,
             client_prepare_ms=(prepared - start) * 1000.0,
+            server_stage_timings_ms=_load_server_stage_timings(response=response),
         )
 
         return timed_call
@@ -327,12 +362,15 @@ def _run_profile(
     total_latencies: list[float] = []
     request_latencies: list[float] = []
     prepare_latencies: list[float] = []
+    server_stage_latencies: dict[str, list[float]] = {}
     started = perf_counter()
     for index, frame in enumerate(frames, start=1):
         timed_call = runner(frame)
         total_latencies.append(timed_call.total_latency_ms)
         request_latencies.append(timed_call.request_latency_ms)
         prepare_latencies.append(timed_call.client_prepare_ms)
+        for stage, duration_ms in timed_call.server_stage_timings_ms.items():
+            server_stage_latencies.setdefault(stage, []).append(duration_ms)
         if progress_every > 0 and index % progress_every == 0:
             elapsed = perf_counter() - started
             fps = index / elapsed if elapsed > 0 else 0.0
@@ -351,9 +389,14 @@ def _run_profile(
         total_latency_ms=_percentiles(total_latencies),
         request_latency_ms=_percentiles(request_latencies),
         client_prepare_ms=_percentiles(prepare_latencies),
+        server_stage_timing_ms={
+            stage: _percentiles(stage_latencies)
+            for stage, stage_latencies in sorted(server_stage_latencies.items())
+        },
         total_latency_reads_ms=total_latencies,
         request_latency_reads_ms=request_latencies,
         client_prepare_reads_ms=prepare_latencies,
+        server_stage_timing_reads_ms=server_stage_latencies,
         metadata=metadata,
     )
     _print_profile_result(result)
@@ -382,6 +425,12 @@ def _print_profile_result(result: _BenchmarkResult) -> None:
         f"{_format_percentiles(result.client_prepare_ms)}",
         flush=True,
     )
+    for stage, percentiles in result.server_stage_timing_ms.items():
+        print(
+            f"[benchmark] server_stage={stage} "
+            f"{_format_percentiles(percentiles)}",
+            flush=True,
+        )
 
 
 def _write_json(path: str, payload: dict[str, Any]) -> None:

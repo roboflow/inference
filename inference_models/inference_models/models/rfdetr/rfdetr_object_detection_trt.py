@@ -1,4 +1,5 @@
 import threading
+from contextlib import nullcontext
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -44,6 +45,13 @@ from inference_models.models.rfdetr.class_remapping import (
 from inference_models.models.rfdetr.common import post_process_object_detection_results
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.weights_providers.entities import RecommendedParameters
+
+try:
+    from inference.core.perf_counters import profile_request_stage
+except ImportError:
+
+    def profile_request_stage(stage: str):
+        return nullcontext()
 
 try:
     import tensorrt as trt
@@ -225,16 +233,18 @@ class RFDetrForObjectDetectionTRT(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        with torch.cuda.stream(self._pre_process_stream):
-            pre_processed_images, pre_processing_meta = pre_process_network_input(
-                images=images,
-                image_pre_processing=self._inference_config.image_pre_processing,
-                network_input=self._inference_config.network_input,
-                target_device=self._device,
-                input_color_format=input_color_format,
-                pre_processing_overrides=pre_processing_overrides,
-            )
-        self._pre_process_stream.synchronize()
+        with profile_request_stage("rfdetr_preprocess"):
+            with torch.cuda.stream(self._pre_process_stream):
+                pre_processed_images, pre_processing_meta = pre_process_network_input(
+                    images=images,
+                    image_pre_processing=self._inference_config.image_pre_processing,
+                    network_input=self._inference_config.network_input,
+                    target_device=self._device,
+                    input_color_format=input_color_format,
+                    pre_processing_overrides=pre_processing_overrides,
+                )
+            self._pre_process_stream.synchronize()
+
         return pre_processed_images, pre_processing_meta
 
     def forward(
@@ -244,20 +254,22 @@ class RFDetrForObjectDetectionTRT(
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
-        with self._lock:
-            with use_cuda_context(context=self._cuda_context):
-                detections, labels = infer_from_trt_engine(
-                    pre_processed_images=pre_processed_images,
-                    trt_config=self._trt_config,
-                    engine=self._engine,
-                    context=self._execution_context,
-                    device=self._device,
-                    input_name=self._input_name,
-                    outputs=self._output_names,
-                    stream=self._inference_stream,
-                    trt_cuda_graph_cache=cache,
-                )
-                return detections, labels
+        with profile_request_stage("rfdetr_infer"):
+            with self._lock:
+                with use_cuda_context(context=self._cuda_context):
+                    detections, labels = infer_from_trt_engine(
+                        pre_processed_images=pre_processed_images,
+                        trt_config=self._trt_config,
+                        engine=self._engine,
+                        context=self._execution_context,
+                        device=self._device,
+                        input_name=self._input_name,
+                        outputs=self._output_names,
+                        stream=self._inference_stream,
+                        trt_cuda_graph_cache=cache,
+                    )
+
+        return detections, labels
 
     def post_process(
         self,
@@ -266,25 +278,27 @@ class RFDetrForObjectDetectionTRT(
         confidence: Confidence = "default",
         **kwargs,
     ) -> List[Detections]:
-        confidence_filter = ConfidenceFilter(
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
-        )
-        with torch.cuda.stream(self._post_process_stream):
-            for result_element in model_results:
-                result_element.record_stream(self._post_process_stream)
-            bboxes, logits = model_results
-            results = post_process_object_detection_results(
-                bboxes=bboxes,
-                logits=logits,
-                pre_processing_meta=pre_processing_meta,
-                threshold=confidence_filter.get_threshold(self.class_names),
-                num_classes=len(self.class_names),
-                classes_re_mapping=self._classes_re_mapping,
-                device=self._device,
+        with profile_request_stage("rfdetr_postprocess"):
+            confidence_filter = ConfidenceFilter(
+                confidence=confidence,
+                recommended_parameters=self.recommended_parameters,
+                default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
             )
-        self._post_process_stream.synchronize()
+            with torch.cuda.stream(self._post_process_stream):
+                for result_element in model_results:
+                    result_element.record_stream(self._post_process_stream)
+                bboxes, logits = model_results
+                results = post_process_object_detection_results(
+                    bboxes=bboxes,
+                    logits=logits,
+                    pre_processing_meta=pre_processing_meta,
+                    threshold=confidence_filter.get_threshold(self.class_names),
+                    num_classes=len(self.class_names),
+                    classes_re_mapping=self._classes_re_mapping,
+                    device=self._device,
+                )
+            self._post_process_stream.synchronize()
+
         return results
 
     @property

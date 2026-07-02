@@ -1,5 +1,6 @@
 import base64
 import concurrent
+import json
 import logging
 import os
 import re
@@ -34,6 +35,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
 from inference.core.constants import (
+    INFERENCE_PROFILE_REQUEST_HEADER,
+    INFERENCE_STAGE_COUNTS_HEADER,
+    INFERENCE_STAGE_TIMINGS_HEADER,
     MODEL_COLD_START_COUNT_HEADER,
     MODEL_COLD_START_HEADER,
     MODEL_ID_HEADER,
@@ -284,6 +288,11 @@ from inference.core.managers.model_load_collector import (
     request_workflow_id,
 )
 from inference.core.managers.prometheus import InferenceInstrumentator
+from inference.core.perf_counters import (
+    profile_request_stage,
+    start_request_stage_profiling,
+    stop_request_stage_profiling,
+)
 from inference.core.roboflow_api import (
     assume_identity_authorised_workspace_db_id,
     build_roboflow_api_headers,
@@ -445,6 +454,16 @@ def _set_optional_context_var(context_var: Optional[Any], value: Optional[str]) 
         context_var.set(value)
     except Exception:
         pass
+
+
+def _should_profile_inference_request(request: Request) -> bool:
+    header_value = request.headers.get(INFERENCE_PROFILE_REQUEST_HEADER)
+    if header_value is None:
+        return False
+
+    should_profile = header_value.lower() in {"1", "true", "yes", "on"}
+
+    return should_profile
 
 
 def _prepare_serverless_observability_context(
@@ -1142,11 +1161,45 @@ class HttpInterface(BaseInterface):
 
         @app.middleware("http")
         async def add_inference_engine_headers(request: Request, call_next):
-            response = await call_next(request)
+            profile_token = None
+            profiler = None
+            if _should_profile_inference_request(request=request):
+                profiler, profile_token = start_request_stage_profiling()
+
+            try:
+                if profiler is None:
+                    response = await call_next(request)
+                else:
+                    with profiler.profile("http_total"):
+                        response = await call_next(request)
+            finally:
+                if profile_token is not None:
+                    stop_request_stage_profiling(token=profile_token)
+
             inference_engine = (
                 "inference-models" if USE_INFERENCE_MODELS else "old-inference"
             )
             response.headers["x-inference-engine"] = inference_engine
+            if profiler is not None:
+                stage_timings = profiler.snapshot_ms()
+                handler_ms = stage_timings.get("http_handler", 0.0)
+                total_ms = stage_timings.get("http_total", 0.0)
+                if total_ms > 0:
+                    profiler.record_derived(
+                        stage="request_parsing_and_routing",
+                        duration_ms=total_ms - handler_ms,
+                    )
+                    stage_timings = profiler.snapshot_ms()
+                response.headers[INFERENCE_STAGE_TIMINGS_HEADER] = json.dumps(
+                    stage_timings,
+                    separators=(",", ":"),
+                )
+                stage_counts = profiler.snapshot_counts()
+                if stage_counts:
+                    response.headers[INFERENCE_STAGE_COUNTS_HEADER] = json.dumps(
+                        stage_counts,
+                        separators=(",", ":"),
+                    )
             return response
 
         @app.middleware("http")
@@ -1288,33 +1341,39 @@ class HttpInterface(BaseInterface):
             """
             if api_key is not None:
                 inference_request.api_key = api_key
-            requested_model_id = inference_request.model_id
-            de_aliased_model_id = resolve_roboflow_model_alias(
-                model_id=requested_model_id
-            )
-            model_id_alias = (
-                requested_model_id
-                if de_aliased_model_id != requested_model_id
-                else None
-            )
-            self.model_manager.add_model(
-                de_aliased_model_id,
-                inference_request.api_key,
-                model_id_alias=model_id_alias,
-                countinference=countinference,
-                service_secret=service_secret,
-            )
-            inference_model_id = (
-                requested_model_id
-                if model_id_alias is not None
-                else de_aliased_model_id
-            )
-            resp = self.model_manager.infer_from_request_sync(
-                inference_model_id,
-                inference_request,
-                **kwargs,
-            )
-            return orjson_response(resp)
+            with profile_request_stage("http_handler"):
+                requested_model_id = inference_request.model_id
+                de_aliased_model_id = resolve_roboflow_model_alias(
+                    model_id=requested_model_id
+                )
+                model_id_alias = (
+                    requested_model_id
+                    if de_aliased_model_id != requested_model_id
+                    else None
+                )
+                with profile_request_stage("model_adapter_resolution"):
+                    self.model_manager.add_model(
+                        de_aliased_model_id,
+                        inference_request.api_key,
+                        model_id_alias=model_id_alias,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                inference_model_id = (
+                    requested_model_id
+                    if model_id_alias is not None
+                    else de_aliased_model_id
+                )
+                with profile_request_stage("model_manager_infer"):
+                    resp = self.model_manager.infer_from_request_sync(
+                        inference_model_id,
+                        inference_request,
+                        **kwargs,
+                    )
+                with profile_request_stage("response_preparation"):
+                    response = orjson_response(resp)
+
+            return response
 
         def process_workflow_inference_request(
             workflow_request: WorkflowInferenceRequest,

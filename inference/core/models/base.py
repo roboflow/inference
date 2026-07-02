@@ -8,6 +8,7 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import USE_INFERENCE_MODELS
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.perf_counters import profile_request_stage
 from inference.core.telemetry import set_span_attribute, start_span
 from inference.usage_tracking.collector import usage_collector
 
@@ -24,19 +25,22 @@ class BaseInference:
         - image:
             can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
         """
-        with start_span("model.preprocess"):
-            preproc_image, returned_metadata = self.preprocess(image, **kwargs)
-            logger.debug(
-                f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
-            )
-            if hasattr(preproc_image, "shape"):
-                set_span_attribute("model.input_shape", str(preproc_image.shape))
-        with start_span("model.predict"):
-            predicted_arrays = self.predict(preproc_image, **kwargs)
-        with start_span("model.postprocess"):
-            postprocessed = self.postprocess(
-                predicted_arrays, returned_metadata, **kwargs
-            )
+        with profile_request_stage("model_preprocess"):
+            with start_span("model.preprocess"):
+                preproc_image, returned_metadata = self.preprocess(image, **kwargs)
+                logger.debug(
+                    f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
+                )
+                if hasattr(preproc_image, "shape"):
+                    set_span_attribute("model.input_shape", str(preproc_image.shape))
+        with profile_request_stage("model_predict"):
+            with start_span("model.predict"):
+                predicted_arrays = self.predict(preproc_image, **kwargs)
+        with profile_request_stage("model_postprocess"):
+            with start_span("model.postprocess"):
+                postprocessed = self.postprocess(
+                    predicted_arrays, returned_metadata, **kwargs
+                )
 
         return postprocessed
 
@@ -140,7 +144,8 @@ class Model(BaseInference):
               is also included in the response.
         """
         t1 = perf_counter()
-        kwargs = request.dict()
+        with profile_request_stage("request_to_kwargs"):
+            kwargs = request.dict()
         stream_pipeline_context_id = getattr(
             request, "stream_pipeline_context_id", None
         )
@@ -154,7 +159,8 @@ class Model(BaseInference):
                 confidence,
             )
             kwargs.pop("confidence")
-        responses = self.infer(**kwargs, return_image_dims=False)
+        with profile_request_stage("model_infer"):
+            responses = self.infer(**kwargs, return_image_dims=False)
         for response in responses:
             response.time = perf_counter() - t1
             logger.debug(f"model infer time: {response.time * 1000.0} ms")

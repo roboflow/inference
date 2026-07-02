@@ -50,6 +50,7 @@ from inference.core.env import (
 )
 from inference.core.exceptions import PostProcessingError
 from inference.core.models.base import Model
+from inference.core.perf_counters import profile_request_stage
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.postprocess import bitpacked_masks2poly, mask2poly, masks2poly
@@ -218,23 +219,29 @@ class InferenceModelsObjectDetectionAdapter(Model):
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
-        is_batch = isinstance(image, list)
-        images = image if is_batch else [image]
-        np_images: List[np.ndarray] = [
-            load_image_bgr(
-                v,
-                disable_preproc_auto_orient=kwargs.get(
-                    "disable_preproc_auto_orient", False
-                ),
-            )
-            for v in images
-        ]
-        mapped_kwargs = self.map_inference_kwargs(kwargs)
-        return self._model.pre_process(np_images, **mapped_kwargs)
+        with profile_request_stage("adapter_preprocess"):
+            is_batch = isinstance(image, list)
+            images = image if is_batch else [image]
+            np_images: List[np.ndarray] = [
+                load_image_bgr(
+                    v,
+                    disable_preproc_auto_orient=kwargs.get(
+                        "disable_preproc_auto_orient", False
+                    ),
+                )
+                for v in images
+            ]
+            mapped_kwargs = self.map_inference_kwargs(kwargs)
+            preprocessed = self._model.pre_process(np_images, **mapped_kwargs)
+
+        return preprocessed
 
     def predict(self, img_in, **kwargs):
-        mapped_kwargs = self.map_inference_kwargs(kwargs)
-        return self._model.forward(img_in, **mapped_kwargs)
+        with profile_request_stage("adapter_predict"):
+            mapped_kwargs = self.map_inference_kwargs(kwargs)
+            predictions = self._model.forward(img_in, **mapped_kwargs)
+
+        return predictions
 
     def postprocess(
         self,
@@ -242,56 +249,60 @@ class InferenceModelsObjectDetectionAdapter(Model):
         preprocess_return_metadata: PreprocessingMetadata,
         **kwargs,
     ) -> List[ObjectDetectionInferenceResponse]:
-        mapped_kwargs = self.map_inference_kwargs(kwargs)
-        detections_list = self._model.post_process(
-            predictions, preprocess_return_metadata, **mapped_kwargs
-        )
+        with profile_request_stage("adapter_postprocess"):
+            mapped_kwargs = self.map_inference_kwargs(kwargs)
+            detections_list = self._model.post_process(
+                predictions, preprocess_return_metadata, **mapped_kwargs
+            )
 
-        responses: List[ObjectDetectionInferenceResponse] = []
-        for preproc_metadata, det in zip(preprocess_return_metadata, detections_list):
-            H = preproc_metadata.original_size.height
-            W = preproc_metadata.original_size.width
+            responses: List[ObjectDetectionInferenceResponse] = []
+            for preproc_metadata, det in zip(
+                preprocess_return_metadata, detections_list
+            ):
+                H = preproc_metadata.original_size.height
+                W = preproc_metadata.original_size.width
 
-            xyxy = det.xyxy.detach().cpu().numpy()
-            confs = det.confidence.detach().cpu().numpy()
-            class_ids = det.class_id.detach().cpu().numpy()
+                xyxy = det.xyxy.detach().cpu().numpy()
+                confs = det.confidence.detach().cpu().numpy()
+                class_ids = det.class_id.detach().cpu().numpy()
 
-            predictions: List[ObjectDetectionPrediction] = []
+                predictions: List[ObjectDetectionPrediction] = []
 
-            for (x1, y1, x2, y2), conf, class_id in zip(xyxy, confs, class_ids):
-                cx = (float(x1) + float(x2)) / 2.0
-                cy = (float(y1) + float(y2)) / 2.0
-                w = float(x2) - float(x1)
-                h = float(y2) - float(y1)
-                class_id_int = int(class_id)
-                class_name = (
-                    self.class_names[class_id_int]
-                    if 0 <= class_id_int < len(self.class_names)
-                    else str(class_id_int)
-                )
-                if (
-                    kwargs.get("class_filter")
-                    and class_name not in kwargs["class_filter"]
-                ):
-                    continue
-                predictions.append(
-                    ObjectDetectionPrediction(
-                        x=cx,
-                        y=cy,
-                        width=w,
-                        height=h,
-                        confidence=float(conf),
-                        **{"class": class_name},
-                        class_id=class_id_int,
+                for (x1, y1, x2, y2), conf, class_id in zip(xyxy, confs, class_ids):
+                    cx = (float(x1) + float(x2)) / 2.0
+                    cy = (float(y1) + float(y2)) / 2.0
+                    w = float(x2) - float(x1)
+                    h = float(y2) - float(y1)
+                    class_id_int = int(class_id)
+                    class_name = (
+                        self.class_names[class_id_int]
+                        if 0 <= class_id_int < len(self.class_names)
+                        else str(class_id_int)
+                    )
+                    if (
+                        kwargs.get("class_filter")
+                        and class_name not in kwargs["class_filter"]
+                    ):
+                        continue
+                    predictions.append(
+                        ObjectDetectionPrediction(
+                            x=cx,
+                            y=cy,
+                            width=w,
+                            height=h,
+                            confidence=float(conf),
+                            **{"class": class_name},
+                            class_id=class_id_int,
+                        )
+                    )
+
+                responses.append(
+                    ObjectDetectionInferenceResponse(
+                        predictions=predictions,
+                        image=InferenceResponseImage(width=W, height=H),
                     )
                 )
 
-            responses.append(
-                ObjectDetectionInferenceResponse(
-                    predictions=predictions,
-                    image=InferenceResponseImage(width=W, height=H),
-                )
-            )
         return responses
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
@@ -424,19 +435,22 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         return kwargs
 
     def preprocess(self, image: Any, **kwargs):
-        is_batch = isinstance(image, list)
-        images = image if is_batch else [image]
-        np_images: List[np.ndarray] = [
-            load_image_bgr(
-                v,
-                disable_preproc_auto_orient=kwargs.get(
-                    "disable_preproc_auto_orient", False
-                ),
-            )
-            for v in images
-        ]
-        mapped_kwargs = self.map_inference_kwargs(kwargs)
-        return self._model.pre_process(np_images, **mapped_kwargs)
+        with profile_request_stage("adapter_preprocess"):
+            is_batch = isinstance(image, list)
+            images = image if is_batch else [image]
+            np_images: List[np.ndarray] = [
+                load_image_bgr(
+                    v,
+                    disable_preproc_auto_orient=kwargs.get(
+                        "disable_preproc_auto_orient", False
+                    ),
+                )
+                for v in images
+            ]
+            mapped_kwargs = self.map_inference_kwargs(kwargs)
+            preprocessed = self._model.pre_process(np_images, **mapped_kwargs)
+
+        return preprocessed
 
     def _request_batch_size(self, img_in: Any) -> int:
         pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
@@ -450,37 +464,43 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         return 1
 
     def predict(self, img_in, **kwargs):
-        mapped_kwargs = self.map_inference_kwargs(kwargs)
-        if self._pipeline_depth <= 1:
-            # Original path: forward on current frame, postprocess on
-            # current frame, all synchronous.
-            return self._model.forward(img_in, **mapped_kwargs)
-        if self._request_batch_size(img_in) > 1:
-            return self._model.forward(img_in, **mapped_kwargs)
+        with profile_request_stage("adapter_predict"):
+            mapped_kwargs = self.map_inference_kwargs(kwargs)
+            if self._pipeline_depth <= 1:
+                # Original path: forward on current frame, postprocess on
+                # current frame, all synchronous.
+                predictions = self._model.forward(img_in, **mapped_kwargs)
 
-        mapped_kwargs["defer_count_to_adapter"] = (
-            kwargs.get("response_mask_format") != "rle"
-        )
-        mapped_kwargs["defer_postprocess_sync"] = True
-        mapped_kwargs["reuse_trt_graph_outputs"] = True
-        # Pipelined path: before launching frame N's forward, enqueue the
-        # oldest frame whose postprocess metadata is already known. That keeps
-        # postprocess off the current frame's postprocess() host path while
-        # still preserving the correctness dependency for reused TRT outputs.
-        self._submit_next_pending_gpu_work()
-        pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
-        fut = self._model.forward_async(img_in, pre_processing_meta, **mapped_kwargs)
-        stream_pipeline_context_id = kwargs.get(STREAM_PIPELINE_CONTEXT_ID_KWARG)
-        if not isinstance(stream_pipeline_context_id, str):
-            stream_pipeline_context_id = None
-        attach_adapter_mapped_kwargs(
-            fut,
-            mapped_kwargs,
-            stream_pipeline_context_id=stream_pipeline_context_id,
-        )
-        if pre_processing_meta is not None:
-            self._submit_future_gpu_work(fut, pre_processing_meta, mapped_kwargs)
-        self._submit_ready_responses()
+                return predictions
+            if self._request_batch_size(img_in) > 1:
+                predictions = self._model.forward(img_in, **mapped_kwargs)
+
+                return predictions
+
+            mapped_kwargs["defer_count_to_adapter"] = (
+                kwargs.get("response_mask_format") != "rle"
+            )
+            mapped_kwargs["defer_postprocess_sync"] = True
+            mapped_kwargs["reuse_trt_graph_outputs"] = True
+            # Pipelined path: before launching frame N's forward, enqueue the
+            # oldest frame whose postprocess metadata is already known. That keeps
+            # postprocess off the current frame's postprocess() host path while
+            # still preserving the correctness dependency for reused TRT outputs.
+            self._submit_next_pending_gpu_work()
+            pre_processing_meta = getattr(img_in, "_pre_processing_meta", None)
+            fut = self._model.forward_async(img_in, pre_processing_meta, **mapped_kwargs)
+            stream_pipeline_context_id = kwargs.get(STREAM_PIPELINE_CONTEXT_ID_KWARG)
+            if not isinstance(stream_pipeline_context_id, str):
+                stream_pipeline_context_id = None
+            attach_adapter_mapped_kwargs(
+                fut,
+                mapped_kwargs,
+                stream_pipeline_context_id=stream_pipeline_context_id,
+            )
+            if pre_processing_meta is not None:
+                self._submit_future_gpu_work(fut, pre_processing_meta, mapped_kwargs)
+            self._submit_ready_responses()
+
         return fut
 
     def flush(self) -> List[InstanceSegmentationInferenceResponse]:
@@ -597,47 +617,55 @@ class InferenceModelsInstanceSegmentationAdapter(Model):
         preprocess_return_metadata: PreprocessingMetadata,
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
-        if self._pipeline_depth <= 1 or not isinstance(predictions, InferenceFuture):
-            return self._postprocess_sync(
-                predictions, preprocess_return_metadata, **kwargs
-            )
-        fut: InferenceFuture = predictions
-        mapped_kwargs = get_adapter_mapped_kwargs(fut)
-        self._pending_gpu_submissions.append(
-            (
-                fut,
-                preprocess_return_metadata,
-                mapped_kwargs,
-            )
-        )
-        self._pending_futures.append((fut, preprocess_return_metadata, mapped_kwargs))
-        if len(self._pending_futures) > self._response_delay:
-            self._submit_next_pending_gpu_work()
-            self._submit_ready_responses()
-
-        if not self._response_futures:
-            return self._empty_responses_for_metadata(
-                preprocess_return_metadata=preprocess_return_metadata,
-                workflow_execution=kwargs.get("source") == "workflow-execution",
-            )
-
-        response_future, context_id = self._response_futures.popleft()
-        if kwargs.get("source") == "workflow-execution":
-            responses = self._empty_responses_for_metadata(
-                preprocess_return_metadata=preprocess_return_metadata,
-                workflow_execution=True,
-            )
-            if responses:
-                attach_async_response_future(
-                    response=responses[0],
-                    response_future=response_future,
-                    context_id=context_id,
+        with profile_request_stage("adapter_postprocess"):
+            if self._pipeline_depth <= 1 or not isinstance(predictions, InferenceFuture):
+                responses = self._postprocess_sync(
+                    predictions, preprocess_return_metadata, **kwargs
                 )
+
+                return responses
+            fut: InferenceFuture = predictions
+            mapped_kwargs = get_adapter_mapped_kwargs(fut)
+            self._pending_gpu_submissions.append(
+                (
+                    fut,
+                    preprocess_return_metadata,
+                    mapped_kwargs,
+                )
+            )
+            self._pending_futures.append((fut, preprocess_return_metadata, mapped_kwargs))
+            if len(self._pending_futures) > self._response_delay:
+                self._submit_next_pending_gpu_work()
+                self._submit_ready_responses()
+
+            if not self._response_futures:
+                responses = self._empty_responses_for_metadata(
+                    preprocess_return_metadata=preprocess_return_metadata,
+                    workflow_execution=kwargs.get("source") == "workflow-execution",
+                )
+
+                return responses
+
+            response_future, context_id = self._response_futures.popleft()
+            if kwargs.get("source") == "workflow-execution":
+                responses = self._empty_responses_for_metadata(
+                    preprocess_return_metadata=preprocess_return_metadata,
+                    workflow_execution=True,
+                )
+                if responses:
+                    attach_async_response_future(
+                        response=responses[0],
+                        response_future=response_future,
+                        context_id=context_id,
+                    )
+
+                return responses
+            responses = _resolve_response_future(
+                future=response_future,
+                context="RF-DETR stream pipeline response finalization",
+            )
+
             return responses
-        return _resolve_response_future(
-            future=response_future,
-            context="RF-DETR stream pipeline response finalization",
-        )
 
     def _empty_responses_for_metadata(
         self,
