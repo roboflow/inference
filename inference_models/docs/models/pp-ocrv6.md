@@ -35,6 +35,21 @@ Key features:
 - **EasyOCR**: Broader multi-language scene-text support out of the box
 - **TrOCR**: Transformer-based recognition of pre-cropped text lines
 
+## Performance
+
+End-to-end latency (pre-processing + inference + post-processing), mean over 50 runs after warmup, on **NVIDIA L4** (24 GB, ONNX Runtime `CUDAExecutionProvider`) and an **Apple Silicon MacBook** (arm64, `CPUExecutionProvider`):
+
+| Model | Input | L4 (CUDA) | MacBook (CPU) |
+|---|---|---|---|
+| `pp-ocrv6-det` tiny   | 640×480 image           | 16.9 ms | 38.5 ms  |
+| `pp-ocrv6-det` small  | 640×480 image           | 22.8 ms | 113.6 ms |
+| `pp-ocrv6-det` medium | 640×480 image           | 43.4 ms | 527.2 ms |
+| `pp-ocrv6-rec` tiny   | batch of 8 line crops   | 3.7 ms  | 35.9 ms  |
+| `pp-ocrv6-rec` small  | batch of 8 line crops   | 27.8 ms | 131.6 ms |
+| `pp-ocrv6-rec` medium | batch of 8 line crops   | 32.1 ms | 492.8 ms |
+
+Predictions match the original PaddlePaddle implementation of the same weights — verified on the L4 against native Paddle inference (`paddlex`), with identical detections and exact-string recognition across all three variants. On L4 the GPU forward is the minor cost; end-to-end latency is dominated by CPU-side pre-processing (detection image resize/normalize) and CTC decoding (recognition, scaling with the ~18.7k-character vocabulary of the `small`/`medium` variants).
+
 ## License
 
 **Apache 2.0**
