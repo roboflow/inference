@@ -130,9 +130,7 @@ def _serialise_image_for_webexec(image: Any) -> dict:
     from inference.core.workflows.core_steps.common.serializers import (
         serialize_video_metadata_kind,
     )
-    from inference.core.workflows.execution_engine.entities.base import (
-        ParentOrigin,
-    )
+    from inference.core.workflows.execution_engine.entities.base import ParentOrigin
 
     numpy_image = image.numpy_image
     b64 = base64.b64encode(
