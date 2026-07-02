@@ -259,6 +259,10 @@ def execute_compilation(
             driver_version=str(runtime_xray.driver_version),
             os_version=runtime_xray.os_version,
         )
+    if runtime_xray.cuda_version is None:
+        raise CompiledPackageRegistrationError(
+            f"Could not establish CUDA version for environment."
+        )
     package_manifest = TRTModelPackageV1(
         type="trt-model-package-v1",
         backend_type="trt",
