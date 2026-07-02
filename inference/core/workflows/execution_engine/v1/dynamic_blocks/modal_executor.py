@@ -7,8 +7,8 @@ using web endpoints for better security and no size limitations.
 Two transport modes are available, controlled by ``WEBEXEC_TRANSPORT``:
 
 * **http** — JSON POST with gzip compression and persistent ``requests.Session``.
-* **websocket** (default) — persistent WebSocket connection with msgpack binary frames.
-  Eliminates per-request HTTP overhead and base64 image encoding.
+* **websocket** (default) — persistent WebSocket connections with msgpack binary
+  frames. Eliminates per-request HTTP overhead and base64 image encoding.
 
 """
 
@@ -33,6 +33,7 @@ from inference.core.env import (
     MODAL_TOKEN_SECRET,
     MODAL_WORKSPACE_NAME,
     WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS,
+    WEBEXEC_WS_CONNECTION_POOL_SIZE,
     WEBEXEC_WS_READ_TIMEOUT_SECONDS,
 )
 from inference.core.logger import logger
@@ -1140,10 +1141,76 @@ class WebSocketModalExecutor:
         )
 
 
-def get_modal_executor(workspace_id: Optional[str] = None) -> "ModalExecutor":
+class PooledWebSocketModalExecutor:
+    """Per-workspace pool of websocket executors.
+
+    A single websocket supports only one in-flight request because responses are
+    ordered on the connection. The workspace-level executor cache can therefore
+    keep this pool hot without funneling every same-workspace execution through
+    one socket.
+    """
+
+    def __init__(self, workspace_id: Optional[str] = None):
+        self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
+        pool_size = max(1, WEBEXEC_WS_CONNECTION_POOL_SIZE)
+        self._executors = [
+            WebSocketModalExecutor(workspace_id=self.workspace_id)
+            for _ in range(pool_size)
+        ]
+        self._active_counts = [0] * pool_size
+        self._next_executor_index = 0
+        self._pool_lock = threading.Lock()
+
+    def _acquire_executor(self) -> tuple[int, WebSocketModalExecutor]:
+        with self._pool_lock:
+            pool_size = len(self._executors)
+            best_index = self._next_executor_index
+            best_count = self._active_counts[best_index]
+            for offset in range(1, pool_size):
+                index = (self._next_executor_index + offset) % pool_size
+                active_count = self._active_counts[index]
+                if active_count < best_count:
+                    best_index = index
+                    best_count = active_count
+                    if best_count == 0:
+                        break
+            self._active_counts[best_index] += 1
+            self._next_executor_index = (best_index + 1) % pool_size
+            return best_index, self._executors[best_index]
+
+    def _release_executor(self, index: int) -> None:
+        with self._pool_lock:
+            self._active_counts[index] -= 1
+
+    def close(self) -> None:
+        for executor in self._executors:
+            executor.close()
+
+    def execute_remote(
+        self,
+        block_type_name: str,
+        python_code: PythonCode,
+        inputs: Dict[str, Any],
+        workspace_id: Optional[str] = None,
+        workflow_context: Optional[Dict[str, Any]] = None,
+    ) -> BlockResult:
+        index, executor = self._acquire_executor()
+        try:
+            return executor.execute_remote(
+                block_type_name=block_type_name,
+                python_code=python_code,
+                inputs=inputs,
+                workspace_id=workspace_id or self.workspace_id,
+                workflow_context=workflow_context,
+            )
+        finally:
+            self._release_executor(index)
+
+
+def get_modal_executor(workspace_id: Optional[str] = None) -> Any:
     """Returns the right executor based on ``WEBEXEC_TRANSPORT``."""
     from inference.core.env import WEBEXEC_TRANSPORT
 
     if WEBEXEC_TRANSPORT == "websocket":
-        return WebSocketModalExecutor(workspace_id)  # type: ignore[return-value]
+        return PooledWebSocketModalExecutor(workspace_id)
     return ModalExecutor(workspace_id)

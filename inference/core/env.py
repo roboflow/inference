@@ -736,6 +736,11 @@ WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS = int(
 WEBEXEC_WS_READ_TIMEOUT_SECONDS = int(
     os.getenv("WEBEXEC_WS_READ_TIMEOUT_SECONDS", "720")
 )
+# One websocket supports one in-flight execution, so keep a small pool per
+# cached workspace executor to preserve custom-block parallelism.
+WEBEXEC_WS_CONNECTION_POOL_SIZE = int(
+    os.getenv("WEBEXEC_WS_CONNECTION_POOL_SIZE", "10")
+)
 WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
     os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
 )
