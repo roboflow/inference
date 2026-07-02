@@ -88,6 +88,81 @@ python development/benchmark_scripts/triton_comparison/rfdetr-trt-inference-serv
 If you are benchmarking instance segmentation, use
 `--task instance_segmentation`.
 
+## Experimental New Model Manager Server Run
+
+Use the experimental GPU image that contains the new `inference_server` package:
+
+```bash
+export NEW_INFERENCE_IMAGE=roboflow/inference-server-experimental:gpu-0.1.3-rc2
+```
+
+The helper below starts the container with the MMP-oriented tuning used for this
+benchmark, waits for `/v2/server/health`, and then runs the client against the
+raw `/infer` endpoint. This is the correct path for local package IDs like
+`/models/rfdetr-trt-package`; the structured `/v2/models/infer` path first
+resolves model metadata through the Roboflow registry.
+
+```bash
+INFERENCE_IMAGE="$NEW_INFERENCE_IMAGE" \
+SOURCE="$SOURCE" \
+MODEL_PACKAGE_DIR="$MODEL_PACKAGE_DIR" \
+OUTPUT_DIR="$OUTPUT_DIR" \
+development/benchmark_scripts/triton_comparison/run-rfdetr-new-inference-server-benchmark.sh
+```
+
+By default, the wrapper uses:
+
+```bash
+docker run --rm --gpus all --shm-size=1g -p 8000:8000 \
+  -e NVIDIA_DRIVER_CAPABILITIES=all \
+  -e PORT=8000 \
+  -e NUM_WORKERS=1 \
+  -e INFERENCE_DECODER=nvjpeg \
+  -e INFERENCE_BATCH_MAX_SIZE=1 \
+  -e INFERENCE_BATCH_MAX_WAIT_MS=0 \
+  -e INFERENCE_N_SLOTS=8 \
+  -e INFERENCE_INPUT_MB=25 \
+  -e INFERENCE_LIMIT_CONCURRENCY=8 \
+  -e INFERENCE_LOAD_WAIT_S=120 \
+  -e INFERENCE_MODEL_IDLE_TIMEOUT_S=31536000 \
+  -e INFERENCE_VRAM_IDLE_CUTOFF_S=31536000 \
+  -e INFERENCE_VRAM_ADMISSION_CONTROL=false \
+  -e INFERENCE_VRAM_RECENT_WINDOW_S=0 \
+  -e INFERENCE_ALLOC_TIMEOUT_S=1 \
+  -e INFERENCE_WORKER_EMPTY_CACHE_EVERY_N_BATCHES=0 \
+  -e INFERENCE_WORKER_EMPTY_CACHE_CHECK_INTERVAL_S=0 \
+  -e INFERENCE_HOME=/cache \
+  -e INFERENCE_DEPLOYMENT_MODE=mmp \
+  -e LOG_LEVEL=WARNING \
+  -v /home/damiankosowski/inference/inference_cache:/cache \
+  -v "$MODEL_PACKAGE_DIR:/models/rfdetr-trt-package:ro" \
+  "$NEW_INFERENCE_IMAGE"
+```
+
+The result is written to `$OUTPUT_DIR/new-inference-server.json` unless
+`RESULT_OUT` is set. The mounted model package is addressed as
+`/models/rfdetr-trt-package`.
+
+For a direct client run without starting Docker, first start the server and then
+run:
+
+```bash
+python development/benchmark_scripts/triton_comparison/rfdetr-trt-new-inference-server-percentiles.py \
+  --source "$SOURCE" \
+  --resize-width 512 \
+  --resize-height 512 \
+  --model-id /models/rfdetr-trt-package \
+  --server-url http://localhost:8000 \
+  --endpoint-mode raw \
+  --result-out "$OUTPUT_DIR/new-inference-server.json"
+```
+
+`--endpoint-mode raw` sends `POST /infer?model_id=...&format=json` with raw image
+bytes. Use `--endpoint-mode v2-json` only for registry-resolvable model IDs; it
+sends `POST /v2/models/infer` with `model_id` in the query string and a JSON body
+shaped as `{"inputs": {"image": {"type": "base64", "value": "..."}, "confidence":
+0.4}}`.
+
 ## Triton Server Run
 
 Build the Triton serving image:
