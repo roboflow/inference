@@ -1,99 +1,100 @@
 ---
 name: review-sdk
-description: Review guidance for PRs changing inference_sdk/ (HTTP client, webrtc client, entities, errors, request/response utils) — enforces the InferenceHTTPClient public-API contract, sync/async parity, API-key redaction, error-wrapping, client-mode gating, and companion version/docs/test requirements.
+description: >-
+  Load for PRs touching inference_sdk/** (http/client.py InferenceHTTPClient, http/entities.py,
+  http/errors.py, http/utils/**, config.py, webrtc/**), tests/inference_sdk/**,
+  docs/inference_helpers/inference_sdk*, .release/pypi/inference.sdk.setup.py, or
+  requirements/requirements.sdk.*.txt. Diff signals: a new client method, a new/renamed
+  HTTPClientError subclass, a new InferenceConfiguration field, response.raise_for_status,
+  api_key redaction, @wrap_errors_async, or __ensure_v1_client_mode.
 ---
 
 # Reviewing sdk changes
 
 ## Scope
-Triggers on any PR touching:
-- `inference_sdk/**` — the pip-installable `inference-sdk` package: `http/client.py` (the `InferenceHTTPClient`), `http/entities.py`, `http/errors.py`, `http/utils/**` (encoding, loaders, requests, executors, request_building, post_processing, aliases), `config.py`, `webrtc/**`.
-- `tests/inference_sdk/**` — unit/integration/e2e tests for the above.
-- `docs/inference_helpers/inference_sdk*` and `docs/inference_sdk/**` — SDK reference docs.
-- `.release/pypi/inference.sdk.setup.py`, `requirements/requirements.sdk.*.txt`.
+PRs touching:
+- `inference_sdk/**` — the pip-installable `inference-sdk` package: `http/client.py`, `http/entities.py`, `http/errors.py`, `http/utils/**`, `config.py`, `webrtc/**`.
+- `tests/inference_sdk/**`, `docs/inference_helpers/inference_sdk*` (top-level `inference_sdk.md` + `inference_sdk/` sub-pages), `.release/pypi/inference.sdk.setup.py`, `requirements/requirements.sdk.*.txt`.
 
-NOTE the legacy name: this package used to be `inference_client/` (renamed in #85). There is **no** `inference_client/` directory in the current tree — treat any such path as stale.
+Legacy name: the package was `inference_client/` (renamed in #85). Treat any `inference_client/` path as stale.
 
-OUT of scope (other skills): server-side model code under `inference/models/**` and `inference/core/**` (even when a PR touches both, e.g. #212 added core-model endpoints + SDK methods together — review only the `inference_sdk/` side here), Workflows blocks, and `inference_cli/`.
+OUT of scope (other skills): server-side model code under `inference/models/**` and `inference/core/**` (review only the `inference_sdk/` side even in mixed PRs like #212), Workflows blocks, and `inference_cli/`.
 
-## What this surface is
-`inference_sdk` is a **thin, dependency-light HTTP/WebRTC client** that talks to a Roboflow inference server (local or hosted) — it must not import heavy server/model code. The contracts a reviewer protects:
-
-- **`InferenceHTTPClient` is the public API.** Constructed via `InferenceHTTPClient(api_url=..., api_key=...)` or `.init(...)`. `client_mode` (`HTTPClientMode.V0`/`V1`) is auto-derived from `api_url` by `_determine_client_mode` (`ALL_ROBOFLOW_API_URLS` → V0/legacy hosted routes; everything else → V1). Public state: `inference_configuration`, `client_mode`, `selected_model`.
-- **Every public inference method ships a sync + async pair** (`infer`/`infer_async`, `ocr_image`/`ocr_image_async`, `clip_compare`/`clip_compare_async`, `sam2_segment_image`/`_async`, …). ~23 async methods mirror the sync surface (`inference_sdk/http/client.py`). A new method without its async sibling is a defect.
-- **Errors are a stable public taxonomy** (`inference_sdk/http/errors.py`): `HTTPClientError` (base) with subclasses `HTTPCallErrorError`, `InvalidInputFormatError`, `InvalidModelIdentifier`, `ModelNotInitializedError`, `ModelTaskTypeNotSupportedError`, `ModelNotSelectedError`, `APIKeyNotProvided`, `EncodingError`, `WrongClientModeError`, `InvalidParameterError`, `FeatureDeprecatedError`, plus `RetryError`. Callers catch these; renaming/removing one is a breaking change.
-- **`InferenceConfiguration`** (`http/entities.py`) is a `frozen=True` dataclass whose fields map to server query/body params via `to_*_parameters()` methods (V0 legacy vs V1 per-task). The internal→external name mapping tables are the wire contract.
-- **`ImagesReference = Union[np.ndarray, PIL.Image.Image, str]`** is the accepted input type across the client; loaders/encoders convert to base64 for the wire.
-- **API keys must never leak** in exceptions, logs, or `response.url` (see Pitfalls).
-
-## Standards enforced here
-- **Every new sync client method needs an async twin, both `@wrap_errors`/`@wrap_errors_async` decorated.** The sync decorator maps `RetryError`/`HTTPError`/`ConnectionError`; the async one maps `ClientResponseError`/`ClientConnectionError` (`client.py` lines ~121-173). #255 was a one-line bugfix precisely because `infer_async` was wrongly wrapped with the sync `@wrap_errors` instead of `@wrap_errors_async`.
-- **Never call bare `response.raise_for_status()`.** Use `api_key_safe_raise_for_status(response=...)` (`http/utils/requests.py`) so the key is stripped from `response.url` before raising. #212 flipped a `response.raise_for_status()` to `api_key_safe_raise_for_status`.
-- **Any string derived from an error/URL that surfaces to the user must pass through `deduct_api_key_from_string(...)`** — applies to `description`, `api_message`, and connection-error messages (#248, #255).
-- **V1-only endpoints must gate with `self.__ensure_v1_client_mode()`** (raises `WrongClientModeError`) before building the request — core-model methods (clip/cogvlm/sam/doctr/gaze/lmm, load/list models) all do this (`client.py`, e.g. lines ~722, 970; CogVLM comment "Lambda does not support CogVLM"). Docstrings for these methods must list `WrongClientModeError` under `Raises:`.
-- **New endpoint methods follow the established shape**: resolve model alias (`resolve_roboflow_model_alias`), load/encode input via `load_static_inference_input` (+ `_async`), build payload with `inject_images_into_payload` / `inject_nested_batches_of_images_into_payload`, apply config via `InferenceConfiguration.to_*_parameters`, post, then `api_key_safe_raise_for_status`. See the core-model methods added in #212.
-- **`InferenceConfiguration` field additions must be wired into the relevant `to_*_parameters()` mapping table AND documented.** #1521 added `workflow_run_retries_enabled` to the dataclass, defaulted it from a `config.py` env-flag (`WORKFLOW_RUN_RETRIES_ENABLED` via `str2bool`), and documented it in `docs/inference_helpers/inference_sdk.md`. Fields are `Optional[...] = None` unless a hard default is intended; the dataclass is `frozen=True`.
-- **Deprecation is signalled, not silently broken.** Use `@deprecated(reason=...)` / `@experimental(info=...)` (`utils/decorators.py`) — they emit `InferenceSDKDeprecationWarning`, gated by `INFERENCE_WARNINGS_DISABLED`. Hard removals raise `FeatureDeprecatedError(feature=..., reason=..., removal_release=..., replacement=...)`, not a bare `ValueError` (see `test_detect_gazes_deprecated.py`). `infer_from_workflow` is the canonical `@deprecated` example (superseded by `run_workflow`).
-- **New public symbols must be exported.** Top-level re-exports in `inference_sdk/__init__.py` (`InferenceHTTPClient`, `InferenceConfiguration`, `VisualisationResponseFormat`); WebRTC classes in both the `from .sources import ...` block AND `__all__` of `inference_sdk/webrtc/__init__.py` (#2200 added `LocalStreamSource` to both).
-- **Type-hinted public signatures + Google-style docstrings** with `Args:`/`Returns:`/`Raises:` on every public method (see any method in `client.py`). Keep `ImagesReference` as the image param type.
-- **Keep the SDK dependency-light.** Runtime deps are pinned in `requirements/requirements.sdk.http.txt` and `requirements.sdk.webrtc.txt`; a new third-party import needs a corresponding pin. Do not import `inference.core.*` heavy modules into `inference_sdk` (only lightweight cross-refs like a shared exception, as #1521 imported one server exception on the *server* side, not into the SDK).
-
-## Required companions
-- **Version bump: `inference/core/version.py`** (`__version__`). The `inference-sdk` package derives its version from there — `.release/pypi/inference.sdk.setup.py` copies `inference/core/version.py` → `inference_sdk/version.py` at build time and imports `__version__` from core. Every merged SDK PR here bumps it (#248 `rc17→rc19`, #255 `rc21→rc22`, #1521 `0.54.1→0.54.2`). Do NOT hand-edit `inference_sdk/version.py` — it is generated. Block a behavioural SDK change with no `inference/core/version.py` bump.
-- **Tests under `tests/inference_sdk/unit_tests/**`.** #212 added/updated `http/test_client.py`, `test_entities.py`, and every `http/utils/test_*.py`; #255/#248 (key redaction) belong in `http/utils/test_requests.py`; config/env-flag changes → `unit_tests/test_config.py`; deprecations → a dedicated test like `test_detect_gazes_deprecated.py`; WebRTC → `unit_tests/webrtc/` (+ `integration_tests/`/`e2e_tests/webrtc/`). A new method with no test is blocked.
-- **Docs.** New/changed public methods, config fields, or model helpers must update `docs/inference_helpers/inference_sdk.md` and/or the sub-pages (`inference_sdk/core_models.md`, `configuration.md`, `workflows.md`, `model_management.md`). #212 updated `docs/foundation/*.md` + the SDK http_client page; #1521 documented the new config field.
-- **Requirements pins** in `requirements/requirements.sdk.http.txt` / `.webrtc.txt` for any new runtime dependency.
-- There is **no dedicated SDK changelog file** — the version bump + docs are the changelog surface here.
-
-## Common pitfalls & past regressions
-- **#255 — wrong error decorator on an async method.** `infer_async` was decorated `@wrap_errors` (sync) instead of `@wrap_errors_async`; async exceptions (`ClientResponseError`) escaped un-redacted/un-wrapped. Check: every `async def` public method uses `@wrap_errors_async`.
-- **#248 — API key leaked via `api_message`.** `api_message=error.message` passed the raw aiohttp message (containing `api_key=...`) straight through; fix wrapped it in `deduct_api_key_from_string`. Check: no error field, log line, or re-raised URL carries an un-redacted key.
-- **#255 (broader) — key leaking in errors generally.** Any new code path that stringifies an exception, URL, or request into a user-facing message must redact. Grep the diff for `str(error)`, `.message`, `response.url`, `raise_for_status` without the safe wrapper.
-- **#1521 — transient Workflow failures weren't retried / weren't surfaced cleanly.** `_run_workflow` was switched from raw `requests.post` + `raise_for_status` to `send_post_request(..., enable_retries=...)`, and `RetryError` added to `wrap_errors`. Check: workflow/HTTP calls that can be retried honour `workflow_run_retries_enabled` and that `RetryError` is mapped to `HTTPCallErrorError`/`HTTPClientError`.
-- **Missing async sibling / missing V1 gate.** New V1-only endpoint added without `__ensure_v1_client_mode()` will produce confusing 404s against hosted V0 URLs instead of a clear `WrongClientModeError`.
-- **Silent hard-removal.** Removing a helper by making it raise `ValueError` (instead of `FeatureDeprecatedError`, or `@deprecated` if it should still work) breaks callers without a migration signal — MEMORY note: only specific helpers escalate to `FeatureDeprecatedError`; don't over- or under-apply it.
-- **Editing generated `inference_sdk/version.py`** instead of `inference/core/version.py` — the edit is overwritten at build time and the real package version won't move.
+`inference_sdk` is a **thin, dependency-light HTTP/WebRTC client** for a Roboflow inference server. It must not import heavy `inference.core.*` / model code.
 
 ## Review checklist
-1. Does a behavioural change bump `inference/core/version.py`? (block if not) — and is `inference_sdk/version.py` left untouched (generated)?
-2. New sync client method → is there a matching `_async` method, and are both decorated with the correct `@wrap_errors` / `@wrap_errors_async`?
-3. Any new HTTP call: uses `api_key_safe_raise_for_status`, not bare `raise_for_status`? All user-facing error/URL strings pass through `deduct_api_key_from_string`?
-4. V1-only endpoint: calls `self.__ensure_v1_client_mode()` and documents `WrongClientModeError` in the docstring?
-5. New/changed error class: subclasses `HTTPClientError`, and no existing error class renamed/removed (backward-compat)?
-6. `InferenceConfiguration` field: added to the right `to_*_parameters()` mapping(s), correct `Optional`/default, dataclass still `frozen=True`, and documented?
-7. Deprecation/removal uses `@deprecated`/`@experimental`/`FeatureDeprecatedError` appropriately (warning vs hard error), not a bare exception?
-8. New public symbol exported in `inference_sdk/__init__.py` (and `webrtc/__init__.py` `__all__` for WebRTC)?
-9. Tests added/updated under `tests/inference_sdk/unit_tests/**` covering the new path (client, entities, utils, redaction, deprecation, or webrtc as applicable)?
-10. Docs updated under `docs/inference_helpers/inference_sdk*` for any public API/config/model change?
-11. New runtime dependency pinned in `requirements/requirements.sdk.*.txt`? No heavy `inference.core`/model imports pulled into the SDK?
-12. Public signatures fully type-hinted with Google-style docstrings; images typed as `ImagesReference`?
+Severity tags: **BLOCK** (fix before merge) / **FLAG** (raise it) / **NIT** (optional).
 
-## Key files & entry points
-- `inference_sdk/http/client.py` — `InferenceHTTPClient`, `wrap_errors`/`wrap_errors_async`, `_determine_client_mode`, all endpoint methods.
-- `inference_sdk/http/errors.py` — public exception taxonomy.
-- `inference_sdk/http/entities.py` — `InferenceConfiguration`, `HTTPClientMode`, `ImagesReference`, param-mapping tables.
-- `inference_sdk/http/utils/requests.py` — `api_key_safe_raise_for_status`, `deduct_api_key_from_string`, image payload injection.
-- `inference_sdk/http/utils/{loaders,encoding,executors,request_building,post_processing,aliases}.py` — input loading, `send_post_request`/retries, model-alias resolution.
-- `inference_sdk/config.py` — env flags (`WORKFLOW_RUN_RETRIES_ENABLED`, WebRTC timeouts), `InferenceSDKDeprecationWarning`.
-- `inference_sdk/utils/decorators.py` — `deprecated`/`experimental`.
-- `inference_sdk/webrtc/{sources,session,client,config}.py` — WebRTC streaming API.
-- `.release/pypi/inference.sdk.setup.py` — proves version derives from `inference/core/version.py`.
-- `docs/inference_helpers/inference_sdk.md` (+ `inference_sdk/` sub-pages).
+- **BLOCK** — Behavioural change bumps `inference/core/version.py` (`__version__`); `inference_sdk/version.py` left untouched (it is generated).
+- **BLOCK** — New HTTP call uses `api_key_safe_raise_for_status`, never bare `response.raise_for_status()`; every user-facing error/URL string passes through `deduct_api_key_from_string`.
+- **BLOCK** — New sync client method has a matching `_async` sibling, each decorated with the correct `@wrap_errors` (sync) / `@wrap_errors_async` (async).
+- **BLOCK** — V1-only endpoint calls `self.__ensure_v1_client_mode()` before building the request.
+- **BLOCK** — No existing `HTTPClientError` subclass renamed/removed (public taxonomy; callers catch these).
+- **FLAG** — `InferenceConfiguration` field wired into the right `to_*_parameters()` mapping(s), correct `Optional`/default, dataclass still `frozen=True`.
+- **FLAG** — Deprecation/removal uses `@deprecated` / `@experimental` / `FeatureDeprecatedError` (warning vs hard error), not a bare `ValueError`.
+- **FLAG** — New public symbol exported in `inference_sdk/__init__.py` (and `webrtc/__init__.py` `__all__` for WebRTC).
+- **FLAG** — Tests added/updated under `tests/inference_sdk/unit_tests/**` for the new path.
+- **FLAG** — New runtime dependency pinned in `requirements/requirements.sdk.*.txt`; no heavy `inference.core`/model import pulled into the SDK.
+- **FLAG** — Sync HTTP path preserves per-thread `requests.Session` reuse (does not reintroduce a per-call `Session()` or force single requests through a `ThreadPoolExecutor`).
+- **NIT** — Docs updated under `docs/inference_helpers/inference_sdk*` for public API/config/model changes.
+- **NIT** — Public signatures fully type-hinted with Google-style docstrings; image params typed as `ImagesReference`; `WrongClientModeError` listed under `Raises:` for V1-gated methods.
 
-## Reference PRs
-- [#212](https://github.com/roboflow/inference/pull/212) — feature: extend SDK client to (almost) all core models (clip/cogvlm/sam/doctr/gaze); canonical new-endpoint shape + V1 gate + tests + docs.
-- [#2200](https://github.com/roboflow/inference/pull/2200) — feature: WebRTC `LocalStreamSource` local stream processing; export in `webrtc/__init__.py` `__all__` + example.
-- [#1521](https://github.com/roboflow/inference/pull/1521) — feature: workflow retries via SDK; `InferenceConfiguration.workflow_run_retries_enabled`, `RetryError` mapping in `wrap_errors`, `send_post_request`, docs + version bump.
-- [#255](https://github.com/roboflow/inference/pull/255) — security/bugfix: API key leaking in errors; wrong `@wrap_errors` (sync) on `infer_async` → `@wrap_errors_async`.
-- [#248](https://github.com/roboflow/inference/pull/248) — bugfix: redact API key from `api_message` via `deduct_api_key_from_string`.
-- [#85](https://github.com/roboflow/inference/pull/85) — refactor: rename `inference_client/` → `inference_sdk/` (package, tests, requirements, release setup, docs, mkdocs).
-- [#70](https://github.com/roboflow/inference/pull/70) — feature: baseline HTTP client for the inference server (original `InferenceHTTPClient`).
-- [#1417](https://github.com/roboflow/inference/pull/1417) — WIP/DO-NOT-MERGE: pass images as numpy arrays; reference for `ImagesReference` handling direction (not merged).
+### Not blocking
+- A pure-internal refactor (no public method/error/config/signature change and no behavioural change) does not require a version bump, docs, or new tests — only that existing tests still pass.
+- A method that is intrinsically V1-only *and* has no V0 route does not need a V0 fallback; the `WrongClientModeError` gate is the correct behaviour, not a gap.
+- Cosmetic docstring/typing nits (last two items) never block a merge on their own.
+
+## Standards
+
+- **Sync + async pairing.** Every public inference method ships a sync + async twin (`infer`/`infer_async`, `ocr_image`/`ocr_image_async`, `clip_compare`/`clip_compare_async`, `sam2_segment_image`/`_async`, …). The sync `wrap_errors` maps `RetryError`/`HTTPError`/`ConnectionError`; the async `wrap_errors_async` maps `ClientResponseError`/`ClientConnectionError`. A sync method decorated `@wrap_errors_async` (or vice-versa) lets un-redacted async exceptions escape (broke in #255; that PR was a one-line decorator swap on `infer_async`).
+
+- **API keys never leak.** Any string derived from an error, URL, or request that surfaces to the user must pass through `deduct_api_key_from_string` (`http/utils/requests.py`) — `description`, `api_message`, connection-error messages (raw `api_message=error.message` leaked the key in #248). Never call bare `response.raise_for_status()`; use `api_key_safe_raise_for_status(response=...)`, which strips the key from `response.url` before raising (#212). Grep the diff for `str(error)`, `.message`, `response.url`, and `raise_for_status` without the safe wrapper.
+
+- **Client-mode gating.** `client_mode` (`HTTPClientMode.V0`/`V1`) is auto-derived from `api_url` by `_determine_client_mode` (`ALL_ROBOFLOW_API_URLS` → V0 legacy hosted; else V1). V1-only endpoints (clip/cogvlm/sam/doctr/gaze/lmm, load/list models) must gate with `self.__ensure_v1_client_mode()` (raises `WrongClientModeError`) before building the request, and list it under `Raises:`. Skipping the gate produces confusing 404s against a V0 URL instead of a clear error.
+
+- **New-endpoint shape.** Resolve alias (`resolve_roboflow_model_alias`), load/encode input via `load_static_inference_input` (+ `_async`), inject via `inject_images_into_payload` / `inject_nested_batches_of_images_into_payload`, apply config via `InferenceConfiguration.to_*_parameters`, post, then `api_key_safe_raise_for_status` (canonical example: the core-model methods in #212).
+
+- **`InferenceConfiguration` is the wire contract.** `frozen=True` dataclass (`http/entities.py`); fields map to server query/body params via `to_*_parameters()` (V0 legacy vs V1 per-task). A field addition must be wired into the relevant mapping table, defaulted `Optional[...] = None` unless a hard default is intended, and documented — #1521 added `workflow_run_retries_enabled`, defaulted it from the `config.py` env flag `WORKFLOW_RUN_RETRIES_ENABLED` (via `str2bool`), and documented it.
+
+- **Error taxonomy is public.** `http/errors.py`: `HTTPClientError` (base) with subclasses incl. `HTTPCallErrorError`, `WrongClientModeError`, `APIKeyNotProvided`, `FeatureDeprecatedError`, plus the standalone `RetryError`. Renaming/removing one is a breaking change. New errors subclass `HTTPClientError`.
+
+- **Deprecation is signalled, not silently broken.** `@deprecated(reason=...)` / `@experimental(info=...)` (`utils/decorators.py`) emit `InferenceSDKDeprecationWarning`, gated by `INFERENCE_WARNINGS_DISABLED`. A hard removal raises `FeatureDeprecatedError(feature=..., reason=..., removal_release=..., replacement=...)`, not a bare `ValueError` (`test_detect_gazes_deprecated.py`). `infer_from_workflow` is the canonical `@deprecated` case (superseded by `run_workflow`). MEMORY: only specific helpers escalate to `FeatureDeprecatedError` — don't over/under-apply.
+
+- **HTTP session reuse + timeouts (sync path).** The sync executor keeps a per-thread `requests.Session` via `_get_thread_local_requests_session` and runs a single-request package on the caller thread (`make_parallel_requests` short-circuits when `len==1`, avoiding a one-off `ThreadPoolExecutor`) so sequential workflow frames reuse TCP/TLS connections. `requests.Session` is **not** thread-safe, so parallel requests stay isolated per worker thread and reset the session on exit (`_reset_thread_local_requests_session`). A change that reintroduces a per-call `Session()`, shares one `Session` across threads, or routes single requests through the pool regresses this (#2538 recovered ~71% sequential FPS by reusing sync sessions). Retries flow through `send_post_request(..., enable_retries=...)`, which maps `RetryError` → `HTTPCallErrorError` (#1521). Note the async path still opens a fresh `aiohttp.ClientSession()` per call — do not assume it reuses connections.
+
+- **Exports.** Top-level re-exports in `inference_sdk/__init__.py` (`InferenceHTTPClient`, `InferenceConfiguration`, `VisualisationResponseFormat`); WebRTC classes in both the `from .sources import ...` block and `__all__` of `inference_sdk/webrtc/__init__.py` (#2200 added `LocalStreamSource` to both).
+
+- **Dependency-light.** Runtime deps pinned in `requirements/requirements.sdk.http.txt` / `.webrtc.txt`; a new third-party import needs a pin. Do not import heavy `inference.core.*`/model modules into `inference_sdk`.
+
+- **Signatures + docstrings.** Type-hinted public signatures with Google-style `Args:`/`Returns:`/`Raises:`. Image params typed `ImagesReference = Union[np.ndarray, PIL.Image.Image, str]`.
+
+## Required companions
+- **Version bump:** `inference/core/version.py` (`__version__`). `.release/pypi/inference.sdk.setup.py` copies it → `inference_sdk/version.py` at build time; never hand-edit the generated file (bumps: #248 rc17→rc19, #255 rc21→rc22, #1521 0.54.1→0.54.2).
+- **Tests:** `tests/inference_sdk/unit_tests/**` — `http/test_client.py`, `test_entities.py`, `http/utils/test_*.py` (key redaction → `test_requests.py`; session reuse → `http/utils/test_executors.py`), `test_config.py` for env-flags, a dedicated file for deprecations, `webrtc/` for WebRTC.
+- **Docs:** `docs/inference_helpers/inference_sdk.md` and/or sub-pages (`inference_sdk/core_models.md`, `configuration.md`, `workflows.md`, `model_management.md`).
+- **Requirements:** a pin in `requirements/requirements.sdk.http.txt` / `.webrtc.txt` for any new runtime dependency.
+- There is **no dedicated SDK changelog** — version bump + docs are the changelog surface.
+
+## Key files & Reference PRs
+- `inference_sdk/http/client.py` — `InferenceHTTPClient`, `wrap_errors`/`wrap_errors_async`, `_determine_client_mode`, `__ensure_v1_client_mode`, endpoint methods.
+- `inference_sdk/http/errors.py` — exception taxonomy. `inference_sdk/http/entities.py` — `InferenceConfiguration`, `HTTPClientMode`, `ImagesReference`, param-mapping tables.
+- `inference_sdk/http/utils/requests.py` — `api_key_safe_raise_for_status`, `deduct_api_key_from_string`.
+- `inference_sdk/http/utils/executors.py` — `_get_thread_local_requests_session`, `make_parallel_requests`, `send_post_request`.
+- `inference_sdk/http/utils/{loaders,encoding,request_building,aliases}.py`, `inference_sdk/config.py`, `inference_sdk/utils/decorators.py`, `inference_sdk/webrtc/{sources,session,client,config}.py`.
+- `.release/pypi/inference.sdk.setup.py`, `docs/inference_helpers/inference_sdk.md` (+ `inference_sdk/` sub-pages).
+
+Reference PRs:
+- [#212](https://github.com/roboflow/inference/pull/212) — core-model client methods; canonical new-endpoint shape + V1 gate + tests + docs.
+- [#2538](https://github.com/roboflow/inference/pull/2538) — perf: per-thread `requests.Session` reuse in the sync executor (~71% sequential FPS gain).
+- [#1521](https://github.com/roboflow/inference/pull/1521) — workflow retries; `workflow_run_retries_enabled`, `RetryError` mapping, `send_post_request`.
+- [#255](https://github.com/roboflow/inference/pull/255) — API key leak; wrong `@wrap_errors` (sync) on `infer_async`.
+- [#248](https://github.com/roboflow/inference/pull/248) — redact API key from `api_message`.
+- [#2200](https://github.com/roboflow/inference/pull/2200) — WebRTC `LocalStreamSource` export.
+- [#85](https://github.com/roboflow/inference/pull/85) — rename `inference_client/` → `inference_sdk/`.
+- [#70](https://github.com/roboflow/inference/pull/70) — baseline HTTP client.
 
 ## Related topic skills
-
-When the PR also exhibits these cross-cutting concerns, load the matching topic skill too (see each skill's `description` for the trigger):
-
+Load the matching topic skill when the PR also shows these concerns:
 - `review-topic-backward-compat-and-versioning`
 - `review-topic-external-contract-and-silent-fallback`
 - `review-topic-test-hygiene`
