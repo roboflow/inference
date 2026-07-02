@@ -48,7 +48,9 @@ Only start scaffolding after you know which existing model yours most resembles.
 
 ## Discovery phase — ask the user
 
-Before touching files, get concrete answers:
+Before touching files, get concrete answers, agreed with codeowners - you must enforce acknowledgement 
+of proposed values to be provided - if you run as CI agent - comment on GH PR tagging codeowners to get the 
+response and make that required to pass your review:
 
 1. **Architecture name** (registry key string) — lower-case, hyphens OK, no slashes. This is the string matched in `models_registry.py`.
 2. **Task type** — choose one of the concrete task constants defined in `inference_models/inference_models/models/auto_loaders/models_registry.py` (for example `OBJECT_DETECTION_TASK`, etc.), and confirm the exact accepted task string with the Roboflow Inference Core team (who own the model-registry tooling).
@@ -110,22 +112,21 @@ Running from the repo root without `-c inference_models/pytest.ini` silently mis
 ### 4. Integration test + fixture
 
 Add a package-URL constant and a `pytest.fixture(scope="module")` in `inference_models/tests/integration_tests/models/conftest.py` (follow existing patterns near other HF / torch packages). Add `inference_models/tests/integration_tests/models/test_<family>_predictions.py` marked `@pytest.mark.slow`. These run once the model package has been published via the internal registration tooling (Surface 2, step 6).
+This should start from loading local package when experimenting, but should be followed up with upload of that package as *.zip file 
+to test GCP location and creation of fixture to download the asset in test-time, as other tests do.
 
 ### 5. Workflow block (surface 3, optional)
 
-Skip this section unless surface 3 is needed. Create `inference/core/workflows/core_steps/models/foundation/<family>/v1.py` + `__init__.py`. Read 1-2 existing blocks that match your pattern (stateless per-image vs. stateful per-video-session) before writing.
+Skip this section unless surface 3 is needed. If needed, create the workflow block by
+following the **`create-workflow-block`** skill
+(`.claude/skills/create-workflow-block/SKILL.md`) — the end-to-end playbook for
+authoring a Workflows block (manifest, kinds, `run()`, loader registration,
+versioning, tests). For a model block: put it under
+`inference/core/workflows/core_steps/models/foundation/<family>/`, use the
+variant-qualified model id (e.g. `"foo/small"`) as the `model_id` default, and wire
+`run()` to `AutoModel.from_pretrained`.
 
-Block manifest fields to get right:
-
-- `model_id` default — use the variant-qualified id, e.g. `"foo/small"` (not bare `"foo"`)
-- `examples` — list every shipping variant
-- `get_supported_model_variants()` — list every variant; **put the default first** (used as display name by the air-gapped cache scanner in `inference/core/cache/air_gapped.py`)
-
-If the block holds per-video or otherwise per-request state, raise `NotImplementedError` in `__init__` when `step_execution_mode is StepExecutionMode.REMOTE` — remote sharding breaks stateful blocks. Fail at workflow-compile time, not at first-frame.
-
-Register the block with the block loader (grep for an existing block's name in `inference/core/workflows/core_steps/loader.py` or similar to find the registration site).
-
-Add unit tests at `tests/workflows/unit_tests/core_steps/models/foundation/test_<family>.py` — mock the inner `AutoModel.from_pretrained` and the model's inference call so the test isolates the block's branching/decision logic. Run from repo root:
+Run the block's unit tests from the repo root:
 
 ```bash
 python -m pytest tests/workflows/unit_tests/core_steps/models/foundation/test_<family>*.py -W ignore

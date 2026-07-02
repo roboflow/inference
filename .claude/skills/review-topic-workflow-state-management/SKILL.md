@@ -19,6 +19,7 @@ Paths are hints; the trigger is the *behaviour* — a block holding state that m
 - **State must be bounded and evicted.** A block instance can live for the whole process. Any `Dict[video_id, ...]` or `Dict[tracker_id, ...]` that only ever grows is an unbounded memory leak on a long-lived server (one entry per video ever seen, per track ever created). New track ids are effectively unbounded over a long stream.
 - **Stateful blocks must be honest about remote/serverless execution.** State cannot cross a request or shard boundary. On stateless / multi-replica HTTP runtimes successive frames may hit different workers, so in-memory tracking/counting/cooldown is meaningless. A block must either declare this via `get_restrictions()` (SOFT: degraded output) or **fail closed** — raise `NotImplementedError` at the top of `run()` when `step_execution_mode is not LOCAL` (HARD: cannot produce a usable result). The failure surfaces at compile/first-frame, not as silently-wrong analytics in production.
 - **TTL / reattach / cooldown windows must be internally consistent.** A reattach window shorter than the eviction interval drops tracks that should survive; a cooldown stored in per-process memory does not throttle behind a load balancer.
+- **Workflows blocks intended to run on a platform** must have isolated (and ideally Redis-offloaded) state which would not create friction post-deployment.
 
 ## What to check
 1. **`__init__` state inventory.** List every mutable attribute seeded in `__init__` (dicts, deques, sets, lists, cache handles).

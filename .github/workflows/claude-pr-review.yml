@@ -163,11 +163,6 @@ jobs:
 
       - name: Restore trusted review skills
         run: |
-          # Overwrite the PR checkout's skills with the trusted base snapshot so the
-          # agent loads reviewer guidance from base, not from the PR under review.
-          # FAIL CLOSED: always drop the PR's (untrusted) copy first; only re-add
-          # skills if the trusted base snapshot exists. If base had none, the agent
-          # runs with no skills (generic review) rather than loading untrusted ones.
           rm -rf .claude/skills
           if [ -d "${RUNNER_TEMP}/trusted_skills" ]; then
             mkdir -p .claude

@@ -14,7 +14,7 @@ Triggers when a PR changes any of:
 OUT of scope (defer to sibling skills): the `inference/core/**` model adapters, workflow blocks, HTTP API, and the ENABLE_TENSOR_DATA_REPRESENTATION `_tensor` block pivot — those belong to the core/workflows review skills. Only review the `inference_models` side of a cross-cutting PR here.
 
 ## What this surface is
-`inference-models` is a standalone pip package (`inference-models`, currently `0.29.x`) that loads and runs CV models. Architecture and the contracts a reviewer must protect:
+`inference-models` is a standalone pip package (`inference-models`) that loads and runs CV models. Architecture and the contracts a reviewer must protect:
 
 - **`AutoModel.from_pretrained(model_id, ...)`** is the public entrypoint. It negotiates a *model package* against the runtime environment, downloads/caches weights, then calls the model class's **`from_pretrained` classmethod contract** (the one hard requirement per `docs/contributors/adding-model.md`). New models MUST implement it and accept `**kwargs` so `AutoModel` can forward negotiation-derived params.
 - **Model registry** `models/auto_loaders/models_registry.py`: `REGISTERED_MODELS` keyed by `(ModelArchitecture, TaskType, BackendType)` → `LazyClass` / `RegistryEntry`. A new model/backend is invisible until registered here. `RegistryEntry.supported_model_features` / `required_model_features` (e.g. `{"nms_fused"}`) gate feature negotiation.
@@ -22,17 +22,24 @@ OUT of scope (defer to sibling skills): the `inference/core/**` model adapters, 
 - **Prediction entities** (`models/base/*.py`): `Detections`, `InstanceDetections`, `KeyPoints`, `ClassificationPrediction`, etc. — torch-tensor dataclasses each exposing `to_supervision()`. Their field shapes/dtypes and `to_supervision()` output are a public contract consumed by `inference/core` adapters and Workflows; changing a field is a breaking change.
 - **Errors** (`errors.py`): a class tree under `BaseInferenceModelsError` carrying an optional `help_url`. Raised errors point at a `docs/errors/<page>#<anchor>` page. The `inference/core` step-error handlers map specific classes (`ModelNotFoundError`, `UnauthorizedModelAccessError`, `ModelPackageRestrictedError`, `ModelPackageAlternativesExhaustedError`) to HTTP/workflow errors — renaming/removing a class breaks that mapping.
 
+In doubts regarding how the models in package should work, investigate:
+* `inference_models/docs/how-to` - to understand concepts and generic assumption
+* `inference_models/docs/contributors` - which is complete contributor guide, including
+  * `adding-model.md` - for info how to add a model
+  * `core-architecture.md` - for general architecture
+  * `dependencies-and-backends.md` - info about dependencies and backends
+  * `writing-tests.md` - expected structure of tests
+
 ## Standards enforced here
 1. **`from_pretrained` + `**kwargs` contract.** Every model class is loaded through it and must tolerate extra negotiation kwargs; new load-time params are threaded as optional kwargs, not positional (e.g. `torchscript_state_global_lock: Optional[Lock] = None` in #2373, `rf_detr_max_input_resolution` in #2145). Evidence: `docs/contributors/adding-model.md`, #2373.
 2. **Register the model.** New arch/task/backend combos must land in `REGISTERED_MODELS` with the right `(arch, task, BackendType)` key and `LazyClass(module_name, class_name)`; feature-gated backends declare `supported_model_features` (e.g. `nms_fused`). Evidence: `models_registry.py`, #1637/#1645/#1786 feature PRs.
 3. **Prediction-entity shape stability.** Do not change `xyxy`/`class_id`/`confidence`/`mask` semantics without updating every backend + `to_supervision()` + api-reference doc. New representations are added as `Union`/opt-in, not by mutating existing fields — RLE masks added as `Union[torch.Tensor, InstancesRLEMasks]` + `InstanceSegmentationMaskFormat` literal (#2260); `KeyPoints` gained `covariance`/`detection_confidence` additively (changelog `0.29.7`).
 4. **Device / dtype discipline.** Tensors kept on-device until `to_supervision()` does `.cpu().numpy()`. No leaked global autocast — a leaked bf16 `torch.autocast` context that poisons the whole process was a real bug (#2363). Cast processor inputs to the resolved model dtype per device (Jetson bfloat16 fix, changelog `0.29.4`).
-5. **Third-party compat via feature-detection, not version pins in code.** Optional-signature params are probed with `inspect.signature(...)` and passed conditionally. On this surface, guard transformers/flash-attn API drift this way (#2257 owlv2, #2266 GLM-OCR). (The supervision `sv.KeyPoints(confidence=...)` guard often cited for #2467 lives in the workflows viz block — out of scope here.)
-6. **Errors carry `help_url` to a real docs anchor.** New `errors.py` classes get a `docs/errors/<page>.md` section and are raised with `help_url="https://inference-models.roboflow.com/errors/<page>/#<lowercased-classname>"`. Evidence: `configuration.py:341`, `weights_providers/*.py`, `ModelPackageRestrictedError` doc added in #2145.
-7. **Env-var config is validated and documented.** New env flags follow the `INFERENCE_MODELS_*` naming, are validated (raising `InvalidEnvVariable` on bad values, `configuration.py`), and documented in `docs/how-to/environment-variables.md` + changelog (Triton RF-DETR flags, changelog `0.29.6`).
-8. **Concurrency safety for global-mutating loaders.** `torch.jit.load/script` mutate a non-thread-safe process-global registry — must be serialized behind a shared lock threaded from the model manager (#2373). Any new global-state loader needs the same treatment.
-9. **Runtime introspection must degrade gracefully.** CUDA/Jetson/L4T detection is best-effort; a failed probe must not crash negotiation (CUDA-version acquisition fix #2515, Jetson env spec #1796, JetsonTypeResolutionError). 
-10. **ONNX/TRT edge-cases.** Batch-size fast paths must respect both `min_batch_size` and `max_batch_size` bounds (#2112). TRT artefacts are inconsistent — output-name verification is skipped where artefacts are known-bad (#1790 YOLO-NAS), and `engine_host_code_allowed` must be set where required (#1791 YOLOv10).
+5. **Errors carry `help_url` to a real docs anchor.** New `errors.py` classes get a `docs/errors/<page>.md` section and are raised with `help_url="https://inference-models.roboflow.com/errors/<page>/#<lowercased-classname>"`. Evidence: `configuration.py:341`, `weights_providers/*.py`, `ModelPackageRestrictedError` doc added in #2145.
+6. **Env-var config is validated and documented.** New env flags follow the `INFERENCE_MODELS_*` naming, are validated (raising `InvalidEnvVariable` on bad values, `configuration.py`), and documented in `docs/how-to/environment-variables.md` + changelog (Triton RF-DETR flags, changelog `0.29.6`).
+7. **Concurrency safety for global-mutating loaders.** `torch.jit.load/script` mutate a non-thread-safe process-global registry — must be serialized behind a shared lock threaded from the model manager (#2373). Any new global-state loader needs the same treatment.
+8. **Runtime introspection must degrade gracefully.** CUDA/Jetson/L4T detection is best-effort; a failed probe must not crash negotiation (CUDA-version acquisition fix #2515, Jetson env spec #1796, JetsonTypeResolutionError). 
+9. **ONNX/TRT edge-cases.** Batch-size fast paths must respect both `min_batch_size` and `max_batch_size` bounds (#2112). TRT artefacts are inconsistent — output-name verification is skipped where artefacts are known-bad (#1790 YOLO-NAS), and `engine_host_code_allowed` must be set where required (#1791 YOLOv10).
 
 ## Required companions
 Block the PR unless these accompany a functional change:
@@ -41,6 +48,15 @@ Block the PR unless these accompany a functional change:
 - **Lockfile** `inference_models/uv.lock` regenerated whenever `pyproject.toml` deps change (`uv sync`), plus mirrored pins in `requirements/*.txt` when the dep is also a server dep (#2047, #2449 security bumps, #2415/#2510 dep updates). A dep change without a matching `uv.lock` update = block.
 - **Docs**: new error class → `docs/errors/*` section; new model → `docs/models/<model>.md` + registry + tests (per `adding-model.md`); new env var → `docs/how-to/environment-variables.md`.
 - **Tests** in `inference_models/tests/`: `integration_tests/models/` (mandatory for a new model — "the most important tests" per `writing-tests.md`), `e2e_platform_tests/` (AutoModel path), `unit_tests/` for pure logic (ranking, negotiation, post-processing, introspection — see #2047, #2515).
+- **Enforcement of license** - each new model should provide (and list in docs - `inference_models/docs/models/index.md`) the license - license file to be submitted for each dir with model family
+- **Confirmation about model registration** - new models must be registered, code-owners first **must acknowledge** the registration details and **must confirm** model registration once done - both are approval-blocking review items which should be notified in the GH comments.   
+- **Speed verification enforcement** - contributor of new model must provide evidences for model speed. Currently, we are working to make that more organised across platforms we support, but we required verification of 
+speed for newly added model on representative data for NVIDIA L4 GPU and MacBook (if MacBook does not support model - that check is optional). Evidence **must provide** comparison between performance of our implementation and
+speed of original implementation - lack of evidence **is a blocker for approval of newly added model.**
+- **Prediction verification enforcement** - each newly added model / substantial change in model (especially global one) should provide evidence for 
+predictions to be reasonable - new model contribution should ideally contain integration tests asserting meaningful qualities of predictions - for modifications - it's ok to rely on 
+existing tests - when no tests available - contributor should provide ones and verify how they work against unchanged version of the code - manually created evidences are ok. Lack of correctness verification
+is a blocker for approval.
 
 ## Common pitfalls & past regressions
 - **#2467** — supervision 0.29.0 renamed the `sv.KeyPoints(confidence=...)` kwarg. The guard + viz breakage live in the workflows keypoint viz block (**out of scope here**); on THIS surface #2467 was only an additive `keypoints_detection.py` enrichment. Don't treat supervision-constructor guards as an inference_models concern.
