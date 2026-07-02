@@ -8,9 +8,9 @@ permissions:
 on:
   pull_request:
     branches: [main]
-    types: [opened, reopened, ready_for_review]
-  issue_comment:
-    types: [created]
+    # `labeled` is what drives re-reviews (add the `claude-review` label); the other
+    # three drive the single automatic INITIAL review.
+    types: [opened, reopened, ready_for_review, labeled]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -19,28 +19,24 @@ on:
         type: number
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
   gate:
     name: Decide whether to review
     # Cheap eligibility filter; the step does the full validation + gate decision.
+    # A `labeled` event only survives when the label is exactly `claude-review`.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (
         github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository &&
         !github.event.pull_request.draft &&
-        github.event.pull_request.user.type != 'Bot'
-      ) ||
-      (
-        github.event_name == 'issue_comment' &&
-        github.event.issue.pull_request != null &&
-        github.event.comment.user.type != 'Bot' &&
+        github.event.pull_request.user.type != 'Bot' &&
         (
-          github.event.comment.author_association == 'MEMBER' ||
-          github.event.comment.author_association == 'OWNER'
+          github.event.action != 'labeled' ||
+          github.event.label.name == 'claude-review'
         )
       )
     runs-on: ubuntu-latest
@@ -55,22 +51,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          LABEL_NAME: ${{ github.event.label.name }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
           DISPATCH_PR: ${{ inputs.pr_number }}
-          # Comment body via env (NOT inline ${{ }}) to avoid shell-injection.
-          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
 
-          FORCE_TAG='/claude-review'
           MARKER='<!-- claude-pr-review:run-marker -->'
+          REVIEW_LABEL='claude-review'
 
           case "$GH_EVENT_NAME" in
             workflow_dispatch) pr_number="$DISPATCH_PR" ;;
-            issue_comment)     pr_number="$ISSUE_NUMBER" ;;
-            *)                 pr_number="$PR_NUMBER" ;;
+            pull_request)      pr_number="$PR_NUMBER" ;;
+            *)                 echo "::error::Unexpected event ${GH_EVENT_NAME}"; exit 1 ;;
           esac
 
           pr_json="$(gh api "repos/${REPO}/pulls/${pr_number}")"
@@ -98,23 +93,27 @@ jobs:
           [ "$draft" = "false" ]         || skip "is a draft"
           [ "$author_type" != "Bot" ]    || skip "opened by a bot"
 
-          if [ "$GH_EVENT_NAME" = "issue_comment" ]; then
-            # Re-review only on an explicit force-tag comment that is newer than the
-            # last review-start marker (i.e. not already serviced by a prior review).
-            case "$COMMENT_BODY" in
-              *"$FORCE_TAG"*) : ;;
-              *) skip "comment does not contain ${FORCE_TAG}" ;;
-            esac
-            comments="$(gh api --paginate "repos/${REPO}/issues/${pr_number}/comments" | jq -s 'add // []')"
-            last_marker="$(echo "$comments" | jq -r --arg m "$MARKER"     '[.[]|select(.body|contains($m))|.created_at]|max // ""')"
-            last_force="$(echo "$comments"  | jq -r --arg t "$FORCE_TAG"  '[.[]|select(.body|contains($t))|.created_at]|max // ""')"
-            if [ -n "$last_marker" ] && [[ ! "$last_force" > "$last_marker" ]]; then
-              skip "no ${FORCE_TAG} comment newer than the last review marker"
-            fi
+          # workflow_dispatch is a manual override — always review.
+          if [ "$GH_EVENT_NAME" = "workflow_dispatch" ]; then
+            emit true; exit 0
           fi
 
-          # pull_request (opened/reopened/ready_for_review), workflow_dispatch, or a
-          # valid new force-tag comment.
+          # Label-triggered re-review: proceed whenever the `claude-review` label is
+          # added. Labels can only be set by repo collaborators, so this is inherently
+          # access-gated (no MEMBER/OWNER re-check needed).
+          if [ "$EVENT_ACTION" = "labeled" ]; then
+            [ "$LABEL_NAME" = "$REVIEW_LABEL" ] || skip "label '${LABEL_NAME}' is not '${REVIEW_LABEL}'"
+            emit true; exit 0
+          fi
+
+          # Otherwise this is opened / reopened / ready_for_review → the single
+          # automatic INITIAL review. If a review-start marker already exists a review
+          # has already run, so do NOT auto-review again; a fresh review must be
+          # requested by adding the `${REVIEW_LABEL}` label.
+          comments="$(gh api --paginate "repos/${REPO}/issues/${pr_number}/comments" | jq -s 'add // []')"
+          last_marker="$(echo "$comments" | jq -r --arg m "$MARKER" '[.[]|select(.body|contains($m))|.created_at]|max // ""')"
+          [ -z "$last_marker" ] || skip "initial review already ran (marker present); add the '${REVIEW_LABEL}' label to request a re-review"
+
           emit true
 
   review:
@@ -191,14 +190,15 @@ jobs:
           HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
         run: |
           set -euo pipefail
-          # Posted only once we know a review will actually run (prompt present). The
-          # gate uses this marker as "last review"; it also tells contributors how to
-          # request a re-review after new commits.
+          # Posted once we know a review will actually run (prompt present). The gate
+          # treats this marker as "an initial review has already happened", so later
+          # opened/reopened/ready_for_review events skip; it also tells contributors
+          # how to request a re-review.
           body="$(printf '%s\n' \
             '<!-- claude-pr-review:run-marker -->' \
             "🤖 **Claude review started** at commit \`${HEAD_SHA}\`." \
             '' \
-            'New commits are **not** auto-reviewed. Comment `/claude-review` when you are ready for a re-review.')"
+            'New commits are **not** auto-reviewed. Add the **`claude-review`** label (remove & re-add it to trigger again) when you want another review.')"
           gh pr comment "$PR" --repo "$REPO" --body "$body"
 
       - name: Claude review

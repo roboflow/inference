@@ -330,8 +330,9 @@ or refresh an action-item comment that includes:
 - A clear call to action and a warning that unanswered questions may stop the PR
   from being included in a release.
 - An explicit re-review instruction: **new commits are NOT auto-reviewed** — once
-  the contributor has answered the questions and/or pushed changes, they must
-  comment `/claude-review` to request a fresh review. State this in the action-item.
+  the contributor has answered the questions and/or pushed changes, they must add
+  the **`claude-review`** label to the PR (remove and re-add it to trigger again)
+  to request a fresh review. State this in the action-item.
 - Refresh this comment on EVERY subsequent review run for which an IMPORTANT
   question remains unanswered — re-mention the author and keep the PENDING status
   visible — until they answer. Do not let an unanswered IMPORTANT question silently
