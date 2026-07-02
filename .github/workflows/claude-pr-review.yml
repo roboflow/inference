@@ -8,7 +8,9 @@ permissions:
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -17,39 +19,62 @@ on:
         type: number
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pr_number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
-  review:
-    name: Review pull request
+  gate:
+    name: Decide whether to review
+    # Cheap eligibility filter; the step does the full validation + gate decision.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (
+        github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository &&
         !github.event.pull_request.draft &&
         github.event.pull_request.user.type != 'Bot'
+      ) ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        github.event.comment.user.type != 'Bot' &&
+        (
+          github.event.comment.author_association == 'MEMBER' ||
+          github.event.comment.author_association == 'OWNER'
+        )
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+    outputs:
+      should_review: ${{ steps.gate.outputs.should_review }}
+      number: ${{ steps.gate.outputs.number }}
+      base_sha: ${{ steps.gate.outputs.base_sha }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
     steps:
-      - name: Resolve and validate PR
-        id: pr
+      - name: Resolve, validate, and gate
+        id: gate
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          DISPATCH_PR: ${{ inputs.pr_number }}
+          # Comment body via env (NOT inline ${{ }}) to avoid shell-injection.
+          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            pr_number="${{ inputs.pr_number }}"
-          else
-            pr_number="${{ github.event.pull_request.number }}"
-          fi
+          FORCE_TAG='/claude-review'
+          MARKER='<!-- claude-pr-review:run-marker -->'
 
-          pr_json="$(gh api "repos/${{ github.repository }}/pulls/${pr_number}")"
+          case "$GH_EVENT_NAME" in
+            workflow_dispatch) pr_number="$DISPATCH_PR" ;;
+            issue_comment)     pr_number="$ISSUE_NUMBER" ;;
+            *)                 pr_number="$PR_NUMBER" ;;
+          esac
 
-          state="$(echo "$pr_json" | jq -r '.state')"
+          pr_json="$(gh api "repos/${REPO}/pulls/${pr_number}")"
+          state="$(echo "$pr_json"  | jq -r '.state')"
           base_ref="$(echo "$pr_json" | jq -r '.base.ref')"
           base_sha="$(echo "$pr_json" | jq -r '.base.sha')"
           head_sha="$(echo "$pr_json" | jq -r '.head.sha')"
@@ -57,41 +82,70 @@ jobs:
           draft="$(echo "$pr_json" | jq -r '.draft')"
           author_type="$(echo "$pr_json" | jq -r '.user.type')"
 
-          if [ "$state" != "open" ]; then
-            echo "::error::PR #${pr_number} is not open."
-            exit 1
+          emit() {
+            {
+              echo "should_review=$1"
+              echo "number=${pr_number}"
+              echo "base_sha=${base_sha}"
+              echo "head_sha=${head_sha}"
+            } >> "$GITHUB_OUTPUT"
+          }
+          skip() { echo "::notice::PR #${pr_number}: $1 — skipping review."; emit false; exit 0; }
+
+          [ "$state" = "open" ]          || skip "not open"
+          [ "$base_ref" = "main" ]       || skip "targets ${base_ref}, not main"
+          [ "$head_repo" = "${REPO}" ]   || skip "from a fork (${head_repo})"
+          [ "$draft" = "false" ]         || skip "is a draft"
+          [ "$author_type" != "Bot" ]    || skip "opened by a bot"
+
+          if [ "$GH_EVENT_NAME" = "issue_comment" ]; then
+            # Re-review only on an explicit force-tag comment that is newer than the
+            # last review-start marker (i.e. not already serviced by a prior review).
+            case "$COMMENT_BODY" in
+              *"$FORCE_TAG"*) : ;;
+              *) skip "comment does not contain ${FORCE_TAG}" ;;
+            esac
+            comments="$(gh api --paginate "repos/${REPO}/issues/${pr_number}/comments" | jq -s 'add // []')"
+            last_marker="$(echo "$comments" | jq -r --arg m "$MARKER"     '[.[]|select(.body|contains($m))|.created_at]|max // ""')"
+            last_force="$(echo "$comments"  | jq -r --arg t "$FORCE_TAG"  '[.[]|select(.body|contains($t))|.created_at]|max // ""')"
+            if [ -n "$last_marker" ] && [[ ! "$last_force" > "$last_marker" ]]; then
+              skip "no ${FORCE_TAG} comment newer than the last review marker"
+            fi
           fi
 
-          if [ "$base_ref" != "main" ]; then
-            echo "::error::PR #${pr_number} targets ${base_ref}, not main."
-            exit 1
-          fi
+          # pull_request (opened/reopened/ready_for_review), workflow_dispatch, or a
+          # valid new force-tag comment.
+          emit true
 
-          if [ "$head_repo" != "${{ github.repository }}" ]; then
-            echo "::error::PR #${pr_number} is from ${head_repo}; only same-repository PRs are reviewed."
-            exit 1
-          fi
+  review:
+    name: Review pull request
+    needs: gate
+    if: needs.gate.outputs.should_review == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
 
-          if [ "$draft" = "true" ]; then
-            echo "::error::PR #${pr_number} is a draft."
-            exit 1
-          fi
-
-          if [ "$author_type" = "Bot" ]; then
-            echo "::error::PR #${pr_number} was opened by a bot."
-            exit 1
-          fi
-
-          {
-            echo "number=${pr_number}"
-            echo "base_sha=${base_sha}"
-            echo "head_sha=${head_sha}"
-          } >> "$GITHUB_OUTPUT"
+    steps:
+      - name: Post review-start marker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ needs.gate.outputs.number }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          # Separate marker comment the gate uses as "last review", and which tells
+          # contributors how to request a re-review after new commits.
+          body="$(printf '%s\n' \
+            '<!-- claude-pr-review:run-marker -->' \
+            "🤖 **Claude review started** at commit \`${HEAD_SHA}\`." \
+            '' \
+            'New commits are **not** auto-reviewed. Comment `/claude-review` when you are ready for a re-review.')"
+          gh pr comment "$PR" --repo "$REPO" --body "$body"
 
       - name: Checkout trusted base branch
         uses: actions/checkout@v6
         with:
-          ref: ${{ steps.pr.outputs.base_sha }}
+          ref: ${{ needs.gate.outputs.base_sha }}
           fetch-depth: 1
           persist-credentials: false
 
@@ -135,9 +189,9 @@ jobs:
           {
             echo "prompt<<EOF"
             echo "REPO: ${{ github.repository }}"
-            echo "PR NUMBER: ${{ steps.pr.outputs.number }}"
-            echo "BASE SHA: ${{ steps.pr.outputs.base_sha }}"
-            echo "HEAD SHA: ${{ steps.pr.outputs.head_sha }}"
+            echo "PR NUMBER: ${{ needs.gate.outputs.number }}"
+            echo "BASE SHA: ${{ needs.gate.outputs.base_sha }}"
+            echo "HEAD SHA: ${{ needs.gate.outputs.head_sha }}"
             echo
             cat .github/prompts/claude-pr-review.md
             echo "EOF"
@@ -157,7 +211,7 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@v6
         with:
-          ref: ${{ steps.pr.outputs.head_sha }}
+          ref: ${{ needs.gate.outputs.head_sha }}
           fetch-depth: 1
           persist-credentials: false
 
