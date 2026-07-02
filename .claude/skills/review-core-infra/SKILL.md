@@ -75,7 +75,7 @@ Severity tags: **BLOCK** = fix before merge; **FLAG** = raise it; **NIT** = opti
 - `inference/core/utils/image_utils.py` — `load_image_from_url`, `_ensure_url_input_allowed`, `_ensure_resource_schema_allowed`, `_ensure_resource_fqdn_allowed`, `_ensure_location_matches_destination_whitelist` / `_blacklist`
 - `inference/core/utils/requests.py` — `api_key_safe_raise_for_status`, `api_key_safe_raise_for_status_aiohttp`
 - `inference/core/utils/environment.py` — `str2bool`, `safe_env_to_type`
-- `inference/core/entities/responses/inference.py` & `requests/inference.py` — Pydantic + `*DC` siblings, `_is_pred_dc_to_dict` / `_is_response_dc_to_dict`
+- `requests/inference.py` — Pydantic + `*DC` siblings, `_is_pred_dc_to_dict` / `_is_response_dc_to_dict`
 - `inference/core/exceptions.py`, `inference/core/logger.py` (`structlog_exception_formatter`), `inference/core/nms.py`
 - Docs: `docs/server_configuration/environmental_variables.md`, `accepted_input_formats.md`, `docs/install/security.md`
 - Tests: `tests/inference/unit_tests/core/**`

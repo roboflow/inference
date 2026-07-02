@@ -18,7 +18,7 @@ Load when the diff shows ANY of these content signals (paths are hints, not the 
 Tag each finding. Fix BLOCK before merge; raise FLAG; NIT is optional.
 
 - **BLOCK** — Caller pinned a model/backend/package but resolution can silently substitute a different one. Pinned `requested_model_package_id` must return exactly that or raise (`NoModelPackagesAvailableError` / `AmbiguousModelPackageResolutionError`), never a nearest match. (See rule 3.)
-- **BLOCK** — A `.get(key, <default>)` on external data whose default is semantically wrong (e.g. `api_data.get("taskType", "object-detection")` mislabels a non-detection model if the field is genuinely absent). Raise instead when correctness depends on it. (Rule 2.)
+- **BLOCK** — A `.get(key, <default>)` on external data whose default is semantically wrong. Raise instead when correctness depends on it. (Rule 2.)
 - **BLOCK** — A new required field / nested response key read on a hot path with no deploy guarantee or flag guard → prod `KeyError`/`None` before the platform emits it. (Rule 1.)
 - **BLOCK** — A security/credit header (`X-Roboflow-Internal-Service-Secret` / `service_secret`, `countinference`) assumed enforced but the deployed endpoint may ignore it — an ignored auth header is worse than an error. (Rule 6.)
 - **BLOCK** — A dependency (cache / registry / license server) failure swallowed into a wrong-but-successful response; a bare `except Exception` that returns a default. Must raise a typed error (`CacheUnavailableError`) at a decision point, then fall through consciously. (Rule 8.)

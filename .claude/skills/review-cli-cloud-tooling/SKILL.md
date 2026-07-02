@@ -79,7 +79,7 @@ Two distinct cloud surfaces live here — do not conflate them:
 - **Version bump** — most CLI PRs bump `inference/core/version.py` `__version__`. Flag if absent, but dismissible (see Not blocking). Ignore `inference_cli/version.py` (CI-managed).
 - **Tests** — logic changes need unit tests under `tests/inference_cli/unit_tests/lib/...` mirroring the source tree; user-visible changes update integration tests under `tests/inference_cli/integration_tests/`. (#891 updated both.)
 - **CI deps** — new runtime imports must be covered by the unit-test CI install list; `inference` is an optional dep, so new deps typically belong in `requirements/requirements.cli.txt`.
-- **Docs** — user-facing command/option changes update `docs/inference_helpers/cli_commands/{benchmark,cloud,workflows,infer,server}.md`. Batch-processing API-shape changes mirror `docs/workflows/batch_processing/*_swagger.json` (#2062, #2143, #1211).
+- **Docs** — user-facing command/option changes update `docs/inference_helpers/cli_commands/{benchmark,cloud,workflows,infer,server}.md`. Batch-processing API swagger is exposed externally - tag @Erol444.
 - **Enterprise / inference_models** — inference-compiler PRs (#2186) also touch `inference_models/pyproject.toml`, `inference_models/docs/changelog.md`, and weights-provider code — verify they move together.
 
 ## Key files & entry points
@@ -91,7 +91,7 @@ Two distinct cloud surfaces live here — do not conflate them:
 - `inference_cli/lib/roboflow_cloud/{data_staging,batch_processing}/{core,api_operations,entities}.py` — `rf-cloud` commands + wire schemas.
 - `inference_cli/lib/enterprise/inference_compiler/**` — TRT compiler extension (own LICENSE).
 - `inference/core/version.py` — the `__version__` bumped by CLI PRs.
-- Tests: `tests/inference_cli/{unit_tests,integration_tests}/**`. Docs: `docs/inference_helpers/cli_commands/**`, `docs/workflows/batch_processing/*_swagger.json`.
+- Tests: `tests/inference_cli/{unit_tests,integration_tests}/**`. Docs: `docs/inference_helpers/cli_commands/**`.
 
 ## Reference PRs
 - [#2399](https://github.com/roboflow/inference/pull/2399) — feature: Asset Library metadata threaded entity→api_op→core; version bump + CI deps.

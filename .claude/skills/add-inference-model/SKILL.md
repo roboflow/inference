@@ -52,7 +52,7 @@ Before touching files, get concrete answers, agreed with codeowners — you must
 
 1. **Architecture name** (registry key string) — lower-case, hyphens OK, no slashes. This is the string matched in `models_registry.py`.
 2. **Task type** — choose one of the concrete task constants defined in `inference_models/inference_models/models/auto_loaders/models_registry.py` (e.g. `OBJECT_DETECTION_TASK = "object-detection"`, `INSTANCE_SEGMENTATION_TASK`, `CLASSIFICATION_TASK`, `KEYPOINT_DETECTION_TASK`, `VLM_TASK`, `EMBEDDING_TASK`, etc.), and confirm the exact accepted task string with the Roboflow Inference Core team (who own the model-registry tooling).
-3. **Backend** — check the `BackendType` enum (imported into `models_registry.py`): `HF` / `TORCH` / `ONNX` / `TRT` / `TORCH_SCRIPT` / `MEDIAPIPE`, etc. Determines which sibling you survey.
+3. **Backend** — check the `BackendType` enum (imported into `models_registry.py`): `HF` / `TORCH` / `ONNX` / `TRT` / `TORCH_SCRIPT` , etc. Determines which sibling you survey.
 4. **Upstream weight source** — HF repo id, internal `.pt`, local files. **If HF and gated, stop** — the user needs to accept terms and supply an `HF_TOKEN` before any download.
 5. **Variants** — one id like `clip`, or a family like `foo/{tiny,small,large}` with a default. Variants share one registry entry; variant resolution happens server-side (see step 2).
 6. **Which surfaces?** Ask explicitly: workflow block? plain `/infer` adapter? If both, both get wired.

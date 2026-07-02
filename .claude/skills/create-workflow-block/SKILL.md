@@ -117,7 +117,6 @@ Curated index — read the doc for the matching need:
 - `docs/workflows/blocks_connections.md` — how kinds drive which steps can connect.
 - `docs/workflows/workflows_execution_engine.md` + `docs/workflows/workflow_execution.md` — EE internals, batch fan-out, dimensionality, empty/conditional datapoints.
 - `docs/workflows/internal_data_types.md` — `WorkflowImageData`, `Batch`, and the concrete Python types behind each kind.
-- `docs/workflows/kinds/index.md` (+ per-kind pages) — the type catalog (generated); `docs/workflows/schema_api.md` for how manifests export to UI schema.
 - `docs/workflows/blocks_bundling.md` + `docs/workflows/versioning.md` — plugin packaging, loaders, (de)serializers, version lifecycle.
 - `docs/workflows/batch_processing/` and `docs/workflows/video_processing/` — batch-heavy and video/stateful block patterns.
 - `docs/workflows/execution_engine_changelog.md` — which EE version introduced a feature (pin `get_execution_engine_compatibility()` accordingly).
