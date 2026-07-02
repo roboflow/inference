@@ -144,12 +144,34 @@ jobs:
             echo "prompt_available=true"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Stage trusted review skills
+        run: |
+          # Snapshot the review skills from the TRUSTED base checkout so the PR's
+          # own (untrusted) copy cannot alter the reviewer's guidance.
+          rm -rf "${RUNNER_TEMP}/trusted_skills"
+          if [ -d .claude/skills ]; then
+            mkdir -p "${RUNNER_TEMP}/trusted_skills"
+            cp -R .claude/skills/. "${RUNNER_TEMP}/trusted_skills/"
+          fi
+
       - name: Checkout PR branch
         uses: actions/checkout@v6
         with:
           ref: ${{ steps.pr.outputs.head_sha }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Restore trusted review skills
+        if: steps.review-prompt.outputs.prompt_available == 'true'
+        run: |
+          set -euo pipefail
+          rm -rf .claude/skills
+          if [ ! -d "${RUNNER_TEMP}/trusted_skills" ]; then
+            echo "::error::Trusted review skills snapshot missing at ${RUNNER_TEMP}/trusted_skills — the base branch must contain .claude/skills. Failing closed."
+            exit 1
+          fi
+          mkdir -p .claude
+          cp -R "${RUNNER_TEMP}/trusted_skills" .claude/skills
 
       - name: Claude review
         if: steps.review-prompt.outputs.prompt_available == 'true'
