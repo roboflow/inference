@@ -207,6 +207,15 @@ def boxes_from_probability_map(
             continue
         box[:, 0] = np.clip(box[:, 0] / map_width * source_width, 0, source_width)
         box[:, 1] = np.clip(box[:, 1] / map_height * source_height, 0, source_height)
+        # Drop sub-line-sized boxes in source coordinates, matching PaddleOCR's
+        # text-detector `filter_tag_det_res`, which discards any box whose width or
+        # height is <= 3px in the original image. The earlier `_min_area_quad`
+        # checks are in bitmap coordinates, so a blob can still scale down to a
+        # few source pixels and surface as a spurious (non-text) detection.
+        box_width = int(np.linalg.norm(box[0] - box[1]))
+        box_height = int(np.linalg.norm(box[0] - box[3]))
+        if box_width <= MIN_BOX_SIDE or box_height <= MIN_BOX_SIDE:
+            continue
         detections.append((box.astype(np.int32), float(score)))
     return detections
 

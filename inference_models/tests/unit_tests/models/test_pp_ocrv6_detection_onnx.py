@@ -187,6 +187,31 @@ def test_boxes_from_probability_map_returns_empty_for_blank_map() -> None:
     assert boxes == []
 
 
+def test_boxes_from_probability_map_drops_sub_line_sized_boxes() -> None:
+    # A blob that clears the bitmap-coordinate size checks but scales down to a
+    # few source pixels must be dropped, matching PaddleOCR's filter_tag_det_res
+    # (width/height <= 3px in the original image). Otherwise sub-character blobs
+    # surface as spurious non-text detections.
+    probability_map = np.zeros((100, 100), dtype=np.float32)
+    probability_map[30:70, 30:70] = 1.0
+
+    kept = boxes_from_probability_map(
+        probability_map=probability_map,
+        source_height=200,
+        source_width=200,
+        config=_config(),
+    )
+    dropped = boxes_from_probability_map(
+        probability_map=probability_map,
+        source_height=4,
+        source_width=4,
+        config=_config(),
+    )
+
+    assert len(kept) == 1  # large source: real box survives
+    assert dropped == []  # tiny source: box (<=3px) filtered as sub-line-sized
+
+
 @requires_onnxruntime
 def test_detection_model_infer_runs_end_to_end_on_uint8_numpy() -> None:
     model = _stub_detection_model()
