@@ -1,18 +1,37 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 
-from inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx import (
-    PPOCRv6DetectionOnnx,
-)
+try:
+    import onnxruntime  # noqa: F401
+
+    _ONNXRUNTIME_AVAILABLE = True
+except ImportError:
+    _ONNXRUNTIME_AVAILABLE = False
+
+if _ONNXRUNTIME_AVAILABLE:
+    from inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx import (
+        PPOCRv6DetectionOnnx,
+    )
 from inference_models.models.pp_ocrv6.pp_ocrv6_detection_utils import (
     DBNetConfig,
     boxes_from_probability_map,
     load_detection_config,
     normalize_detection_image,
     resize_for_detection,
+)
+
+# The stub-session model tests below import the ONNX model class, which requires
+# ``onnxruntime`` (the ``onnx-*`` extra). The unit-test CI job installs only
+# ``[test]``, so those tests are skipped there while the backend-free utility
+# tests in this module still run. Model coverage runs in the onnx-enabled jobs.
+requires_onnxruntime = pytest.mark.skipif(
+    not _ONNXRUNTIME_AVAILABLE,
+    reason="onnxruntime is not installed (requires the onnx-* extra)",
 )
 
 
@@ -168,6 +187,7 @@ def test_boxes_from_probability_map_returns_empty_for_blank_map() -> None:
     assert boxes == []
 
 
+@requires_onnxruntime
 def test_detection_model_infer_runs_end_to_end_on_uint8_numpy() -> None:
     model = _stub_detection_model()
     image = np.full((64, 128, 3), 255, dtype=np.uint8)
@@ -181,6 +201,7 @@ def test_detection_model_infer_runs_end_to_end_on_uint8_numpy() -> None:
     assert "polygon" in detections[0].bboxes_metadata[0]
 
 
+@requires_onnxruntime
 def test_detection_model_infer_handles_unit_range_float_tensor() -> None:
     # Regression: float [0, 1] tensors were previously scaled by 1/255 twice and
     # the detector saw a near-black image, returning garbage with no error.
@@ -196,6 +217,7 @@ def test_detection_model_infer_handles_unit_range_float_tensor() -> None:
     assert len(detections[0].xyxy) == 1
 
 
+@requires_onnxruntime
 def test_detection_model_post_process_handles_empty_maps() -> None:
     model = _stub_detection_model()
     empty_map = torch.zeros((64, 64), dtype=torch.float32)

@@ -1,16 +1,35 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
-from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx import (
-    PPOCRv6RecognitionOnnx,
-)
+try:
+    import onnxruntime  # noqa: F401
+
+    _ONNXRUNTIME_AVAILABLE = True
+except ImportError:
+    _ONNXRUNTIME_AVAILABLE = False
+
+if _ONNXRUNTIME_AVAILABLE:
+    from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx import (
+        PPOCRv6RecognitionOnnx,
+    )
 from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_utils import (
     ctc_decode,
     load_inference_config,
     preprocess_text_lines,
     resize_and_pad_text_line,
+)
+
+# The stub-session model tests need onnxruntime (the onnx-* extra); the unit-test
+# CI job installs only ``[test]`` and skips them, while the backend-free utility
+# tests in this module still run. Model coverage runs in the onnx-enabled jobs.
+requires_onnxruntime = pytest.mark.skipif(
+    not _ONNXRUNTIME_AVAILABLE,
+    reason="onnxruntime is not installed (requires the onnx-* extra)",
 )
 
 
@@ -152,6 +171,7 @@ def test_ctc_decode_removes_blanks_and_collapses_repeated_tokens() -> None:
     assert result == [("AB ", 1.0)]
 
 
+@requires_onnxruntime
 def test_recognition_model_infer_runs_end_to_end_on_uint8_numpy() -> None:
     model = _stub_recognition_model()
     image = np.full((24, 96, 3), 255, dtype=np.uint8)
@@ -161,6 +181,7 @@ def test_recognition_model_infer_runs_end_to_end_on_uint8_numpy() -> None:
     assert result == ["hi"]
 
 
+@requires_onnxruntime
 def test_recognition_model_infer_handles_unit_range_float_tensor() -> None:
     # Regression: float [0, 1] tensors were previously interpreted as
     # near-black images and produced wrong text with no error raised.
@@ -176,6 +197,7 @@ def test_recognition_model_infer_handles_unit_range_float_tensor() -> None:
     assert result == ["hi"]
 
 
+@requires_onnxruntime
 def test_recognition_model_pre_process_batches_multiple_images() -> None:
     model = _stub_recognition_model()
     images = [
