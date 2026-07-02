@@ -30,7 +30,28 @@ mkdir -p "$OUTPUT_DIR"
 
 ## Inference Server Run
 
-Build or use the standard GPU Inference image:
+Use a stable GPU Inference image and mount this checkout's server code:
+
+```bash
+export INFERENCE_IMAGE=roboflow/roboflow-inference-server-gpu:1.3.3
+```
+
+Start the server with the local `inference` package and TRT package mounted:
+
+```bash
+docker run --rm --gpus all \
+  --name rfdetr-inference-server \
+  -p 9001:9001 \
+  -e ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES=True \
+  -v "$PWD/inference:/app/inference:ro" \
+  -v "$MODEL_PACKAGE_DIR:/models/rfdetr-trt-package:ro" \
+  "$INFERENCE_IMAGE"
+```
+
+The image provides the dependency stack, while the mounted `/app/inference`
+directory lets the server run against local code from this checkout.
+
+Alternatively, build a benchmark image from this checkout:
 
 ```bash
 docker build \
@@ -39,7 +60,7 @@ docker build \
   .
 ```
 
-Start the server with the TRT package mounted:
+Then start that image with the TRT package mounted:
 
 ```bash
 docker run --rm --gpus all \
