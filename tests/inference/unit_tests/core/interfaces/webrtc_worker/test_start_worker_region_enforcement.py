@@ -23,15 +23,20 @@ from inference.core.interfaces.webrtc_worker.entities import (
 )
 
 
-def _build_request(requested_region=None) -> WebRTCWorkerRequest:
+def _build_request(
+    requested_region=None,
+    workspace_name="workspace-1",
+    workspace_id=None,
+) -> WebRTCWorkerRequest:
     return WebRTCWorkerRequest(
         api_key="fake-api-key",
         workflow_configuration=WorkflowConfiguration(
             type="WorkflowConfiguration",
-            workspace_name="workspace-1",
+            workspace_name=workspace_name,
         ),
         webrtc_offer=WebRTCOffer(type="offer", sdp="fake-sdp"),
         requested_region=requested_region,
+        workspace_id=workspace_id,
     )
 
 
@@ -55,6 +60,7 @@ def _install_modal_stubs(monkeypatch, spawn_mock):
         "inference.core.interfaces.webrtc_worker.utils",
         utils_stub,
     )
+    return utils_stub
 
 
 def _enter_modal_branch(monkeypatch):
@@ -62,6 +68,10 @@ def _enter_modal_branch(monkeypatch):
     monkeypatch.setattr(webrtc_worker, "WEBRTC_MODAL_TOKEN_SECRET", "token-secret")
     monkeypatch.setattr(webrtc_worker, "WEBRTC_MODAL_USAGE_QUOTA_ENABLED", False)
     monkeypatch.setattr(webrtc_worker, "WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED", False)
+    monkeypatch.setattr(
+        "inference.core.interfaces.webrtc_worker.request_utils.get_roboflow_workspace",
+        lambda api_key: "workspace-from-api-key",
+    )
 
 
 def test_start_worker_preserves_client_region_when_enforce_disabled(
@@ -126,6 +136,47 @@ def test_start_worker_raises_when_enforced_region_is_not_eu(monkeypatch) -> None
     with pytest.raises(WebRTCConfigurationError):
         asyncio.run(start_worker(request))
     spawn.assert_not_called()
+
+
+def test_start_worker_uses_api_workspace_for_workspace_quota(monkeypatch) -> None:
+    # given
+    captured = {}
+
+    def spawn(webrtc_request: WebRTCWorkerRequest) -> WebRTCWorkerResult:
+        captured["workspace_id"] = webrtc_request.workspace_id
+        captured["workspace_name"] = (
+            webrtc_request.workflow_configuration.workspace_name
+        )
+        return WebRTCWorkerResult()
+
+    _enter_modal_branch(monkeypatch)
+    utils_stub = _install_modal_stubs(monkeypatch, spawn)
+    monkeypatch.setattr(webrtc_worker, "WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED", True)
+    monkeypatch.setattr(webrtc_worker, "WEBRTC_WORKSPACE_STREAM_QUOTA", 1)
+    monkeypatch.setattr(webrtc_worker, "WEBRTC_WORKSPACE_STREAM_TTL_SECONDS", 60)
+
+    request = _build_request(
+        workspace_name="workspace-from-request",
+        workspace_id="workspace-id-from-request",
+    )
+
+    # when
+    result = asyncio.run(start_worker(request))
+
+    # then
+    assert isinstance(result, WebRTCWorkerResult)
+    assert captured["workspace_id"] == "workspace-from-api-key"
+    assert captured["workspace_name"] == "workspace-from-api-key"
+    utils_stub.is_over_workspace_session_quota.assert_called_once_with(
+        workspace_id="workspace-from-api-key",
+        quota=1,
+        ttl_seconds=60,
+    )
+    utils_stub.register_webrtc_session.assert_called_once()
+    assert (
+        utils_stub.register_webrtc_session.call_args.kwargs["workspace_id"]
+        == "workspace-from-api-key"
+    )
 
 
 def test_start_worker_raises_when_enforced_region_is_none(monkeypatch) -> None:

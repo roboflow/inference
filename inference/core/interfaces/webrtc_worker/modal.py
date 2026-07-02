@@ -65,7 +65,7 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerResult,
 )
 from inference.core.interfaces.webrtc_worker.request_utils import (
-    resolve_workspace_id_for_webrtc_request,
+    reuse_resolved_workspace_id_for_webrtc_request,
 )
 from inference.core.interfaces.webrtc_worker.utils import (
     warmup_cuda,
@@ -302,7 +302,9 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
-            _workspace_id = resolve_workspace_id_for_webrtc_request(webrtc_request)
+            _workspace_id = reuse_resolved_workspace_id_for_webrtc_request(
+                webrtc_request
+            )
 
             workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
@@ -617,7 +619,7 @@ if modal is not None:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client, tag=docker_tag)
 
-        workspace_id = resolve_workspace_id_for_webrtc_request(webrtc_request)
+        workspace_id = reuse_resolved_workspace_id_for_webrtc_request(webrtc_request)
         if not webrtc_request.workflow_configuration.workflow_specification:
             webrtc_request.workflow_configuration.workflow_specification = get_workflow_specification(
                 api_key=webrtc_request.api_key,
