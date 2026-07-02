@@ -1,5 +1,27 @@
 # Changelog
 
+## `0.30.0`
+
+### Added
+
+- PP-OCRv6 text detection model (`pp-ocrv6-det`, DBNet, ONNX backend) with
+  `tiny` / `small` / `medium` variants. Returns axis-aligned boxes with the
+  tight four-point quadrilateral preserved in
+  `Detections.bboxes_metadata["polygon"]` for downstream crops.
+- PP-OCRv6 text recognition model (`pp-ocrv6-rec`, ONNX backend) with
+  `tiny` / `small` / `medium` variants, running recognition over cropped
+  text-line images.
+- Two-stage OCR example (`examples/pp_ocrv6/two_stage_ocr.py`) chaining
+  detection and recognition.
+- New direct dependencies: `PyYAML`, `pyclipper`, `shapely` (all previously
+  present transitively).
+
+### Fixed
+
+- PP-OCRv6 models now make the input pixel-scale contract explicit: float
+  images in `[0, 1]` (e.g. normalized `torch.Tensor` inputs) are rescaled to
+  `[0, 255]` instead of being silently interpreted as near-black images.
+
 ## `0.29.7`
 
 ### Added

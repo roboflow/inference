@@ -2,7 +2,11 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import torch
 
+from inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx import (
+    PPOCRv6DetectionOnnx,
+)
 from inference_models.models.pp_ocrv6.pp_ocrv6_detection_utils import (
     DBNetConfig,
     boxes_from_probability_map,
@@ -10,6 +14,33 @@ from inference_models.models.pp_ocrv6.pp_ocrv6_detection_utils import (
     normalize_detection_image,
     resize_for_detection,
 )
+
+
+class _StubOrtInput:
+    name = "x"
+    type = "tensor(float)"
+
+
+class _StubDetectionSession:
+    """Session stub emitting a probability map with one high-confidence region."""
+
+    def get_inputs(self):
+        return [_StubOrtInput()]
+
+    def run(self, output_names, inputs):
+        _, _, height, width = inputs["x"].shape
+        probability_map = np.zeros((1, 1, height, width), dtype=np.float32)
+        probability_map[:, :, height // 4 : height // 2, width // 8 : -width // 8] = 1.0
+        return [probability_map]
+
+
+def _stub_detection_model() -> PPOCRv6DetectionOnnx:
+    return PPOCRv6DetectionOnnx(
+        session=_StubDetectionSession(),
+        input_name="x",
+        config=_config(limit_side_len=64),
+        device=torch.device("cpu"),
+    )
 
 
 def _config(**overrides) -> DBNetConfig:
@@ -135,3 +166,45 @@ def test_boxes_from_probability_map_returns_empty_for_blank_map() -> None:
     )
 
     assert boxes == []
+
+
+def test_detection_model_infer_runs_end_to_end_on_uint8_numpy() -> None:
+    model = _stub_detection_model()
+    image = np.full((64, 128, 3), 255, dtype=np.uint8)
+
+    detections = model(image)
+
+    assert len(detections) == 1
+    assert len(detections[0].xyxy) == 1
+    assert model.class_names == ["text"]
+    assert detections[0].confidence[0].item() > 0.9
+    assert "polygon" in detections[0].bboxes_metadata[0]
+
+
+def test_detection_model_infer_handles_unit_range_float_tensor() -> None:
+    # Regression: float [0, 1] tensors were previously scaled by 1/255 twice and
+    # the detector saw a near-black image, returning garbage with no error.
+    model = _stub_detection_model()
+    image_uint8 = np.full((64, 128, 3), 255, dtype=np.uint8)
+    image_tensor = torch.ones((3, 64, 128), dtype=torch.float32)
+
+    pre_processed_uint8, _ = model.pre_process(image_uint8)
+    pre_processed_float, _ = model.pre_process(image_tensor)
+    detections = model(image_tensor)
+
+    assert torch.allclose(pre_processed_uint8[0], pre_processed_float[0], atol=0.02)
+    assert len(detections[0].xyxy) == 1
+
+
+def test_detection_model_post_process_handles_empty_maps() -> None:
+    model = _stub_detection_model()
+    empty_map = torch.zeros((64, 64), dtype=torch.float32)
+
+    detections = model.post_process(
+        model_results=[empty_map],
+        pre_processing_meta=[{"source_height": 64, "source_width": 64}],
+    )
+
+    assert len(detections) == 1
+    assert len(detections[0].xyxy) == 0
+    assert detections[0].bboxes_metadata == []

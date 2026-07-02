@@ -1756,3 +1756,41 @@ def sam3_package() -> str:
         model_package_zip_url=SAM3_PACKAGE_URL,
         package_name="sam3",
     )
+
+
+# PP-OCRv6 ONNX packages — downloaded file-by-file from the public PaddlePaddle
+# Hugging Face repos (no token required). TODO: switch to the Roboflow
+# test-assets bucket once the packages are registered by internal tooling.
+PP_OCRV6_TINY_DET_ONNX_FILES_BASE_URL = (
+    "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det_onnx/resolve/main"
+)
+PP_OCRV6_TINY_REC_ONNX_FILES_BASE_URL = (
+    "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/resolve/main"
+)
+PP_OCRV6_PACKAGE_FILES = ["inference.onnx", "inference.yml"]
+
+
+def download_pp_ocrv6_package(files_base_url: str, package_name: str) -> str:
+    package_dir = os.path.join(MODELS_DIR, package_name)
+    for file_name in PP_OCRV6_PACKAGE_FILES:
+        _download_if_not_exists(
+            file_path=os.path.join(package_dir, file_name),
+            url=f"{files_base_url}/{file_name}",
+        )
+    return package_dir
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_tiny_det_onnx_package() -> str:
+    return download_pp_ocrv6_package(
+        files_base_url=PP_OCRV6_TINY_DET_ONNX_FILES_BASE_URL,
+        package_name="pp-ocrv6-tiny-det-onnx",
+    )
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_tiny_rec_onnx_package() -> str:
+    return download_pp_ocrv6_package(
+        files_base_url=PP_OCRV6_TINY_REC_ONNX_FILES_BASE_URL,
+        package_name="pp-ocrv6-tiny-rec-onnx",
+    )

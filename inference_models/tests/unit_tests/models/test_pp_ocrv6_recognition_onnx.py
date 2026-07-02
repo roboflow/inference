@@ -1,13 +1,47 @@
 from pathlib import Path
 
 import numpy as np
+import torch
 
+from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx import (
+    PPOCRv6RecognitionOnnx,
+)
 from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_utils import (
     ctc_decode,
     load_inference_config,
     preprocess_text_lines,
     resize_and_pad_text_line,
 )
+
+
+class _StubOrtInput:
+    name = "x"
+    type = "tensor(float)"
+
+
+class _StubRecognitionSession:
+    """Session stub emitting logits that CTC-decode to "hi" for every image."""
+
+    def get_inputs(self):
+        return [_StubOrtInput()]
+
+    def run(self, output_names, inputs):
+        batch_size = inputs["x"].shape[0]
+        # characters ["h", "i"] -> index map ["", "h", "i", " "]
+        logits = np.zeros((batch_size, 4, 4), dtype=np.float32)
+        for step, token_idx in enumerate([1, 0, 2, 2]):
+            logits[:, step, token_idx] = 1.0
+        return [logits]
+
+
+def _stub_recognition_model() -> PPOCRv6RecognitionOnnx:
+    return PPOCRv6RecognitionOnnx(
+        session=_StubRecognitionSession(),
+        input_name="x",
+        image_shape=(3, 48, 320),
+        characters=["h", "i"],
+        device=torch.device("cpu"),
+    )
 
 
 def test_load_inference_config_parses_shape_and_characters(tmp_path: Path) -> None:
@@ -116,3 +150,42 @@ def test_ctc_decode_removes_blanks_and_collapses_repeated_tokens() -> None:
     result = ctc_decode(predictions=predictions, characters=["A", "B"])
 
     assert result == [("AB ", 1.0)]
+
+
+def test_recognition_model_infer_runs_end_to_end_on_uint8_numpy() -> None:
+    model = _stub_recognition_model()
+    image = np.full((24, 96, 3), 255, dtype=np.uint8)
+
+    result = model(image)
+
+    assert result == ["hi"]
+
+
+def test_recognition_model_infer_handles_unit_range_float_tensor() -> None:
+    # Regression: float [0, 1] tensors were previously interpreted as
+    # near-black images and produced wrong text with no error raised.
+    model = _stub_recognition_model()
+    image = torch.ones((3, 24, 96), dtype=torch.float32)
+
+    pre_processed = model.pre_process(image)
+    result = model(image)
+
+    assert isinstance(pre_processed, torch.Tensor)
+    # a white input must normalize to +1.0 content, not the -1.0 black level
+    assert pre_processed.max().item() > 0.99
+    assert result == ["hi"]
+
+
+def test_recognition_model_pre_process_batches_multiple_images() -> None:
+    model = _stub_recognition_model()
+    images = [
+        np.full((24, 96, 3), 255, dtype=np.uint8),
+        np.full((48, 48, 3), 0, dtype=np.uint8),
+    ]
+
+    pre_processed = model.pre_process(images)
+
+    assert pre_processed.shape[0] == 2
+    assert pre_processed.shape[1] == 3
+    assert pre_processed.shape[2] == 48
+    assert model(images) == ["hi", "hi"]

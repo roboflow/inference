@@ -1,19 +1,22 @@
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
-import cv2
 import numpy as np
 import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ColorFormat
-from inference_models.errors import EnvironmentConfigurationError, ModelInputError
+from inference_models.errors import EnvironmentConfigurationError
 from inference_models.models.base.object_detection import (
     Detections,
     ObjectDetectionModel,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
-from inference_models.models.common.onnx import set_onnx_execution_provider_defaults
+from inference_models.models.common.onnx import (
+    run_onnx_session_via_iobinding,
+    set_onnx_execution_provider_defaults,
+)
+from inference_models.models.pp_ocrv6.pp_ocrv6_common import normalize_input_images
 from inference_models.models.pp_ocrv6.pp_ocrv6_detection_utils import (
     DBNetConfig,
     boxes_from_probability_map,
@@ -46,7 +49,7 @@ TEXT_CLASS_NAME = "text"
 
 
 class PPOCRv6DetectionOnnx(
-    ObjectDetectionModel[List[np.ndarray], List[dict], List[np.ndarray]]
+    ObjectDetectionModel[List[torch.Tensor], List[dict], List[torch.Tensor]]
 ):
     """PP-OCRv6 text detection model (DBNet).
 
@@ -100,6 +103,7 @@ class PPOCRv6DetectionOnnx(
             session=session,
             input_name=session.get_inputs()[0].name,
             config=config,
+            device=device,
         )
 
     def __init__(
@@ -107,11 +111,17 @@ class PPOCRv6DetectionOnnx(
         session: onnxruntime.InferenceSession,
         input_name: str,
         config: DBNetConfig,
+        device: torch.device,
     ):
         self._session = session
         self._input_name = input_name
         self._config = config
+        self._device = device
         self._session_thread_lock = Lock()
+
+    @property
+    def device(self) -> torch.device:
+        return self._device
 
     @property
     def class_names(self) -> List[str]:
@@ -122,7 +132,7 @@ class PPOCRv6DetectionOnnx(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
-    ) -> Tuple[List[np.ndarray], List[dict]]:
+    ) -> Tuple[List[torch.Tensor], List[dict]]:
         images = normalize_input_images(
             images=images,
             input_color_format=input_color_format,
@@ -136,37 +146,41 @@ class PPOCRv6DetectionOnnx(
                 limit_side_len=self._config.limit_side_len,
                 limit_type=self._config.limit_type,
             )
-            pre_processed_images.append(
-                normalize_detection_image(image_bgr=resized, config=self._config)
+            normalized = normalize_detection_image(
+                image_bgr=resized, config=self._config
             )
+            pre_processed_images.append(torch.from_numpy(normalized).to(self._device))
             pre_processing_meta.append(
                 {"source_height": source_height, "source_width": source_width}
             )
         return pre_processed_images, pre_processing_meta
 
     def forward(
-        self, pre_processed_images: List[np.ndarray], **kwargs
-    ) -> List[np.ndarray]:
+        self, pre_processed_images: List[torch.Tensor], **kwargs
+    ) -> List[torch.Tensor]:
+        # Detection inputs have per-image spatial shapes (each image is resized
+        # to its own multiple-of-32 size), so images run through the session one
+        # by one instead of as a single stacked batch.
         probability_maps = []
         with self._session_thread_lock:
             for pre_processed_image in pre_processed_images:
-                output = self._session.run(
-                    None,
-                    {self._input_name: pre_processed_image},
+                output = run_onnx_session_via_iobinding(
+                    session=self._session,
+                    inputs={self._input_name: pre_processed_image},
                 )[0]
                 probability_maps.append(output[0, 0])
         return probability_maps
 
     def post_process(
         self,
-        model_results: List[np.ndarray],
+        model_results: List[torch.Tensor],
         pre_processing_meta: List[dict],
         **kwargs,
     ) -> List[Detections]:
         detections = []
         for probability_map, meta in zip(model_results, pre_processing_meta):
             quads_with_scores = boxes_from_probability_map(
-                probability_map=probability_map,
+                probability_map=probability_map.detach().cpu().numpy(),
                 source_height=meta["source_height"],
                 source_width=meta["source_width"],
                 config=self._config,
@@ -200,72 +214,3 @@ def _quads_to_detections(
         confidence=torch.tensor(scores, dtype=torch.float32),
         bboxes_metadata=bboxes_metadata,
     )
-
-
-def normalize_input_images(
-    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-    input_color_format: Optional[ColorFormat] = None,
-) -> List[np.ndarray]:
-    if isinstance(images, np.ndarray):
-        input_color_format = input_color_format or "bgr"
-        return [
-            convert_numpy_image_to_bgr(image=images, color_format=input_color_format)
-        ]
-    if isinstance(images, torch.Tensor):
-        input_color_format = input_color_format or "rgb"
-        return [
-            convert_numpy_image_to_bgr(image=image, color_format=input_color_format)
-            for image in torch_images_to_numpy_list(images=images)
-        ]
-    if not isinstance(images, list):
-        raise ModelInputError(
-            message="PP-OCRv6 detection supports np.ndarray, torch.Tensor, or lists of those inputs.",
-            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
-        )
-    if not images:
-        raise ModelInputError(
-            message="Detected empty input to PP-OCRv6 detection model.",
-            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
-        )
-    if isinstance(images[0], np.ndarray):
-        input_color_format = input_color_format or "bgr"
-        return [
-            convert_numpy_image_to_bgr(image=image, color_format=input_color_format)
-            for image in images
-        ]
-    if isinstance(images[0], torch.Tensor):
-        input_color_format = input_color_format or "rgb"
-        return [
-            convert_numpy_image_to_bgr(image=image, color_format=input_color_format)
-            for image in torch_images_to_numpy_list(images=torch.stack(images, dim=0))
-        ]
-    raise ModelInputError(
-        message=f"Detected unsupported PP-OCRv6 detection input type: {type(images[0])}",
-        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
-    )
-
-
-def torch_images_to_numpy_list(images: torch.Tensor) -> List[np.ndarray]:
-    if len(images.shape) == 3:
-        images = torch.unsqueeze(images, dim=0)
-    if len(images.shape) != 4:
-        raise ModelInputError(
-            message="PP-OCRv6 detection expects torch images in CHW or BCHW format.",
-            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
-        )
-    return [image.permute(1, 2, 0).detach().cpu().numpy() for image in images]
-
-
-def convert_numpy_image_to_bgr(
-    image: np.ndarray, color_format: ColorFormat
-) -> np.ndarray:
-    if len(image.shape) == 2:
-        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    if len(image.shape) != 3 or image.shape[2] != 3:
-        raise ModelInputError(
-            message="PP-OCRv6 detection expects images with 3 color channels.",
-            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
-        )
-    if color_format == "rgb":
-        image = image[:, :, ::-1]
-    return np.ascontiguousarray(image)
