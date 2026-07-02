@@ -2,6 +2,8 @@ from typing import Any, List, Optional, Tuple
 
 import cv2
 import numpy as np
+import torch
+import torch.nn.functional as F
 import yaml
 
 from inference_models.errors import ModelInputError
@@ -56,6 +58,52 @@ def resize_and_pad_text_line(
     padded = np.zeros((image.shape[2], target_height, target_width), dtype="float32")
     padded[:, :, :resized_width] = normalized
     return padded
+
+
+def preprocess_text_lines_torch(
+    images: List[torch.Tensor],
+    target_height: int,
+    min_width: int,
+    max_width: int = DEFAULT_MAX_TEXT_LINE_WIDTH,
+) -> torch.Tensor:
+    """Device-native counterpart of ``preprocess_text_lines``.
+
+    ``images`` are ``CHW`` float tensors in ``[0, 255]`` on the model device.
+    Returns the normalized, right-zero-padded ``NCHW`` batch on the same device,
+    with the batch width derived from the widest text-line aspect ratio (as in
+    the numpy path), without a numpy/cv2 round-trip.
+    """
+    max_wh_ratio = min_width / float(target_height)
+    for image in images:
+        _, height, width = image.shape
+        if height <= 0 or width <= 0:
+            raise ModelInputError(
+                message="Cannot run PP-OCRv6 recognition on an empty image.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
+        max_wh_ratio = max(max_wh_ratio, width / float(height))
+    target_width = int(np.ceil(target_height * max_wh_ratio))
+    target_width = min(max(target_width, min_width), max_width)
+    processed = []
+    for image in images:
+        channels, height, width = image.shape
+        resized_width = int(np.ceil(target_height * width / float(height)))
+        resized_width = max(1, min(resized_width, target_width))
+        resized = F.interpolate(
+            image.unsqueeze(0),
+            size=(target_height, resized_width),
+            mode="bilinear",
+            align_corners=False,
+        )[0]
+        normalized = (resized / 255.0 - 0.5) / 0.5
+        padded = torch.zeros(
+            (channels, target_height, target_width),
+            dtype=normalized.dtype,
+            device=normalized.device,
+        )
+        padded[:, :, :resized_width] = normalized
+        processed.append(padded)
+    return torch.stack(processed, dim=0)
 
 
 def ctc_decode(

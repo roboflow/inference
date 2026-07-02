@@ -4,6 +4,8 @@ from typing import Any, List, Optional, Tuple
 import cv2
 import numpy as np
 import pyclipper
+import torch
+import torch.nn.functional as F
 import yaml
 from shapely.geometry import Polygon
 
@@ -116,6 +118,63 @@ def normalize_detection_image(image_bgr: np.ndarray, config: DBNetConfig) -> np.
     std = np.array(config.std, dtype="float32")
     normalized = (image.astype("float32") * config.scale - mean) / std
     return np.ascontiguousarray(np.transpose(normalized, (2, 0, 1))[np.newaxis, ...])
+
+
+def resize_for_detection_torch(
+    image: torch.Tensor, limit_side_len: int, limit_type: str
+) -> torch.Tensor:
+    """Device-native counterpart of ``resize_for_detection``.
+
+    ``image`` is a ``CHW`` float tensor in ``[0, 255]``; returns the resized
+    ``NCHW`` tensor (multiple of 32 on each side) on the same device, without a
+    numpy/cv2 round-trip.
+    """
+    _, height, width = image.shape
+    if height <= 0 or width <= 0:
+        raise ModelInputError(
+            message="Cannot run PP-OCRv6 detection on an empty image.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
+    if limit_type == "max":
+        ratio = (
+            limit_side_len / max(height, width)
+            if max(height, width) > limit_side_len
+            else 1.0
+        )
+    elif limit_type == "min":
+        ratio = (
+            limit_side_len / min(height, width)
+            if min(height, width) < limit_side_len
+            else 1.0
+        )
+    else:
+        ratio = limit_side_len / max(height, width)
+    resize_h = max(int(round(height * ratio / 32) * 32), 32)
+    resize_w = max(int(round(width * ratio / 32) * 32), 32)
+    return F.interpolate(
+        image.unsqueeze(0),
+        size=(resize_h, resize_w),
+        mode="bilinear",
+        align_corners=False,
+    )
+
+
+def normalize_detection_image_torch(
+    image_bgr: torch.Tensor, config: DBNetConfig
+) -> torch.Tensor:
+    """Device-native counterpart of ``normalize_detection_image``.
+
+    ``image_bgr`` is an ``NCHW`` BGR float tensor in ``[0, 255]``; returns the
+    normalized ``NCHW`` tensor on the same device.
+    """
+    image = image_bgr.flip(1) if config.to_rgb else image_bgr
+    mean = torch.tensor(config.mean, dtype=image.dtype, device=image.device).view(
+        1, 3, 1, 1
+    )
+    std = torch.tensor(config.std, dtype=image.dtype, device=image.device).view(
+        1, 3, 1, 1
+    )
+    return (image * config.scale - mean) / std
 
 
 def boxes_from_probability_map(

@@ -4,7 +4,9 @@ import torch
 
 from inference_models.errors import ModelInputError
 from inference_models.models.pp_ocrv6.pp_ocrv6_common import (
+    is_torch_input,
     normalize_input_images,
+    normalize_torch_images_to_device,
     rescale_image_to_uint8,
 )
 
@@ -121,3 +123,80 @@ def test_normalize_input_images_rejects_unsupported_type() -> None:
 def test_normalize_input_images_rejects_wrong_channel_count() -> None:
     with pytest.raises(ModelInputError):
         normalize_input_images(images=np.zeros((8, 8, 4), dtype=np.uint8))
+
+
+def test_is_torch_input_discriminates_torch_from_numpy() -> None:
+    assert is_torch_input(torch.zeros((3, 4, 4)))
+    assert is_torch_input([torch.zeros((3, 4, 4))])
+    assert not is_torch_input(np.zeros((4, 4, 3), dtype=np.uint8))
+    assert not is_torch_input([np.zeros((4, 4, 3), dtype=np.uint8)])
+    assert not is_torch_input([])
+
+
+def test_normalize_torch_images_to_device_matches_numpy_path() -> None:
+    # The device-native torch path must agree with the numpy/cv2 path so
+    # predictions do not depend on whether the caller passes np.ndarray or
+    # torch.Tensor. Torch images are CHW/rgb and get flipped to bgr.
+    image_bgr = np.random.default_rng(2).integers(
+        0, 256, size=(20, 30, 3), dtype=np.uint8
+    )
+    rgb_tensor = (
+        torch.from_numpy(np.ascontiguousarray(image_bgr[:, :, ::-1]))
+        .permute(2, 0, 1)
+        .float()
+        / 255.0
+    )
+
+    numpy_ref = normalize_input_images(images=image_bgr)[0]  # HWC uint8 BGR
+    torch_out = normalize_torch_images_to_device(
+        images=rgb_tensor, input_color_format=None, device=torch.device("cpu")
+    )
+
+    assert len(torch_out) == 1
+    result = torch_out[0]
+    assert result.shape == (3, 20, 30)  # CHW, kept as a tensor (no numpy round-trip)
+    assert result.dtype == torch.float32
+    as_hwc = result.permute(1, 2, 0).round().to(torch.int32).numpy()
+    assert np.abs(as_hwc - numpy_ref.astype(int)).max() <= 1
+
+
+def test_normalize_torch_images_to_device_rescales_unit_range_and_flips_to_bgr() -> None:
+    # A pure-red rgb float image in [0, 1]: rescaled ×255 and flipped to bgr so
+    # the red channel lands at index 2 with value 255.
+    rgb = torch.zeros((3, 4, 4), dtype=torch.float32)
+    rgb[0] = 1.0
+
+    result = normalize_torch_images_to_device(
+        images=rgb, input_color_format=None, device=torch.device("cpu")
+    )[0]
+
+    assert result.shape == (3, 4, 4)
+    assert float(result[0].max()) == 0.0  # blue
+    assert float(result[1].max()) == 0.0  # green
+    assert float(result[2].max()) == 255.0  # red, rescaled and moved to bgr index
+
+
+def test_normalize_torch_images_to_device_splits_batched_tensor() -> None:
+    images = torch.zeros((2, 3, 8, 8), dtype=torch.uint8)
+
+    result = normalize_torch_images_to_device(
+        images=images, input_color_format=None, device=torch.device("cpu")
+    )
+
+    assert len(result) == 2
+    assert all(image.shape == (3, 8, 8) for image in result)
+
+
+def test_normalize_torch_images_to_device_accepts_list_and_rescales_floats() -> None:
+    images = [
+        torch.zeros((3, 8, 8), dtype=torch.uint8),
+        torch.ones((3, 4, 4), dtype=torch.float32),
+    ]
+
+    result = normalize_torch_images_to_device(
+        images=images, input_color_format=None, device=torch.device("cpu")
+    )
+
+    assert len(result) == 2
+    assert result[0].shape == (3, 8, 8)
+    assert float(result[1].max()) == 255.0  # float 1.0 -> 255

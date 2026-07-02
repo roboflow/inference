@@ -16,13 +16,19 @@ from inference_models.models.common.onnx import (
     run_onnx_session_via_iobinding,
     set_onnx_execution_provider_defaults,
 )
-from inference_models.models.pp_ocrv6.pp_ocrv6_common import normalize_input_images
+from inference_models.models.pp_ocrv6.pp_ocrv6_common import (
+    is_torch_input,
+    normalize_input_images,
+    normalize_torch_images_to_device,
+)
 from inference_models.models.pp_ocrv6.pp_ocrv6_detection_utils import (
     DBNetConfig,
     boxes_from_probability_map,
     load_detection_config,
     normalize_detection_image,
+    normalize_detection_image_torch,
     resize_for_detection,
+    resize_for_detection_torch,
 )
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
@@ -133,6 +139,18 @@ class PPOCRv6DetectionOnnx(
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> Tuple[List[torch.Tensor], List[dict]]:
+        # torch.Tensor inputs are pre-processed on their own device (resize +
+        # normalize run with torch ops), so they are never copied out to numpy
+        # and back. numpy inputs keep the cv2 pipeline.
+        if is_torch_input(images):
+            return self._pre_process_torch(images, input_color_format)
+        return self._pre_process_numpy(images, input_color_format)
+
+    def _pre_process_numpy(
+        self,
+        images: Union[np.ndarray, List[np.ndarray]],
+        input_color_format: Optional[ColorFormat],
+    ) -> Tuple[List[torch.Tensor], List[dict]]:
         images = normalize_input_images(
             images=images,
             input_color_format=input_color_format,
@@ -150,6 +168,34 @@ class PPOCRv6DetectionOnnx(
                 image_bgr=resized, config=self._config
             )
             pre_processed_images.append(torch.from_numpy(normalized).to(self._device))
+            pre_processing_meta.append(
+                {"source_height": source_height, "source_width": source_width}
+            )
+        return pre_processed_images, pre_processing_meta
+
+    def _pre_process_torch(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor]],
+        input_color_format: Optional[ColorFormat],
+    ) -> Tuple[List[torch.Tensor], List[dict]]:
+        device_images = normalize_torch_images_to_device(
+            images=images,
+            input_color_format=input_color_format,
+            device=self._device,
+        )
+        pre_processed_images = []
+        pre_processing_meta = []
+        for image in device_images:
+            source_height, source_width = int(image.shape[1]), int(image.shape[2])
+            resized = resize_for_detection_torch(
+                image=image,
+                limit_side_len=self._config.limit_side_len,
+                limit_type=self._config.limit_type,
+            )
+            normalized = normalize_detection_image_torch(
+                image_bgr=resized, config=self._config
+            )
+            pre_processed_images.append(normalized)
             pre_processing_meta.append(
                 {"source_height": source_height, "source_width": source_width}
             )

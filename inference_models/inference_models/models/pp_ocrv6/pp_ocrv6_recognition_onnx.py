@@ -13,11 +13,16 @@ from inference_models.models.common.onnx import (
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
-from inference_models.models.pp_ocrv6.pp_ocrv6_common import normalize_input_images
+from inference_models.models.pp_ocrv6.pp_ocrv6_common import (
+    is_torch_input,
+    normalize_input_images,
+    normalize_torch_images_to_device,
+)
 from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_utils import (
     ctc_decode,
     load_inference_config,
     preprocess_text_lines,
+    preprocess_text_lines_torch,
 )
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
@@ -126,6 +131,20 @@ class PPOCRv6RecognitionOnnx(TextOnlyOCRModel[torch.Tensor, torch.Tensor]):
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> torch.Tensor:
+        # torch.Tensor inputs are pre-processed on their own device (resize +
+        # normalize + pad run with torch ops), so they are never copied out to
+        # numpy and back. numpy inputs keep the cv2 pipeline.
+        if is_torch_input(images):
+            device_images = normalize_torch_images_to_device(
+                images=images,
+                input_color_format=input_color_format,
+                device=self._device,
+            )
+            return preprocess_text_lines_torch(
+                images=device_images,
+                target_height=self._input_height,
+                min_width=self._input_width,
+            )
         images = normalize_input_images(
             images=images,
             input_color_format=input_color_format,
