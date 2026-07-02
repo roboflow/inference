@@ -26,7 +26,10 @@ from inference.core.interfaces.webrtc_worker.entities import (
 def _build_request(requested_region=None) -> WebRTCWorkerRequest:
     return WebRTCWorkerRequest(
         api_key="fake-api-key",
-        workflow_configuration=WorkflowConfiguration(type="WorkflowConfiguration"),
+        workflow_configuration=WorkflowConfiguration(
+            type="WorkflowConfiguration",
+            workspace_name="workspace-1",
+        ),
         webrtc_offer=WebRTCOffer(type="offer", sdp="fake-sdp"),
         requested_region=requested_region,
     )
@@ -59,11 +62,6 @@ def _enter_modal_branch(monkeypatch):
     monkeypatch.setattr(webrtc_worker, "WEBRTC_MODAL_TOKEN_SECRET", "token-secret")
     monkeypatch.setattr(webrtc_worker, "WEBRTC_MODAL_USAGE_QUOTA_ENABLED", False)
     monkeypatch.setattr(webrtc_worker, "WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED", False)
-    monkeypatch.setattr(
-        webrtc_worker,
-        "get_roboflow_workspace",
-        MagicMock(return_value="workspace-1"),
-    )
 
 
 def test_start_worker_preserves_client_region_when_enforce_disabled(
