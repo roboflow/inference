@@ -134,6 +134,7 @@ docker run --rm --gpus all --shm-size=1g -p 8000:8000 \
   -e INFERENCE_HOME=/cache \
   -e INFERENCE_DEPLOYMENT_MODE=mmp \
   -e LOG_LEVEL=WARNING \
+  -e ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND=True \
   -v /home/damiankosowski/inference/inference_cache:/cache \
   -v "$MODEL_PACKAGE_DIR:/models/rfdetr-trt-package:ro" \
   "$NEW_INFERENCE_IMAGE"

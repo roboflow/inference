@@ -169,6 +169,8 @@ def _load_frames(
     source_path = Path(source)
     frames: list[np.ndarray] = []
 
+    is_current_frame_present = False
+
     if source_path.is_dir():
         for image_path in _iter_image_paths(source_path):
             frames.append(_read_image_rgb(path=image_path, resize_wh=resize_wh))
@@ -194,7 +196,13 @@ def _load_frames(
                         resize_wh,
                         interpolation=cv2.INTER_AREA,
                     )
-                frames.append(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+
+                if is_current_frame_present:
+                    frames.append(tmp_current_frame)
+                else:
+                    tmp_current_frame = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                    is_current_frame_present = True
+                    frames.append(tmp_current_frame)
                 if frame_limit is not None and len(frames) >= frame_limit:
                     break
 
@@ -601,7 +609,7 @@ def _write_json(path: str, payload: dict[str, Any]) -> None:
 )
 @click.option(
     "--server-url",
-    default="http://localhost:8000",
+    default="http://127.0.0.1:8000",
     show_default=True,
 )
 @click.option(
