@@ -162,12 +162,16 @@ jobs:
           persist-credentials: false
 
       - name: Restore trusted review skills
+        if: steps.review-prompt.outputs.prompt_available == 'true'
         run: |
+          set -euo pipefail
           rm -rf .claude/skills
-          if [ -d "${RUNNER_TEMP}/trusted_skills" ]; then
-            mkdir -p .claude
-            cp -R "${RUNNER_TEMP}/trusted_skills" .claude/skills
+          if [ ! -d "${RUNNER_TEMP}/trusted_skills" ]; then
+            echo "::error::Trusted review skills snapshot missing at ${RUNNER_TEMP}/trusted_skills — the base branch must contain .claude/skills. Failing closed."
+            exit 1
           fi
+          mkdir -p .claude
+          cp -R "${RUNNER_TEMP}/trusted_skills" .claude/skills
 
       - name: Claude review
         if: steps.review-prompt.outputs.prompt_available == 'true'
