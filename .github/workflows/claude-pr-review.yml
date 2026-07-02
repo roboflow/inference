@@ -125,57 +125,12 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Post review-start marker
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR: ${{ needs.gate.outputs.number }}
-          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
-        run: |
-          set -euo pipefail
-          # Separate marker comment the gate uses as "last review", and which tells
-          # contributors how to request a re-review after new commits.
-          body="$(printf '%s\n' \
-            '<!-- claude-pr-review:run-marker -->' \
-            "🤖 **Claude review started** at commit \`${HEAD_SHA}\`." \
-            '' \
-            'New commits are **not** auto-reviewed. Comment `/claude-review` when you are ready for a re-review.')"
-          gh pr comment "$PR" --repo "$REPO" --body "$body"
-
       - name: Checkout trusted base branch
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.gate.outputs.base_sha }}
           fetch-depth: 1
           persist-credentials: false
-
-      - name: Cache Python packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-claude-review-pip-3.10-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-claude-review-pip-3.10-
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.10"
-          check-latest: true
-
-      - name: Install review dependencies
-        timeout-minutes: 15
-        run: |
-          python -m pip install --upgrade pip setuptools
-          python -m pip install \
-            -r requirements/_requirements.txt \
-            -r requirements/requirements.cpu.txt \
-            -r requirements/requirements.sdk.http.txt \
-            -r requirements/requirements.test.unit.txt \
-            -r requirements/requirements.http.txt \
-            -r requirements/requirements.transformers.txt \
-            -r requirements/requirements.code_analysis.txt
-          python -m pip install -e ./inference_models[test,torch-cpu,onnx-cpu]
 
       - name: Load review prompt
         id: review-prompt
@@ -227,6 +182,25 @@ jobs:
           mkdir -p .claude
           cp -R "${RUNNER_TEMP}/trusted_skills" .claude/skills
 
+      - name: Post review-start marker
+        if: steps.review-prompt.outputs.prompt_available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ needs.gate.outputs.number }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          # Posted only once we know a review will actually run (prompt present). The
+          # gate uses this marker as "last review"; it also tells contributors how to
+          # request a re-review after new commits.
+          body="$(printf '%s\n' \
+            '<!-- claude-pr-review:run-marker -->' \
+            "🤖 **Claude review started** at commit \`${HEAD_SHA}\`." \
+            '' \
+            'New commits are **not** auto-reviewed. Comment `/claude-review` when you are ready for a re-review.')"
+          gh pr comment "$PR" --repo "$REPO" --body "$body"
+
       - name: Claude review
         if: steps.review-prompt.outputs.prompt_available == 'true'
         uses: anthropics/claude-code-action@v1
@@ -240,4 +214,4 @@ jobs:
           claude_args: |
             --model claude-opus-4-8
             --max-turns 50
-            --allowedTools "Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/*/*/issues/*/comments --paginate),Bash(gh api repos/*/*/pulls/*/comments --paginate),Bash(gh api repos/*/*/pulls/*/reviews --paginate),Bash(gh api repos/*/*/pulls/*/commits --paginate),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(python:*),Bash(python3:*),Bash(pytest:*)"
+            --allowedTools "Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/*/*/issues/*/comments --paginate),Bash(gh api repos/*/*/pulls/*/comments --paginate),Bash(gh api repos/*/*/pulls/*/reviews --paginate),Bash(gh api repos/*/*/pulls/*/commits --paginate),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
