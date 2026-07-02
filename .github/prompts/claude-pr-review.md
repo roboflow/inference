@@ -195,10 +195,10 @@ paths the PR touches (each skill's `description` names its exact trigger paths):
 | --- | --- |
 | `inference/core/workflows/core_steps/**` | `review-workflows-blocks` |
 | `inference/core/workflows/execution_engine/**`, other `inference/core/workflows/**` | `review-workflows-execution-engine` |
-| `inference_models/**`, `inference_experimental/**` | `review-inference-models-pkg` |
+| `inference_models/**` | `review-inference-models-pkg` |
 | `inference/models/**`, `inference/core/models/**`, `inference/core/registries/**` | `review-legacy-models-registries` |
 | `inference/core/interfaces/http/**`, `inference_cli/server.py` | `review-http-api-server` |
-| `inference_sdk/**`, `inference_client/**` | `review-sdk` |
+| `inference_sdk/**` | `review-sdk` |
 | `inference_cli/**` (except `server.py`) | `review-cli-cloud-tooling` |
 | `docker/**`, `.github/**`, `requirements/**`, `.release/**`, `Makefile`, repo-root `setup.py`/`pyproject.toml`/`mkdocs.yml`, `build_scripts/**`, `app_bundles/**` | `review-packaging-ci` |
 | other `inference/core/**` (env, version, entities, utils, roboflow_api, exceptions) | `review-core-infra` |
@@ -228,6 +228,7 @@ each topic skill whose signal the PR exhibits (confirm via the skill's
 | adds threads / async / background work, touches caches / locks / model lifecycle / temp dirs, or long-running resources | `review-topic-concurrency-and-resource-safety` |
 | calls an external / platform API, changes an SDK↔server contract, or adds fallback / auto-conversion | `review-topic-external-contract-and-silent-fallback` |
 | touches auth / api-key / workspace-tenant scoping / permissions / secrets | `review-topic-auth-and-tenant-security` |
+| ingests external / user input — a URL / file path / uploaded image, `torch.load` / pickle / weights load, or zip/tar extraction (SSRF, path traversal, unsafe deserialization, decompression bombs) | `review-topic-input-boundary-security` |
 | **(every PR)** — verify changed behavior is covered by a real CI test, tests are isolated, selectors exercised | `review-topic-test-hygiene` |
 
 Load a skill when in doubt — skills are additive guidance, not gates. Apply only
