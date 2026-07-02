@@ -1,17 +1,20 @@
 import base64
 import math
+from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 from uuid import uuid4
 
 from pydantic import ConfigDict, Field
 from typing_extensions import Annotated
 
+from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.roboflow_api import (
     get_roboflow_workspace,
     search_project_images_at_roboflow,
 )
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
+from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.integrations.roboflow.visual_search.helpers import (
     build_visual_search_candidate_image,
     format_visual_search_candidate,
@@ -214,8 +217,9 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
             )
 
         if isinstance(image, Batch):
-            return [
-                self._classify_single_image(
+            tasks = [
+                partial(
+                    self._classify_single_image,
                     image=single_image,
                     workspace=workspace,
                     target_project=target_project,
@@ -224,6 +228,10 @@ class RoboflowVisualSearchClassifierBlockV1(WorkflowBlock):
                 )
                 for single_image in image
             ]
+            return run_in_parallel(
+                tasks=tasks,
+                max_workers=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+            )
 
         return self._classify_single_image(
             image=image,

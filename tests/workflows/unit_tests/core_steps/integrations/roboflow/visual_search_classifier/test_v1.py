@@ -1,4 +1,6 @@
 import math
+import threading
+import time
 from unittest import mock
 
 import numpy as np
@@ -529,6 +531,49 @@ def test_run_batch_returns_one_classification_per_image() -> None:
     assert [row["inference_id"] for row in result]
     assert search_mock.call_args_list[0].kwargs["image_base64"] == "image-1"
     assert search_mock.call_args_list[1].kwargs["image_base64"] == "image-2"
+
+
+def test_run_batch_searches_images_in_parallel_and_preserves_output_order() -> None:
+    block = RoboflowVisualSearchClassifierBlockV1(api_key="api-key")
+    active_requests = 0
+    max_active_requests = 0
+    active_requests_lock = threading.Lock()
+
+    def search_side_effect(**kwargs: object) -> dict:
+        nonlocal active_requests, max_active_requests
+        with active_requests_lock:
+            active_requests += 1
+            max_active_requests = max(max_active_requests, active_requests)
+        try:
+            image_base64 = kwargs["image_base64"]
+            if image_base64 == "image-1":
+                time.sleep(0.08)
+                return {
+                    "results": [
+                        make_candidate(image_id="img-1", class_name="a", class_id=0)
+                    ]
+                }
+            time.sleep(0.01)
+            return {
+                "results": [
+                    make_candidate(image_id="img-2", class_name="b", class_id=1)
+                ]
+            }
+        finally:
+            with active_requests_lock:
+                active_requests -= 1
+
+    with mock.patch.object(v1, "search_project_images_at_roboflow") as search_mock:
+        search_mock.side_effect = search_side_effect
+
+        result = block.run(
+            image=make_batch(),
+            workspace="my-workspace",
+            target_project="reference-images",
+        )
+
+    assert max_active_requests == 2
+    assert [row["predictions"]["top"] for row in result] == ["a", "b"]
 
 
 def test_run_without_api_key_raises() -> None:
