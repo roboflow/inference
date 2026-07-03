@@ -1,0 +1,50 @@
+from development.profiling.config import parse_profile_config
+
+
+def test_parse_profile_config_with_defaults():
+    config = parse_profile_config(
+        {
+            "profile_name": "example",
+            "target": {"name": "smoke-tensor"},
+            "data_source": {"name": "dummy", "record_count": 3},
+        }
+    )
+
+    assert config.profile_name == "example"
+    assert config.target.name == "smoke-tensor"
+    assert config.data_source.name == "dummy"
+    assert config.data_source.parameters == {"record_count": 3}
+    assert config.capture_range == "profile-target"
+    assert config.cuda.synchronize_before_capture is True
+    assert config.cuda.synchronize_each_iteration is False
+
+
+def test_parse_profile_config_accepts_workload_and_cuda_overrides():
+    config = parse_profile_config(
+        {
+            "profile": {"name": "example"},
+            "target": {
+                "name": "generated",
+                "import_path": "inference_profiling/snippets/generated/target.py:target",
+                "profile_prepare": True,
+            },
+            "data": {"source": "dummy"},
+            "workload": {
+                "device": "cuda",
+                "warmup": 2,
+                "iterations": 5,
+                "repetitions": 3,
+                "capture_range": "custom-capture",
+            },
+            "cuda": {"synchronize_each_iteration": True},
+        }
+    )
+
+    assert config.profile_name == "example"
+    assert config.target.profile_prepare is True
+    assert config.device == "cuda"
+    assert config.warmup == 2
+    assert config.iterations == 5
+    assert config.repetitions == 3
+    assert config.capture_range == "custom-capture"
+    assert config.cuda.synchronize_each_iteration is True
