@@ -199,8 +199,10 @@ def project_detections(
     horizontal_fov: float = 73.7,
     heading: float = 0.0,
 ) -> Tuple[List[dict], List[dict]]:
-    """Project sv.Detections to ground GPS. Shared by the workflow block and the
-    sliced-inference path. Returns (geo_detections records, GeoJSON features)."""
+    """Project sv.Detections to ground GPS coordinates.
+
+    Returns (geo_detections records, GeoJSON features).
+    """
     geo_detections, features = [], []
     if len(predictions) == 0:
         return geo_detections, features
