@@ -8,6 +8,8 @@ from inference.core.workflows.core_steps.fusion.detections_consensus.v2 import (
     AggregationMode,
     BlockManifest,
     calculate_iou,
+    get_intersection_mask,
+    get_union_mask,
 )
 
 
@@ -152,3 +154,39 @@ def test_calculate_iou_uses_obb_iou_when_both_have_oriented_boxes() -> None:
 
     # then
     assert result < 0.2
+
+
+def _two_overlapping_masks() -> sv.Detections:
+    # columns 0-1 for A, columns 1-2 for B, so column 1 overlaps.
+    mask_a = np.zeros((1, 4, 4), dtype=bool)
+    mask_a[0, :, 0:2] = True
+    mask_b = np.zeros((1, 4, 4), dtype=bool)
+    mask_b[0, :, 1:3] = True
+    return sv.Detections(
+        xyxy=np.array([[0, 0, 4, 4], [1, 0, 3, 4]], dtype=np.float32),
+        mask=np.concatenate([mask_a, mask_b]),
+    )
+
+
+def test_get_union_mask_is_boolean_or_not_pixel_sum() -> None:
+    # given
+    detections = _two_overlapping_masks()
+
+    # when
+    union = get_union_mask(detections)
+
+    # then - overlapping pixels stay True rather than summing to 2
+    assert union.dtype == bool
+    assert np.array_equal(union, detections.mask[0] | detections.mask[1])
+
+
+def test_get_intersection_mask_is_boolean_and() -> None:
+    # given
+    detections = _two_overlapping_masks()
+
+    # when
+    intersection = get_intersection_mask(detections)
+
+    # then
+    assert intersection.dtype == bool
+    assert np.array_equal(intersection, detections.mask[0] & detections.mask[1])
