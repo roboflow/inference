@@ -26,9 +26,9 @@ from inference.core.env import (
     ALLOW_NON_HTTPS_URL_INPUT,
     ALLOW_NUMPY_INPUT,
     ALLOW_URL_INPUT,
-    ALLOW_URL_INPUT_TO_PRIVATE_NETWORKS,
     ALLOW_URL_INPUT_WITHOUT_FQDN,
     BLACKLISTED_DESTINATIONS_FOR_URL_INPUT,
+    MAX_IMAGE_URL_REDIRECTS,
     WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
 )
 from inference.core.exceptions import (
@@ -202,7 +202,14 @@ def load_image_with_inferred_type(
     elif isinstance(value, Image.Image):
         return np.asarray(value.convert("RGB")), False
     elif isinstance(value, str) and (value.startswith("http")):
-        return load_image_from_url(value=value, cv_imread_flags=cv_imread_flags), True
+        return (
+            load_image_from_url(
+                value=value,
+                max_redirects=MAX_IMAGE_URL_REDIRECTS,
+                cv_imread_flags=cv_imread_flags,
+            ),
+            True,
+        )
     elif (
         isinstance(value, str)
         and ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM
@@ -387,7 +394,9 @@ def validate_numpy_image(data: np.ndarray) -> None:
 
 
 def load_image_from_url(
-    value: str, cv_imread_flags: int = cv2.IMREAD_COLOR
+    value: str,
+    max_redirects: int,
+    cv_imread_flags: int = cv2.IMREAD_COLOR,
 ) -> np.ndarray:
     """Loads an image from a given URL.
 
@@ -398,6 +407,41 @@ def load_image_from_url(
         Image.Image: The loaded PIL image.
     """
     _ensure_url_input_allowed()
+    url = value
+    response = None
+    for _ in range(max_redirects + 1):
+        prepared_url = _prepare_and_validate_image_url(value=url)
+        try:
+            response = requests.get(
+                prepared_url,
+                stream=True,
+                allow_redirects=False,
+            )
+            if response.is_redirect:
+                location = response.headers.get("Location")
+                if not location:
+                    break
+                url = urllib.parse.urljoin(prepared_url, location)
+                response.close()
+                continue
+            api_key_safe_raise_for_status(response=response)
+            return load_image_from_encoded_bytes(
+                value=response.content, cv_imread_flags=cv_imread_flags
+            )
+        except (RequestException, ConnectionError) as error:
+            raise InputImageLoadError(
+                message=f"Could not load image from url: {value}. Details: {error}",
+                public_message="Data pointed by URL could not be decoded into image.",
+            )
+    if response is not None:
+        response.close()
+    raise InputImageLoadError(
+        message=f"Could not load image from url: {value}. Too many redirects.",
+        public_message="Data pointed by URL could not be decoded into image.",
+    )
+
+
+def _prepare_and_validate_image_url(value: str) -> str:
     try:
         original_parsed_url = urllib.parse.urlparse(value)
         if "\\" in original_parsed_url.netloc:
@@ -412,7 +456,13 @@ def load_image_from_url(
             public_message=message,
         ) from error
     _ensure_resource_schema_allowed(schema=parsed_url.scheme)
-    network_location = parsed_url.hostname or ""
+    network_location = parsed_url.hostname
+    if network_location is None:
+        message = "Provided image URL is invalid"
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        )
     if ":" in network_location:
         network_location = f"[{network_location}]"
     domain_extraction_result = tldextract.TLDExtract(suffix_list_urls=())(
@@ -429,34 +479,11 @@ def load_image_from_url(
     _ensure_location_matches_destination_blacklist(
         destination=address_parts_concatenated
     )
-    _ensure_url_resolves_to_allowed_address(hostname=parsed_url.hostname)
-    try:
-        response = requests.get(prepared_url, stream=True, allow_redirects=False)
-        if response.is_redirect:
-            raise InputImageLoadError(
-                message="Image URL redirects are not supported.",
-                public_message="Data pointed by URL could not be decoded into image.",
-            )
-        api_key_safe_raise_for_status(response=response)
-        return load_image_from_encoded_bytes(
-            value=response.content, cv_imread_flags=cv_imread_flags
-        )
-    except (RequestException, ConnectionError) as error:
-        raise InputImageLoadError(
-            message=f"Could not load image from url: {value}. Details: {error}",
-            public_message="Data pointed by URL could not be decoded into image.",
-        )
+    _ensure_url_resolves_to_global_address(hostname=parsed_url.hostname)
+    return prepared_url
 
 
-def _ensure_url_resolves_to_allowed_address(hostname: Optional[str]) -> None:
-    if not hostname:
-        message = "Provided image URL is invalid"
-        raise InputImageLoadError(
-            message=message,
-            public_message=message,
-        )
-    if ALLOW_URL_INPUT_TO_PRIVATE_NETWORKS:
-        return None
+def _ensure_url_resolves_to_global_address(hostname: str) -> None:
     try:
         addresses = {
             ipaddress.ip_address(result[4][0].split("%", 1)[0])
@@ -467,14 +494,11 @@ def _ensure_url_resolves_to_allowed_address(hostname: Optional[str]) -> None:
             message=f"Could not resolve image URL host: {hostname}. Details: {error}",
             public_message="Data pointed by URL could not be decoded into image.",
         ) from error
-    if not addresses or any(
-        not address.is_global or address.is_multicast for address in addresses
-    ):
+    if not addresses or any(not address.is_global for address in addresses):
         raise InputImageLoadError(
             message="Image URL resolves to a non-public address.",
             public_message="Data pointed by URL could not be decoded into image.",
         )
-    return None
 
 
 def _ensure_url_input_allowed() -> None:
@@ -575,7 +599,11 @@ IMAGE_LOADERS = {
     ImageType.NUMPY: lambda v, _: load_image_from_numpy_str(v),
     ImageType.NUMPY_OBJECT: lambda v, _: load_image_from_numpy_object(v),
     ImageType.PILLOW: lambda v, _: np.asarray(v.convert("RGB")),
-    ImageType.URL: load_image_from_url,
+    ImageType.URL: lambda v, flags: load_image_from_url(
+        value=v,
+        max_redirects=MAX_IMAGE_URL_REDIRECTS,
+        cv_imread_flags=flags,
+    ),
 }
 
 
