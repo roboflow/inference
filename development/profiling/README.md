@@ -4,6 +4,46 @@ Developer-only Nsight Systems profiling helpers live here. The committed tooling
 drives focused, isolated profiling targets; generated targets and traces live
 under ignored `inference_profiling/`.
 
+## How It Fits Together
+
+```mermaid
+flowchart TD
+    config["ProfileConfig\nYAML + CLI overrides"]
+    main["main.py"]
+    runProfile["run_profile(config, run_id, run_dir)"]
+    dataRegistry["Data source registry"]
+    dataSource["DataSource\niter_records() + describe()"]
+    targetRegistry["Target registry"]
+    target["ProfileTarget\nprepare() / run() / validate() / summarize()"]
+    warmup["Warmup passes\nprepare + run + validate"]
+    capture["Measured iterations\nNVTX capture range"]
+    manifest["manifest.yaml\nsettings + records + summaries"]
+    nsysCommand["--print-nsys-command"]
+    nsys["nsys profile\nwraps uv run python ..."]
+    trace["trace.nsys-rep"]
+
+    config --> main
+    main --> runProfile
+    main --> nsysCommand
+    nsysCommand --> nsys
+    nsys --> main
+    nsys --> trace
+
+    runProfile --> dataRegistry
+    dataRegistry --> dataSource
+    runProfile --> targetRegistry
+    targetRegistry --> target
+
+    dataSource --> warmup
+    target --> warmup
+    warmup --> capture
+    dataSource --> capture
+    target --> capture
+    capture --> manifest
+    dataSource --> manifest
+    target --> manifest
+```
+
 ## Setup
 
 Use the standard local inference development install from the repository root:
