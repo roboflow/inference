@@ -3,6 +3,40 @@
 Use this skill when the user asks to create an isolated profiling target from a
 function, snippet, module, or line range.
 
+## Repository Context
+
+This skill targets the Roboflow Inference repository. The committed profiling
+tooling lives under `development/profiling/` and is developer-only; it is excluded
+from package distribution. Generated profiling artifacts live under ignored local
+paths:
+
+```text
+inference_profiling/snippets/<profile-name>/
+  target.py
+  config.yaml
+  README.md
+  runs/<run-id>/manifest.yaml
+  runs/<run-id>/trace.nsys-rep
+```
+
+The reusable profiling modules expected by generated snippets are:
+
+- `development.profiling.main`: CLI and `run_profile(...)`
+- `development.profiling.config`: Pydantic config models and YAML parsing
+- `development.profiling.registry`: `ProfileTarget` protocol and target import
+  resolution
+- `development.profiling.data.base`: `DataRecord`
+- `development.profiling.nvtx`: `profiling_range(...)` and
+  `profiling_range_if_cuda(...)`
+
+Run generated profiles from the repository root after standard local setup:
+
+```bash
+uv venv --python 3.10
+uv pip install -e .
+uv run python development/profiling/main.py --config <generated-config.yaml>
+```
+
 ## Workflow
 
 1. Read the referenced production code and nearby imports, types, helpers, and
@@ -35,6 +69,100 @@ function, snippet, module, or line range.
    - required local files, models, or environment variables
    - smoke command without Nsight
    - full `nsys profile` command
+
+## Target Contract
+
+Generated `target.py` files must expose a `target` object or zero-argument
+factory implementing this shape:
+
+```python
+from typing import Any
+
+import torch
+
+from development.profiling.data.base import DataRecord
+
+
+class MyProfileTarget:
+    name = "my-profile"
+
+    def prepare(self, record: DataRecord, *, device: torch.device) -> Any:
+        ...
+
+    def run(self, prepared: Any) -> Any:
+        ...
+
+    def validate(self, output: Any) -> None:
+        ...
+
+    def summarize(self, output: Any) -> dict[str, Any]:
+        ...
+
+
+target = MyProfileTarget()
+```
+
+The runner validates outputs during warmup only. Measured iterations should not
+include validation work in the captured NVTX range.
+
+## Config Shape
+
+Generated configs should use explicit file-path target imports so generated
+snippet directories do not need to be Python packages:
+
+```yaml
+profile_name: my-profile
+target:
+  name: my-profile
+  import_path: inference_profiling/snippets/my_profile/target.py:target
+  profile_prepare: false
+data_source:
+  name: dummy
+device: cuda
+warmup: 10
+iterations: 100
+record_loading: eager
+seed: 0
+capture_range: profile-target
+cuda:
+  synchronize_before_warmup: true
+  synchronize_after_warmup: true
+  synchronize_before_capture: true
+  synchronize_after_capture: true
+  synchronize_each_iteration: false
+```
+
+For local image directories, use the `images` data source:
+
+```yaml
+data_source:
+  name: images
+  directory: /path/to/images
+  decode: true
+  limit: 4
+  repeat: 100
+```
+
+The image source decodes to RGB NumPy arrays when `decode: true`.
+
+## Command Template
+
+The smoke command should run without Nsight first:
+
+```bash
+uv run python development/profiling/main.py \
+  --config inference_profiling/snippets/my_profile/config.yaml \
+  --run-id smoke
+```
+
+Then print or document the Nsight command:
+
+```bash
+uv run python development/profiling/main.py \
+  --config inference_profiling/snippets/my_profile/config.yaml \
+  --run-id smoke \
+  --print-nsys-command
+```
 
 ## Sanity Checks
 
