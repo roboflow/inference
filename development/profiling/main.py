@@ -1,4 +1,5 @@
 import random
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -463,7 +464,7 @@ def build_nsys_command(
     if config.seed is not None:
         command.extend(["--seed", str(config.seed)])
 
-    nsys_command = " \\\n  ".join(command)
+    nsys_command = " \\\n  ".join(shlex.quote(part) for part in command)
 
     return nsys_command
 

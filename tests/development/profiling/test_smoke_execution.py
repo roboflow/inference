@@ -80,11 +80,12 @@ def test_nsys_command_uses_capture_range_and_does_not_execute_nsys(tmp_path):
     command = build_nsys_command(
         config=config,
         run_dir=tmp_path / "smoke" / "runs" / "run-1",
-        config_path="config.yaml",
+        config_path="configs/profile config.yaml",
     )
 
     assert command.startswith("nsys profile")
     assert "--nvtx-capture=custom-target@*" in command
     assert "--record-loading \\\n  lazy" in command
     assert "--seed \\\n  7" in command
+    assert "'configs/profile config.yaml'" in command
     assert "uv run python development/profiling/main.py" in command
