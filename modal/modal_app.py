@@ -14,6 +14,7 @@ import inspect
 import json
 import os
 import threading
+import time
 import traceback
 from typing import Any, Dict, Optional, Tuple
 
@@ -56,6 +57,19 @@ WEBEXEC_DEPLOY_ROUTING_REGION = os.getenv("WEBEXEC_DEPLOY_ROUTING_REGION") or os
 )
 
 app = modal.App("webexec")
+
+# WebSocket connection lifecycle. A WebSocket connection is a single Modal
+# input: if it is still open when the function ``timeout`` is reached, Modal
+# kills it and the input is reported as a timeout. Close the connection
+# gracefully before that so every input completes as a success; the client
+# reconnects lazily on its next request (container and cached namespaces
+# survive the reconnect). Both limits must stay below the function timeout.
+WEBEXEC_WS_MAX_CONNECTION_SECONDS = int(
+    os.getenv("WEBEXEC_WS_MAX_CONNECTION_SECONDS", "3600")
+)
+WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_IDLE_TIMEOUT_SECONDS", "10")
+)
 
 
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
@@ -767,9 +781,23 @@ from datetime import datetime
         @ws_app.websocket("/ws")
         async def ws_execute(websocket: WebSocket):
             await websocket.accept()
+            connected_at = time.monotonic()
             try:
                 while True:
-                    raw = await websocket.receive_bytes()
+                    remaining = WEBEXEC_WS_MAX_CONNECTION_SECONDS - (
+                        time.monotonic() - connected_at
+                    )
+                    if remaining <= 0:
+                        await websocket.close(code=1000)
+                        return
+                    try:
+                        raw = await asyncio.wait_for(
+                            websocket.receive_bytes(),
+                            timeout=min(remaining, WEBEXEC_WS_IDLE_TIMEOUT_SECONDS),
+                        )
+                    except asyncio.TimeoutError:
+                        await websocket.close(code=1000)
+                        return
                     request = msgpack.unpackb(raw, raw=False)
 
                     code_str = request.get("code_str", "")
