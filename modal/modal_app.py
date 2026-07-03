@@ -24,24 +24,14 @@ import modal
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     capture_output,
 )
-
-# Deploy-time Modal region/cloud knobs for the webexec executor app.
-WEBEXEC_MODAL_CLOUD = os.getenv("WEBEXEC_MODAL_CLOUD")
-WEBEXEC_MODAL_REGION = os.getenv("WEBEXEC_MODAL_REGION")
-WEBEXEC_MODAL_ROUTING_REGION = os.getenv("WEBEXEC_MODAL_ROUTING_REGION")
-
-# WebSocket connection lifecycle. A WebSocket connection is a single Modal
-# input: if it is still open when the function ``timeout`` is reached, Modal
-# kills it and the input is reported as a timeout. Close the connection
-# gracefully before that so every input completes as a success; the client
-# reconnects lazily on its next request (container and cached namespaces
-# survive the reconnect). Both limits must stay below the function timeout.
-WEBEXEC_WS_MAX_CONNECTION_SECONDS = int(
-    os.getenv("WEBEXEC_WS_MAX_CONNECTION_SECONDS", "3600")
+from inference.core.env import (
+    WEBEXEC_WS_MAX_CONNECTION_SECONDS,
+    WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
 )
-WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
-    os.getenv("WEBEXEC_WS_IDLE_TIMEOUT_SECONDS", "10")
-)
+
+WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
+WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
+WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
 
 
 class _NoopDebugTraces:

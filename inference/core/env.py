@@ -722,7 +722,7 @@ WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "95"))
 # Transport protocol for webexec execution: "http" or "websocket".
 # Modal code validation always uses the HTTP execute-block endpoint, so
 # websocket deployments must keep both execute-block and wsapp deployed.
-WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "websockets").lower().strip()
+WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "http").lower().strip()
 
 # Websocket transport timeouts. Keep connection establishment fast, but allow
 # reads to wait for Modal's custom block execution budget.
@@ -815,6 +815,13 @@ ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM = str2bool(
     os.getenv("ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM", "True")
 )
 WORKFLOW_BLOCKS_WRITE_DIRECTORY = os.getenv("WORKFLOW_BLOCKS_WRITE_DIRECTORY")
+
+WEBEXEC_WS_MAX_CONNECTION_SECONDS = int(
+    os.getenv("WEBEXEC_WS_MAX_CONNECTION_SECONDS", "3600")
+)
+WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_IDLE_TIMEOUT_SECONDS", "10")
+)
 
 DEDICATED_DEPLOYMENT_ID = os.getenv("DEDICATED_DEPLOYMENT_ID")
 
