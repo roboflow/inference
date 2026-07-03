@@ -12,11 +12,12 @@ Covers both the sync (``requests``) and async (``aiohttp``) code paths:
 * Redirect handling: either legacy (client follows redirects, capped) or
   hardened (follow one hop at a time, re-validating each hop URL).
 
-FQDN handling here is hostname-based (no ``tldextract`` dependency in the SDK).
-The allow/block lists are compared against the parsed hostname.
+FQDN handling mirrors the inference server exactly: ``tldextract`` derives the
+FQDN (empty for IPs and hosts without a public suffix) for the
+``ALLOW_URL_INPUT_WITHOUT_FQDN`` gate, and the allow/block lists are matched
+against the concatenated ``subdomain.domain.suffix`` network location.
 """
 
-import asyncio
 import ipaddress
 import socket
 import threading
@@ -26,14 +27,21 @@ from typing import List, Optional, Set
 
 import aiohttp
 import requests
+import tldextract
 import urllib3.util
+from aiohttp import ClientResponseError
 from aiohttp.abc import AbstractResolver
+from requests import HTTPError
 from requests.adapters import HTTPAdapter
+from tldextract.tldextract import ExtractResult
 from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
 
 from inference_sdk import config
 from inference_sdk.http.errors import HTTPClientError
-from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
+from inference_sdk.http.utils.requests import (
+    api_key_safe_raise_for_status,
+    deduct_api_key_from_string,
+)
 
 _WARNING_LOCK = threading.Lock()
 _LEGACY_REDIRECT_WARNING_EMITTED = False
@@ -144,26 +152,48 @@ def validate_url_destination(value: str) -> str:
     except (requests.exceptions.RequestException, ValueError) as error:
         raise InvalidURLImageInput("Provided image URL is invalid.") from error
 
-    scheme = parsed.scheme
-    if scheme != "https" and not config.ALLOW_NON_HTTPS_URL_INPUT:
+    if parsed.scheme != "https" and not config.ALLOW_NON_HTTPS_URL_INPUT:
         raise InvalidURLImageInput("Providing images via non-https URL is not enabled.")
-    hostname = parsed.hostname or ""
-    if not hostname and not config.ALLOW_URL_INPUT_WITHOUT_FQDN:
+
+    network_location = parsed.hostname or ""
+    if ":" in network_location:
+        network_location = f"[{network_location}]"
+    domain_extraction_result = tldextract.TLDExtract(suffix_list_urls=())(
+        network_location
+    )  # strip ports and parse FQDNs (mirrors the inference server)
+    if not domain_extraction_result.fqdn and not config.ALLOW_URL_INPUT_WITHOUT_FQDN:
         raise InvalidURLImageInput(
-            "Providing images via URL without a hostname is not enabled."
+            "Providing images via URL without FQDN is not enabled."
         )
-    _ensure_not_blocked_by_lists(hostname=hostname)
+    destination = _concatenate_chunks_of_network_location(
+        extraction_result=domain_extraction_result
+    )  # even if there is no FQDN but an address, this allows allow/block matching
+    _ensure_not_blocked_by_lists(destination=destination)
     return prepared_url
 
 
-def _ensure_not_blocked_by_lists(hostname: str) -> None:
+def _concatenate_chunks_of_network_location(extraction_result: ExtractResult) -> str:
+    chunks = [
+        extraction_result.subdomain,
+        extraction_result.domain,
+        extraction_result.suffix,
+    ]
+    non_empty_chunks = [chunk for chunk in chunks if chunk]
+    result = ".".join(non_empty_chunks)
+    if result.startswith("[") and result.endswith("]"):
+        # dropping brackets for IPv6
+        return result[1:-1]
+    return result
+
+
+def _ensure_not_blocked_by_lists(destination: str) -> None:
     whitelist: Optional[Set[str]] = config.WHITELISTED_DESTINATIONS_FOR_URL_INPUT
     blacklist: Optional[Set[str]] = config.BLACKLISTED_DESTINATIONS_FOR_URL_INPUT
-    if whitelist is not None and hostname not in whitelist:
+    if whitelist is not None and destination not in whitelist:
         raise InvalidURLImageInput(
             "URL destination is not on the allow-list (whitelisted)."
         )
-    if blacklist is not None and hostname in blacklist:
+    if blacklist is not None and destination in blacklist:
         raise InvalidURLImageInput(
             "URL destination is on the block-list (blacklisted)."
         )
@@ -242,8 +272,19 @@ def fetch_url_bytes(url: str, request_timeout: Optional[float] = None) -> bytes:
         return _fetch_legacy_sync(
             session=session, url=prepared_url, request_timeout=request_timeout
         )
-    except requests.exceptions.TooManyRedirects as error:
-        raise HTTPClientError(f"Too many redirects while loading URL image: {error}")
+    except HTTPError:
+        # HTTP-status errors keep flowing so wrap_errors maps them to
+        # HTTPCallErrorError (status code + api message preserved).
+        raise
+    except HTTPClientError:
+        # Our own validation / SSRF / redirect errors are already the right type.
+        raise
+    except requests.exceptions.RequestException as error:
+        # ConnectionError, TooManyRedirects, Timeout, ... -> uniform SDK error.
+        raise HTTPClientError(
+            f"Could not load image from URL. Details: "
+            f"{deduct_api_key_from_string(str(error))}"
+        ) from error
     finally:
         session.close()
 
@@ -332,23 +373,34 @@ async def fetch_url_bytes_async(
         else aiohttp.ClientTimeout()
     )
     async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-        if config.VALIDATE_IMAGE_URL_REDIRECTS:
-            return await _fetch_validating_redirects_async(
-                session=session, url=prepared_url
-            )
-        return await _fetch_legacy_async(session=session, url=prepared_url)
+        try:
+            if config.VALIDATE_IMAGE_URL_REDIRECTS:
+                return await _fetch_validating_redirects_async(
+                    session=session, url=prepared_url
+                )
+            return await _fetch_legacy_async(session=session, url=prepared_url)
+        except ClientResponseError:
+            # HTTP-status errors keep flowing so wrap_errors_async maps them to
+            # HTTPCallErrorError (status code + api message preserved).
+            raise
+        except HTTPClientError:
+            # Our own validation / SSRF / redirect errors are already correct.
+            raise
+        except aiohttp.ClientError as error:
+            # TooManyRedirects, connection errors, ... -> uniform SDK error.
+            raise HTTPClientError(
+                f"Could not load image from URL. Details: "
+                f"{deduct_api_key_from_string(str(error))}"
+            ) from error
 
 
 async def _fetch_legacy_async(session: aiohttp.ClientSession, url: str) -> bytes:
     _warn_legacy_redirect_handling()
-    try:
-        async with session.get(
-            url, allow_redirects=True, max_redirects=config.MAX_IMAGE_URL_REDIRECTS
-        ) as response:
-            response.raise_for_status()
-            return await response.read()
-    except aiohttp.TooManyRedirects as error:
-        raise HTTPClientError(f"Too many redirects while loading URL image: {error}")
+    async with session.get(
+        url, allow_redirects=True, max_redirects=config.MAX_IMAGE_URL_REDIRECTS
+    ) as response:
+        response.raise_for_status()
+        return await response.read()
 
 
 async def _fetch_validating_redirects_async(

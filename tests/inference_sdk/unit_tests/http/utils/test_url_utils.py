@@ -1,5 +1,7 @@
 import socket
 
+import aiohttp
+
 import pytest
 import requests
 from urllib3.connectionpool import HTTPSConnectionPool
@@ -71,6 +73,34 @@ def test_validate_url_destination_respects_whitelist(monkeypatch) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://localhost/image.jpg",
+        "https://192.168.0.1/image.jpg",
+        "https://internalhost/image.jpg",
+        "https://internal.corp/image.jpg",
+        "https://metadata.google.internal/latest/meta-data",
+    ],
+)
+def test_validate_url_destination_fqdn_gate_rejects_suffixless_hosts(
+    url: str, monkeypatch
+) -> None:
+    # Mirrors the server: with FQDN enforced, IPs / bare hosts / suffix-less
+    # internal names are rejected on the URL string alone.
+    monkeypatch.setattr(config, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+    monkeypatch.setattr(config, "ALLOW_NON_HTTPS_URL_INPUT", True)
+    with pytest.raises(InvalidURLImageInput):
+        validate_url_destination(url)
+
+
+def test_validate_url_destination_fqdn_gate_allows_public_domain(monkeypatch) -> None:
+    monkeypatch.setattr(config, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+    assert validate_url_destination("https://sub.example.com/image.jpg").startswith(
+        "https://sub.example.com"
+    )
+
+
 def test_resolve_blocks_non_global_when_disallowed(monkeypatch) -> None:
     monkeypatch.setattr(
         url_utils.socket, "getaddrinfo", _fake_getaddrinfo("169.254.169.254")
@@ -123,6 +153,44 @@ def test_fetch_url_bytes_enforces_max_redirects(requests_mock, monkeypatch) -> N
 
     with pytest.raises(HTTPClientError):
         fetch_url_bytes(looping)
+
+
+def test_fetch_url_bytes_translates_transport_error_to_http_client_error(
+    requests_mock,
+) -> None:
+    from inference_sdk.http.errors import HTTPClientError
+
+    url = "https://some.com/file.jpg"
+    requests_mock.get(url, exc=requests.exceptions.ConnectionError("boom"))
+
+    with pytest.raises(HTTPClientError) as error:
+        fetch_url_bytes(url)
+    # It must not leak the raw requests exception past the SDK error contract.
+    assert not isinstance(error.value, requests.exceptions.RequestException)
+
+
+def test_fetch_url_bytes_preserves_http_status_error(requests_mock) -> None:
+    from requests import HTTPError
+
+    url = "https://some.com/file.jpg"
+    requests_mock.get(url, status_code=500)
+
+    # Status errors keep flowing as HTTPError so wrap_errors -> HTTPCallErrorError.
+    with pytest.raises(HTTPError):
+        fetch_url_bytes(url)
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_bytes_async_translates_transport_error(monkeypatch) -> None:
+    from aioresponses import aioresponses
+
+    from inference_sdk.http.errors import HTTPClientError
+
+    url = "https://some.com/file.jpg"
+    with aioresponses() as m:
+        m.get(url, exception=aiohttp.ClientConnectionError("boom"))
+        with pytest.raises(HTTPClientError):
+            await url_utils.fetch_url_bytes_async(url)
 
 
 @pytest.mark.asyncio
