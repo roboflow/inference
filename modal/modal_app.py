@@ -24,10 +24,6 @@ import modal
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     capture_output,
 )
-from inference.core.env import (
-    WEBEXEC_WS_MAX_CONNECTION_SECONDS,
-    WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
-)
 
 WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
 WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
