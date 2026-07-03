@@ -60,7 +60,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: python3 -m pip install modal
+        run: python3 -m pip install modal requests packaging pydantic structlog python-dotenv rich
       - name: Deploy webexec (${{ matrix.target }} -> Modal env ${{ matrix.environment }})
         env:
           MODAL_WORKSPACE_NAME: ${{ secrets.MODAL_WORKSPACE_NAME }}
