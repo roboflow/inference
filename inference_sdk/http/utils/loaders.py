@@ -21,10 +21,7 @@ from inference_sdk.http.utils.pre_processing import (
     resize_opencv_image,
     resize_pillow_image,
 )
-from inference_sdk.http.utils.url_utils import (
-    fetch_url_bytes,
-    fetch_url_bytes_async,
-)
+from inference_sdk.http.utils.url_utils import fetch_url_bytes, fetch_url_bytes_async
 
 
 def load_stream_inference_input(

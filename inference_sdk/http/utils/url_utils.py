@@ -146,9 +146,7 @@ def validate_url_destination(value: str) -> str:
 
     scheme = parsed.scheme
     if scheme != "https" and not config.ALLOW_NON_HTTPS_URL_INPUT:
-        raise InvalidURLImageInput(
-            "Providing images via non-https URL is not enabled."
-        )
+        raise InvalidURLImageInput("Providing images via non-https URL is not enabled.")
     hostname = parsed.hostname or ""
     if not hostname and not config.ALLOW_URL_INPUT_WITHOUT_FQDN:
         raise InvalidURLImageInput(

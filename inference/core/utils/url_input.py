@@ -126,9 +126,7 @@ def resolve_and_validate_ips(
     non-global one.
     """
     try:
-        addr_infos = socket.getaddrinfo(
-            host, port, proto=socket.IPPROTO_TCP
-        )
+        addr_infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except socket.gaierror as error:
         # Unresolvable host is a normal connection failure, not an SSRF block.
         raise requests.exceptions.ConnectionError(
