@@ -70,7 +70,9 @@ Later phases may add:
 
 ```text
 development/profiling/
-  TRACE_ANALYSIS_SKILL.md
+  skills/
+    trace_analysis/
+      SKILL.md
   runners.py
   data/
     coco.py
@@ -106,7 +108,7 @@ MVP scope:
 - dummy tensor/image data source in `data/dummy.py` for smoke tests and fully
   deterministic traces
 - local image directory data source in `data/images.py`
-- `SKILL.md` for snippet extraction only
+- `skills/snippet_extraction/SKILL.md` for snippet extraction only
 - one committed built-in smoke target for tests
 - one local generated example snippet under
   `inference_profiling/snippets/example_candidate/`
@@ -136,7 +138,7 @@ Phase 2 can add richer data sources and the first trace-analysis docs:
 
 - COCO-format image-only and image-plus-annotation loaders, if actually needed
 - video pipeline mode and video frame mode
-- `TRACE_ANALYSIS_SKILL.md` for reading `nsys` outputs and aggregating NVTX
+- `skills/trace_analysis/SKILL.md` for reading `nsys` outputs and aggregating NVTX
   ranges
 - optional helper commands for exporting `nsys stats`
 - aggregation intent and metric-selection config for trace analysis
@@ -640,8 +642,8 @@ command line, expected trace output path, and summaries returned by
 
 ## Future Trace Analysis Skill
 
-`TRACE_ANALYSIS_SKILL.md` should guide an agent through reading and interpreting
-Nsight outputs produced by this tooling.
+`skills/trace_analysis/SKILL.md` should guide an agent through reading and
+interpreting Nsight outputs produced by this tooling.
 
 The skill should support:
 
@@ -659,8 +661,9 @@ that should not run inside the profiled process.
 
 ## Snippet Extraction Skill
 
-`SKILL.md` should guide an agent through creating an isolated profiling target
-from a user-provided code snippet, function name, or module and line range.
+`skills/snippet_extraction/SKILL.md` should guide an agent through creating an
+isolated profiling target from a user-provided code snippet, function name, or
+module and line range.
 
 The skill should require the agent to:
 
