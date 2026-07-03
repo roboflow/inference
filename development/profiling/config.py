@@ -48,7 +48,6 @@ class ProfileConfig:
     device: str = "cpu"
     warmup: int = 1
     iterations: int = 1
-    repetitions: int = 1
     batch_size: int = 1
     record_loading: Literal["eager", "lazy"] = "eager"
     seed: int | None = None
@@ -137,7 +136,6 @@ def parse_profile_config(raw_config: Mapping[str, Any]) -> ProfileConfig:
         device=str(_coalesce(raw_config, workload_raw, "device", default="cpu")),
         warmup=int(_coalesce(raw_config, workload_raw, "warmup", default=1)),
         iterations=int(_coalesce(raw_config, workload_raw, "iterations", default=1)),
-        repetitions=int(_coalesce(raw_config, workload_raw, "repetitions", default=1)),
         batch_size=int(_coalesce(raw_config, workload_raw, "batch_size", default=1)),
         record_loading=_parse_record_loading(
             _coalesce(raw_config, workload_raw, "record_loading", default="eager")
@@ -186,7 +184,6 @@ def apply_overrides(
     device: str | None = None,
     warmup: int | None = None,
     iterations: int | None = None,
-    repetitions: int | None = None,
     capture_range: str | None = None,
     record_loading: Literal["eager", "lazy"] | None = None,
     seed: int | None = None,
@@ -200,7 +197,6 @@ def apply_overrides(
         device (str | None): Optional device override.
         warmup (int | None): Optional warmup count override.
         iterations (int | None): Optional measured iteration count override.
-        repetitions (int | None): Optional repetition count override.
         capture_range (str | None): Optional capture range override.
         record_loading (Literal["eager", "lazy"] | None): Optional record loading
             mode override.
@@ -224,7 +220,6 @@ def apply_overrides(
         device=device or config.device,
         warmup=config.warmup if warmup is None else warmup,
         iterations=config.iterations if iterations is None else iterations,
-        repetitions=config.repetitions if repetitions is None else repetitions,
         batch_size=config.batch_size,
         record_loading=(
             config.record_loading if record_loading is None else record_loading

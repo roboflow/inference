@@ -73,11 +73,6 @@ def main(argv: list[str] | None = None) -> int:
     help="Override measured iteration count.",
 )
 @click.option(
-    "--repetitions",
-    type=int,
-    help="Override repetition count.",
-)
-@click.option(
     "--capture-range",
     type=str,
     help=f"Override top-level NVTX capture range. Default: {DEFAULT_CAPTURE_RANGE}.",
@@ -112,7 +107,6 @@ def cli(
     device: str | None,
     warmup: int | None,
     iterations: int | None,
-    repetitions: int | None,
     capture_range: str | None,
     record_loading: str | None,
     seed: int | None,
@@ -145,7 +139,6 @@ def cli(
         device=device,
         warmup=warmup,
         iterations=iterations,
-        repetitions=repetitions,
         capture_range=capture_range,
         record_loading=record_loading,
         seed=seed,
@@ -247,25 +240,23 @@ def run_profile(
     last_record_ids = []
     synchronize_cuda(device, config.cuda.synchronize_before_capture)
     with profiling_range(config.capture_range):
-        for repetition_index in range(config.repetitions):
-            with profiling_range(f"repetition {repetition_index}"):
-                for iteration_index in range(config.iterations):
-                    with profiling_range(f"iteration {iteration_index}"):
-                        last_outputs, pass_record_ids = _run_pass(
-                            target=target,
-                            records=_records_for_pass(
-                                records=records,
-                                data_source=data_source,
-                            ),
-                            prepared_records=prepared_records,
-                            device=device,
-                            profile_prepare=config.target.profile_prepare,
-                            validate_output=config.validate_output,
-                            synchronize_each_iteration=(
-                                config.cuda.synchronize_each_iteration
-                            ),
-                        )
-                        last_record_ids = pass_record_ids
+        for iteration_index in range(config.iterations):
+            with profiling_range(f"iteration {iteration_index}"):
+                last_outputs, pass_record_ids = _run_pass(
+                    target=target,
+                    records=_records_for_pass(
+                        records=records,
+                        data_source=data_source,
+                    ),
+                    prepared_records=prepared_records,
+                    device=device,
+                    profile_prepare=config.target.profile_prepare,
+                    validate_output=config.validate_output,
+                    synchronize_each_iteration=(
+                        config.cuda.synchronize_each_iteration
+                    ),
+                )
+                last_record_ids = pass_record_ids
     synchronize_cuda(device, config.cuda.synchronize_after_capture)
 
     if not last_outputs:
@@ -402,7 +393,6 @@ def build_manifest(
         "workload": {
             "warmup": config.warmup,
             "iterations": config.iterations,
-            "repetitions": config.repetitions,
             "batch_size": config.batch_size,
             "record_loading": config.record_loading,
             "seed": config.seed,
@@ -466,8 +456,6 @@ def build_nsys_command(
         str(config.warmup),
         "--iterations",
         str(config.iterations),
-        "--repetitions",
-        str(config.repetitions),
         "--record-loading",
         config.record_loading,
         "--run-id",

@@ -19,7 +19,6 @@ def test_smoke_profile_execution_writes_expected_manifest_data(tmp_path):
             "device": "cpu",
             "warmup": 1,
             "iterations": 2,
-            "repetitions": 1,
             "seed": 123,
             "output_dir": str(tmp_path),
         }

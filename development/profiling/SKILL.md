@@ -27,7 +27,7 @@ function, snippet, module, or line range.
    - target name
    - `target.import_path`
    - data source settings
-   - device, warmup, iterations, repetitions, record loading mode, and seed
+   - device, warmup, iterations, record loading mode, and seed
    - capture range and CUDA synchronization settings when needed
 8. Create a short README in the generated snippet directory that documents:
    - provenance of the copied code

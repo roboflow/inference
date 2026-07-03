@@ -35,7 +35,6 @@ def test_parse_profile_config_accepts_workload_and_cuda_overrides():
                 "device": "cuda",
                 "warmup": 2,
                 "iterations": 5,
-                "repetitions": 3,
                 "capture_range": "custom-capture",
                 "record_loading": "lazy",
                 "seed": 42,
@@ -49,7 +48,6 @@ def test_parse_profile_config_accepts_workload_and_cuda_overrides():
     assert config.device == "cuda"
     assert config.warmup == 2
     assert config.iterations == 5
-    assert config.repetitions == 3
     assert config.capture_range == "custom-capture"
     assert config.record_loading == "lazy"
     assert config.seed == 42
