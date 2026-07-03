@@ -1,3 +1,5 @@
+import pytest
+
 from development.profiling.config import parse_profile_config
 
 
@@ -52,3 +54,26 @@ def test_parse_profile_config_accepts_workload_and_cuda_overrides():
     assert config.record_loading == "lazy"
     assert config.seed == 42
     assert config.cuda.synchronize_each_iteration is True
+
+
+def test_parse_profile_config_rejects_empty_profile_name():
+    with pytest.raises(ValueError, match="String config values must not be empty"):
+        parse_profile_config(
+            {
+                "profile_name": " ",
+                "target": {"name": "smoke-tensor"},
+                "data_source": {"name": "dummy"},
+            }
+        )
+
+
+def test_parse_profile_config_rejects_invalid_iteration_count():
+    with pytest.raises(ValueError, match="iterations must be greater than"):
+        parse_profile_config(
+            {
+                "profile_name": "example",
+                "target": {"name": "smoke-tensor"},
+                "data_source": {"name": "dummy"},
+                "iterations": 0,
+            }
+        )

@@ -399,7 +399,7 @@ def build_manifest(
             "validate_output": config.validate_output,
         },
         "capture_range": config.capture_range,
-        "cuda": config.cuda.__dict__,
+        "cuda": config.cuda.model_dump(),
         "device": config.device,
         "git_commit": current_git_commit(),
         "command_line": " ".join(sys.argv if argv is None else argv),
