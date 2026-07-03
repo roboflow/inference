@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 import yaml
 
@@ -50,7 +50,8 @@ class ProfileConfig:
     iterations: int = 1
     repetitions: int = 1
     batch_size: int = 1
-    limit: int | None = None
+    record_loading: Literal["eager", "lazy"] = "eager"
+    seed: int | None = None
     validate_output: bool = True
     capture_range: str = DEFAULT_CAPTURE_RANGE
     output_dir: Path = DEFAULT_OUTPUT_DIR
@@ -138,7 +139,10 @@ def parse_profile_config(raw_config: Mapping[str, Any]) -> ProfileConfig:
         iterations=int(_coalesce(raw_config, workload_raw, "iterations", default=1)),
         repetitions=int(_coalesce(raw_config, workload_raw, "repetitions", default=1)),
         batch_size=int(_coalesce(raw_config, workload_raw, "batch_size", default=1)),
-        limit=_optional_int(_coalesce(raw_config, workload_raw, "limit", default=None)),
+        record_loading=_parse_record_loading(
+            _coalesce(raw_config, workload_raw, "record_loading", default="eager")
+        ),
+        seed=_optional_int(_coalesce(raw_config, workload_raw, "seed", default=None)),
         validate_output=bool(
             _coalesce(raw_config, workload_raw, "validate_output", default=True)
         ),
@@ -184,6 +188,8 @@ def apply_overrides(
     iterations: int | None = None,
     repetitions: int | None = None,
     capture_range: str | None = None,
+    record_loading: Literal["eager", "lazy"] | None = None,
+    seed: int | None = None,
 ) -> ProfileConfig:
     """Apply CLI overrides to a parsed profile config.
 
@@ -196,6 +202,9 @@ def apply_overrides(
         iterations (int | None): Optional measured iteration count override.
         repetitions (int | None): Optional repetition count override.
         capture_range (str | None): Optional capture range override.
+        record_loading (Literal["eager", "lazy"] | None): Optional record loading
+            mode override.
+        seed (int | None): Optional reproducibility seed override.
 
     Returns:
         New profile configuration with overrides applied.
@@ -217,7 +226,10 @@ def apply_overrides(
         iterations=config.iterations if iterations is None else iterations,
         repetitions=config.repetitions if repetitions is None else repetitions,
         batch_size=config.batch_size,
-        limit=config.limit,
+        record_loading=(
+            config.record_loading if record_loading is None else record_loading
+        ),
+        seed=config.seed if seed is None else seed,
         validate_output=config.validate_output,
         capture_range=capture_range or config.capture_range,
         output_dir=config.output_dir,
@@ -277,6 +289,17 @@ def _optional_int(value: Any) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def _parse_record_loading(value: Any) -> Literal["eager", "lazy"]:
+    record_loading = str(value)
+    if record_loading == "eager":
+        return "eager"
+
+    if record_loading == "lazy":
+        return "lazy"
+
+    raise ValueError("record_loading must be either 'eager' or 'lazy'.")
 
 
 def _coalesce(

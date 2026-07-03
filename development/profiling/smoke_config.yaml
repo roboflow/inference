@@ -9,4 +9,6 @@ device: cpu
 warmup: 1
 iterations: 2
 repetitions: 1
+record_loading: eager
+seed: 0
 capture_range: profile-target

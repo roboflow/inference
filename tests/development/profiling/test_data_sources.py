@@ -30,3 +30,26 @@ def test_image_data_source_yields_sorted_local_paths_without_decode(tmp_path):
     assert [record.id for record in records] == ["a", "b"]
     assert [record.path for record in records] == [second, first]
     assert all(record.image is None for record in records)
+
+
+def test_image_data_source_repeats_paths_to_requested_record_count(tmp_path):
+    first = tmp_path / "b.jpg"
+    second = tmp_path / "a.png"
+    first.write_bytes(b"not decoded")
+    second.write_bytes(b"not decoded")
+
+    data_source = build_data_source(
+        name="images",
+        config={"directory": str(tmp_path), "decode": False, "repeat": 5},
+    )
+
+    records = list(data_source.iter_records())
+
+    assert [record.id for record in records] == [
+        "a",
+        "b",
+        "a-repeat-1",
+        "b-repeat-1",
+        "a-repeat-2",
+    ]
+    assert [record.path for record in records] == [second, first, second, first, second]

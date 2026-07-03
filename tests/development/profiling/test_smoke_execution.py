@@ -20,6 +20,7 @@ def test_smoke_profile_execution_writes_expected_manifest_data(tmp_path):
             "warmup": 1,
             "iterations": 2,
             "repetitions": 1,
+            "seed": 123,
             "output_dir": str(tmp_path),
         }
     )
@@ -37,6 +38,8 @@ def test_smoke_profile_execution_writes_expected_manifest_data(tmp_path):
     assert manifest["data_source"]["name"] == "dummy"
     assert manifest["record_ids"] == ["dummy-0", "dummy-1"]
     assert manifest["workload"]["iterations"] == 2
+    assert manifest["workload"]["record_loading"] == "eager"
+    assert manifest["workload"]["seed"] == 123
     assert len(manifest["output_summaries"]) == 2
 
 
@@ -70,6 +73,8 @@ def test_nsys_command_uses_capture_range_and_does_not_execute_nsys(tmp_path):
             "target": {"name": "smoke-tensor"},
             "data_source": {"name": "dummy"},
             "capture_range": "custom-target",
+            "record_loading": "lazy",
+            "seed": 7,
         }
     )
 
@@ -81,4 +86,6 @@ def test_nsys_command_uses_capture_range_and_does_not_execute_nsys(tmp_path):
 
     assert command.startswith("nsys profile")
     assert "--nvtx-capture=custom-target@*" in command
+    assert "--record-loading \\\n  lazy" in command
+    assert "--seed \\\n  7" in command
     assert "uv run python development/profiling/main.py" in command

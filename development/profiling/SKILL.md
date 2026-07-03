@@ -27,7 +27,7 @@ function, snippet, module, or line range.
    - target name
    - `target.import_path`
    - data source settings
-   - device, warmup, iterations, repetitions
+   - device, warmup, iterations, repetitions, record loading mode, and seed
    - capture range and CUDA synchronization settings when needed
 8. Create a short README in the generated snippet directory that documents:
    - provenance of the copied code
@@ -42,6 +42,11 @@ When practical, compare the generated snippet output against the production
 function on a tiny fixture. Preserve dtype and device behavior unless the
 experiment is intentionally profiling an alternative implementation. Document any
 known differences in the generated README.
+
+Use `record_loading: eager` when selected records can fit in memory. Use
+`record_loading: lazy` only with `target.profile_prepare: true`, because lazy mode
+does not retain records for precomputed preparation. Add a `seed` when the target
+or data source uses randomness.
 
 ## Boundaries
 

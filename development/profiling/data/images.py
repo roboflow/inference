@@ -1,6 +1,10 @@
 from dataclasses import dataclass
+from itertools import cycle, islice
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+
+import numpy as np
+from numpy.typing import NDArray
 
 from development.profiling.data.base import DataRecord
 
@@ -15,6 +19,7 @@ class ImageDirectoryDataSource:
     paths: tuple[Path, ...]
     decode: bool = True
     limit: int | None = None
+    repeat: int | None = None
 
     @classmethod
     def from_config(
@@ -31,10 +36,12 @@ class ImageDirectoryDataSource:
         config = config or {}
         paths = _resolve_paths(config)
         limit = config.get("limit")
+        repeat = config.get("repeat")
         data_source = cls(
             paths=paths,
             decode=bool(config.get("decode", True)),
             limit=None if limit is None else int(limit),
+            repeat=None if repeat is None else int(repeat),
         )
 
         return data_source
@@ -49,13 +56,28 @@ class ImageDirectoryDataSource:
         if self.limit is not None:
             selected_paths = selected_paths[: self.limit]
 
-        for path in selected_paths:
+        emitted_paths = selected_paths
+        if self.repeat is not None:
+            emitted_paths = tuple(islice(cycle(selected_paths), self.repeat))
+
+        path_counts: dict[Path, int] = {}
+        for path in emitted_paths:
+            repeat_index = path_counts.get(path, 0)
+            path_counts[path] = repeat_index + 1
             image = _decode_image(path) if self.decode else None
+            record_id = path.stem
+            if repeat_index:
+                record_id = f"{path.stem}-repeat-{repeat_index}"
+
             yield DataRecord(
-                id=path.stem,
+                id=record_id,
                 image=image,
                 path=path,
-                source={"type": "images", "path": str(path)},
+                source={
+                    "type": "images",
+                    "path": str(path),
+                    "repeat_index": repeat_index,
+                },
             )
 
     def describe(self) -> Mapping[str, Any]:
@@ -69,6 +91,8 @@ class ImageDirectoryDataSource:
             "paths": [str(path) for path in self.paths],
             "decode": self.decode,
             "limit": self.limit,
+            "repeat": self.repeat,
+            "decoded_format": "rgb_numpy_array" if self.decode else None,
         }
 
         return description
@@ -105,20 +129,24 @@ def _as_sequence(value: Any) -> Sequence[Any]:
     return value
 
 
-def _decode_image(path: Path):
+def _decode_image(path: Path) -> NDArray[np.uint8]:
     try:
-        import cv2
+        from PIL import Image
     except ImportError:
-        cv2 = None
+        Image = None
 
-    if cv2 is not None:
-        image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-        if image is None:
-            raise ValueError(f"Unable to decode image: {path}")
+    if Image is not None:
+        with Image.open(path) as image:
+            decoded_image = np.asarray(image.convert("RGB").copy())
 
-        return image
+        return decoded_image
 
-    from PIL import Image
+    import cv2
 
-    with Image.open(path) as image:
-        return image.copy()
+    image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    if image is None:
+        raise ValueError(f"Unable to decode image: {path}")
+
+    decoded_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    return decoded_image

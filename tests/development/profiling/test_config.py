@@ -14,6 +14,8 @@ def test_parse_profile_config_with_defaults():
     assert config.target.name == "smoke-tensor"
     assert config.data_source.name == "dummy"
     assert config.data_source.parameters == {"record_count": 3}
+    assert config.record_loading == "eager"
+    assert config.seed is None
     assert config.capture_range == "profile-target"
     assert config.cuda.synchronize_before_capture is True
     assert config.cuda.synchronize_each_iteration is False
@@ -35,6 +37,8 @@ def test_parse_profile_config_accepts_workload_and_cuda_overrides():
                 "iterations": 5,
                 "repetitions": 3,
                 "capture_range": "custom-capture",
+                "record_loading": "lazy",
+                "seed": 42,
             },
             "cuda": {"synchronize_each_iteration": True},
         }
@@ -47,4 +51,6 @@ def test_parse_profile_config_accepts_workload_and_cuda_overrides():
     assert config.iterations == 5
     assert config.repetitions == 3
     assert config.capture_range == "custom-capture"
+    assert config.record_loading == "lazy"
+    assert config.seed == 42
     assert config.cuda.synchronize_each_iteration is True

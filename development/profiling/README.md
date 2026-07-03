@@ -56,5 +56,17 @@ target:
   import_path: inference_profiling/snippets/my_profile/target.py:target
 ```
 
+Use `record_loading: eager` when the selected records can be held in memory and
+the target should prepare them once before warmup/capture. Use
+`record_loading: lazy` for large data sources; lazy mode requires
+`target.profile_prepare: true` because records are re-read for each pass instead
+of retained.
+
+Set `seed` when the target or data source uses randomness. The runner seeds
+Python, PyTorch, CUDA, and NumPy when available.
+
+For local image directories, set `repeat: <n>` in the data source config to cycle
+the selected image paths until `n` records are emitted.
+
 Generated snippets may import `development.profiling.*` helpers. Production code
 must not import these development-only modules.

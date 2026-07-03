@@ -1,8 +1,9 @@
+import random
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import click
 import torch
@@ -82,6 +83,19 @@ def main(argv: list[str] | None = None) -> int:
     help=f"Override top-level NVTX capture range. Default: {DEFAULT_CAPTURE_RANGE}.",
 )
 @click.option(
+    "--record-loading",
+    type=click.Choice(
+        ["eager", "lazy"],
+        case_sensitive=True,
+    ),
+    help="Override record loading mode from config.",
+)
+@click.option(
+    "--seed",
+    type=int,
+    help="Override reproducibility seed from config.",
+)
+@click.option(
     "--run-id",
     type=str,
     help="Stable run id for manifests and trace output.",
@@ -100,6 +114,8 @@ def cli(
     iterations: int | None,
     repetitions: int | None,
     capture_range: str | None,
+    record_loading: str | None,
+    seed: int | None,
     run_id: str | None,
     print_nsys_command: bool,
 ) -> int:
@@ -114,6 +130,8 @@ def cli(
         iterations (int | None): Optional measured iteration count override.
         repetitions (int | None): Optional repetition count override.
         capture_range (str | None): Optional top-level NVTX capture range override.
+        record_loading (str | None): Optional record loading mode override.
+        seed (int | None): Optional reproducibility seed override.
         run_id (str | None): Optional stable run identifier.
         print_nsys_command (bool): Whether to print the Nsight command and exit.
 
@@ -129,6 +147,8 @@ def cli(
         iterations=iterations,
         repetitions=repetitions,
         capture_range=capture_range,
+        record_loading=record_loading,
+        seed=seed,
     )
 
     resolved_run_id = run_id or make_run_id()
@@ -178,17 +198,25 @@ def run_profile(
     Returns:
         Manifest data describing the profiled workload.
     """
+    if config.record_loading == "lazy" and not config.target.profile_prepare:
+        raise ValueError(
+            "Lazy record loading requires target.profile_prepare=true because "
+            "records are not retained for precomputed preparation."
+        )
+
+    seed_everything(config.seed)
+
     device = torch.device(config.device)
     data_source = build_data_source(
         name=config.data_source.name,
         config=config.data_source.parameters,
     )
-    records = list(data_source.iter_records())
-    if config.limit is not None:
-        records = records[: config.limit]
 
-    if not records:
-        raise ValueError("Data source yielded no records.")
+    records = None
+    if config.record_loading == "eager":
+        records = list(data_source.iter_records())
+        if not records:
+            raise ValueError("Data source yielded no records.")
 
     target = resolve_target(
         name=config.target.name,
@@ -196,14 +224,17 @@ def run_profile(
     )
 
     prepared_records = None
-    if not config.target.profile_prepare:
+    if records is not None and not config.target.profile_prepare:
         prepared_records = [target.prepare(record, device=device) for record in records]
 
     synchronize_cuda(device, config.cuda.synchronize_before_warmup)
     for _ in range(config.warmup):
         _run_pass(
             target=target,
-            records=records,
+            records=_records_for_pass(
+                records=records,
+                data_source=data_source,
+            ),
             prepared_records=prepared_records,
             device=device,
             profile_prepare=config.target.profile_prepare,
@@ -212,35 +243,41 @@ def run_profile(
         )
     synchronize_cuda(device, config.cuda.synchronize_after_warmup)
 
-    outputs = []
+    last_outputs = []
+    last_record_ids = []
     synchronize_cuda(device, config.cuda.synchronize_before_capture)
     with profiling_range(config.capture_range):
         for repetition_index in range(config.repetitions):
             with profiling_range(f"repetition {repetition_index}"):
                 for iteration_index in range(config.iterations):
                     with profiling_range(f"iteration {iteration_index}"):
-                        outputs.extend(
-                            _run_pass(
-                                target=target,
+                        last_outputs, pass_record_ids = _run_pass(
+                            target=target,
+                            records=_records_for_pass(
                                 records=records,
-                                prepared_records=prepared_records,
-                                device=device,
-                                profile_prepare=config.target.profile_prepare,
-                                validate_output=config.validate_output,
-                                synchronize_each_iteration=(
-                                    config.cuda.synchronize_each_iteration
-                                ),
-                            )
+                                data_source=data_source,
+                            ),
+                            prepared_records=prepared_records,
+                            device=device,
+                            profile_prepare=config.target.profile_prepare,
+                            validate_output=config.validate_output,
+                            synchronize_each_iteration=(
+                                config.cuda.synchronize_each_iteration
+                            ),
                         )
+                        last_record_ids = pass_record_ids
     synchronize_cuda(device, config.cuda.synchronize_after_capture)
 
-    output_summaries = [target.summarize(output) for output in outputs[-len(records) :]]
+    if not last_outputs:
+        raise ValueError("Data source yielded no records.")
+
+    output_summaries = [target.summarize(output) for output in last_outputs]
     manifest = build_manifest(
         config=config,
         run_id=run_id,
         run_dir=run_dir,
         data_source_description=data_source.describe(),
-        record_ids=[record.id for record in records],
+        record_ids=last_record_ids,
         output_summaries=output_summaries,
         argv=argv,
     )
@@ -251,28 +288,45 @@ def run_profile(
 def _run_pass(
     *,
     target: Any,
-    records: list[Any],
+    records: Iterable[Any],
     prepared_records: list[Any] | None,
     device: torch.device,
     profile_prepare: bool,
     validate_output: bool,
     synchronize_each_iteration: bool,
-) -> list[Any]:
+) -> tuple[list[Any], list[str]]:
     outputs = []
+    record_ids = []
     if profile_prepare:
-        iterable = (target.prepare(record, device=device) for record in records)
+        iterable = (
+            (record, target.prepare(record, device=device))
+            for record in records
+        )
     else:
         if prepared_records is None:
-            raise ValueError("prepared_records is required when profile_prepare is false.")
-        iterable = iter(prepared_records)
+            raise ValueError(
+                "prepared_records is required when profile_prepare is false."
+            )
+        iterable = zip(records, prepared_records)
 
-    for prepared in iterable:
+    for record, prepared in iterable:
         output = target.run(prepared)
         if validate_output:
             target.validate(output)
         outputs.append(output)
+        record_ids.append(record.id)
         synchronize_cuda(device, synchronize_each_iteration)
-    return outputs
+
+    return outputs, record_ids
+
+
+def _records_for_pass(*, records: list[Any] | None, data_source: Any) -> Iterable[Any]:
+    if records is not None:
+        return records
+
+    lazy_records = data_source.iter_records()
+
+    return lazy_records
 
 
 def synchronize_cuda(device: torch.device, enabled: bool) -> None:
@@ -284,6 +338,28 @@ def synchronize_cuda(device: torch.device, enabled: bool) -> None:
     """
     if enabled and device.type == "cuda" and torch.cuda.is_available():
         torch.cuda.synchronize(device)
+
+
+def seed_everything(seed: int | None) -> None:
+    """Seed supported random number generators for reproducible profiling.
+
+    Args:
+        seed (int | None): Seed value, or ``None`` to leave RNG state unchanged.
+    """
+    if seed is None:
+        return
+
+    random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    try:
+        import numpy as np
+    except ImportError:
+        return
+
+    np.random.seed(seed)
 
 
 def build_manifest(
@@ -328,7 +404,8 @@ def build_manifest(
             "iterations": config.iterations,
             "repetitions": config.repetitions,
             "batch_size": config.batch_size,
-            "limit": config.limit,
+            "record_loading": config.record_loading,
+            "seed": config.seed,
             "validate_output": config.validate_output,
         },
         "capture_range": config.capture_range,
@@ -343,13 +420,17 @@ def build_manifest(
     return manifest
 
 
-def build_nsys_command(config: ProfileConfig, run_dir: Path, config_path: Path) -> str:
+def build_nsys_command(
+    config: ProfileConfig,
+    run_dir: Path,
+    config_path: str | Path,
+) -> str:
     """Build the Nsight Systems command for a profile run.
 
     Args:
         config (ProfileConfig): Parsed profile configuration.
         run_dir (Path): Directory where run outputs are expected.
-        config_path (Path): Path to the YAML config file.
+        config_path (str | Path): Path to the YAML config file.
 
     Returns:
         Copy/paste-ready ``nsys profile`` command.
@@ -387,9 +468,14 @@ def build_nsys_command(config: ProfileConfig, run_dir: Path, config_path: Path) 
         str(config.iterations),
         "--repetitions",
         str(config.repetitions),
+        "--record-loading",
+        config.record_loading,
         "--run-id",
         run_dir.name,
     ]
+    if config.seed is not None:
+        command.extend(["--seed", str(config.seed)])
+
     nsys_command = " \\\n  ".join(command)
 
     return nsys_command
