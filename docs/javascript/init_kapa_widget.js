@@ -16,6 +16,8 @@
     var KAPA_SRC = "https://widget.kapa.ai/kapa-widget.bundle.js";
     var PROJECT_COLOR = "#6405C9";
     var LOGO_URL = "https://media.roboflow.com/chat.png";
+    var LAUNCHER_CLASS = "rf-kapa-launcher";
+    var STYLE_ID = "rf-kapa-launcher-style";
 
     var loadState = "idle"; // idle -> loading -> ready
 
@@ -67,25 +69,35 @@
     }
 
     function injectStyles() {
+        if (document.getElementById(STYLE_ID)) {
+            return;
+        }
+
         var style = document.createElement("style");
+        style.id = STYLE_ID;
         style.textContent =
-            ".kapa-launcher{position:fixed;bottom:24px;right:24px;z-index:1000;" +
+            "." + LAUNCHER_CLASS + "{position:fixed;bottom:24px;right:24px;z-index:1000;" +
             "display:flex;align-items:center;justify-content:center;" +
             "width:56px;height:56px;padding:0;border:none;border-radius:50%;" +
-            "background:" + PROJECT_COLOR + ";cursor:pointer;" +
+            "background:" + PROJECT_COLOR + ";cursor:pointer;overflow:hidden;" +
             "box-shadow:0 4px 12px rgba(0,0,0,.25);transition:transform .15s ease;}" +
-            ".kapa-launcher:hover{transform:scale(1.06);}" +
-            ".kapa-launcher:focus-visible{outline:3px solid #fff;outline-offset:2px;}" +
-            ".kapa-launcher img{width:30px;height:30px;}";
+            "." + LAUNCHER_CLASS + ":hover{transform:scale(1.06);}" +
+            "." + LAUNCHER_CLASS + ":focus-visible{outline:3px solid #fff;outline-offset:2px;}" +
+            "." + LAUNCHER_CLASS + " img{width:30px;height:30px;max-width:30px;max-height:30px;}";
         document.head.appendChild(style);
     }
 
     function createLauncher() {
         injectStyles();
 
+        var existingLauncher = document.querySelector("." + LAUNCHER_CLASS);
+        if (existingLauncher) {
+            return;
+        }
+
         var button = document.createElement("button");
         button.type = "button";
-        button.className = "kapa-launcher";
+        button.className = LAUNCHER_CLASS;
         button.setAttribute("aria-label", "Ask AI about Roboflow Inference");
         button.setAttribute("aria-haspopup", "dialog");
 
@@ -98,5 +110,20 @@
         document.body.appendChild(button);
     }
 
-    document.addEventListener("DOMContentLoaded", createLauncher);
+    function mountLauncher() {
+        createLauncher();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", mountLauncher);
+    } else {
+        mountLauncher();
+    }
+
+    // MkDocs Material's instant navigation swaps parts of the document without
+    // firing DOMContentLoaded again, and can remove styles injected into <head>.
+    // Re-assert our launcher styles after each virtual page load.
+    if (window.document$ && typeof window.document$.subscribe === "function") {
+        window.document$.subscribe(mountLauncher);
+    }
 })();

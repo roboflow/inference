@@ -207,6 +207,12 @@ from inference.core.workflows.core_steps.fusion.image_stack.v1 import ImageStack
 from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
     OverlapAnalysisBlockV1,
 )
+from inference.core.workflows.core_steps.integrations.roboflow.visual_search.v1 import (
+    RoboflowVisualSearchBlockV1,
+)
+from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.v1 import (
+    RoboflowVisualSearchClassifierBlockV1,
+)
 from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
 )
@@ -815,6 +821,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionOffsetBlockV1,
         PerClassConfidenceFilterBlockV1,
         DepthEstimationBlockV1,
+        RoboflowVisualSearchBlockV1,
+        RoboflowVisualSearchClassifierBlockV1,
         ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
