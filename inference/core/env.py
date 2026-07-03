@@ -745,7 +745,7 @@ WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
     os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
 )
 # Deploy-time Modal region/cloud knobs for the webexec executor app.
-WEBEXEC_MODAL_CLOUD = os.getenv("WEBEXEC_MODAL_CLOUD").lower().strip()
+WEBEXEC_MODAL_CLOUD = os.getenv("WEBEXEC_MODAL_CLOUD")
 WEBEXEC_MODAL_REGION = os.getenv("WEBEXEC_MODAL_REGION")
 WEBEXEC_MODAL_ROUTING_REGION = os.getenv("WEBEXEC_MODAL_ROUTING_REGION")
 # WebSocket connection lifecycle. A WebSocket connection is a single Modal
@@ -770,6 +770,8 @@ _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
 MODAL_TOKEN_ID = _modal_token_id.strip("\"'") if _modal_token_id else None
 MODAL_TOKEN_SECRET = _modal_token_secret.strip("\"'") if _modal_token_secret else None
 MODAL_WORKSPACE_NAME = os.getenv("MODAL_WORKSPACE_NAME", "roboflow")
+MODAL_WEB_ENDPOINT_URL = os.getenv("MODAL_WEB_ENDPOINT_URL", "")
+MODAL_WS_ENDPOINT_URL = os.getenv("MODAL_WS_ENDPOINT_URL", "")
 
 # Control whether anonymous Modal execution is allowed (when no api_key is available)
 MODAL_ALLOW_ANONYMOUS_EXECUTION = str2bool(
