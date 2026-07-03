@@ -744,10 +744,6 @@ WEBEXEC_WS_CONNECTION_POOL_SIZE = int(
 WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
     os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
 )
-# Deploy-time Modal region/cloud knobs for the webexec executor app.
-WEBEXEC_MODAL_CLOUD = os.getenv("WEBEXEC_MODAL_CLOUD")
-WEBEXEC_MODAL_REGION = os.getenv("WEBEXEC_MODAL_REGION")
-WEBEXEC_MODAL_ROUTING_REGION = os.getenv("WEBEXEC_MODAL_ROUTING_REGION")
 # WebSocket connection lifecycle. A WebSocket connection is a single Modal
 # input: if it is still open when the function ``timeout`` is reached, Modal
 # kills it and the input is reported as a timeout. Close the connection

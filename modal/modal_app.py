@@ -18,9 +18,6 @@ import time
 import traceback
 from typing import Any, Dict, Optional, Tuple
 from inference.core.env import (
-    WEBEXEC_MODAL_CLOUD,
-    WEBEXEC_MODAL_REGION,
-    WEBEXEC_MODAL_ROUTING_REGION,
     WEBEXEC_WS_MAX_CONNECTION_SECONDS,
     WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
 )
@@ -31,6 +28,11 @@ import modal
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     capture_output,
 )
+
+# Deploy-time Modal region/cloud knobs for the webexec executor app.
+WEBEXEC_MODAL_CLOUD = os.getenv("WEBEXEC_MODAL_CLOUD")
+WEBEXEC_MODAL_REGION = os.getenv("WEBEXEC_MODAL_REGION")
+WEBEXEC_MODAL_ROUTING_REGION = os.getenv("WEBEXEC_MODAL_ROUTING_REGION")
 
 
 class _NoopDebugTraces:
