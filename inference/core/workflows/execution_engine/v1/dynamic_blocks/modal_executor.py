@@ -46,6 +46,12 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     extract_code_snippet,
 )
 from inference.core.workflows.prototypes.block import BlockResult
+from inference.core.env import WEBEXEC_JPEG_QUALITY
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+from inference.core.workflows.core_steps.common.serializers import (
+    serialize_video_metadata_kind,
+)
+from inference.core.workflows.execution_engine.entities.base import ParentOrigin
 
 # Check if Modal credentials are available
 if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
@@ -126,13 +132,6 @@ def _compute_code_hash(code_str: str, imports: Optional[list]) -> str:
 
 def _serialise_image_for_webexec(image: Any) -> dict:
     """Encode an image at the configured WEBEXEC_JPEG_QUALITY (default 95)."""
-    from inference.core.env import WEBEXEC_JPEG_QUALITY
-    from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
-    from inference.core.workflows.core_steps.common.serializers import (
-        serialize_video_metadata_kind,
-    )
-    from inference.core.workflows.execution_engine.entities.base import ParentOrigin
-
     numpy_image = image.numpy_image
     b64 = base64.b64encode(
         encode_image_to_jpeg_bytes(numpy_image, jpeg_quality=WEBEXEC_JPEG_QUALITY)
