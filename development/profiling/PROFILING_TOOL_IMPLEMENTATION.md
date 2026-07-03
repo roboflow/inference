@@ -143,6 +143,8 @@ Phase 2 can add richer data sources and the first trace-analysis docs:
 - batching support through a `Batcher` object that consumes a `DataSource` and
   yields deterministic batches without requiring every data source or target to
   implement batching directly
+- target-specific parameters through an explicit target factory/config contract,
+  rather than silently parsing unused `target.parameters`
 - richer workload controls such as seeded shuffle, explicit record ids, and
   fuller variance/trial reporting once real traces exist
 - richer CUDA device inference for modules and nested structures, if real targets
@@ -761,7 +763,6 @@ Config should include:
 - profile name
 - target name
 - target import path for generated targets
-- target-specific parameters
 - whether to include `target.prepare(...)` in warmup and measured loops
 - data source type and data-source-specific parameters
 - device

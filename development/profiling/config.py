@@ -27,7 +27,6 @@ class TargetConfig:
     name: str
     import_path: str | None = None
     profile_prepare: bool = False
-    parameters: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -126,7 +125,6 @@ def parse_profile_config(raw_config: Mapping[str, Any]) -> ProfileConfig:
             name=str(_required_value(target_raw, "name")),
             import_path=_optional_str(target_raw.get("import_path")),
             profile_prepare=bool(target_raw.get("profile_prepare", False)),
-            parameters=dict(target_raw.get("parameters", {})),
         ),
         data_source=DataSourceConfig(
             name=str(data_source_name),
@@ -209,7 +207,6 @@ def apply_overrides(
             name=target or config.target.name,
             import_path=config.target.import_path,
             profile_prepare=config.target.profile_prepare,
-            parameters=config.target.parameters,
         ),
         data_source=DataSourceConfig(
             name=data_source or config.data_source.name,
