@@ -5,7 +5,7 @@ data_source:
   name: dummy
   record_count: 2
   tensor_shape: [4, 4]
-device: cpu
+device: cuda:0
 warmup: 1
 iterations: 2
 record_loading: eager
