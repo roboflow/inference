@@ -437,8 +437,7 @@ def build_nsys_command(
         "--capture-range=nvtx",
         "--capture-range-end=stop",
         f"--nvtx-capture={config.capture_range}@*",
-        "-e",
-        "NSYS_NVTX_PROFILER_REGISTER_ONLY=0",
+        "-e NSYS_NVTX_PROFILER_REGISTER_ONLY=0",
         "--trace-fork-before-exec=true",
         "uv",
         "run",
@@ -464,9 +463,19 @@ def build_nsys_command(
     if config.seed is not None:
         command.extend(["--seed", str(config.seed)])
 
-    nsys_command = " \\\n  ".join(shlex.quote(part) for part in command)
+    nsys_command = " \\\n  ".join(_quote_nsys_command_part(part) for part in command)
 
     return nsys_command
+
+
+def _quote_nsys_command_part(part: str) -> str:
+    """Quote shell command parts while preserving Nsight's documented capture glob."""
+    if part.startswith("--nvtx-capture="):
+        return part
+
+    quoted_part = shlex.quote(part)
+
+    return quoted_part
 
 
 def make_run_id() -> str:

@@ -85,7 +85,7 @@ def test_nsys_command_uses_capture_range_and_does_not_execute_nsys(tmp_path):
     )
 
     assert command.startswith("nsys profile")
-    assert "--nvtx-capture=custom-target@*" in command
+    assert "--nvtx-capture=custom-target@* \\" in command
     assert "--record-loading \\\n  lazy" in command
     assert "--seed \\\n  7" in command
     assert "'configs/profile config.yaml'" in command
