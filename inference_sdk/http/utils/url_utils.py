@@ -35,7 +35,6 @@ from requests import HTTPError
 from requests.adapters import HTTPAdapter
 from requests.utils import select_proxy
 from tldextract.tldextract import ExtractResult
-from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
 
 from inference_sdk import config
 from inference_sdk.http.errors import HTTPClientError
@@ -47,6 +46,7 @@ from inference_sdk.http.utils.requests import (
 _WARNING_LOCK = threading.Lock()
 _LEGACY_REDIRECT_WARNING_EMITTED = False
 _NON_GLOBAL_WARNING_EMITTED = False
+_PROXY_BYPASS_WARNING_EMITTED = False
 
 
 class InvalidURLImageInput(HTTPClientError):
@@ -83,6 +83,21 @@ def _warn_non_global_allowed() -> None:
         "(ALLOW_URL_TO_NON_GLOBAL_ADDRESSES=True). This default is scheduled to "
         "change to False in Q4 2026.",
         category=DeprecationWarning,
+        stacklevel=2,
+    )
+
+
+def _warn_proxy_bypasses_ssrf_protection() -> None:
+    global _PROXY_BYPASS_WARNING_EMITTED
+    with _WARNING_LOCK:
+        if _PROXY_BYPASS_WARNING_EMITTED:
+            return
+        _PROXY_BYPASS_WARNING_EMITTED = True
+    warnings.warn(
+        "An HTTP(S) proxy is configured for URL image fetching; the proxy "
+        "resolves the destination, so non-global address blocking and DNS "
+        "rebinding pinning are NOT enforced for these requests.",
+        category=UserWarning,
         stacklevel=2,
     )
 
@@ -249,19 +264,24 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
         host_params = dict(host_params)
         host_params["host"] = pinned_ip
         pool_kwargs = dict(pool_kwargs)
-        pool_kwargs["assert_hostname"] = hostname
+        is_https = host_params.get("scheme") == "https"
+        if is_https:
+            # assert_hostname / server_hostname are HTTPS-only; forwarding them
+            # to a plain HTTPConnection raises TypeError at connect time.
+            pool_kwargs["assert_hostname"] = hostname
         pool = self.poolmanager.connection_from_host(
             **host_params, pool_kwargs=pool_kwargs
         )
-        pool.conn_kw["server_hostname"] = hostname
+        if is_https:
+            pool.conn_kw["server_hostname"] = hostname
         return pool
 
-    def get_connection_with_tls_context(
-        self, request, verify, proxies=None, cert=None
-    ):
+    def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None):
         # send() path for requests >= 2.32 (the pinned floor). Defer under a
         # forward proxy (the proxy resolves the target, so pinning is moot).
         if select_proxy(request.url, proxies):
+            if not self._allow_non_global_addresses:
+                _warn_proxy_bypasses_ssrf_protection()
             return super().get_connection_with_tls_context(
                 request, verify, proxies=proxies, cert=cert
             )
@@ -279,6 +299,8 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
     def get_connection(self, url, proxies=None):
         # Fallback for requests < 2.32 (below the pinned floor).
         if select_proxy(url, proxies):
+            if not self._allow_non_global_addresses:
+                _warn_proxy_bypasses_ssrf_protection()
             return super().get_connection(url, proxies)
         pin = self._resolve_pin_target(url)
         if pin is None:
@@ -407,22 +429,49 @@ def _build_async_connector(allow_non_global_addresses: bool) -> aiohttp.TCPConne
     )
 
 
+def _ensure_ip_literal_allowed(url: str) -> None:
+    """aiohttp skips its resolver for IP-literal hosts, so a literal non-global
+    target (e.g. the cloud metadata IP ``169.254.169.254``) would otherwise
+    bypass :class:`ValidatingResolver`. Validate literals explicitly before the
+    request is issued (the resolver still covers hostname targets).
+    """
+    if config.ALLOW_URL_TO_NON_GLOBAL_ADDRESSES:
+        return
+    parsed = urllib3.util.parse_url(url)
+    host = parsed.host
+    if host and _host_is_ip_literal(host):
+        literal = _strip_ipv6_brackets(host)
+        if not address_is_global(literal):
+            raise URLAddressNotAllowedError(
+                f"URL points to non-global address '{literal}'."
+            )
+
+
 async def fetch_url_bytes_async(
     url: str, request_timeout: Optional[float] = None
 ) -> bytes:
     """Async counterpart of :func:`fetch_url_bytes`."""
     prepared_url = validate_url_destination(url)
+    _ensure_ip_literal_allowed(prepared_url)
     connector = _build_async_connector(config.ALLOW_URL_TO_NON_GLOBAL_ADDRESSES)
-    timeout = (
-        aiohttp.ClientTimeout(total=request_timeout)
-        if request_timeout is not None
-        else aiohttp.ClientTimeout()
-    )
-    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+    # Leave aiohttp's default ClientTimeout (total=300s) in place unless the
+    # caller sets one; passing an empty ClientTimeout() would disable it.
+    session_kwargs = {"connector": connector}
+    if request_timeout is not None:
+        session_kwargs["timeout"] = aiohttp.ClientTimeout(total=request_timeout)
+    async with aiohttp.ClientSession(**session_kwargs) as session:
         try:
             if config.VALIDATE_IMAGE_URL_REDIRECTS:
-                return await _fetch_validating_redirects_async(
-                    session=session, url=prepared_url
+                return await _fetch_manual_redirects_async(
+                    session, prepared_url, revalidate_string_policy=True
+                )
+            if not config.ALLOW_URL_TO_NON_GLOBAL_ADDRESSES:
+                # Non-global blocking is on: follow redirects manually so every
+                # hop (including IP literals, which aiohttp's resolver skips) is
+                # checked -- parity with the sync per-hop adapter.
+                _warn_legacy_redirect_handling()
+                return await _fetch_manual_redirects_async(
+                    session, prepared_url, revalidate_string_policy=False
                 )
             return await _fetch_legacy_async(session=session, url=prepared_url)
         except ClientResponseError:
@@ -449,9 +498,13 @@ async def _fetch_legacy_async(session: aiohttp.ClientSession, url: str) -> bytes
         return await response.read()
 
 
-async def _fetch_validating_redirects_async(
-    session: aiohttp.ClientSession, url: str
+async def _fetch_manual_redirects_async(
+    session: aiohttp.ClientSession, url: str, revalidate_string_policy: bool
 ) -> bytes:
+    """Follow redirects one hop at a time. Every hop gets the IP-literal
+    non-global check; when ``revalidate_string_policy`` is True the full
+    URL-string policy (scheme / FQDN / allow-block) is re-applied too.
+    """
     current_url = url
     for _ in range(config.MAX_IMAGE_URL_REDIRECTS + 1):
         async with session.get(current_url, allow_redirects=False) as response:
@@ -460,7 +513,10 @@ async def _fetch_validating_redirects_async(
                 if not location:
                     raise HTTPClientError("Redirect response missing Location header.")
                 next_url = urllib.parse.urljoin(current_url, location)
-                current_url = validate_url_destination(next_url)
+                if revalidate_string_policy:
+                    next_url = validate_url_destination(next_url)
+                _ensure_ip_literal_allowed(next_url)
+                current_url = next_url
                 continue
             response.raise_for_status()
             return await response.read()

@@ -24,7 +24,6 @@ import requests
 import urllib3.util
 from requests.adapters import HTTPAdapter
 from requests.utils import select_proxy
-from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
 
 from inference.core import logger
 from inference.core.utils.requests import api_key_safe_raise_for_status
@@ -34,25 +33,18 @@ from inference.core.warnings import InferenceDeprecationWarning
 # Deprecation notices (emitted once per process to avoid hot-path log spam).
 # ---------------------------------------------------------------------------
 _WARNING_LOCK = threading.Lock()
-_LEGACY_REDIRECT_WARNING_EMITTED = False
-_NON_GLOBAL_WARNING_EMITTED = False
+_EMITTED_WARNINGS = set()
 
 
 class URLAddressNotAllowedError(Exception):
     """Raised when a URL resolves to a destination that is not permitted."""
 
 
-def _warn_once(flag_name: str, message: str) -> None:
-    global _LEGACY_REDIRECT_WARNING_EMITTED, _NON_GLOBAL_WARNING_EMITTED
+def _warn_once(key: str, message: str) -> None:
     with _WARNING_LOCK:
-        if flag_name == "VALIDATE_IMAGE_URL_REDIRECTS":
-            if _LEGACY_REDIRECT_WARNING_EMITTED:
-                return
-            _LEGACY_REDIRECT_WARNING_EMITTED = True
-        else:
-            if _NON_GLOBAL_WARNING_EMITTED:
-                return
-            _NON_GLOBAL_WARNING_EMITTED = True
+        if key in _EMITTED_WARNINGS:
+            return
+        _EMITTED_WARNINGS.add(key)
     warnings.warn(message, category=InferenceDeprecationWarning, stacklevel=2)
     logger.warning(message)
 
@@ -74,6 +66,15 @@ def _warn_non_global_allowed() -> None:
         "(ALLOW_URL_TO_NON_GLOBAL_ADDRESSES=True). This is an SSRF-sensitive "
         "default and is scheduled to change to False in Q4 2026. Set "
         "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES=False to opt in early.",
+    )
+
+
+def _warn_proxy_bypasses_ssrf_protection() -> None:
+    _warn_once(
+        "URL_IMAGE_PROXY_BYPASS",
+        "An HTTP(S) proxy is configured for URL image fetching; the proxy "
+        "resolves the destination, so non-global address blocking and DNS "
+        "rebinding pinning are NOT enforced for these requests.",
     )
 
 
@@ -208,21 +209,26 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
         host_params = dict(host_params)
         host_params["host"] = pinned_ip
         pool_kwargs = dict(pool_kwargs)
-        pool_kwargs["assert_hostname"] = hostname
+        is_https = host_params.get("scheme") == "https"
+        if is_https:
+            # assert_hostname / server_hostname are HTTPS-only; forwarding them
+            # to a plain HTTPConnection raises TypeError at connect time.
+            pool_kwargs["assert_hostname"] = hostname
         pool = self.poolmanager.connection_from_host(
             **host_params, pool_kwargs=pool_kwargs
         )
-        # SNI must target the original hostname even though we dial the IP.
-        pool.conn_kw["server_hostname"] = hostname
+        if is_https:
+            # SNI must target the original hostname even though we dial the IP.
+            pool.conn_kw["server_hostname"] = hostname
         return pool
 
-    def get_connection_with_tls_context(
-        self, request, verify, proxies=None, cert=None
-    ):
+    def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None):
         # This is the method on the send() path for requests >= 2.32 (the pinned
         # floor). With a forward proxy the proxy resolves the target, so
         # client-side pinning is moot -> defer and keep proxy/CA/mTLS intact.
         if select_proxy(request.url, proxies):
+            if not self._allow_non_global_addresses:
+                _warn_proxy_bypasses_ssrf_protection()
             return super().get_connection_with_tls_context(
                 request, verify, proxies=proxies, cert=cert
             )
@@ -241,6 +247,8 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
         # Fallback for requests < 2.32 (below the pinned floor); kept so the
         # protection also holds if an older requests is somehow installed.
         if select_proxy(url, proxies):
+            if not self._allow_non_global_addresses:
+                _warn_proxy_bypasses_ssrf_protection()
             return super().get_connection(url, proxies)
         pin = self._resolve_pin_target(url)
         if pin is None:

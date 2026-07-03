@@ -168,6 +168,108 @@ def test_tls_context_pins_to_resolved_global_ip(monkeypatch) -> None:
     assert getattr(conn, "server_hostname", None) == "example.com"
 
 
+@pytest.mark.skipif(not _HAS_TLS_CONTEXT, reason="requests < 2.32")
+def test_tls_context_pins_plain_http_without_tls_kwargs(monkeypatch) -> None:
+    # Regression: http:// pinned pool must build a real connection (assert_hostname
+    # / server_hostname are HTTPS-only and crash a plain HTTPConnection).
+    from urllib3.connectionpool import HTTPConnectionPool
+
+    monkeypatch.setattr(url_utils.socket, "getaddrinfo", _fake_getaddrinfo("8.8.8.8"))
+    adapter = SSRFProtectedHTTPAdapter(allow_non_global_addresses=False)
+    pool = adapter.get_connection_with_tls_context(
+        _prepared_get("http://example.com/image.jpg"), verify=True
+    )
+    assert isinstance(pool, HTTPConnectionPool)
+    assert pool.host == "8.8.8.8"
+    conn = pool._new_conn()  # must not raise
+    assert conn.host == "8.8.8.8"
+
+
+@pytest.mark.skipif(not _HAS_TLS_CONTEXT, reason="requests < 2.32")
+def test_tls_context_defers_and_warns_under_proxy(monkeypatch) -> None:
+    monkeypatch.setattr(
+        url_utils, "select_proxy", lambda url, proxies: "http://proxy.local:3128"
+    )
+    warned = []
+    monkeypatch.setattr(
+        url_utils, "_warn_proxy_bypasses_ssrf_protection", lambda: warned.append(1)
+    )
+    monkeypatch.setattr(
+        url_utils.socket,
+        "getaddrinfo",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not resolve")),
+    )
+    adapter = SSRFProtectedHTTPAdapter(allow_non_global_addresses=False)
+    adapter.get_connection_with_tls_context(
+        _prepared_get("https://metadata.example/x"), verify=True
+    )
+    assert warned == [1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "target",
+    [
+        "http://127.0.0.1/image.jpg",
+        "http://169.254.169.254/latest/meta-data",
+        "http://[::1]/image.jpg",
+    ],
+)
+async def test_fetch_url_bytes_async_blocks_non_global_ip_literal(
+    target: str, monkeypatch
+) -> None:
+    # aiohttp skips its resolver for IP literals; the explicit pre-check must
+    # still block non-global literal targets (no network is touched).
+    monkeypatch.setattr(config, "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", False)
+    monkeypatch.setattr(config, "ALLOW_NON_HTTPS_URL_INPUT", True)
+    monkeypatch.setattr(config, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+    with pytest.raises(URLAddressNotAllowedError):
+        await url_utils.fetch_url_bytes_async(target)
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_bytes_async_legacy_blocks_redirect_to_literal(
+    monkeypatch,
+) -> None:
+    # Parity with sync: even in legacy redirect mode (VALIDATE=False), with
+    # non-global blocking on, a redirect to a literal metadata IP is rejected.
+    from aioresponses import aioresponses
+
+    monkeypatch.setattr(config, "VALIDATE_IMAGE_URL_REDIRECTS", False)
+    monkeypatch.setattr(config, "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", False)
+    monkeypatch.setattr(config, "ALLOW_NON_HTTPS_URL_INPUT", True)
+    monkeypatch.setattr(config, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+    start = "https://start.example/image.jpg"
+    metadata = "http://169.254.169.254/latest/meta-data"
+    with aioresponses() as m:
+        m.get(start, status=302, headers={"Location": metadata})
+        with pytest.raises(URLAddressNotAllowedError):
+            await url_utils.fetch_url_bytes_async(start)
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_bytes_async_keeps_default_timeout(monkeypatch) -> None:
+    # Passing an empty ClientTimeout() would disable aiohttp's 300s default;
+    # when the caller gives no timeout we must not override it.
+    monkeypatch.setattr(config, "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
+    captured = {}
+    real_session = url_utils.aiohttp.ClientSession
+
+    def _capture(*args, **kwargs):
+        captured.update(kwargs)
+        return real_session(*args, **kwargs)
+
+    monkeypatch.setattr(url_utils.aiohttp, "ClientSession", _capture)
+
+    from aioresponses import aioresponses
+
+    with aioresponses() as m:
+        m.get("https://some.com/image.jpg", body=b"bytes")
+        await url_utils.fetch_url_bytes_async("https://some.com/image.jpg")
+
+    assert "timeout" not in captured  # aiohttp default (total=300s) left intact
+
+
 def test_fetch_url_bytes_validated_redirects_revalidate_hops(
     requests_mock, monkeypatch
 ) -> None:

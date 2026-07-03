@@ -132,6 +132,10 @@ def test_adapter_pins_http_connection(monkeypatch) -> None:
     pool = adapter.get_connection("http://example.com/image.jpg")
     assert isinstance(pool, HTTPConnectionPool)
     assert pool.host == "8.8.8.8"
+    # http:// must NOT receive HTTPS-only assert_hostname/server_hostname, which
+    # would raise TypeError at connect time; build a real connection to prove it.
+    conn = pool._new_conn()
+    assert conn.host == "8.8.8.8"
 
 
 # The methods below drive get_connection_with_tls_context, which is the method
@@ -172,6 +176,45 @@ def test_tls_context_pins_to_resolved_global_ip(monkeypatch) -> None:
     conn = pool._new_conn()
     assert conn.host == "8.8.8.8"
     assert getattr(conn, "server_hostname", None) == "example.com"
+
+
+@pytest.mark.skipif(not _HAS_TLS_CONTEXT, reason="requests < 2.32")
+def test_tls_context_pins_plain_http_without_tls_kwargs(monkeypatch) -> None:
+    # Regression: http:// pinned pool must build a real connection (assert_hostname
+    # / server_hostname are HTTPS-only and crash a plain HTTPConnection).
+    monkeypatch.setattr(url_input.socket, "getaddrinfo", _fake_getaddrinfo("8.8.8.8"))
+    adapter = SSRFProtectedHTTPAdapter(allow_non_global_addresses=False)
+    pool = adapter.get_connection_with_tls_context(
+        _prepared_get("http://example.com/image.jpg"), verify=True
+    )
+    assert isinstance(pool, HTTPConnectionPool)
+    assert pool.host == "8.8.8.8"
+    conn = pool._new_conn()  # must not raise
+    assert conn.host == "8.8.8.8"
+
+
+@pytest.mark.skipif(not _HAS_TLS_CONTEXT, reason="requests < 2.32")
+def test_tls_context_defers_and_warns_under_proxy(monkeypatch) -> None:
+    monkeypatch.setattr(
+        url_input, "select_proxy", lambda url, proxies: "http://proxy.local:3128"
+    )
+    warned = []
+    monkeypatch.setattr(
+        url_input,
+        "_warn_proxy_bypasses_ssrf_protection",
+        lambda: warned.append(1),
+    )
+    # resolution must NOT run when we defer to the proxy path.
+    monkeypatch.setattr(
+        url_input.socket,
+        "getaddrinfo",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not resolve")),
+    )
+    adapter = SSRFProtectedHTTPAdapter(allow_non_global_addresses=False)
+    adapter.get_connection_with_tls_context(
+        _prepared_get("https://metadata.example/x"), verify=True
+    )
+    assert warned == [1]  # user is told protection is bypassed behind the proxy
 
 
 @pytest.mark.skipif(not _HAS_TLS_CONTEXT, reason="requests < 2.32")
