@@ -17,10 +17,6 @@ import threading
 import time
 import traceback
 from typing import Any, Dict, Optional, Tuple
-from inference.core.env import (
-    WEBEXEC_WS_MAX_CONNECTION_SECONDS,
-    WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
-)
 
 from starlette.requests import Request
 
