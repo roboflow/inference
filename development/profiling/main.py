@@ -232,7 +232,7 @@ def run_profile(
             prepared_records=prepared_records,
             device=device,
             profile_prepare=config.target.profile_prepare,
-            validate_output=False,
+            validate_output=config.validate_output,
             synchronize_each_iteration=config.cuda.synchronize_each_iteration,
         )
     synchronize_cuda(device, config.cuda.synchronize_after_warmup)
@@ -252,7 +252,7 @@ def run_profile(
                     prepared_records=prepared_records,
                     device=device,
                     profile_prepare=config.target.profile_prepare,
-                    validate_output=config.validate_output,
+                    validate_output=False,
                     synchronize_each_iteration=(
                         config.cuda.synchronize_each_iteration
                     ),
