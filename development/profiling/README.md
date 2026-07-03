@@ -60,7 +60,7 @@ After that, run profiling commands through the `uv` environment.
 Run the built-in deterministic target without Nsight first:
 
 ```bash
-uv run python development/profiling/main.py \
+PYTHONPATH=./ uv run python development/profiling/main.py \
   --config development/profiling/smoke_config.yaml \
   --run-id smoke-local
 ```

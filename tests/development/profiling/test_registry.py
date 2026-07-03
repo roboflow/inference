@@ -1,5 +1,8 @@
 import textwrap
 
+import torch
+
+from development.profiling.data.base import DataRecord
 from development.profiling.registry import registered_target_names, resolve_target
 
 
@@ -8,6 +11,14 @@ def test_builtin_target_lookup_resolves_smoke_target():
 
     assert target.name == "smoke-tensor"
     assert "smoke-tensor" in registered_target_names()
+
+    prepared = target.prepare(
+        DataRecord(id="record", metadata={"tensor": torch.ones((2, 2))}),
+        device=torch.device("cpu"),
+    )
+    output = target.run(prepared)
+
+    assert target.summarize(output)["shape"] == [2]
 
 
 def test_generated_target_import_path_resolves_selected_file(tmp_path):

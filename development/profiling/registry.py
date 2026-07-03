@@ -149,6 +149,9 @@ def _load_from_file_import(import_path: str) -> Any:
 
 
 def _coerce_target(candidate: Any, source: str) -> ProfileTarget:
+    if isinstance(candidate, type):
+        candidate = candidate()
+
     if _is_profile_target(candidate):
         return candidate
 
