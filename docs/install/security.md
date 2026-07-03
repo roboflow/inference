@@ -1,5 +1,5 @@
 ---
-description: Securing a self-hosted Roboflow Inference Server — network isolation, authentication, TLS, and disabling custom Python execution. Security of local deployments is your responsibility.
+description: Securing a self-hosted Roboflow Inference Server — network isolation, authentication, TLS, disabling custom Python execution, and restricting image fetching from URLs (SSRF). Security of local deployments is your responsibility.
 ---
 
 # Securing a Self-Hosted Server
@@ -10,7 +10,7 @@ network restrictions by default — it is built to be easy to start, not to be
 safe to expose. Out of the box it will answer any request that reaches it,
 including requests to run models and execute Workflows.
 
-This page covers the four controls every self-hosted deployment should
+This page covers the five controls every self-hosted deployment should
 review before it handles anything beyond local development traffic. They are
 complementary — apply as many as your environment allows.
 
@@ -130,6 +130,53 @@ docker run --rm -p 9001:9001 \
     enabling it only on deployments where the network and authentication
     controls above are already in place.
 
+## 5. Restrict image fetching from URLs (SSRF)
+
+Inference and Workflow requests can reference images **by URL**, and the
+server fetches them on the caller's behalf. On an exposed server this is a
+server-side request forgery (SSRF) surface: a client can make *your server*
+issue HTTP requests — including to targets only your server can reach, such
+as internal services or cloud instance-metadata endpoints
+(`169.254.169.254`).
+
+By default the server keeps the historical, permissive behavior: it
+validates only the URL the client submitted (HTTPS-only, FQDN required,
+optional allow/deny lists) and then follows any HTTP redirects blindly. A
+URL that passes validation can therefore redirect the server to a private or
+internal address. Two opt-in flags close this:
+
+| Setting | Default | Effect when enabled |
+| --- | --- | --- |
+| `VALIDATE_IMAGE_URL_REDIRECTS` | `False` | Redirects are no longer followed blindly. Each redirect hop is re-validated against the full URL policy before it is fetched, up to `MAX_IMAGE_URL_REDIRECTS` hops (default `5`; `0` means never follow redirects). |
+| `ALLOW_URL_INPUT_TO_NON_GLOBAL_ADDRESSES` | `True` | Set to `False` to resolve every fetched hostname via DNS and reject it unless all resolved addresses are public. Blocks private ranges (RFC 1918), loopback, link-local (including `169.254.169.254`), and other non-global addresses. |
+
+**If clients only submit images hosted on the public internet, enable both:**
+
+```bash
+docker run --rm -p 9001:9001 \
+  -e VALIDATE_IMAGE_URL_REDIRECTS=true \
+  -e ALLOW_URL_INPUT_TO_NON_GLOBAL_ADDRESSES=false \
+  roboflow/roboflow-inference-server-cpu:latest
+```
+
+The defaults stay permissive because many self-hosted deployments
+legitimately pull images from LAN cameras and internal storage. If that is
+your setup, leave `ALLOW_URL_INPUT_TO_NON_GLOBAL_ADDRESSES` at its default —
+but still consider `VALIDATE_IMAGE_URL_REDIRECTS=true`, and rely on network
+restrictions (control #1) to limit who can submit URLs.
+
+Related URL-input policy knobs, all enforced per redirect hop when
+`VALIDATE_IMAGE_URL_REDIRECTS=true`:
+
+- `ALLOW_URL_INPUT` (default `True`) — set to `False` to reject image URLs
+  entirely.
+- `ALLOW_NON_HTTPS_URL_INPUT` (default `False`) — keep `False` so only
+  `https://` URLs are fetched.
+- `ALLOW_URL_INPUT_WITHOUT_FQDN` (default `False`) — keep `False` so raw IP
+  addresses are rejected.
+- `WHITELISTED_DESTINATIONS_FOR_URL_INPUT` / `BLACKLISTED_DESTINATIONS_FOR_URL_INPUT`
+  (default unset) — comma-separated exact destinations to allow or deny.
+
 ## Recommended baseline
 
 For any self-hosted server that is reachable beyond `localhost`:
@@ -138,3 +185,4 @@ For any self-hosted server that is reachable beyond `localhost`:
 - [ ] `WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT` set, or your own auth in front.
 - [ ] TLS terminated at the server or an upstream proxy.
 - [ ] `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=false` unless you genuinely need it.
+- [ ] `VALIDATE_IMAGE_URL_REDIRECTS=true`, and `ALLOW_URL_INPUT_TO_NON_GLOBAL_ADDRESSES=false` unless the server must fetch images from your private network.

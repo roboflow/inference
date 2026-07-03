@@ -26,9 +26,11 @@ from inference.core.env import (
     ALLOW_NON_HTTPS_URL_INPUT,
     ALLOW_NUMPY_INPUT,
     ALLOW_URL_INPUT,
+    ALLOW_URL_INPUT_TO_NON_GLOBAL_ADDRESSES,
     ALLOW_URL_INPUT_WITHOUT_FQDN,
     BLACKLISTED_DESTINATIONS_FOR_URL_INPUT,
     MAX_IMAGE_URL_REDIRECTS,
+    VALIDATE_IMAGE_URL_REDIRECTS,
     WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
 )
 from inference.core.exceptions import (
@@ -415,7 +417,7 @@ def load_image_from_url(
             response = requests.get(
                 prepared_url,
                 stream=True,
-                allow_redirects=False,
+                allow_redirects=not VALIDATE_IMAGE_URL_REDIRECTS,
             )
             if response.is_redirect:
                 location = response.headers.get("Location")
@@ -484,6 +486,8 @@ def _prepare_and_validate_image_url(value: str) -> str:
 
 
 def _ensure_url_resolves_to_global_address(hostname: str) -> None:
+    if ALLOW_URL_INPUT_TO_NON_GLOBAL_ADDRESSES:
+        return
     try:
         addresses = {
             ipaddress.ip_address(result[4][0].split("%", 1)[0])

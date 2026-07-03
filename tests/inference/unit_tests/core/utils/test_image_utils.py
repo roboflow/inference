@@ -280,6 +280,8 @@ def test_load_image_from_url_rejects_backslash_userinfo_allowlist_bypass() -> No
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
 @mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+@mock.patch.object(image_utils, "VALIDATE_IMAGE_URL_REDIRECTS", True)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_TO_NON_GLOBAL_ADDRESSES", False)
 def test_load_image_from_url_rejects_redirect_to_metadata_address(
     requests_mock: Mocker,
     image_as_png_bytes: bytes,
@@ -304,6 +306,36 @@ def test_load_image_from_url_rejects_redirect_to_metadata_address(
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
 @mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+@mock.patch.object(image_utils, "VALIDATE_IMAGE_URL_REDIRECTS", False)
+def test_load_image_from_url_follows_redirects_blindly_when_validation_disabled(
+    requests_mock: Mocker,
+    image_as_png_bytes: bytes,
+    image_as_numpy: np.ndarray,
+) -> None:
+    public_url = "https://some.com/image.png"
+    metadata_url = "http://169.254.169.254/latest/meta-data"
+    requests_mock.get(
+        public_url,
+        status_code=302,
+        headers={"Location": metadata_url},
+    )
+    requests_mock.get(metadata_url, content=image_as_png_bytes)
+
+    result = load_image_from_url(
+        max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=public_url
+    )
+
+    assert image_as_numpy.shape == result.shape
+    assert [request.url for request in requests_mock.request_history] == [
+        public_url,
+        metadata_url,
+    ]
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+@mock.patch.object(image_utils, "VALIDATE_IMAGE_URL_REDIRECTS", True)
 def test_load_image_from_url_rejects_too_many_redirects(
     requests_mock: Mocker,
     image_as_png_bytes: bytes,
@@ -335,6 +367,7 @@ def test_load_image_from_url_rejects_too_many_redirects(
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
 @mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_TO_NON_GLOBAL_ADDRESSES", False)
 def test_load_image_from_url_rejects_hostname_resolving_to_metadata_address(
     monkeypatch,
 ) -> None:
@@ -363,6 +396,39 @@ def test_load_image_from_url_rejects_hostname_resolving_to_metadata_address(
             )
 
     requests_get.assert_not_called()
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_TO_NON_GLOBAL_ADDRESSES", True)
+def test_load_image_from_url_allows_non_global_address_when_enabled_by_env(
+    requests_mock: Mocker,
+    monkeypatch,
+    image_as_png_bytes: bytes,
+    image_as_numpy: np.ndarray,
+) -> None:
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("169.254.169.254", 0),
+            )
+        ],
+    )
+    resource_url = "https://some.com/image.png"
+    requests_mock.get(resource_url, content=image_as_png_bytes)
+
+    result = load_image_from_url(
+        max_redirects=TEST_MAX_IMAGE_URL_REDIRECTS, value=resource_url
+    )
+
+    assert image_as_numpy.shape == result.shape
 
 
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
