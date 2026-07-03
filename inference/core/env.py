@@ -744,6 +744,19 @@ WEBEXEC_WS_CONNECTION_POOL_SIZE = int(
 WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
     os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
 )
+# WebSocket connection lifecycle. A WebSocket connection is a single Modal
+# input: if it is still open when the function ``timeout`` is reached, Modal
+# kills it and the input is reported as a timeout. Close the connection
+# gracefully before that so every input completes as a success; the client
+# reconnects lazily on its next request (container and cached namespaces
+# survive the reconnect). Both limits must stay below the function timeout.
+WEBEXEC_WS_MAX_CONNECTION_SECONDS = int(
+    os.getenv("WEBEXEC_WS_MAX_CONNECTION_SECONDS", "3600")
+)
+WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_IDLE_TIMEOUT_SECONDS", "10")
+)
+
 
 # Strip quotes from Modal credentials in case users include them
 _modal_token_id = os.getenv("MODAL_TOKEN_ID")

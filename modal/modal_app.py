@@ -21,6 +21,8 @@ from inference.core.env import (
     WEBEXEC_MODAL_CLOUD,
     WEBEXEC_MODAL_REGION,
     WEBEXEC_MODAL_ROUTING_REGION,
+    WEBEXEC_WS_MAX_CONNECTION_SECONDS,
+    WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
 )
 
 from starlette.requests import Request
@@ -51,19 +53,6 @@ class _NoopDebugTraces:
 # still control where that single executor is deployed.
 
 app = modal.App("webexec")
-
-# WebSocket connection lifecycle. A WebSocket connection is a single Modal
-# input: if it is still open when the function ``timeout`` is reached, Modal
-# kills it and the input is reported as a timeout. Close the connection
-# gracefully before that so every input completes as a success; the client
-# reconnects lazily on its next request (container and cached namespaces
-# survive the reconnect). Both limits must stay below the function timeout.
-WEBEXEC_WS_MAX_CONNECTION_SECONDS = int(
-    os.getenv("WEBEXEC_WS_MAX_CONNECTION_SECONDS", "3600")
-)
-WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
-    os.getenv("WEBEXEC_WS_IDLE_TIMEOUT_SECONDS", "10")
-)
 
 
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
