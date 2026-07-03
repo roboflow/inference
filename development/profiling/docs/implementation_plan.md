@@ -147,10 +147,22 @@ Phase 2 can add richer data sources and the first trace-analysis docs:
   implement batching directly
 - target-specific parameters through an explicit target factory/config contract,
   rather than silently parsing unused `target.parameters`
-- Docker profiling helper template, likely a shell script that accepts a Docker
-  image, mounts the repository, the generated `inference_profiling/` snippet
-  directory, and Nsight Systems tooling, then runs the printed profiling command
-  with GPU access configured
+- Docker profiling helper template, likely a shell script, that makes local
+  container profiling easy to customize. The template should make it easy to
+  change:
+  - the Docker image used as the base profiling environment
+  - the Nsight command printed by
+    `uv run python development/profiling/main.py --print-nsys-command`
+  After patching those values, the template should:
+  - build a derived image from the provided Docker image, overriding the base
+    image entrypoint when needed
+  - install Nsight Systems / `nsys` into that derived image so the original
+    runtime image does not need to include profiling tooling
+  - run the derived image with GPU access and the provided Nsight command
+  - mount the committed `development/profiling/` directory
+  - mount the generated `inference_profiling/snippets/` directory
+  - mount the profile output directory corresponding to
+    `config.output_dir / config.profile_name`
 - richer workload controls such as seeded shuffle, explicit record ids, and
   fuller variance/trial reporting once real traces exist
 - future validation workflows may compare target outputs against recorded outputs
