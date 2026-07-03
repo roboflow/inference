@@ -147,6 +147,10 @@ Phase 2 can add richer data sources and the first trace-analysis docs:
   implement batching directly
 - target-specific parameters through an explicit target factory/config contract,
   rather than silently parsing unused `target.parameters`
+- Docker profiling helper template, likely a shell script that accepts a Docker
+  image, mounts the repository, the generated `inference_profiling/` snippet
+  directory, and Nsight Systems tooling, then runs the printed profiling command
+  with GPU access configured
 - richer workload controls such as seeded shuffle, explicit record ids, and
   fuller variance/trial reporting once real traces exist
 - future validation workflows may compare target outputs against recorded outputs
