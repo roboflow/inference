@@ -23,7 +23,7 @@ import socket
 import threading
 import urllib.parse
 import warnings
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 import aiohttp
 import requests
@@ -33,6 +33,7 @@ from aiohttp import ClientResponseError
 from aiohttp.abc import AbstractResolver
 from requests import HTTPError
 from requests.adapters import HTTPAdapter
+from requests.utils import select_proxy
 from tldextract.tldextract import ExtractResult
 from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
 
@@ -216,11 +217,15 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
             request.headers["Host"] = host_header
         return super().send(request, **kwargs)
 
-    def get_connection(self, url, proxies=None):
+    def _resolve_pin_target(self, url: str) -> Optional[Tuple[str, str]]:
+        """Return ``(hostname, pinned_ip)`` to pin, or ``None`` to connect
+        normally. Raises :class:`URLAddressNotAllowedError` on a blocked
+        non-global destination.
+        """
         parsed = urllib3.util.parse_url(url)
         host = parsed.host
         if host is None:
-            return super().get_connection(url, proxies)
+            return None
         scheme = parsed.scheme or "https"
         port = parsed.port or (443 if scheme == "https" else 80)
         if _host_is_ip_literal(host):
@@ -229,21 +234,62 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
                 raise URLAddressNotAllowedError(
                     f"URL points to non-global address '{literal}'."
                 )
-            return super().get_connection(url, proxies)
-        pinned_ip = resolve_and_validate_ips(
+            return None
+        resolved_ips = resolve_and_validate_ips(
             host=host,
             port=port,
             allow_non_global_addresses=self._allow_non_global_addresses,
-        )[0]
-        if scheme == "https":
-            return HTTPSConnectionPool(
-                host=pinned_ip,
-                port=port,
-                assert_hostname=host,
-                cert_reqs="CERT_REQUIRED",
-                conn_kw={"server_hostname": host},
+        )
+        return host, resolved_ips[0]
+
+    def _build_pinned_pool(self, host_params, pool_kwargs, hostname, pinned_ip):
+        # Reuse requests' own host params / TLS pool kwargs (preserving proxies,
+        # custom CA bundles and mTLS client certs), but dial the validated IP and
+        # verify TLS against the original hostname.
+        host_params = dict(host_params)
+        host_params["host"] = pinned_ip
+        pool_kwargs = dict(pool_kwargs)
+        pool_kwargs["assert_hostname"] = hostname
+        pool = self.poolmanager.connection_from_host(
+            **host_params, pool_kwargs=pool_kwargs
+        )
+        pool.conn_kw["server_hostname"] = hostname
+        return pool
+
+    def get_connection_with_tls_context(
+        self, request, verify, proxies=None, cert=None
+    ):
+        # send() path for requests >= 2.32 (the pinned floor). Defer under a
+        # forward proxy (the proxy resolves the target, so pinning is moot).
+        if select_proxy(request.url, proxies):
+            return super().get_connection_with_tls_context(
+                request, verify, proxies=proxies, cert=cert
             )
-        return HTTPConnectionPool(host=pinned_ip, port=port)
+        pin = self._resolve_pin_target(request.url)
+        if pin is None:
+            return super().get_connection_with_tls_context(
+                request, verify, proxies=proxies, cert=cert
+            )
+        hostname, pinned_ip = pin
+        host_params, pool_kwargs = self.build_connection_pool_key_attributes(
+            request, verify, cert
+        )
+        return self._build_pinned_pool(host_params, pool_kwargs, hostname, pinned_ip)
+
+    def get_connection(self, url, proxies=None):
+        # Fallback for requests < 2.32 (below the pinned floor).
+        if select_proxy(url, proxies):
+            return super().get_connection(url, proxies)
+        pin = self._resolve_pin_target(url)
+        if pin is None:
+            return super().get_connection(url, proxies)
+        hostname, pinned_ip = pin
+        parsed = urllib3.util.parse_url(url)
+        scheme = parsed.scheme or "https"
+        port = parsed.port or (443 if scheme == "https" else 80)
+        host_params = {"scheme": scheme, "host": pinned_ip, "port": port}
+        pool_kwargs = {"cert_reqs": "CERT_REQUIRED"} if scheme == "https" else {}
+        return self._build_pinned_pool(host_params, pool_kwargs, hostname, pinned_ip)
 
 
 def _build_sync_session(allow_non_global_addresses: bool) -> requests.Session:

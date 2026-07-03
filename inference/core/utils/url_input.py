@@ -18,11 +18,12 @@ import socket
 import threading
 import urllib.parse
 import warnings
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 import requests
 import urllib3.util
 from requests.adapters import HTTPAdapter
+from requests.utils import select_proxy
 from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
 
 from inference.core import logger
@@ -174,37 +175,83 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
             request.headers["Host"] = host_header
         return super().send(request, **kwargs)
 
-    def get_connection(self, url, proxies=None):
+    def _resolve_pin_target(self, url: str) -> Optional[Tuple[str, str]]:
+        """Return ``(hostname, pinned_ip)`` to pin, or ``None`` to connect
+        normally. Raises :class:`URLAddressNotAllowedError` when the destination
+        is a blocked non-global address.
+        """
         parsed = urllib3.util.parse_url(url)
         host = parsed.host
         if host is None:
-            return super().get_connection(url, proxies)
+            return None
         scheme = parsed.scheme or "https"
         port = parsed.port or (443 if scheme == "https" else 80)
-
         if _host_is_ip_literal(host):
             literal = _strip_ipv6_brackets(host)
             if not self._allow_non_global_addresses and not address_is_global(literal):
                 raise URLAddressNotAllowedError(
                     f"URL points to non-global address '{literal}'."
                 )
-            return super().get_connection(url, proxies)
-
+            # The literal already is the validated address; connect directly.
+            return None
         resolved_ips = resolve_and_validate_ips(
             host=host,
             port=port,
             allow_non_global_addresses=self._allow_non_global_addresses,
         )
-        pinned_ip = resolved_ips[0]
-        if scheme == "https":
-            return HTTPSConnectionPool(
-                host=pinned_ip,
-                port=port,
-                assert_hostname=host,
-                cert_reqs="CERT_REQUIRED",
-                conn_kw={"server_hostname": host},
+        return host, resolved_ips[0]
+
+    def _build_pinned_pool(self, host_params, pool_kwargs, hostname, pinned_ip):
+        # Reuse requests' own host params / TLS pool kwargs (so proxies, custom
+        # CA bundles and mTLS client certs are preserved), but point the pool at
+        # the validated IP and verify TLS against the original hostname.
+        host_params = dict(host_params)
+        host_params["host"] = pinned_ip
+        pool_kwargs = dict(pool_kwargs)
+        pool_kwargs["assert_hostname"] = hostname
+        pool = self.poolmanager.connection_from_host(
+            **host_params, pool_kwargs=pool_kwargs
+        )
+        # SNI must target the original hostname even though we dial the IP.
+        pool.conn_kw["server_hostname"] = hostname
+        return pool
+
+    def get_connection_with_tls_context(
+        self, request, verify, proxies=None, cert=None
+    ):
+        # This is the method on the send() path for requests >= 2.32 (the pinned
+        # floor). With a forward proxy the proxy resolves the target, so
+        # client-side pinning is moot -> defer and keep proxy/CA/mTLS intact.
+        if select_proxy(request.url, proxies):
+            return super().get_connection_with_tls_context(
+                request, verify, proxies=proxies, cert=cert
             )
-        return HTTPConnectionPool(host=pinned_ip, port=port)
+        pin = self._resolve_pin_target(request.url)
+        if pin is None:
+            return super().get_connection_with_tls_context(
+                request, verify, proxies=proxies, cert=cert
+            )
+        hostname, pinned_ip = pin
+        host_params, pool_kwargs = self.build_connection_pool_key_attributes(
+            request, verify, cert
+        )
+        return self._build_pinned_pool(host_params, pool_kwargs, hostname, pinned_ip)
+
+    def get_connection(self, url, proxies=None):
+        # Fallback for requests < 2.32 (below the pinned floor); kept so the
+        # protection also holds if an older requests is somehow installed.
+        if select_proxy(url, proxies):
+            return super().get_connection(url, proxies)
+        pin = self._resolve_pin_target(url)
+        if pin is None:
+            return super().get_connection(url, proxies)
+        hostname, pinned_ip = pin
+        parsed = urllib3.util.parse_url(url)
+        scheme = parsed.scheme or "https"
+        port = parsed.port or (443 if scheme == "https" else 80)
+        host_params = {"scheme": scheme, "host": pinned_ip, "port": port}
+        pool_kwargs = {"cert_reqs": "CERT_REQUIRED"} if scheme == "https" else {}
+        return self._build_pinned_pool(host_params, pool_kwargs, hostname, pinned_ip)
 
 
 def _build_ssrf_protected_session(allow_non_global_addresses: bool) -> requests.Session:

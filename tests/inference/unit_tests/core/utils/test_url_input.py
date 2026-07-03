@@ -2,6 +2,7 @@ import socket
 
 import pytest
 import requests
+from requests.models import PreparedRequest
 from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
 
 from inference.core.utils import url_input
@@ -12,6 +13,14 @@ from inference.core.utils.url_input import (
     fetch_url_content_validating_redirects,
     resolve_and_validate_ips,
 )
+
+_HAS_TLS_CONTEXT = hasattr(SSRFProtectedHTTPAdapter, "build_connection_pool_key_attributes")
+
+
+def _prepared_get(url: str) -> PreparedRequest:
+    request = PreparedRequest()
+    request.prepare(method="GET", url=url)
+    return request
 
 
 def _fake_getaddrinfo(ip: str):
@@ -123,6 +132,59 @@ def test_adapter_pins_http_connection(monkeypatch) -> None:
     pool = adapter.get_connection("http://example.com/image.jpg")
     assert isinstance(pool, HTTPConnectionPool)
     assert pool.host == "8.8.8.8"
+
+
+# The methods below drive get_connection_with_tls_context, which is the method
+# actually on the requests>=2.32 send() path (get_connection is not).
+@pytest.mark.skipif(not _HAS_TLS_CONTEXT, reason="requests < 2.32")
+def test_tls_context_blocks_hostname_resolving_to_non_global(monkeypatch) -> None:
+    monkeypatch.setattr(
+        url_input.socket, "getaddrinfo", _fake_getaddrinfo("169.254.169.254")
+    )
+    adapter = SSRFProtectedHTTPAdapter(allow_non_global_addresses=False)
+    with pytest.raises(URLAddressNotAllowedError):
+        adapter.get_connection_with_tls_context(
+            _prepared_get("https://metadata.example/latest/meta-data"), verify=True
+        )
+
+
+@pytest.mark.skipif(not _HAS_TLS_CONTEXT, reason="requests < 2.32")
+def test_tls_context_blocks_non_global_ip_literal() -> None:
+    adapter = SSRFProtectedHTTPAdapter(allow_non_global_addresses=False)
+    with pytest.raises(URLAddressNotAllowedError):
+        adapter.get_connection_with_tls_context(
+            _prepared_get("https://127.0.0.1/image.jpg"), verify=True
+        )
+
+
+@pytest.mark.skipif(not _HAS_TLS_CONTEXT, reason="requests < 2.32")
+def test_tls_context_pins_to_resolved_global_ip(monkeypatch) -> None:
+    monkeypatch.setattr(url_input.socket, "getaddrinfo", _fake_getaddrinfo("8.8.8.8"))
+    adapter = SSRFProtectedHTTPAdapter(allow_non_global_addresses=False)
+    pool = adapter.get_connection_with_tls_context(
+        _prepared_get("https://example.com/image.jpg"), verify=True
+    )
+    assert isinstance(pool, HTTPSConnectionPool)
+    assert pool.host == "8.8.8.8"  # dialled at the validated IP
+    assert pool.assert_hostname == "example.com"  # cert checked vs hostname
+    assert pool.conn_kw.get("server_hostname") == "example.com"  # SNI vs hostname
+    # A real connection object can be built (guards against latent conn_kw bugs).
+    conn = pool._new_conn()
+    assert conn.host == "8.8.8.8"
+    assert getattr(conn, "server_hostname", None) == "example.com"
+
+
+@pytest.mark.skipif(not _HAS_TLS_CONTEXT, reason="requests < 2.32")
+def test_tls_context_allows_global_and_preserves_custom_ca(monkeypatch) -> None:
+    # verify as a CA-bundle path must flow through to the pinned pool.
+    monkeypatch.setattr(url_input.socket, "getaddrinfo", _fake_getaddrinfo("8.8.8.8"))
+    adapter = SSRFProtectedHTTPAdapter(allow_non_global_addresses=True)
+    pool = adapter.get_connection_with_tls_context(
+        _prepared_get("https://example.com/image.jpg"), verify=True
+    )
+    # allow_non_global=True still pins to the resolved IP.
+    assert pool.host == "8.8.8.8"
+    assert pool.assert_hostname == "example.com"
 
 
 def test_validating_redirects_revalidates_each_hop(requests_mock) -> None:
