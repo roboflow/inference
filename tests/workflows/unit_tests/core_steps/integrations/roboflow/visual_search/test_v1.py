@@ -115,7 +115,8 @@ def test_run_calls_project_search_and_returns_best_candidate(
     assert result["best_candidate_image"].parent_metadata.parent_id == "img-1"
     serialized_image = serialise_image(result["best_candidate_image"])
     load_image_from_url_mock.assert_called_once_with(
-        value="https://example.com/widget-a.jpg"
+        value="https://example.com/widget-a.jpg",
+        max_redirects=base.MAX_IMAGE_URL_REDIRECTS,
     )
     assert serialized_image["type"] == "base64"
     assert serialized_image["value"]
