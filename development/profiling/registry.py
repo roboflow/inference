@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 from pathlib import Path
 from typing import Any, Callable, Protocol, runtime_checkable
 
@@ -127,7 +128,9 @@ def _load_from_file_import(import_path: str) -> Any:
     if not file_path.exists():
         raise FileNotFoundError(f"Target import file does not exist: {file_path}")
 
-    module_name = f"_profiling_target_{abs(hash(file_path.resolve()))}"
+    digest = hashlib.sha1(str(file_path.resolve()).encode()).hexdigest()
+    module_name = f"_profiling_target_{digest}"
+
     spec = importlib.util.spec_from_file_location(module_name, file_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Unable to import profiling target from: {file_path}")
