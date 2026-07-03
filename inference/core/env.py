@@ -722,7 +722,7 @@ WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "95"))
 # Transport protocol for webexec execution: "http" or "websocket".
 # Modal code validation always uses the HTTP execute-block endpoint, so
 # websocket deployments must keep both execute-block and wsapp deployed.
-WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "http").lower().strip()
+WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "websockets").lower().strip()
 
 # Websocket transport timeouts. Keep connection establishment fast, but allow
 # reads to wait for Modal's custom block execution budget.
@@ -743,18 +743,6 @@ WEBEXEC_WS_CONNECTION_POOL_SIZE = int(
 )
 WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
     os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
-)
-# WebSocket connection lifecycle. A WebSocket connection is a single Modal
-# input: if it is still open when the function ``timeout`` is reached, Modal
-# kills it and the input is reported as a timeout. Close the connection
-# gracefully before that so every input completes as a success; the client
-# reconnects lazily on its next request (container and cached namespaces
-# survive the reconnect). Both limits must stay below the function timeout.
-WEBEXEC_WS_MAX_CONNECTION_SECONDS = int(
-    os.getenv("WEBEXEC_WS_MAX_CONNECTION_SECONDS", "3600")
-)
-WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
-    os.getenv("WEBEXEC_WS_IDLE_TIMEOUT_SECONDS", "10")
 )
 
 
