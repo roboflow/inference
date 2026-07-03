@@ -393,7 +393,6 @@ def build_manifest(
         "workload": {
             "warmup": config.warmup,
             "iterations": config.iterations,
-            "batch_size": config.batch_size,
             "record_loading": config.record_loading,
             "seed": config.seed,
             "validate_output": config.validate_output,

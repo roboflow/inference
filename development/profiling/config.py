@@ -48,7 +48,6 @@ class ProfileConfig:
     device: str = "cpu"
     warmup: int = 1
     iterations: int = 1
-    batch_size: int = 1
     record_loading: Literal["eager", "lazy"] = "eager"
     seed: int | None = None
     validate_output: bool = True
@@ -136,7 +135,6 @@ def parse_profile_config(raw_config: Mapping[str, Any]) -> ProfileConfig:
         device=str(_coalesce(raw_config, workload_raw, "device", default="cpu")),
         warmup=int(_coalesce(raw_config, workload_raw, "warmup", default=1)),
         iterations=int(_coalesce(raw_config, workload_raw, "iterations", default=1)),
-        batch_size=int(_coalesce(raw_config, workload_raw, "batch_size", default=1)),
         record_loading=_parse_record_loading(
             _coalesce(raw_config, workload_raw, "record_loading", default="eager")
         ),
@@ -220,7 +218,6 @@ def apply_overrides(
         device=device or config.device,
         warmup=config.warmup if warmup is None else warmup,
         iterations=config.iterations if iterations is None else iterations,
-        batch_size=config.batch_size,
         record_loading=(
             config.record_loading if record_loading is None else record_loading
         ),

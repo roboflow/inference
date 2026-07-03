@@ -140,6 +140,9 @@ Phase 2 can add richer data sources and the first trace-analysis docs:
   ranges
 - optional helper commands for exporting `nsys stats`
 - aggregation intent and metric-selection config for trace analysis
+- batching support through a `Batcher` object that consumes a `DataSource` and
+  yields deterministic batches without requiring every data source or target to
+  implement batching directly
 - richer workload controls such as seeded shuffle, explicit record ids, and
   fuller variance/trial reporting once real traces exist
 - richer CUDA device inference for modules and nested structures, if real targets
@@ -460,7 +463,6 @@ benchmark framework. The MVP workload plan should describe:
 
 - deterministic record selection
 - `limit`
-- `batch_size`
 - `warmup`
 - `iterations`
 - `repetitions`
@@ -495,6 +497,16 @@ framework. Its job is to produce deterministic workloads and traces that are eas
 to analyze. Aggregation intent, metric selection, seeded shuffle, complex input
 conversion, and richer trial/variance semantics belong in the trace-analysis
 skill or a later config schema.
+
+Batching should remain out of Phase 1. The initial runner should process one
+`DataRecord` at a time so target behavior and trace boundaries are easy to
+understand. A Phase 2 batching design should introduce a `Batcher` abstraction
+instead of placing batching directly on every data source. The `Batcher` should
+accept a `DataSource`, apply `batch_size`, `drop_last`, and batching-specific
+determinism controls, then yield batch records or batch containers that targets
+can adapt in `prepare(...)`. That design should define how manifests report
+batch membership, how lazy data sources interact with partial final batches, and
+whether target summaries are per-record, per-batch, or both.
 
 ### Future COCO-Format Source
 
@@ -756,7 +768,6 @@ Config should include:
 - deterministic record selection and optional limit
 - warmup count
 - iteration count
-- batch size
 - repetitions
 - output validation behavior
 - capture range name, defaulting to `profile-target`
