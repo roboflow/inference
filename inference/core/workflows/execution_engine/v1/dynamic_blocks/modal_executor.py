@@ -32,12 +32,18 @@ from inference.core.env import (
     MODAL_TOKEN_ID,
     MODAL_TOKEN_SECRET,
     MODAL_WORKSPACE_NAME,
+    WEBEXEC_JPEG_QUALITY,
     WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS,
     WEBEXEC_WS_CONNECTION_POOL_SIZE,
     WEBEXEC_WS_READ_TIMEOUT_SECONDS,
 )
 from inference.core.logger import logger
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+from inference.core.workflows.core_steps.common.serializers import (
+    serialize_video_metadata_kind,
+)
 from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
+from inference.core.workflows.execution_engine.entities.base import ParentOrigin
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
 )
@@ -46,12 +52,6 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     extract_code_snippet,
 )
 from inference.core.workflows.prototypes.block import BlockResult
-from inference.core.env import WEBEXEC_JPEG_QUALITY
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
-from inference.core.workflows.core_steps.common.serializers import (
-    serialize_video_metadata_kind,
-)
-from inference.core.workflows.execution_engine.entities.base import ParentOrigin
 
 # Check if Modal credentials are available
 if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
