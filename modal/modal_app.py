@@ -33,6 +33,13 @@ WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
 WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
 WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
 
+WEBEXEC_WS_MAX_CONNECTION_SECONDS = int(
+    os.getenv("WEBEXEC_WS_MAX_CONNECTION_SECONDS", "3600")
+)
+WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_IDLE_TIMEOUT_SECONDS", "10")
+)
+
 
 class _NoopDebugTraces:
     """No-op stand-in for the workflow-scoped ``debug_traces`` proxy.
