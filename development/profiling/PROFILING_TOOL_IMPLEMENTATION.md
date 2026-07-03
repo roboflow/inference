@@ -147,6 +147,9 @@ Phase 2 can add richer data sources and the first trace-analysis docs:
   rather than silently parsing unused `target.parameters`
 - richer workload controls such as seeded shuffle, explicit record ids, and
   fuller variance/trial reporting once real traces exist
+- future validation workflows may compare target outputs against recorded outputs
+  or a reference target. Phase 1 only supports lightweight `target.validate(output)`
+  checks before capture.
 - richer CUDA device inference for modules and nested structures, if real targets
   need it
 - Roboflow exact-version dataset loader with cache support, if local and
