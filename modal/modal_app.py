@@ -17,6 +17,11 @@ import threading
 import time
 import traceback
 from typing import Any, Dict, Optional, Tuple
+from inference.core.env import (
+    WEBEXEC_MODAL_CLOUD,
+    WEBEXEC_MODAL_REGION,
+    WEBEXEC_MODAL_ROUTING_REGION,
+)
 
 from starlette.requests import Request
 
@@ -44,17 +49,6 @@ class _NoopDebugTraces:
 #
 # The executor app name stays fixed at ``webexec``. Cloud / region env vars
 # still control where that single executor is deployed.
-WEBEXEC_DEPLOY_CLOUD = (
-    (os.getenv("WEBEXEC_DEPLOY_CLOUD") or os.getenv("WEBEXEC_MODAL_CLOUD", "aws"))
-    .lower()
-    .strip()
-)
-WEBEXEC_DEPLOY_REGION = os.getenv("WEBEXEC_DEPLOY_REGION") or os.getenv(
-    "WEBEXEC_MODAL_REGION", "us-east-1"
-)
-WEBEXEC_DEPLOY_ROUTING_REGION = os.getenv("WEBEXEC_DEPLOY_ROUTING_REGION") or os.getenv(
-    "WEBEXEC_MODAL_ROUTING_REGION"
-)
 
 app = modal.App("webexec")
 
@@ -113,12 +107,12 @@ _executor_decorator_kwargs = {
     "timeout": 700,
     "enable_memory_snapshot": True,  # Enable memory snapshotting for faster cold starts
     "scaledown_window": 60,
-    "cloud": WEBEXEC_DEPLOY_CLOUD,
-    "region": WEBEXEC_DEPLOY_REGION,
+    "cloud": WEBEXEC_MODAL_CLOUD,
+    "region": WEBEXEC_MODAL_REGION,
     "buffer_containers": 1,
 }
-if WEBEXEC_DEPLOY_ROUTING_REGION:
-    _executor_decorator_kwargs["routing_region"] = WEBEXEC_DEPLOY_ROUTING_REGION
+if WEBEXEC_MODAL_ROUTING_REGION:
+    _executor_decorator_kwargs["routing_region"] = WEBEXEC_MODAL_ROUTING_REGION
 
 
 @app.cls(**_executor_decorator_kwargs)
