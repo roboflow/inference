@@ -2085,6 +2085,42 @@ def test_search_project_images_at_roboflow_uses_existing_search_fields(
     }
 
 
+def test_search_project_images_at_roboflow_forwards_requested_fields(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(
+            f"{API_BASE_URL}/my-workspace/my-project/search?api_key=my_api_key"
+        ),
+        json={
+            "results": [
+                {"score": 1.87, "labels": [{"class": "pass"}], "annotations": []}
+            ]
+        },
+    )
+
+    # when
+    result = search_project_images_at_roboflow(
+        api_key="my_api_key",
+        workspace="my-workspace",
+        project="my-project",
+        image_base64="query-image",
+        limit=1,
+        fields=["id", "score", "labels", "annotations"],
+    )
+
+    # then
+    assert result == {
+        "results": [{"score": 1.87, "labels": [{"class": "pass"}], "annotations": []}]
+    }
+    assert requests_mock.last_request.json() == {
+        "image_base64": "query-image",
+        "limit": 1,
+        "fields": ["id", "score", "labels", "annotations"],
+    }
+
+
 @mock.patch.object(roboflow_api.requests, "get")
 def test_get_roboflow_labeling_batches_when_connection_error_occurs(
     get_mock: MagicMock,
