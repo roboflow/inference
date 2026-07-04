@@ -46,12 +46,47 @@ def apply_camera_register_parameters(
         return ApplyCameraParametersResult(success=False, message=str(exc))
 
     try:
-        return edge_client.post_camera_parameters(
+        result = edge_client.post_camera_parameters(
             pipeline_id,
             parameters,
             persist=persist,
             only_if_changed=only_if_changed,
         )
+        if result.success or result.skipped:
+            return result
+        if _should_fallback_to_configure(result):
+            return _apply_via_configure_fallback(pipeline_id, parameters)
+        return result
     except Exception as exc:
         logger.exception("Failed to apply stream camera parameters")
         return ApplyCameraParametersResult(success=False, message=str(exc))
+
+
+def _should_fallback_to_configure(result: ApplyCameraParametersResult) -> bool:
+    message = (result.message or "").lower()
+    return "405" in message or "not found" in message or "unsupported" in message
+
+
+def _apply_via_configure_fallback(
+    pipeline_id: str,
+    parameters: Dict[str, Any],
+) -> ApplyCameraParametersResult:
+    from inference.enterprise.workflows.stream_camera_parameters.configure_client import (
+        configure_usb_camera,
+    )
+
+    v4l2_props = parameters.get("v4l2_camera_properties")
+    if not isinstance(v4l2_props, dict) or not v4l2_props:
+        return ApplyCameraParametersResult(
+            success=False,
+            message="Camera-parameters endpoint unavailable and no v4l2_camera_properties to configure",
+        )
+
+    video_reference = "0"
+    if pipeline_id.isdigit():
+        video_reference = pipeline_id
+
+    return configure_usb_camera(
+        video_reference,
+        v4l2_props,
+    )

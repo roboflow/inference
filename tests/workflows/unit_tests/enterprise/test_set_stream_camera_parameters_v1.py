@@ -9,6 +9,10 @@ from inference.enterprise.workflows.enterprise_blocks.streams.set_stream_camera_
 from inference.enterprise.workflows.stream_camera_parameters.entities import (
     ApplyCameraParametersResult,
 )
+from inference.enterprise.workflows.stream_camera_parameters.register_catalog import (
+    build_parameter_delta,
+    registers_for_camera_family,
+)
 from inference.enterprise.workflows.stream_camera_parameters.service import (
     StreamCameraParametersError,
     apply_camera_register_parameters,
@@ -22,12 +26,29 @@ class TestSetStreamCameraParametersBlockManifest:
         raw = {
             "type": "roboflow_enterprise/set_stream_camera_parameters@v1",
             "name": "camera_params",
-            "parameters": {"v4l2_camera_properties": {"exposure_absolute": 200}},
-            "depends_on": "$steps.plc_read.output",
+            "value": "$inputs.focus_value",
+            "register": "focus",
+            "camera_family": "ai1",
+            "stream_name": "aione",
+            "depends_on": "$inputs.image",
         }
         manifest = SetStreamCameraParametersBlockManifest.model_validate(raw)
         assert manifest.only_if_changed is True
         assert manifest.persist is False
+
+
+class TestRegisterCatalog:
+
+    def test_focus_delta_for_ai1(self):
+        delta = build_parameter_delta("focus", 42, camera_family="ai1")
+        assert delta == {"v4l2_camera_properties": {"lens_position": 42}}
+
+    def test_line_rate_for_lucid_line_scan(self):
+        delta = build_parameter_delta("line_rate", 128000, camera_family="lucid_line_scan")
+        assert delta == {"AcquisitionLineRate": 128000}
+
+    def test_registers_for_ai1_include_focus(self):
+        assert "focus" in registers_for_camera_family("ai1")
 
 
 class TestResolvePipelineId:
@@ -63,17 +84,17 @@ class TestApplyCameraRegisterParameters:
         mock_resolve.return_value = "stream-1"
         mock_post.return_value = ApplyCameraParametersResult(
             success=True,
-            applied=["exposure_absolute"],
+            applied=["lens_position"],
         )
 
         result = apply_camera_register_parameters(
-            {"v4l2_camera_properties": {"exposure_absolute": 200}}
+            {"v4l2_camera_properties": {"lens_position": 25}}
         )
 
         assert result.success is True
         mock_post.assert_called_once_with(
             "stream-1",
-            {"v4l2_camera_properties": {"exposure_absolute": 200}},
+            {"v4l2_camera_properties": {"lens_position": 25}},
             persist=False,
             only_if_changed=True,
         )
@@ -88,28 +109,59 @@ class TestSetStreamCameraParametersBlockV1:
     @patch(
         "inference.enterprise.workflows.enterprise_blocks.streams.set_stream_camera_parameters.v1.apply_camera_register_parameters"
     )
-    def test_run_returns_service_outputs(self, mock_apply):
+    def test_run_builds_register_delta_from_value(self, mock_apply):
         mock_apply.return_value = ApplyCameraParametersResult(
             success=True,
-            applied=["AcquisitionLineRate"],
+            applied=["lens_position"],
             skipped=False,
             message="",
         )
         block = SetStreamCameraParametersBlockV1()
 
         output = block.run(
-            parameters={"AcquisitionLineRate": 128000},
-            stream_name="",
+            value=50,
+            register_key="focus",
+            camera_family="ai1",
+            stream_name="aione",
+            device_id="",
+            manual_register_key="",
+            parameters={},
             persist=False,
             only_if_changed=True,
             depends_on=MagicMock(),
         )
 
         assert output["success"] is True
-        assert output["applied"] == ["AcquisitionLineRate"]
+        mock_apply.assert_called_once_with(
+            {"v4l2_camera_properties": {"lens_position": 50}},
+            stream_name="aione",
+            persist=False,
+            only_if_changed=True,
+        )
+
+    @patch(
+        "inference.enterprise.workflows.enterprise_blocks.streams.set_stream_camera_parameters.v1.apply_camera_register_parameters"
+    )
+    def test_run_uses_raw_parameters_when_provided(self, mock_apply):
+        mock_apply.return_value = ApplyCameraParametersResult(success=True, applied=["custom"])
+        block = SetStreamCameraParametersBlockV1()
+
+        block.run(
+            value=1,
+            register_key="focus",
+            camera_family="ai1",
+            stream_name="",
+            device_id="",
+            manual_register_key="",
+            parameters={"AcquisitionLineRate": 128000},
+            persist=False,
+            only_if_changed=False,
+            depends_on=MagicMock(),
+        )
+
         mock_apply.assert_called_once_with(
             {"AcquisitionLineRate": 128000},
             stream_name=None,
             persist=False,
-            only_if_changed=True,
+            only_if_changed=False,
         )

@@ -58,4 +58,6 @@ def post_camera_parameters(
         body = {"success": False, "message": response.text}
     if not isinstance(body, dict):
         body = {"success": False, "message": str(body)}
+    if response.status_code == 405:
+        body.setdefault("message", "HTTP 405 Method Not Allowed")
     return ApplyCameraParametersResult.from_dict(body, http_ok=response.ok)
