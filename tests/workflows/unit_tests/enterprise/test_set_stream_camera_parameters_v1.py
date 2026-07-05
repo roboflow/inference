@@ -47,6 +47,20 @@ class TestRegisterCatalog:
         delta = build_parameter_delta("line_rate", 128000, camera_family="lucid_line_scan")
         assert delta == {"AcquisitionLineRate": 128000}
 
+    def test_line_rate_for_basler_line_scan(self):
+        delta = build_parameter_delta("line_rate", 21000, camera_family="basler_line_scan")
+        assert delta == {"AcquisitionLineRate": 21000}
+
+    def test_lines_per_frame_for_basler_line_scan(self):
+        delta = build_parameter_delta("lines_per_frame", 4096, camera_family="basler_line_scan")
+        assert delta == {"LinesPerFrame": 4096}
+
+    def test_registers_for_basler_line_scan_include_line_rate(self):
+        registers = registers_for_camera_family("basler_line_scan")
+        assert "line_rate" in registers
+        assert "lines_per_frame" in registers
+        assert "exposure_time" in registers
+
     def test_registers_for_ai1_include_focus(self):
         assert "focus" in registers_for_camera_family("ai1")
 

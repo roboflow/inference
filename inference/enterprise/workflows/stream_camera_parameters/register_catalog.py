@@ -17,7 +17,7 @@ REGISTER_LABELS: Dict[str, str] = {
     "manual": "Manual register",
 }
 
-CAMERA_FAMILIES = ("usb", "ai1", "basler", "lucid", "lucid_line_scan")
+CAMERA_FAMILIES = ("usb", "ai1", "basler", "basler_line_scan", "lucid", "lucid_line_scan")
 
 ParameterBuilder = Callable[[Any], Dict[str, Any]]
 
@@ -27,16 +27,20 @@ REGISTER_BUILDERS: Dict[str, Dict[str, ParameterBuilder]] = {
         "usb": lambda value: {"v4l2_camera_properties": {"lens_position": value}},
     },
     "line_rate": {
+        "basler_line_scan": lambda value: {"AcquisitionLineRate": value},
         "lucid_line_scan": lambda value: {"AcquisitionLineRate": value},
     },
     "exposure_time": {
+        "basler_line_scan": lambda value: {"ExposureTime": value},
         "lucid_line_scan": lambda value: {"ExposureTime": value},
     },
     "lines_per_frame": {
+        "basler_line_scan": lambda value: {"LinesPerFrame": value},
         "lucid_line_scan": lambda value: {"LinesPerFrame": value},
     },
     "brightness": {
         "basler": lambda value: {"TARGET_BRIGHTNESS": value},
+        "basler_line_scan": lambda value: {"TARGET_BRIGHTNESS": value},
         "lucid": lambda value: {"TargetBrightness": value},
         "lucid_line_scan": lambda value: {"TargetBrightness": value},
         "usb": lambda value: {"v4l2_camera_properties": {"brightness": value}},
@@ -44,6 +48,7 @@ REGISTER_BUILDERS: Dict[str, Dict[str, ParameterBuilder]] = {
     },
     "width": {
         "basler": lambda value: {"pylon_nodemap": {"Width": value}},
+        "basler_line_scan": lambda value: {"pylon_nodemap": {"Width": value}},
         "lucid": lambda value: {"Width": value},
         "lucid_line_scan": lambda value: {"Width": value},
         "usb": lambda value: {"video_source_properties": {"frame_width": value}},
@@ -58,22 +63,27 @@ REGISTER_BUILDERS: Dict[str, Dict[str, ParameterBuilder]] = {
     },
     "exposure_lower": {
         "basler": lambda value: {"EXPOSURE_LOWER_LIMIT": value},
+        "basler_line_scan": lambda value: {"EXPOSURE_LOWER_LIMIT": value},
         "lucid": lambda value: {"ExposureAutoLowerLimit": value},
         "lucid_line_scan": lambda value: {"ExposureAutoLowerLimit": value},
     },
     "exposure_upper": {
         "basler": lambda value: {"EXPOSURE_UPPER_LIMIT": value},
+        "basler_line_scan": lambda value: {"EXPOSURE_UPPER_LIMIT": value},
         "lucid": lambda value: {"ExposureAutoUpperLimit": value},
         "lucid_line_scan": lambda value: {"ExposureAutoUpperLimit": value},
     },
     "gain_lower": {
         "basler": lambda value: {"GAIN_LOWER_LIMIT": value},
+        "basler_line_scan": lambda value: {"GAIN_LOWER_LIMIT": value},
     },
     "gain_upper": {
         "basler": lambda value: {"GAIN_UPPER_LIMIT": value},
+        "basler_line_scan": lambda value: {"GAIN_UPPER_LIMIT": value},
     },
     "timeout": {
         "basler": lambda value: {"GEV_HEARTBEAT_TIMEOUT": value},
+        "basler_line_scan": lambda value: {"GEV_HEARTBEAT_TIMEOUT": value},
         "lucid": lambda value: {"grab_timeout_ms": value},
         "lucid_line_scan": lambda value: {"grab_timeout_ms": value},
     },

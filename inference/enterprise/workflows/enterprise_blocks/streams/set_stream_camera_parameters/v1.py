@@ -80,8 +80,8 @@ class SetStreamCameraParametersBlockManifest(WorkflowBlockManifest):
     )
     camera_family: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
         default="",
-        description="Camera family for register mapping (usb, ai1, basler, lucid, lucid_line_scan).",
-        examples=["ai1", "lucid_line_scan"],
+        description="Camera family for register mapping (usb, ai1, basler, basler_line_scan, lucid, lucid_line_scan).",
+        examples=["ai1", "basler_line_scan", "lucid_line_scan"],
     )
     stream_name: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
         default="",
