@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import random
 import shlex
 import subprocess
@@ -123,7 +125,6 @@ def cli(
         device (str | None): Optional torch device override.
         warmup (int | None): Optional warmup count override.
         iterations (int | None): Optional measured iteration count override.
-        repetitions (int | None): Optional repetition count override.
         capture_range (str | None): Optional top-level NVTX capture range override.
         record_loading (str | None): Optional record loading mode override.
         seed (int | None): Optional reproducibility seed override.
@@ -458,6 +459,8 @@ def build_nsys_command(
         str(config.iterations),
         "--record-loading",
         config.record_loading,
+        "--capture-range",
+        config.capture_range,
         "--run-id",
         run_dir.name,
     ]

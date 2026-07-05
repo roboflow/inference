@@ -53,7 +53,9 @@ uv venv --python 3.10
 uv pip install -e .
 ```
 
-After that, run profiling commands through the `uv` environment.
+This developer-only tooling is supported on Python 3.10+ and is excluded from
+package distribution. After setup, run profiling commands through the `uv`
+environment.
 
 ## Smoke Run
 

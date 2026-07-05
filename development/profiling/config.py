@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
@@ -217,17 +219,6 @@ class ProfileConfig(BaseModel):
             raise ValueError("iterations must be greater than or equal to 1.")
 
         return value
-
-    def to_manifest_dict(self) -> dict[str, Any]:
-        """Serialize this config for manifest output.
-
-        Returns:
-            Dictionary representation with path fields converted to strings.
-        """
-        result = self.model_dump(mode="json")
-
-        return result
-
 
 def load_profile_config(path: str | Path) -> ProfileConfig:
     """Load a YAML profiling config.
