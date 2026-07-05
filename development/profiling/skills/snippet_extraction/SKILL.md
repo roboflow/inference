@@ -46,9 +46,17 @@ uv run python development/profiling/main.py --config <generated-config.yaml>
 3. Copy or adapt only the code needed for the experiment into `target.py`.
    Generated snippets are local experiments; do not edit production code unless
    the user separately asks for a production change.
+   When copying a function body, preserve its direct control flow and delegate
+   helper calls back to production modules unless the helper itself is the
+   profiling subject. Import copied-body dependencies from their actual source
+   modules, not from nearby or similarly named model metadata modules.
 4. Add NVTX ranges with `development.profiling.nvtx.profiling_range_if_cuda` or
    `profiling_range` around meaningful operations such as preprocessing, model
-   execution, decoding, filtering, NMS, or postprocessing.
+   execution, decoding, filtering, NMS, or postprocessing. When the user
+   references a function name or marks the lines of a function definition, copy
+   or adapt that function's direct body into the generated target and instrument
+   meaningful operations inside that body. Do not only wrap a call to the
+   selected function unless the user explicitly asks for black-box timing.
 5. Implement a `ProfileTarget`-compatible class with:
    - `name`
    - `prepare(record, *, device)`
@@ -144,6 +152,9 @@ data_source:
 ```
 
 The image source decodes to RGB NumPy arrays when `decode: true`.
+Use an absolute path in generated YAML when the user supplies a shell shortcut
+such as `~/images`, because config parsing passes paths directly to `Path(...)`
+and does not perform shell expansion.
 
 ## Command Template
 
@@ -175,6 +186,19 @@ Use `record_loading: eager` when selected records can fit in memory. Use
 `record_loading: lazy` only with `target.profile_prepare: true`, because lazy mode
 does not retain records for precomputed preparation. Add a `seed` when the target
 or data source uses randomness.
+
+Run a smoke profile after generation when practical. It catches config and import
+mistakes that lints may miss, and confirms validation against real local data.
+If converting decoded NumPy images to torch tensors in `prepare()`, make the array
+writable and contiguous before `torch.from_numpy(...)` to avoid read-only array
+warnings.
+
+Some profiling snippets importing `torchvision.transforms` through production
+preprocessing may fail in environments where fake `torchvision::nms` registration
+runs before the operator schema exists. For local snippets, it is acceptable to
+define a minimal `torchvision::nms` schema before importing the production module
+when the profile does not call NMS; document this as an environment workaround in
+the README.
 
 ## Boundaries
 
