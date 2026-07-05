@@ -68,7 +68,7 @@ PYTHONPATH=./ uv run python development/profiling/main.py \
 Print the matching Nsight command:
 
 ```bash
-uv run python development/profiling/main.py \
+PYTHONPATH=./ uv run python development/profiling/main.py \
   --config development/profiling/smoke_config.yaml \
   --run-id smoke-local \
   --print-nsys-command
