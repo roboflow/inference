@@ -9,7 +9,7 @@ https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/
 
 **Disk Space**: Allocate at least 10 GB free for the Roboflow Jetson image (8.14 GB). 
 
-**JetPack Version**: Must be running a supported JetPack (4.5, 4.6, 5.x, or 6.x).
+**JetPack Version**: Must be running a supported JetPack (5.x, or 6.x).
 
 **Recommended Hardware**: For best performance while running Inference, we recommend an NVIDIA Orin NX 16 GB or above. 
 

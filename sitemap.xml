@@ -250,6 +250,9 @@
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;semantic_segmentation_model&#x2f;</loc>
     </url>
     <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;roboflow_visual_search_classifier&#x2f;</loc>
+    </url>
+    <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;keypoint_detection_model&#x2f;</loc>
     </url>
     <url>
@@ -545,6 +548,9 @@
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;detections_merge&#x2f;</loc>
+    </url>
+    <url>
+         <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;geo_tag_detection&#x2f;</loc>
     </url>
     <url>
          <loc>https:&#x2f;&#x2f;inference.roboflow.com&#x2f;workflows&#x2f;blocks&#x2f;detections_combine&#x2f;</loc>

@@ -6,7 +6,7 @@ Below you can find example workflows you can use as inspiration to build your ap
 
 This is the basic workflow that only contains a single object detection model and bounding rectangle extraction.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoid3FNeUNhUjlMT2c5RE9XNE11QloiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI1MDgxMTZ9.W9F950Q_Yrxz64mv8XaUfDJAWXfvQuQ-zRYLEKPcvFs?showGraph=true" loading="lazy" title="Roboflow Workflow for fit bounding rectangle" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoid3FNeUNhUjlMT2c5RE9XNE11QloiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODMzMjY5MjN9.8Lo6hBgBftxNDnaJDoyx_HymwcAxYl9Pam3mW_TkNPI?showGraph=true" loading="lazy" title="Roboflow Workflow for fit bounding rectangle" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -47,7 +47,7 @@ This is the basic workflow that only contains a single object detection model an
 This Workflow shows how to use an embedding model to compare the
 similarity of two images with each other.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiSXN3cXBRd2VVVGQybnJLVnZzbHYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI1MDgxMTZ9.EP8XzgbTkMqN4lBp1ML6O4fGbVnM6fmod7dAxbvcbK4?showGraph=true" loading="lazy" title="Roboflow Workflow for clip" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiSXN3cXBRd2VVVGQybnJLVnZzbHYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODMzMjY5MjR9.jI6ebN4BGgTEjSZTziFOybBjuDp_4CovtSlLrfZkYtQ?showGraph=true" loading="lazy" title="Roboflow Workflow for clip" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -110,7 +110,7 @@ detection step via input selector (`$inputs.image`) and how non-batch parameters
 (reference set of texts that the each image in batch will be compared to)
 is dynamically specified - via `$inputs.reference` selector.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiSXN3cXBRd2VVVGQybnJLVnZzbHYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI1MDgxMTd9.FoBIpb3Lladkh5iUnnth2JK5f8l7KxxtqhR-QYkI8uQ?showGraph=true" loading="lazy" title="Roboflow Workflow for clip" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiSXN3cXBRd2VVVGQybnJLVnZzbHYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODMzMjY5MjV9.GKyupzCXfLkzKpAdqPIkKAFWqb6fFp1Q2It1-p6lVQI?showGraph=true" loading="lazy" title="Roboflow Workflow for clip" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -153,7 +153,7 @@ This is useful when you want to:
 - Create a single region that contains multiple detected objects
 - Simplify multiple detections into one larger detection
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiVkMxOHRWN2h0dENXQlhhRnpzTkYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI1MDgxMTh9.uAYNJsweiV9SVNhkD2AustA4JtvUEraR5-4ZJicSxuU?showGraph=true" loading="lazy" title="Roboflow Workflow for merge detections" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiVkMxOHRWN2h0dENXQlhhRnpzTkYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODMzMjY5MjZ9.ZVrztcUWdMx359xFgh1_bjW37T4FFzTEGWjSPCxit-s?showGraph=true" loading="lazy" title="Roboflow Workflow for merge detections" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -200,7 +200,7 @@ which means that each time you run the workflow (for instance in each different
 physical location, where RoI for static crop is location-dependent) you may 
 provide different RoI coordinates.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoidDJEZmJUUmZWQmpENFlxWlhaYTQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI1MDgxMTl9.9jhusCs5GXGDhC1lBVb4tJk3CJ9JGT-tK5Qkd12keZA?showGraph=true" loading="lazy" title="Roboflow Workflow for static crop" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoidDJEZmJUUmZWQmpENFlxWlhaYTQiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODMzMjY5Mjd9.vYI4DCdUyjxqjT9Un6s255tATuEkFow-v_tFbGjZvg4?showGraph=true" loading="lazy" title="Roboflow Workflow for static crop" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -287,7 +287,7 @@ In order to write to OPC this block is making use of [asyncua](https://github.co
 Writing to OPC enables workflows to expose insights extracted from camera to PLC controllers
 allowing factory automation engineers to take advantage of machine vision when building PLC logic.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiQnBpako0UjhqejVDbUJSTDlrUUIiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI1MDgxMjB9.Fj5Z72TbFjl3Jl2TA7LE7IyRpdOOrYbzFQObaDugD4k?showGraph=true" loading="lazy" title="Roboflow Workflow for opc_writer" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiQnBpako0UjhqejVDbUJSTDlrUUIiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODMzMjY5Mjd9.tB5oBp4CorAYjRgKsij4ZFmK4r-hmfRg1BesKC0Hnnk?showGraph=true" loading="lazy" title="Roboflow Workflow for opc_writer" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
@@ -361,7 +361,7 @@ Please take a look at how batch-oriented WorkflowImage data is plugged to
 detection step via input selector (`$inputs.image`) and how non-batch parameters
 are dynamically specified - via `$inputs.model_id` and `$inputs.confidence` selectors.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiYUR2T0NscVN5QVVMYk1oQzJGNzYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODI1MDgxMjF9.YEZgPapxXD4HA5BD0gR3X7TFS2quxR79_KmHLrDJgVo?showGraph=true" loading="lazy" title="Roboflow Workflow for basic object detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiYUR2T0NscVN5QVVMYk1oQzJGNzYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODMzMjY5Mjl9.OUPirAgyRphbxGvIYzaCjMP3vLKiPgrXyP1WD07qnNM?showGraph=true" loading="lazy" title="Roboflow Workflow for basic object detection" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

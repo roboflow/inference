@@ -420,6 +420,10 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 
 ::: inference.core.workflows.core_steps.transformations.detections_merge.v1
 
+## `core/workflows/core_steps/transformations/geotag_detection`
+
+::: inference.core.workflows.core_steps.transformations.geotag_detection.v1
+
 ## `core/workflows/core_steps/transformations/image_slicer`
 
 ::: inference.core.workflows.core_steps.transformations.image_slicer.v1

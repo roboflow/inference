@@ -98,6 +98,21 @@ hide:
 
 
 
+            <a href="roboflow_visual_search_classifier">
+              <div class="block">
+                
+                <div class="block_name"> <i class="far fa-tags" > </i>  Roboflow Visual Search Classifier</div>
+                <div class="block_description">Classify an image by finding the most visually similar annotated image.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
             <a href="keypoint_detection_model">
               <div class="block">
                 
@@ -1483,6 +1498,21 @@ hide:
                 
                 <div class="block_name"> <i class="fal fa-object-union" > </i>  Detections Merge</div>
                 <div class="block_description">Merge multiple detections into a single bounding box.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
+            <a href="geo_tag_detection">
+              <div class="block">
+                
+                <div class="block_name"> <i class="far fa-map-pin" > </i>  GeoTag Detection</div>
+                <div class="block_description">Project detections from pixel coordinates to real-world GPS positions.</div>
                 <!-- <div class="block_license">APACHE-2.0</div> -->
               </div>
             </a>
