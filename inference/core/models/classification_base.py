@@ -338,7 +338,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                         predicted_classes.append(cls_name)
                 response = MultiLabelClassificationInferenceResponse(
                     image=InferenceResponseImage(
-                        width=img_dims[ind][0], height=img_dims[ind][1]
+                        width=img_dims[ind][1], height=img_dims[ind][0]
                     ),
                     predicted_classes=predicted_classes,
                     predictions=results,
