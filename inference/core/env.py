@@ -169,7 +169,7 @@ CLASS_AGNOSTIC_NMS = str2bool(
     os.getenv(CLASS_AGNOSTIC_NMS_ENV, DEFAULT_CLASS_AGNOSTIC_NMS)
 )
 
-# Confidence threshold, default is 50%
+# Confidence threshold, default is 40%
 CONFIDENCE_ENV = "CONFIDENCE"
 DEFAULT_CONFIDENCE = 0.4
 CONFIDENCE = float(os.getenv(CONFIDENCE_ENV, DEFAULT_CONFIDENCE))
