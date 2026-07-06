@@ -40,6 +40,26 @@ if BLACKLISTED_DESTINATIONS_FOR_URL_INPUT is not None:
         BLACKLISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
     )
 
+# SSRF hardening for URL image input (GHSA-hjmm-hr52-vrp2).
+# When enabled, redirects are followed one hop at a time and every hop URL is
+# re-validated (scheme / FQDN / allow-list / block-list) instead of being
+# followed blindly by `requests`. Default is currently False to preserve the
+# legacy behaviour; the default is scheduled to flip to True in Q4 2026.
+VALIDATE_IMAGE_URL_REDIRECTS = str2bool(
+    os.getenv("VALIDATE_IMAGE_URL_REDIRECTS", False)
+)
+# Hard cap on the number of redirect hops allowed when fetching a URL image.
+# Enforced regardless of VALIDATE_IMAGE_URL_REDIRECTS. 30 mirrors the historical
+# `requests` default.
+MAX_IMAGE_URL_REDIRECTS = int(os.getenv("MAX_IMAGE_URL_REDIRECTS", 30))
+# When False, a URL image whose hostname resolves to a non-global address
+# (loopback, private, link-local/metadata, CGNAT, ULA, ...) is rejected and the
+# connection is pinned to the validated IP. Default is currently True to preserve
+# the legacy behaviour; the default is scheduled to flip to False in Q4 2026.
+ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
+)
+
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
 ALLOW_ORIGINS = ALLOW_ORIGINS.split(",")

@@ -534,7 +534,9 @@ def test_construct_workflow_output_can_defer_future_resolution() -> None:
     )
     predictions = _completed_future(["resolved"])
     execution_data_manager.get_selector_indices.return_value = None
-    execution_data_manager.get_non_batch_data.return_value = {"predictions": predictions}
+    execution_data_manager.get_non_batch_data.return_value = {
+        "predictions": predictions
+    }
 
     # when
     result = construct_workflow_output(

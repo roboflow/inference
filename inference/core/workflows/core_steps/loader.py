@@ -207,6 +207,9 @@ from inference.core.workflows.core_steps.fusion.overlap_analysis.v1 import (
 from inference.core.workflows.core_steps.integrations.roboflow.visual_search.v1 import (
     RoboflowVisualSearchBlockV1,
 )
+from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.v1 import (
+    RoboflowVisualSearchClassifierBlockV1,
+)
 from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
 )
@@ -532,6 +535,9 @@ from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import 
 from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
     DynamicZonesBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.geotag_detection.v1 import (
+    GeoTagDetectionBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
     ImageSlicerBlockV1,
 )
@@ -819,6 +825,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PerClassConfidenceFilterBlockV1,
         DepthEstimationBlockV1,
         RoboflowVisualSearchBlockV1,
+        RoboflowVisualSearchClassifierBlockV1,
         ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
@@ -940,6 +947,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         StabilityAIImageGenBlockV1,
         StabilityAIOutpaintingBlockV1,
         StabilizeTrackedDetectionsBlockV1,
+        GeoTagDetectionBlockV1,
         StitchImagesBlockV1,
         StitchOCRDetectionsBlockV2,
         StitchOCRDetectionsBlockV1,
