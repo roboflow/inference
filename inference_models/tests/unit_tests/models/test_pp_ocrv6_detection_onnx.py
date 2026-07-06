@@ -17,6 +17,7 @@ if _ONNXRUNTIME_AVAILABLE:
     from inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx import (
         PPOCRv6DetectionOnnx,
     )
+from inference_models.models.pp_ocrv6.pp_ocrv6_common import PreProcessingMetadata
 from inference_models.models.pp_ocrv6.pp_ocrv6_detection_utils import (
     DBNetConfig,
     boxes_from_probability_map,
@@ -146,7 +147,7 @@ def test_resize_for_detection_rounds_to_multiple_of_32() -> None:
 def test_normalize_detection_image_produces_nchw_float() -> None:
     image = np.full((64, 96, 3), 255, dtype=np.uint8)
 
-    result = normalize_detection_image(image_bgr=image, config=_config())
+    result = normalize_detection_image(image=image, config=_config())
 
     assert result.shape == (1, 3, 64, 96)
     assert result.dtype == np.float32
@@ -227,12 +228,12 @@ def test_detection_model_infer_runs_end_to_end_on_uint8_numpy() -> None:
 
 
 @requires_onnxruntime
-def test_detection_model_infer_handles_unit_range_float_tensor() -> None:
-    # Regression: float [0, 1] tensors were previously scaled by 1/255 twice and
-    # the detector saw a near-black image, returning garbage with no error.
+def test_detection_model_pre_process_reads_float_tensor_on_255_scale() -> None:
+    # Float tensors are read on the [0, 255] scale (matching sibling ONNX models):
+    # a 255-valued float tensor pre-processes identically to a 255 uint8 image.
     model = _stub_detection_model()
     image_uint8 = np.full((64, 128, 3), 255, dtype=np.uint8)
-    image_tensor = torch.ones((3, 64, 128), dtype=torch.float32)
+    image_tensor = torch.full((3, 64, 128), 255.0, dtype=torch.float32)
 
     pre_processed_uint8, _ = model.pre_process(image_uint8)
     pre_processed_float, _ = model.pre_process(image_tensor)
@@ -249,7 +250,7 @@ def test_detection_model_post_process_handles_empty_maps() -> None:
 
     detections = model.post_process(
         model_results=[empty_map],
-        pre_processing_meta=[{"source_height": 64, "source_width": 64}],
+        pre_processing_meta=[PreProcessingMetadata(source_height=64, source_width=64)],
     )
 
     assert len(detections) == 1

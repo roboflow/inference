@@ -11,16 +11,25 @@
 - PP-OCRv6 text recognition model (`pp-ocrv6-rec`, ONNX backend) with
   `tiny` / `small` / `medium` variants, running recognition over cropped
   text-line images.
-- Two-stage OCR example (`examples/pp_ocrv6/two_stage_ocr.py`) chaining
-  detection and recognition.
+- `PPOCRv6Pipeline` two-stage OCR pipeline
+  (`inference_models.models.pp_ocrv6.pp_ocrv6_pipeline`) chaining detection and
+  recognition: perspective-crops each detected line via its polygon, groups them
+  into reading order, and returns per-line and assembled text. Construct from
+  loaded models or via `PPOCRv6Pipeline.from_pretrained(...)`. Either stage is
+  optional: passing only a detection model runs detect-only (boxes, no text),
+  passing only a recognition model runs recognize-only (each image treated as a
+  single text-line crop); passing neither raises `ValueError`.
 - New direct dependencies: `PyYAML`, `pyclipper`, `shapely` (all previously
   present transitively).
 
 ### Fixed
 
-- PP-OCRv6 models now make the input pixel-scale contract explicit: float
-  images in `[0, 1]` (e.g. normalized `torch.Tensor` inputs) are rescaled to
-  `[0, 255]` instead of being silently interpreted as near-black images.
+- PP-OCRv6 models now make the input pixel-scale contract explicit and aligned
+  with sibling ONNX models: integer images are read as `[0, 255]`, float images
+  are assumed already on the `[0, 255]` scale (no `[0, 1]` auto-detection
+  heuristic). Pre-processing was also cleaned up: a single net channel
+  permutation replaces the earlier BGR round-trip-and-flip, and detection
+  pre-processing metadata is threaded as a `NamedTuple`.
 
 ## `0.29.7`
 

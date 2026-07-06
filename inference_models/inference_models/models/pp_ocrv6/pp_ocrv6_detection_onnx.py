@@ -17,6 +17,7 @@ from inference_models.models.common.onnx import (
     set_onnx_execution_provider_defaults,
 )
 from inference_models.models.pp_ocrv6.pp_ocrv6_common import (
+    PreProcessingMetadata,
     is_torch_input,
     normalize_input_images,
     normalize_torch_images_to_device,
@@ -55,7 +56,9 @@ TEXT_CLASS_NAME = "text"
 
 
 class PPOCRv6DetectionOnnx(
-    ObjectDetectionModel[List[torch.Tensor], List[dict], List[torch.Tensor]]
+    ObjectDetectionModel[
+        List[torch.Tensor], List[PreProcessingMetadata], List[torch.Tensor]
+    ]
 ):
     """PP-OCRv6 text detection model (DBNet).
 
@@ -138,7 +141,7 @@ class PPOCRv6DetectionOnnx(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
-    ) -> Tuple[List[torch.Tensor], List[dict]]:
+    ) -> Tuple[List[torch.Tensor], List[PreProcessingMetadata]]:
         # torch.Tensor inputs are pre-processed on their own device (resize +
         # normalize run with torch ops), so they are never copied out to numpy
         # and back. numpy inputs keep the cv2 pipeline.
@@ -146,14 +149,19 @@ class PPOCRv6DetectionOnnx(
             return self._pre_process_torch(images, input_color_format)
         return self._pre_process_numpy(images, input_color_format)
 
+    @property
+    def _model_color_format(self) -> ColorFormat:
+        return "rgb" if self._config.to_rgb else "bgr"
+
     def _pre_process_numpy(
         self,
         images: Union[np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat],
-    ) -> Tuple[List[torch.Tensor], List[dict]]:
+    ) -> Tuple[List[torch.Tensor], List[PreProcessingMetadata]]:
         images = normalize_input_images(
             images=images,
             input_color_format=input_color_format,
+            target_color_format=self._model_color_format,
         )
         pre_processed_images = []
         pre_processing_meta = []
@@ -164,12 +172,12 @@ class PPOCRv6DetectionOnnx(
                 limit_side_len=self._config.limit_side_len,
                 limit_type=self._config.limit_type,
             )
-            normalized = normalize_detection_image(
-                image_bgr=resized, config=self._config
-            )
+            normalized = normalize_detection_image(image=resized, config=self._config)
             pre_processed_images.append(torch.from_numpy(normalized).to(self._device))
             pre_processing_meta.append(
-                {"source_height": source_height, "source_width": source_width}
+                PreProcessingMetadata(
+                    source_height=source_height, source_width=source_width
+                )
             )
         return pre_processed_images, pre_processing_meta
 
@@ -177,11 +185,12 @@ class PPOCRv6DetectionOnnx(
         self,
         images: Union[torch.Tensor, List[torch.Tensor]],
         input_color_format: Optional[ColorFormat],
-    ) -> Tuple[List[torch.Tensor], List[dict]]:
+    ) -> Tuple[List[torch.Tensor], List[PreProcessingMetadata]]:
         device_images = normalize_torch_images_to_device(
             images=images,
             input_color_format=input_color_format,
             device=self._device,
+            target_color_format=self._model_color_format,
         )
         pre_processed_images = []
         pre_processing_meta = []
@@ -193,11 +202,13 @@ class PPOCRv6DetectionOnnx(
                 limit_type=self._config.limit_type,
             )
             normalized = normalize_detection_image_torch(
-                image_bgr=resized, config=self._config
+                image=resized, config=self._config
             )
             pre_processed_images.append(normalized)
             pre_processing_meta.append(
-                {"source_height": source_height, "source_width": source_width}
+                PreProcessingMetadata(
+                    source_height=source_height, source_width=source_width
+                )
             )
         return pre_processed_images, pre_processing_meta
 
@@ -220,15 +231,15 @@ class PPOCRv6DetectionOnnx(
     def post_process(
         self,
         model_results: List[torch.Tensor],
-        pre_processing_meta: List[dict],
+        pre_processing_meta: List[PreProcessingMetadata],
         **kwargs,
     ) -> List[Detections]:
         detections = []
         for probability_map, meta in zip(model_results, pre_processing_meta):
             quads_with_scores = boxes_from_probability_map(
                 probability_map=probability_map.detach().cpu().numpy(),
-                source_height=meta["source_height"],
-                source_width=meta["source_width"],
+                source_height=meta.source_height,
+                source_width=meta.source_width,
                 config=self._config,
             )
             detections.append(_quads_to_detections(quads_with_scores))

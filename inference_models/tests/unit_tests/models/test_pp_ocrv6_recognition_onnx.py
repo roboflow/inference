@@ -182,17 +182,16 @@ def test_recognition_model_infer_runs_end_to_end_on_uint8_numpy() -> None:
 
 
 @requires_onnxruntime
-def test_recognition_model_infer_handles_unit_range_float_tensor() -> None:
-    # Regression: float [0, 1] tensors were previously interpreted as
-    # near-black images and produced wrong text with no error raised.
+def test_recognition_model_reads_float_tensor_on_255_scale() -> None:
+    # Float tensors are read on the [0, 255] scale (matching sibling ONNX
+    # models): a white (255.0) input normalizes to the +1.0 content level.
     model = _stub_recognition_model()
-    image = torch.ones((3, 24, 96), dtype=torch.float32)
+    image = torch.full((3, 24, 96), 255.0, dtype=torch.float32)
 
     pre_processed = model.pre_process(image)
     result = model(image)
 
     assert isinstance(pre_processed, torch.Tensor)
-    # a white input must normalize to +1.0 content, not the -1.0 black level
     assert pre_processed.max().item() > 0.99
     assert result == ["hi"]
 

@@ -112,8 +112,9 @@ def resize_for_detection(
     return resized, resize_h / float(height), resize_w / float(width)
 
 
-def normalize_detection_image(image_bgr: np.ndarray, config: DBNetConfig) -> np.ndarray:
-    image = image_bgr[:, :, ::-1] if config.to_rgb else image_bgr
+def normalize_detection_image(image: np.ndarray, config: DBNetConfig) -> np.ndarray:
+    """Scale/mean/std-normalize an ``HWC`` image already in the model's channel
+    order (``rgb`` when ``config.to_rgb`` else ``bgr``); no channel flip here."""
     mean = np.array(config.mean, dtype="float32")
     std = np.array(config.std, dtype="float32")
     normalized = (image.astype("float32") * config.scale - mean) / std
@@ -160,14 +161,14 @@ def resize_for_detection_torch(
 
 
 def normalize_detection_image_torch(
-    image_bgr: torch.Tensor, config: DBNetConfig
+    image: torch.Tensor, config: DBNetConfig
 ) -> torch.Tensor:
     """Device-native counterpart of ``normalize_detection_image``.
 
-    ``image_bgr`` is an ``NCHW`` BGR float tensor in ``[0, 255]``; returns the
-    normalized ``NCHW`` tensor on the same device.
+    ``image`` is an ``NCHW`` float tensor in ``[0, 255]``, already in the model's
+    channel order (``rgb`` when ``config.to_rgb`` else ``bgr``); no channel flip
+    here. Returns the normalized ``NCHW`` tensor on the same device.
     """
-    image = image_bgr.flip(1) if config.to_rgb else image_bgr
     mean = torch.tensor(config.mean, dtype=image.dtype, device=image.device).view(
         1, 3, 1, 1
     )

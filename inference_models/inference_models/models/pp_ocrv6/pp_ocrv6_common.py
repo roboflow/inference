@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, NamedTuple, Optional, Union
 
 import cv2
 import numpy as np
@@ -7,34 +7,45 @@ import torch
 from inference_models.entities import ColorFormat
 from inference_models.errors import ModelInputError
 
-FLOAT_UNIT_RANGE_MAX = 1.0 + 1e-6
+
+class PreProcessingMetadata(NamedTuple):
+    source_height: int
+    source_width: int
 
 
 def normalize_input_images(
-    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+    images: Union[np.ndarray, List[np.ndarray]],
     input_color_format: Optional[ColorFormat] = None,
+    target_color_format: ColorFormat = "bgr",
 ) -> List[np.ndarray]:
-    """Normalize supported image inputs into a list of BGR ``uint8`` arrays.
+    """Normalize numpy image inputs into a list of ``uint8`` arrays.
 
-    Accepted pixel scales: integer arrays / tensors are assumed to be in
-    ``[0, 255]``; floating-point arrays / tensors are assumed to be in
-    ``[0, 1]`` and are rescaled, unless values above ``1.0`` are present, in
-    which case they are treated as already being in ``[0, 255]``.
+    Numpy-only: ``torch.Tensor`` inputs are pre-processed on-device by the
+    models (see ``normalize_torch_images_to_device``) and never reach this path.
+    Integer images are read as ``[0, 255]`` (clipped and cast); floating-point
+    images are assumed to already be on the ``[0, 255]`` scale (clipped, rounded
+    and cast). Channels are emitted in ``target_color_format`` order via a single
+    net flip against ``input_color_format`` (numpy inputs default to ``bgr``).
     """
     if isinstance(images, np.ndarray):
         input_color_format = input_color_format or "bgr"
         return [
-            convert_numpy_image_to_bgr(image=images, color_format=input_color_format)
-        ]
-    if isinstance(images, torch.Tensor):
-        input_color_format = input_color_format or "rgb"
-        return [
-            convert_numpy_image_to_bgr(
-                image=image,
-                color_format=input_color_format,
+            convert_numpy_image(
+                image=images,
+                source_color_format=input_color_format,
+                target_color_format=target_color_format,
             )
-            for image in torch_images_to_numpy_list(images=images)
         ]
+    if isinstance(images, torch.Tensor) or (
+        isinstance(images, list) and images and isinstance(images[0], torch.Tensor)
+    ):
+        raise ModelInputError(
+            message=(
+                "normalize_input_images accepts numpy images only; torch.Tensor "
+                "inputs are pre-processed on-device by the PP-OCRv6 models."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
     if not isinstance(images, list):
         raise ModelInputError(
             message="PP-OCRv6 models support np.ndarray, torch.Tensor, or lists of those inputs.",
@@ -48,23 +59,48 @@ def normalize_input_images(
     if isinstance(images[0], np.ndarray):
         input_color_format = input_color_format or "bgr"
         return [
-            convert_numpy_image_to_bgr(image=image, color_format=input_color_format)
+            convert_numpy_image(
+                image=image,
+                source_color_format=input_color_format,
+                target_color_format=target_color_format,
+            )
             for image in images
         ]
-    if isinstance(images[0], torch.Tensor):
+    raise ModelInputError(
+        message=f"Detected unsupported PP-OCRv6 model input type: {type(images[0])}",
+        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+    )
+
+
+def images_to_numpy_bgr_for_cropping(
+    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+    input_color_format: Optional[ColorFormat] = None,
+) -> List[np.ndarray]:
+    """Convert supported image inputs into a list of BGR ``uint8`` arrays.
+
+    Used only by ``PPOCRv6Pipeline`` for its CPU perspective-crop path: torch
+    tensors are copied out to numpy here (the models themselves never do this),
+    numpy inputs go straight through ``normalize_input_images``.
+    """
+    if isinstance(images, torch.Tensor):
+        input_color_format = input_color_format or "rgb"
+        return [
+            convert_numpy_image(image=image, source_color_format=input_color_format)
+            for image in torch_images_to_numpy_list(images=images)
+        ]
+    if isinstance(images, list) and images and isinstance(images[0], torch.Tensor):
         input_color_format = input_color_format or "rgb"
         result = []
         for image in images:
             result.extend(
-                convert_numpy_image_to_bgr(
-                    image=numpy_image, color_format=input_color_format
+                convert_numpy_image(
+                    image=numpy_image, source_color_format=input_color_format
                 )
                 for numpy_image in torch_images_to_numpy_list(images=image)
             )
         return result
-    raise ModelInputError(
-        message=f"Detected unsupported PP-OCRv6 model input type: {type(images[0])}",
-        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+    return normalize_input_images(
+        images=images, input_color_format=input_color_format
     )
 
 
@@ -79,18 +115,22 @@ def torch_images_to_numpy_list(images: torch.Tensor) -> List[np.ndarray]:
     return [image.permute(1, 2, 0).detach().cpu().numpy() for image in images]
 
 
-def convert_numpy_image_to_bgr(
-    image: np.ndarray, color_format: ColorFormat
+def convert_numpy_image(
+    image: np.ndarray,
+    source_color_format: ColorFormat,
+    target_color_format: ColorFormat = "bgr",
 ) -> np.ndarray:
     image = rescale_image_to_uint8(image=image)
     if len(image.shape) == 2:
+        # Grayscale expands to identical channels, so channel order is irrelevant.
         image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        return np.ascontiguousarray(image)
     if len(image.shape) != 3 or image.shape[2] != 3:
         raise ModelInputError(
             message="PP-OCRv6 models expect images with 3 color channels.",
             help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
-    if color_format == "rgb":
+    if source_color_format != target_color_format:
         image = image[:, :, ::-1]
     return np.ascontiguousarray(image)
 
@@ -98,17 +138,14 @@ def convert_numpy_image_to_bgr(
 def rescale_image_to_uint8(image: np.ndarray) -> np.ndarray:
     """Bring an image to ``uint8`` in ``[0, 255]``, making the scale explicit.
 
-    Float images in ``[0, 1]`` (the common normalized ``torch.Tensor`` case)
-    are rescaled by 255; float images with values above ``1.0`` are treated as
-    already being on the ``[0, 255]`` scale. Without this, float inputs would
-    silently be interpreted as near-black images.
+    Integer images are clipped to ``[0, 255]`` and cast; floating-point images
+    are assumed to already be on the ``[0, 255]`` scale and are clipped, rounded
+    and cast. This mirrors the sibling ONNX convention (see RF-DETR's
+    ``_ensure_hwc_uint8``): callers pass images on the ``[0, 255]`` scale.
     """
     if image.dtype == np.uint8:
         return image
     if np.issubdtype(image.dtype, np.floating):
-        max_value = float(image.max()) if image.size else 0.0
-        if max_value <= FLOAT_UNIT_RANGE_MAX:
-            image = image * 255.0
         return np.clip(np.rint(image), 0, 255).astype(np.uint8)
     if np.issubdtype(image.dtype, np.integer):
         return np.clip(image, 0, 255).astype(np.uint8)
@@ -135,15 +172,17 @@ def normalize_torch_images_to_device(
     images: Union[torch.Tensor, List[torch.Tensor]],
     input_color_format: Optional[ColorFormat],
     device: torch.device,
+    target_color_format: ColorFormat = "bgr",
 ) -> List[torch.Tensor]:
-    """Normalize torch image inputs into a list of ``CHW`` BGR ``float32`` tensors.
+    """Normalize torch image inputs into a list of ``CHW`` ``float32`` tensors.
 
-    The tensors are kept on ``device`` (no host round-trip). Channel order and
-    pixel-scale handling match the numpy path (``normalize_input_images``):
-    torch images are assumed ``rgb`` and flipped to ``bgr``; float images in
-    ``[0, 1]`` are rescaled ×255 while float images with values above ``1.0`` are
-    treated as already ``[0, 255]``. Values stay ``float`` (no ``uint8`` round)
-    so no precision is lost before the model's own normalization.
+    The tensors are kept on ``device`` (no host round-trip). Integer images are
+    read as ``[0, 255]`` and float images are assumed already on the ``[0, 255]``
+    scale; values stay ``float`` (no ``uint8`` round) so no precision is lost
+    before the model's own normalization. Channels are emitted in
+    ``target_color_format`` order via a single net flip against
+    ``input_color_format`` (torch inputs default to ``rgb``), so no intermediate
+    channel-flipped copy is materialized.
     """
     color_format = input_color_format or "rgb"
     if isinstance(images, torch.Tensor):
@@ -162,7 +201,10 @@ def normalize_torch_images_to_device(
             message="PP-OCRv6 models support np.ndarray, torch.Tensor, or lists of those inputs.",
             help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
-    return [_torch_image_to_chw_bgr(image, color_format, device) for image in tensors]
+    return [
+        _torch_image_to_chw(image, color_format, target_color_format, device)
+        for image in tensors
+    ]
 
 
 def _split_torch_batch(images: torch.Tensor) -> List[torch.Tensor]:
@@ -176,8 +218,11 @@ def _split_torch_batch(images: torch.Tensor) -> List[torch.Tensor]:
     )
 
 
-def _torch_image_to_chw_bgr(
-    image: torch.Tensor, color_format: ColorFormat, device: torch.device
+def _torch_image_to_chw(
+    image: torch.Tensor,
+    source_color_format: ColorFormat,
+    target_color_format: ColorFormat,
+    device: torch.device,
 ) -> torch.Tensor:
     image = image.to(device)
     if image.ndim == 2:
@@ -195,7 +240,7 @@ def _torch_image_to_chw_bgr(
             help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     image = _rescale_torch_image_to_255(image)
-    if color_format == "rgb":
+    if source_color_format != target_color_format:
         image = image.flip(0)
     return image.contiguous()
 
@@ -205,9 +250,5 @@ def _rescale_torch_image_to_255(image: torch.Tensor) -> torch.Tensor:
     if image.dtype == torch.uint8:
         return image.to(torch.float32)
     if image.is_floating_point():
-        max_value = float(image.max()) if image.numel() else 0.0
-        image = image.to(torch.float32)
-        if max_value <= FLOAT_UNIT_RANGE_MAX:
-            image = image * 255.0
-        return image.clamp(0.0, 255.0)
+        return image.to(torch.float32).clamp(0.0, 255.0)
     return image.clamp(0, 255).to(torch.float32)
