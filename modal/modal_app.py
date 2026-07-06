@@ -103,6 +103,10 @@ _executor_decorator_kwargs = {
     "cloud": WEBEXEC_MODAL_CLOUD,
     "region": WEBEXEC_MODAL_REGION,
     "buffer_containers": 1,
+    "env": {
+        "WEBEXEC_WS_MAX_CONNECTION_SECONDS": str(WEBEXEC_WS_MAX_CONNECTION_SECONDS),
+        "WEBEXEC_WS_IDLE_TIMEOUT_SECONDS": str(WEBEXEC_WS_IDLE_TIMEOUT_SECONDS),
+    },
 }
 if WEBEXEC_MODAL_ROUTING_REGION:
     _executor_decorator_kwargs["routing_region"] = WEBEXEC_MODAL_ROUTING_REGION
