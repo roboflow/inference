@@ -25,7 +25,10 @@ from inference.core.env import (
     ALLOW_NUMPY_INPUT,
     ALLOW_URL_INPUT,
     ALLOW_URL_INPUT_WITHOUT_FQDN,
+    ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
     BLACKLISTED_DESTINATIONS_FOR_URL_INPUT,
+    MAX_IMAGE_URL_REDIRECTS,
+    VALIDATE_IMAGE_URL_REDIRECTS,
     WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
 )
 from inference.core.exceptions import (
@@ -36,6 +39,11 @@ from inference.core.exceptions import (
 )
 from inference.core.utils.function import deprecated
 from inference.core.utils.requests import api_key_safe_raise_for_status
+from inference.core.utils.url_input import (
+    URLAddressNotAllowedError,
+    fetch_url_content_legacy,
+    fetch_url_content_validating_redirects,
+)
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
 
@@ -395,6 +403,30 @@ def load_image_from_url(
         Image.Image: The loaded PIL image.
     """
     _ensure_url_input_allowed()
+    prepared_url = _validate_url_destination(value=value)
+    try:
+        image_bytes = _fetch_image_bytes_from_url(prepared_url=prepared_url)
+    except URLAddressNotAllowedError as error:
+        message = "URL points to a network destination that is not allowed."
+        raise InputImageLoadError(
+            message=f"{message} Details: {error}",
+            public_message=message,
+        ) from error
+    except (RequestException, ConnectionError) as error:
+        raise InputImageLoadError(
+            message=f"Could not load image from url: {value}. Details: {error}",
+            public_message="Data pointed by URL could not be decoded into image.",
+        )
+    return load_image_from_encoded_bytes(
+        value=image_bytes, cv_imread_flags=cv_imread_flags
+    )
+
+
+def _validate_url_destination(value: str) -> str:
+    """Run the URL-string SSRF policy (scheme / FQDN / allow-list / block-list)
+    and return the prepared URL. Called for the initial URL and re-used per
+    redirect hop when redirect validation is enabled.
+    """
     try:
         original_parsed_url = urllib.parse.urlparse(value)
         if "\\" in original_parsed_url.netloc:
@@ -426,17 +458,26 @@ def load_image_from_url(
     _ensure_location_matches_destination_blacklist(
         destination=address_parts_concatenated
     )
-    try:
-        response = requests.get(prepared_url, stream=True)
-        api_key_safe_raise_for_status(response=response)
-        return load_image_from_encoded_bytes(
-            value=response.content, cv_imread_flags=cv_imread_flags
+    return prepared_url
+
+
+def _fetch_image_bytes_from_url(prepared_url: str) -> bytes:
+    """Dispatch URL fetching to the hardened per-hop validator or the legacy
+    (redirect-following) path, based on VALIDATE_IMAGE_URL_REDIRECTS. Non-global
+    address blocking is applied by both paths, independently.
+    """
+    if VALIDATE_IMAGE_URL_REDIRECTS:
+        return fetch_url_content_validating_redirects(
+            url=prepared_url,
+            allow_non_global_addresses=ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
+            max_redirects=MAX_IMAGE_URL_REDIRECTS,
+            validate_redirect=_validate_url_destination,
         )
-    except (RequestException, ConnectionError) as error:
-        raise InputImageLoadError(
-            message=f"Could not load image from url: {value}. Details: {error}",
-            public_message="Data pointed by URL could not be decoded into image.",
-        )
+    return fetch_url_content_legacy(
+        url=prepared_url,
+        allow_non_global_addresses=ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
+        max_redirects=MAX_IMAGE_URL_REDIRECTS,
+    )
 
 
 def _ensure_url_input_allowed() -> None:
