@@ -299,13 +299,16 @@ def _downstream_step_selectors(
         construct_step_selector(step_name=step_name) for step_name in workflow.steps
     }
     result = set()
+    visited = set(step_selectors)
     nodes_to_visit = list(step_selectors)
     while nodes_to_visit:
         node = nodes_to_visit.pop(0)
         for successor in workflow.execution_graph.successors(node):
             if successor in step_selector_set and successor not in result:
                 result.add(successor)
-            nodes_to_visit.append(successor)
+            if successor not in visited:
+                visited.add(successor)
+                nodes_to_visit.append(successor)
     return result
 
 
