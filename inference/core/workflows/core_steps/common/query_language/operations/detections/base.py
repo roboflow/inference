@@ -192,7 +192,7 @@ def select_detections(
             context="step_execution | roboflow_query_language_evaluation",
         )
     if mode not in DETECTIONS_SELECTORS:
-        InvalidInputTypeError(
+        raise InvalidInputTypeError(
             public_message=f"Executing select_detections(...), expected mode to be one of {DETECTIONS_SELECTORS.values()}, "
             f"got {mode}.",
             context="step_execution | roboflow_query_language_evaluation",
