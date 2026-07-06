@@ -155,7 +155,7 @@ class DetectionOffsetBlockV1(WorkflowBlock):
         offset_height: int,
         units: str = "Pixels",
     ) -> BlockResult:
-        use_percentage = units == "Percent (%) - of bounding box width / height"
+        use_percentage = units == "Percent (%)"
         return [
             {
                 "predictions": offset_detections(
