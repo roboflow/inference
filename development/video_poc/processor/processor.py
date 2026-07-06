@@ -362,10 +362,23 @@ class Worker:
         if mode == "batch":
             # Record results so the UI can scrub them after the job completes.
             self.recorder = JobRecorder(str(job.get("id", "local")))
-            # Every frame, in order, as fast as inference allows. The explicit
-            # strategies matter: a signed URL fails VideoSource's is_file check
-            # (os.path.exists), so left to defaults the pipeline would treat the
-            # file as a live stream and silently drop frames (ADAPTIVE_DROP_OLDEST).
+            # Batch means the WHOLE file, once: download it to a local path first.
+            # A URL fails VideoSource's is_file check (os.path.exists), which has
+            # two effects — stream buffer strategies (frames silently dropped) and,
+            # worse, stream reconnection: at EOF the pipeline "reconnects" to the
+            # URL and starts over, looping forever and never completing the job.
+            # A local file gets true file semantics: every frame, natural end.
+            if source_url.startswith("http"):
+                try:
+                    video_reference = self._download_source(source_url, job.get("id", "local"))
+                except Exception as exc:
+                    print(f"[processor] source download failed: {exc}", file=sys.stderr)
+                    self._finalize_recorder()
+                    with self.lock:
+                        self.state = "error"
+                        self.job = {**job, "error": f"source download failed: {exc}"}
+                    return
+            # Explicit strategies as a belt-and-braces: every frame, in order.
             pipeline_kwargs = {
                 "source_buffer_filling_strategy": BufferFillingStrategy.WAIT,
                 "source_buffer_consumption_strategy": BufferConsumptionStrategy.LAZY,
@@ -435,6 +448,7 @@ class Worker:
         except Exception:
             pass
         self._finalize_recorder()
+        self._cleanup_download()
         with self.lock:
             if self.job and self.job.get("id") == job_id and self.state == "running":
                 self.state = "completed"
@@ -457,6 +471,29 @@ class Worker:
                 except Exception:
                     pass
 
+    def _download_source(self, source_url: str, job_id) -> str:
+        """Fetch a batch job's file to local disk so it gets true file semantics."""
+        suffix = os.path.splitext(urlparse(source_url).path)[1] or ".mp4"
+        fd, path = tempfile.mkstemp(prefix=f"rfv-job-{job_id}-", suffix=suffix)
+        started = time.time()
+        with os.fdopen(fd, "wb") as out:
+            with requests.get(source_url, stream=True, timeout=30) as resp:
+                resp.raise_for_status()
+                for chunk in resp.iter_content(chunk_size=1 << 20):
+                    out.write(chunk)
+        size_mb = os.path.getsize(path) / 1e6
+        print(f"[processor] downloaded source ({size_mb:.1f} MB in {time.time() - started:.1f}s) -> {path}")
+        self._downloaded_path = path
+        return path
+
+    def _cleanup_download(self):
+        path, self._downloaded_path = getattr(self, "_downloaded_path", None), None
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
     def stop_job(self):
         pipeline, self.pipeline = self.pipeline, None
         if pipeline is not None:
@@ -468,6 +505,7 @@ class Worker:
                 print(f"[processor] error during terminate: {exc}", file=sys.stderr)
         self._stop_sim_process()
         self._finalize_recorder()
+        self._cleanup_download()
         with self.lock:
             self.job = None
             self.state = "idle"

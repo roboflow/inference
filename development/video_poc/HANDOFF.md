@@ -104,6 +104,32 @@ the media plane + processors become the "cell" (relay + warm pool colocated on G
 infra) and the connector stays exactly as it is — that's the point of proving it with
 outbound-only connections now.
 
+### The media plane (mediamtx)
+
+The relay is [mediamtx](https://github.com/bluenviron/mediamtx) — one static binary,
+fetched by `fetch-deps.sh` (latest release, **unpinned** — pin before anyone else
+depends on this) and run as a separate process: `./bin/mediamtx mediamtx.yml`. It is
+*almost* vanilla; every deviation in `mediamtx.yml` is deliberate:
+
+| Setting | Value | Why |
+|---|---|---|
+| `rtspTransports` | `[tcp]` | force TCP: predictable through localhost/firewalls, no UDP port-range headaches; both the connector (push) and processor (read) use it |
+| `webrtc` / `webrtcAddress` | `:8889` | WHEP endpoint the browser preview reads (`/<stream>/whep`) |
+| `webrtcLocalUDPAddress`, `webrtcAdditionalHosts` | `:8189`, `[127.0.0.1, localhost]` | makes browser WebRTC work on a laptop with no STUN/public IP |
+| `hls`, `rtmp`, `srt` | `no` | narrow the surface to exactly what the POC uses: RTSP in, RTSP+WHEP out |
+| `api` | `127.0.0.1:9997` | debugging only (`curl localhost:9997/v3/paths/list` shows active streams); nothing in the code depends on it |
+| `paths: all_others` | catch-all | **the biggest cheat**: any stream name can be published or read with *no auth*. Production needs per-stream publish/read credentials — this is where the deck's ingest-URL + stream-key design lands (mediamtx supports per-path auth and external auth hooks) |
+
+Stream naming conventions (both sides must agree; defined in
+`videoSourcesService.js` and `processor.py`):
+- `src-<sourceId>` — connector-pushed source streams (platform tells the connector
+  the full ingest URL in the `start_stream` command)
+- `sim-<jobId>` — the processor's own file replay for simulate-a-camera jobs
+
+Production deltas beyond auth: pin the version, TLS on ingest, colocation with the
+warm pool as a "cell", and capacity metrics (aggregate ingress/egress is the cell
+sizing input).
+
 ## 5. The two processing modes (important)
 
 A video file and a live stream are **fundamentally different jobs**, and the platform
@@ -111,8 +137,9 @@ treats them as such via `job.mode`:
 
 - **`batch`** — *process the file as it actually is*: every frame, in order, as fast as
   inference can go. Output is complete and deterministic; "faster than real time" is
-  the goal, not a bug. Implemented by passing explicit buffer strategies
-  (`WAIT` filling + `LAZY` consumption) to `InferencePipeline`.
+  the goal, not a bug. Implemented by **downloading the file to processor-local disk
+  first** (so `VideoSource` gets true file semantics), plus explicit buffer strategies
+  (`WAIT` filling + `LAZY` consumption) as belt-and-braces.
 - **`stream`** — *real-time semantics*: the pipeline keeps up with the clock and drops
   frames when inference falls behind (`ADAPTIVE_DROP_OLDEST`), keeping latency bounded
   at ~one inference time. This is the only sane mode for cameras, and it's also
@@ -143,10 +170,12 @@ processor's temp dir in the POC; the production shape is object storage.
 
 **Gotcha that motivated all this:** `VideoSource.discover_source_properties` in
 inference classifies a source as a file only if `os.path.exists(ref)` is true. A signed
-GCS URL fails that check, so without explicit strategies the pipeline treats an
-uploaded file as a live stream: decode at network speed, drop frames under load. That's
-why early tests showed output "faster than the input" *with silent frame drops* —
-neither mode done properly. The explicit strategies fix it.
+GCS URL fails that check, with two consequences: stream buffer strategies (decode at
+network speed, drop frames under load — early tests showed output "faster than the
+input" with silent drops), and worse, **stream reconnection at EOF** — the pipeline
+treats end-of-file as a dropped stream, reconnects to the URL, and replays the file
+forever, so the job never completes. Downloading to a local path fixes both at the
+root; the explicit strategies stay as a guard.
 
 ## 6. How each flow works
 
