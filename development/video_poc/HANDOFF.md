@@ -8,13 +8,14 @@ implemented, and how the pieces fit together.
 
 The POC spans two repos:
 
-| Repo | Branch | What lives there |
-|---|---|---|
-| `roboflow/inference` | `hansent/video-poc` | `development/video_poc/` — Go connector agent, Python processor (warm worker), local media plane (mediamtx), this doc |
-| `roboflow/roboflow` | `hansent/video-sources-poc` | Video Sources page (React), `/query/video-sources*` routes, connector/processor API endpoints, Firestore DAOs |
+| Repo | Branch | Draft PR | What lives there |
+|---|---|---|---|
+| `roboflow/inference` | `hansent/video-poc` | [#2616](https://github.com/roboflow/inference/pull/2616) | `development/video_poc/` — Go connector agent, Python processor (warm worker), local media plane (mediamtx), this doc |
+| `roboflow/roboflow` | `hansent/video-sources-poc` | [#13264](https://github.com/roboflow/roboflow/pull/13264) | Video Sources page (React), `/query/video-sources*` routes, connector/processor API endpoints, Firestore DAOs |
 
-There is also an internal video strategy deck (ask Thomas) that motivates all of this;
-the POC deliberately implements the shapes recommended there.
+There is also an internal video strategy deck that motivates all of this — the POC
+deliberately implements the shapes recommended there:
+https://rising-denim-n8yv.here.now/ (password-protected; ask Thomas for access).
 
 ---
 
