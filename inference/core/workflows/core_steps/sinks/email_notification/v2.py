@@ -1054,6 +1054,7 @@ def _send_email_using_smtp_server_v2(
         )
         e_mail_message.attach(part)
 
+    del e_mail_message["Bcc"]
     to_sent = e_mail_message.as_string()
 
     # Establish SMTP connection
@@ -1069,4 +1070,8 @@ def _send_email_using_smtp_server_v2(
         smtp_server=smtp_server, smtp_port=smtp_port
     ) as server:
         server.login(sender_email, sender_email_password)
-        server.sendmail(sender_email, receiver_email, to_sent)
+        server.sendmail(
+            sender_email,
+            receiver_email + (cc_receiver_email or []) + (bcc_receiver_email or []),
+            to_sent,
+        )
