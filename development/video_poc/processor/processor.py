@@ -11,6 +11,9 @@ While a job runs, the processor exposes:
   GET /events                SSE stream of per-frame workflow outputs (images redacted to refs)
   GET /preview.mjpeg?output= MJPEG stream of one image output (defaults to the job's
                              designated output, switchable per-request)
+  GET /results/<jobId>/...   persisted batch-job results: video.mp4 (annotated, Range
+                             support for scrubbing), frames.jsonl (one line per frame,
+                             aligned with the mp4 by index), meta.json (fps, frames)
 
 Design notes (mirrors the video strategy deck):
   - events and pixels are split at the source; base64 image blobs never ride the events channel
@@ -23,10 +26,12 @@ import base64
 import copy
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -56,6 +61,19 @@ FFMPEG_BIN = os.getenv(
 )
 if not os.path.exists(FFMPEG_BIN):
     FFMPEG_BIN = "ffmpeg"
+
+# Batch-job results (annotated mp4 + per-frame JSONL) are kept here so the UI can
+# scrub them after the job completes. Survives until the OS clears temp storage;
+# the production shape is object storage.
+RESULTS_ROOT = os.getenv(
+    "VIDEO_POC_RESULTS_DIR", os.path.join(tempfile.gettempdir(), "rf-video-poc-results")
+)
+RESULT_FILES = {
+    "video.mp4": "video/mp4",
+    "frames.jsonl": "application/x-ndjson",
+    "meta.json": "application/json",
+}
+JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def utcnow_iso() -> str:
@@ -195,6 +213,81 @@ class FrameStore:
             self.cond.notify_all()
 
 
+class JobRecorder:
+    """Persists a batch job's results for post-hoc review with scrubbing.
+
+    Writes the designated image output as an H.264 mp4 (via ffmpeg image2pipe, at
+    the source's declared fps) and one JSON line per processed frame. In batch mode
+    every frame is processed in order, so mp4 frame k, JSONL line k, and playhead
+    time k/fps all refer to the same source frame — that's what lets the UI align
+    the JSON with the video while scrubbing.
+    """
+
+    def __init__(self, job_id: str):
+        self.job_id = job_id
+        self.dir = os.path.join(RESULTS_ROOT, job_id)
+        os.makedirs(self.dir, exist_ok=True)
+        self.events_file = open(os.path.join(self.dir, "frames.jsonl"), "w")
+        self.ffmpeg = None
+        self.fps = None
+        self.frames = 0
+        self.video_failed = False
+        self.lock = threading.Lock()
+
+    def add(self, jpeg_bytes, fps, event: dict):
+        with self.lock:
+            if self.events_file is None:
+                return
+            self.events_file.write(json.dumps(event, default=str) + "\n")
+            self.frames += 1
+            if jpeg_bytes is None or self.video_failed:
+                return
+            if self.ffmpeg is None:
+                self.fps = float(fps) if fps and fps > 0 else 30.0
+                try:
+                    self.ffmpeg = subprocess.Popen(
+                        [
+                            FFMPEG_BIN, "-y", "-f", "image2pipe",
+                            "-framerate", str(self.fps), "-i", "-",
+                            "-c:v", "libx264", "-preset", "veryfast",
+                            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                            os.path.join(self.dir, "video.mp4"),
+                        ],
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except OSError as exc:
+                    print(f"[processor] result recording disabled: {exc}", file=sys.stderr)
+                    self.video_failed = True
+                    return
+            try:
+                self.ffmpeg.stdin.write(jpeg_bytes)
+            except Exception:
+                self.video_failed = True
+
+    def finalize(self):
+        with self.lock:
+            events_file, self.events_file = self.events_file, None
+            if events_file is None:
+                return
+            events_file.close()
+            if self.ffmpeg is not None:
+                try:
+                    self.ffmpeg.stdin.close()
+                    self.ffmpeg.wait(timeout=60)
+                except Exception:
+                    self.video_failed = True
+            meta = {
+                "jobId": self.job_id,
+                "fps": self.fps,
+                "frames": self.frames,
+                "hasVideo": self.ffmpeg is not None and not self.video_failed,
+            }
+            with open(os.path.join(self.dir, "meta.json"), "w") as f:
+                json.dump(meta, f)
+
+
 class Worker:
     def __init__(self, args):
         self.args = args
@@ -204,6 +297,7 @@ class Worker:
         self.frames = FrameStore()
         self.pipeline = None
         self.sim_process = None
+        self.recorder = None
         self.job = None
         self.state = "idle"
         self.image_output = None
@@ -220,12 +314,16 @@ class Worker:
         self.stats.on_result(video_frame)
 
         outputs = {}
+        designated_jpeg = None
         for key, value in predictions.items():
             if is_serialized_image(value):
                 if self.image_output is None:
                     self.image_output = key
                 try:
-                    self.frames.set(key, base64.b64decode(value["value"]))
+                    jpeg = base64.b64decode(value["value"])
+                    self.frames.set(key, jpeg)
+                    if key == self.image_output:
+                        designated_jpeg = jpeg
                 except Exception:
                     pass
                 outputs[key] = {"type": "image_ref", "output": key}
@@ -234,14 +332,16 @@ class Worker:
             else:
                 outputs[key] = value
 
-        self.events.publish(
-            {
-                "frameId": video_frame.frame_id,
-                "timestamp": utcnow_iso(),
-                "latencyMs": self.stats.last_latency_ms and round(self.stats.last_latency_ms, 1),
-                "outputs": outputs,
-            }
-        )
+        event = {
+            "frameId": video_frame.frame_id,
+            "timestamp": utcnow_iso(),
+            "latencyMs": self.stats.last_latency_ms and round(self.stats.last_latency_ms, 1),
+            "outputs": outputs,
+        }
+        recorder = self.recorder
+        if recorder is not None:
+            recorder.add(designated_jpeg, video_frame.fps, event)
+        self.events.publish(event)
 
     # ---------- job lifecycle ----------
 
@@ -260,6 +360,8 @@ class Worker:
         video_reference = source_url
         pipeline_kwargs = {}
         if mode == "batch":
+            # Record results so the UI can scrub them after the job completes.
+            self.recorder = JobRecorder(str(job.get("id", "local")))
             # Every frame, in order, as fast as inference allows. The explicit
             # strategies matter: a signed URL fails VideoSource's is_file check
             # (os.path.exists), so left to defaults the pipeline would treat the
@@ -275,9 +377,11 @@ class Worker:
             # a camera that will be hooked up later.
             video_reference = f"{RTSP_SIM_BASE}/sim-{job.get('id', 'local')}"
             try:
+                # -stream_loop -1: a test source should keep behaving like a camera
+                # until the job is stopped, not end when the recording runs out
                 self.sim_process = subprocess.Popen(
                     [
-                        FFMPEG_BIN, "-re", "-i", source_url,
+                        FFMPEG_BIN, "-re", "-stream_loop", "-1", "-i", source_url,
                         "-c", "copy", "-f", "rtsp", "-rtsp_transport", "tcp",
                         video_reference,
                     ],
@@ -308,13 +412,38 @@ class Worker:
             self.pipeline.start(use_main_thread=False)
             with self.lock:
                 self.state = "running"
+            if mode == "batch":
+                # a batch job ends when the file does; detect it so results become
+                # scrubbable and the worker frees up for the next job
+                threading.Thread(
+                    target=self._watch_pipeline_end,
+                    args=(job.get("id"), self.pipeline),
+                    daemon=True,
+                ).start()
         except Exception as exc:
             print(f"[processor] job failed to start: {exc}", file=sys.stderr)
             self._stop_sim_process()
+            self._finalize_recorder()
             with self.lock:
                 self.state = "error"
                 self.job = {**job, "error": str(exc)}
             return
+
+    def _watch_pipeline_end(self, job_id, pipeline):
+        try:
+            pipeline.join()
+        except Exception:
+            pass
+        self._finalize_recorder()
+        with self.lock:
+            if self.job and self.job.get("id") == job_id and self.state == "running":
+                self.state = "completed"
+                print(f"[processor] job {job_id} completed; results are scrubbable")
+
+    def _finalize_recorder(self):
+        recorder, self.recorder = self.recorder, None
+        if recorder is not None:
+            recorder.finalize()
 
     def _stop_sim_process(self):
         sim, self.sim_process = self.sim_process, None
@@ -338,6 +467,7 @@ class Worker:
             except Exception as exc:
                 print(f"[processor] error during terminate: {exc}", file=sys.stderr)
         self._stop_sim_process()
+        self._finalize_recorder()
         with self.lock:
             self.job = None
             self.state = "idle"
@@ -382,12 +512,17 @@ class Worker:
                     if job:
                         self.run_job(job)
                 else:
+                    state = self.state
                     resp = self.api(
                         "POST",
                         f"/video-jobs/{self.job['id']}/status",
-                        json={"state": self.state, "stats": self.stats.snapshot()},
+                        json={"state": state, "stats": self.stats.snapshot()},
                     )
-                    if resp.get("cancel"):
+                    if state == "completed":
+                        # results stay on disk and servable; the worker frees up
+                        print("[processor] completed job reported; back to idle")
+                        self.stop_job()
+                    elif resp.get("cancel"):
                         print("[processor] job cancelled by platform")
                         self.stop_job()
             except requests.RequestException as exc:
@@ -479,11 +614,71 @@ def make_handler(worker: Worker):
                         self.wfile.flush()
                 except (BrokenPipeError, ConnectionResetError):
                     pass
+            elif path.startswith("/results/"):
+                # /results/<jobId>/(video.mp4|frames.jsonl|meta.json) — persisted
+                # batch-job results. Range support is what makes <video> scrubbing
+                # work: the browser seeks by requesting byte ranges of the mp4.
+                parts = path.split("/")
+                if (
+                    len(parts) == 4
+                    and JOB_ID_RE.match(parts[2])
+                    and parts[3] in RESULT_FILES
+                ):
+                    fpath = os.path.join(RESULTS_ROOT, parts[2], parts[3])
+                    if os.path.isfile(fpath):
+                        self._serve_file(fpath, RESULT_FILES[parts[3]])
+                        return
+                self._not_found()
             else:
-                self.send_response(404)
-                self._cors()
-                self.send_header("Content-Length", "0")
-                self.end_headers()
+                self._not_found()
+
+        def _not_found(self):
+            self.send_response(404)
+            self._cors()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def _serve_file(self, fpath, content_type):
+            size = os.path.getsize(fpath)
+            start, end, status = 0, size - 1, 200
+            range_header = self.headers.get("Range", "")
+            match = re.match(r"bytes=(\d*)-(\d*)$", range_header)
+            if match and (match.group(1) or match.group(2)):
+                if match.group(1):
+                    start = int(match.group(1))
+                    if match.group(2):
+                        end = min(int(match.group(2)), size - 1)
+                else:  # suffix range: last N bytes
+                    start = max(0, size - int(match.group(2)))
+                if start > end or start >= size:
+                    self.send_response(416)
+                    self._cors()
+                    self.send_header("Content-Range", f"bytes */{size}")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                status = 206
+            length = end - start + 1
+            self.send_response(status)
+            self._cors()
+            self.send_header("Content-Type", content_type)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(length))
+            if status == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.end_headers()
+            try:
+                with open(fpath, "rb") as f:
+                    f.seek(start)
+                    remaining = length
+                    while remaining > 0:
+                        chunk = f.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
         def do_OPTIONS(self):
             self.send_response(204)

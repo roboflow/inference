@@ -123,6 +123,23 @@ treats them as such via `job.mode`:
 Mode selection: connector sources are always `stream`; uploaded files default to
 `batch` with a UI radio to choose the simulation mode.
 
+Note that **a file behind the connector is not a file to the platform**: the
+connector can only replay it as looping real-time RTSP (`ffmpeg -re -stream_loop
+-1`) — a test stand-in for a camera. It is labeled "Video File (test stream)" in
+the UI. Only uploaded files (a URL the processor can read directly) support batch
+processing; letting the connector *transfer* a file for batch is future work.
+
+**Batch results are recorded and scrubbable.** During a batch job the processor
+writes the designated image output to an H.264 mp4 (ffmpeg image2pipe at the
+source's declared fps) and one JSON line per frame. Because batch processes every
+frame in order, mp4 frame k, JSONL line k, and playhead time k/fps are the same
+source frame — so the UI can serve a seekable annotated video with the JSON
+result aligned to the playhead. When the file ends, the processor finalizes the
+recording, reports `completed`, frees itself for the next job, and keeps serving
+results at `/results/<jobId>/{video.mp4,frames.jsonl,meta.json}` (mp4 with HTTP
+Range support — that is what makes browser scrubbing work). Results live in the
+processor's temp dir in the POC; the production shape is object storage.
+
 **Gotcha that motivated all this:** `VideoSource.discover_source_properties` in
 inference classifies a source as a file only if `os.path.exists(ref)` is true. A signed
 GCS URL fails that check, so without explicit strategies the pipeline treats an
@@ -214,9 +231,10 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   publishing, and stops when the TTL lapses. Identical pattern to source preview TTLs;
   requires no new connection into the processor. Result video should not stream when
   nobody is watching.
-- **No `completed` transition for finished files**: when a batch job's file ends, the
-  pipeline stops producing but the processor keeps reporting `running`. Needs the
-  pipeline-finished signal wired to a final status post.
+- **Batch results are processor-local**: the annotated mp4 + JSONL live in the
+  processor's temp dir and die with the machine. Production shape: upload to object
+  storage on finalize and serve from there (also unblocks reviewing results after
+  the processor is reassigned).
 - **Processor HTTP has no auth** and CORS `*` (localhost POC only).
 - **Single-workspace claim**: processors claim jobs only for the workspace of their API
   key. Real warm pools need cross-tenant scheduling, leases/heartbeats on claims, and
@@ -233,7 +251,7 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
 2. The task list that produced this: dev tooling ✅, backend API ✅, connector ✅,
    processor ✅, frontend ✅, e2e demo verified through "workflow on uploaded file with
    live annotated preview" ✅.
-3. Natural next moves, in rough order of value: the `completed` transition for batch
-   jobs; the relay-published results stream + `watchRequestedUntil` signaling (§8);
+3. Natural next moves, in rough order of value: batch results to object storage
+   (§8); the relay-published results stream + `watchRequestedUntil` signaling (§8);
    connector-source e2e polish (USB/RTSP path got less testing than files); claim
    leases.
