@@ -145,6 +145,32 @@ def test_rename_detections_when_non_strict_mode_enabled_and_not_all_classes_pres
     ], "Expected to change with mapping"
 
 
+def test_rename_detections_when_detections_have_no_class_name_data() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[0, 1, 2, 3], [0, 1, 2, 3]]),
+        class_id=np.array([10, 11]),
+        confidence=np.array([0.3, 0.4]),
+    )
+
+    # when
+    result = rename_detections(
+        detections=detections,
+        class_map={"a": "A"},
+        strict=False,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then
+    assert isinstance(
+        result, sv.Detections
+    ), "Expected a handled result, not a raw AttributeError"
+    assert (
+        result.data["class_name"].tolist() == []
+    ), "Expected empty class_name when input carries no class_name"
+
+
 def test_rename_detections_when_mapping_is_parametrised() -> None:
     # given
     detections = sv.Detections(

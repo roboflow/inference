@@ -295,7 +295,9 @@ def rename_detections(
             context="step_execution | roboflow_query_language_evaluation",
         )
     detections_copy = deepcopy(detections)
-    original_class_names = detections_copy.data.get("class_name", []).tolist()
+    original_class_names = detections_copy.data.get(
+        "class_name", np.array([], dtype=object)
+    ).tolist()
     original_class_ids = detections_copy.class_id.tolist()
     new_class_names = []
     new_class_ids = []
