@@ -32,7 +32,7 @@ def string_to_upper(value: Any, execution_context: str, **kwargs) -> str:
 def to_string(value: Any, execution_context: str, **kwargs) -> str:
     try:
         return str(value)
-    except (RuntimeError, RuntimeError) as e:
+    except Exception as e:
         raise InvalidInputTypeError(
             public_message=f"Using operation to_string(...) in context {execution_context} caused the following "
             f"error: {e} of type {type(value)}",
