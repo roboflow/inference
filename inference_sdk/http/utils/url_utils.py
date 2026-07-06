@@ -22,7 +22,7 @@ import ipaddress
 import socket
 import urllib.parse
 import warnings
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 import aiohttp
 import requests
@@ -32,23 +32,18 @@ from aiohttp import ClientResponseError
 from aiohttp.abc import AbstractResolver
 from requests import HTTPError
 from requests.adapters import HTTPAdapter
+from requests.models import PreparedRequest
 from requests.utils import select_proxy
 from tldextract.tldextract import ExtractResult
 from urllib3.connectionpool import HTTPConnectionPool
 
 from inference_sdk import config
-from inference_sdk.http.errors import HTTPClientError
+from inference_sdk.config import InferenceSDKDeprecationWarning
+from inference_sdk.http.errors import HTTPClientError, InvalidURLImageInput, URLAddressNotAllowedError
 from inference_sdk.http.utils.requests import (
     api_key_safe_raise_for_status,
     deduct_api_key_from_string,
 )
-
-class InvalidURLImageInput(HTTPClientError):
-    """Raised when a URL image reference fails the SDK URL-string policy."""
-
-
-class URLAddressNotAllowedError(HTTPClientError):
-    """Raised when a URL resolves to a destination that is not permitted."""
 
 
 # `warnings.warn` deduplicates identical warnings per call site under the
@@ -58,7 +53,7 @@ def _warn_legacy_redirect_handling() -> None:
         "URL image redirects are followed without per-hop validation "
         "(VALIDATE_IMAGE_URL_REDIRECTS=False). This default is scheduled to "
         "change to True in Q4 2026.",
-        category=DeprecationWarning,
+        category=InferenceSDKDeprecationWarning,
         stacklevel=2,
     )
 
@@ -68,7 +63,7 @@ def _warn_non_global_allowed() -> None:
         "URL image input is allowed to reach non-global addresses "
         "(ALLOW_URL_TO_NON_GLOBAL_ADDRESSES=True). This default is scheduled to "
         "change to False in Q4 2026.",
-        category=DeprecationWarning,
+        category=InferenceSDKDeprecationWarning,
         stacklevel=2,
     )
 
@@ -200,11 +195,11 @@ def _ensure_not_blocked_by_lists(destination: str) -> None:
 # Sync path (requests) — pinning adapter, mirrors the server.
 # ---------------------------------------------------------------------------
 class SSRFProtectedHTTPAdapter(HTTPAdapter):
-    def __init__(self, *, allow_non_global_addresses: bool, **kwargs):
+    def __init__(self, *, allow_non_global_addresses: bool, **kwargs: Any) -> None:
         self._allow_non_global_addresses = allow_non_global_addresses
         super().__init__(**kwargs)
 
-    def send(self, request, **kwargs):
+    def send(self, request: PreparedRequest, **kwargs: Any) -> requests.Response:
         parsed = urllib3.util.parse_url(request.url)
         if parsed.host is not None and not _host_is_ip_literal(parsed.host):
             host_header = parsed.host
@@ -263,7 +258,13 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
             pool.conn_kw["server_hostname"] = hostname
         return pool
 
-    def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None):
+    def get_connection_with_tls_context(
+        self,
+        request: PreparedRequest,
+        verify: Union[bool, str],
+        proxies: Optional[Mapping[str, str]] = None,
+        cert: Optional[Union[str, Tuple[str, str]]] = None,
+    ) -> HTTPConnectionPool:
         # send() path for requests >= 2.32 (the pinned floor). Defer under a
         # forward proxy (the proxy resolves the target, so pinning is moot).
         if select_proxy(request.url, proxies):
@@ -283,7 +284,9 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
         )
         return self._build_pinned_pool(host_params, pool_kwargs, hostname, pinned_ip)
 
-    def get_connection(self, url, proxies=None):
+    def get_connection(
+        self, url: str, proxies: Optional[Mapping[str, str]] = None
+    ) -> HTTPConnectionPool:
         # Fallback for requests < 2.32 (below the pinned floor).
         if select_proxy(url, proxies):
             if not self._allow_non_global_addresses:
@@ -388,11 +391,13 @@ class ValidatingResolver(AbstractResolver):
     validates and pins the connection to a checked IP on every hop.
     """
 
-    def __init__(self, allow_non_global_addresses: bool):
+    def __init__(self, allow_non_global_addresses: bool) -> None:
         self._allow_non_global_addresses = allow_non_global_addresses
         self._delegate = aiohttp.ThreadedResolver()
 
-    async def resolve(self, host: str, port: int = 0, family: int = socket.AF_INET):
+    async def resolve(
+        self, host: str, port: int = 0, family: int = socket.AF_INET
+    ) -> List[Dict[str, Any]]:
         hosts = await self._delegate.resolve(host, port, family)
         if self._allow_non_global_addresses:
             return hosts

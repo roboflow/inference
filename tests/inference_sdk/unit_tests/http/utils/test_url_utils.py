@@ -9,14 +9,13 @@ from urllib3.connectionpool import HTTPSConnectionPool
 from inference_sdk import config
 from inference_sdk.http.utils import url_utils
 from inference_sdk.http.utils.url_utils import (
-    InvalidURLImageInput,
     SSRFProtectedHTTPAdapter,
-    URLAddressNotAllowedError,
     address_is_global,
     fetch_url_bytes,
     resolve_and_validate_ips,
     validate_url_destination,
 )
+from inference_sdk.http.errors import InvalidURLImageInput, URLAddressNotAllowedError
 
 
 def _fake_getaddrinfo(ip: str):

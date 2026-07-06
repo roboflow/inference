@@ -293,7 +293,6 @@ def fetch_url_content_legacy(
 
 
 def fetch_url_content_validating_redirects(
-    *,
     url: str,
     allow_non_global_addresses: bool,
     max_redirects: int,
