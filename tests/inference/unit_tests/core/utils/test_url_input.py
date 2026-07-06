@@ -14,7 +14,9 @@ from inference.core.utils.url_input import (
     resolve_and_validate_ips,
 )
 
-_HAS_TLS_CONTEXT = hasattr(SSRFProtectedHTTPAdapter, "build_connection_pool_key_attributes")
+_HAS_TLS_CONTEXT = hasattr(
+    SSRFProtectedHTTPAdapter, "build_connection_pool_key_attributes"
+)
 
 
 def _prepared_get(url: str) -> PreparedRequest:
@@ -25,7 +27,9 @@ def _prepared_get(url: str) -> PreparedRequest:
 
 def _fake_getaddrinfo(ip: str):
     def _inner(host, port, *args, **kwargs):
-        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (ip, port))]
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (ip, port))
+        ]
 
     return _inner
 

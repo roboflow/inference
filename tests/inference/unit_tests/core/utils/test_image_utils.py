@@ -379,7 +379,13 @@ def test_load_image_from_url_blocks_hostname_resolving_to_non_global(
     def _fake_getaddrinfo(host, port, *args, **kwargs):
         resolved.append(host)
         return [
-            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("127.0.0.1", port))
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                ("127.0.0.1", port),
+            )
         ]
 
     monkeypatch.setattr(url_input.socket, "getaddrinfo", _fake_getaddrinfo)
