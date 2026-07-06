@@ -39,7 +39,11 @@ from urllib3.connectionpool import HTTPConnectionPool
 
 from inference_sdk import config
 from inference_sdk.config import InferenceSDKDeprecationWarning
-from inference_sdk.http.errors import HTTPClientError, InvalidURLImageInput, URLAddressNotAllowedError
+from inference_sdk.http.errors import (
+    HTTPClientError,
+    InvalidURLImageInput,
+    URLAddressNotAllowedError,
+)
 from inference_sdk.http.utils.requests import (
     api_key_safe_raise_for_status,
     deduct_api_key_from_string,
