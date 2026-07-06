@@ -397,6 +397,112 @@ def test_classes_replacement_when_empty_classification_predictions_fallback_clas
     ), "class name expected to be set to value passed with fallback_class_name parameter"
 
 
+def test_classes_replacement_when_dict_prediction_is_none_fallback_class_provided():
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["animal", "animal"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    cls_prediction = ClassificationInferenceResponse(
+        image=InferenceResponseImage(width=128, height=256),
+        predictions=[
+            ClassificationPrediction(
+                **{"class": "cat", "class_id": 0, "confidence": 0.6}
+            ),
+            ClassificationPrediction(
+                **{"class": "dog", "class_id": 1, "confidence": 0.4}
+            ),
+        ],
+        top="cat",
+        confidence=0.6,
+        parent_id="some",
+    ).dict(by_alias=True, exclude_none=True)
+    cls_prediction["parent_id"] = "one"
+    classification_predictions = Batch(
+        content=[
+            cls_prediction,
+            None,
+        ],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name="unknown",
+        fallback_class_id=123,
+    )
+
+    # then
+    assert (
+        len(result["predictions"]) == 2
+    ), "Expected both detections preserved: the matched one classified, the unmatched one via fallback"
+    predictions = result["predictions"]
+    # detection "one" is classified as cat; detection "zero" has no classification -> fallback
+    assert predictions.data["class_name"].tolist() == [
+        "unknown",
+        "cat",
+    ], "Detection whose classification is None must receive the fallback class name"
+    assert predictions.class_id.tolist() == [
+        123,
+        0,
+    ], "Fallback class id expected for the detection without classification"
+    assert (
+        predictions.confidence[0] == 0.0
+    ), "Fallback class confidence expected to be set to 0"
+
+
+def test_classes_replacement_when_all_dict_predictions_none_fallback_class_provided():
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["animal", "animal"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    classification_predictions = Batch(
+        content=[None, None],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name="unknown",
+        fallback_class_id=123,
+    )
+
+    # then
+    assert (
+        len(result["predictions"]) == 2
+    ), "Fallback must preserve detections even when every classification is absent"
+    predictions = result["predictions"]
+    assert predictions.data["class_name"].tolist() == ["unknown", "unknown"]
+    assert predictions.class_id.tolist() == [123, 123]
+
+
 def test_extract_leading_class_from_prediction_when_prediction_is_multi_label() -> None:
     # given
     prediction = ClassificationInferenceResponse(

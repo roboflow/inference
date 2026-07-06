@@ -309,12 +309,12 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
 
             return {"predictions": selected_object_detection_predictions}
 
-        if all(
+        if not fallback_class_name and all(
             p is None or "top" in p and not p["top"] or "predictions" not in p
             for p in classification_predictions
         ):
             return {"predictions": sv.Detections.empty()}
-        detection_id_by_class: Dict[str, Optional[Tuple[str, int]]] = {
+        detection_id_by_class: Dict[str, Optional[Tuple[str, int, float]]] = {
             prediction[PARENT_ID_KEY]: extract_leading_class_from_prediction(
                 prediction=prediction,
                 fallback_class_name=fallback_class_name,
@@ -323,6 +323,21 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
             for prediction in classification_predictions
             if prediction is not None
         }
+        if fallback_class_name:
+            # A None entry in the batch carries no parent_id, so detections whose
+            # classification is entirely absent never enter detection_id_by_class.
+            # Route them through the fallback instead of dropping them, matching
+            # the string path and the documented fallback behavior.
+            try:
+                resolved_fallback_id = int(fallback_class_id)
+            except (ValueError, TypeError):
+                resolved_fallback_id = None
+            if resolved_fallback_id is None or resolved_fallback_id < 0:
+                resolved_fallback_id = sys.maxsize
+            fallback_class = (fallback_class_name, resolved_fallback_id, 0.0)
+            for detection_id in object_detection_predictions.data[DETECTION_ID_KEY]:
+                if detection_id_by_class.get(detection_id) is None:
+                    detection_id_by_class[detection_id] = fallback_class
         detections_to_remain_mask = [
             detection_id_by_class.get(detection_id) is not None
             for detection_id in object_detection_predictions.data[DETECTION_ID_KEY]
