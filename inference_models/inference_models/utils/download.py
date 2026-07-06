@@ -137,7 +137,7 @@ def download_files_to_directory(
             single large file. Default: 8.
 
         file_lock_acquire_timeout: Timeout in seconds for acquiring file locks during
-            concurrent downloads. Default: 10.
+            concurrent downloads. Default: FILE_LOCK_ACQUIRE_TIMEOUT (20).
 
         verify_hash_while_download: Verify MD5 hash during download. Default: True.
 
