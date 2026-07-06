@@ -32,14 +32,14 @@ async def app_with_fake_proxy():
     from inference_server.framework.model_stat import _reset_cache_for_tests
 
     _reset_cache_for_tests()
-    prev_debug = app_mod._DEBUG_PASSTHROUGH_MODEL
-    app_mod._DEBUG_PASSTHROUGH_MODEL = True
+    prev_validate = app_mod.validate_api_key
+    app_mod.validate_api_key = AsyncMock(return_value=(True, None))
     proxy = _FakeProxy()
     app_mod.app.state.model_manager = proxy
     try:
         yield app_mod.app, proxy
     finally:
-        app_mod._DEBUG_PASSTHROUGH_MODEL = prev_debug
+        app_mod.validate_api_key = prev_validate
 
 
 @pytest_asyncio.fixture()

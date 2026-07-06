@@ -106,7 +106,6 @@ LOG_LEVEL = os.environ.get("LOG_LEVEL", "warning").lower()
 
 # ── App lifespan (app.py) ─────────────────────────────────────────────────
 MULTIPART_SPOOL_MB = get_integer_from_env("INFERENCE_MULTIPART_SPOOL_MB", default=32)
-DEBUG_PASSTHROUGH_MODEL = get_boolean_from_env("DEBUG_PASSTHROUGH_MODEL", default=False)
 
 # ── Preload / readiness (server.main, routers/v2_server) ──────────────────
 INFERENCE_PRELOAD_MODELS_ENV = "INFERENCE_PRELOAD_MODELS"

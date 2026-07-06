@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -55,8 +56,14 @@ def mmp_harness():
 async def client(mmp_harness):
     """Async httpx client with an MMPClient attached to app.state."""
     import inference_server.app as app_mod
+    import inference_server.routers.v2_models as v2_models_mod
 
-    app_mod._DEBUG_PASSTHROUGH_MODEL = True
+    prev_validate = app_mod.validate_api_key
+    app_mod.validate_api_key = AsyncMock(return_value=(True, None))
+    prev_stat = v2_models_mod.stat_model_while_checking_auth
+    v2_models_mod.stat_model_while_checking_auth = AsyncMock(
+        side_effect=LookupError("model not in registry")
+    )
 
     proxy = MMPClient(
         mmp_addr=mmp_harness.addr,
@@ -70,10 +77,13 @@ async def client(mmp_harness):
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app_mod.app),
         base_url="http://test",
+        headers={"authorization": "Bearer test-key"},
     ) as c:
         yield c
 
     await proxy.shutdown()
+    app_mod.validate_api_key = prev_validate
+    v2_models_mod.stat_model_while_checking_auth = prev_stat
 
 
 @pytest.mark.asyncio

@@ -78,9 +78,6 @@ _AUTH_SKIP_PATHS = frozenset(
     }
 )
 
-_DEBUG_PASSTHROUGH_MODEL = _cfg.DEBUG_PASSTHROUGH_MODEL
-
-
 class _AuthMiddleware:
     """ASGI middleware for auth — does NOT buffer the request body.
 
@@ -99,10 +96,6 @@ class _AuthMiddleware:
             await send({"type": "websocket.close", "code": 1008})
             return
         if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        if _DEBUG_PASSTHROUGH_MODEL:
             await self.app(scope, receive, send)
             return
 
