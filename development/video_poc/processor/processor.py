@@ -1,0 +1,529 @@
+"""Video POC processor: a warm worker that runs Roboflow Workflows on video sources.
+
+Modes:
+  --job-file job.json          run a single job from disk (standalone testing, no platform)
+  --api-url ... --api-key ...  poll the platform for job assignments (videoJobs/claim contract)
+
+While a job runs, the processor exposes:
+  GET /status                worker + job state, timing/fps stats, and the image outputs
+                             it is redacting from events (imageOutputs) so clients can
+                             attach to any of them after the job has started
+  GET /events                SSE stream of per-frame workflow outputs (images redacted to refs)
+  GET /preview.mjpeg?output= MJPEG stream of one image output (defaults to the job's
+                             designated output, switchable per-request)
+
+Design notes (mirrors the video strategy deck):
+  - events and pixels are split at the source; base64 image blobs never ride the events channel
+  - the pipeline uses InferencePipeline's live-stream defaults (ADAPTIVE_DROP_OLDEST) so
+    latency stays bounded at ~one inference time regardless of ingest rate
+"""
+
+import argparse
+import base64
+import copy
+import json
+import os
+import signal
+import socket
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from datetime import datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
+
+import requests
+
+from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.camera.video_source import (
+    BufferConsumptionStrategy,
+    BufferFillingStrategy,
+)
+from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+
+POLL_INTERVAL_S = 2.0
+EVENT_BUFFER_SIZE = 50
+MJPEG_MAX_FPS = 12
+
+# Used by stream-mode jobs on file sources: the file is replayed at native speed
+# into the local relay and consumed as RTSP, so the pipeline sees a real stream.
+RTSP_SIM_BASE = os.getenv("VIDEO_POC_RTSP_BASE", "rtsp://127.0.0.1:8554")
+FFMPEG_BIN = os.getenv(
+    "FFMPEG_BIN",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "ffmpeg"),
+)
+if not os.path.exists(FFMPEG_BIN):
+    FFMPEG_BIN = "ffmpeg"
+
+
+def utcnow_iso() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def is_serialized_image(value) -> bool:
+    return isinstance(value, dict) and value.get("type") == "base64" and "value" in value
+
+
+class Stats:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.reset()
+
+    def reset(self):
+        with getattr(self, "lock", threading.Lock()):
+            self.job_received_at = None
+            self.pipeline_started_at = None
+            self.first_result_at = None
+            self.frames = 0
+            self.ema_fps = None
+            self.last_latency_ms = None
+            self.ema_latency_ms = None
+            self._last_frame_time = None
+
+    def on_job(self):
+        self.reset()
+        self.job_received_at = time.time()
+
+    def on_pipeline_start(self):
+        self.pipeline_started_at = time.time()
+
+    def on_result(self, video_frame: VideoFrame):
+        now = time.time()
+        with self.lock:
+            if self.first_result_at is None:
+                self.first_result_at = now
+            self.frames += 1
+            if self._last_frame_time is not None:
+                dt = now - self._last_frame_time
+                if dt > 0:
+                    inst = 1.0 / dt
+                    self.ema_fps = inst if self.ema_fps is None else 0.9 * self.ema_fps + 0.1 * inst
+            self._last_frame_time = now
+            latency_ms = (datetime.now() - video_frame.frame_timestamp).total_seconds() * 1000.0
+            self.last_latency_ms = latency_ms
+            self.ema_latency_ms = (
+                latency_ms if self.ema_latency_ms is None else 0.9 * self.ema_latency_ms + 0.1 * latency_ms
+            )
+
+    def snapshot(self) -> dict:
+        with self.lock:
+            out = {
+                "frames": self.frames,
+                "fps": round(self.ema_fps, 2) if self.ema_fps else None,
+                "decodeToResultLatencyMs": round(self.ema_latency_ms, 1) if self.ema_latency_ms else None,
+            }
+            if self.job_received_at and self.pipeline_started_at:
+                out["pipelineStartS"] = round(self.pipeline_started_at - self.job_received_at, 2)
+            if self.job_received_at and self.first_result_at:
+                out["timeToFirstResultS"] = round(self.first_result_at - self.job_received_at, 2)
+            return out
+
+
+class EventBus:
+    """Fan-out for SSE subscribers with a small replay buffer."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.buffer = []
+        self.subscribers = []
+
+    def publish(self, event: dict):
+        data = json.dumps(event, default=str)
+        with self.lock:
+            self.buffer.append(data)
+            if len(self.buffer) > EVENT_BUFFER_SIZE:
+                self.buffer.pop(0)
+            subs = list(self.subscribers)
+        for q in subs:
+            try:
+                q.put_nowait(data)
+            except Exception:
+                pass
+
+    def subscribe(self):
+        import queue
+
+        q = queue.Queue(maxsize=200)
+        with self.lock:
+            for item in self.buffer[-10:]:
+                q.put_nowait(item)
+            self.subscribers.append(q)
+        return q
+
+    def unsubscribe(self, q):
+        with self.lock:
+            if q in self.subscribers:
+                self.subscribers.remove(q)
+
+
+class FrameStore:
+    """Latest annotated JPEG per image output, for MJPEG preview.
+
+    Keeping the latest frame for every image output (not just the designated one)
+    is what makes late attachment possible: a viewer can pick any output after the
+    job started. The frames are already JPEG-encoded by the pipeline's serializer,
+    so the only extra cost per output is a base64 decode.
+    """
+
+    def __init__(self):
+        self.cond = threading.Condition()
+        self.jpegs = {}
+        self.seqs = {}
+
+    def set(self, output: str, jpeg_bytes: bytes):
+        with self.cond:
+            self.jpegs[output] = jpeg_bytes
+            self.seqs[output] = self.seqs.get(output, 0) + 1
+            self.cond.notify_all()
+
+    def wait_next(self, output: str, last_seq, timeout=2.0):
+        with self.cond:
+            if self.seqs.get(output, 0) == last_seq:
+                self.cond.wait(timeout=timeout)
+            return self.jpegs.get(output), self.seqs.get(output, 0)
+
+    def outputs(self):
+        with self.cond:
+            return sorted(self.jpegs)
+
+    def clear(self):
+        with self.cond:
+            self.jpegs = {}
+            self.seqs = {}
+            self.cond.notify_all()
+
+
+class Worker:
+    def __init__(self, args):
+        self.args = args
+        self.processor_id = args.processor_id or f"proc-{socket.gethostname()}-{uuid.uuid4().hex[:6]}"
+        self.stats = Stats()
+        self.events = EventBus()
+        self.frames = FrameStore()
+        self.pipeline = None
+        self.sim_process = None
+        self.job = None
+        self.state = "idle"
+        self.image_output = None
+        self._stop_requested = False
+        self.lock = threading.Lock()
+
+    # ---------- sink ----------
+
+    def on_prediction(self, predictions, video_frame):
+        if isinstance(predictions, list):  # multi-source mode; POC runs one source
+            predictions, video_frame = predictions[0], video_frame[0]
+        if predictions is None or video_frame is None:
+            return
+        self.stats.on_result(video_frame)
+
+        outputs = {}
+        for key, value in predictions.items():
+            if is_serialized_image(value):
+                if self.image_output is None:
+                    self.image_output = key
+                try:
+                    self.frames.set(key, base64.b64decode(value["value"]))
+                except Exception:
+                    pass
+                outputs[key] = {"type": "image_ref", "output": key}
+            elif isinstance(value, list) and value and all(is_serialized_image(v) for v in value):
+                outputs[key] = [{"type": "image_ref", "output": key, "index": i} for i in range(len(value))]
+            else:
+                outputs[key] = value
+
+        self.events.publish(
+            {
+                "frameId": video_frame.frame_id,
+                "timestamp": utcnow_iso(),
+                "latencyMs": self.stats.last_latency_ms and round(self.stats.last_latency_ms, 1),
+                "outputs": outputs,
+            }
+        )
+
+    # ---------- job lifecycle ----------
+
+    def run_job(self, job: dict):
+        with self.lock:
+            self.job = job
+            self.state = "starting"
+            self.image_output = job.get("imageOutput")
+        self.frames.clear()
+        self.stats.on_job()
+
+        source_url = job["sourceUrl"]
+        mode = job.get("mode") or ("batch" if source_url.startswith("http") else "stream")
+        print(f"[processor] starting job {job.get('id')} ({mode}) on {source_url}")
+
+        video_reference = source_url
+        pipeline_kwargs = {}
+        if mode == "batch":
+            # Every frame, in order, as fast as inference allows. The explicit
+            # strategies matter: a signed URL fails VideoSource's is_file check
+            # (os.path.exists), so left to defaults the pipeline would treat the
+            # file as a live stream and silently drop frames (ADAPTIVE_DROP_OLDEST).
+            pipeline_kwargs = {
+                "source_buffer_filling_strategy": BufferFillingStrategy.WAIT,
+                "source_buffer_consumption_strategy": BufferConsumptionStrategy.LAZY,
+            }
+        elif source_url.startswith("http"):
+            # Stream mode on a file: replay it at native speed through the local
+            # relay and consume RTSP, so the pipeline sees a genuine live stream
+            # (real-time pacing, drops under load) — a recording standing in for
+            # a camera that will be hooked up later.
+            video_reference = f"{RTSP_SIM_BASE}/sim-{job.get('id', 'local')}"
+            try:
+                self.sim_process = subprocess.Popen(
+                    [
+                        FFMPEG_BIN, "-re", "-i", source_url,
+                        "-c", "copy", "-f", "rtsp", "-rtsp_transport", "tcp",
+                        video_reference,
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                time.sleep(2.0)  # let the publisher register with the relay
+            except OSError as exc:
+                print(f"[processor] could not start ffmpeg replay: {exc}", file=sys.stderr)
+                with self.lock:
+                    self.state = "error"
+                    self.job = {**job, "error": f"ffmpeg replay failed: {exc}"}
+                return
+
+        try:
+            self.pipeline = InferencePipeline.init_with_workflow(
+                video_reference=video_reference,
+                workflow_specification=job.get("workflowSpecification"),
+                workspace_name=job.get("workspaceName"),
+                workflow_id=job.get("workflowId"),
+                api_key=self.args.api_key or os.getenv("ROBOFLOW_API_KEY"),
+                on_prediction=self.on_prediction,
+                serialize_results=True,
+                max_fps=job.get("maxFps"),
+                **pipeline_kwargs,
+            )
+            self.stats.on_pipeline_start()
+            self.pipeline.start(use_main_thread=False)
+            with self.lock:
+                self.state = "running"
+        except Exception as exc:
+            print(f"[processor] job failed to start: {exc}", file=sys.stderr)
+            self._stop_sim_process()
+            with self.lock:
+                self.state = "error"
+                self.job = {**job, "error": str(exc)}
+            return
+
+    def _stop_sim_process(self):
+        sim, self.sim_process = self.sim_process, None
+        if sim is not None:
+            try:
+                sim.terminate()
+                sim.wait(timeout=5)
+            except Exception:
+                try:
+                    sim.kill()
+                except Exception:
+                    pass
+
+    def stop_job(self):
+        pipeline, self.pipeline = self.pipeline, None
+        if pipeline is not None:
+            print("[processor] terminating pipeline")
+            try:
+                pipeline.terminate()
+                pipeline.join()
+            except Exception as exc:
+                print(f"[processor] error during terminate: {exc}", file=sys.stderr)
+        self._stop_sim_process()
+        with self.lock:
+            self.job = None
+            self.state = "idle"
+
+    def status(self) -> dict:
+        with self.lock:
+            return {
+                "processorId": self.processor_id,
+                "state": self.state,
+                "job": self.job,
+                "stats": self.stats.snapshot(),
+                # image outputs redacted from /events; each is watchable at
+                # /preview.mjpeg?output=<name>
+                "imageOutputs": self.frames.outputs(),
+                "defaultImageOutput": self.image_output,
+            }
+
+    # ---------- platform polling ----------
+
+    def api(self, method, path, **kwargs):
+        url = f"{self.args.api_url.rstrip('/')}{path}"
+        params = kwargs.pop("params", {})
+        params["api_key"] = self.args.api_key
+        resp = requests.request(method, url, params=params, timeout=10, **kwargs)
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+
+    def poll_loop(self):
+        print(f"[processor] {self.processor_id} polling {self.args.api_url} for jobs")
+        while not self._stop_requested:
+            try:
+                if self.state in ("idle", "error"):
+                    resp = self.api(
+                        "POST",
+                        "/video-jobs/claim",
+                        json={
+                            "processorId": self.processor_id,
+                            "processorUrl": f"http://127.0.0.1:{self.args.port}",
+                        },
+                    )
+                    job = resp.get("job")
+                    if job:
+                        self.run_job(job)
+                else:
+                    resp = self.api(
+                        "POST",
+                        f"/video-jobs/{self.job['id']}/status",
+                        json={"state": self.state, "stats": self.stats.snapshot()},
+                    )
+                    if resp.get("cancel"):
+                        print("[processor] job cancelled by platform")
+                        self.stop_job()
+            except requests.RequestException as exc:
+                print(f"[processor] poll error: {exc}", file=sys.stderr)
+            time.sleep(POLL_INTERVAL_S)
+
+    def run(self):
+        if self.args.job_file:
+            with open(self.args.job_file) as f:
+                job = json.load(f)
+            job.setdefault("id", "local-job")
+            self.run_job(job)
+        else:
+            threading.Thread(target=self.poll_loop, daemon=True).start()
+
+
+# ---------- HTTP ----------
+
+
+def make_handler(worker: Worker):
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, fmt, *args):
+            pass
+
+        def _cors(self):
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-cache")
+
+        def do_GET(self):
+            path = self.path.split("?")[0]
+            if path == "/status":
+                body = json.dumps(worker.status(), default=str).encode()
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            elif path == "/events":
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Connection", "keep-alive")
+                self.end_headers()
+                q = worker.events.subscribe()
+                try:
+                    while True:
+                        try:
+                            data = q.get(timeout=15)
+                            self.wfile.write(f"data: {data}\n\n".encode())
+                        except Exception:
+                            self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                finally:
+                    worker.events.unsubscribe(q)
+            elif path == "/preview.mjpeg":
+                query = parse_qs(urlparse(self.path).query)
+                requested_output = (query.get("output") or [None])[0]
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+                self.end_headers()
+                seq = -1
+                min_interval = 1.0 / MJPEG_MAX_FPS
+                last_sent = 0.0
+                try:
+                    while True:
+                        # resolved per-iteration so a stream opened before the first
+                        # result attaches to the default output once it exists
+                        output = requested_output or worker.image_output
+                        if output is None:
+                            time.sleep(0.2)
+                            continue
+                        jpeg, seq = worker.frames.wait_next(output, seq)
+                        if jpeg is None:
+                            continue
+                        wait = min_interval - (time.time() - last_sent)
+                        if wait > 0:
+                            time.sleep(wait)
+                        last_sent = time.time()
+                        self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n")
+                        self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode())
+                        self.wfile.write(jpeg)
+                        self.wfile.write(b"\r\n")
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+            else:
+                self.send_response(404)
+                self._cors()
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+        def do_OPTIONS(self):
+            self.send_response(204)
+            self._cors()
+            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    return Handler
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Roboflow video POC processor")
+    parser.add_argument("--api-url", default=os.getenv("RF_API_URL"))
+    parser.add_argument("--api-key", default=os.getenv("ROBOFLOW_API_KEY"))
+    parser.add_argument("--job-file", help="run a single local job definition (skips platform polling)")
+    parser.add_argument("--port", type=int, default=8890)
+    parser.add_argument("--processor-id", default=None)
+    args = parser.parse_args()
+
+    if not args.job_file and not args.api_url:
+        parser.error("either --job-file or --api-url is required")
+
+    worker = Worker(args)
+    server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(worker))
+
+    def shutdown(*_):
+        print("\n[processor] shutting down")
+        worker._stop_requested = True
+        worker.stop_job()
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+
+    worker.run()
+    print(f"[processor] http on :{args.port}  (/status /events /preview.mjpeg)")
+    server.serve_forever()
+    print("[processor] bye")
+
+
+if __name__ == "__main__":
+    main()
