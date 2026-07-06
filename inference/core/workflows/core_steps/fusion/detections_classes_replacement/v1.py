@@ -261,9 +261,9 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
                 if prediction is None:
                     if fallback_class_name:
                         resolved_fallback_id = (
-                            fallback_class_id
-                            if fallback_class_id is not None
-                            else sys.maxsize
+                            sys.maxsize
+                            if fallback_class_id is None or fallback_class_id < 0
+                            else fallback_class_id
                         )
                         class_name, class_id, confidence = (
                             fallback_class_name,
