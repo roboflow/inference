@@ -1,0 +1,13 @@
+profile_name: smoke-tensor
+target:
+  name: smoke-tensor
+data_source:
+  name: dummy
+  record_count: 2
+  tensor_shape: [4, 4]
+device: cuda:0
+warmup: 1
+iterations: 2
+record_loading: eager
+seed: 0
+capture_range: profile-target
