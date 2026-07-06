@@ -119,3 +119,6 @@ warm processor amortizes imports; model load is the remaining per-job cost).
 - **Media plane**: mediamtx is one static binary doing RTSP ingest + WHEP browser preview;
   the processor consumes plain RTSP from it. This is the seam where the real relay/cell
   architecture (see the video strategy deck) slots in.
+
+An interactive architecture diagram with scenario walkthroughs (for demos) lives at
+[architecture.html](architecture.html) — open it directly in a browser.
