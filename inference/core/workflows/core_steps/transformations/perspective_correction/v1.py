@@ -746,9 +746,18 @@ def correct_detections(
     return sv.Detections.merge(corrected_detections)
 
 
+def _to_hashable(value):
+    if isinstance(value, np.ndarray):
+        return _to_hashable(value.tolist())
+    if isinstance(value, (list, tuple)):
+        return tuple(_to_hashable(element) for element in value)
+    return value
+
+
 class PerspectiveCorrectionBlockV1(WorkflowBlock):
     def __init__(self):
         self.perspective_transformers: List[Tuple[np.ndarray, float, float]] = []
+        self.perspective_transformers_cache_key: Optional[tuple] = None
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -787,10 +796,21 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
         if isinstance(transformed_rect_width, int):
             transformed_rect_width = [transformed_rect_width] * batch_size
 
+        perspective_transformers_cache_key = (
+            _to_hashable(perspective_polygons),
+            _to_hashable(transformed_rect_width),
+            _to_hashable(transformed_rect_height),
+            str(extend_perspective_polygon_by_detections_anchor),
+        )
         if (
             not self.perspective_transformers
             or extend_perspective_polygon_by_detections_anchor
+            or self.perspective_transformers_cache_key
+            != perspective_transformers_cache_key
         ):
+            self.perspective_transformers_cache_key = (
+                perspective_transformers_cache_key
+            )
             self.perspective_transformers = []
             largest_perspective_polygons = pick_largest_perspective_polygons(
                 perspective_polygons
