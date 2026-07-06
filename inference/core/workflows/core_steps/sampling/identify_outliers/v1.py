@@ -204,7 +204,7 @@ class IdentifyOutliersBlockV1(WorkflowBlock):
         embedding: List[float],
         threshold_percentile: float,
         warmup: int,
-        window_size: int,
+        window_size: Optional[int],
     ) -> BlockResult:
         # Convert to np array
         embedding = np.array(embedding, dtype=float)
@@ -221,7 +221,7 @@ class IdentifyOutliersBlockV1(WorkflowBlock):
 
         # Store normalized embedding for vMF:
         self.all_embeddings.append(embedding_normed)
-        if len(self.all_embeddings) > window_size:
+        if window_size is not None and len(self.all_embeddings) > window_size:
             # Remove oldest embedding
             self.all_embeddings.pop(0)
 
