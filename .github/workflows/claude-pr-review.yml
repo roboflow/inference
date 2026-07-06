@@ -27,6 +27,8 @@ jobs:
     name: Decide whether to review
     # Cheap eligibility filter; the step does the full validation + gate decision.
     # A `labeled` event only survives when the label is exactly `claude-review`.
+    # The `skip-claude-review` label is an explicit opt-out: its presence short-circuits
+    # every automatic pull_request trigger here (the step re-checks it authoritatively).
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (
@@ -34,6 +36,7 @@ jobs:
         github.event.pull_request.head.repo.full_name == github.repository &&
         !github.event.pull_request.draft &&
         github.event.pull_request.user.type != 'Bot' &&
+        !contains(github.event.pull_request.labels.*.name, 'skip-claude-review') &&
         (
           github.event.action != 'labeled' ||
           github.event.label.name == 'claude-review'
@@ -61,6 +64,7 @@ jobs:
 
           MARKER='<!-- claude-pr-review:run-marker -->'
           REVIEW_LABEL='claude-review'
+          SKIP_LABEL='skip-claude-review'
 
           case "$GH_EVENT_NAME" in
             workflow_dispatch) pr_number="$DISPATCH_PR" ;;
@@ -86,6 +90,15 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           }
           skip() { echo "::notice::PR #${pr_number}: $1 — skipping review."; emit false; exit 0; }
+
+          # Explicit opt-out. Checked FIRST so the `skip-claude-review` label suppresses
+          # the review ahead of every other path — the automatic initial review, a
+          # `claude-review` re-review request, and a manual workflow_dispatch alike.
+          # Case-insensitive match to mirror GitHub's contains() in the job-level filter
+          # (GitHub label names are case-insensitively unique).
+          if echo "$pr_json" | jq -e --arg l "$SKIP_LABEL" '.labels[]? | select((.name // "" | ascii_downcase) == ($l | ascii_downcase))' >/dev/null; then
+            skip "labeled '${SKIP_LABEL}'"
+          fi
 
           [ "$state" = "open" ]          || skip "not open"
           [ "$base_ref" = "main" ]       || skip "targets ${base_ref}, not main"
