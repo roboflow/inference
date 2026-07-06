@@ -31,6 +31,9 @@ REGISTER_BUILDERS: Dict[str, Dict[str, ParameterBuilder]] = {
         "lucid_line_scan": lambda value: {"AcquisitionLineRate": value},
     },
     "exposure_time": {
+        "ai1": lambda value: {
+            "v4l2_camera_properties": {"exposure_mode": 0, "exposure_time": value}
+        },
         "basler_line_scan": lambda value: {"ExposureTime": value},
         "lucid_line_scan": lambda value: {"ExposureTime": value},
     },
