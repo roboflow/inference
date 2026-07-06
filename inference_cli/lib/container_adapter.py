@@ -358,7 +358,7 @@ def pull_image(image: str, use_local_images: bool = False) -> None:
     try:
         _ = docker_client.images.get(image)
         if use_local_images:
-            print(f"Using locally cached image: {use_local_images}")
+            print(f"Using locally cached image: {image}")
             return None
     except ImageNotFound:
         pass
