@@ -24,7 +24,9 @@ from inference_server.errors import (
     ServerBusyError,
     UploadTooSlowError,
 )
+from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.input_parsers.image_check import looks_like_image
+from inference_server.framework.model_stat import stat_model_while_checking_auth
 from inference_server.image_headers import image_pixels
 from inference_server.proxies.base import ClientDisconnected, ModelManagerProxy
 from inference_server.serializers import serialize_json
@@ -111,6 +113,21 @@ async def infer(
         )
     if not model_id:
         return Response(status_code=400, content=b"model_id query param required")
+
+    try:
+        await stat_model_while_checking_auth(
+            CommonRequestParams(model_id=model_id, api_key=api_key, instance=instance)
+        )
+    except PermissionError:
+        return Response(status_code=401, content=b"invalid api key")
+    except LookupError:
+        return Response(status_code=404, content=b"unknown model_id")
+    except RuntimeError:
+        return Response(
+            status_code=503,
+            headers={"Retry-After": "1"},
+            content=b"model registry unreachable",
+        )
 
     status = await mm.ensure_loaded(model_id, instance, api_key, device)
     if status[0] == "load_timeout":
