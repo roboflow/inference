@@ -182,10 +182,12 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         bbox_smoothing_coefficient: float,
     ) -> BlockResult:
         metadata = image.video_metadata
-        if detections.tracker_id is None:
+        if len(detections) > 0 and detections.tracker_id is None:
             raise ValueError(
                 f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
             )
+        if detections.tracker_id is None:
+            detections.tracker_id = np.array([])
         cached_detections = self._batch_of_last_known_detections.setdefault(
             metadata.video_identifier, {}
         )
