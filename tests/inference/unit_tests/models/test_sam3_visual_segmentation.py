@@ -10,6 +10,9 @@ import numpy as np
 import pytest
 import torch
 
+from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.requests.sam2 import Sam2SegmentationRequest
+
 # Meta's `sam3` package is not installed in the unit-test environment, so the
 # adapter module (which imports it transitively via inference_models) cannot
 # be imported without stubbing it.
@@ -139,6 +142,121 @@ def test_segment_image_forwards_all_prompts_to_model(
     boxes = call_kwargs["boxes"]
     assert boxes.shape == (2, 4)
     np.testing.assert_allclose(boxes, [[8, 8, 12, 12], [26, 26, 34, 34]])
+
+
+def test_segment_image_accepts_xyxy_box_and_disables_multimask(
+    adapter_module: ModuleType,
+) -> None:
+    # given
+    prediction = SimpleNamespace(
+        masks=torch.rand(1, 8, 8),
+        scores=torch.tensor([0.9]),
+        logits=torch.rand(1, 16, 16),
+    )
+    adapter = _build_adapter(adapter_module, prediction)
+
+    # when
+    _ = adapter.segment_image(
+        image=None,
+        multimask_output=True,
+        prompts={"prompts": [{"box": [1, 2, 8, 9]}]},
+    )
+
+    # then
+    call_kwargs = adapter._model.segment_with_visual_prompts.call_args.kwargs
+    np.testing.assert_allclose(call_kwargs["boxes"], [[1, 2, 8, 9]])
+    assert call_kwargs["multi_mask_output"] is False
+
+
+def test_segmentation_request_converts_top_level_boxes_to_prompts() -> None:
+    # when
+    request = Sam2SegmentationRequest(
+        image=InferenceRequestImage(type="base64", value="abc"),
+        boxes=[
+            {
+                "x1": 1,
+                "y1": 2,
+                "x2": 8,
+                "y2": 9,
+                "class": "widget",
+                "class_id": 3,
+                "detection_id": "det-1",
+                "confidence": 0.87,
+            }
+        ],
+    )
+
+    # then
+    args = request.prompts.to_sam2_inputs()
+    np.testing.assert_allclose(args["box"], [[1, 2, 8, 9]])
+    assert request.prompts.prediction_metadata() == [
+        {
+            "class_name": "widget",
+            "class_id": 3,
+            "detection_id": "det-1",
+            "parent_id": "det-1",
+            "detection_confidence": 0.87,
+        }
+    ]
+
+    detection_request = Sam2SegmentationRequest(
+        image=InferenceRequestImage(type="base64", value="abc"),
+        detections={
+            "predictions": [
+                {
+                    "x": 10,
+                    "y": 10,
+                    "width": 4,
+                    "height": 4,
+                    "class": "widget",
+                }
+            ]
+        },
+    )
+    np.testing.assert_allclose(
+        detection_request.prompts.to_sam2_inputs()["box"],
+        [[8, 8, 12, 12]],
+    )
+    assert detection_request.prompts.prediction_metadata()[0]["class_name"] == "widget"
+
+
+def test_infer_from_request_preserves_box_metadata(
+    adapter_module: ModuleType,
+) -> None:
+    # given
+    mask = torch.zeros(1, 8, 8)
+    mask[:, 1:6, 1:6] = 1
+    prediction = SimpleNamespace(
+        masks=mask,
+        scores=torch.tensor([0.9]),
+        logits=torch.rand(1, 16, 16),
+    )
+    adapter = _build_adapter(adapter_module, prediction)
+    request = Sam2SegmentationRequest(
+        image=InferenceRequestImage(type="base64", value="abc"),
+        image_id="cached-image",
+        format="rle",
+        boxes=[
+            {
+                "bbox": [1, 2, 8, 9],
+                "class_name": "widget",
+                "class_id": 3,
+                "detection_id": "det-1",
+                "confidence": 0.87,
+            }
+        ],
+    )
+
+    # when
+    response = adapter.infer_from_request(request)
+
+    # then
+    prediction_response = response.predictions[0]
+    assert prediction_response.class_name == "widget"
+    assert prediction_response.class_id == 3
+    assert prediction_response.detection_id == "det-1"
+    assert prediction_response.parent_id == "det-1"
+    assert prediction_response.detection_confidence == 0.87
 
 
 def _single_prediction() -> SimpleNamespace:

@@ -110,18 +110,21 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
             _, _, image_id = self.embed_image(**request.dict())
             return Sam2EmbeddingResponse(time=perf_counter() - t1, image_id=image_id)
         if isinstance(request, Sam2SegmentationRequest):
+            prediction_metadata = request.prompts.prediction_metadata()
             masks, scores, low_res_logits = self.segment_image(**request.dict())
             if request.format == "json" or request.format == "polygon":
                 return _build_polygon_response(
                     masks=masks,
                     scores=scores,
                     inference_start_timestamp=t1,
+                    prediction_metadata=prediction_metadata,
                 )
             if request.format == "rle":
                 return _build_rle_response(
                     masks=masks,
                     scores=scores,
                     inference_start_timestamp=t1,
+                    prediction_metadata=prediction_metadata,
                 )
             if request.format == "binary":
                 buf = BytesIO()
@@ -178,6 +181,8 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
                 prompts = Sam2PromptSet(**prompts)
         else:
             prompts = Sam2PromptSet()
+        if prompts.has_boxes():
+            multimask_output = False
         args = prompts.to_sam2_inputs()
         args = _pad_points(args)
         if args["point_coords"] is not None:
@@ -252,15 +257,17 @@ def _build_polygon_response(
     masks: np.ndarray,
     scores: np.ndarray,
     inference_start_timestamp: float,
+    prediction_metadata: Optional[List[Dict[str, Any]]] = None,
 ) -> Sam2SegmentationResponse:
     predictions: List[Sam2SegmentationPrediction] = []
     polygons = masks2multipoly(masks >= MASK_THRESHOLD)
-    for poly, score in zip(polygons, scores):
+    for idx, (poly, score) in enumerate(zip(polygons, scores)):
         predictions.append(
             Sam2SegmentationPrediction(
                 masks=[m.tolist() for m in poly],
                 confidence=float(score),
                 format="polygon",
+                **_metadata_for_prediction(prediction_metadata, idx),
             )
         )
     return Sam2SegmentationResponse(
@@ -273,16 +280,30 @@ def _build_rle_response(
     masks: np.ndarray,
     scores: np.ndarray,
     inference_start_timestamp: float,
+    prediction_metadata: Optional[List[Dict[str, Any]]] = None,
 ) -> Sam2SegmentationResponse:
     predictions: List[Sam2SegmentationPrediction] = []
-    for mask, score in zip(masks, scores):
+    for idx, (mask, score) in enumerate(zip(masks, scores)):
         mb = (mask >= MASK_THRESHOLD).astype(np.uint8)
         rle = mask_utils.encode(np.asfortranarray(mb))
         rle["counts"] = rle["counts"].decode("utf-8")
         predictions.append(
-            Sam2SegmentationPrediction(masks=rle, confidence=float(score), format="rle")
+            Sam2SegmentationPrediction(
+                masks=rle,
+                confidence=float(score),
+                format="rle",
+                **_metadata_for_prediction(prediction_metadata, idx),
+            )
         )
     return Sam2SegmentationResponse(
         time=perf_counter() - inference_start_timestamp,
         predictions=predictions,
     )
+
+
+def _metadata_for_prediction(
+    prediction_metadata: Optional[List[Dict[str, Any]]], prediction_index: int
+) -> Dict[str, Any]:
+    if not prediction_metadata or prediction_index >= len(prediction_metadata):
+        return {}
+    return prediction_metadata[prediction_index]

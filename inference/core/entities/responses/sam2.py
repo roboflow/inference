@@ -33,6 +33,22 @@ class Sam2SegmentationPrediction(BaseModel):
     format: Optional[str] = Field(
         default="polygon", description="Format of the mask data: 'polygon' or 'rle'"
     )
+    class_name: Optional[str] = Field(
+        default=None, description="Class name from the source detection, if provided."
+    )
+    class_id: Optional[Union[int, str]] = Field(
+        default=None, description="Class id from the source detection, if provided."
+    )
+    detection_id: Optional[str] = Field(
+        default=None, description="Detection id from the source detection, if provided."
+    )
+    parent_id: Optional[str] = Field(
+        default=None, description="Parent id from the source detection, if provided."
+    )
+    detection_confidence: Optional[float] = Field(
+        default=None,
+        description="Confidence from the source detection, if provided.",
+    )
 
 
 class Sam2SegmentationResponse(BaseModel):

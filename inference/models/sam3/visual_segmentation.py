@@ -203,8 +203,14 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             inference_time = perf_counter() - t1
             return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
         elif isinstance(request, Sam2SegmentationRequest):
+            prediction_metadata = request.prompts.prediction_metadata()
             masks, scores, low_resolution_logits = self.segment_image(**request.dict())
-            predictions = _masks_to_predictions(masks, scores, request.format)
+            predictions = _masks_to_predictions(
+                masks,
+                scores,
+                request.format,
+                prediction_metadata=prediction_metadata,
+            )
             return Sam2SegmentationResponse(
                 time=perf_counter() - t1,
                 predictions=predictions,
@@ -294,6 +300,8 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                     args = prompts.to_sam2_inputs()
             else:
                 prompt_set = Sam2PromptSet()
+            if prompt_set.has_boxes():
+                multimask_output = False
 
             if mask_input is None and load_logits_from_cache:
                 mask_input = maybe_load_low_res_logits_from_cache(
@@ -319,11 +327,25 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                     normalize_coords=True,
                     **args,
                 )
-            masks, scores, low_resolution_logits = choose_most_confident_sam_prediction(
-                masks=masks,
-                scores=scores,
-                low_resolution_logits=low_resolution_logits,
-            )
+            masks = _to_numpy_array(masks)
+            scores = _to_numpy_array(scores).reshape(-1)
+            low_resolution_logits = _to_numpy_array(low_resolution_logits)
+            if multimask_output:
+                (
+                    masks,
+                    scores,
+                    low_resolution_logits,
+                ) = choose_most_confident_sam_prediction(
+                    masks=masks,
+                    scores=scores,
+                    low_resolution_logits=low_resolution_logits,
+                )
+            else:
+                masks, scores, low_resolution_logits = ensure_prompt_dimension(
+                    masks=masks,
+                    scores=scores,
+                    low_resolution_logits=low_resolution_logits,
+                )
 
             if save_logits_to_cache:
                 self.add_low_res_logits_to_cache(
@@ -562,6 +584,28 @@ def choose_most_confident_prompt_set_element_prediction(
     return selected_mask, selected_score, selected_low_resolution_logit
 
 
+def _to_numpy_array(value: Any) -> np.ndarray:
+    if hasattr(value, "detach"):
+        return value.detach().cpu().numpy()
+    return np.asarray(value)
+
+
+def ensure_prompt_dimension(
+    masks: np.ndarray,
+    scores: np.ndarray,
+    low_resolution_logits: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if masks.ndim == 4 and masks.shape[1] == 1:
+        masks = masks[:, 0, ...]
+    if masks.ndim == 2:
+        masks = np.expand_dims(masks, axis=0)
+    if low_resolution_logits.ndim == 4 and low_resolution_logits.shape[1] == 1:
+        low_resolution_logits = low_resolution_logits[:, 0, ...]
+    if low_resolution_logits.ndim == 2:
+        low_resolution_logits = np.expand_dims(low_resolution_logits, axis=0)
+    return masks, scores.reshape(-1), low_resolution_logits
+
+
 def turn_segmentation_results_into_api_response(
     masks: np.ndarray,
     scores: np.ndarray,
@@ -608,7 +652,10 @@ def pad_points(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _masks_to_predictions(
-    masks_np: np.ndarray, scores: List[float], fmt: str
+    masks_np: np.ndarray,
+    scores: List[float],
+    fmt: str,
+    prediction_metadata: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Sam2SegmentationPrediction]:
     """Convert boolean masks (N,H,W) to API predictions in requested format.
 
@@ -629,25 +676,37 @@ def _masks_to_predictions(
 
     if fmt in ["polygon", "json"]:
         polygons = masks2multipoly((masks_np > 0).astype(np.uint8))
-        for poly, score in zip(polygons, scores[: len(polygons)]):
+        for idx, (poly, score) in enumerate(zip(polygons, scores[: len(polygons)])):
             preds.append(
                 Sam2SegmentationPrediction(
                     masks=[p.tolist() for p in poly],
                     confidence=float(score),
                     format="polygon",
+                    **_metadata_for_prediction(prediction_metadata, idx),
                 )
             )
     elif fmt == "rle":
-        for m, score in zip(masks_np, scores[: masks_np.shape[0]]):
+        for idx, (m, score) in enumerate(zip(masks_np, scores[: masks_np.shape[0]])):
             mb = (m > 0).astype(np.uint8)
             rle = mask_utils.encode(np.asfortranarray(mb))
             rle["counts"] = rle["counts"].decode("utf-8")
             preds.append(
                 Sam2SegmentationPrediction(
-                    masks=rle, confidence=float(score), format="rle"
+                    masks=rle,
+                    confidence=float(score),
+                    format="rle",
+                    **_metadata_for_prediction(prediction_metadata, idx),
                 )
             )
     return preds
+
+
+def _metadata_for_prediction(
+    prediction_metadata: Optional[List[Dict[str, Any]]], prediction_index: int
+) -> Dict[str, Any]:
+    if not prediction_metadata or prediction_index >= len(prediction_metadata):
+        return {}
+    return prediction_metadata[prediction_index]
 
 
 def safe_remove_from_list(values: List[T], element: T) -> None:
