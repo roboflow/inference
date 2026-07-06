@@ -335,8 +335,7 @@ def append_extra_headers(
 ) -> Dict[str, str]:
     if not extra_headers:
         return headers
-    extra_headers.update(headers)
-    return extra_headers
+    return {**extra_headers, **headers}
 
 
 def _add_query_params_to_url(url: str, query: Dict[str, List[str]]) -> str:
