@@ -250,7 +250,7 @@ def start_inference_container(
     )
     pull_image(image, use_local_images=use_local_images)
     print(f"Starting inference server container...")
-    ports = {"9001": port}
+    ports = {str(port): port}
     if development:
         ports["9002"] = 9002
     docker_client = docker.from_env()
