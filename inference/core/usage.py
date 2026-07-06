@@ -52,11 +52,11 @@ def trackUsage(endpoint, actor, n=1):
                 memcache_client.add("ACTOR_KEYS", json.dumps(ak))
             else:
                 decoded = json.loads(actor_keys)
-                if actor in actor_keys:
-                    actor_keys[actor] += n
+                if actor in decoded:
+                    decoded[actor] += n
                 else:
-                    actor_keys[actor] = n
-                memcache_client.set("ACTOR_KEYS", json.dumps(actor_keys))
+                    decoded[actor] = n
+                memcache_client.set("ACTOR_KEYS", json.dumps(decoded))
 
     except Exception as e:
         logger.debug("WARNING: there was an error in counting this inference")
