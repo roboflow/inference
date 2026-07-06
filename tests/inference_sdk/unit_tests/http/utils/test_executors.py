@@ -599,6 +599,40 @@ async def test_make_request_async_when_retryable_error_occurs_and_does_not_recov
 
 @pytest.mark.asyncio
 @pytest.mark.slow
+async def test_make_request_async_when_retryable_error_occurs_and_does_not_recover_with_positional_request_data() -> (
+    None
+):
+    # given
+    request_data = RequestData(
+        url="https://some.com",
+        request_elements=1,
+        headers=None,
+        data="some",
+        parameters=None,
+        payload=None,
+        image_scaling_factors=[None],
+    )
+
+    with aioresponses() as m:
+        async with aiohttp.ClientSession() as session:
+            m.get("https://some.com", status=503)
+            m.get("https://some.com", status=503)
+            m.get("https://some.com", status=503)
+
+            # when - request_data is passed positionally, mirroring how
+            # make_parallel_requests_async invokes make_request_async. This
+            # makes backoff record it in details["args"][0] rather than
+            # details["kwargs"], so the give-up handler must not assume kwargs.
+            with pytest.raises(ClientResponseError):
+                _ = await make_request_async(
+                    request_data,
+                    request_method=RequestMethod.GET,
+                    session=session,
+                )
+
+
+@pytest.mark.asyncio
+@pytest.mark.slow
 async def test_make_request_async_when_retryable_error_occurs_and_does_recover() -> (
     None
 ):
