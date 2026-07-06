@@ -211,6 +211,9 @@ CORE_MODEL_EASYOCR_ENABLED = str2bool(os.getenv("CORE_MODEL_EASYOCR_ENABLED", Tr
 # Flag to enable TrOCR core model, default is True
 CORE_MODEL_TROCR_ENABLED = str2bool(os.getenv("CORE_MODEL_TROCR_ENABLED", True))
 
+# Flag to enable PP-OCR core model, default is True
+CORE_MODEL_PPOCR_ENABLED = str2bool(os.getenv("CORE_MODEL_PPOCR_ENABLED", True))
+
 # Flag to enable GROUNDINGDINO core model, default is True
 CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
     os.getenv("CORE_MODEL_GROUNDINGDINO_ENABLED", True)

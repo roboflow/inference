@@ -237,6 +237,9 @@ from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 i
 from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
     EasyOCRBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1 import (
+    PPOCRBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     Florence2BlockV1,
 )
@@ -1012,6 +1015,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowVisionEventsBlockV1,
         GLMOCRBlockV1,
         EasyOCRBlockV1,
+        PPOCRBlockV1,
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
         MaskAreaMeasurementBlockV1,

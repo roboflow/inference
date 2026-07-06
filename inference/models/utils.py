@@ -12,6 +12,7 @@ from inference.core.env import (
     CORE_MODEL_SAM2_ENABLED,
     CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_SAM_ENABLED,
+    CORE_MODEL_PPOCR_ENABLED,
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     DEPTH_ESTIMATION_ENABLED,
@@ -673,6 +674,21 @@ except:
         "Your `inference` configuration does not support TrOCR model. "
         "Use pip install 'inference[transformers]' to install missing requirements."
         "To suppress this warning, set CORE_MODEL_TROCR_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    if CORE_MODEL_PPOCR_ENABLED:
+        from inference.models.pp_ocr.pp_ocr_inference_models import (
+            InferenceModelsPPOCRAdapter,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("ocr", "pp_ocr")] = InferenceModelsPPOCRAdapter
+except ImportError:
+    warnings.warn(
+        "Your `inference` configuration does not support PP-OCR model. "
+        "Use pip install 'inference[inference-models]' to install missing requirements."
+        "To suppress this warning, set CORE_MODEL_PPOCR_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 

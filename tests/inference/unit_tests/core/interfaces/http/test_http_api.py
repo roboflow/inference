@@ -209,6 +209,44 @@ def test_serverless_does_not_register_sam3_3d_route_when_sam3_3d_flag_is_disable
     assert "/sam3_3d/infer" not in paths
 
 
+def test_serverless_registers_pp_ocr_route_when_model_flag_is_enabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_PPOCR_ENABLED", True)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/ocr/pp-ocr" in paths
+
+
+def test_serverless_does_not_register_pp_ocr_route_when_model_flag_is_disabled(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "CORE_MODEL_PPOCR_ENABLED", False)
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/ocr/pp-ocr" not in paths
+
+
 def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
