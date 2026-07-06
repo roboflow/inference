@@ -50,3 +50,6 @@ jobs:
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
         run: python -m pytest tests/inference/unit_tests
+      - name: 🧪 Development Profiling Tests
+        timeout-minutes: 5
+        run: python -m pytest tests/development/profiling
