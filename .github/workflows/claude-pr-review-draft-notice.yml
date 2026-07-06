@@ -1,0 +1,87 @@
+name: Claude PR Review — Draft Notice
+
+# Companion to `claude-pr-review.yml`. That workflow excludes drafts at the job-level
+# `if:` (`!github.event.pull_request.draft`), so a draft PR never triggers it and the
+# author gets no signal about what will (or won't) happen. This workflow fills that gap:
+# when a PR is opened as — or converted to — a draft, it posts a single informational
+# comment explaining that automated review is paused until the PR is marked ready, and
+# how to opt out entirely with the `skip-claude-review` label.
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+on:
+  pull_request:
+    branches: [main]
+    # A draft can arrive three ways: opened straight as a draft, reopened while a draft,
+    # or a ready PR flipped back to draft. The step is idempotent, so overlap is safe.
+    types: [opened, reopened, converted_to_draft]
+
+concurrency:
+  # Never cancel an in-flight post (that could interrupt the comment mid-create); the
+  # marker check below is what prevents duplicates across events on the same PR.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  notice:
+    name: Post draft-review notice
+    # Cheap eligibility filter; the step re-checks authoritatively. Scope matches the
+    # review workflow so we never promise a review that would not run: same-repo only
+    # (forks are not reviewed), human authors only, and not already opted out via
+    # `skip-claude-review` (no point advertising review to a PR that declined it).
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft &&
+      github.event.pull_request.user.type != 'Bot' &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-claude-review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post draft notice (once)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          MARKER='<!-- claude-pr-review:draft-notice -->'
+          SKIP_LABEL='skip-claude-review'
+
+          # Re-fetch authoritatively: the job-level filter reads the event payload, which
+          # can be stale by the time the runner starts (the PR may have been marked ready,
+          # closed, or opted out in the interim). Fail closed — post nothing — on any of
+          # those, mirroring how the review workflow re-validates before acting.
+          pr_json="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")"
+          state="$(echo "$pr_json" | jq -r '.state')"
+          draft="$(echo "$pr_json" | jq -r '.draft')"
+
+          skip() { echo "::notice::PR #${PR_NUMBER}: $1 — not posting draft notice."; exit 0; }
+
+          [ "$state" = "open" ] || skip "not open"
+          [ "$draft" = "true" ] || skip "no longer a draft"
+
+          # Case-insensitive opt-out check, matching the review workflow's authoritative
+          # re-check (GitHub label names are case-insensitively unique).
+          if echo "$pr_json" | jq -e --arg l "$SKIP_LABEL" '.labels[]? | select((.name // "" | ascii_downcase) == ($l | ascii_downcase))' >/dev/null; then
+            skip "labeled '${SKIP_LABEL}'"
+          fi
+
+          # Idempotent: post the notice at most once per PR. Re-fires (reopen, flipped
+          # back to draft) find the marker and no-op.
+          comments="$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" | jq -s 'add // []')"
+          if echo "$comments" | jq -e --arg m "$MARKER" 'any(.[]; .body // "" | contains($m))' >/dev/null; then
+            skip "draft notice already present"
+          fi
+
+          body="$(printf '%s\n' \
+            "$MARKER" \
+            '🤖 **Automated Claude review is paused while this PR is a draft.**' \
+            '' \
+            "- Mark this PR **Ready for review** to trigger the automatic Claude review." \
+            "- Prefer to skip automated review entirely? Add the **\`${SKIP_LABEL}\`** label.")"
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
+          echo "::notice::PR #${PR_NUMBER}: posted draft-review notice."
