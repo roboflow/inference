@@ -771,22 +771,35 @@ def post_process_semantic_segmentation_logits(
             round(mask_w_scale * image_metadata.pad_right),
         )
         _, mh, mw = image_results.shape
+        border_mask: Optional[torch.Tensor] = None
         if (
             mask_pad_top < 0
             or mask_pad_bottom < 0
             or mask_pad_left < 0
             or mask_pad_right < 0
         ):
+            negative_padding = (
+                abs(min(mask_pad_left, 0)),
+                abs(min(mask_pad_right, 0)),
+                abs(min(mask_pad_top, 0)),
+                abs(min(mask_pad_bottom, 0)),
+            )
+            # A negative pad means the input was CENTER_CROP-ed, so the border the
+            # crop removed has no prediction and must resolve to background. Track it
+            # in `border_mask` and force it to background after argmax; padding the
+            # logits themselves with a class id (as opposed to tracking the region)
+            # makes argmax select a foreground channel over the re-added border.
+            border_mask = torch.nn.functional.pad(
+                torch.zeros((mh, mw), dtype=torch.bool, device=device),
+                negative_padding,
+                "constant",
+                True,
+            )
             image_results = torch.nn.functional.pad(
                 image_results,
-                (
-                    abs(min(mask_pad_left, 0)),
-                    abs(min(mask_pad_right, 0)),
-                    abs(min(mask_pad_top, 0)),
-                    abs(min(mask_pad_bottom, 0)),
-                ),
+                negative_padding,
                 "constant",
-                background_class_id,
+                0,
             )
             padded_mask_offset_top = max(mask_pad_top, 0)
             padded_mask_offset_bottom = max(mask_pad_bottom, 0)
@@ -797,6 +810,12 @@ def post_process_semantic_segmentation_logits(
                 padded_mask_offset_top : image_results.shape[1]
                 - padded_mask_offset_bottom,
                 padded_mask_offset_left : image_results.shape[2]
+                - padded_mask_offset_right,
+            ]
+            border_mask = border_mask[
+                padded_mask_offset_top : border_mask.shape[0]
+                - padded_mask_offset_bottom,
+                padded_mask_offset_left : border_mask.shape[1]
                 - padded_mask_offset_right,
             ]
         else:
@@ -817,6 +836,19 @@ def post_process_semantic_segmentation_logits(
                 ],
                 interpolation=functional.InterpolationMode.BILINEAR,
             )
+            if border_mask is not None:
+                border_mask = (
+                    functional.resize(
+                        border_mask.unsqueeze(0).to(dtype=torch.uint8),
+                        [
+                            image_metadata.size_after_pre_processing.height,
+                            image_metadata.size_after_pre_processing.width,
+                        ],
+                        interpolation=functional.InterpolationMode.NEAREST,
+                    )
+                    .squeeze(0)
+                    .to(dtype=torch.bool)
+                )
         if image_results.shape[0] == 1:
             image_confidence = image_results[0].sigmoid()
             image_class_ids = insert_background_class(
@@ -833,6 +865,11 @@ def post_process_semantic_segmentation_logits(
                     background_class_id=background_class_id,
                     num_classes=len(class_names),
                 )
+        if border_mask is not None:
+            image_class_ids = image_class_ids.clone()
+            image_confidence = image_confidence.clone()
+            image_class_ids[border_mask] = background_class_id
+            image_confidence[border_mask] = 0.0
         if (
             image_metadata.static_crop_offset.offset_x > 0
             or image_metadata.static_crop_offset.offset_y > 0
