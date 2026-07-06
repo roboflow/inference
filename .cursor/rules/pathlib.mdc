@@ -1,0 +1,31 @@
+---
+description: Prefer pathlib for Python path handling
+globs: **/*.py
+alwaysApply: false
+---
+
+# Path Handling
+
+When working with filesystem paths, prefer `pathlib.Path` objects and `pathlib`
+methods over `os.path` utilities when the surrounding code can accept `Path`
+values.
+
+```python
+from pathlib import Path
+
+model_path = Path(cache_dir) / "weights.onnx"
+
+if model_path.exists():
+    load_model(model_path=model_path)
+```
+
+Avoid new `os.path.join`, `os.path.exists`, `os.path.dirname`, or similar usage
+unless compatibility with an existing API or string-only path contract requires
+it.
+
+```python
+model_path = os.path.join(cache_dir, "weights.onnx")
+
+if os.path.exists(model_path):
+    load_model(model_path=model_path)
+```
