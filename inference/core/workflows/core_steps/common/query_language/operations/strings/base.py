@@ -62,4 +62,4 @@ def string_matches(value: Any, regex: str, execution_context: str, **kwargs) -> 
             f"got value which of type {type(value)}: {value_as_str}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
-    return not re.match(pattern=regex, string=value)
+    return bool(re.search(pattern=regex, string=value))
