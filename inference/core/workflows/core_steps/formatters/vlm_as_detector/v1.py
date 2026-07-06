@@ -224,6 +224,15 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 "Must pass list of classes to this block when using gemini or claude"
             )
+        if (
+            self.model_type == "florence-2"
+            and self.task_type == "open-vocabulary-object-detection"
+            and self.classes is None
+        ):
+            raise ValueError(
+                "Must pass list of classes to this block when using florence-2 "
+                "with open-vocabulary-object-detection task"
+            )
 
         return self
 
