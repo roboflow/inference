@@ -186,6 +186,13 @@ UI: POST /query/video-jobs/:id/cancel → sets cancelRequested; if the processor
     not reported for 15s it is presumed dead and the job is cancelled directly.
 ```
 
+Orphan handling: `heartbeatAt` is written ONLY by the processor's own calls (claim +
+status) — never by cancel, which would make a dead processor look alive. Jobs in
+claimed/running whose heartbeat is >30s old are lazily reset to `error` on read
+(`listJobs`), so a crashed/killed processor cannot leave the UI stuck on
+"processing". A reaped job is terminal: a zombie processor posting status for it
+gets `{cancel: true}` back instead of resurrecting it.
+
 ### Results path (events vs pixels)
 The processor's per-frame sink:
 - decodes and stores the latest JPEG for **every** serialized image output (cheap: the
