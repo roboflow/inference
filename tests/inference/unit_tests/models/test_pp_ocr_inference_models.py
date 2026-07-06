@@ -1,8 +1,16 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
 from inference.core.entities.responses.ocr import OCRInferenceResponse
+
+pytest.importorskip(
+    "inference_models.models.pp_ocrv6",
+    reason="Installed `inference_models` version does not ship PP-OCRv6.",
+)
+
 from inference.models.pp_ocr import pp_ocr_inference_models
 
 
