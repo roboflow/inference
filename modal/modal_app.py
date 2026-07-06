@@ -38,7 +38,7 @@ class _NoopDebugTraces:
 app = modal.App("webexec")
 
 
-INFERENCE_VERSION = os.getenv("INFERENCE_VERSION", "latest")
+INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
 WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv("WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu")
 
 WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
@@ -50,6 +50,15 @@ def get_inference_image():
     """Get the Modal Image for inference."""
 
     # Use the pre-built shared image or create on-the-fly
+    global INFERENCE_VERSION
+    if not INFERENCE_VERSION:
+        try:
+            from inference.core.version import __version__
+
+            INFERENCE_VERSION = __version__
+        except ImportError:
+            INFERENCE_VERSION = "latest"
+
     image = (
         modal.Image.from_registry(f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{INFERENCE_VERSION}")
         .apt_install(
