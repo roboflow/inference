@@ -20,10 +20,9 @@ against the concatenated ``subdomain.domain.suffix`` network location.
 
 import ipaddress
 import socket
-import threading
 import urllib.parse
 import warnings
-from typing import List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import aiohttp
 import requests
@@ -35,6 +34,7 @@ from requests import HTTPError
 from requests.adapters import HTTPAdapter
 from requests.utils import select_proxy
 from tldextract.tldextract import ExtractResult
+from urllib3.connectionpool import HTTPConnectionPool
 
 from inference_sdk import config
 from inference_sdk.http.errors import HTTPClientError
@@ -42,12 +42,6 @@ from inference_sdk.http.utils.requests import (
     api_key_safe_raise_for_status,
     deduct_api_key_from_string,
 )
-
-_WARNING_LOCK = threading.Lock()
-_LEGACY_REDIRECT_WARNING_EMITTED = False
-_NON_GLOBAL_WARNING_EMITTED = False
-_PROXY_BYPASS_WARNING_EMITTED = False
-
 
 class InvalidURLImageInput(HTTPClientError):
     """Raised when a URL image reference fails the SDK URL-string policy."""
@@ -57,12 +51,9 @@ class URLAddressNotAllowedError(HTTPClientError):
     """Raised when a URL resolves to a destination that is not permitted."""
 
 
+# `warnings.warn` deduplicates identical warnings per call site under the
+# default filter, so these do not spam the hot path.
 def _warn_legacy_redirect_handling() -> None:
-    global _LEGACY_REDIRECT_WARNING_EMITTED
-    with _WARNING_LOCK:
-        if _LEGACY_REDIRECT_WARNING_EMITTED:
-            return
-        _LEGACY_REDIRECT_WARNING_EMITTED = True
     warnings.warn(
         "URL image redirects are followed without per-hop validation "
         "(VALIDATE_IMAGE_URL_REDIRECTS=False). This default is scheduled to "
@@ -73,11 +64,6 @@ def _warn_legacy_redirect_handling() -> None:
 
 
 def _warn_non_global_allowed() -> None:
-    global _NON_GLOBAL_WARNING_EMITTED
-    with _WARNING_LOCK:
-        if _NON_GLOBAL_WARNING_EMITTED:
-            return
-        _NON_GLOBAL_WARNING_EMITTED = True
     warnings.warn(
         "URL image input is allowed to reach non-global addresses "
         "(ALLOW_URL_TO_NON_GLOBAL_ADDRESSES=True). This default is scheduled to "
@@ -88,11 +74,6 @@ def _warn_non_global_allowed() -> None:
 
 
 def _warn_proxy_bypasses_ssrf_protection() -> None:
-    global _PROXY_BYPASS_WARNING_EMITTED
-    with _WARNING_LOCK:
-        if _PROXY_BYPASS_WARNING_EMITTED:
-            return
-        _PROXY_BYPASS_WARNING_EMITTED = True
     warnings.warn(
         "An HTTP(S) proxy is configured for URL image fetching; the proxy "
         "resolves the destination, so non-global address blocking and DNS "
@@ -257,7 +238,13 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
         )
         return host, resolved_ips[0]
 
-    def _build_pinned_pool(self, host_params, pool_kwargs, hostname, pinned_ip):
+    def _build_pinned_pool(
+        self,
+        host_params: Dict[str, Any],
+        pool_kwargs: Dict[str, Any],
+        hostname: str,
+        pinned_ip: str,
+    ) -> HTTPConnectionPool:
         # Reuse requests' own host params / TLS pool kwargs (preserving proxies,
         # custom CA bundles and mTLS client certs), but dial the validated IP and
         # verify TLS against the original hostname.

@@ -15,66 +15,55 @@ Background: GHSA-hjmm-hr52-vrp2.
 
 import ipaddress
 import socket
-import threading
 import urllib.parse
 import warnings
-from typing import Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 import urllib3.util
 from requests.adapters import HTTPAdapter
 from requests.utils import select_proxy
+from urllib3.connectionpool import HTTPConnectionPool
 
-from inference.core import logger
 from inference.core.utils.requests import api_key_safe_raise_for_status
 from inference.core.warnings import InferenceDeprecationWarning
-
-# ---------------------------------------------------------------------------
-# Deprecation notices (emitted once per process to avoid hot-path log spam).
-# ---------------------------------------------------------------------------
-_WARNING_LOCK = threading.Lock()
-_EMITTED_WARNINGS = set()
 
 
 class URLAddressNotAllowedError(Exception):
     """Raised when a URL resolves to a destination that is not permitted."""
 
 
-def _warn_once(key: str, message: str) -> None:
-    with _WARNING_LOCK:
-        if key in _EMITTED_WARNINGS:
-            return
-        _EMITTED_WARNINGS.add(key)
-    warnings.warn(message, category=InferenceDeprecationWarning, stacklevel=2)
-    logger.warning(message)
-
-
+# `warnings.warn` deduplicates identical warnings per call site under the
+# default filter, so these do not spam the hot path.
 def _warn_legacy_redirect_handling() -> None:
-    _warn_once(
-        "VALIDATE_IMAGE_URL_REDIRECTS",
+    warnings.warn(
         "URL image redirects are being followed without per-hop validation "
         "(VALIDATE_IMAGE_URL_REDIRECTS=False). This is an SSRF-sensitive default "
         "and is scheduled to change to True in Q4 2026. Set "
         "VALIDATE_IMAGE_URL_REDIRECTS=True to opt in early.",
+        category=InferenceDeprecationWarning,
+        stacklevel=2,
     )
 
 
 def _warn_non_global_allowed() -> None:
-    _warn_once(
-        "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES",
+    warnings.warn(
         "URL image input is allowed to reach non-global addresses "
         "(ALLOW_URL_TO_NON_GLOBAL_ADDRESSES=True). This is an SSRF-sensitive "
         "default and is scheduled to change to False in Q4 2026. Set "
         "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES=False to opt in early.",
+        category=InferenceDeprecationWarning,
+        stacklevel=2,
     )
 
 
 def _warn_proxy_bypasses_ssrf_protection() -> None:
-    _warn_once(
-        "URL_IMAGE_PROXY_BYPASS",
+    warnings.warn(
         "An HTTP(S) proxy is configured for URL image fetching; the proxy "
         "resolves the destination, so non-global address blocking and DNS "
         "rebinding pinning are NOT enforced for these requests.",
+        category=InferenceDeprecationWarning,
+        stacklevel=2,
     )
 
 
@@ -202,7 +191,13 @@ class SSRFProtectedHTTPAdapter(HTTPAdapter):
         )
         return host, resolved_ips[0]
 
-    def _build_pinned_pool(self, host_params, pool_kwargs, hostname, pinned_ip):
+    def _build_pinned_pool(
+        self,
+        host_params: Dict[str, Any],
+        pool_kwargs: Dict[str, Any],
+        hostname: str,
+        pinned_ip: str,
+    ) -> HTTPConnectionPool:
         # Reuse requests' own host params / TLS pool kwargs (so proxies, custom
         # CA bundles and mTLS client certs are preserved), but point the pool at
         # the validated IP and verify TLS against the original hostname.
@@ -273,11 +268,7 @@ def _build_ssrf_protected_session(allow_non_global_addresses: bool) -> requests.
     return session
 
 
-# ---------------------------------------------------------------------------
-# Fetch entry points.
-# ---------------------------------------------------------------------------
 def fetch_url_content_legacy(
-    *,
     url: str,
     allow_non_global_addresses: bool,
     max_redirects: int,
