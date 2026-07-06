@@ -403,7 +403,7 @@ def extract_leading_class_from_prediction(
         elif not prediction.get("predictions") and fallback_class_name:
             try:
                 fallback_class_id = int(fallback_class_id)
-            except ValueError:
+            except (ValueError, TypeError):
                 fallback_class_id = None
             if fallback_class_id is None or fallback_class_id < 0:
                 fallback_class_id = sys.maxsize
