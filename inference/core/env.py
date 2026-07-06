@@ -15,6 +15,22 @@ from inference.core.warnings import (
 
 load_dotenv(os.getcwd() + "/.env")
 
+# Install warning filters before any module-level ``warnings.warn`` calls below,
+# so these flags also suppress warnings emitted during this module's own import
+# (e.g. the gaze deprecation stub warning), not just warnings raised afterwards.
+INFERENCE_WARNINGS_DISABLED = str2bool(
+    os.getenv("INFERENCE_WARNINGS_DISABLED", "False")
+)
+if INFERENCE_WARNINGS_DISABLED:
+    warnings.simplefilter("ignore", InferenceDeprecationWarning)
+    warnings.simplefilter("ignore", InferenceModelsStackMissing)
+
+IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
+    os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
+)
+if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
+    warnings.simplefilter("ignore", ModelDependencyMissing)
+
 # The project name, default is "roboflow-platform"
 PROJECT = os.getenv("PROJECT", "roboflow-platform")
 
@@ -754,14 +770,6 @@ MODAL_ANONYMOUS_WORKSPACE_NAME = os.getenv(
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))
 
-INFERENCE_WARNINGS_DISABLED = str2bool(
-    os.getenv("INFERENCE_WARNINGS_DISABLED", "False")
-)
-
-if INFERENCE_WARNINGS_DISABLED:
-    warnings.simplefilter("ignore", InferenceDeprecationWarning)
-    warnings.simplefilter("ignore", InferenceModelsStackMissing)
-
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 DEVICE = os.getenv("DEVICE")
 
@@ -851,12 +859,6 @@ if ROBOFLOW_API_REQUEST_TIMEOUT:
 # Control SSL certificate verification for requests to the Roboflow API
 # Default is True (verify SSL). Set ROBOFLOW_API_VERIFY_SSL=false to disable in local dev.
 ROBOFLOW_API_VERIFY_SSL = str2bool(os.getenv("ROBOFLOW_API_VERIFY_SSL", "True"))
-
-IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
-    os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
-)
-if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
-    warnings.simplefilter("ignore", ModelDependencyMissing)
 
 DISK_CACHE_CLEANUP = str2bool(os.getenv("DISK_CACHE_CLEANUP", "True"))
 MEMORY_FREE_THRESHOLD = float(
