@@ -129,7 +129,7 @@ GAZE_MODEL_ID = f"gaze/{GAZE_VERSION_ID}"
 # OWLv2 version ID, default is "owlv2-large-patch14-ensemble"
 OWLV2_VERSION_ID = os.getenv("OWLV2_VERSION_ID", "owlv2-large-patch14-ensemble")
 
-# OWLv2 image cache size, default is 1000 since each image has max <MAX_DETECTIONS> boxes at ~4kb each
+# OWLv2 image cache size, default is 10000 since each image has max <MAX_DETECTIONS> boxes at ~4kb each
 OWLV2_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_IMAGE_CACHE_SIZE", 10000))
 
 # OWLv2 model cache size, default is 100 as memory is num_prompts * ~4kb and num_prompts is rarely above 1000 (but could be much higher)
@@ -138,7 +138,7 @@ OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 100))
 # OWLv2 cache device placement, default sends cached embeddings to CPU to reduce GPU memory pressure
 OWLV2_CACHE_SEND_TO_CPU = str2bool(os.getenv("OWLV2_CACHE_SEND_TO_CPU", True))
 
-# OWLv2 CPU image cache size, default is 10000
+# OWLv2 CPU image cache size, default is 1000
 OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 
 # OWLv2 compile model, default is True
