@@ -128,6 +128,42 @@ remote_processing_times = contextvars.ContextVar(
 WORKFLOW_RUN_RETRIES_ENABLED = str2bool(
     os.getenv("WORKFLOW_RUN_RETRIES_ENABLED", "True")
 )
+
+# --- URL image input hardening (mirrors inference server, GHSA-hjmm-hr52-vrp2) ---
+# NOTE on defaults: the server defaults ALLOW_NON_HTTPS_URL_INPUT / FQDN
+# enforcement to the restrictive side. The SDK historically applied NO URL
+# validation, so to avoid a hard breaking change these *newly introduced*
+# restrictions default to permissive here. The SSRF-specific flags
+# (VALIDATE_IMAGE_URL_REDIRECTS / ALLOW_URL_TO_NON_GLOBAL_ADDRESSES) follow the
+# same deprecation schedule as the server.
+ALLOW_URL_INPUT = str2bool(os.getenv("ALLOW_URL_INPUT", "True"))
+ALLOW_NON_HTTPS_URL_INPUT = str2bool(os.getenv("ALLOW_NON_HTTPS_URL_INPUT", "True"))
+ALLOW_URL_INPUT_WITHOUT_FQDN = str2bool(
+    os.getenv("ALLOW_URL_INPUT_WITHOUT_FQDN", "True")
+)
+WHITELISTED_DESTINATIONS_FOR_URL_INPUT = os.getenv(
+    "WHITELISTED_DESTINATIONS_FOR_URL_INPUT"
+)
+if WHITELISTED_DESTINATIONS_FOR_URL_INPUT is not None:
+    WHITELISTED_DESTINATIONS_FOR_URL_INPUT = set(
+        WHITELISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
+    )
+BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = os.getenv(
+    "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT"
+)
+if BLACKLISTED_DESTINATIONS_FOR_URL_INPUT is not None:
+    BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = set(
+        BLACKLISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
+    )
+# Scheduled to flip to True in Q4 2026 (per-hop redirect validation).
+VALIDATE_IMAGE_URL_REDIRECTS = str2bool(
+    os.getenv("VALIDATE_IMAGE_URL_REDIRECTS", "False")
+)
+MAX_IMAGE_URL_REDIRECTS = int(os.getenv("MAX_IMAGE_URL_REDIRECTS", "30"))
+# Scheduled to flip to False in Q4 2026 (block non-global destinations).
+ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", "True")
+)
 EXECUTION_ID_HEADER = os.getenv("EXECUTION_ID_HEADER", "execution_id")
 PROCESSING_TIME_HEADER = os.getenv("PROCESSING_TIME_HEADER", "X-Processing-Time")
 INTERNAL_REMOTE_EXEC_REQ_HEADER = "X-Internal-Remote-Exec-Req"

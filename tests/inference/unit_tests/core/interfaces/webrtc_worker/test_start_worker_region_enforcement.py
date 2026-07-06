@@ -18,8 +18,8 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 from inference.core.interfaces.webrtc_worker import start_worker
 from inference.core.interfaces.webrtc_worker.entities import (
-    WebRTCWorkerResult,
     WebRTCWorkerRequest,
+    WebRTCWorkerResult,
 )
 
 
