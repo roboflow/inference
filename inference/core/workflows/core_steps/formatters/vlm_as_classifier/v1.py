@@ -222,7 +222,14 @@ def string2json(
 
 def try_parse_json(content: str) -> Tuple[bool, dict]:
     try:
-        return False, json.loads(content)
+        parsed = json.loads(content)
+        if isinstance(parsed, dict):
+            return False, parsed
+        logging.warning(
+            "Could not parse JSON to dict in `roboflow_core/vlm_as_classifier@v1` block. "
+            f"Unexpected JSON root type: {type(parsed).__name__}."
+        )
+        return True, {}
     except Exception as error:
         logging.warning(
             f"Could not parse JSON to dict in `roboflow_core/vlm_as_classifier@v1` block. "
