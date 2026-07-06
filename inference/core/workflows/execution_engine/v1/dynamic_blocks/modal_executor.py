@@ -1157,24 +1157,24 @@ class PooledWebSocketModalExecutor:
             for _ in range(pool_size)
         ]
         self._active_counts = [0] * pool_size
-        self._next_executor_index = 0
         self._pool_lock = threading.Lock()
 
     def _acquire_executor(self) -> tuple[int, WebSocketModalExecutor]:
+        # Prefer the lowest-index least-busy executor so serial workloads
+        # (e.g. video streams) reuse a single connection; additional sockets
+        # only open when concurrency actually demands them.
         with self._pool_lock:
-            pool_size = len(self._executors)
-            best_index = self._next_executor_index
-            best_count = self._active_counts[best_index]
-            for offset in range(1, pool_size):
-                index = (self._next_executor_index + offset) % pool_size
-                active_count = self._active_counts[index]
-                if active_count < best_count:
-                    best_index = index
-                    best_count = active_count
-                    if best_count == 0:
-                        break
+            best_index = 0
+            best_count = self._active_counts[0]
+            if best_count > 0:
+                for index in range(1, len(self._executors)):
+                    active_count = self._active_counts[index]
+                    if active_count < best_count:
+                        best_index = index
+                        best_count = active_count
+                        if best_count == 0:
+                            break
             self._active_counts[best_index] += 1
-            self._next_executor_index = (best_index + 1) % pool_size
             return best_index, self._executors[best_index]
 
     def _release_executor(self, index: int) -> None:
