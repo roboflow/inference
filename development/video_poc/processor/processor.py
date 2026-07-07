@@ -571,16 +571,24 @@ class AiortcWhipPublisher:
         while pc.iceGatheringState != "complete":
             await asyncio.sleep(0.05)
 
-        # WHIP is just "POST the offer SDP, apply the answer"
-        resp = await loop.run_in_executor(
-            None,
-            lambda: requests.post(
-                self.whip_url,
-                data=pc.localDescription.sdp,
-                headers={"Content-Type": "application/sdp"},
-                timeout=10,
-            ),
-        )
+        # WHIP is just "POST the offer SDP, apply the answer". On output
+        # switches this publisher restarts on the SAME relay path, and the
+        # relay may still be tearing the old session down — retry briefly
+        # instead of failing the whole publisher over the race.
+        for post_attempt in range(3):
+            resp = await loop.run_in_executor(
+                None,
+                lambda: requests.post(
+                    self.whip_url,
+                    data=pc.localDescription.sdp,
+                    headers={"Content-Type": "application/sdp"},
+                    timeout=10,
+                ),
+            )
+            if resp.status_code < 400:
+                break
+            if post_attempt < 2:
+                await asyncio.sleep(1.0)
         resp.raise_for_status()
         await pc.setRemoteDescription(RTCSessionDescription(sdp=resp.text, type="answer"))
         print(f"[processor] viewer attached — publishing '{output}' via WHIP (in-process)")
