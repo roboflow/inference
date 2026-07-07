@@ -33,6 +33,7 @@ trt10-runtime = ["inference-model-manager[trt10-runtime]"]
 cuda = ["inference-model-manager[cuda]"]
 test = [
   "pytest>=8.0.0",
+  "pytest-asyncio>=1.0.0",
   "pytest-timeout>=2.3.0",
 ]
 
