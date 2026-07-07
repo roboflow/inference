@@ -40,24 +40,24 @@ app = modal.App("webexec")
 
 
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
+WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv("WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu")
 
 
 def get_inference_image():
     """Get the Modal Image for inference."""
-    if INFERENCE_VERSION:
-        inference_version = f"inference=={INFERENCE_VERSION}"
-    else:
+
+    # Use the pre-built shared image or create on-the-fly
+    global INFERENCE_VERSION
+    if not INFERENCE_VERSION:
         try:
             from inference.core.version import __version__
 
-            inference_version = f"inference=={__version__}"
+            INFERENCE_VERSION = __version__
         except ImportError:
-            # If we can't import inference (e.g., during deployment), use latest
-            inference_version = "inference"
+            INFERENCE_VERSION = "latest"
 
-    # Use the pre-built shared image or create on-the-fly
     image = (
-        modal.Image.debian_slim(python_version="3.11")
+        modal.Image.from_registry(f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{INFERENCE_VERSION}")
         .apt_install(
             "libgl1-mesa-glx",
             "libglib2.0-0",

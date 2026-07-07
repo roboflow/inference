@@ -215,9 +215,7 @@ class TestPostprocess:
         assert responses[0].image.width == 48
         assert responses[0].image.height == 64
 
-    def test_no_think_tag_is_prepended_or_parsed(
-        self, model: Qwen3VLVLLMProxy
-    ) -> None:
+    def test_no_think_tag_is_prepended_or_parsed(self, model: Qwen3VLVLLMProxy) -> None:
         # given - text that the qwen3_5 thinking parser would split; qwen3vl
         # has no thinking mode, so it must come back verbatim even when the
         # caller passes enable_thinking.

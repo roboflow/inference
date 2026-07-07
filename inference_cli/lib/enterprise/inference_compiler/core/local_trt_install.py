@@ -14,12 +14,14 @@ from inference_cli.lib.enterprise.inference_compiler.constants import (
     KEYPOINTS_METADATA_FILE,
     TRT_CONFIG_FILE,
 )
-from inference_cli.lib.enterprise.inference_compiler.core.entities import TRTConfig, TRTModelPackageV1
+from inference_cli.lib.enterprise.inference_compiler.core.entities import (
+    TRTConfig,
+    TRTModelPackageV1,
+)
 from inference_cli.lib.enterprise.inference_compiler.utils.file_system import (
     calculate_local_file_md5,
     dump_json,
 )
-
 from inference_models.weights_providers.local_trt_constants import (
     LOCAL_TRT_MANIFEST_FILE,
     LOCAL_TRT_PACKAGE_PREFIX,
@@ -60,7 +62,9 @@ def install_compiled_trt_package(
     )
 
     package_id = local_package_id_for_manifest(package_manifest)
-    install_dir = generate_model_package_cache_path(model_id=model_id, package_id=package_id)
+    install_dir = generate_model_package_cache_path(
+        model_id=model_id, package_id=package_id
+    )
     if os.path.isdir(install_dir):
         shutil.rmtree(install_dir, ignore_errors=True)
     os.makedirs(install_dir, exist_ok=True)

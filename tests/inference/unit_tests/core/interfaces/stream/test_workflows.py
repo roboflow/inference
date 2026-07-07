@@ -692,8 +692,7 @@ def test_instance_segmentation_stream_pipeline_uses_response_context_id() -> Non
     assert second_result[0]["predictions"].result() == "frame-1:first-final"
     assert len(manager.stream_pipeline_context_ids) == 2
     assert (
-        manager.stream_pipeline_context_ids[0]
-        != manager.stream_pipeline_context_ids[1]
+        manager.stream_pipeline_context_ids[0] != manager.stream_pipeline_context_ids[1]
     )
 
 
