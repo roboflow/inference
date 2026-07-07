@@ -44,16 +44,7 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
-# Trim OpenCV's FFmpeg capture buffering for RTSP consumption BEFORE anything
-# opens a cv2.VideoCapture: without these flags the demuxer/decoder sits on
-# hundreds of ms of internal buffer that no downstream drop-oldest strategy can
-# reclaim — it's ahead of the first place we can drop. setdefault so the
-# environment can still override. (Also applies to batch local-file decode,
-# where nobuffer/low_delay are harmless.)
-os.environ.setdefault(
-    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
-    "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay",
-)
+import cv2
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.video_source import (
@@ -61,6 +52,10 @@ from inference.core.interfaces.camera.video_source import (
     BufferFillingStrategy,
 )
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.workflows.core_steps.common.serializers import (
+    serialize_wildcard_kind,
+)
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 POLL_INTERVAL_S = 2.0
 EVENT_BUFFER_SIZE = 50
@@ -92,10 +87,6 @@ JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 def utcnow_iso() -> str:
     return datetime.utcnow().isoformat() + "Z"
-
-
-def is_serialized_image(value) -> bool:
-    return isinstance(value, dict) and value.get("type") == "base64" and "value" in value
 
 
 class Stats:
@@ -441,10 +432,9 @@ class AiortcWhipPublisher:
     the relay) instead of a fixed GOP, and no RTSP layer — measurably lower
     glass-to-glass latency than the ffmpeg/RTSP transport.
 
-    v1 feeds from the serializer's JPEGs, decoded on THIS publisher's thread —
-    never the pipeline sink's. The raw-frame slot (skipping the JPEG round
-    trip entirely) is a later increment; it requires taking over result
-    serialization from InferencePipeline.
+    Feeds from the worker's raw-frame store (ndarrays straight from the
+    workflow — the sink owns serialization, so no JPEG ever exists on this
+    path and encode input is generation-loss-free).
 
     Risk containment lives OUTSIDE this class: the worker's watchdog hot-swaps
     back to the ffmpeg/RTSP transport mid-job if inference latency degrades
@@ -496,13 +486,11 @@ class AiortcWhipPublisher:
         import asyncio
         import fractions
 
-        import cv2
-        import numpy as np
         from aiortc import RTCPeerConnection, RTCSessionDescription
         from aiortc.mediastreams import MediaStreamError, MediaStreamTrack
         from av import VideoFrame
 
-        frames = self.frames
+        frames = self.frames  # raw ndarrays per output (no JPEG round trip)
         stopped = self._stopped
 
         class LatestFrameTrack(MediaStreamTrack):
@@ -519,15 +507,12 @@ class AiortcWhipPublisher:
                 while True:
                     if stopped.is_set():
                         raise MediaStreamError
-                    jpeg, seq = await loop.run_in_executor(
+                    image, seq = await loop.run_in_executor(
                         None, frames.wait_next, output, self._seq, 0.25
                     )
-                    if jpeg is not None and seq != self._seq:
+                    if image is not None and seq != self._seq:
                         self._seq = seq
                         break
-                image = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
-                if image is None:
-                    raise MediaStreamError
                 # yuv420 conversion requires even dimensions
                 h, w = image.shape[:2]
                 if h % 2 or w % 2:
@@ -704,6 +689,9 @@ class Worker:
         self.stats = Stats()
         self.events = EventBus()
         self.frames = FrameStore()
+        # raw ndarrays per image output (same store semantics): feeds the
+        # in-process publisher without any JPEG round trip
+        self.raw_frames = FrameStore()
         self.pipeline = None
         self.sim_process = None
         self.recorder = None
@@ -727,24 +715,36 @@ class Worker:
             return
         self.stats.on_result(video_frame)
 
+        # We own serialization (serialize_results=False): image outputs stay raw
+        # ndarrays (straight into the publisher's raw store — no JPEG round
+        # trip, no generation loss) and everything else goes through inference's
+        # own serialize_wildcard_kind, so event content is identical to what
+        # the pipeline's serializer produced.
         outputs = {}
         designated_jpeg = None
         for key, value in predictions.items():
-            if is_serialized_image(value):
+            if isinstance(value, WorkflowImageData):
                 if self.image_output is None:
                     self.image_output = key
                 try:
-                    jpeg = base64.b64decode(value["value"])
-                    self.frames.set(key, jpeg)
-                    if key == self.image_output:
-                        designated_jpeg = jpeg
+                    image = value.numpy_image
+                    self.raw_frames.set(key, image)
+                    ok, buf = cv2.imencode(".jpg", image)
+                    if ok:
+                        jpeg = buf.tobytes()
+                        self.frames.set(key, jpeg)
+                        if key == self.image_output:
+                            designated_jpeg = jpeg
                 except Exception:
                     pass
                 outputs[key] = {"type": "image_ref", "output": key}
-            elif isinstance(value, list) and value and all(is_serialized_image(v) for v in value):
+            elif isinstance(value, list) and value and all(isinstance(v, WorkflowImageData) for v in value):
                 outputs[key] = [{"type": "image_ref", "output": key, "index": i} for i in range(len(value))]
             else:
-                outputs[key] = value
+                try:
+                    outputs[key] = serialize_wildcard_kind(value=value)
+                except Exception:
+                    outputs[key] = str(value)
 
         event = {
             "frameId": video_frame.frame_id,
@@ -769,6 +769,7 @@ class Worker:
             self.state = "starting"
             self.image_output = job.get("imageOutput")
         self.frames.clear()
+        self.raw_frames.clear()
         self.stats.on_job()
 
         source_url = job["sourceUrl"]
@@ -777,11 +778,38 @@ class Worker:
 
         video_reference = source_url
         pipeline_kwargs = {}
+        # OpenCV FFmpeg capture options are read when the capture opens (inside
+        # init_with_workflow); one job per worker makes per-mode env safe. Both
+        # knobs are overridable per job (claim payload: captureOptions,
+        # captureBufferSize) — use cases differ: monitoring wants freshness,
+        # some sources may need multi-threaded decode to keep up (4K), and a
+        # non-sliced source stream may prefer thread_type tuning over threads;1.
         if mode == "stream":
-            # cap the capture-side frame queue at 1: latest-frame semantics must
-            # start at the decoder, not after it (maps to CAP_PROP_BUFFERSIZE;
-            # harmlessly ignored by backends that don't support it)
-            pipeline_kwargs["video_source_properties"] = {"buffersize": 1}
+            # threads;1 is the big one: H.264 frame-threaded decoding holds
+            # (threads-1) frames INSIDE the decoder — a constant ~15-frame
+            # (~500ms at 30fps) standing delay ahead of frame_timestamp,
+            # invisible to every latency stat we print. The connector encodes
+            # zerolatency (sliced) streams, so single-thread 720p30 decode is
+            # cheap. nobuffer/low_delay trim demuxer-side buffering.
+            default_capture_options = (
+                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|threads;1"
+            )
+            # cap the capture-side frame queue at 1: latest-frame semantics
+            # must start at the decoder (CAP_PROP_BUFFERSIZE; harmlessly
+            # ignored by backends that don't support it)
+            default_buffersize = 1
+        else:
+            # batch wants decode throughput, not glass-to-glass latency
+            default_capture_options = None
+            default_buffersize = None
+        capture_options = job.get("captureOptions", default_capture_options)
+        if capture_options:
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = capture_options
+        else:
+            os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
+        buffersize = job.get("captureBufferSize", default_buffersize)
+        if buffersize:
+            pipeline_kwargs["video_source_properties"] = {"buffersize": float(buffersize)}
         if mode == "batch":
             # Record results so the UI can scrub them after the job completes.
             self.recorder = JobRecorder(str(job.get("id", "local")))
@@ -851,7 +879,9 @@ class Worker:
                 # follow the job, not this worker's identity key
                 api_key=job.get("apiKey") or self.args.api_key or os.getenv("ROBOFLOW_API_KEY"),
                 on_prediction=self.on_prediction,
-                serialize_results=True,
+                # we serialize ourselves in on_prediction (images stay raw for
+                # the publisher; the rest goes through inference's serializer)
+                serialize_results=False,
                 max_fps=job.get("maxFps"),
                 **pipeline_kwargs,
             )
@@ -1148,7 +1178,8 @@ class Worker:
         job_id = job.get("id", "local")
         if transport == "whip":
             whip_url = job.get("outWhipUrl") or f"{WHIP_SIM_BASE}/out-{job_id}/whip"
-            return AiortcWhipPublisher(self.frames, whip_url)
+            # raw frames: the whip transport encodes straight from ndarrays
+            return AiortcWhipPublisher(self.raw_frames, whip_url)
         publish_url = job.get("outPublishUrl") or f"{RTSP_SIM_BASE}/out-{job_id}"
         return OutputPublisher(self.frames, publish_url)
 
