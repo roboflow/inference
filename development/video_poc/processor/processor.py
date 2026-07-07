@@ -57,6 +57,26 @@ from inference.core.workflows.core_steps.common.serializers import (
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
+try:
+    from low_latency_producer import LowLatencyRtspProducer
+except Exception:  # PyAV missing: fall back to cv2 URL ingest
+    LowLatencyRtspProducer = None
+
+
+def _parse_capture_options(options):
+    """'key;value|key;value' (the cv2 capture-options format the API stores)
+    → libavformat open-options dict, dropping codec/cv2-level keys the PyAV
+    producer already handles itself."""
+    parsed = {}
+    for pair in (options or "").split("|"):
+        if ";" not in pair:
+            continue
+        key, value = pair.split(";", 1)
+        if key.strip() not in ("threads", "flags"):
+            parsed[key.strip()] = value.strip()
+    return parsed or None
+
+
 POLL_INTERVAL_S = 2.0
 EVENT_BUFFER_SIZE = 50
 MJPEG_MAX_FPS = 12
@@ -778,36 +798,21 @@ class Worker:
 
         video_reference = source_url
         pipeline_kwargs = {}
-        # OpenCV FFmpeg capture options are read when the capture opens (inside
-        # init_with_workflow); one job per worker makes per-mode env safe. Both
-        # knobs are overridable per job (claim payload: captureOptions,
-        # captureBufferSize) — use cases differ: monitoring wants freshness,
-        # some sources may need multi-threaded decode to keep up (4K), and a
-        # non-sliced source stream may prefer thread_type tuning over threads;1.
-        if mode == "stream":
-            # threads;1 is the big one: H.264 frame-threaded decoding holds
-            # (threads-1) frames INSIDE the decoder — a constant ~15-frame
-            # (~500ms at 30fps) standing delay ahead of frame_timestamp,
-            # invisible to every latency stat we print. The connector encodes
-            # zerolatency (sliced) streams, so single-thread 720p30 decode is
-            # cheap. nobuffer/low_delay trim demuxer-side buffering.
-            default_capture_options = (
-                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|threads;1"
-            )
-            # cap the capture-side frame queue at 1: latest-frame semantics
-            # must start at the decoder (CAP_PROP_BUFFERSIZE; harmlessly
-            # ignored by backends that don't support it)
-            default_buffersize = 1
-        else:
-            # batch wants decode throughput, not glass-to-glass latency
-            default_capture_options = None
-            default_buffersize = None
-        capture_options = job.get("captureOptions", default_capture_options)
-        if capture_options:
+        # Ingest knobs, overridable per job (claim payload: captureOptions as
+        # "key;value|key;value", captureBufferSize). Stream mode reads through
+        # LowLatencyRtspProducer (PyAV) where captureOptions become libavformat
+        # open options; batch/cv2 fallback applies them via
+        # OPENCV_FFMPEG_CAPTURE_OPTIONS (read when the capture opens, inside
+        # init_with_workflow; one job per worker makes per-mode env safe).
+        capture_options = job.get("captureOptions")
+        if capture_options and mode != "stream":
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = capture_options
         else:
             os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
-        buffersize = job.get("captureBufferSize", default_buffersize)
+        # cap cv2's capture-side frame queue (CAP_PROP_BUFFERSIZE) so
+        # latest-frame semantics start at the decoder; a no-op for the PyAV
+        # producer, which never queues more than one decoded frame
+        buffersize = job.get("captureBufferSize", 1 if mode == "stream" else None)
         if buffersize:
             pipeline_kwargs["video_source_properties"] = {"buffersize": float(buffersize)}
         if mode == "batch":
@@ -868,6 +873,22 @@ class Worker:
                 # requeue the job, and the attempts cap handles poison jobs
                 self.retire_if_pool_mode()
                 return
+
+        if (
+            mode == "stream"
+            and LowLatencyRtspProducer is not None
+            and isinstance(video_reference, str)
+            and video_reference.startswith("rtsp")
+        ):
+            # ffmpeg's h264 decoder holds a DPB-sized reorder buffer (~16
+            # frames = ~530ms at 30fps) unless AV_CODEC_FLAG_LOW_DELAY is set
+            # on the CODEC context — which cv2's capture options (format-level
+            # only) cannot reach. The PyAV producer sets it directly; measured
+            # on the pixel-clock harness: cv2 586ms → PyAV 40ms glass-to-glass.
+            rtsp_url = video_reference
+            av_options = _parse_capture_options(capture_options)
+            video_reference = lambda: LowLatencyRtspProducer(rtsp_url, av_options)
+            print(f"[processor] low-latency ingest for {rtsp_url}")
 
         try:
             pipeline = InferencePipeline.init_with_workflow(
