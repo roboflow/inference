@@ -150,6 +150,7 @@ nav:
           - Core Models: inference_helpers/inference_sdk/core_models.md
           - Model Management: inference_helpers/inference_sdk/model_management.md
           - Workflows: inference_helpers/inference_sdk/workflows.md
+          - WebRTC Streaming: inference_helpers/inference_sdk/webrtc.md
           - Reference: reference/inference_sdk/
       - Inference CLI:
           - About: inference_helpers/inference_cli.md
