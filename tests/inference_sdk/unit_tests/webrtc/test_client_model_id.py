@@ -24,6 +24,7 @@ from inference_sdk.webrtc.session import SessionState, VideoMetadata, WebRTCSess
 def _mock_ort_response(task_type: str):
     """Build a MagicMock mimicking the Roboflow /ort endpoint response."""
     response = MagicMock()
+    response.status_code = 200
     response.raise_for_status.return_value = None
     response.json.return_value = {"ort": {"type": task_type}}
     return response
@@ -267,6 +268,23 @@ class TestTaskTypeResolution:
                 client.stream(source=source, model_id="rfdetr-nano")
         # Error should point the user at the escape hatch.
         assert "Failed to resolve task type" in str(exc_info.value)
+
+    def test_lookup_failure_redacts_api_key(self, client):
+        # requests exceptions embed the request URL, which carries api_key=...;
+        # the surfaced error must never contain the raw key.
+        source = MagicMock()
+        leaky_error = Exception(
+            "404 Client Error: Not Found for url: "
+            "https://api.roboflow.com/ort/some/1?api_key=super-secret-key&nocache=true"
+        )
+        with patch(
+            "inference_sdk.webrtc.model_workflows.requests.get",
+            side_effect=leaky_error,
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                client.stream(source=source, model_id="some/1")
+        assert "super-secret-key" not in str(exc_info.value)
+        assert "api_key=" in str(exc_info.value)  # redacted form remains
 
     def test_unsupported_api_task_type_raises(self, client):
         source = MagicMock()

@@ -17,6 +17,10 @@ import requests
 from inference_sdk.config import RF_API_BASE_URL
 from inference_sdk.http.errors import InvalidParameterError
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
+from inference_sdk.http.utils.requests import (
+    api_key_safe_raise_for_status,
+    deduct_api_key_from_string,
+)
 from inference_sdk.webrtc.config import StreamConfig
 
 # Map project task type (as returned by the Roboflow /ort endpoint, and matching
@@ -113,15 +117,18 @@ def resolve_task_type(
             },
             timeout=_TASK_TYPE_LOOKUP_TIMEOUT,
         )
-        response.raise_for_status()
+        api_key_safe_raise_for_status(response=response)
         payload = response.json()
         resolved = payload["ort"]["type"]
     except Exception as e:
+        # Exception text may embed the request URL (which carries api_key=...);
+        # redact before surfacing it to the user.
+        safe_error = deduct_api_key_from_string(str(e))
         raise RuntimeError(
             f"Failed to resolve task type for model_id '{model_id}' "
             f"(resolved to '{resolved_model_id}') via the Roboflow API: "
-            f"{e.__class__.__name__}: {e}. You can bypass this lookup by "
-            "passing task_type= explicitly (one of "
+            f"{e.__class__.__name__}: {safe_error}. You can bypass this lookup "
+            "by passing task_type= explicitly (one of "
             f"{sorted(TASK_TYPE_TO_BLOCK)})."
         ) from e
 
