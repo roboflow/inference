@@ -171,6 +171,7 @@ def convert_kwargs_to_legacy(
     kwargs: Dict[str, Any],
     manifest_description: Optional[ManifestDescription],
     block_name: str,
+    declared_input_kinds: Optional[Dict[str, frozenset]] = None,
 ) -> Dict[str, Any]:
     """IN boundary: convert native tensor objects in a dynamic block's assembled
     kwargs into the documented legacy representations, driven by declared kinds
@@ -178,6 +179,10 @@ def convert_kwargs_to_legacy(
 
     Identity function (the very same ``kwargs`` object) when the tensor
     representation is off or the block declared ``tensor_native``.
+
+    ``declared_input_kinds`` is the optional assembly-time precomputed lookup
+    (see ``collect_declared_input_kind_names``); when omitted it is derived from
+    the manifest here — same behavior, one extra computation per call.
     """
     if not _TENSOR_REPRESENTATION_ACTIVE:
         return kwargs
@@ -187,17 +192,44 @@ def convert_kwargs_to_legacy(
         is TensorCompatibility.TENSOR_NATIVE
     ):
         return kwargs
-    declared_inputs = manifest_description.inputs if manifest_description else {}
+    if declared_input_kinds is None:
+        declared_input_kinds = (
+            collect_declared_input_kind_names(manifest_description) or {}
+        )
     converted = {}
     for name, value in kwargs.items():
-        declared_kinds = _collect_declared_kind_names(declared_inputs.get(name))
         converted[name] = _walk_value_to_legacy(
             value=value,
-            declared_kinds=declared_kinds,
+            declared_kinds=declared_input_kinds.get(name, frozenset()),
             block_name=block_name,
             value_name=name,
         )
     return converted
+
+
+def collect_declared_input_kind_names(
+    manifest_description: Optional[ManifestDescription],
+) -> Optional[Dict[str, frozenset]]:
+    """Precompute the per-input declared-kind lookup once per block — the
+    manifest is static, so callers (block assembly) hoist this out of run()."""
+    if manifest_description is None:
+        return None
+    return {
+        name: frozenset(_collect_declared_kind_names(definition))
+        for name, definition in manifest_description.inputs.items()
+    }
+
+
+def collect_declared_output_kind_names(
+    manifest_description: Optional[ManifestDescription],
+) -> Optional[Dict[str, frozenset]]:
+    """Per-output twin of ``collect_declared_input_kind_names``."""
+    if manifest_description is None:
+        return None
+    return {
+        name: frozenset(_collect_declared_output_kind_names(definition))
+        for name, definition in manifest_description.outputs.items()
+    }
 
 
 def _collect_declared_kind_names(input_definition: Optional[Any]) -> set:
@@ -544,7 +576,20 @@ def _materialise_dense_mask(
     if mask is None:
         return None
     if isinstance(mask, InstancesRLEMasks):
-        return coco_rle_masks_to_numpy_mask(mask)
+        # Iterative densification: decode one instance at a time into a single
+        # preallocated (N, H, W) output. The bulk pycocotools decode holds up to
+        # three full-stack transients at peak ((H, W, N) uint8 + bool astype +
+        # contiguous copy); per-instance decoding caps the transient at one mask.
+        height, width = (int(value) for value in mask.image_size)
+        dense = np.zeros((len(mask.masks), height, width), dtype=bool)
+        for index in range(len(mask.masks)):
+            dense[index] = coco_rle_masks_to_numpy_mask(
+                InstancesRLEMasks(
+                    image_size=mask.image_size,
+                    masks=[mask.masks[index]],
+                )
+            )[0]
+        return dense
     # single bulk device->host transfer for the whole stack
     return mask.detach().cpu().numpy().astype(bool)
 
@@ -697,6 +742,7 @@ def convert_block_result_to_native(
     result: Any,
     manifest_description: Optional[ManifestDescription],
     block_name: str,
+    declared_output_kinds: Optional[Dict[str, frozenset]] = None,
 ) -> Any:
     """OUT boundary: convert legacy objects in a dynamic block's ``BlockResult``
     back into native tensor representations, driven by declared output kinds
@@ -707,6 +753,10 @@ def convert_block_result_to_native(
     representation-dependent payload). Identity function (the very same object)
     when the tensor representation is off or the block declared
     ``tensor_native``.
+
+    ``declared_output_kinds`` is the optional assembly-time precomputed lookup
+    (see ``collect_declared_output_kind_names``); when omitted it is derived
+    from the manifest here — same behavior, one extra computation per call.
     """
     if not _TENSOR_REPRESENTATION_ACTIVE:
         return result
@@ -716,17 +766,20 @@ def convert_block_result_to_native(
         is TensorCompatibility.TENSOR_NATIVE
     ):
         return result
-    declared_outputs = manifest_description.outputs if manifest_description else {}
+    if declared_output_kinds is None:
+        declared_output_kinds = (
+            collect_declared_output_kind_names(manifest_description) or {}
+        )
     return _walk_result_to_native(
         result=result,
-        declared_outputs=declared_outputs,
+        declared_output_kinds=declared_output_kinds,
         block_name=block_name,
     )
 
 
 def _walk_result_to_native(
     result: Any,
-    declared_outputs: Dict[str, DynamicOutputDefinition],
+    declared_output_kinds: Dict[str, frozenset],
     block_name: str,
 ) -> Any:
     if isinstance(result, FlowControl):
@@ -735,7 +788,7 @@ def _walk_result_to_native(
         return [
             _walk_result_to_native(
                 result=element,
-                declared_outputs=declared_outputs,
+                declared_output_kinds=declared_output_kinds,
                 block_name=block_name,
             )
             for element in result
@@ -744,9 +797,7 @@ def _walk_result_to_native(
         return {
             output_name: _walk_output_value_to_native(
                 value=value,
-                declared_kinds=_collect_declared_output_kind_names(
-                    declared_outputs.get(output_name)
-                ),
+                declared_kinds=declared_output_kinds.get(output_name, frozenset()),
                 block_name=block_name,
                 value_name=output_name,
             )
@@ -857,7 +908,17 @@ def _convert_output_by_declared_kinds(
     if _KEYPOINT_KIND_NAME in declared_kinds:
         if _is_key_point_prediction_tuple(value):
             return value
-        if isinstance(value, sv.Detections):
+        # Kind-UNION disambiguation: outputs commonly declare
+        # [object_detection, instance_segmentation, keypoint_detection] together
+        # (mirroring model-agnostic inputs). Rebuilding the KP tuple from an sv
+        # that carries no keypoint payload would fabricate a keypoint prediction
+        # out of a plain detection - so within a union the choice is data-driven
+        # (payload columns present -> tuple), and only a SOLE keypoint
+        # declaration keeps the strict always-tuple contract.
+        if isinstance(value, sv.Detections) and (
+            _sv_detections_carry_keypoint_payload(value)
+            or not declared_kinds & _DETECTIONS_FAMILY_KIND_NAMES
+        ):
             return sv_detections_to_native_key_point_prediction(sv_detections=value)
     if declared_kinds & _DETECTIONS_FAMILY_KIND_NAMES:
         if isinstance(value, _NativeDetections):
@@ -1216,12 +1277,20 @@ def _rebuild_mask_carrier_from_sv(
         )
     if sv_detections.mask is None:
         return None
-    dense = np.asarray(sv_detections.mask).astype(bool)
+    dense = np.asarray(sv_detections.mask)
+    if dense.dtype != np.bool_:
+        # Both carriers require bool; copy ONLY when the dtype actually differs
+        # (sv masks are typically bool already — the old unconditional astype
+        # duplicated the full (N, H, W) stack every call).
+        dense = dense.astype(bool)
     if prefer_rle:
         if detections_number == 0:
             return InstancesRLEMasks(image_size=(0, 0), masks=[])
+        # Iterative encode straight off the existing rows — rows of a contiguous
+        # stack share memory with torch.as_tensor, so the only per-instance
+        # transient is the fortran-order flatten inside torch_mask_to_coco_rle.
         coco_masks = [
-            torch_mask_to_coco_rle(torch.as_tensor(instance_mask))
+            torch_mask_to_coco_rle(torch.as_tensor(np.ascontiguousarray(instance_mask)))
             for instance_mask in dense
         ]
         image_size = tuple(int(value) for value in coco_masks[0]["size"])

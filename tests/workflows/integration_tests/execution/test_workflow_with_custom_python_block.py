@@ -22,16 +22,6 @@ from tests.workflows.integration_tests.execution.workflows_gallery_collector.dec
     add_to_workflows_gallery,
 )
 
-_CUSTOM_PY_NATIVE_TODO = pytest.mark.skipif(
-    ENABLE_TENSOR_DATA_REPRESENTATION,
-    reason=(
-        "KNOWN ISSUE / DEFERRED: custom-python dynamic blocks receive native "
-        "inference_models dataclasses but the public contract uses "
-        "sv.Detections/numpy; native->sv coercion at the block boundary is an "
-        "undecided contract change. Tracking: re-enable once decided."
-    ),
-)
-
 FUNCTION_TO_GET_OVERLAP_OF_BBOXES = """
 def run(self, predictions: sv.Detections, class_x: str, class_y: str) -> BlockResult:
     bboxes_class_x = predictions[predictions.data["class_name"] == class_x]
@@ -261,7 +251,6 @@ WORKFLOW_WITH_CUSTOM_BLOCK_WORKFLOW_CONTEXT = {
 }
 
 
-@_CUSTOM_PY_NATIVE_TODO
 def test_workflow_with_custom_python_block_exposes_workflow_context() -> None:
     # given
     execution_engine = ExecutionEngine.init(
@@ -286,7 +275,6 @@ def test_workflow_with_custom_python_block_exposes_workflow_context() -> None:
     ]
 
 
-@_CUSTOM_PY_NATIVE_TODO
 @add_to_workflows_gallery(
     category="Workflows with dynamic Python Blocks",
     use_case_title="Workflow measuring bounding boxes overlap",
@@ -423,7 +411,7 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH = {
     ],
 }
 
-@_CUSTOM_PY_NATIVE_TODO
+
 def test_workflow_with_custom_python_block_operating_on_batch(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -556,7 +544,22 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_CROSS_DIMENSIONS = {
 }
 
 
-@_CUSTOM_PY_NATIVE_TODO
+def _class_names_of_prediction(prediction) -> list:
+    """Representation-agnostic class-name extraction: raw engine outputs are
+    sv.Detections flag-off and native inference_models Detections flag-on (the
+    declared-kind OUT boundary converts them by design)."""
+    import supervision as sv
+
+    if isinstance(prediction, sv.Detections):
+        return prediction["class_name"].tolist()
+    per_box = prediction.bboxes_metadata or [{} for _ in range(len(prediction))]
+    mapping = (prediction.image_metadata or {}).get("class_names", {})
+    return [
+        str(box.get("class", mapping.get(int(class_id))))
+        for box, class_id in zip(per_box, prediction.class_id.detach().cpu().tolist())
+    ]
+
+
 def test_workflow_with_custom_python_block_operating_cross_dimensions(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -592,13 +595,13 @@ def test_workflow_with_custom_python_block_operating_cross_dimensions(
     }, "Expected all declared outputs to be delivered"
     assert len(result[1]["associated_detections"]) == 12
     class_names_first_image_crops = [
-        e["class_name"].tolist() for e in result[0]["associated_detections"]
+        _class_names_of_prediction(e) for e in result[0]["associated_detections"]
     ]
     for class_names in class_names_first_image_crops:
         assert len(class_names) == 1, "Expected single bbox to be associated"
     assert len(class_names_first_image_crops) == 2, "Expected 2 crops for first image"
     class_names_second_image_crops = [
-        e["class_name"].tolist() for e in result[1]["associated_detections"]
+        _class_names_of_prediction(e) for e in result[1]["associated_detections"]
     ]
     for class_names in class_names_second_image_crops:
         assert len(class_names) == 1, "Expected single bbox to be associated"
@@ -1067,3 +1070,210 @@ def test_workflow_with_custom_python_block_when_code_does_not_define_declared_in
             init_parameters=workflow_init_parameters,
             max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
         )
+
+
+FUNCTION_TO_FILTER_AND_PROBE = """
+def run(self, predictions: sv.Detections) -> BlockResult:
+    got_sv = isinstance(predictions, sv.Detections)
+    filtered = predictions[predictions.confidence > 0.6]
+    _ = filtered.xyxy.copy()  # numpy-style access, the documented legacy contract
+    return {"filtered": filtered, "got_sv": got_sv}
+"""
+
+WORKFLOW_WITH_BOTH_BOUNDARIES_AND_TENSOR_CONSUMER = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "FilterProbe",
+                "inputs": {
+                    "predictions": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                        "selector_data_kind": {
+                            "step_output": ["object_detection_prediction"]
+                        },
+                    },
+                },
+                "outputs": {
+                    "filtered": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": ["object_detection_prediction"],
+                    },
+                    "got_sv": {"type": "DynamicOutputDefinition", "kind": []},
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_TO_FILTER_AND_PROBE,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "FilterProbe",
+            "name": "filter_probe",
+            "predictions": "$steps.model.predictions",
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "count",
+            "data": "$steps.filter_probe.filtered",
+            "operations": [{"type": "SequenceLength"}],
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "filtered",
+            "selector": "$steps.filter_probe.filtered",
+        },
+        {"type": "JsonField", "name": "count", "selector": "$steps.count.output"},
+        {
+            "type": "JsonField",
+            "name": "got_sv",
+            "selector": "$steps.filter_probe.got_sv",
+        },
+    ],
+}
+
+
+def test_workflow_with_custom_python_block_between_model_and_tensor_consumer(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Both boundaries in one workflow: model producer -> legacy custom block
+    (default knob; must see sv.Detections and use the numpy contract) ->
+    downstream UQL consumer (native ops under the flag) -> serialized output.
+    The hardcoded expectations hold in BOTH flag directions, which is the
+    integration-level parity statement (byte-parity is proven at the unit
+    layer's round-trip tests)."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BOTH_BOUNDARIES_AND_TENSOR_CONSUMER,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [dogs_image]},
+        serialize_results=True,
+    )
+
+    # then
+    assert isinstance(result, list) and len(result) == 1
+    assert result[0]["got_sv"] is True, "User code must receive sv.Detections"
+    assert result[0]["count"] == 1, "Expected exactly one detection above 0.6"
+    serialized = result[0]["filtered"]["predictions"]
+    assert len(serialized) == 1
+    assert serialized[0]["class"] == "dog"
+    assert abs(serialized[0]["confidence"] - 0.856) < 0.1
+    assert {
+        "x",
+        "y",
+        "width",
+        "height",
+        "confidence",
+        "class",
+        "class_id",
+        "detection_id",
+    } <= set(serialized[0].keys())
+
+
+FUNCTION_RETURNING_BARE_TENSOR = """
+def run(self, predictions) -> BlockResult:
+    import torch
+    return {"weird": torch.zeros(3)}
+"""
+
+WORKFLOW_WITH_BARE_TENSOR_WILDCARD_OUTPUT = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "BareTensorBlock",
+                "inputs": {
+                    "predictions": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                    },
+                },
+                "outputs": {"weird": {"type": "DynamicOutputDefinition", "kind": []}},
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_RETURNING_BARE_TENSOR,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "BareTensorBlock",
+            "name": "bad_block",
+            "predictions": "$steps.model.predictions",
+        },
+    ],
+    "outputs": [
+        {"type": "JsonField", "name": "weird", "selector": "$steps.bad_block.weird"},
+    ],
+}
+
+
+def test_workflow_with_custom_python_block_returning_bare_tensor_via_wildcard(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """OUT-direction wildcard semantics: a bare torch.Tensor returned through a
+    wildcard output PASSES THROUGH in both flag directions — on the OUT side a
+    tensor is a native-representation value (the `tensor` kind's runtime type),
+    so the boundary forwards it untouched. The loud-error contract for bare
+    tensors applies to the IN direction (legacy user code cannot operate on
+    them) and is covered by the representation-boundary unit tests."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BARE_TENSOR_WILDCARD_OUTPUT,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={"image": [dogs_image]})
+
+    # then
+    import torch
+
+    assert isinstance(result[0]["weird"], torch.Tensor)
+    assert result[0]["weird"].shape == (3,)

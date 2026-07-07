@@ -25,6 +25,12 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils imp
     create_dynamic_block_code_error,
     extract_code_snippet,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
+    collect_declared_input_kind_names,
+    collect_declared_output_kind_names,
+    convert_block_result_to_native,
+    convert_kwargs_to_legacy,
+)
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -110,12 +116,37 @@ def assembly_custom_python_block(
         )
     run_function = getattr(code_module, python_code.run_function_name)
 
+    # Declared-kind lookups are static per block — computed once at assembly so
+    # the boundary does not re-derive them per kwarg per run().
+    declared_input_kinds = collect_declared_input_kind_names(manifest_description)
+    declared_output_kinds = collect_declared_output_kind_names(manifest_description)
+
     def run(self, *args, **kwargs) -> BlockResult:
-        # Check if we're using Modal remote execution
+        step_name = getattr(self, "_workflow_step_name", None) or block_type_name
+        # Representation boundary: under ENABLE_TENSOR_DATA_REPRESENTATION,
+        # `legacy_compatibility` blocks receive the documented sv/numpy
+        # representations instead of native tensor objects, and their returned
+        # legacy objects are converted back. Identity when the flag is off or
+        # the block declared `tensor_native`. D2-REVISED (Option A, symmetric
+        # sv-hop): BOTH execution arms convert on both sides — Modal inputs
+        # ride the modal serializer's existing sv arms, and Modal results
+        # (rebuilt as sv by the numpy deserializers on the return leg) are
+        # converted to native here. Boundary calls sit OUTSIDE
+        # capture_output/run_function on purpose: a boundary failure is an
+        # engine-boundary error, not a user-code crash. Each arm converts
+        # AFTER its own execution gate so misconfiguration errors keep
+        # precedence over conversion errors.
         if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
             # Remote execution via Modal - allowed even if local execution is disabled
             from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
                 ModalExecutor,
+            )
+
+            kwargs = convert_kwargs_to_legacy(
+                kwargs=kwargs,
+                manifest_description=self._manifest_description,
+                block_name=step_name,
+                declared_input_kinds=declared_input_kinds,
             )
 
             try:  # Get workspace_id from context if available
@@ -128,12 +159,18 @@ def assembly_custom_python_block(
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
             executor = ModalExecutor(workspace_id)
-            return executor.execute_remote(
+            remote_result = executor.execute_remote(
                 block_type_name=block_type_name,
                 python_code=python_code,
                 inputs=kwargs,
                 workspace_id=workspace_id,
                 workflow_context=self.get_workflow_context(),
+            )
+            return convert_block_result_to_native(
+                result=remote_result,
+                manifest_description=self._manifest_description,
+                block_name=step_name,
+                declared_output_kinds=declared_output_kinds,
             )
         else:
             # Local execution - check if allowed
@@ -144,8 +181,13 @@ def assembly_custom_python_block(
                     "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
                     context="workflow_execution | step_execution | dynamic_step",
                 )
+            kwargs = convert_kwargs_to_legacy(
+                kwargs=kwargs,
+                manifest_description=self._manifest_description,
+                block_name=step_name,
+                declared_input_kinds=declared_input_kinds,
+            )
             import_lines_count = len(_get_python_code_imports(python_code).splitlines())
-            step_name = getattr(self, "_workflow_step_name", None) or block_type_name
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
                     # stdout/stderr already reach the process streams in real time via the
@@ -166,7 +208,12 @@ def assembly_custom_python_block(
                     block_type_name=block_type_name,
                 ) from error
             _record_logs_to_active_collector(step_name, stdout_buf, stderr_buf)
-            return result
+            return convert_block_result_to_native(
+                result=result,
+                manifest_description=self._manifest_description,
+                block_name=step_name,
+                declared_output_kinds=declared_output_kinds,
+            )
 
     if python_code.init_function_code is not None and not hasattr(
         code_module, python_code.init_function_name
@@ -208,8 +255,11 @@ def assembly_custom_python_block(
             "get_init_parameters": get_init_parameters,
             "get_manifest": get_manifest,
             "run": run,
-            # Raw dynamic-block manifest description; carries `tensor_compatibility`
-            # for the representation boundary (None for callers predating the knob).
+            # AUTHORITATIVE source of the raw dynamic-block manifest description
+            # (carries `tensor_compatibility`): run() reads self._manifest_description,
+            # it is introspectable, and the Step-1 assembler tests pin it. The
+            # constructor parameter of assembly_custom_python_block is only the
+            # input that seeds this attribute (None for callers predating the knob).
             "_manifest_description": manifest_description,
         },
     )
