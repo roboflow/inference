@@ -14,6 +14,14 @@ ROCK_PAPER_SCISSORS_ASSETS = os.path.join(ASSETS_DIR, "rock_paper_scissors")
 DUMMY_SECRET_ENV_VARIABLE = "DUMMY_SECRET"
 os.environ[DUMMY_SECRET_ENV_VARIABLE] = "this-is-not-a-real-secret"
 
+# Modal tests run against the local webexec stub server (see
+# local_webexec_server fixture), so they never need real Modal credentials.
+# Set dummies before the test modules are imported, as their skipif markers
+# are evaluated at import time.
+os.environ.setdefault("MODAL_TOKEN_ID", "local-webexec-token-id")
+os.environ.setdefault("MODAL_TOKEN_SECRET", "local-webexec-token-secret")
+os.environ.setdefault("MODAL_ALLOW_ANONYMOUS_EXECUTION", "True")
+
 
 @pytest.fixture(scope="function")
 def crowd_image() -> np.ndarray:
@@ -170,3 +178,93 @@ def fake_mqtt_broker():
 
     print("Teardown broker")
     broker.finish()
+
+
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+@pytest.fixture(scope="session")
+def local_webexec_server():
+    """Run the local webexec stub (local_webexec_app.py) as a subprocess.
+
+    Points MODAL_WEB_ENDPOINT_URL / MODAL_WS_ENDPOINT_URL at the stub so Modal
+    integration tests exercise the full executor code path without touching
+    real Modal infrastructure. Runs as a subprocess (not a thread) so
+    MODAL_TASK_ID can be set in the stub's environment without leaking into
+    the "local" execution-mode subprocesses spawned by the tests.
+    """
+    import subprocess
+    import sys
+    import time
+
+    import requests
+
+    port = _find_free_port()
+    base_url = f"http://127.0.0.1:{port}"
+    tests_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.abspath(os.path.join(tests_dir, "..", "..", "..", ".."))
+
+    env = os.environ.copy()
+    sep = ";" if os.name == "nt" else ":"
+    env["PYTHONPATH"] = sep.join(p for p in [repo_root, env.get("PYTHONPATH", "")] if p)
+    # Modal task ids start with "ta-"; tests use this to verify the block ran
+    # on the (stubbed) remote executor rather than locally.
+    env["MODAL_TASK_ID"] = "ta-local-webexec-stub"
+
+    server = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "local_webexec_app:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--log-level",
+            "warning",
+        ],
+        cwd=tests_dir,
+        env=env,
+    )
+
+    try:
+        deadline = time.monotonic() + 120
+        while True:
+            if server.poll() is not None:
+                raise RuntimeError(
+                    f"local webexec stub exited early with code {server.returncode}"
+                )
+            try:
+                if requests.get(f"{base_url}/health", timeout=1).status_code == 200:
+                    break
+            except requests.RequestException:
+                pass
+            if time.monotonic() > deadline:
+                raise RuntimeError("local webexec stub did not start within 120s")
+            time.sleep(0.5)
+
+        overridden = {
+            "MODAL_WEB_ENDPOINT_URL": base_url,
+            "MODAL_WS_ENDPOINT_URL": base_url,
+        }
+        previous = {key: os.environ.get(key) for key in overridden}
+        os.environ.update(overridden)
+        try:
+            yield base_url
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=10)

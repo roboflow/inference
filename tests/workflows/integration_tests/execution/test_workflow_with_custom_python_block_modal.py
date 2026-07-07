@@ -31,6 +31,10 @@ MODAL_TOKEN_SECRET = os.getenv("MODAL_TOKEN_SECRET")
 SKIP_MODAL_TESTS = not (MODAL_TOKEN_ID and MODAL_TOKEN_SECRET)
 SKIP_REASON = "Modal credentials not present (MODAL_TOKEN_ID and MODAL_TOKEN_SECRET)"
 
+# All tests run against the local webexec stub server instead of real Modal
+# (see local_webexec_server in conftest.py, which overrides the endpoint URLs).
+pytestmark = pytest.mark.usefixtures("local_webexec_server")
+
 
 # Simple addition block for basic testing
 SIMPLE_ADDITION_BLOCK = """

@@ -26,6 +26,10 @@ MODAL_TOKEN_SECRET = os.getenv("MODAL_TOKEN_SECRET")
 SKIP_MODAL_TESTS = not (MODAL_TOKEN_ID and MODAL_TOKEN_SECRET)
 SKIP_REASON = "Modal credentials not present (MODAL_TOKEN_ID and MODAL_TOKEN_SECRET)"
 
+# All tests run against the local webexec stub server instead of real Modal
+# (see local_webexec_server in conftest.py, which overrides the endpoint URLs).
+pytestmark = pytest.mark.usefixtures("local_webexec_server")
+
 
 def run_workflow_in_subprocess(
     workflow: dict, runtime_params: dict, execution_mode: str
@@ -502,18 +506,14 @@ def run(self, x: int) -> BlockResult:
     # Results should match
     assert local_result[0]["result"] == modal_result[0]["result"] == 10
 
-    # But execution contexts should be different
+    # But execution contexts should be different: the block must have run in
+    # the (stubbed) webexec executor process, which sets MODAL_TASK_ID, and not
+    # in the workflow subprocess. Hostnames are not compared because the local
+    # webexec stub runs on the same machine as the tests.
     assert local_result[0]["task_id"] == "LOCAL"
     assert modal_result[0]["task_id"] != "LOCAL"
     assert modal_result[0]["task_id"].startswith("ta-")  # Modal task IDs start with ta-
 
-    # Hostnames should be different
-    import socket
-
-    local_hostname = socket.gethostname()
-    assert modal_result[0]["hostname"] != local_hostname
-
     print(f"\n✅ Modal execution confirmed:")
-    print(f"  Local hostname: {local_hostname}")
     print(f"  Modal hostname: {modal_result[0]['hostname']}")
     print(f"  Modal task ID: {modal_result[0]['task_id']}")
