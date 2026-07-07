@@ -214,6 +214,16 @@ class FrameStore:
         self.cond = threading.Condition()
         self.jpegs = {}
         self.seqs = {}
+        # live MJPEG clients; lets the sink skip JPEG encodes nobody reads
+        self.consumers = 0
+
+    def add_consumer(self):
+        with self.cond:
+            self.consumers += 1
+
+    def remove_consumer(self):
+        with self.cond:
+            self.consumers = max(0, self.consumers - 1)
 
     def set(self, output: str, jpeg_bytes: bytes):
         with self.cond:
@@ -364,6 +374,9 @@ class OutputPublisher:
         self._proc = None
         self._thread = None
         self._stop = threading.Event()
+        # this publisher eats JPEGs from the FrameStore, so it must count as a
+        # consumer or the sink's encode-skip would starve it
+        self._consuming = False
 
     def running(self):
         return self._proc is not None and self._proc.poll() is None
@@ -403,6 +416,9 @@ class OutputPublisher:
             print(f"[processor] output publisher failed to start: {exc}", file=sys.stderr)
             return
         self._proc = proc
+        if not self._consuming:
+            self.frames.add_consumer()
+            self._consuming = True
         self._thread = threading.Thread(target=self._pump, args=(proc, output), daemon=True)
         self._thread.start()
         print(f"[processor] viewer attached — publishing '{output}' to the relay")
@@ -423,6 +439,9 @@ class OutputPublisher:
 
     def stop(self):
         self._stop.set()
+        if self._consuming:
+            self.frames.remove_consumer()
+            self._consuming = False
         thread, self._thread = self._thread, None
         proc, self._proc = self._proc, None
         if thread is not None and thread is not threading.current_thread():
@@ -742,6 +761,12 @@ class Worker:
         # the pipeline's serializer produced.
         outputs = {}
         designated_jpeg = None
+        recorder = self.recorder
+        # JPEGs feed the recorder and MJPEG preview clients only (the whip
+        # publisher reads raw_frames) — skip the per-frame encode when neither
+        # exists; a newly attached MJPEG client gets its first frame on the
+        # next prediction
+        want_jpeg = recorder is not None or self.frames.consumers > 0
         for key, value in predictions.items():
             if isinstance(value, WorkflowImageData):
                 if self.image_output is None:
@@ -749,12 +774,13 @@ class Worker:
                 try:
                     image = value.numpy_image
                     self.raw_frames.set(key, image)
-                    ok, buf = cv2.imencode(".jpg", image)
-                    if ok:
-                        jpeg = buf.tobytes()
-                        self.frames.set(key, jpeg)
-                        if key == self.image_output:
-                            designated_jpeg = jpeg
+                    if want_jpeg:
+                        ok, buf = cv2.imencode(".jpg", image)
+                        if ok:
+                            jpeg = buf.tobytes()
+                            self.frames.set(key, jpeg)
+                            if key == self.image_output:
+                                designated_jpeg = jpeg
                 except Exception:
                     pass
                 outputs[key] = {"type": "image_ref", "output": key}
@@ -772,7 +798,6 @@ class Worker:
             "latencyMs": self.stats.last_latency_ms and round(self.stats.last_latency_ms, 1),
             "outputs": outputs,
         }
-        recorder = self.recorder
         if recorder is not None:
             recorder.add(designated_jpeg, video_frame.fps, event)
         self.events.publish(event)
@@ -1113,7 +1138,9 @@ class Worker:
                 "stats": self.stats.snapshot(),
                 # image outputs redacted from /events; each is watchable at
                 # /preview.mjpeg?output=<name>
-                "imageOutputs": self.frames.outputs(),
+                # from the raw store: always populated, unlike the JPEG store,
+                # whose encodes are skipped while nothing consumes them
+                "imageOutputs": self.raw_frames.outputs(),
                 "defaultImageOutput": self.image_output,
             }
 
@@ -1424,6 +1451,7 @@ def make_handler(worker: Worker):
                 seq = -1
                 min_interval = 1.0 / MJPEG_MAX_FPS
                 last_sent = 0.0
+                worker.frames.add_consumer()
                 try:
                     while True:
                         # resolved per-iteration so a stream opened before the first
@@ -1446,6 +1474,8 @@ def make_handler(worker: Worker):
                         self.wfile.flush()
                 except (BrokenPipeError, ConnectionResetError):
                     pass
+                finally:
+                    worker.frames.remove_consumer()
             elif path == "/metrics":
                 # busy gauge drives the warm-pool autoscaler:
                 # desired replicas = sum(busy) + MIN_IDLE
