@@ -337,7 +337,7 @@ def _reset_thread_local_requests_session() -> None:
 )
 @backoff.on_exception(
     backoff.constant,
-    exception=ConnectionError,
+    exception=(ConnectionError, requests.exceptions.ConnectionError),
     max_tries=3,
     interval=1,
     backoff_log_level=logging.DEBUG,

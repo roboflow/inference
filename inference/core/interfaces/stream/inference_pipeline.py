@@ -801,8 +801,7 @@ class InferencePipeline:
         """
         if watchdog is None:
             watchdog = NullPipelineWatchdog()
-        if status_update_handlers is None:
-            status_update_handlers = []
+        status_update_handlers = list(status_update_handlers or [])
         status_update_handlers.append(watchdog.on_status_update)
         desired_source_fps = None
         if ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING:

@@ -205,5 +205,18 @@ def unfold_parameters(
     return None
 
 
+CSV_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
 def to_csv(data: List[Dict[str, Any]]) -> str:
-    return pd.DataFrame(data).to_csv(index=False)
+    sanitized_data = [
+        {key: neutralize_csv_injection(value) for key, value in row.items()}
+        for row in data
+    ]
+    return pd.DataFrame(sanitized_data).to_csv(index=False)
+
+
+def neutralize_csv_injection(value: Any) -> Any:
+    if isinstance(value, str) and value.startswith(CSV_INJECTION_PREFIXES):
+        return "'" + value
+    return value
