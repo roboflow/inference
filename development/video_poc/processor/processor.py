@@ -205,6 +205,10 @@ class FrameStore:
                 self.cond.wait(timeout=timeout)
             return self.jpegs.get(output), self.seqs.get(output, 0)
 
+    def latest(self, output: str):
+        with self.cond:
+            return self.jpegs.get(output)
+
     def outputs(self):
         with self.cond:
             return sorted(self.jpegs)
@@ -304,6 +308,96 @@ class JobRecorder:
             }
             with open(os.path.join(self.dir, "meta.json"), "w") as f:
                 json.dump(meta, f)
+
+
+PUBLISH_FPS = 12
+
+
+class OutputPublisher:
+    """Publishes one annotated image output to the relay as H.264 RTSP — but
+    ONLY while the platform says someone is watching (the watch TTL rides the
+    status-poll response). One publish serves every WHEP viewer through the
+    relay, and nothing is encoded while nobody watches.
+
+    Frames are re-encoded from the serializer's JPEGs at a constant tick
+    (duplicating the latest frame when inference is slower than PUBLISH_FPS),
+    which gives the encoder a clean CFR input.
+    """
+
+    def __init__(self, frames: FrameStore, publish_url: str):
+        self.frames = frames
+        self.publish_url = publish_url
+        self.output = None
+        self._proc = None
+        self._thread = None
+        self._stop = threading.Event()
+
+    def running(self):
+        return self._proc is not None and self._proc.poll() is None
+
+    def ensure(self, output: str):
+        """Publish `output`, (re)starting if the output changed or ffmpeg died."""
+        if self.running() and output == self.output:
+            return
+        self.stop()
+        self.output = output
+        self._stop.clear()
+        try:
+            proc = subprocess.Popen(
+                [
+                    FFMPEG_BIN, "-f", "image2pipe", "-framerate", str(PUBLISH_FPS),
+                    "-i", "-",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+                    "-profile:v", "baseline", "-pix_fmt", "yuv420p",
+                    "-g", str(PUBLISH_FPS * 2),
+                    "-f", "rtsp", "-rtsp_transport", "tcp", self.publish_url,
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError as exc:
+            print(f"[processor] output publisher failed to start: {exc}", file=sys.stderr)
+            return
+        self._proc = proc
+        self._thread = threading.Thread(target=self._pump, args=(proc, output), daemon=True)
+        self._thread.start()
+        print(f"[processor] viewer attached — publishing '{output}' to the relay")
+
+    def _pump(self, proc, output):
+        interval = 1.0 / PUBLISH_FPS
+        while not self._stop.is_set() and proc.poll() is None:
+            tick = time.time()
+            jpeg = self.frames.latest(output)
+            if jpeg is not None:
+                try:
+                    proc.stdin.write(jpeg)
+                except Exception:
+                    break
+            delay = interval - (time.time() - tick)
+            if delay > 0:
+                time.sleep(delay)
+
+    def stop(self):
+        self._stop.set()
+        thread, self._thread = self._thread, None
+        proc, self._proc = self._proc, None
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=2)
+        if proc is not None:
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            print("[processor] no viewers — stopped publishing to the relay")
 
 
 K8S_SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
@@ -438,6 +532,7 @@ class Worker:
         self.pipeline = None
         self.sim_process = None
         self.recorder = None
+        self.publisher = None
         self.job = None
         self.state = "idle"
         self.image_output = None
@@ -735,6 +830,9 @@ class Worker:
         # taken AFTER any in-flight start finishes — cancelling mid-start would
         # leak a running pipeline with no job attached
         with self.lifecycle_lock:
+            publisher, self.publisher = self.publisher, None
+            if publisher is not None:
+                publisher.stop()
             pipeline, self.pipeline = self.pipeline, None
             if pipeline is not None:
                 print("[processor] terminating pipeline")
@@ -828,6 +926,24 @@ class Worker:
             threading.Thread(target=self.run_job, args=(job,), daemon=True).start()
             return job
 
+    def _handle_watch(self, watch, job):
+        """React to the watch signal riding the status-poll response: publish
+        the annotated output to the relay while someone is watching, stop when
+        the TTL lapses. The viewer can switch outputs mid-stream."""
+        if self.state != "running":
+            return
+        if watch.get("requested"):
+            publish_url = job.get("outPublishUrl") or f"{RTSP_SIM_BASE}/out-{job.get('id', 'local')}"
+            output = watch.get("output") or self.image_output
+            if output is None:
+                return  # no image output produced (JSON-only workflow)
+            if self.publisher is None:
+                self.publisher = OutputPublisher(self.frames, publish_url)
+            self.publisher.ensure(output)
+        elif self.publisher is not None:
+            publisher, self.publisher = self.publisher, None
+            publisher.stop()
+
     def retire_if_pool_mode(self):
         """Single-use workers: once a job ends (completed, cancelled, or failed),
         the worker deletes its own pod instead of returning to the pool — a
@@ -911,6 +1027,8 @@ class Worker:
                         print("[processor] job cancelled by platform")
                         self.stop_job()
                         self.retire_if_pool_mode()
+                    else:
+                        self._handle_watch(resp.get("watch") or {}, job)
             except requests.RequestException as exc:
                 print(f"[processor] poll error: {exc}", file=sys.stderr)
             except Exception as exc:
