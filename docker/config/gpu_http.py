@@ -6,6 +6,7 @@ from inference.core.env import (
     ACTIVE_LEARNING_ENABLED,
     ENABLE_STREAM_API,
     LAMBDA,
+    LEGACY_MMP_ADAPTER_ENABLED,
     MAX_ACTIVE_MODELS,
     STREAM_API_PRELOADED_PROCESSES,
 )
@@ -44,8 +45,22 @@ else:
     model_manager = ModelManager(model_registry=model_registry)
 
 model_manager = WithFixedSizeCache(model_manager, max_size=MAX_ACTIVE_MODELS)
+if LEGACY_MMP_ADAPTER_ENABLED:
+    from inference.core.managers.mmp_adapter import ModelManagerAdapter
+
+    model_manager = ModelManagerAdapter(legacy_stack=model_manager)
 model_manager.init_pingback()
 interface = HttpInterface(
     model_manager,
 )
 app = interface.app
+
+if LEGACY_MMP_ADAPTER_ENABLED:
+
+    @app.on_event("startup")
+    async def start_mmp_adapter():
+        await model_manager.start()
+
+    @app.on_event("shutdown")
+    async def stop_mmp_adapter():
+        await model_manager.shutdown()
