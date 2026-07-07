@@ -431,6 +431,11 @@ undeclared (wildcard) values are recognised by type where possible, and values t
 cannot cross the boundary raise a clear error naming the block, the input/output and a
 remediation.
 
+Modal remote execution is covered by the same boundary: inputs are converted before
+they are serialized to the sandbox (predictions travel as the standard detections wire
+payloads), and results are converted back to native objects when they return — your
+code sees exactly what it would see locally.
+
 Be aware of the conversion cost on GPU servers: every prediction crossing the boundary
 pays a device→host copy, and instance segmentation additionally materialises dense
 masks (native masks may travel in a compact RLE form). For pipelines where the custom
