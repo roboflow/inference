@@ -413,7 +413,11 @@ class Worker:
         elif gateway_base and pod_ip:
             self.public_url = f"{gateway_base.rstrip('/')}/ip-{pod_ip.replace('.', '-')}"
         else:
-            self.public_url = f"http://127.0.0.1:{args.port}"
+            # "localhost", NOT 127.0.0.1: browsers on an https app page allow
+            # insecure subresources from hostname loopbacks but refuse to load
+            # <img> streams from IP-literal hosts ("not upgraded to HTTPS
+            # because its URL's host is an IP address" → MJPEG never paints)
+            self.public_url = f"http://localhost:{args.port}"
         # serializes claims between the poll loop and the Pub/Sub wake-up so a
         # worker can never start two jobs
         self.claim_lock = threading.Lock()
