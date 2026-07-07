@@ -637,6 +637,308 @@ class TestPerTypeRepack:
             self._run(running_adapter, monkeypatch, "depth-estimation", [depth])
 
 
+class TestPhase3aRouting:
+    def test_structured_ocr_with_bounding_boxes(self, running_adapter, monkeypatch):
+        running_adapter._client.class_names = ["text"]
+        result = (
+            ["hello world"],
+            [FakeDetections(xyxy=[[1.0, 2.0, 3.0, 4.0]], confidence=[0.9], class_id=[0])],
+        )
+        monkeypatch.setattr(translation, "stat_model", make_stat("structured-ocr"))
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        running_adapter._client.infer_result = result
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, generate_bounding_boxes=True)
+        response = running_adapter.infer_from_request_sync("doctr/default", request)
+        assert response.result == "hello world"
+        assert response.predictions[0].class_name == "text"
+        assert response.image.width == 64
+        assert response.time > 0
+
+    def test_structured_ocr_without_boxes(self, running_adapter, monkeypatch):
+        result = (["abc"], [None])
+        monkeypatch.setattr(translation, "stat_model", make_stat("structured-ocr"))
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        running_adapter._client.infer_result = result
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        response = running_adapter.infer_from_request_sync(
+            "doctr/default", od_request(image=image)
+        )
+        assert response.result == "abc"
+        assert response.predictions is None
+
+    def test_easy_ocr_non_default_language_errors(self, running_adapter, monkeypatch):
+        monkeypatch.setattr(translation, "stat_model", make_stat("structured-ocr"))
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, language_codes=["fr"])
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.infer_from_request_sync("easy_ocr/english_g2", request)
+
+    def test_text_only_ocr(self, running_adapter, monkeypatch):
+        monkeypatch.setattr(translation, "stat_model", make_stat("text-only-ocr"))
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        running_adapter._client.infer_result = "printed text"
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        response = running_adapter.infer_from_request_sync(
+            "trocr/trocr-base-printed", od_request(image=image)
+        )
+        assert response.result == "printed text"
+
+    def test_open_vocabulary_uses_requested_classes(
+        self, running_adapter, monkeypatch
+    ):
+        monkeypatch.setattr(
+            translation, "stat_model", make_stat("open-vocabulary-object-detection")
+        )
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        running_adapter._client.infer_result = [
+            FakeDetections(
+                xyxy=[[0.0, 0.0, 10.0, 10.0], [1.0, 1.0, 5.0, 5.0]],
+                confidence=[0.9, 0.8],
+                class_id=[1, 2],
+            )
+        ]
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, text=["person", "dog"])
+        response = running_adapter.infer_from_request_sync("grounding_dino/default", request)
+        assert running_adapter._client.infer_calls[0]["params"]["classes"] == [
+            "person",
+            "dog",
+        ]
+        names = [p.class_name for p in response.predictions]
+        assert names == ["dog", "2"]
+
+    def test_open_vocabulary_without_classes_errors(
+        self, running_adapter, monkeypatch
+    ):
+        monkeypatch.setattr(
+            translation, "stat_model", make_stat("open-vocabulary-object-detection")
+        )
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.infer_from_request_sync(
+                "owlv2/base", od_request(image=image)
+            )
+
+    def test_few_shot_training_data_errors(self, running_adapter, monkeypatch):
+        monkeypatch.setattr(
+            translation, "stat_model", make_stat("open-vocabulary-object-detection")
+        )
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, text=["a"], training_data=[{"boxes": []}])
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.infer_from_request_sync("owlv2/base", request)
+
+    def test_box_threshold_non_default_errors(self, running_adapter, monkeypatch):
+        monkeypatch.setattr(
+            translation, "stat_model", make_stat("open-vocabulary-object-detection")
+        )
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, text=["a"], box_threshold=0.7)
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.infer_from_request_sync("grounding_dino/default", request)
+
+    def test_vlm_unsupported_in_phase(self, running_adapter, monkeypatch):
+        monkeypatch.setattr(translation, "stat_model", make_stat("vlm", "prompt"))
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.add_model("moondream2/2b", api_key="key")
+        assert running_adapter._client.loaded == []
+
+
+class SamEmbeddingRequest(SimpleNamespace):
+    pass
+
+
+class Sam2EmbeddingRequest(SimpleNamespace):
+    pass
+
+
+class Sam2SegmentationRequest(SimpleNamespace):
+    pass
+
+
+class Sam3SegmentationRequest(SimpleNamespace):
+    pass
+
+
+def sam_request(cls, **overrides):
+    fields = {
+        "id": "req-1",
+        "api_key": "key",
+        "image": SimpleNamespace(
+            type="base64", value=base64.b64encode(b"f").decode()
+        ),
+        "image_id": None,
+        "format": "polygon",
+    }
+    fields.update(overrides)
+    return cls(**fields)
+
+
+class TestSamRouting:
+    def _setup(self, running_adapter, monkeypatch, tasks):
+        monkeypatch.setattr(
+            translation, "stat_model", make_stat("interactive-instance-segmentation", "embed")
+        )
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        running_adapter._client.tasks = {t: {} for t in tasks}
+
+    def test_sam2_embed_echoes_image_id(self, running_adapter, monkeypatch):
+        self._setup(running_adapter, monkeypatch, ["embed", "segment"])
+        running_adapter._client.infer_result = [
+            SimpleNamespace(image_hash="deadbeef")
+        ]
+        request = sam_request(Sam2EmbeddingRequest, image_id="abc")
+        response = running_adapter.infer_from_request_sync("sam2/hiera_large", request)
+        assert response.image_id == "abc"
+        assert running_adapter._client.infer_calls[0]["task"] == "embed"
+
+    def test_sam3_embed_images_uses_hash_fallback(self, running_adapter, monkeypatch):
+        self._setup(
+            running_adapter,
+            monkeypatch,
+            ["embed_images", "segment_with_visual_prompts", "segment_with_text_prompts"],
+        )
+        running_adapter._client.infer_result = [
+            SimpleNamespace(image_hash="deadbeef")
+        ]
+        request = sam_request(Sam2EmbeddingRequest)
+        response = running_adapter.infer_from_request_sync(
+            "sam3/sam3_interactive", request
+        )
+        assert response.image_id == "deadbeef"
+        assert running_adapter._client.infer_calls[0]["task"] == "embed_images"
+        assert "image_hashes" not in running_adapter._client.infer_calls[0]["params"]
+
+    def test_sam1_embed_returns_embeddings(self, running_adapter, monkeypatch):
+        self._setup(running_adapter, monkeypatch, ["embed", "segment"])
+        running_adapter._client.infer_result = [
+            SimpleNamespace(embeddings=np.ones((1, 2, 2, 2)))
+        ]
+        request = sam_request(SamEmbeddingRequest, format="json")
+        response = running_adapter.infer_from_request_sync("sam/vit_h", request)
+        assert response.embeddings == np.ones((1, 2, 2, 2)).tolist()
+
+    def test_sam2_segment_is_unsupported(self, running_adapter, monkeypatch):
+        self._setup(running_adapter, monkeypatch, ["embed", "segment"])
+        request = sam_request(Sam2SegmentationRequest, prompts=None)
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.infer_from_request_sync("sam2/hiera_large", request)
+
+    def test_sam3_visual_segment(self, running_adapter, monkeypatch):
+        from inference.core.entities.requests.sam2 import (
+            Box,
+            Point,
+            Sam2Prompt,
+            Sam2PromptSet,
+        )
+
+        self._setup(
+            running_adapter,
+            monkeypatch,
+            ["embed_images", "segment_with_visual_prompts", "segment_with_text_prompts"],
+        )
+        masks = np.zeros((1, 3, 16, 16), dtype=np.float32)
+        masks[0, 1, 4:8, 4:8] = 1.0
+        running_adapter._client.infer_result = [
+            SimpleNamespace(masks=masks, scores=np.asarray([[0.2, 0.9, 0.1]]))
+        ]
+        prompts = Sam2PromptSet(
+            prompts=[
+                Sam2Prompt(
+                    box=Box(x=10, y=10, width=4, height=4),
+                    points=[Point(x=1, y=2, positive=True)],
+                )
+            ]
+        )
+        request = sam_request(
+            Sam2SegmentationRequest,
+            prompts=prompts,
+            multimask_output=True,
+            image_id="img1",
+        )
+        response = running_adapter.infer_from_request_sync(
+            "sam3/sam3_interactive", request
+        )
+        params = running_adapter._client.infer_calls[0]["params"]
+        assert params["boxes"] == [[8.0, 8.0, 12.0, 12.0]]
+        assert params["point_coordinates"] == [[[1.0, 2.0]]]
+        assert params["point_labels"] == [[1]]
+        assert params["image_hashes"] == ["img1"]
+        assert params["multi_mask_output"] is True
+        assert len(response.predictions) == 1
+        prediction = response.predictions[0]
+        assert prediction.confidence == 0.9
+        assert prediction.format == "polygon"
+        assert len(prediction.masks) > 0
+
+    def test_sam3_text_segment_with_prompt_threshold(
+        self, running_adapter, monkeypatch
+    ):
+        from inference.core.entities.requests.sam3 import Sam3Prompt
+
+        self._setup(
+            running_adapter,
+            monkeypatch,
+            ["embed_images", "segment_with_visual_prompts", "segment_with_text_prompts"],
+        )
+        masks = np.zeros((2, 16, 16), dtype=np.uint8)
+        masks[0, 2:6, 2:6] = 1
+        masks[1, 8:12, 8:12] = 1
+        running_adapter._client.infer_result = [
+            [{"prompt_index": 0, "masks": masks, "scores": [0.9, 0.3]}]
+        ]
+        prompt = Sam3Prompt(type="text", text="cat", output_prob_thresh=0.5)
+        request = sam_request(
+            Sam3SegmentationRequest,
+            prompts=[prompt],
+            output_prob_thresh=0.5,
+            nms_iou_threshold=None,
+        )
+        response = running_adapter.infer_from_request_sync("sam3/sam3_final", request)
+        params = running_adapter._client.infer_calls[0]["params"]
+        assert params["output_prob_thresh"] == 0.5
+        assert params["prompts"][0]["text"] == "cat"
+        result = response.prompt_results[0]
+        assert result.echo.type == "text" and result.echo.text == "cat"
+        assert len(result.predictions) == 1
+        assert result.predictions[0].confidence == 0.9
+
+    def test_mask_input_errors(self, running_adapter, monkeypatch):
+        self._setup(
+            running_adapter,
+            monkeypatch,
+            ["embed_images", "segment_with_visual_prompts", "segment_with_text_prompts"],
+        )
+        request = sam_request(
+            Sam2SegmentationRequest, prompts=None, mask_input=[[0.0]]
+        )
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.infer_from_request_sync(
+                "sam3/sam3_interactive", request
+            )
+
+    def test_nms_iou_threshold_errors(self, running_adapter, monkeypatch):
+        from inference.core.entities.requests.sam3 import Sam3Prompt
+
+        self._setup(
+            running_adapter,
+            monkeypatch,
+            ["embed_images", "segment_with_visual_prompts", "segment_with_text_prompts"],
+        )
+        request = sam_request(
+            Sam3SegmentationRequest,
+            prompts=[Sam3Prompt(type="text", text="cat")],
+            nms_iou_threshold=0.5,
+        )
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.infer_from_request_sync("sam3/sam3_final", request)
+
+
 class TestUnsupportedModelOps:
     def test_lower_level_ops_raise(self):
         adapter = make_adapter()

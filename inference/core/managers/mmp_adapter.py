@@ -32,6 +32,12 @@ class _InertModelStub:
         self.model_id = model_id
 
 
+def _set_if_field(response: Any, name: str, value: Any) -> None:
+    fields = getattr(type(response), "model_fields", None)
+    if fields is None or name in fields:
+        setattr(response, name, value)
+
+
 def _unsupported(model_id: str) -> ModelDeploymentNotSupportedError:
     return ModelDeploymentNotSupportedError(
         f"Model '{model_id}' cannot be served by the MMP inference backend"
@@ -104,43 +110,40 @@ class ModelManagerAdapter:
         if model_id == "passthrough" or model_id.startswith("passthrough/"):
             self._routes[model_id] = {"supported": False}
             raise _unsupported(model_id)
-        task_type, action = await translation.stat_model(
+        task_type, default_action = await translation.stat_model(
             model_id=model_id, api_key=api_key or ""
         )
-        if (task_type, action) not in translation.IMPLEMENTED_ROUTES:
-            self._routes[model_id] = {
-                "supported": False,
-                "task_type": task_type,
-                "action": action,
-            }
+        terminal = {
+            "supported": False,
+            "task_type": task_type,
+            "action": default_action,
+        }
+        if task_type not in translation.IMPLEMENTED_TASK_TYPES:
+            self._routes[model_id] = terminal
             raise _unsupported(model_id)
         result = await self._client.load(model_id, api_key or "")
         translation.raise_for_lifecycle_result(result, model_id)
         interface = await self._client.interface(model_id)
-        if action not in interface.get("tasks", {}):
+        tasks = set(interface.get("tasks", {}))
+        if not tasks.intersection(
+            translation.implemented_actions(task_type)
+        ):
             await self._client.unload(model_id)
-            self._routes[model_id] = {
-                "supported": False,
-                "task_type": task_type,
-                "action": action,
-            }
+            self._routes[model_id] = terminal
             raise _unsupported(model_id)
         stats = await self._client.stats()
         model_entry = stats.get("mmp_models", {}).get(model_id, {})
         key_points_classes = model_entry.get("key_points_classes")
         if task_type == "keypoint-detection" and key_points_classes is None:
             await self._client.unload(model_id)
-            self._routes[model_id] = {
-                "supported": False,
-                "task_type": task_type,
-                "action": action,
-            }
+            self._routes[model_id] = terminal
             raise _unsupported(model_id)
         route = {
             "supported": True,
             "mmp_model_id": model_id,
             "task_type": task_type,
-            "action": action,
+            "action": default_action,
+            "tasks": tasks,
             "class_names": model_entry.get("class_names"),
             "key_points_classes": key_points_classes,
         }
@@ -151,30 +154,39 @@ class ModelManagerAdapter:
         route = await self._resolve_route_async(
             model_id, getattr(request, "api_key", None)
         )
+        action = translation.resolve_request_action(route, request)
+        if (route["task_type"], action) not in translation.IMPLEMENTED_ROUTES or (
+            action not in route["tasks"]
+        ):
+            raise _unsupported(model_id)
         translation.ensure_request_supported(model_id, request)
         is_batch = isinstance(request.image, list)
         images = request.image if is_batch else [request.image]
         forwarded = [translation.forward_image(image) for image in images]
-        params = translation.build_task_params(route["task_type"], request)
+        params = translation.build_task_params(
+            route["task_type"], action, request
+        )
         t_start = time.perf_counter()
         ensure = await self._client.ensure_loaded(
             route["mmp_model_id"], api_key=getattr(request, "api_key", None) or ""
         )
         translation.raise_for_lifecycle_result(ensure, model_id)
-        predictions = await self._fan_out_infer(model_id, route, forwarded, params)
+        predictions = await self._fan_out_infer(
+            model_id, route, action, forwarded, params
+        )
         elapsed = time.perf_counter() - t_start
         responses = []
         for prediction, (_, dims) in zip(predictions, forwarded):
             response = translation.repack_prediction(
-                route["task_type"], prediction, dims, route, request
+                route["task_type"], action, prediction, dims, route, request
             )
-            response.time = elapsed
-            response.inference_id = request.id
+            _set_if_field(response, "time", elapsed)
+            _set_if_field(response, "inference_id", request.id)
             responses.append(response)
         return responses if is_batch else responses[0]
 
     async def _fan_out_infer(
-        self, model_id: str, route: dict, forwarded: list, params: dict
+        self, model_id: str, route: dict, action: str, forwarded: list, params: dict
     ) -> list:
         concurrency = min(
             len(forwarded), max(1, getattr(self._client, "n_slots", 1) or 1)
@@ -186,7 +198,7 @@ class ModelManagerAdapter:
                 return await self._client.infer(
                     model_id=route["mmp_model_id"],
                     image=image_bytes,
-                    task=route["action"],
+                    task=action,
                     params=params,
                 )
 
