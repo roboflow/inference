@@ -372,13 +372,20 @@ else:
         CosineSimilarityBlockV1,
     )
 
-# HERE YOU CAN FIND NEW BLOCKS, ADDED IN THE MEANTIME, WHICH HAVE NO TENSOR-NATIVE PARITY
+# visual_search consumes the image through the WorkflowImageData wrapper and emits
+# only dict/scalar/image outputs, so both representations share the numpy source.
 from inference.core.workflows.core_steps.integrations.roboflow.visual_search.v1 import (
     RoboflowVisualSearchBlockV1,
 )
-from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.v1 import (
-    RoboflowVisualSearchClassifierBlockV1,
-)
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.v1 import (
+        RoboflowVisualSearchClassifierBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.v1_tensor import (
+        RoboflowVisualSearchClassifierBlockV1,
+    )
 
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     AnthropicClaudeBlockV1,
@@ -1058,10 +1065,14 @@ else:
         DynamicZonesBlockV1,
     )
 
-# ANOTHER BLOCK ADDED IN THE MEANTIME W/O PARITY
-from inference.core.workflows.core_steps.transformations.geotag_detection.v1 import (
-    GeoTagDetectionBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.transformations.geotag_detection.v1 import (
+        GeoTagDetectionBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.transformations.geotag_detection.v1_tensor import (
+        GeoTagDetectionBlockV1,
+    )
 
 from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
     ImageSlicerBlockV1,
