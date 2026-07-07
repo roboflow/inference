@@ -69,6 +69,14 @@ class ModelManagerAdapter:
     async def shutdown(self) -> None:
         await self._client.shutdown()
 
+    def mmp_ready(self) -> bool:
+        """Readiness probe: the MMP must answer stats over ZMQ."""
+        try:
+            self._run_sync(self._client.stats())
+            return True
+        except Exception:
+            return False
+
     # ------------------------------------------------------------------
     # sync -> async bridge
     # ------------------------------------------------------------------

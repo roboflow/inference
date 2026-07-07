@@ -1076,6 +1076,21 @@ class TestLegacyDelegation:
         make_adapter().pin_model("some/1")
 
 
+class TestMmpReady:
+    def test_ready_when_stats_answer(self, running_adapter):
+        assert running_adapter.mmp_ready() is True
+
+    def test_not_ready_when_stats_fail(self, running_adapter):
+        async def failing_stats():
+            raise RuntimeError("stats request failed")
+
+        running_adapter._client.stats = failing_stats
+        assert running_adapter.mmp_ready() is False
+
+    def test_not_ready_before_start(self):
+        assert make_adapter().mmp_ready() is False
+
+
 class TestSyncBridge:
     def test_round_trips_result_from_worker_thread(self, running_adapter):
         async def coro():
