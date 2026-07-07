@@ -138,6 +138,14 @@ class ModelManagerAdapter:
             await self._client.unload(model_id)
             self._routes[model_id] = terminal
             raise _unsupported(model_id)
+        if (
+            task_type == "vlm"
+            and model_entry.get("model_class_name")
+            in translation.VLM_UNSUPPORTED_MODEL_CLASSES
+        ):
+            await self._client.unload(model_id)
+            self._routes[model_id] = terminal
+            raise _unsupported(model_id)
         route = {
             "supported": True,
             "mmp_model_id": model_id,

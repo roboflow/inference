@@ -76,12 +76,15 @@ class FakeClient:
     async def interface(self, model_id):
         return {"model_id": model_id, "tasks": self.tasks}
 
+    model_class_name = "YOLOv8ObjectDetectionOnnx"
+
     async def stats(self):
         return {
             "mmp_models": {
                 m: {
                     "class_names": self.class_names,
                     "key_points_classes": self.key_points_classes,
+                    "model_class_name": self.model_class_name,
                 }
                 for m in self.loaded
             }
@@ -210,16 +213,16 @@ class TestRouting:
 
         async def fake_stat(model_id, api_key):
             calls.append(model_id)
-            return ("vlm", "prompt")
+            return ("embedding", "embed_images")
 
         monkeypatch.setattr(translation, "stat_model", fake_stat)
         with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.add_model("ws/vlm", api_key="key")
+            running_adapter.add_model("clip/1", api_key="key")
         with pytest.raises(ModelDeploymentNotSupportedError):
-            running_adapter.add_model("ws/vlm", api_key="key")
-        assert calls == ["ws/vlm"]
+            running_adapter.add_model("clip/1", api_key="key")
+        assert calls == ["clip/1"]
         assert running_adapter._client.loaded == []
-        assert "ws/vlm" not in running_adapter
+        assert "clip/1" not in running_adapter
 
     def test_passthrough_is_unsupported_without_stat(
         self, running_adapter, od_stat
@@ -742,11 +745,74 @@ class TestPhase3aRouting:
         with pytest.raises(ModelDeploymentNotSupportedError):
             running_adapter.infer_from_request_sync("grounding_dino/default", request)
 
-    def test_vlm_unsupported_in_phase(self, running_adapter, monkeypatch):
+    def test_embedding_task_unsupported(self, running_adapter, monkeypatch):
+        monkeypatch.setattr(translation, "stat_model", make_stat("embedding", "embed_images"))
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.add_model("clip/ViT-B-16", api_key="key")
+        assert running_adapter._client.loaded == []
+
+
+class TestVlmRouting:
+    def _setup(self, running_adapter, monkeypatch, tasks=("prompt",)):
         monkeypatch.setattr(translation, "stat_model", make_stat("vlm", "prompt"))
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        running_adapter._client.tasks = {t: {} for t in tasks}
+
+    def test_prompt_happy_path(self, running_adapter, monkeypatch):
+        self._setup(running_adapter, monkeypatch)
+        running_adapter._client.model_class_name = "Qwen25VLHF"
+        running_adapter._client.infer_result = "a red truck"
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(
+            image=image, prompt="describe", max_new_tokens=128, enable_thinking=False
+        )
+        response = running_adapter.infer_from_request_sync("qwen/1", request)
+        assert response.response == "a red truck"
+        assert response.image.width == 64
+        params = running_adapter._client.infer_calls[0]["params"]
+        assert params == {"prompt": "describe", "max_new_tokens": 128}
+        assert running_adapter._client.infer_calls[0]["task"] == "prompt"
+
+    def test_enable_thinking_forwarded_and_dict_response(
+        self, running_adapter, monkeypatch
+    ):
+        self._setup(running_adapter, monkeypatch)
+        running_adapter._client.model_class_name = "Qwen35HF"
+        running_adapter._client.infer_result = [
+            {"reasoning": "...", "answer": "cat"}
+        ]
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, prompt="what?", enable_thinking=True)
+        response = running_adapter.infer_from_request_sync("qwen35/1", request)
+        assert response.response == {"reasoning": "...", "answer": "cat"}
+        assert (
+            running_adapter._client.infer_calls[0]["params"]["enable_thinking"] is True
+        )
+
+    def test_missing_prompt_errors(self, running_adapter, monkeypatch):
+        self._setup(running_adapter, monkeypatch)
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, prompt=None)
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.infer_from_request_sync("qwen/1", request)
+
+    def test_florence2_terminal_unsupported(self, running_adapter, monkeypatch):
+        self._setup(running_adapter, monkeypatch)
+        running_adapter._client.model_class_name = "Florence2HF"
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.add_model("florence-2-base/1", api_key="key")
+        assert running_adapter._client.unloaded == ["florence-2-base/1"]
+
+    def test_moondream_without_prompt_task_unsupported(
+        self, running_adapter, monkeypatch
+    ):
+        self._setup(
+            running_adapter,
+            monkeypatch,
+            tasks=("caption", "detect", "query", "point", "encode"),
+        )
         with pytest.raises(ModelDeploymentNotSupportedError):
             running_adapter.add_model("moondream2/2b", api_key="key")
-        assert running_adapter._client.loaded == []
 
 
 class SamEmbeddingRequest(SimpleNamespace):
