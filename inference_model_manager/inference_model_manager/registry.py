@@ -11,6 +11,7 @@ happens once at import time in registry_defaults.py.
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Type
 
@@ -49,6 +50,10 @@ class ModelRegistry:
 
     def __init__(self) -> None:
         self._entries: Dict[type, Dict[str, TaskEntry]] = {}
+        # Guards _entries against concurrent first-registration (lazy_register*
+        # runs on load paths) racing the per-request MRO-name scans — iterating
+        # an unlocked dict while register inserts raises RuntimeError mid-inference.
+        self._lock = threading.RLock()
 
     def register(
         self,
@@ -84,9 +89,8 @@ class ModelRegistry:
             response_type=response_type,
         )
 
-        if model_class not in self._entries:
-            self._entries[model_class] = {}
-        self._entries[model_class][task_name] = entry
+        with self._lock:
+            self._entries.setdefault(model_class, {})[task_name] = entry
 
     def get_entry(self, model: Any, task_name: str) -> Optional[TaskEntry]:
         """Look up TaskEntry for model instance + task, following MRO.
@@ -143,26 +147,30 @@ class ModelRegistry:
         Used when model instance is in worker process and parent only has
         class name strings from the READY pipe message.
         """
-        for name in mro_names:
-            for cls, class_entries in self._entries.items():
-                if cls.__name__ == name and task_name in class_entries:
-                    return class_entries[task_name]
+        with self._lock:
+            for name in mro_names:
+                for cls, class_entries in self._entries.items():
+                    if cls.__name__ == name and task_name in class_entries:
+                        return class_entries[task_name]
         return None
 
     def get_default_task_by_mro_names(self, mro_names: list[str]) -> Optional[str]:
         """Find default task name by MRO class name strings."""
-        for name in mro_names:
-            for cls, class_entries in self._entries.items():
-                if cls.__name__ == name:
-                    for task_name, entry in class_entries.items():
-                        if entry.default:
-                            return task_name
+        with self._lock:
+            for name in mro_names:
+                for cls, class_entries in self._entries.items():
+                    if cls.__name__ == name:
+                        for task_name, entry in class_entries.items():
+                            if entry.default:
+                                return task_name
         return None
 
     def registered_classes(self) -> List[type]:
         """Return all classes with registered entries."""
-        return list(self._entries.keys())
+        with self._lock:
+            return list(self._entries.keys())
 
     def registered_tasks(self, model_class: type) -> List[str]:
         """Return all task names registered for a class (exact, not MRO)."""
-        return list(self._entries.get(model_class, {}).keys())
+        with self._lock:
+            return list(self._entries.get(model_class, {}).keys())
