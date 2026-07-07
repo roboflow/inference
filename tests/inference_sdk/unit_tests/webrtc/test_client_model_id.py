@@ -11,9 +11,17 @@ import pytest
 import supervision as sv
 
 from inference_sdk.http.errors import InvalidParameterError
-from inference_sdk.webrtc.client import WebRTCClient
+from inference_sdk.webrtc.client import TASK_TYPE_TO_BLOCK, WebRTCClient
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.session import SessionState, VideoMetadata, WebRTCSession
+
+
+def _mock_ort_response(task_type: str):
+    """Build a MagicMock mimicking the Roboflow /ort endpoint response."""
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {"ort": {"type": task_type}}
+    return response
 
 
 @pytest.fixture
@@ -83,7 +91,7 @@ class TestBuildModelWorkflow:
     """Tests for the generated workflow specification."""
 
     def test_workflow_spec_built_correctly(self):
-        spec = WebRTCClient._build_model_workflow("rfdetr-nano")
+        spec = WebRTCClient._build_model_workflow("rfdetr-nano", "object-detection")
         assert spec == {
             "version": "1.0",
             "inputs": [{"type": "InferenceImage", "name": "image"}],
@@ -110,18 +118,175 @@ class TestBuildModelWorkflow:
             ],
         }
 
+    @pytest.mark.parametrize(
+        "task_type,expected_block",
+        [
+            (
+                "object-detection",
+                "roboflow_core/roboflow_object_detection_model@v2",
+            ),
+            (
+                "instance-segmentation",
+                "roboflow_core/roboflow_instance_segmentation_model@v2",
+            ),
+            (
+                "classification",
+                "roboflow_core/roboflow_classification_model@v2",
+            ),
+            (
+                "multi-label-classification",
+                "roboflow_core/roboflow_multi_label_classification_model@v2",
+            ),
+            (
+                "keypoint-detection",
+                "roboflow_core/roboflow_keypoint_detection_model@v2",
+            ),
+            (
+                "semantic-segmentation",
+                "roboflow_core/roboflow_semantic_segmentation_model@v2",
+            ),
+        ],
+    )
+    def test_each_task_type_maps_to_correct_block(self, task_type, expected_block):
+        spec = WebRTCClient._build_model_workflow("some/1", task_type)
+        assert spec["steps"][0]["type"] == expected_block
+        # Every task type exposes its predictions under the "predictions" output.
+        assert spec["outputs"][0]["name"] == "predictions"
+        assert spec["outputs"][0]["selector"] == "$steps.model.predictions"
+        assert spec["outputs"][0]["coordinates_system"] == "own"
+
+    def test_build_workflow_rejects_unknown_task_type(self):
+        with pytest.raises(InvalidParameterError, match="Unsupported task_type"):
+            WebRTCClient._build_model_workflow("some/1", "not-a-task")
+
     def test_stream_passes_spec_to_session(self, client):
         source = MagicMock()
         with patch(
             "inference_sdk.webrtc.client.WebRTCSession"
         ) as mock_session_cls:
-            client.stream(source=source, model_id="rfdetr-nano")
+            client.stream(
+                source=source,
+                model_id="rfdetr-nano",
+                task_type="object-detection",
+            )
         _, kwargs = mock_session_cls.call_args
         assert kwargs["model_mode"] is True
         assert kwargs["predictions_output"] == "predictions"
         assert kwargs["workflow_config"] == {
-            "workflow_specification": WebRTCClient._build_model_workflow("rfdetr-nano")
+            "workflow_specification": WebRTCClient._build_model_workflow(
+                "rfdetr-nano", "object-detection"
+            )
         }
+
+
+class TestTaskTypeResolution:
+    """Tests for resolving the model task type (explicit and via the API)."""
+
+    def test_explicit_task_type_skips_http(self, client):
+        source = MagicMock()
+        with patch("inference_sdk.webrtc.client.requests.get") as mock_get, patch(
+            "inference_sdk.webrtc.client.WebRTCSession"
+        ) as mock_session_cls:
+            client.stream(
+                source=source,
+                model_id="rfdetr-nano",
+                task_type="instance-segmentation",
+            )
+        mock_get.assert_not_called()
+        _, kwargs = mock_session_cls.call_args
+        spec = kwargs["workflow_config"]["workflow_specification"]
+        assert (
+            spec["steps"][0]["type"]
+            == "roboflow_core/roboflow_instance_segmentation_model@v2"
+        )
+
+    def test_auto_resolution_calls_api_and_selects_block(self, client):
+        source = MagicMock()
+        with patch(
+            "inference_sdk.webrtc.client.requests.get",
+            return_value=_mock_ort_response("keypoint-detection"),
+        ) as mock_get, patch(
+            "inference_sdk.webrtc.client.WebRTCSession"
+        ) as mock_session_cls:
+            client.stream(source=source, model_id="rfdetr-nano")
+        # Lookup happened once.
+        assert mock_get.call_count == 1
+        call_url = mock_get.call_args[0][0]
+        # Alias resolved before lookup: rfdetr-nano -> coco/38.
+        assert call_url.endswith("/ort/coco/38")
+        params = mock_get.call_args.kwargs["params"]
+        assert params["api_key"] == "test_key"
+        assert params["device"] == "sdk"
+        _, kwargs = mock_session_cls.call_args
+        spec = kwargs["workflow_config"]["workflow_specification"]
+        assert (
+            spec["steps"][0]["type"]
+            == "roboflow_core/roboflow_keypoint_detection_model@v2"
+        )
+
+    def test_invalid_explicit_task_type_raises(self, client):
+        source = MagicMock()
+        with patch("inference_sdk.webrtc.client.requests.get") as mock_get:
+            with pytest.raises(InvalidParameterError, match="Unsupported task_type"):
+                client.stream(
+                    source=source, model_id="rfdetr-nano", task_type="bogus"
+                )
+        mock_get.assert_not_called()
+
+    def test_task_type_with_workflow_raises(self, client):
+        source = MagicMock()
+        with pytest.raises(
+            InvalidParameterError, match="'task_type' is only valid together with"
+        ):
+            client.stream(
+                source=source,
+                workflow="wf",
+                workspace="ws",
+                task_type="object-detection",
+            )
+
+    def test_versionless_model_id_raises(self, client):
+        source = MagicMock()
+        with patch("inference_sdk.webrtc.client.requests.get") as mock_get:
+            with pytest.raises(InvalidParameterError, match="dataset/version"):
+                client.stream(source=source, model_id="just-a-name-no-version")
+        mock_get.assert_not_called()
+
+    def test_lookup_failure_raises_helpful_error(self, client):
+        source = MagicMock()
+        with patch(
+            "inference_sdk.webrtc.client.requests.get",
+            side_effect=RuntimeError("boom"),
+        ):
+            with pytest.raises(RuntimeError, match="task_type=") as exc_info:
+                client.stream(source=source, model_id="rfdetr-nano")
+        # Error should point the user at the escape hatch.
+        assert "Failed to resolve task type" in str(exc_info.value)
+
+    def test_unsupported_api_task_type_raises(self, client):
+        source = MagicMock()
+        with patch(
+            "inference_sdk.webrtc.client.requests.get",
+            return_value=_mock_ort_response("some-exotic-task"),
+        ):
+            with pytest.raises(InvalidParameterError, match="not supported"):
+                client.stream(source=source, model_id="rfdetr-nano")
+
+    def test_all_supported_task_types_resolvable(self, client):
+        # Sanity: every key in the map resolves end-to-end via the API path.
+        for task_type in TASK_TYPE_TO_BLOCK:
+            source = MagicMock()
+            with patch(
+                "inference_sdk.webrtc.client.requests.get",
+                return_value=_mock_ort_response(task_type),
+            ), patch("inference_sdk.webrtc.client.WebRTCSession") as mock_session_cls:
+                client.stream(source=source, model_id="rfdetr-nano")
+            _, kwargs = mock_session_cls.call_args
+            spec = kwargs["workflow_config"]["workflow_specification"]
+            assert (
+                spec["steps"][0]["type"]
+                == TASK_TYPE_TO_BLOCK[task_type]["block_type"]
+            )
 
 
 class TestModelIdDefaults:
