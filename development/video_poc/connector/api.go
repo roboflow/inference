@@ -17,6 +17,10 @@ type Source struct {
 	Path   string `json:"path,omitempty"`
 	Device string `json:"device,omitempty"`
 	URL    string `json:"url,omitempty"`
+
+	// avfoundation enumeration index at discovery time; session-fragile, so
+	// only used to disambiguate identically-named cameras (never serialized)
+	index string
 }
 
 type StreamState struct {

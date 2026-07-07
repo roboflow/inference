@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -124,15 +125,48 @@ func discoverAVFoundation(ffmpeg string) []Source {
 				continue
 			}
 			out = append(out, Source{
-				LocalID: "usb:" + m[1],
+				// identity by NAME, not index: avfoundation indices reshuffle
+				// when devices come and go (lid close, iPhone connect), which
+				// silently rebinds "usb:0" to a different physical camera and
+				// crash-loops any leg whose index vanished
+				LocalID: "usb:" + slugify(label),
 				Kind:    "usb",
 				Label:   label,
-				Device:  m[1],
+				Device:  label, // ffmpeg avfoundation -i accepts the exact device name
+				index:   m[1],
 			})
 		}
 	}
 	cmd.Wait() // ffmpeg exits non-zero after listing; that's expected
-	return out
+	return dedupeCameraIDs(out)
+}
+
+var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
+
+func slugify(label string) string {
+	return strings.Trim(slugRe.ReplaceAllString(strings.ToLower(label), "-"), "-")
+}
+
+// Two cameras with the same product name can't be told apart by name, so
+// ffmpeg gets the (session-fragile) index for those; the LocalID gains an
+// ordinal so each still registers as a distinct source.
+func dedupeCameraIDs(sources []Source) []Source {
+	counts := map[string]int{}
+	for _, s := range sources {
+		counts[s.LocalID]++
+	}
+	seen := map[string]int{}
+	for i, s := range sources {
+		if counts[s.LocalID] < 2 {
+			continue
+		}
+		seen[s.LocalID]++
+		if seen[s.LocalID] > 1 {
+			sources[i].LocalID = fmt.Sprintf("%s-%d", s.LocalID, seen[s.LocalID])
+		}
+		sources[i].Device = s.index
+	}
+	return sources
 }
 
 func discoverV4L2() []Source {
