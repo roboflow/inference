@@ -268,11 +268,15 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   publishing, and stops when the TTL lapses. Identical pattern to source preview TTLs;
   requires no new connection into the processor. Result video should not stream when
   nobody is watching.
-- **Batch results are processor-local**: the annotated mp4 + JSONL live in the
-  processor's temp dir and die with the machine. Production shape: upload to object
-  storage on finalize and serve from there (also unblocks reviewing results after
-  the processor is reassigned).
-- **Processor HTTP has no auth** and CORS `*` (localhost POC only).
+- ~~Batch results are processor-local~~ **CLOSED**: on completion the processor
+  uploads mp4/JSONL/meta to GCS via platform-signed PUT URLs and the review UI
+  reads platform-signed GET URLs; processor-local files remain only as fallback.
+- ~~Relay is unauthenticated~~ **CLOSED**: per-stream keys (per source, per job)
+  minted by the platform, embedded in every issued URL, validated per connection
+  by mediamtx's external-auth hook → `POST /video-relay/auth`. No shared secrets
+  are pushed to connectors.
+- **Processor HTTP has no auth** and CORS `*` (still open; the gateway hostname
+  is the only barrier in staging).
 - **Single-workspace claim**: processors claim jobs only for the workspace of their API
   key. Real warm pools need cross-tenant scheduling, leases/heartbeats on claims, and
   model-affinity placement.

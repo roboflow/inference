@@ -1,5 +1,17 @@
 # Staging deployment plan — video POC on Crusoe
 
+> **Status 2026-07-07**: the "day-2" items below are now IMPLEMENTED, not
+> planned — per-stream keys + relay external auth, per-job API key in the claim
+> payload, batch results to GCS (with processor-local fallback), Pub/Sub
+> dispatch wake-ups (claim stays the transactional source of truth; claim is
+> now an actual Firestore transaction), the `video_processor_busy` metric, and
+> the KEDA warm-floor autoscaling. The Helm chart exists:
+> `helm/roboflow-video-poc/` in roboflow-infra
+> ([PR #2290](https://github.com/roboflow/roboflow-infra/pull/2290)) — its
+> README lists the remaining MANUAL steps (image push, Pub/Sub topic/sub,
+> secrets, DNS, functions env). What's left of this document that still needs
+> doing is exactly that manual list plus the smoke tests.
+
 Goal: mediamtx (relay) + video processors running on the Crusoe staging cluster
 (`ck8s-stg`), talking to the staging Roboflow platform, demo-able end to end.
 This plan assumes the POC as of PRs

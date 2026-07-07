@@ -13,7 +13,10 @@ While a job runs, the processor exposes:
                              designated output, switchable per-request)
   GET /results/<jobId>/...   persisted batch-job results: video.mp4 (annotated, Range
                              support for scrubbing), frames.jsonl (one line per frame,
-                             aligned with the mp4 by index), meta.json (fps, frames)
+                             aligned with the mp4 by index), meta.json (fps, frames);
+                             local fallback — results also upload to GCS on completion
+  GET /metrics               Prometheus text: video_processor_busy gauge (warm-pool
+                             autoscaling signal: replicas = sum(busy) + MIN_IDLE)
 
 Design notes (mirrors the video strategy deck):
   - events and pixels are split at the source; base64 image blobs never ride the events channel
@@ -292,6 +295,13 @@ class Worker:
     def __init__(self, args):
         self.args = args
         self.processor_id = args.processor_id or f"proc-{socket.gethostname()}-{uuid.uuid4().hex[:6]}"
+        # what browsers should use to reach this worker (an ingress/gateway URL
+        # in a cluster); falls back to localhost for single-machine dev
+        self.public_url = args.public_url or f"http://127.0.0.1:{args.port}"
+        # serializes claims between the poll loop and the Pub/Sub wake-up so a
+        # worker can never start two jobs
+        self.claim_lock = threading.Lock()
+        self._pubsub_client = None
         self.stats = Stats()
         self.events = EventBus()
         self.frames = FrameStore()
@@ -387,8 +397,9 @@ class Worker:
             # Stream mode on a file: replay it at native speed through the local
             # relay and consume RTSP, so the pipeline sees a genuine live stream
             # (real-time pacing, drops under load) — a recording standing in for
-            # a camera that will be hooked up later.
-            video_reference = f"{RTSP_SIM_BASE}/sim-{job.get('id', 'local')}"
+            # a camera that will be hooked up later. The platform hands us a
+            # credentialed publish URL; the env base is the local-dev fallback.
+            video_reference = job.get("simPublishUrl") or f"{RTSP_SIM_BASE}/sim-{job.get('id', 'local')}"
             try:
                 # -stream_loop -1: a test source should keep behaving like a camera
                 # until the job is stopped, not end when the recording runs out
@@ -415,7 +426,9 @@ class Worker:
                 workflow_specification=job.get("workflowSpecification"),
                 workspace_name=job.get("workspaceName"),
                 workflow_id=job.get("workflowId"),
-                api_key=self.args.api_key or os.getenv("ROBOFLOW_API_KEY"),
+                # the job carries its workspace's key so model access and usage
+                # follow the job, not this worker's identity key
+                api_key=job.get("apiKey") or self.args.api_key or os.getenv("ROBOFLOW_API_KEY"),
                 on_prediction=self.on_prediction,
                 serialize_results=True,
                 max_fps=job.get("maxFps"),
@@ -449,10 +462,44 @@ class Worker:
             pass
         self._finalize_recorder()
         self._cleanup_download()
+        self._upload_results(job_id)
         with self.lock:
             if self.job and self.job.get("id") == job_id and self.state == "running":
                 self.state = "completed"
                 print(f"[processor] job {job_id} completed; results are scrubbable")
+
+    def _upload_results(self, job_id):
+        """Move finished batch results to durable storage via platform-signed URLs.
+
+        The worker's disk is ephemeral: once this succeeds, nothing about the
+        finished job depends on this process existing. Failure keeps the local
+        copies servable via /results/ as a fallback.
+        """
+        if not self.args.api_url:
+            return
+        rdir = os.path.join(RESULTS_ROOT, str(job_id))
+        files = [f for f in RESULT_FILES if os.path.isfile(os.path.join(rdir, f))]
+        if not files:
+            return
+        try:
+            resp = self.api("POST", f"/video-jobs/{job_id}/results/upload-urls", json={})
+            uploads = resp.get("uploads", {})
+            uploaded = []
+            for name in files:
+                url = uploads.get(name)
+                if not url:
+                    continue
+                with open(os.path.join(rdir, name), "rb") as fh:
+                    # v4 signed PUT with no bound content type: send no
+                    # Content-Type header (requests omits it for file bodies)
+                    r = requests.put(url, data=fh, timeout=300)
+                    r.raise_for_status()
+                uploaded.append(name)
+            if uploaded:
+                self.api("POST", f"/video-jobs/{job_id}/results/complete", json={"files": uploaded})
+                print(f"[processor] uploaded results for {job_id}: {', '.join(uploaded)}")
+        except Exception as exc:
+            print(f"[processor] results upload failed (kept locally): {exc}", file=sys.stderr)
 
     def _finalize_recorder(self):
         recorder, self.recorder = self.recorder, None
@@ -533,22 +580,66 @@ class Worker:
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
+    def try_claim(self):
+        """Claim (at most) one job if idle. Serialized so the poll loop and a
+        Pub/Sub wake-up can't both start work on this worker."""
+        with self.claim_lock:
+            if self.state not in ("idle", "error"):
+                return None
+            resp = self.api(
+                "POST",
+                "/video-jobs/claim",
+                json={
+                    "processorId": self.processor_id,
+                    "processorUrl": self.public_url,
+                },
+            )
+            job = resp.get("job")
+            if job:
+                self.run_job(job)
+            return job
+
+    def start_pubsub_listener(self):
+        """Optional Pub/Sub wake-ups: messages are notifications, not work items —
+        the claim endpoint stays the transactional source of truth. Busy workers
+        nack so the backlog stays visible to autoscaling and redelivery reaches
+        an idle worker; polling continues as the fallback."""
+        subscription = self.args.pubsub_subscription
+        if not subscription or not self.args.api_url:
+            return
+        try:
+            from google.cloud import pubsub_v1
+        except ImportError:
+            print(
+                "[processor] google-cloud-pubsub not installed; polling only",
+                file=sys.stderr,
+            )
+            return
+
+        def on_message(message):
+            if self.state not in ("idle", "error"):
+                message.nack()
+                return
+            try:
+                self.try_claim()
+                message.ack()
+            except Exception:
+                message.nack()
+
+        self._pubsub_client = pubsub_v1.SubscriberClient()
+        self._pubsub_client.subscribe(
+            subscription,
+            callback=on_message,
+            flow_control=pubsub_v1.types.FlowControl(max_messages=1),
+        )
+        print(f"[processor] pubsub wake-ups on {subscription}")
+
     def poll_loop(self):
         print(f"[processor] {self.processor_id} polling {self.args.api_url} for jobs")
         while not self._stop_requested:
             try:
                 if self.state in ("idle", "error"):
-                    resp = self.api(
-                        "POST",
-                        "/video-jobs/claim",
-                        json={
-                            "processorId": self.processor_id,
-                            "processorUrl": f"http://127.0.0.1:{self.args.port}",
-                        },
-                    )
-                    job = resp.get("job")
-                    if job:
-                        self.run_job(job)
+                    self.try_claim()
                 else:
                     state = self.state
                     resp = self.api(
@@ -574,6 +665,7 @@ class Worker:
             job.setdefault("id", "local-job")
             self.run_job(job)
         else:
+            self.start_pubsub_listener()
             threading.Thread(target=self.poll_loop, daemon=True).start()
 
 
@@ -652,6 +744,21 @@ def make_handler(worker: Worker):
                         self.wfile.flush()
                 except (BrokenPipeError, ConnectionResetError):
                     pass
+            elif path == "/metrics":
+                # busy gauge drives the warm-pool autoscaler:
+                # desired replicas = sum(busy) + MIN_IDLE
+                busy = 1 if worker.state in ("starting", "running") else 0
+                body = (
+                    "# HELP video_processor_busy 1 while a job is assigned to this worker\n"
+                    "# TYPE video_processor_busy gauge\n"
+                    f"video_processor_busy {busy}\n"
+                ).encode()
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "text/plain; version=0.0.4")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
             elif path.startswith("/results/"):
                 # /results/<jobId>/(video.mp4|frames.jsonl|meta.json) — persisted
                 # batch-job results. Range support is what makes <video> scrubbing
@@ -735,6 +842,16 @@ def main():
     parser.add_argument("--job-file", help="run a single local job definition (skips platform polling)")
     parser.add_argument("--port", type=int, default=8890)
     parser.add_argument("--processor-id", default=None)
+    parser.add_argument(
+        "--public-url",
+        default=os.getenv("PROCESSOR_PUBLIC_URL"),
+        help="externally reachable base URL reported as processorUrl (e.g. an ingress path)",
+    )
+    parser.add_argument(
+        "--pubsub-subscription",
+        default=os.getenv("PROCESSOR_PUBSUB_SUBSCRIPTION"),
+        help="optional GCP Pub/Sub subscription for instant job wake-ups (polling remains the fallback)",
+    )
     args = parser.parse_args()
 
     if not args.job_file and not args.api_url:
