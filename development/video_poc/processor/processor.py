@@ -44,6 +44,17 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
+# Trim OpenCV's FFmpeg capture buffering for RTSP consumption BEFORE anything
+# opens a cv2.VideoCapture: without these flags the demuxer/decoder sits on
+# hundreds of ms of internal buffer that no downstream drop-oldest strategy can
+# reclaim — it's ahead of the first place we can drop. setdefault so the
+# environment can still override. (Also applies to batch local-file decode,
+# where nobuffer/low_delay are harmless.)
+os.environ.setdefault(
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+    "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay",
+)
+
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
@@ -766,6 +777,11 @@ class Worker:
 
         video_reference = source_url
         pipeline_kwargs = {}
+        if mode == "stream":
+            # cap the capture-side frame queue at 1: latest-frame semantics must
+            # start at the decoder, not after it (maps to CAP_PROP_BUFFERSIZE;
+            # harmlessly ignored by backends that don't support it)
+            pipeline_kwargs["video_source_properties"] = {"buffersize": 1}
         if mode == "batch":
             # Record results so the UI can scrub them after the job completes.
             self.recorder = JobRecorder(str(job.get("id", "local")))
