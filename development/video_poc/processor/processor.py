@@ -495,22 +495,29 @@ class AiortcWhipPublisher:
         return self._thread is not None and self._thread.is_alive() and not self._failed
 
     def ensure(self, output: str):
-        if self.running() and output == self.output:
+        if self.running():
+            if output != self.output:
+                # in-session switch: the track reads self.output per frame, so
+                # the next frame simply carries the new output — no WebRTC
+                # teardown, no relay path churn, viewers never reconnect
+                # (VP8 handles mid-stream dimension changes)
+                print(f"[processor] switching whip output to '{output}' in-session")
+                self.output = output
             return
         self.stop()
         self.output = output
         self._stopped.clear()
         self._failed = False
-        self._thread = threading.Thread(target=self._run, args=(output,), daemon=True)
+        self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def _run(self, output):
+    def _run(self):
         import asyncio
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(self._publish(loop, output))
+            loop.run_until_complete(self._publish(loop))
         except Exception as exc:
             print(f"[processor] whip publisher error: {exc}", file=sys.stderr)
             self._failed = True
@@ -521,7 +528,7 @@ class AiortcWhipPublisher:
                 pass
             loop.close()
 
-    async def _publish(self, loop, output):
+    async def _publish(self, loop):
         import asyncio
         import fractions
 
@@ -531,6 +538,7 @@ class AiortcWhipPublisher:
 
         frames = self.frames  # raw ndarrays per output (no JPEG round trip)
         stopped = self._stopped
+        publisher = self
 
         class LatestFrameTrack(MediaStreamTrack):
             kind = "video"
@@ -538,14 +546,21 @@ class AiortcWhipPublisher:
             def __init__(self):
                 super().__init__()
                 self._seq = -1
+                self._output = publisher.output
                 self._t0 = None
 
             async def recv(self):
                 # event-driven: block (off the event loop) until the pipeline
-                # produces a new frame, then stamp its actual arrival time
+                # produces a new frame, then stamp its actual arrival time.
+                # publisher.output is re-read per frame so viewers can switch
+                # outputs without a session restart.
                 while True:
                     if stopped.is_set():
                         raise MediaStreamError
+                    output = publisher.output
+                    if output != self._output:
+                        # per-output seq counters aren't comparable
+                        self._output, self._seq = output, -1
                     image, seq = await loop.run_in_executor(
                         None, frames.wait_next, output, self._seq, 0.25
                     )
@@ -571,8 +586,8 @@ class AiortcWhipPublisher:
         while pc.iceGatheringState != "complete":
             await asyncio.sleep(0.05)
 
-        # WHIP is just "POST the offer SDP, apply the answer". On output
-        # switches this publisher restarts on the SAME relay path, and the
+        # WHIP is just "POST the offer SDP, apply the answer". On transport
+        # hot-swaps this publisher restarts on the SAME relay path, and the
         # relay may still be tearing the old session down — retry briefly
         # instead of failing the whole publisher over the race.
         for post_attempt in range(3):
@@ -591,7 +606,9 @@ class AiortcWhipPublisher:
                 await asyncio.sleep(1.0)
         resp.raise_for_status()
         await pc.setRemoteDescription(RTCSessionDescription(sdp=resp.text, type="answer"))
-        print(f"[processor] viewer attached — publishing '{output}' via WHIP (in-process)")
+        print(
+            f"[processor] viewer attached — publishing '{self.output}' via WHIP (in-process)"
+        )
 
         try:
             while not stopped.is_set() and pc.connectionState not in ("failed", "closed"):
