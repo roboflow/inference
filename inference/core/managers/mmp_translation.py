@@ -19,6 +19,20 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pybase64
 
+from inference.core.entities.responses.ocr import OCRInferenceResponse
+from inference.core.entities.responses.sam import SamEmbeddingResponse
+from inference.core.entities.responses.sam2 import (
+    Sam2EmbeddingResponse,
+    Sam2SegmentationPrediction,
+    Sam2SegmentationResponse,
+)
+from inference.core.entities.responses.sam3 import (
+    Sam3EmbeddingResponse,
+    Sam3PromptEcho,
+    Sam3PromptResult,
+    Sam3SegmentationPrediction,
+    Sam3SegmentationResponse,
+)
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponseImage,
@@ -56,7 +70,7 @@ from inference.core.utils.image_utils import (
     load_image_from_numpy_object,
     load_image_from_numpy_str,
 )
-from inference.core.utils.postprocess import mask2poly, masks2poly
+from inference.core.utils.postprocess import mask2poly, masks2multipoly, masks2poly
 
 # Static mirror of the (model_type, action) pairs registered by
 # inference_server/handlers/*/description.py. Kept as literals so the legacy
@@ -112,10 +126,50 @@ IMPLEMENTED_ROUTES = frozenset(
         ("instance-segmentation", "infer"),
         ("keypoint-detection", "infer"),
         ("multi-label-classification", "infer"),
+        ("interactive-instance-segmentation", "embed"),
+        ("interactive-instance-segmentation", "embed_images"),
+        ("interactive-instance-segmentation", "segment_with_text_prompts"),
+        ("interactive-instance-segmentation", "segment_with_visual_prompts"),
         ("object-detection", "infer"),
+        ("open-vocabulary-object-detection", "infer"),
         ("semantic-segmentation", "infer"),
+        ("structured-ocr", "infer"),
+        ("text-only-ocr", "infer"),
     ]
 )
+
+IMPLEMENTED_TASK_TYPES = frozenset(
+    task_type for task_type, _ in IMPLEMENTED_ROUTES
+)
+
+
+def implemented_actions(task_type: str) -> frozenset:
+    return frozenset(
+        action for t, action in IMPLEMENTED_ROUTES if t == task_type
+    )
+
+
+# Explicit foundation endpoints supply a concrete action via the request type,
+# overriding the task type's default action. Candidates are checked against
+# the model's registered tasks in order.
+_ACTION_CANDIDATES_BY_REQUEST_TYPE: Dict[str, Tuple[str, ...]] = {
+    "SamEmbeddingRequest": ("embed",),
+    "SamSegmentationRequest": ("segment",),
+    "Sam2EmbeddingRequest": ("embed", "embed_images"),
+    "Sam2SegmentationRequest": ("segment_with_visual_prompts", "segment"),
+    "Sam3SegmentationRequest": ("segment_with_text_prompts",),
+}
+
+
+def resolve_request_action(route: dict, request: Any) -> str:
+    candidates = _ACTION_CANDIDATES_BY_REQUEST_TYPE.get(type(request).__name__)
+    if not candidates:
+        return route["action"]
+    tasks = route.get("tasks") or set()
+    for candidate in candidates:
+        if candidate in tasks:
+            return candidate
+    return candidates[0]
 
 # Error codes returned by the MMP in ("error", code) lifecycle tuples;
 # values mirror inference_model_manager.model_manager_process.
@@ -242,8 +296,17 @@ def _numeric_confidence(value: Any) -> Optional[float]:
     return float(value)
 
 
-def build_task_params(task_type: str, request: Any) -> dict:
+def build_task_params(task_type: str, action: str, request: Any) -> dict:
     params: dict = {}
+    if task_type == "interactive-instance-segmentation":
+        return _build_interactive_segmentation_params(action, request)
+    if task_type == "structured-ocr":
+        _ensure_ocr_request_supported(request)
+        return params
+    if task_type == "text-only-ocr":
+        return params
+    if task_type == "open-vocabulary-object-detection":
+        return _build_open_vocabulary_params(request)
     if task_type in ("semantic-segmentation", "depth-estimation"):
         return params
     confidence = _numeric_confidence(getattr(request, "confidence", None))
@@ -264,6 +327,134 @@ def build_task_params(task_type: str, request: Any) -> dict:
         keypoint_confidence = getattr(request, "keypoint_confidence", None)
         if keypoint_confidence is not None:
             params["key_points_threshold"] = float(keypoint_confidence)
+    return params
+
+
+def _build_interactive_segmentation_params(action: str, request: Any) -> dict:
+    if action == "embed":
+        return {}
+    if action == "embed_images":
+        params: dict = {}
+        image_id = getattr(request, "image_id", None)
+        if image_id:
+            params["image_hashes"] = [image_id]
+        return params
+    if action == "segment_with_visual_prompts":
+        return _build_visual_prompt_params(request)
+    if action == "segment_with_text_prompts":
+        return _build_text_prompt_params(request)
+    raise ModelDeploymentNotSupportedError(
+        f"SAM action '{action}' is not supported on the MMP path."
+    )
+
+
+def _build_visual_prompt_params(request: Any) -> dict:
+    if getattr(request, "mask_input", None) is not None or getattr(
+        request, "has_mask_input", False
+    ):
+        raise ModelDeploymentNotSupportedError(
+            "mask_input is not supported on the MMP path."
+        )
+    for field in ("save_logits_to_cache", "load_logits_from_cache"):
+        if getattr(request, field, False):
+            raise ModelDeploymentNotSupportedError(
+                f"{field} is not supported on the MMP path."
+            )
+    prompts = getattr(request, "prompts", None)
+    if prompts is not None:
+        args = prompts.to_sam2_inputs()
+    else:
+        args = {"point_coords": None, "point_labels": None, "box": None}
+    point_coords = args.get("point_coords")
+    point_labels = args.get("point_labels")
+    boxes = args.get("box")
+    if point_coords or point_labels:
+        point_coords, point_labels = _pad_points(point_coords, point_labels)
+    if not point_coords and not point_labels and not boxes:
+        point_coords, point_labels = [[0, 0]], [-1]
+    params: dict = {
+        "multi_mask_output": bool(getattr(request, "multimask_output", True)),
+    }
+    if point_coords:
+        params["point_coordinates"] = point_coords
+    if point_labels:
+        params["point_labels"] = point_labels
+    if boxes:
+        params["boxes"] = boxes
+    image_id = getattr(request, "image_id", None)
+    if image_id:
+        params["image_hashes"] = [image_id]
+    return params
+
+
+def _pad_points(
+    point_coords: Optional[List[list]], point_labels: Optional[List[list]]
+) -> Tuple[Optional[List[list]], Optional[List[list]]]:
+    if not point_coords or not point_labels:
+        return point_coords, point_labels
+    max_len = max(len(coords) for coords in point_coords)
+    padded_coords = [
+        list(coords) + [[0, 0]] * (max_len - len(coords)) for coords in point_coords
+    ]
+    padded_labels = [
+        list(labels) + [-1] * (max_len - len(labels)) for labels in point_labels
+    ]
+    return padded_coords, padded_labels
+
+
+def _build_text_prompt_params(request: Any) -> dict:
+    if getattr(request, "nms_iou_threshold", None) is not None:
+        raise ModelDeploymentNotSupportedError(
+            "nms_iou_threshold is not supported on the MMP path."
+        )
+    prompts = getattr(request, "prompts", None)
+    if not prompts:
+        raise ModelDeploymentNotSupportedError(
+            "SAM3 concept segmentation requires prompts on the MMP path."
+        )
+    return {
+        "prompts": [prompt.dict() for prompt in prompts],
+        "output_prob_thresh": float(
+            getattr(request, "output_prob_thresh", None) or 0.5
+        ),
+    }
+
+
+def _ensure_ocr_request_supported(request: Any) -> None:
+    language_codes = getattr(request, "language_codes", None)
+    if language_codes is not None and list(language_codes) != ["en"]:
+        raise ModelDeploymentNotSupportedError(
+            "language_codes other than ['en'] are not supported on the MMP path."
+        )
+    if getattr(request, "quantize", False):
+        raise ModelDeploymentNotSupportedError(
+            "quantize is not supported on the MMP path."
+        )
+
+
+def _build_open_vocabulary_params(request: Any) -> dict:
+    classes = getattr(request, "text", None) or getattr(request, "classes", None)
+    if getattr(request, "training_data", None) is not None:
+        raise ModelDeploymentNotSupportedError(
+            "Few-shot detection with training_data is not supported on the MMP path."
+        )
+    if not classes:
+        raise ModelDeploymentNotSupportedError(
+            "Open-vocabulary detection requires a list of classes on the MMP path."
+        )
+    for field, default in (("box_threshold", 0.5), ("text_threshold", 0.5)):
+        value = getattr(request, field, None)
+        if value is not None and value != default:
+            raise ModelDeploymentNotSupportedError(
+                f"{field} is not supported on the MMP path."
+            )
+    params: dict = {"classes": [str(c) for c in classes]}
+    confidence = _numeric_confidence(getattr(request, "confidence", None))
+    if confidence is not None:
+        params["confidence"] = confidence
+    class_agnostic_nms = getattr(request, "class_agnostic_nms", None)
+    if class_agnostic_nms is not None:
+        params["class_agnostic_nms"] = bool(class_agnostic_nms)
     return params
 
 
@@ -297,6 +488,7 @@ def forward_image(image: Any) -> Tuple[bytes, Tuple[int, int]]:
 
 def repack_prediction(
     task_type: str,
+    action: str,
     prediction: Any,
     dims: Tuple[int, int],
     route: dict,
@@ -305,6 +497,16 @@ def repack_prediction(
     class_names = route.get("class_names")
     if task_type == "object-detection":
         return repack_object_detection_response(prediction, dims, class_names, request)
+    if task_type == "open-vocabulary-object-detection":
+        requested_classes = [
+            str(c)
+            for c in (
+                getattr(request, "text", None) or getattr(request, "classes", None) or []
+            )
+        ]
+        return repack_object_detection_response(
+            prediction, dims, requested_classes, request
+        )
     if task_type == "instance-segmentation":
         return repack_instance_segmentation_response(
             prediction, dims, class_names, request
@@ -325,6 +527,12 @@ def repack_prediction(
         )
     if task_type == "depth-estimation":
         return repack_depth_estimation_response(prediction)
+    if task_type == "structured-ocr":
+        return repack_structured_ocr_response(prediction, dims, class_names, request)
+    if task_type == "text-only-ocr":
+        return repack_text_ocr_response(prediction, dims)
+    if task_type == "interactive-instance-segmentation":
+        return repack_interactive_segmentation_response(action, prediction, request)
     raise ModelDeploymentNotSupportedError(
         f"No response translation for task type '{task_type}' on the MMP path."
     )
@@ -669,6 +877,172 @@ def repack_depth_estimation_response(prediction: Any) -> _DepthAdapterResponse:
             "normalized_depth": normalized_depth,
             "image": _DepthImage(base64_image=encoded),
         }
+    )
+
+
+def repack_structured_ocr_response(
+    prediction: Any,
+    dims: Tuple[int, int],
+    class_names: Optional[List[str]],
+    request: Any,
+) -> OCRInferenceResponse:
+    if not (isinstance(prediction, tuple) and len(prediction) == 2):
+        raise ModelArtefactError(
+            "Unexpected structured OCR prediction shape from the inference backend."
+        )
+    texts, detections = prediction
+    text = _unwrap_single_prediction(texts)
+    width, height = dims
+    response = OCRInferenceResponse(
+        result=text if isinstance(text, str) else str(text),
+        image=InferenceResponseImage(width=width, height=height),
+        time=0.0,
+    )
+    if getattr(request, "generate_bounding_boxes", False):
+        boxes = repack_object_detection_response(
+            _unwrap_single_prediction(detections), dims, class_names, request
+        )
+        response.predictions = boxes.predictions
+    return response
+
+
+def repack_text_ocr_response(
+    prediction: Any, dims: Tuple[int, int]
+) -> OCRInferenceResponse:
+    text = _unwrap_single_prediction(prediction)
+    width, height = dims
+    return OCRInferenceResponse(
+        result=text if isinstance(text, str) else str(text),
+        image=InferenceResponseImage(width=width, height=height),
+        time=0.0,
+    )
+
+
+def repack_interactive_segmentation_response(
+    action: str, prediction: Any, request: Any
+):
+    if action in ("embed", "embed_images"):
+        return _repack_sam_embeddings(action, prediction, request)
+    if action == "segment_with_visual_prompts":
+        return _repack_visual_segmentation(prediction, request)
+    if action == "segment_with_text_prompts":
+        return _repack_text_segmentation(prediction, request)
+    raise ModelDeploymentNotSupportedError(
+        f"No response translation for SAM action '{action}' on the MMP path."
+    )
+
+
+def _repack_sam_embeddings(action: str, prediction: Any, request: Any):
+    embeddings_obj = _unwrap_single_prediction(prediction)
+    if type(request).__name__ == "SamEmbeddingRequest":
+        embeddings = np.asarray(embeddings_obj.embeddings)
+        if getattr(request, "format", "json") == "binary":
+            buffer = io.BytesIO()
+            np.save(buffer, embeddings)
+            return SamEmbeddingResponse(embeddings=buffer.getvalue(), time=0.0)
+        return SamEmbeddingResponse(embeddings=embeddings.tolist(), time=0.0)
+    image_id = getattr(request, "image_id", None) or getattr(
+        embeddings_obj, "image_hash", None
+    )
+    if action == "embed_images":
+        return Sam3EmbeddingResponse(image_id=image_id, time=0.0)
+    return Sam2EmbeddingResponse(image_id=image_id, time=0.0)
+
+
+def _repack_visual_segmentation(
+    prediction: Any, request: Any
+) -> Sam2SegmentationResponse:
+    result = _unwrap_single_prediction(prediction)
+    masks, scores = _choose_most_confident_sam_masks(result.masks, result.scores)
+    predictions = _sam_masks_to_predictions(
+        masks, scores, getattr(request, "format", "polygon"), Sam2SegmentationPrediction
+    )
+    return Sam2SegmentationResponse(predictions=predictions, time=0.0)
+
+
+def _repack_text_segmentation(
+    prediction: Any, request: Any
+) -> Sam3SegmentationResponse:
+    prompt_outputs = _unwrap_single_prediction(prediction)
+    if not isinstance(prompt_outputs, list):
+        raise ModelArtefactError(
+            "Unexpected SAM3 text-prompt prediction shape from the inference backend."
+        )
+    prompts = list(getattr(request, "prompts", None) or [])
+    response_format = getattr(request, "format", "polygon")
+    prompt_results = []
+    for output in prompt_outputs:
+        index = int(output.get("prompt_index", len(prompt_results)))
+        prompt = prompts[index] if index < len(prompts) else None
+        masks = np.asarray(output.get("masks"))
+        scores = [float(score) for score in output.get("scores", [])]
+        prompt_threshold = getattr(prompt, "output_prob_thresh", None)
+        if prompt_threshold is not None:
+            kept = [i for i, score in enumerate(scores) if score >= prompt_threshold]
+            masks = masks[kept] if len(kept) else masks[:0]
+            scores = [scores[i] for i in kept]
+        has_visual = bool(getattr(prompt, "boxes", None))
+        echo = Sam3PromptEcho(
+            prompt_index=index,
+            type="visual" if has_visual else "text",
+            text=getattr(prompt, "text", None),
+            num_boxes=len(getattr(prompt, "boxes", None) or []) if has_visual else 0,
+        )
+        predictions = _sam_masks_to_predictions(
+            masks, scores, response_format, Sam3SegmentationPrediction
+        )
+        prompt_results.append(
+            Sam3PromptResult(prompt_index=index, echo=echo, predictions=predictions)
+        )
+    return Sam3SegmentationResponse(prompt_results=prompt_results, time=0.0)
+
+
+def _choose_most_confident_sam_masks(
+    masks: Any, scores: Any
+) -> Tuple[np.ndarray, List[float]]:
+    masks = np.asarray(masks)
+    scores = np.asarray(scores, dtype=float)
+    if masks.ndim == 3:
+        masks = masks[None]
+        scores = scores.reshape(1, -1)
+    selected_masks = []
+    selected_scores = []
+    for prompt_masks, prompt_scores in zip(masks, scores):
+        best = int(np.argmax(prompt_scores))
+        selected_masks.append(prompt_masks[best])
+        selected_scores.append(float(prompt_scores[best]))
+    return np.asarray(selected_masks), selected_scores
+
+
+def _sam_masks_to_predictions(
+    masks: np.ndarray, scores: List[float], response_format: Any, prediction_cls
+) -> list:
+    response_format = response_format or "polygon"
+    if response_format in ("polygon", "json"):
+        polygons = masks2multipoly((np.asarray(masks) > 0).astype(np.uint8))
+        return [
+            prediction_cls(
+                masks=[polygon.tolist() for polygon in mask_polygons],
+                confidence=float(score),
+                format="polygon",
+            )
+            for mask_polygons, score in zip(polygons, scores)
+        ]
+    if response_format == "rle":
+        from pycocotools import mask as mask_utils
+
+        predictions = []
+        for mask, score in zip(np.asarray(masks), scores):
+            rle = mask_utils.encode(
+                np.asfortranarray((mask > 0).astype(np.uint8))
+            )
+            rle["counts"] = rle["counts"].decode("utf-8")
+            predictions.append(
+                prediction_cls(masks=rle, confidence=float(score), format="rle")
+            )
+        return predictions
+    raise ModelDeploymentNotSupportedError(
+        f"format={response_format!r} is not supported on the MMP path."
     )
 
 

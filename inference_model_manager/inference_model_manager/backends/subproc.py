@@ -162,8 +162,10 @@ def _tensors_to_numpy(result: Any) -> Any:
         if isinstance(obj, Tensor):
             return obj.detach().cpu().numpy()
         if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+            # object.__setattr__ so frozen dataclasses (SAM predictions,
+            # embeddings) convert too instead of raising FrozenInstanceError
             for f in dataclasses.fields(obj):
-                setattr(obj, f.name, _walk(getattr(obj, f.name)))
+                object.__setattr__(obj, f.name, _walk(getattr(obj, f.name)))
             return obj
         if isinstance(obj, list):
             return [_walk(x) for x in obj]
