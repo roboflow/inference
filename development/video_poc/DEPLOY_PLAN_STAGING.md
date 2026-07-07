@@ -204,3 +204,29 @@ Afternoon (wiring):
 - mediamtx version pinning + `fetch-deps.sh` alignment.
 - GCS→Crusoe egress for batch downloads (revisit when Crusoe object storage
   is adopted; explicitly deferred).
+
+## 8. Poll → queue migration path (design, not tomorrow)
+
+A video job is a **lease, not a request** — monitoring jobs run for months, so
+queue ack cannot mean "done"; it means "claimed". The queue therefore only
+replaces dispatch; the heartbeat/lease/reaping system built in the POC stays
+as the ownership mechanism, and the status poll stays as the control channel
+(cancel, watch signaling).
+
+- **Phase A (now)**: polling claim. Prerequisite fix regardless of queues:
+  make claim a transactional compare-and-set — today two processors can race
+  on the same queued job.
+- **Phase B**: `video-jobs` queue for dispatch. Functions (GCP) keep writing
+  Firestore only; a small in-cluster dispatcher bridges Firestore→RabbitMQ
+  (queue stays cluster-local = per-cell by construction). Processor consumes
+  with prefetch=1, acks on claim, compare-and-sets Firestore before starting
+  (discards stale/duplicate deliveries). Orphan reaping additionally
+  re-enqueues. Poll mode remains for local dev.
+- **Phase C**: split classes. `video-batch` = true backlog, KEDA scales the
+  pool on queue depth — this is where the processor migrates into
+  async-serverless machinery almost verbatim. Monitoring = placement problem,
+  not queueing: scale on assigned-streams-per-worker; rebalancing = drain →
+  re-enqueue → re-place (cheap because workers re-attach to relay streams
+  locally).
+
+Never queued: heartbeats, cancel/watch signals, results to the browser.
