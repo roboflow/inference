@@ -7,8 +7,10 @@ from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     BlockManifest,
+    DetectionOffsetBlockV1,
     offset_detections,
 )
+from inference.core.workflows.execution_engine.entities.base import Batch
 
 
 @pytest.mark.parametrize(
@@ -181,6 +183,41 @@ def test_offset_detection_with_percentage() -> None:
 
     # then
     x1, y1, x2, y2 = result.xyxy[0]
+    assert x1 == 85, "Left corner should be moved by 5% of detection width to the left"
+    assert y1 == 180, "Top corner should be moved by 5% of detection height to the top"
+    assert (
+        x2 == 415
+    ), "Right corner should be moved by 5% of detection width to the right"
+    assert (
+        y2 == 620
+    ), "Bottom corner should be moved by 5% of detection height to the bottom"
+
+
+def test_run_offsets_by_percentage_when_percent_units_selected() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[100, 200, 400, 600]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.5], dtype=np.float64),
+        data={
+            "detection_id": np.array(["three"]),
+            "class_name": np.array(["truck"]),
+            "parent_id": np.array(["p3"]),
+            "image_dimensions": np.array([[640, 640]]),
+        },
+    )
+    block = DetectionOffsetBlockV1()
+
+    # when
+    result = block.run(
+        predictions=Batch(content=[detections], indices=[(0,)]),
+        offset_width=10,
+        offset_height=10,
+        units="Percent (%)",
+    )
+
+    # then
+    x1, y1, x2, y2 = result[0]["predictions"].xyxy[0]
     assert x1 == 85, "Left corner should be moved by 5% of detection width to the left"
     assert y1 == 180, "Top corner should be moved by 5% of detection height to the top"
     assert (
