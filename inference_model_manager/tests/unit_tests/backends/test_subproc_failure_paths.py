@@ -212,3 +212,38 @@ def test_unpicklable_result_errors_slot_without_killing_batch(monkeypatch):
         assert any(r == 202 and sz > 0 for r, _, sz in results)
     finally:
         pool.close()
+
+
+class TestCleanUnloadFailsFast:
+    def _unloadable_backend(self) -> SubprocessBackend:
+        return _bare_backend(
+            _recv_thread=SimpleNamespace(
+                join=lambda timeout=None: None, is_alive=lambda: False
+            ),
+            _recv_running=True,
+            _worker=SimpleNamespace(
+                is_alive=lambda: False,
+                pid=1,
+                exitcode=0,
+                kill=lambda: None,
+                join=lambda timeout=None: None,
+            ),
+            _zmq_sock=SimpleNamespace(close=lambda linger=0: None),
+            _zmq_ctx=SimpleNamespace(term=lambda: None),
+            _zmq_addr="tcp://127.0.0.1:1",
+        )
+
+    def test_submit_slot_after_clean_unload_raises(self):
+        b = self._unloadable_backend()
+        b.unload()
+        fut: Future = Future()
+        with pytest.raises(RuntimeError, match="recv thread is dead"):
+            b.submit_slot(1, 42, fut, b"{}")
+        assert 1 not in b._slot_futures or b._slot_futures[1][1].done()
+
+    def test_signal_slot_after_clean_unload_raises(self):
+        b = self._unloadable_backend()
+        b.unload()
+        with pytest.raises(RuntimeError, match="recv thread is dead"):
+            b.signal_slot(2, 43)
+        assert b._outstanding == 0

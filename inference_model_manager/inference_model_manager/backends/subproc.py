@@ -1232,6 +1232,11 @@ class SubprocessBackend(Backend):
         If ``future`` is provided, it will be resolved when the worker
         sends T_RESULT for this slot.
         """
+        if self._recv_dead:
+            raise RuntimeError(
+                f"SubprocessBackend({self._model_id!r}): recv thread is dead, "
+                "cannot enqueue work"
+            )
         with self._slot_lock:
             self._slot_futures[slot_id] = (req_id, future)
 
@@ -1272,6 +1277,10 @@ class SubprocessBackend(Backend):
 
     def unload(self) -> None:
         self._state_value = "unhealthy"  # block new submits immediately
+        # Fail-fast gate for submit_slot/signal_slot: without it, work enqueued
+        # after the recv thread consumes the shutdown sentinel is never drained —
+        # the future never resolves and its SHM slot leaks until pool exhaustion.
+        self._recv_dead = True
 
         # Sentinel alone terminates the recv loop (it sends T_SHUTDOWN first).
         # Clearing _recv_running before the sentinel raced the loop's top
