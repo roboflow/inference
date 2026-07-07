@@ -317,6 +317,17 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   minted by the platform, embedded in every issued URL, validated per connection
   by mediamtx's external-auth hook → `POST /video-relay/auth`. No shared secrets
   are pushed to connectors.
+- ~~Managed-pool workers hold a workspace key / claim is a privilege step-up~~
+  **CLOSED for the fleet**: pool workers authenticate to claim/status/results
+  with a service secret (`x-video-proc-service-access-token`, same pattern as
+  batch-processing's), claim **across all workspaces**, and hold no tenant
+  credentials at rest — the claim payload still carries the JOB's workspace key
+  so per-tenant execution is unchanged; ownership on status/results is the
+  processor identity. Terraform mints the secret (k8s + Secret Manager;
+  functions bind it as a runtime secret). Self-hosted processors keep
+  workspace-key auth and its workspace scoping — per-job scoped tokens remain
+  the eventual hardening there. The fleet secret is the crown jewel: never
+  user-facing.
 - **Processor HTTP has no auth** and CORS `*` — the gateway hostname is the only
   barrier in staging. This is the top prod-readiness item. Planned shape: the
   platform mints a per-job access token (same pattern as stream keys), returns it
