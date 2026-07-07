@@ -72,6 +72,16 @@ Two separate hosts for relay vs processors on purpose: WHEP returns session
 resource URLs in `Location` headers, so serving mediamtx at a path prefix
 behind a rewriting proxy is asking for breakage — give it a root.
 
+**WebRTC media path (do not miss this):** Traefik only carries the WHEP
+*signaling* (HTTP). The media itself is RTP over ICE, which must reach
+mediamtx directly. Plan: enable mediamtx **ICE TCP mux** (`webrtcLocalTCPAddress
+:8189`), expose TCP 8189 on the same `mediamtx-ingest` LoadBalancer as RTSP,
+and set `webrtcAdditionalHosts: [<LB IP or video-ingest hostname>]` so the
+advertised ICE candidates point at the LB. TCP-mux WebRTC is slightly worse
+than UDP but one port, one LB, and it works through the same untested-LB risk
+we're already carrying. Test = WHEP playback actually rendering frames, not
+just a 201 from the signaling request.
+
 ## 2. Kubernetes objects (the chart's contents)
 
 1. **Namespace** `video-poc` (chart `--create-namespace`, or add to
