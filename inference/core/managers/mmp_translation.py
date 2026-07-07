@@ -10,17 +10,30 @@ pays for them while the gate is off.
 from __future__ import annotations
 
 import asyncio
+import base64
 import binascii
 import io
-from typing import Any, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pybase64
 
 from inference.core.entities.responses.inference import (
+    ClassificationInferenceResponse,
     InferenceResponseImage,
+    InstanceSegmentationInferenceResponse,
+    InstanceSegmentationPrediction,
+    InstanceSegmentationRLEPrediction,
+    Keypoint,
+    KeypointsDetectionInferenceResponse,
+    KeypointsPrediction,
+    MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
+    Point,
+    SemanticSegmentationInferenceResponse,
+    SemanticSegmentationPrediction,
 )
 from inference.core.exceptions import (
     InferenceModelNotFound,
@@ -30,6 +43,7 @@ from inference.core.exceptions import (
     ModelArtefactError,
     ModelDeploymentNotSupportedError,
     ModelManagerLockAcquisitionError,
+    PostProcessingError,
     RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
@@ -37,10 +51,12 @@ from inference.core.exceptions import (
 )
 from inference.core.utils.image_utils import (
     BASE64_DATA_TYPE_PATTERN,
+    encode_image_to_jpeg_bytes,
     fetch_image_bytes_from_url,
     load_image_from_numpy_object,
     load_image_from_numpy_str,
 )
+from inference.core.utils.postprocess import mask2poly, masks2poly
 
 # Static mirror of the (model_type, action) pairs registered by
 # inference_server/handlers/*/description.py. Kept as literals so the legacy
@@ -91,7 +107,13 @@ NEW_WORLD_HANDLERS = frozenset(
 # Pairs the adapter can actually translate today; grows per rollout phase.
 IMPLEMENTED_ROUTES = frozenset(
     [
+        ("classification", "infer"),
+        ("depth-estimation", "infer"),
+        ("instance-segmentation", "infer"),
+        ("keypoint-detection", "infer"),
+        ("multi-label-classification", "infer"),
         ("object-detection", "infer"),
+        ("semantic-segmentation", "infer"),
     ]
 )
 
@@ -197,21 +219,38 @@ def ensure_request_supported(model_id: str, request: Any) -> None:
         raise ModelDeploymentNotSupportedError(
             f"max_candidates is not supported for model '{model_id}' on the MMP path."
         )
-    if isinstance(getattr(request, "image", None), list):
+    mask_decode_mode = getattr(request, "mask_decode_mode", None)
+    if mask_decode_mode is not None and mask_decode_mode != "accurate":
         raise ModelDeploymentNotSupportedError(
-            f"Batch requests are not supported for model '{model_id}' on the MMP path."
+            f"mask_decode_mode={mask_decode_mode!r} is not supported for model "
+            f"'{model_id}' on the MMP path."
+        )
+    tradeoff_factor = getattr(request, "tradeoff_factor", None)
+    if tradeoff_factor:
+        raise ModelDeploymentNotSupportedError(
+            f"tradeoff_factor is not supported for model '{model_id}' on the MMP path."
         )
 
 
-def build_object_detection_params(request: Any) -> dict:
+def _numeric_confidence(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ModelDeploymentNotSupportedError(
+            f"confidence={value!r} is not supported on the MMP path."
+        )
+    return float(value)
+
+
+def build_task_params(task_type: str, request: Any) -> dict:
     params: dict = {}
-    confidence = getattr(request, "confidence", None)
+    if task_type in ("semantic-segmentation", "depth-estimation"):
+        return params
+    confidence = _numeric_confidence(getattr(request, "confidence", None))
     if confidence is not None:
-        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
-            raise ModelDeploymentNotSupportedError(
-                f"confidence={confidence!r} is not supported on the MMP path."
-            )
-        params["confidence"] = float(confidence)
+        params["confidence"] = confidence
+    if task_type in ("classification", "multi-label-classification"):
+        return params
     iou_threshold = getattr(request, "iou_threshold", None)
     if iou_threshold is not None:
         params["iou_threshold"] = float(iou_threshold)
@@ -221,6 +260,10 @@ def build_object_detection_params(request: Any) -> dict:
     class_agnostic_nms = getattr(request, "class_agnostic_nms", None)
     if class_agnostic_nms is not None:
         params["class_agnostic_nms"] = bool(class_agnostic_nms)
+    if task_type == "keypoint-detection":
+        keypoint_confidence = getattr(request, "keypoint_confidence", None)
+        if keypoint_confidence is not None:
+            params["key_points_threshold"] = float(keypoint_confidence)
     return params
 
 
@@ -249,6 +292,41 @@ def forward_image(image: Any) -> Tuple[bytes, Tuple[int, int]]:
     raise InvalidImageTypeDeclared(
         message=f"Image type '{image_type}' is not supported on the MMP path.",
         public_message=f"Image type '{image_type}' is not supported on the MMP path.",
+    )
+
+
+def repack_prediction(
+    task_type: str,
+    prediction: Any,
+    dims: Tuple[int, int],
+    route: dict,
+    request: Any,
+):
+    class_names = route.get("class_names")
+    if task_type == "object-detection":
+        return repack_object_detection_response(prediction, dims, class_names, request)
+    if task_type == "instance-segmentation":
+        return repack_instance_segmentation_response(
+            prediction, dims, class_names, request
+        )
+    if task_type == "keypoint-detection":
+        return repack_keypoints_response(
+            prediction, dims, class_names, route.get("key_points_classes"), request
+        )
+    if task_type == "classification":
+        return repack_classification_response(prediction, dims, class_names, request)
+    if task_type == "multi-label-classification":
+        return repack_multi_label_classification_response(
+            prediction, dims, class_names, request
+        )
+    if task_type == "semantic-segmentation":
+        return repack_semantic_segmentation_response(
+            prediction, dims, class_names, request
+        )
+    if task_type == "depth-estimation":
+        return repack_depth_estimation_response(prediction)
+    raise ModelDeploymentNotSupportedError(
+        f"No response translation for task type '{task_type}' on the MMP path."
     )
 
 
@@ -290,6 +368,355 @@ def repack_object_detection_response(
         predictions=predictions,
         image=InferenceResponseImage(width=width, height=height),
     )
+
+
+def repack_instance_segmentation_response(
+    prediction: Any,
+    dims: Tuple[int, int],
+    class_names: Optional[List[str]],
+    request: Any,
+) -> InstanceSegmentationInferenceResponse:
+    detections = _unwrap_single_prediction(prediction)
+    return_in_rle = getattr(request, "response_mask_format", "polygon") == "rle"
+    mask = detections.mask
+    if hasattr(mask, "to_coco_rle_masks"):
+        if return_in_rle:
+            polys_or_rles = mask.to_coco_rle_masks()
+        else:
+            polys_or_rles = _rle_masks_to_polygons(mask)
+    else:
+        masks = np.asarray(mask)
+        if return_in_rle:
+            polys_or_rles = [_dense_mask_to_coco_rle(m) for m in masks]
+        else:
+            polys_or_rles = masks2poly(masks)
+
+    xyxy = np.asarray(detections.xyxy, dtype=float).reshape(-1, 4)
+    confidences = np.asarray(detections.confidence, dtype=float).reshape(-1)
+    class_ids = np.asarray(detections.class_id).reshape(-1)
+    class_filter = getattr(request, "class_filter", None)
+
+    predictions = []
+    for (x1, y1, x2, y2), mask_as_poly_or_rle, confidence, class_id in zip(
+        xyxy, polys_or_rles, confidences, class_ids
+    ):
+        class_id_int = int(class_id)
+        class_name = (
+            class_names[class_id_int]
+            if class_names and 0 <= class_id_int < len(class_names)
+            else str(class_id_int)
+        )
+        if class_filter and class_name not in class_filter:
+            continue
+        common = dict(
+            x=(float(x1) + float(x2)) / 2.0,
+            y=(float(y1) + float(y2)) / 2.0,
+            width=float(x2) - float(x1),
+            height=float(y2) - float(y1),
+            confidence=float(confidence),
+            class_id=class_id_int,
+        )
+        if return_in_rle:
+            if isinstance(mask_as_poly_or_rle["counts"], bytes):
+                mask_as_poly_or_rle["counts"] = mask_as_poly_or_rle["counts"].decode(
+                    "ascii"
+                )
+            predictions.append(
+                InstanceSegmentationRLEPrediction(
+                    rle=mask_as_poly_or_rle, **{"class": class_name}, **common
+                )
+            )
+        else:
+            predictions.append(
+                InstanceSegmentationPrediction(
+                    points=[
+                        Point(x=float(point[0]), y=float(point[1]))
+                        for point in mask_as_poly_or_rle
+                    ],
+                    **{"class": class_name},
+                    **common,
+                )
+            )
+    width, height = dims
+    return InstanceSegmentationInferenceResponse(
+        predictions=predictions,
+        image=InferenceResponseImage(width=width, height=height),
+    )
+
+
+def repack_keypoints_response(
+    prediction: Any,
+    dims: Tuple[int, int],
+    class_names: Optional[List[str]],
+    key_points_classes: Optional[List[List[str]]],
+    request: Any,
+) -> KeypointsDetectionInferenceResponse:
+    keypoints_obj, detections = _split_keypoints_prediction(prediction)
+    if key_points_classes is None:
+        raise ModelArtefactError(
+            "Keypoint class names are not available from the inference backend."
+        )
+    xyxy = np.asarray(detections.xyxy, dtype=float).reshape(-1, 4)
+    confidences = np.asarray(detections.confidence, dtype=float).reshape(-1)
+    class_ids = np.asarray(detections.class_id).reshape(-1)
+    keypoints_xy = np.asarray(keypoints_obj.xy, dtype=float).tolist()
+    keypoints_class_id = np.asarray(keypoints_obj.class_id).reshape(-1).tolist()
+    keypoints_confidence = np.asarray(keypoints_obj.confidence, dtype=float).tolist()
+    class_filter = getattr(request, "class_filter", None)
+
+    predictions: List[KeypointsPrediction] = []
+    for (
+        (x1, y1, x2, y2),
+        confidence,
+        class_id,
+        instance_keypoints_xy,
+        instance_keypoints_class_id,
+        instance_keypoints_confidence,
+    ) in zip(
+        xyxy,
+        confidences,
+        class_ids,
+        keypoints_xy,
+        keypoints_class_id,
+        keypoints_confidence,
+    ):
+        class_id_int = int(class_id)
+        class_name = (
+            class_names[class_id_int]
+            if class_names and 0 <= class_id_int < len(class_names)
+            else str(class_id_int)
+        )
+        if class_filter and class_name not in class_filter:
+            continue
+        predictions.append(
+            KeypointsPrediction(
+                x=(float(x1) + float(x2)) / 2.0,
+                y=(float(y1) + float(y2)) / 2.0,
+                width=float(x2) - float(x1),
+                height=float(y2) - float(y1),
+                confidence=float(confidence),
+                **{"class": class_name},
+                class_id=class_id_int,
+                keypoints=_instance_keypoints_to_response(
+                    instance_keypoints_xy=instance_keypoints_xy,
+                    instance_keypoints_confidence=instance_keypoints_confidence,
+                    instance_keypoints_class_id=int(instance_keypoints_class_id),
+                    key_points_classes=key_points_classes,
+                ),
+            )
+        )
+    width, height = dims
+    return KeypointsDetectionInferenceResponse(
+        predictions=predictions,
+        image=InferenceResponseImage(width=width, height=height),
+    )
+
+
+def _instance_keypoints_to_response(
+    instance_keypoints_xy: List[List[float]],
+    instance_keypoints_confidence: List[float],
+    instance_keypoints_class_id: int,
+    key_points_classes: List[List[str]],
+) -> List[Keypoint]:
+    keypoint_classes = key_points_classes[instance_keypoints_class_id]
+    results = []
+    for keypoint_class_id, ((x, y), confidence, keypoint_class_name) in enumerate(
+        zip(instance_keypoints_xy, instance_keypoints_confidence, keypoint_classes)
+    ):
+        if confidence <= 0.0:
+            continue
+        results.append(
+            Keypoint(
+                x=x,
+                y=y,
+                confidence=confidence,
+                class_id=keypoint_class_id,
+                **{"class": keypoint_class_name},
+            )
+        )
+    return results
+
+
+def repack_classification_response(
+    prediction: Any,
+    dims: Tuple[int, int],
+    class_names: Optional[List[str]],
+    request: Any,
+) -> ClassificationInferenceResponse:
+    predicted = _unwrap_single_prediction(prediction)
+    confidences = _classification_confidence_vector(predicted.confidence, class_names)
+    raw_confidence = getattr(request, "confidence", None)
+    confidence_threshold = (
+        raw_confidence
+        if isinstance(raw_confidence, (int, float))
+        and not isinstance(raw_confidence, bool)
+        else 0.5
+    )
+    class_predictions = []
+    for class_id, class_name in enumerate(class_names):
+        class_score = float(confidences[class_id])
+        if class_score < confidence_threshold:
+            continue
+        class_predictions.append(
+            {"class_id": class_id, "class": class_name, "confidence": round(class_score, 4)}
+        )
+    class_predictions = sorted(
+        class_predictions, key=lambda x: x["confidence"], reverse=True
+    )
+    width, height = dims
+    return ClassificationInferenceResponse(
+        image=InferenceResponseImage(width=width, height=height),
+        predictions=class_predictions,
+        top=class_predictions[0]["class"] if class_predictions else "",
+        confidence=class_predictions[0]["confidence"] if class_predictions else 0.0,
+    )
+
+
+def repack_multi_label_classification_response(
+    prediction: Any,
+    dims: Tuple[int, int],
+    class_names: Optional[List[str]],
+    request: Any,
+) -> MultiLabelClassificationInferenceResponse:
+    predicted = _unwrap_single_prediction(prediction)
+    confidences = _classification_confidence_vector(predicted.confidence, class_names)
+    image_predictions = {
+        class_names[class_id]: {"confidence": float(confidence), "class_id": class_id}
+        for class_id, confidence in enumerate(confidences)
+    }
+    predicted_classes = [
+        class_names[int(class_id)]
+        for class_id in np.asarray(predicted.class_ids).reshape(-1).tolist()
+    ]
+    width, height = dims
+    return MultiLabelClassificationInferenceResponse(
+        predictions=image_predictions,
+        predicted_classes=predicted_classes,
+        image=InferenceResponseImage(width=width, height=height),
+    )
+
+
+def _classification_confidence_vector(
+    confidence: Any, class_names: Optional[List[str]]
+) -> List[float]:
+    confidences = np.asarray(confidence, dtype=float).reshape(-1)
+    if not class_names or len(confidences) != len(class_names):
+        raise PostProcessingError(
+            f"Classification model output contains {len(confidences)} confidence "
+            f"score(s), but class names metadata expects "
+            f"{len(class_names) if class_names else 0}."
+        )
+    return confidences.tolist()
+
+
+def repack_semantic_segmentation_response(
+    prediction: Any,
+    dims: Tuple[int, int],
+    class_names: Optional[List[str]],
+    request: Any,
+) -> SemanticSegmentationInferenceResponse:
+    segmentation = _unwrap_single_prediction(prediction)
+    segmentation_map = np.asarray(segmentation.segmentation_map).astype(np.uint8)
+    confidence_map = (np.asarray(segmentation.confidence, dtype=float) * 255).astype(
+        np.uint8
+    )
+    class_map = {str(i): name for i, name in enumerate(class_names or [])}
+    width, height = dims
+    response_image = InferenceResponseImage(width=width, height=height)
+    response_predictions = SemanticSegmentationPrediction(
+        segmentation_mask=_png_b64(segmentation_map),
+        confidence_mask=_png_b64(confidence_map),
+        class_map=class_map,
+        image=dict(response_image),
+    )
+    return SemanticSegmentationInferenceResponse(
+        predictions=response_predictions,
+        image=response_image,
+    )
+
+
+@dataclass
+class _DepthImage:
+    base64_image: str
+
+
+@dataclass
+class _DepthAdapterResponse:
+    response: Dict[str, Any]
+    time: Optional[float] = None
+    inference_id: Optional[str] = None
+
+
+def repack_depth_estimation_response(prediction: Any) -> _DepthAdapterResponse:
+    depth_map = np.asarray(
+        _unwrap_single_prediction(prediction), dtype=np.float32
+    )
+    depth_min = float(depth_map.min())
+    depth_max = float(depth_map.max())
+    if depth_max == depth_min:
+        raise ModelArtefactError("Depth map has no variation (min equals max)")
+    normalized_depth = (depth_map - depth_min) / (depth_max - depth_min)
+    depth_for_viz = (normalized_depth * 255.0).astype(np.uint8)
+    import matplotlib.pyplot as plt
+
+    cmap = plt.get_cmap("viridis")
+    colored_depth = (cmap(depth_for_viz)[:, :, :3] * 255).astype(np.uint8)
+    encoded = base64.b64encode(
+        encode_image_to_jpeg_bytes(colored_depth, jpeg_quality=95)
+    ).decode("ascii")
+    return _DepthAdapterResponse(
+        response={
+            "normalized_depth": normalized_depth,
+            "image": _DepthImage(base64_image=encoded),
+        }
+    )
+
+
+def _split_keypoints_prediction(prediction: Any) -> Tuple[Any, Any]:
+    if isinstance(prediction, tuple) and len(prediction) == 2:
+        keypoints, detections = prediction
+        keypoints = _unwrap_single_prediction(keypoints)
+        detections = _unwrap_single_prediction(detections)
+        if keypoints is None or detections is None:
+            raise ModelArtefactError(
+                "Keypoints prediction from the inference backend is incomplete."
+            )
+        return keypoints, detections
+    raise ModelArtefactError(
+        "Unexpected keypoints prediction shape from the inference backend."
+    )
+
+
+def _dense_mask_to_coco_rle(mask: np.ndarray) -> dict:
+    from pycocotools import mask as mask_utils
+
+    return mask_utils.encode(
+        np.asfortranarray(np.asarray(mask).astype(np.uint8))
+    )
+
+
+def _rle_masks_to_polygons(masks: Any) -> List[np.ndarray]:
+    from pycocotools import mask as mask_utils
+
+    height, width = masks.image_size
+    segments = []
+    for counts in masks.masks:
+        decoded = np.ascontiguousarray(
+            mask_utils.decode({"size": [height, width], "counts": counts})
+        )
+        if not np.any(decoded):
+            segments.append(np.zeros((0, 2), dtype=np.float32))
+        else:
+            segments.append(mask2poly(decoded))
+    return segments
+
+
+def _png_b64(image: np.ndarray) -> str:
+    from PIL import Image
+
+    buffered = io.BytesIO()
+    Image.fromarray(image).save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode("ascii")
 
 
 def _unwrap_single_prediction(prediction: Any) -> Any:

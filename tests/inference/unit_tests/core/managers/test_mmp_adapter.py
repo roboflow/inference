@@ -37,6 +37,7 @@ class FakeDetections:
 class FakeClient:
     load_wait_s = 1.0
     infer_timeout_s = 1.0
+    n_slots = 4
 
     def __init__(self):
         self.started = False
@@ -47,6 +48,7 @@ class FakeClient:
         self.ensure_result = ("model_ready",)
         self.tasks = {"infer": {}}
         self.class_names = ["cat", "dog"]
+        self.key_points_classes = None
         self.infer_result = [
             FakeDetections(
                 xyxy=[[10.0, 20.0, 30.0, 60.0]], confidence=[0.9], class_id=[1]
@@ -75,7 +77,15 @@ class FakeClient:
         return {"model_id": model_id, "tasks": self.tasks}
 
     async def stats(self):
-        return {"mmp_models": {m: {"class_names": self.class_names} for m in self.loaded}}
+        return {
+            "mmp_models": {
+                m: {
+                    "class_names": self.class_names,
+                    "key_points_classes": self.key_points_classes,
+                }
+                for m in self.loaded
+            }
+        }
 
     async def infer(self, *, model_id, image, task=None, instance="", params=None, **kw):
         self.infer_calls.append(
@@ -109,10 +119,18 @@ def _seed_route(adapter, model_id, **overrides):
         "task_type": "object-detection",
         "action": "infer",
         "class_names": ["cat", "dog"],
+        "key_points_classes": None,
     }
     route.update(overrides)
     adapter._routes[model_id] = route
     return route
+
+
+def make_stat(task_type, action="infer"):
+    async def fake_stat(model_id, api_key):
+        return (task_type, action)
+
+    return fake_stat
 
 
 @pytest.fixture
@@ -359,10 +377,28 @@ class TestInfer:
         with pytest.raises(ModelDeploymentNotSupportedError):
             running_adapter.infer_from_request_sync("ws/1", request)
 
-    def test_batch_image_list_errors(self, running_adapter, od_stat, png_image):
+    def test_batch_returns_ordered_response_list(
+        self, running_adapter, od_stat, png_image
+    ):
+        image, payload = png_image
+        request = od_request(image=[image, image, image])
+        responses = running_adapter.infer_from_request_sync("ws/1", request)
+        assert isinstance(responses, list) and len(responses) == 3
+        assert all(
+            isinstance(r, ObjectDetectionInferenceResponse) for r in responses
+        )
+        assert len(running_adapter._client.infer_calls) == 3
+        assert all(
+            call["image"] == payload for call in running_adapter._client.infer_calls
+        )
+
+    def test_batch_first_error_fails_whole_request(
+        self, running_adapter, od_stat, png_image
+    ):
         image, _ = png_image
+        running_adapter._client.infer_error = asyncio.TimeoutError()
         request = od_request(image=[image, image])
-        with pytest.raises(ModelDeploymentNotSupportedError):
+        with pytest.raises(RoboflowAPITimeoutError):
             running_adapter.infer_from_request_sync("ws/1", request)
 
     def test_infer_timeout_maps_to_legacy_timeout(
@@ -403,6 +439,202 @@ class TestInfer:
         image = SimpleNamespace(type="multipart", value=b"x")
         with pytest.raises(InvalidImageTypeDeclared):
             running_adapter.infer_from_request_sync("ws/1", od_request(image=image))
+
+
+class FakeInstanceDetections:
+    def __init__(self, xyxy, confidence, class_id, mask):
+        self.xyxy = np.asarray(xyxy, dtype=float)
+        self.confidence = np.asarray(confidence, dtype=float)
+        self.class_id = np.asarray(class_id)
+        self.mask = mask
+
+
+class FakeKeyPoints:
+    def __init__(self, xy, class_id, confidence):
+        self.xy = np.asarray(xy, dtype=float)
+        self.class_id = np.asarray(class_id)
+        self.confidence = np.asarray(confidence, dtype=float)
+
+
+class FakeClassification:
+    def __init__(self, confidence, class_ids=None):
+        self.confidence = np.asarray(confidence, dtype=float)
+        if class_ids is not None:
+            self.class_ids = np.asarray(class_ids)
+
+
+class FakeSemanticSegmentation:
+    def __init__(self, segmentation_map, confidence):
+        self.segmentation_map = np.asarray(segmentation_map)
+        self.confidence = np.asarray(confidence, dtype=float)
+
+
+class TestPerTypeRepack:
+    def _run(self, running_adapter, monkeypatch, task_type, result, request=None):
+        monkeypatch.setattr(translation, "stat_model", make_stat(task_type))
+        monkeypatch.setattr(translation, "_read_image_dims", lambda data: (64, 48))
+        running_adapter._client.infer_result = result
+        image = SimpleNamespace(
+            type="base64", value=base64.b64encode(b"fake").decode()
+        )
+        return running_adapter.infer_from_request_sync(
+            "ws/1", request or od_request(image=image)
+        )
+
+    def test_instance_segmentation_polygon(self, running_adapter, monkeypatch):
+        mask = np.zeros((1, 48, 64), dtype=np.uint8)
+        mask[0, 10:20, 10:20] = 1
+        result = [
+            FakeInstanceDetections(
+                xyxy=[[10.0, 10.0, 20.0, 20.0]],
+                confidence=[0.8],
+                class_id=[0],
+                mask=mask,
+            )
+        ]
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(
+            image=image,
+            mask_decode_mode="accurate",
+            tradeoff_factor=0.0,
+            response_mask_format="polygon",
+        )
+        response = self._run(
+            running_adapter, monkeypatch, "instance-segmentation", result, request
+        )
+        prediction = response.predictions[0]
+        assert prediction.class_name == "cat"
+        assert prediction.mask_format == "polygon"
+        assert len(prediction.points) > 0
+
+    def test_instance_segmentation_rle(self, running_adapter, monkeypatch):
+        pytest.importorskip("pycocotools")
+        mask = np.zeros((1, 48, 64), dtype=np.uint8)
+        mask[0, 10:20, 10:20] = 1
+        result = [
+            FakeInstanceDetections(
+                xyxy=[[10.0, 10.0, 20.0, 20.0]],
+                confidence=[0.8],
+                class_id=[0],
+                mask=mask,
+            )
+        ]
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, response_mask_format="rle")
+        response = self._run(
+            running_adapter, monkeypatch, "instance-segmentation", result, request
+        )
+        prediction = response.predictions[0]
+        assert prediction.mask_format == "rle"
+        assert isinstance(prediction.rle["counts"], str)
+
+    def test_instance_segmentation_mask_decode_mode_errors(
+        self, running_adapter, monkeypatch
+    ):
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, mask_decode_mode="fast")
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            self._run(
+                running_adapter, monkeypatch, "instance-segmentation", [], request
+            )
+
+    def test_instance_segmentation_tradeoff_factor_errors(
+        self, running_adapter, monkeypatch
+    ):
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, tradeoff_factor=0.5)
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            self._run(
+                running_adapter, monkeypatch, "instance-segmentation", [], request
+            )
+
+    def test_keypoints(self, running_adapter, monkeypatch):
+        running_adapter._client.key_points_classes = [["nose", "tail"]]
+        result = (
+            [FakeKeyPoints(xy=[[[5.0, 6.0], [7.0, 8.0]]], class_id=[0], confidence=[[0.9, 0.0]])],
+            [FakeDetections(xyxy=[[0.0, 0.0, 10.0, 10.0]], confidence=[0.7], class_id=[1])],
+        )
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, keypoint_confidence=0.0)
+        response = self._run(
+            running_adapter, monkeypatch, "keypoint-detection", result, request
+        )
+        prediction = response.predictions[0]
+        assert prediction.class_name == "dog"
+        assert len(prediction.keypoints) == 1
+        keypoint = prediction.keypoints[0]
+        assert keypoint.class_name == "nose" and keypoint.class_id == 0
+        assert running_adapter._client.infer_calls[0]["params"][
+            "key_points_threshold"
+        ] == 0.0
+
+    def test_keypoints_without_skeleton_names_unsupported(
+        self, running_adapter, monkeypatch
+    ):
+        running_adapter._client.key_points_classes = None
+        monkeypatch.setattr(translation, "stat_model", make_stat("keypoint-detection"))
+        with pytest.raises(ModelDeploymentNotSupportedError):
+            running_adapter.add_model("ws/kp", api_key="key")
+        assert running_adapter._client.unloaded == ["ws/kp"]
+
+    def test_classification(self, running_adapter, monkeypatch):
+        result = FakeClassification(confidence=[0.7, 0.2])
+        image = SimpleNamespace(type="base64", value=base64.b64encode(b"f").decode())
+        request = od_request(image=image, confidence=0.4)
+        response = self._run(
+            running_adapter, monkeypatch, "classification", result, request
+        )
+        assert response.top == "cat"
+        assert response.confidence == 0.7
+        assert [p.class_name for p in response.predictions] == ["cat"]
+        assert running_adapter._client.infer_calls[0]["params"] == {"confidence": 0.4}
+
+    def test_multi_label_classification(self, running_adapter, monkeypatch):
+        result = [FakeClassification(confidence=[0.7, 0.9], class_ids=[1])]
+        response = self._run(
+            running_adapter, monkeypatch, "multi-label-classification", result
+        )
+        assert response.predicted_classes == ["dog"]
+        assert response.predictions["cat"].confidence == 0.7
+        assert response.predictions["dog"].class_id == 1
+
+    def test_semantic_segmentation(self, running_adapter, monkeypatch):
+        seg_map = np.zeros((48, 64), dtype=np.uint8)
+        seg_map[:10] = 1
+        result = [
+            FakeSemanticSegmentation(
+                segmentation_map=seg_map, confidence=np.ones((48, 64)) * 0.5
+            )
+        ]
+        response = self._run(
+            running_adapter, monkeypatch, "semantic-segmentation", result
+        )
+        assert response.predictions.class_map == {"0": "cat", "1": "dog"}
+        from PIL import Image as PILImage
+
+        decoded = np.asarray(
+            PILImage.open(
+                io.BytesIO(base64.b64decode(response.predictions.segmentation_mask))
+            )
+        )
+        assert decoded.shape == (48, 64)
+        assert set(np.unique(decoded)) == {0, 1}
+
+    def test_depth_estimation(self, running_adapter, monkeypatch):
+        pytest.importorskip("matplotlib")
+        depth = np.linspace(0.0, 10.0, 48 * 64, dtype=np.float32).reshape(48, 64)
+        response = self._run(
+            running_adapter, monkeypatch, "depth-estimation", [depth]
+        )
+        normalized = response.response["normalized_depth"]
+        assert normalized.min() == 0.0 and normalized.max() == 1.0
+        assert base64.b64decode(response.response["image"].base64_image)[:2] == b"\xff\xd8"
+        assert response.inference_id == "req-1"
+
+    def test_depth_no_variation_errors(self, running_adapter, monkeypatch):
+        depth = np.ones((48, 64), dtype=np.float32)
+        with pytest.raises(ModelArtefactError):
+            self._run(running_adapter, monkeypatch, "depth-estimation", [depth])
 
 
 class TestUnsupportedModelOps:
