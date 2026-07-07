@@ -108,8 +108,10 @@ just a 201 from the signaling request.
    from inference-internal: `nodeSelector: {gpu_type: L40S}`, toleration
    `gpu=true:NoSchedule`, `resources.limits: {nvidia.com/gpu: 1}`, optionally
    `schedulerName: gpu-binpack-scheduler`. Env below. Image: see §3.
-   **NOTE: being revised to the ready-pool model (Deployment + label-detach +
-   self-delete) — see the revised scaling section in §8.**
+   **UPDATE: replaced by the ready-pool model (Deployment + label-detach +
+   self-delete) — IMPLEMENTED; see §8 and the chart. Gateway now routes by
+   pod IP (`/ip-a-b-c-d/`, CIDR-pinned regex) since pool pods have random
+   names.**
 4. **processor-gateway**: nginx Deployment ×1 (CPU pool) routing
    `/{pod}/{rest}` → `http://{pod}.video-processor-headless.video-poc.svc.cluster.local:8890/{rest}`.
    Critical nginx settings: `proxy_buffering off` and `proxy_http_version 1.1`
@@ -289,9 +291,12 @@ revised model eliminates victim selection entirely:
   is always harmless. The `video_processor_busy` gauge stays for observability
   and pool-sizing dashboards.
 
-The chart in roboflow-infra#2290 still ships the older
-ScaledObject-on-StatefulSet approach; the swap to the ready-pool model is in
-progress and should land before anything real runs on this.
+**IMPLEMENTED (2026-07-07)** across all three PRs: the chart ships the
+ready-pool Deployment + RBAC + pod-IP gateway + janitor CronJob (ScaledObject
+removed); the processor label-detaches on claim and self-deletes on job end
+(`PodSelf`, pool mode auto-off outside a cluster); the platform reaper
+requeues orphaned jobs with a 3-attempt cap and refuses status posts from
+zombie workers for requeued jobs.
 
 Never queued: heartbeats, cancel/watch signals, results to the browser (see
 HANDOFF §6 "Consuming results" for how the events/JSON channel is addressed in

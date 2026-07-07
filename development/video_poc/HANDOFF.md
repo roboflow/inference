@@ -340,8 +340,9 @@ yet all in the PRs:
   **deletes its own pod**. Rationale: any ordinary ReplicaSet/StatefulSet
   scale-down picks victims blindly and will kill a mid-job box; in the pool model
   the only workers that ever terminate chose to. Recovery for crashes/evictions =
-  heartbeats + reap-to-requeue (§8). The chart currently ships the older
-  KEDA-ScaledObject-on-StatefulSet approach and needs this swap (in progress).
+  heartbeats + reap-to-requeue (§8). **IMPLEMENTED (2026-07-07)**: the chart ships
+  the ready-pool Deployment (`PodSelf` in processor.py does the label-detach and
+  self-delete; the reaper requeues with a 3-attempt cap).
   Costs: worker RBAC (patch/delete own pod), pod-IP-based gateway routing (random
   pod names), a janitor for leaked non-Running working pods, and awareness that
   long-lived monitoring pods outlive Deployment rollouts (they drain via
@@ -385,8 +386,8 @@ yet all in the PRs:
 2. The task list that produced this: dev tooling ✅, backend API ✅, connector ✅,
    processor ✅, frontend ✅, e2e demo verified through "workflow on uploaded file with
    live annotated preview" ✅.
-3. Prod-readiness order (per §8/§9, post-review): reap-to-requeue; the ready-pool
-   scaling swap in the chart; processor endpoint auth (per-job tokens); the
-   job-addressed events endpoint; relay-published results stream +
+3. Prod-readiness order (per §8/§9, post-review): ~~reap-to-requeue~~ ✅;
+   ~~ready-pool scaling swap in the chart~~ ✅; processor endpoint auth (per-job
+   tokens); the job-addressed events endpoint; relay-published results stream +
    `watchRequestedUntil`; multi-stream-per-GPU (needs bulkiness measurement);
    connector-source e2e polish (USB/RTSP got less testing than files).

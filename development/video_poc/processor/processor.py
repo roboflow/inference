@@ -291,13 +291,95 @@ class JobRecorder:
                 json.dump(meta, f)
 
 
+K8S_SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
+
+
+class PodSelf:
+    """Self-management for ready-pool mode: the worker detaches its own pod from
+    the ready pool on claim (label change — the ReplicaSet instantly creates a
+    replacement, which IS the pool refill) and deletes its own pod when the job
+    ends (workers are single-use; the only pods that ever terminate chose to).
+    Raw API calls with the mounted service-account credentials — no client lib.
+    Inactive outside a cluster, so local dev behaves exactly as before.
+    """
+
+    def __init__(self):
+        self.pod_name = os.getenv("POD_NAME")
+        self.enabled = (
+            bool(os.getenv("PROCESSOR_POOL_MODE"))
+            and bool(self.pod_name)
+            and os.path.isfile(os.path.join(K8S_SA_DIR, "token"))
+        )
+        if not self.enabled:
+            return
+        with open(os.path.join(K8S_SA_DIR, "namespace")) as f:
+            namespace = f.read().strip()
+        with open(os.path.join(K8S_SA_DIR, "token")) as f:
+            self._token = f.read().strip()
+        self._ca = os.path.join(K8S_SA_DIR, "ca.crt")
+        self._pod_url = (
+            f"https://kubernetes.default.svc/api/v1/namespaces/{namespace}/pods/{self.pod_name}"
+        )
+
+    def detach_from_pool(self, job_id):
+        if not self.enabled:
+            return
+        try:
+            resp = requests.patch(
+                self._pod_url,
+                json={
+                    "metadata": {
+                        "labels": {"pool": "working"},
+                        "annotations": {"roboflow.com/job-id": str(job_id)},
+                    }
+                },
+                headers={
+                    "Authorization": f"Bearer {self._token}",
+                    "Content-Type": "application/strategic-merge-patch+json",
+                },
+                verify=self._ca,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            print(f"[processor] detached from ready pool (job {job_id}); pool will refill")
+        except Exception as exc:
+            print(f"[processor] pool detach failed (continuing): {exc}", file=sys.stderr)
+
+    def self_delete(self):
+        if not self.enabled:
+            return False
+        try:
+            resp = requests.delete(
+                self._pod_url,
+                headers={"Authorization": f"Bearer {self._token}"},
+                verify=self._ca,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            print("[processor] job over — retiring this pod")
+            return True
+        except Exception as exc:
+            print(f"[processor] self-delete failed; staying alive: {exc}", file=sys.stderr)
+            return False
+
+
 class Worker:
     def __init__(self, args):
         self.args = args
         self.processor_id = args.processor_id or f"proc-{socket.gethostname()}-{uuid.uuid4().hex[:6]}"
-        # what browsers should use to reach this worker (an ingress/gateway URL
-        # in a cluster); falls back to localhost for single-machine dev
-        self.public_url = args.public_url or f"http://127.0.0.1:{args.port}"
+        self.pod = PodSelf()
+        self.retiring = False
+        # What browsers should use to reach this worker. Priority: explicit URL,
+        # then gateway base + this pod's IP (ready-pool mode: pod names are
+        # random, so the gateway routes /ip-a-b-c-d/ segments), then localhost.
+        gateway_base = os.getenv("GATEWAY_PUBLIC_BASE")
+        pod_ip = os.getenv("POD_IP")
+        if args.public_url:
+            self.public_url = args.public_url
+        elif gateway_base and pod_ip:
+            self.public_url = f"{gateway_base.rstrip('/')}/ip-{pod_ip.replace('.', '-')}"
+        else:
+            self.public_url = f"http://127.0.0.1:{args.port}"
         # serializes claims between the poll loop and the Pub/Sub wake-up so a
         # worker can never start two jobs
         self.claim_lock = threading.Lock()
@@ -418,6 +500,10 @@ class Worker:
                 with self.lock:
                     self.state = "error"
                     self.job = {**job, "error": f"ffmpeg replay failed: {exc}"}
+                # deliberately NOT reported as terminal: failures here are often
+                # transient (relay stream not up yet) — retiring lets the reaper
+                # requeue the job, and the attempts cap handles poison jobs
+                self.retire_if_pool_mode()
                 return
 
         try:
@@ -453,6 +539,8 @@ class Worker:
             with self.lock:
                 self.state = "error"
                 self.job = {**job, "error": str(exc)}
+            # see the replay-failure comment above: retire → reaper requeues
+            self.retire_if_pool_mode()
             return
 
     def _watch_pipeline_end(self, job_id, pipeline):
@@ -584,7 +672,7 @@ class Worker:
         """Claim (at most) one job if idle. Serialized so the poll loop and a
         Pub/Sub wake-up can't both start work on this worker."""
         with self.claim_lock:
-            if self.state not in ("idle", "error"):
+            if self.retiring or self.state not in ("idle", "error"):
                 return None
             resp = self.api(
                 "POST",
@@ -596,8 +684,24 @@ class Worker:
             )
             job = resp.get("job")
             if job:
+                # leave the ready pool BEFORE the (slow) pipeline start so the
+                # replacement worker is already warming while we work
+                self.pod.detach_from_pool(job.get("id"))
                 self.run_job(job)
             return job
+
+    def retire_if_pool_mode(self):
+        """Single-use workers: once a job ends (completed, cancelled, or failed),
+        the worker deletes its own pod instead of returning to the pool — a
+        fresh ready worker already replaced it at claim time. If the delete
+        fails (local dev, degraded RBAC) we fall back to long-lived behavior.
+        The job itself is safe either way: an abrupt death here just means the
+        platform requeues it via the heartbeat reaper."""
+        if not self.pod.enabled or self.retiring:
+            return
+        self.retiring = True
+        if not self.pod.self_delete():
+            self.retiring = False
 
     def start_pubsub_listener(self):
         """Optional Pub/Sub wake-ups: messages are notifications, not work items —
@@ -648,12 +752,13 @@ class Worker:
                         json={"state": state, "stats": self.stats.snapshot()},
                     )
                     if state == "completed":
-                        # results stay on disk and servable; the worker frees up
-                        print("[processor] completed job reported; back to idle")
+                        print("[processor] completed job reported")
                         self.stop_job()
+                        self.retire_if_pool_mode()
                     elif resp.get("cancel"):
                         print("[processor] job cancelled by platform")
                         self.stop_job()
+                        self.retire_if_pool_mode()
             except requests.RequestException as exc:
                 print(f"[processor] poll error: {exc}", file=sys.stderr)
             time.sleep(POLL_INTERVAL_S)
