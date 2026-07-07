@@ -57,7 +57,7 @@ MJPEG_MAX_FPS = 12
 
 # Used by stream-mode jobs on file sources: the file is replayed at native speed
 # into the local relay and consumed as RTSP, so the pipeline sees a real stream.
-RTSP_SIM_BASE = os.getenv("VIDEO_POC_RTSP_BASE", "rtsp://127.0.0.1:8554")
+RTSP_SIM_BASE = os.getenv("VIDEO_PROC_RTSP_BASE", "rtsp://127.0.0.1:8554")
 FFMPEG_BIN = os.getenv(
     "FFMPEG_BIN",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "ffmpeg"),
@@ -69,7 +69,7 @@ if not os.path.exists(FFMPEG_BIN):
 # scrub them after the job completes. Survives until the OS clears temp storage;
 # the production shape is object storage.
 RESULTS_ROOT = os.getenv(
-    "VIDEO_POC_RESULTS_DIR", os.path.join(tempfile.gettempdir(), "rf-video-poc-results")
+    "VIDEO_PROC_RESULTS_DIR", os.path.join(tempfile.gettempdir(), "rf-video-poc-results")
 )
 RESULT_FILES = {
     "video.mp4": "video/mp4",

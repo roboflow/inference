@@ -6,11 +6,24 @@
 > dispatch wake-ups (claim stays the transactional source of truth; claim is
 > now an actual Firestore transaction), the `video_processor_busy` metric, and
 > the KEDA warm-floor autoscaling. The Helm chart exists:
-> `helm/roboflow-video-poc/` in roboflow-infra
+> `helm/roboflow-video-proc/` in roboflow-infra
 > ([PR #2290](https://github.com/roboflow/roboflow-infra/pull/2290)) — its
 > README lists the remaining MANUAL steps (image push, Pub/Sub topic/sub,
 > secrets, DNS, functions env). What's left of this document that still needs
 > doing is exactly that manual list plus the smoke tests.
+>
+> **Update (rename + all-Terraform)**: the project is now **video-proc** (not
+> staying a POC) and the entire deployment — Pub/Sub, processor SA, namespace
+> secrets, AND the helm release — is owned by the `crusoe/video-proc`
+> Terraform stack in roboflow-infra (Spacelift, depends on crusoe/addons; the
+> namespace itself lives in addons like every app namespace). deploy.sh is
+> gone: merge to master + confirm the Spacelift run IS the deploy. Env vars
+> renamed VIDEO_POC_* → VIDEO_PROC_*; functions env ships in the roboflow
+> repo's .env.roboflow-staging (.env.local overrides for laptop dev). The only
+> out-of-band steps left: seed VIDEO_PROC_WORKSPACE_API_KEY in Secret Manager
+> once, build/push + pin the processor image, and DNS records after the first
+> LB IP. Manual kubectl/gcloud sections below are superseded by the chart
+> README + the stack.
 
 Goal: mediamtx (relay) + video processors running on the Crusoe staging cluster
 (`ck8s-stg`), talking to the staging Roboflow platform, demo-able end to end.
@@ -38,8 +51,8 @@ Two candidates were evaluated (both ultimately target the **same cluster**,
   (DNSimple DNS-01), the **Crusoe L4 LoadBalancer controller** (reacts to any
   `Service type: LoadBalancer`), registry pull secrets, GPU node pools.
 
-**Decision: a new Helm chart `helm/roboflow-video-poc/` in `roboflow-infra`,
-deployed to a new `video-poc` namespace on `ck8s-stg`. No new Terraform/
+**Decision: a new Helm chart `helm/roboflow-video-proc/` in `roboflow-infra`,
+deployed to a new `video-proc` namespace on `ck8s-stg`. No new Terraform/
 Spacelift stack** (that would mean a new cluster/VPC — overkill; the agent
 model for a stack here is cluster-level isolation). Not async-serverless for
 now because the processor is poll-driven, not queue-driven — none of that
@@ -55,7 +68,7 @@ Chart to copy as a starting shape: `helm/inference-internal-crusoe/`
 ## 1. Target topology
 
 ```
- laptop / customer network                Crusoe ck8s-stg (namespace video-poc)
+ laptop / customer network                Crusoe ck8s-stg (namespace video-proc)
 ┌────────────────────────┐      ┌───────────────────────────────────────────────┐
 │ connector ──RTSP push──┼──────┼─▶ Crusoe L4 LB :8554 ──▶ mediamtx             │
 │ browser ───WHEP────────┼──────┼─▶ Traefik :443 ───────▶ mediamtx :8889        │
@@ -96,7 +109,7 @@ just a 201 from the signaling request.
 
 ## 2. Kubernetes objects (the chart's contents)
 
-1. **Namespace** `video-poc` (chart `--create-namespace`, or add to
+1. **Namespace** `video-proc` (chart `--create-namespace`, or add to
    `crusoe/addons/namespaces.tf` if we want it Terraform-owned).
 2. **mediamtx**: Deployment ×1 on the default CPU pool (untainted), upstream
    image `bluenviron/mediamtx:<pinned-version>` — pin it, do not use latest.
@@ -113,7 +126,7 @@ just a 201 from the signaling request.
    pod IP (`/ip-a-b-c-d/`, CIDR-pinned regex) since pool pods have random
    names.**
 4. **processor-gateway**: nginx Deployment ×1 (CPU pool) routing
-   `/{pod}/{rest}` → `http://{pod}.video-processor-headless.video-poc.svc.cluster.local:8890/{rest}`.
+   `/{pod}/{rest}` → `http://{pod}.video-processor-headless.video-proc.svc.cluster.local:8890/{rest}`.
    Critical nginx settings: `proxy_buffering off` and `proxy_http_version 1.1`
    (SSE and MJPEG die behind buffering), long `proxy_read_timeout`, resolver
    set to cluster DNS with a variable proxy_pass (so nginx re-resolves pod DNS).
@@ -121,9 +134,9 @@ just a 201 from the signaling request.
    (`roboflow-staging`), materialized to a k8s Secret by the deploy workflow —
    same pattern `helm-deploy-crusoe.yaml` already uses for inference-internal
    creds. Image pull: reuse `gcp-ar-pull-secret`.
-6. **Deploy hook**: add a `video-poc` service option to
+6. **Deploy hook**: add a `video-proc` service option to
    `.github/workflows/helm-deploy-crusoe.yaml` (~15 lines), or ship
-   `helm/roboflow-video-poc/deploy.sh` for day one and wire CI after.
+   `helm/roboflow-video-proc/deploy.sh` for day one and wire CI after.
 
 ## 3. Images
 
@@ -150,11 +163,11 @@ The full connection audit — what breaks when components leave one machine:
 |---|---|---|---|---|
 | 1 | connector → platform | localhost emulator | staging functions URL | none (flag/env on connector invocation) |
 | 2 | connector → relay ingest | `rtsp://127.0.0.1:8554` | `rtsp://video-ingest.crusoe.roboflow.one:8554` | none in code — platform sends full `ingestUrl` in `start_stream`; set functions env |
-| 3 | browser → relay preview | `http://127.0.0.1:8889/...whep` | `https://video-relay.crusoe...` | none — `VIDEO_POC_WHEP_BASE` env exists |
+| 3 | browser → relay preview | `http://127.0.0.1:8889/...whep` | `https://video-relay.crusoe...` | none — `VIDEO_PROC_WHEP_BASE` env exists |
 | 4 | browser → processor | `job.processorUrl` = `http://127.0.0.1:8890` | `https://video-processors.crusoe.../ip-a-b-c-d` | **done**: processor derives its public URL from `GATEWAY_PUBLIC_BASE` + `POD_IP` (pod-IP routing; ready-pool pods have random names) |
 | 5 | processor → platform (claim/status) | localhost emulator | staging functions URL | none — `--api-url` flag exists; needs staging **functions deployed from the branch** (see §5) |
-| 6 | processor → relay (consume `src-*`) | same base URL as #2 | cluster-internal `rtsp://mediamtx.video-poc.svc:8554` | **functions change**: split `VIDEO_POC_RTSP_BASE` into `VIDEO_POC_RTSP_INGEST_BASE` (public, for connector commands) and `VIDEO_POC_RTSP_CONSUME_BASE` (internal, used in claim's `sourceUrl`). One function file; fallback = one var for both (works via public LB, wastes hairpin bandwidth) |
-| 7 | processor → relay (publish `sim-*`) | `VIDEO_POC_RTSP_BASE` env | internal svc DNS | none — env exists on processor |
+| 6 | processor → relay (consume `src-*`) | same base URL as #2 | cluster-internal `rtsp://mediamtx.video-proc.svc:8554` | **functions change**: split `VIDEO_PROC_RTSP_BASE` into `VIDEO_PROC_RTSP_INGEST_BASE` (public, for connector commands) and `VIDEO_PROC_RTSP_CONSUME_BASE` (internal, used in claim's `sourceUrl`). One function file; fallback = one var for both (works via public LB, wastes hairpin bandwidth) |
+| 7 | processor → relay (publish `sim-*`) | `VIDEO_PROC_RTSP_BASE` env | internal svc DNS | none — env exists on processor |
 | 8 | processor → GCS (batch download) | laptop → GCS | Crusoe → GCS egress | none for now (decision: stay on GCS; Crusoe object storage colocation is future work — batch download latency/egress cost is the tax) |
 
 Security deltas (staging-appropriate, do not skip #9):
@@ -175,16 +188,16 @@ Fallback if branch-deploy to staging is contentious tomorrow: keep the
 emulator local and expose it with a `cloudflared` tunnel; point processors and
 connector at the tunnel URL. Ugly but unblocks the demo.
 
-Functions env to set (staging): `VIDEO_POC_RTSP_INGEST_BASE`,
-`VIDEO_POC_RTSP_CONSUME_BASE`, `VIDEO_POC_WHEP_BASE` per the table above.
+Functions env to set (staging): `VIDEO_PROC_RTSP_INGEST_BASE`,
+`VIDEO_PROC_RTSP_CONSUME_BASE`, `VIDEO_PROC_WHEP_BASE` per the table above.
 
 ## 6. Execution order for tomorrow
 
 Morning (infra, parallelizable):
 1. Build + push processor image (§3). Smoke-test locally first:
    `docker run ... processor.py --job-file test-job-blur.json`.
-2. Write chart (`helm/roboflow-video-poc/`), `helm install` into `ck8s-stg`
-   namespace `video-poc` with GPU replicas=1 to start.
+2. Write chart (`helm/roboflow-video-proc/`), `helm install` into `ck8s-stg`
+   namespace `video-proc` with GPU replicas=1 to start.
 3. Apply the `mediamtx-ingest` LoadBalancer Service; **this is the highest-risk
    unknown** (Crusoe LB controller is private beta; no TCP LB exists in either
    repo today). Verify with a raw
