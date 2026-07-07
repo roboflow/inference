@@ -156,7 +156,7 @@ async def test_handler_single_image_calls_proxy_infer_once_with_task_none():
         request=None, common=CommonRequestParams(model_id="acme/1", api_key="k")
     )
     out = await handle_object_detection(
-        "infer", {"images": [_JPEG], "params": {"confidence": "0.5"}}, proxy, hooks
+        "infer", {"images": [_JPEG], "params": {"confidence": 0.5}}, proxy, hooks
     )
     assert out is fake_prediction
     proxy.infer.assert_awaited_once()
@@ -164,7 +164,7 @@ async def test_handler_single_image_calls_proxy_infer_once_with_task_none():
     assert kwargs["model_id"] == "acme/1"
     assert kwargs["image"] == _JPEG
     assert kwargs["task"] is None
-    assert kwargs["params"]["confidence"] == "0.5"
+    assert kwargs["params"]["confidence"] == 0.5
 
 
 @pytest.mark.asyncio
