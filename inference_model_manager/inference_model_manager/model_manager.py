@@ -101,8 +101,11 @@ class ModelManager:
         # cache entry is dropped, so the wrapper can clean up its hosted heads.
         self._shared_death_hook: Optional[Callable[[str], None]] = None
 
-        # Shared SHM pool for subprocess backends — created lazily
+        # Shared SHM pool for subprocess backends — created lazily.
+        # Dedicated lock (not _lifecycle_lock): callers run outside the
+        # lifecycle lock by design, and pool creation must be single-shot.
         self._pool: Optional[Any] = None  # SHMPool, created on first subprocess load
+        self._pool_lock = threading.Lock()
 
         # Shared thread pool for DirectBackends and infer_async
         self._executor = ThreadPoolExecutor(
@@ -450,15 +453,17 @@ class ModelManager:
     def _ensure_pool(self) -> Any:
         """Lazily create shared SHM pool on first subprocess backend load."""
         if self._pool is None:
-            from inference_model_manager.backends.utils.shm_pool import SHMPool
+            with self._pool_lock:
+                if self._pool is None:
+                    from inference_model_manager.backends.utils.shm_pool import SHMPool
 
-            self._pool = SHMPool.create(self._n_slots, self._input_mb)
-            logger.info(
-                "ModelManager: SHM pool created  name=%s  slots=%d  data=%.0fMB",
-                self._pool.name,
-                self._n_slots,
-                self._input_mb,
-            )
+                    self._pool = SHMPool.create(self._n_slots, self._input_mb)
+                    logger.info(
+                        "ModelManager: SHM pool created  name=%s  slots=%d  data=%.0fMB",
+                        self._pool.name,
+                        self._n_slots,
+                        self._input_mb,
+                    )
         return self._pool
 
     def _create_backend(
