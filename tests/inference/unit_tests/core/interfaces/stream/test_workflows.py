@@ -8,6 +8,7 @@ import pytest
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.model_handlers.workflows import (
+    FlushEmittingPipelinedWorkflowRunner,
     PipelinedWorkflowRunner,
     WorkflowRunner,
     wrap_workflow_runner_for_stream_pipeline,
@@ -190,6 +191,71 @@ class _FakeDownstreamPipelinedExecutionEngine:
         frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
         self.flush_calls.append(frame_number)
         return [{"result": f"downstream-frame-{frame_number}"}]
+
+
+class _FakeDeferringStep:
+    def __init__(self, stream_buffer_depth: int, defers: bool = True) -> None:
+        self._stream_buffer_depth = stream_buffer_depth
+        self._defers = defers
+        self.close_calls = 0
+
+    def is_stream_pipelined(self) -> bool:
+        return self._stream_buffer_depth > 0
+
+    def defers_downstream_execution(self) -> bool:
+        return self._defers
+
+    def stream_pipeline_depth(self) -> int:
+        return self._stream_buffer_depth
+
+    def close_stream_pipeline(self) -> None:
+        self.close_calls += 1
+
+
+class _FakeDeferringExecutionEngine:
+    def __init__(self, stream_buffer_depth: int, defers: bool = True) -> None:
+        self.step = _FakeDeferringStep(
+            stream_buffer_depth=stream_buffer_depth, defers=defers
+        )
+        self._engine = SimpleNamespace(
+            _compiled_workflow=SimpleNamespace(
+                steps={"detection": SimpleNamespace(step=self.step)}
+            )
+        )
+        self.calls = []
+        self.flush_calls = []
+
+    def run(
+        self,
+        runtime_parameters,
+        fps,
+        serialize_results,
+        _is_preview,
+        defer_stream_pipeline_flush=False,
+        resolve_output_futures=True,
+    ):
+        frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
+        self.calls.append(
+            {
+                "frame_number": frame_number,
+                "defer_stream_pipeline_flush": defer_stream_pipeline_flush,
+                "resolve_output_futures": resolve_output_futures,
+            }
+        )
+        # The deferred pass only launches the pipelined step; downstream steps are
+        # skipped, so this output is incomplete and discarded by the runner.
+        return [{"result": f"deferred-frame-{frame_number}"}]
+
+    def flush_stream_pipeline(
+        self,
+        runtime_parameters,
+        fps,
+        serialize_results,
+        _is_preview,
+    ):
+        frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
+        self.flush_calls.append(frame_number)
+        return [{"result": f"flushed-frame-{frame_number}"}]
 
 
 class _ImmediateExecutor:
@@ -540,6 +606,140 @@ def test_pipelined_workflow_runner_preserves_frame_alignment_for_downstream_step
         },
     ]
     assert engine.flush_calls == [2]
+
+
+def test_wrap_returns_flush_emitting_runner_when_step_defers_downstream_execution() -> (
+    None
+):
+    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+
+    assert isinstance(runner, FlushEmittingPipelinedWorkflowRunner)
+
+
+def test_wrap_returns_plain_pipelined_runner_when_step_does_not_defer() -> None:
+    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1, defers=False)
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+
+    assert type(runner) is PipelinedWorkflowRunner
+
+
+def test_wrap_returns_plain_pipelined_runner_when_defer_marker_absent() -> None:
+    engine = _FakeExecutionEngine(stream_buffer_depth=1)
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+
+    assert type(runner) is PipelinedWorkflowRunner
+
+
+def test_flush_emitting_runner_emits_from_flush_path_with_buffer_depth_one() -> None:
+    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+    assert isinstance(runner, FlushEmittingPipelinedWorkflowRunner)
+    frame_1 = _make_frame(1)
+    frame_2 = _make_frame(2)
+
+    first_result = runner([frame_1])
+    second_result = runner([frame_2])
+    flushed_results = runner.flush()
+
+    assert first_result is None
+    assert second_result is not None
+    # The emitted predictions come from the flush path, not the discarded run.
+    assert second_result.predictions == [{"result": "flushed-frame-1"}]
+    assert second_result.video_frames == [frame_1]
+    assert flushed_results is not None
+    assert len(flushed_results) == 1
+    assert flushed_results[0].predictions == [{"result": "flushed-frame-2"}]
+    assert flushed_results[0].video_frames == [frame_2]
+    assert engine.flush_calls == [1, 2]
+    assert engine.calls == [
+        {
+            "frame_number": 1,
+            "defer_stream_pipeline_flush": True,
+            "resolve_output_futures": False,
+        },
+        {
+            "frame_number": 2,
+            "defer_stream_pipeline_flush": True,
+            "resolve_output_futures": False,
+        },
+    ]
+    runner.close()
+    assert engine.step.close_calls == 1
+
+
+def test_flush_emitting_runner_preserves_emission_order_with_buffer_depth_two() -> None:
+    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=2)
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+    assert isinstance(runner, FlushEmittingPipelinedWorkflowRunner)
+    frames = [_make_frame(frame_id) for frame_id in range(1, 5)]
+
+    results = [runner([frame]) for frame in frames]
+    flushed_results = runner.flush()
+
+    assert results[0] is None
+    assert results[1] is None
+    assert results[2].predictions == [{"result": "flushed-frame-1"}]
+    assert results[2].video_frames == [frames[0]]
+    assert results[3].predictions == [{"result": "flushed-frame-2"}]
+    assert results[3].video_frames == [frames[1]]
+    assert flushed_results is not None
+    assert [result.video_frames for result in flushed_results] == [
+        [frames[2]],
+        [frames[3]],
+    ]
+    assert flushed_results[0].predictions == [{"result": "flushed-frame-3"}]
+    assert flushed_results[1].predictions == [{"result": "flushed-frame-4"}]
+    # Every frame is emitted through the flush path, in strict frame order.
+    assert engine.flush_calls == [1, 2, 3, 4]
 
 
 def test_instance_segmentation_stream_pipeline_activation_requires_depth_above_one(

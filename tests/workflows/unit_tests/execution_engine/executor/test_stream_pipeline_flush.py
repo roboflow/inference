@@ -27,6 +27,7 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 )
 from inference.core.workflows.execution_engine.v1.executor.core import (
     flush_stream_pipeline_workflow,
+    run_workflow,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -66,6 +67,16 @@ class DeferredProducerBlock(WorkflowBlock):
 
     def close_stream_pipeline(self) -> None:
         self.closed = True
+
+
+class DeferringProducerBlock(DeferredProducerBlock):
+    # A pipelined producer that defers downstream execution: the deferred pass
+    # must skip its downstream consumers, which run later via the flush path.
+    def is_stream_pipelined(self) -> bool:
+        return True
+
+    def defers_downstream_execution(self) -> bool:
+        return True
 
 
 class ConsumerManifest(WorkflowBlockManifest):
@@ -119,6 +130,87 @@ def test_stream_pipeline_flush_runs_tail_output_through_downstream_steps() -> No
     assert result == [{"result": "flushed-tail"}]
     assert producer.flush_calls == 1
     assert producer.closed is False
+
+
+def test_deferred_pass_skips_downstream_of_deferring_step_until_flush() -> None:
+    producer = DeferringProducerBlock()
+    consumer = ConsumerBlock()
+    workflow = _compiled_workflow(
+        producer=producer,
+        consumer=consumer,
+        producer_manifest=DeferredProducerManifest(
+            type="test/deferred_producer@v1",
+            name="segmentation",
+        ),
+        consumer_manifest=ConsumerManifest(
+            type="test/consumer@v1",
+            name="consumer",
+        ),
+    )
+
+    deferred_result = run_workflow(
+        workflow=workflow,
+        runtime_parameters={},
+        max_concurrent_steps=1,
+        kinds_serializers={},
+        serialize_results=False,
+        profiler=NullWorkflowsProfiler.init(),
+        defer_stream_pipeline_flush=True,
+        resolve_output_futures=False,
+    )
+
+    # The deferred pass must not run the downstream consumer.
+    assert consumer.seen_predictions == []
+    assert producer.flush_calls == 0
+    assert producer.closed is False
+
+    flushed_result = flush_stream_pipeline_workflow(
+        workflow=workflow,
+        runtime_parameters={},
+        max_concurrent_steps=1,
+        kinds_serializers={},
+        serialize_results=False,
+        profiler=NullWorkflowsProfiler.init(),
+    )
+
+    # The flush pass runs the consumer with the producer's flushed tail output.
+    assert consumer.seen_predictions == ["flushed-tail"]
+    assert flushed_result == [{"result": "flushed-tail"}]
+    assert producer.flush_calls == 1
+
+
+def test_deferred_pass_runs_downstream_when_producer_does_not_defer() -> None:
+    producer = DeferredProducerBlock()
+    consumer = ConsumerBlock()
+    workflow = _compiled_workflow(
+        producer=producer,
+        consumer=consumer,
+        producer_manifest=DeferredProducerManifest(
+            type="test/deferred_producer@v1",
+            name="segmentation",
+        ),
+        consumer_manifest=ConsumerManifest(
+            type="test/consumer@v1",
+            name="consumer",
+        ),
+    )
+
+    result = run_workflow(
+        workflow=workflow,
+        runtime_parameters={},
+        max_concurrent_steps=1,
+        kinds_serializers={},
+        serialize_results=False,
+        profiler=NullWorkflowsProfiler.init(),
+        defer_stream_pipeline_flush=True,
+        resolve_output_futures=False,
+    )
+
+    # Without the defer marker the consumer runs in the deferred pass, on the
+    # producer's warmup output — the pre-existing behavior.
+    assert consumer.seen_predictions == ["warmup-placeholder"]
+    assert result == [{"result": "warmup-placeholder"}]
+    assert producer.flush_calls == 0
 
 
 def _compiled_workflow(

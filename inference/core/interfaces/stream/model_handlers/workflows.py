@@ -1,15 +1,20 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from inference.core import logger
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import InferenceHandlerResult
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
+    construct_step_selector,
+)
 
 
 @dataclass(frozen=True)
 class _StreamPipelineStep:
     step: Any
+    name: Optional[str] = None
 
 
 class WorkflowRunner:
@@ -177,6 +182,39 @@ class PipelinedWorkflowRunner:
         )
 
 
+class FlushEmittingPipelinedWorkflowRunner(PipelinedWorkflowRunner):
+    """Pipelined runner for steps that defer downstream execution.
+
+    The deferred pass only launches the pipelined step (e.g. a remote model
+    HTTP request) — downstream steps are skipped by the execution engine, so
+    the deferred run's outputs are incomplete and discarded. Each buffered
+    frame is emitted through the stream-pipeline flush instead, which
+    materializes the pipelined step's oldest pending result and runs the
+    downstream steps with that frame's own inputs, preserving frame order
+    for stateful consumers like trackers.
+    """
+
+    def __call__(
+        self, video_frames: List[VideoFrame]
+    ) -> Optional[InferenceHandlerResult]:
+        self._workflow_runner._run_workflow(
+            video_frames=video_frames,
+            defer_stream_pipeline_flush=True,
+            resolve_output_futures=False,
+        )
+        self._pending_video_frames.append(video_frames)
+        if len(self._pending_video_frames) <= self._stream_buffer_depth():
+            return None
+        emit_video_frames = self._pending_video_frames.pop(0)
+        predictions = self._workflow_runner._flush_stream_pipeline(
+            video_frames=emit_video_frames,
+        )
+        return InferenceHandlerResult(
+            predictions=predictions,
+            video_frames=emit_video_frames,
+        )
+
+
 def wrap_workflow_runner_for_stream_pipeline(
     workflow_runner: WorkflowRunner,
     execution_engine: ExecutionEngine,
@@ -184,7 +222,27 @@ def wrap_workflow_runner_for_stream_pipeline(
     stream_steps = _stream_pipeline_steps(execution_engine=execution_engine)
     if not stream_steps:
         return workflow_runner
-    return PipelinedWorkflowRunner(
+    deferring_steps = [
+        stream_step
+        for stream_step in stream_steps
+        if _step_defers_downstream_execution(stream_step=stream_step)
+    ]
+    if not deferring_steps:
+        return PipelinedWorkflowRunner(
+            workflow_runner=workflow_runner,
+            stream_steps=stream_steps,
+        )
+    if not _workflow_supports_downstream_deferral(
+        execution_engine=execution_engine,
+        deferring_steps=deferring_steps,
+    ):
+        logger.warning(
+            "Remote stream pipelining is disabled for this workflow. It requires "
+            "a single pipelined model step with every other step downstream of "
+            "it; falling back to sequential execution."
+        )
+        return workflow_runner
+    return FlushEmittingPipelinedWorkflowRunner(
         workflow_runner=workflow_runner,
         stream_steps=stream_steps,
     )
@@ -197,10 +255,12 @@ def _stream_pipeline_steps(
     compiled_workflow = getattr(engine, "_compiled_workflow", None)
     steps = getattr(compiled_workflow, "steps", {})
     stream_steps = []
-    for initialised_step in steps.values():
+    for step_name, initialised_step in steps.items():
         step_instance = getattr(initialised_step, "step", None)
         if _is_stream_pipeline_step(step_instance=step_instance):
-            stream_steps.append(_StreamPipelineStep(step=step_instance))
+            stream_steps.append(
+                _StreamPipelineStep(step=step_instance, name=step_name)
+            )
     return stream_steps
 
 
@@ -217,3 +277,42 @@ def _stream_step_depth(stream_step: _StreamPipelineStep) -> int:
     if not callable(get_depth):
         return 0
     return max(0, int(get_depth()))
+
+
+def _step_defers_downstream_execution(stream_step: _StreamPipelineStep) -> bool:
+    defers_fn = getattr(stream_step.step, "defers_downstream_execution", None)
+    return callable(defers_fn) and defers_fn()
+
+
+def _workflow_supports_downstream_deferral(
+    execution_engine: ExecutionEngine,
+    deferring_steps: List[_StreamPipelineStep],
+) -> bool:
+    # Flush-based emission reruns only the steps downstream of the pipelined
+    # step, so every other step's output would be missing from emitted results.
+    # Restrict activation to the shape where that cannot happen: one pipelined
+    # step, all remaining steps downstream of it.
+    if len(deferring_steps) != 1:
+        return False
+    deferring_step_name = deferring_steps[0].name
+    engine = getattr(execution_engine, "_engine", None)
+    compiled_workflow = getattr(engine, "_compiled_workflow", None)
+    execution_graph = getattr(compiled_workflow, "execution_graph", None)
+    if execution_graph is None or deferring_step_name is None:
+        return True
+    step_selectors = {
+        construct_step_selector(step_name=step_name)
+        for step_name in getattr(compiled_workflow, "steps", {})
+    }
+    deferring_selector = construct_step_selector(step_name=deferring_step_name)
+    downstream_selectors = set()
+    nodes_to_visit = [deferring_selector]
+    while nodes_to_visit:
+        node = nodes_to_visit.pop(0)
+        for successor in execution_graph.successors(node):
+            if successor in downstream_selectors:
+                continue
+            if successor in step_selectors:
+                downstream_selectors.add(successor)
+            nodes_to_visit.append(successor)
+    return step_selectors - {deferring_selector} <= downstream_selectors

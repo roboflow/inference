@@ -36,6 +36,8 @@ from inference.core.interfaces.stream.entities import (
 from inference.core.interfaces.stream.inference_pipeline import (
     InferencePipeline,
     _resolve_prediction_futures,
+    _stream_pipeline_dispatch_enabled,
+    _workflows_remote_stream_pipeline_enabled,
 )
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
@@ -743,3 +745,77 @@ def test_inference_pipeline_works_correctly_against_multiple_video_files_with_ac
     assert frames_by_sources[1] == list(
         range(1, 431 * 2 + 1)
     ), "Order of prediction frames violated for source 1"
+
+
+def test_workflows_remote_stream_pipeline_enabled_when_remote_and_depth_above_one(
+    monkeypatch,
+) -> None:
+    # given
+    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
+    monkeypatch.setenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "2")
+
+    # when / then
+    assert _workflows_remote_stream_pipeline_enabled() is True
+
+
+def test_workflows_remote_stream_pipeline_disabled_when_execution_mode_is_local(
+    monkeypatch,
+) -> None:
+    # given
+    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "local")
+    monkeypatch.setenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "2")
+
+    # when / then
+    assert _workflows_remote_stream_pipeline_enabled() is False
+
+
+def test_workflows_remote_stream_pipeline_disabled_when_depth_is_one(
+    monkeypatch,
+) -> None:
+    # given
+    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
+    monkeypatch.setenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "1")
+
+    # when / then
+    assert _workflows_remote_stream_pipeline_enabled() is False
+
+
+def test_workflows_remote_stream_pipeline_disabled_when_depth_is_not_an_integer(
+    monkeypatch,
+) -> None:
+    # given
+    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
+    monkeypatch.setenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "not-a-number")
+
+    # when / then
+    assert _workflows_remote_stream_pipeline_enabled() is False
+
+
+def test_stream_pipeline_dispatch_enabled_for_remote_workflows(monkeypatch) -> None:
+    # given
+    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
+    monkeypatch.setenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "2")
+    monkeypatch.delenv("RFDETR_PIPELINE_DEPTH", raising=False)
+
+    # when / then
+    assert _stream_pipeline_dispatch_enabled() is True
+
+
+def test_stream_pipeline_dispatch_enabled_for_rfdetr_alone(monkeypatch) -> None:
+    # given
+    monkeypatch.delenv("WORKFLOWS_STEP_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", raising=False)
+    monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "2")
+
+    # when / then
+    assert _stream_pipeline_dispatch_enabled() is True
+
+
+def test_stream_pipeline_dispatch_disabled_by_default(monkeypatch) -> None:
+    # given
+    monkeypatch.delenv("WORKFLOWS_STEP_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", raising=False)
+    monkeypatch.delenv("RFDETR_PIPELINE_DEPTH", raising=False)
+
+    # when / then
+    assert _stream_pipeline_dispatch_enabled() is False

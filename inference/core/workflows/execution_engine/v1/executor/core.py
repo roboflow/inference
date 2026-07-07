@@ -145,19 +145,30 @@ def _run_workflow(
         execution_graph=workflow.execution_graph,
     )
     workflow_execution_id = get_or_create_workflow_execution_id()
+    deferred_step_selectors = (
+        _deferred_downstream_step_selectors(workflow=workflow)
+        if defer_stream_pipeline_flush
+        else set()
+    )
     try:
         next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
         while next_steps is not None:
-            execute_steps(
-                next_steps=next_steps,
-                workflow=workflow,
-                execution_data_manager=execution_data_manager,
-                max_concurrent_steps=max_concurrent_steps,
-                workflow_execution_id=workflow_execution_id,
-                profiler=profiler,
-                executor=executor,
-                step_error_handler=step_error_handler,
-            )
+            runnable_steps = [
+                step_selector
+                for step_selector in next_steps
+                if step_selector not in deferred_step_selectors
+            ]
+            if runnable_steps:
+                execute_steps(
+                    next_steps=runnable_steps,
+                    workflow=workflow,
+                    execution_data_manager=execution_data_manager,
+                    max_concurrent_steps=max_concurrent_steps,
+                    workflow_execution_id=workflow_execution_id,
+                    profiler=profiler,
+                    executor=executor,
+                    step_error_handler=step_error_handler,
+                )
             next_steps = execution_coordinator.get_steps_to_execute_next(
                 profiler=profiler
             )
@@ -289,6 +300,29 @@ def flush_stream_pipeline_outputs(
             )
             flushed_step_selectors.append(step_selector)
     return flushed_step_selectors
+
+
+def _deferred_downstream_step_selectors(workflow: CompiledWorkflow) -> set[str]:
+    # Steps downstream of a pipelined block that defers downstream execution
+    # (e.g. remote model steps with in-flight HTTP futures) must not run in the
+    # deferred pass — they would block on unresolved futures at input assembly.
+    # They run later, per frame, via flush_stream_pipeline_workflow.
+    deferring_step_selectors = []
+    for step_name, step in workflow.steps.items():
+        defers_fn = getattr(step.step, "defers_downstream_execution", None)
+        if not callable(defers_fn) or not defers_fn():
+            continue
+        is_pipelined_fn = getattr(step.step, "is_stream_pipelined", None)
+        if callable(is_pipelined_fn) and is_pipelined_fn():
+            deferring_step_selectors.append(
+                construct_step_selector(step_name=step_name)
+            )
+    if not deferring_step_selectors:
+        return set()
+    return _downstream_step_selectors(
+        workflow=workflow,
+        step_selectors=deferring_step_selectors,
+    )
 
 
 def _downstream_step_selectors(
