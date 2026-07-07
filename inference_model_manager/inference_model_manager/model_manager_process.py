@@ -1031,6 +1031,9 @@ class ModelManagerProcess:
                     logger.debug(
                         "MMP: failed to get class_names for '%s'", f, exc_info=True
                     )
+                entry["key_points_classes"] = getattr(
+                    backend, "key_points_classes", None
+                )
             if f in self._preloaded_shared_bases and self._manager is not None:
                 base_key = self._preloaded_shared_bases[f]
                 owner = self._manager.shared_owners().get(base_key)

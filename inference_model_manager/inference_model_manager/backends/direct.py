@@ -267,3 +267,7 @@ class DirectBackend(Backend):
     @property
     def class_names(self) -> Optional[List[str]]:
         return getattr(self._model, "class_names", None)
+
+    @property
+    def key_points_classes(self) -> Optional[List[List[str]]]:
+        return getattr(self._model, "key_points_classes", None)

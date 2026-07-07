@@ -126,15 +126,23 @@ class ModelManagerAdapter:
             }
             raise _unsupported(model_id)
         stats = await self._client.stats()
-        class_names = (
-            stats.get("mmp_models", {}).get(model_id, {}).get("class_names")
-        )
+        model_entry = stats.get("mmp_models", {}).get(model_id, {})
+        key_points_classes = model_entry.get("key_points_classes")
+        if task_type == "keypoint-detection" and key_points_classes is None:
+            await self._client.unload(model_id)
+            self._routes[model_id] = {
+                "supported": False,
+                "task_type": task_type,
+                "action": action,
+            }
+            raise _unsupported(model_id)
         route = {
             "supported": True,
             "mmp_model_id": model_id,
             "task_type": task_type,
             "action": action,
-            "class_names": class_names,
+            "class_names": model_entry.get("class_names"),
+            "key_points_classes": key_points_classes,
         }
         self._routes[model_id] = route
         return route
@@ -144,31 +152,55 @@ class ModelManagerAdapter:
             model_id, getattr(request, "api_key", None)
         )
         translation.ensure_request_supported(model_id, request)
-        image_bytes, dims = translation.forward_image(request.image)
-        params = translation.build_object_detection_params(request)
+        is_batch = isinstance(request.image, list)
+        images = request.image if is_batch else [request.image]
+        forwarded = [translation.forward_image(image) for image in images]
+        params = translation.build_task_params(route["task_type"], request)
         t_start = time.perf_counter()
         ensure = await self._client.ensure_loaded(
             route["mmp_model_id"], api_key=getattr(request, "api_key", None) or ""
         )
         translation.raise_for_lifecycle_result(ensure, model_id)
-        try:
-            prediction = await self._client.infer(
-                model_id=route["mmp_model_id"],
-                image=image_bytes,
-                task=route["action"],
-                params=params,
+        predictions = await self._fan_out_infer(model_id, route, forwarded, params)
+        elapsed = time.perf_counter() - t_start
+        responses = []
+        for prediction, (_, dims) in zip(predictions, forwarded):
+            response = translation.repack_prediction(
+                route["task_type"], prediction, dims, route, request
             )
-        except Exception as error:
-            translated = translation.translate_infer_error(error, model_id)
-            if translated is error:
-                raise
-            raise translated from error
-        response = translation.repack_object_detection_response(
-            prediction, dims, route["class_names"], request
+            response.time = elapsed
+            response.inference_id = request.id
+            responses.append(response)
+        return responses if is_batch else responses[0]
+
+    async def _fan_out_infer(
+        self, model_id: str, route: dict, forwarded: list, params: dict
+    ) -> list:
+        concurrency = min(
+            len(forwarded), max(1, getattr(self._client, "n_slots", 1) or 1)
         )
-        response.time = time.perf_counter() - t_start
-        response.inference_id = request.id
-        return response
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def infer_one(image_bytes: bytes):
+            async with semaphore:
+                return await self._client.infer(
+                    model_id=route["mmp_model_id"],
+                    image=image_bytes,
+                    task=route["action"],
+                    params=params,
+                )
+
+        results = await asyncio.gather(
+            *(infer_one(image_bytes) for image_bytes, _ in forwarded),
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, BaseException):
+                translated = translation.translate_infer_error(result, model_id)
+                if translated is result:
+                    raise result
+                raise translated from result
+        return list(results)
 
     # ------------------------------------------------------------------
     # model operations

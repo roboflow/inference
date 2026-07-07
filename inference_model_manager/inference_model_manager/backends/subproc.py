@@ -295,6 +295,7 @@ def _worker_main(
             {
                 "status": "READY",
                 "class_names": getattr(model, "class_names", None),
+                "key_points_classes": getattr(model, "key_points_classes", None),
                 "max_batch_size": model_max_bs,
                 "model_class_name": type(model).__name__,
                 "model_mro_names": [cls.__name__ for cls in type(model).__mro__],
@@ -990,6 +991,7 @@ class SubprocessBackend(Backend):
             raise RuntimeError(f"SubprocessBackend({model_id!r}): {err}")
 
         self._class_names = msg.get("class_names")
+        self._key_points_classes = msg.get("key_points_classes")
         self._max_batch_size_model = msg.get("max_batch_size")
         self._model_class_name = msg.get("model_class_name")
         self._model_mro_names = msg.get("model_mro_names", [])
@@ -1406,3 +1408,7 @@ class SubprocessBackend(Backend):
     @property
     def class_names(self) -> Optional[List[str]]:
         return self._class_names
+
+    @property
+    def key_points_classes(self) -> Optional[List[List[str]]]:
+        return self._key_points_classes
