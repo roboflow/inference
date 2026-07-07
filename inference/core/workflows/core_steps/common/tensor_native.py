@@ -14,7 +14,7 @@ Supported prediction shapes:
 - ``Tuple[KeyPoints, Optional[Detections]]``     (keypoint-detection workflow kind)
 """
 
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from uuid import uuid4
 
 import numpy as np
@@ -790,3 +790,55 @@ def embed_rle_masks_in_larger_canvas(
         embedded.append(rle["counts"])
 
     return InstancesRLEMasks(image_size=(target_h, target_w), masks=embedded)
+
+
+def build_native_key_points(
+    per_instance_xy: List[Optional[List[List[float]]]],
+    per_instance_confidence: List[Optional[List[float]]],
+    object_class_ids: List[Any],
+    image_metadata: dict,
+) -> KeyPoints:
+    """Rebuild a padded native ``KeyPoints`` from per-instance keypoint lists (the
+    flattened ``keypoints_xy`` / ``keypoints_confidence`` shape the keypoint
+    producer writes into ``bboxes_metadata``). Mirrors
+    ``keypoint_detection/v3_tensor._native_key_points_from_inference_predictions``:
+    ragged per-instance keypoint counts are zero-padded to a uniform ``K`` with
+    confidence ``0.0`` in the padding rows. ``class_id`` is the per-instance
+    *object* class id (one per skeleton), matching the bbox ``Detections.class_id``.
+
+    Extracted (verbatim) from ``fusion/detections_list_rollup/v1_tensor.py`` so the
+    dynamic-block representation boundary can rebuild the ``(KeyPoints, Detections)``
+    tuple the visualizer siblings require.
+    """
+    number_of_instances = len(object_class_ids)
+    normalised_xy = [list(xy) if xy else [] for xy in per_instance_xy]
+    normalised_confidence = [
+        list(conf) if conf else [] for conf in per_instance_confidence
+    ]
+    max_key_points = max((len(xy) for xy in normalised_xy), default=0)
+    xy_tensor = torch.zeros(
+        (number_of_instances, max_key_points, 2), dtype=torch.float32
+    )
+    confidence_tensor = torch.zeros(
+        (number_of_instances, max_key_points), dtype=torch.float32
+    )
+    for index in range(number_of_instances):
+        keypoint_count = len(normalised_xy[index])
+        if keypoint_count > 0:
+            xy_tensor[index, :keypoint_count] = torch.as_tensor(
+                normalised_xy[index], dtype=torch.float32
+            )
+        confidence_count = len(normalised_confidence[index])
+        if confidence_count > 0:
+            confidence_tensor[index, :confidence_count] = torch.as_tensor(
+                normalised_confidence[index], dtype=torch.float32
+            )
+    class_id_tensor = torch.as_tensor(
+        [int(value) for value in object_class_ids], dtype=torch.long
+    ).reshape(-1)
+    return KeyPoints(
+        xy=xy_tensor,
+        class_id=class_id_tensor,
+        confidence=confidence_tensor,
+        image_metadata=image_metadata,
+    )

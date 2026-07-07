@@ -6,6 +6,7 @@ import torch
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.tensor_native import (
+    build_native_key_points,
     instance_mask_to_numpy,
     split_key_point_prediction,
 )
@@ -885,7 +886,7 @@ def merge_crop_predictions(
         # keypoint_visualization can call ``KeyPoints.to_supervision()``. Rebuild the
         # native KeyPoints from the merged per-instance keypoint lists; ``result`` is
         # the bounding-box component.
-        key_points = _build_native_key_points(
+        key_points = build_native_key_points(
             per_instance_xy=all_keypoints_data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS],
             per_instance_confidence=all_keypoints_data[
                 KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS
@@ -896,54 +897,6 @@ def merge_crop_predictions(
         return (key_points, result), crop_zones
 
     return result, crop_zones
-
-
-def _build_native_key_points(
-    per_instance_xy: List[Optional[List[List[float]]]],
-    per_instance_confidence: List[Optional[List[float]]],
-    object_class_ids: List[Any],
-    image_metadata: dict,
-) -> KeyPoints:
-    """Rebuild a padded native ``KeyPoints`` from the rolled-up per-instance keypoint
-    lists (the flattened ``keypoints_xy`` / ``keypoints_confidence`` shape the keypoint
-    producer writes into ``bboxes_metadata``). Mirrors
-    ``keypoint_detection/v3_tensor._native_key_points_from_inference_predictions``:
-    ragged per-instance keypoint counts are zero-padded to a uniform ``K`` with
-    confidence ``0.0`` in the padding rows. ``class_id`` is the per-instance *object*
-    class id (one per skeleton), matching the bbox ``Detections.class_id``.
-    """
-    number_of_instances = len(object_class_ids)
-    normalised_xy = [list(xy) if xy else [] for xy in per_instance_xy]
-    normalised_confidence = [
-        list(conf) if conf else [] for conf in per_instance_confidence
-    ]
-    max_key_points = max((len(xy) for xy in normalised_xy), default=0)
-    xy_tensor = torch.zeros(
-        (number_of_instances, max_key_points, 2), dtype=torch.float32
-    )
-    confidence_tensor = torch.zeros(
-        (number_of_instances, max_key_points), dtype=torch.float32
-    )
-    for index in range(number_of_instances):
-        keypoint_count = len(normalised_xy[index])
-        if keypoint_count > 0:
-            xy_tensor[index, :keypoint_count] = torch.as_tensor(
-                normalised_xy[index], dtype=torch.float32
-            )
-        confidence_count = len(normalised_confidence[index])
-        if confidence_count > 0:
-            confidence_tensor[index, :confidence_count] = torch.as_tensor(
-                normalised_confidence[index], dtype=torch.float32
-            )
-    class_id_tensor = torch.as_tensor(
-        [int(value) for value in object_class_ids], dtype=torch.long
-    ).reshape(-1)
-    return KeyPoints(
-        xy=xy_tensor,
-        class_id=class_id_tensor,
-        confidence=confidence_tensor,
-        image_metadata=image_metadata,
-    )
 
 
 def _coerce_metadata_value(key: str, value: Any) -> Any:
