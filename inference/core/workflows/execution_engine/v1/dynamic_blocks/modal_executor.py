@@ -122,9 +122,9 @@ def _as_ws_endpoint_url(endpoint_url: str, workspace_id: str) -> str:
 def _compute_code_hash(code_str: str, imports: Optional[list]) -> str:
     """Stable hash for a python block's code + imports.
 
-    Must match ``get_code_hash`` in ``modal/webexec_runtime.py`` so the
-    server can look up a previously-cached compiled namespace when the client
-    sends only ``code_hash`` instead of the full ``code_str``.
+    Must match ``get_code_hash`` in ``webexec_runtime.py`` (same package) so
+    the server can look up a previously-cached compiled namespace when the
+    client sends only ``code_hash`` instead of the full ``code_str``.
     """
     content = (code_str or "") + "\n" + "\n".join(imports or [])
     return hashlib.md5(content.encode("utf-8")).hexdigest()

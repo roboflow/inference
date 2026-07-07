@@ -1,30 +1,24 @@
 """Local stand-in for the Modal ``webexec`` app used by integration tests.
 
 Serves the exact same execution code as production: it imports
-``modal/webexec_runtime.py`` (the module ``modal/modal_app.py`` ships into the
-Modal image) and only adds the transport glue Modal normally provides — the
-HTTP POST route, the ``/ws`` websocket app, and a ``/health`` probe. Tests
-point ``MODAL_WEB_ENDPOINT_URL`` / ``MODAL_WS_ENDPOINT_URL`` at this server
-(see the ``local_webexec_server`` fixture in ``conftest.py``).
+``webexec_runtime`` from the inference package (the module ``modal/modal_app.py``
+runs in the Modal container) and only adds the transport glue Modal normally
+provides — the HTTP POST route, the ``/ws`` websocket app, and a ``/health``
+probe. Tests point ``MODAL_WEB_ENDPOINT_URL`` / ``MODAL_WS_ENDPOINT_URL`` at
+this server (see the ``local_webexec_server`` fixture in ``conftest.py``).
 
 Run with:
     uvicorn local_webexec_app:app --port <port>
 """
 
 import os
-import sys
 from typing import Any, Dict
 
 from fastapi import FastAPI, Request
 
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
+from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+    webexec_runtime,
 )
-_MODAL_DIR = os.path.join(_REPO_ROOT, "modal")
-if _MODAL_DIR not in sys.path:
-    sys.path.insert(0, _MODAL_DIR)
-
-import webexec_runtime
 
 _store = webexec_runtime.NamespaceStore()
 

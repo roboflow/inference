@@ -5,11 +5,14 @@ This module contains the Modal-specific code for executing untrusted user code
 in sandboxes. It's separated from the main executor to avoid requiring Modal
 as a dependency for the main inference package.
 
-The actual execution/serialization logic lives in ``webexec_runtime.py``,
-which is shipped into the Modal image via ``add_local_python_source`` so the
-deployed container and the local test stub
-(``tests/workflows/integration_tests/execution/local_webexec_app.py``) run
-exactly the same code.
+The actual execution/serialization logic lives in
+``inference/core/workflows/execution_engine/v1/dynamic_blocks/webexec_runtime.py``
+(shipped with the inference package, so it is present in the container image),
+and is also served by the local test stub
+(``tests/workflows/integration_tests/execution/local_webexec_app.py``) so both
+run exactly the same code. Note the container runs the runtime from the
+inference version baked into the image; runtime changes take effect on the
+next inference release + redeploy.
 """
 
 import os
@@ -18,7 +21,9 @@ from typing import Any, Dict
 from starlette.requests import Request
 
 import modal
-import webexec_runtime
+from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+    webexec_runtime,
+)
 
 WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
 WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
@@ -74,10 +79,6 @@ def get_inference_image():
         )
         .pip_install("fastapi[standard]", "msgpack")
         .entrypoint([])
-        # Ship the shared runtime from the repo checkout so the container runs
-        # the same code as the local test stub, independent of the pinned
-        # inference version installed above.
-        .add_local_python_source("webexec_runtime")
     )
     return image
 
