@@ -347,6 +347,13 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   target fps) so a scheduler can pack N streams per node with stability guarantees —
   see §9.
 - **No recording** (phase 3 by design).
+- **Connector camera identity is by enumeration index** (`usb:<n>`): macOS
+  reshuffles avfoundation indices when devices come and go (lid close,
+  Continuity camera, USB replug), which relabels platform source records and
+  makes capture legs grab the wrong device or hang. Observed twice in one day
+  of local testing. Fix: key sources by the device's stable unique ID
+  (avfoundation uniqueID on macOS, udev serial on Linux) and resolve the index
+  at capture time. Until then: restarting the connector re-syncs indices.
 - **No metering** (the intended model: stream-hours + GPU-seconds).
 - **`imageOutput` list outputs** (arrays of images) are redacted from events but not
   stored/previewable.
