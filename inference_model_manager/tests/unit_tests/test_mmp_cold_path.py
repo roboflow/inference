@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import struct
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -141,6 +142,81 @@ class TestEvictionCoordination:
         ok = asyncio.run(mmp._evict_model("a"))
         assert ok is False
         assert "a" not in mmp._unloading  # always discarded
+
+
+class TestEvictionReloadRace:
+    def test_eviction_keeps_backend_registered_mid_drain(self):
+        async def _run():
+            mmp = _bare_mmp()
+            mmp._loop = asyncio.get_running_loop()
+            draining = threading.Event()
+            release = threading.Event()
+
+            def _slow_unload(model_id):
+                draining.set()
+                release.wait(2)
+                return True
+
+            mmp._unload_blocking = _slow_unload
+            old = object()
+            fresh = object()
+            mmp._models["m"] = ModelState(loaded=True)
+            mmp._backends["m"] = old
+
+            evict = asyncio.create_task(mmp._evict_model("m"))
+            await asyncio.get_running_loop().run_in_executor(None, draining.wait, 2)
+            mmp.register_backend("m", fresh)
+            release.set()
+            ok = await evict
+            assert ok is True
+            fs = mmp._models["m"]
+            assert fs.loaded is True
+            assert mmp._backends.get("m") is fresh
+            assert "m" in mmp._model_access
+
+        asyncio.run(_run())
+
+    def test_ensure_loaded_during_eviction_defers_load_until_drain_done(self):
+        async def _run():
+            mmp = _handler_mmp()
+            mmp._loop = asyncio.get_running_loop()
+            mmp._cache_hits = 0
+            mmp._cache_misses = 0
+            draining = threading.Event()
+            release = threading.Event()
+            loads: list = []
+
+            def _slow_unload(model_id):
+                draining.set()
+                release.wait(2)
+                return True
+
+            mmp._unload_blocking = _slow_unload
+
+            async def _fake_load(model_id, api_key="", device=""):
+                loads.append(model_id)
+                mmp.register_backend(model_id, object())
+
+            mmp._load_model = _fake_load
+            mmp._models["m"] = ModelState(loaded=True)
+            mmp._backends["m"] = object()
+
+            evict = asyncio.create_task(mmp._evict_model("m"))
+            await asyncio.get_running_loop().run_in_executor(None, draining.wait, 2)
+
+            frame = struct.pack(">QIH", 7, 5000, 1) + b"m"
+            await mmp._handle_ensure_loaded(b"cli", [frame])
+            assert loads == []  # load must not start while drain in progress
+
+            release.set()
+            ok = await evict
+            assert ok is True
+            await asyncio.sleep(0.05)
+            assert loads == ["m"]
+            assert mmp._models["m"].loaded is True
+            assert mmp._backends.get("m") is not None
+
+        asyncio.run(_run())
 
 
 def _load_frame(req_id: int, model_id: bytes = b"m") -> list[bytes]:

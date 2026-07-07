@@ -497,6 +497,20 @@ class ModelManagerProcess:
             # Owner is already torn down; drop the dead view directly.
             self._manager._backends.pop(head_id, None)
 
+    def _kick_pending_load(self, model_id: str) -> None:
+        """Start a load deferred by the _unloading gate, if waiters accumulated
+        while the model was being unloaded/evicted. Runs on the event loop."""
+        fs = self._models.get(model_id)
+        if fs is None or fs.loading or fs.loaded:
+            return
+        if not (fs.load_waiters or fs.admin_waiters):
+            return
+        fs.loading = True
+        self._spawn(
+            self._load_model(model_id, api_key=fs.api_key, device=fs.device),
+            name=f"mmp-load-{model_id}",
+        )
+
     def _schedule_reload(self, model_id: str) -> None:
         """Mark model as loading and trigger _load_model. Runs on event loop."""
         fs = self._models.get(model_id)
@@ -508,6 +522,8 @@ class ModelManagerProcess:
             del self._inflight[slot_id]
         if fs.loading:
             return  # already reloading
+        if model_id in self._unloading:
+            return  # being unloaded; _kick_pending_load restarts if waiters exist
         fs.loaded = False
         fs.loading = True
         logger.info("MMP: reloading '%s' after worker death", model_id)
@@ -727,11 +743,14 @@ class ModelManagerProcess:
         if not fs.loading:
             fs.api_key = api_key
             fs.device = device
-            fs.loading = True
-            asyncio.create_task(
-                self._load_model(model_id, api_key=api_key, device=device),
-                name=f"mmp-load-{model_id}",
-            )
+            # Gated on _unloading: a load starting mid-drain races the unload's
+            # backend pop (bricked model). _kick_pending_load restarts after.
+            if model_id not in self._unloading:
+                fs.loading = True
+                asyncio.create_task(
+                    self._load_model(model_id, api_key=api_key, device=device),
+                    name=f"mmp-load-{model_id}",
+                )
 
     # ------------------------------------------------------------------
     # T_ALLOC  →  T_ALLOC_OK | T_ERROR
@@ -858,11 +877,12 @@ class ModelManagerProcess:
         fs.admin_waiters.append((identity, req_id))
         if not fs.loading:
             fs.api_key = api_key
-            fs.loading = True
-            self._spawn(
-                self._load_model(model_id, api_key=api_key),
-                name=f"mmp-admin-load-{model_id}",
-            )
+            if model_id not in self._unloading:
+                fs.loading = True
+                self._spawn(
+                    self._load_model(model_id, api_key=api_key),
+                    name=f"mmp-admin-load-{model_id}",
+                )
 
     # ------------------------------------------------------------------
     # T_UNLOAD (admin)
@@ -891,6 +911,7 @@ class ModelManagerProcess:
             fs.loaded = False
             fs.loading = False
         self._unloading.add(model_id)
+        victim = self._backends.get(model_id)
         try:
             if self._manager is not None:
                 if model_id in self._preloaded_shared_bases:
@@ -901,9 +922,14 @@ class ModelManagerProcess:
                     await loop.run_in_executor(
                         None, lambda: self._manager.unload(model_id, drain=True)
                     )
-            self._backends.pop(model_id, None)
-            self._preloaded_shared_bases.pop(model_id, None)
-            self._untrack_shared_head(model_id)
+            cur = self._backends.pop(model_id, None)
+            if cur is not None and cur is not victim:
+                # A load that was already in flight registered a fresh backend
+                # mid-drain — keep it, only the drained victim is gone.
+                self._backends[model_id] = cur
+            else:
+                self._preloaded_shared_bases.pop(model_id, None)
+                self._untrack_shared_head(model_id)
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
         except Exception:
             logger.exception("MMP: T_UNLOAD '%s' failed", model_id)
@@ -912,6 +938,7 @@ class ModelManagerProcess:
             )
         finally:
             self._unloading.discard(model_id)
+            self._kick_pending_load(model_id)
 
     # ------------------------------------------------------------------
     # T_STATS — snapshot reply
@@ -1594,6 +1621,7 @@ class ModelManagerProcess:
         if fs:
             fs.loaded = False
         self._unloading.add(model_id)
+        victim = self._backends.get(model_id)
         try:
             ok = await asyncio.get_running_loop().run_in_executor(
                 None, self._unload_blocking, model_id
@@ -1601,10 +1629,16 @@ class ModelManagerProcess:
         finally:
             self._unloading.discard(model_id)
         if ok:
-            self._backends.pop(model_id, None)
-            self._untrack_shared_head(model_id)
-            self._model_access.pop(model_id, None)
-            self._model_request_times.pop(model_id, None)
+            cur = self._backends.pop(model_id, None)
+            if cur is not None and cur is not victim:
+                # A load that was already in flight registered a fresh backend
+                # mid-drain — keep it, only the drained victim is gone.
+                self._backends[model_id] = cur
+            else:
+                self._untrack_shared_head(model_id)
+                self._model_access.pop(model_id, None)
+                self._model_request_times.pop(model_id, None)
+        self._kick_pending_load(model_id)
         return ok
 
     # ------------------------------------------------------------------
