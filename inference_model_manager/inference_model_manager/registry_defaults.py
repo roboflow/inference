@@ -646,13 +646,17 @@ def lazy_register(model_class: type) -> None:
     _TASK_CONFIGS. Imports validators/serializers only when needed
     (pure Python, no heavy deps).
     """
-    cls_id = id(model_class)
-    if cls_id in _registered_classes:
-        return
-    _registered_classes.add(cls_id)
+    # Under registry._lock so a second thread first-loading the same class
+    # blocks until registration is complete, instead of returning early on the
+    # dedup check and serving before the entries exist.
+    with registry._lock:
+        cls_id = id(model_class)
+        if cls_id in _registered_classes:
+            return
+        _registered_classes.add(cls_id)
 
-    for cls in model_class.__mro__:
-        _register_from_config(cls)
+        for cls in model_class.__mro__:
+            _register_from_config(cls)
 
 
 def lazy_register_by_names(mro_names: list[str]) -> None:
@@ -662,27 +666,36 @@ def lazy_register_by_names(mro_names: list[str]) -> None:
     Creates lightweight placeholder classes for registry storage. Lookup
     uses get_entry_by_mro_names() which matches by class name string.
     """
-    key = ",".join(mro_names)
-    if key in _registered_name_keys:
-        return
-    _registered_name_keys.add(key)
+    with registry._lock:
+        key = ",".join(mro_names)
+        if key in _registered_name_keys:
+            return
+        _registered_name_keys.add(key)
 
-    for name in mro_names:
-        config = _TASK_CONFIGS.get(name)
-        if config is None:
-            continue
-        placeholder = type(name, (), {})
-        for task_name, method, default, params, val_name, ser_name, resp_type in config:
-            registry.register(
-                placeholder,
+        for name in mro_names:
+            config = _TASK_CONFIGS.get(name)
+            if config is None:
+                continue
+            placeholder = type(name, (), {})
+            for (
                 task_name,
-                method=method,
-                default=default,
-                params=params,
-                validator=_resolve_validator(val_name),
-                serializer=_resolve_serializer(ser_name),
-                response_type=resp_type,
-            )
+                method,
+                default,
+                params,
+                val_name,
+                ser_name,
+                resp_type,
+            ) in config:
+                registry.register(
+                    placeholder,
+                    task_name,
+                    method=method,
+                    default=default,
+                    params=params,
+                    validator=_resolve_validator(val_name),
+                    serializer=_resolve_serializer(ser_name),
+                    response_type=resp_type,
+                )
 
 
 _registered_name_keys: set[str] = set()

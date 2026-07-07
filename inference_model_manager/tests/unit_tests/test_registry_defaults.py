@@ -98,3 +98,51 @@ def test_register_from_config_idempotent_for_same_class(monkeypatch):
 
     assert first_entry is second_entry
     assert test_registry.registered_tasks(FakeBase) == ["infer"]
+
+
+class TestRegistryThreadSafety:
+    def test_concurrent_register_and_mro_lookup(self):
+        import threading
+
+        reg = ModelRegistry()
+
+        def _register(name):
+            reg.register(
+                type(name, (), {}),
+                "infer",
+                default=True,
+                validator=lambda kw: kw,
+                serializer=lambda out, model: {},
+                response_type="x",
+            )
+
+        for i in range(300):
+            _register(f"Seed{i}")
+
+        errors: list = []
+        stop = threading.Event()
+
+        def reader():
+            while not stop.is_set():
+                try:
+                    reg.get_entry_by_mro_names(["Seed0"], "infer")
+                    reg.get_default_task_by_mro_names(["Seed299"])
+                except Exception as exc:
+                    errors.append(exc)
+                    return
+
+        def writer():
+            for i in range(3000):
+                _register(f"W{threading.get_ident()}_{i}")
+
+        readers = [threading.Thread(target=reader) for _ in range(4)]
+        writers = [threading.Thread(target=writer) for _ in range(2)]
+        for t in readers + writers:
+            t.start()
+        for t in writers:
+            t.join(timeout=30)
+        stop.set()
+        for t in readers:
+            t.join(timeout=5)
+
+        assert errors == []

@@ -134,12 +134,13 @@ def list_tasks_by_mro_names(mro_names: list[str]) -> Dict[str, Dict[str, Any]]:
     """Return task info by MRO class name strings (subprocess path)."""
     registry = _get_registry()
     result: Dict[str, "TaskEntry"] = {}
-    for name in mro_names:
-        for cls, class_entries in registry._entries.items():
-            if cls.__name__ == name:
-                for task_name, entry in class_entries.items():
-                    if task_name not in result:
-                        result[task_name] = entry
+    with registry._lock:
+        for name in mro_names:
+            for cls, class_entries in registry._entries.items():
+                if cls.__name__ == name:
+                    for task_name, entry in class_entries.items():
+                        if task_name not in result:
+                            result[task_name] = entry
     return _entries_to_dict(result)
 
 
