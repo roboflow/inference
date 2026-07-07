@@ -17,6 +17,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs impo
     get_active_collector,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+    ManifestDescription,
     PythonCode,
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
@@ -90,6 +91,7 @@ def assembly_custom_python_block(
     python_code: PythonCode,
     api_key: Optional[str] = None,
     skip_class_eval: Optional[bool] = False,
+    manifest_description: Optional[ManifestDescription] = None,
 ) -> Type[WorkflowBlock]:
 
     code_module = create_dynamic_module(
@@ -206,6 +208,9 @@ def assembly_custom_python_block(
             "get_init_parameters": get_init_parameters,
             "get_manifest": get_manifest,
             "run": run,
+            # Raw dynamic-block manifest description; carries `tensor_compatibility`
+            # for the representation boundary (None for callers predating the knob).
+            "_manifest_description": manifest_description,
         },
     )
 
