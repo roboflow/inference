@@ -702,6 +702,7 @@ def test_serverless_auth_middleware_adds_observability_headers_and_logs_on_denia
 
     monkeypatch.setattr(http_api, "EXECUTION_ID_HEADER", "X-Execution-Id")
     monkeypatch.setattr(http_api, "get_trace_id", lambda: "trace-123")
+    monkeypatch.setattr(http_api, "API_LOGGING_ENABLED", True)
     denied_log_mock = MagicMock()
     monkeypatch.setattr(http_api.logger, "info", denied_log_mock)
     interface, _, _, _ = _build_serverless_interface(
