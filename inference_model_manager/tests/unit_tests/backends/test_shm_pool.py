@@ -100,6 +100,26 @@ def test_alloc_timeout_when_exhausted():
         pool.close()
 
 
+def test_attacher_process_exit_does_not_unlink_pool():
+    # CPython bug tracker bpo-38119 (<3.13)
+    import subprocess
+    import sys
+
+    pool = _make_pool(n_slots=2)
+    try:
+        code = (
+            "from inference_model_manager.backends.utils.shm_pool import SHMPool; "
+            f"p = SHMPool.attach({pool.name!r}, n_slots=2, input_mb=1.0); "
+            "p.close()"
+        )
+        subprocess.run([sys.executable, "-c", code], check=True, timeout=30)
+        time.sleep(0.2)  # child's resource_tracker cleanup is async
+        attached = SHMPool.attach(pool.name, n_slots=2, input_mb=1.0)
+        attached.close()
+    finally:
+        pool.close()
+
+
 def test_attach_cannot_alloc():
     pool = _make_pool(n_slots=2)
     try:
