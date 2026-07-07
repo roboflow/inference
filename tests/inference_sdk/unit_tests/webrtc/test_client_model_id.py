@@ -11,7 +11,12 @@ import pytest
 import supervision as sv
 
 from inference_sdk.http.errors import InvalidParameterError
-from inference_sdk.webrtc.client import TASK_TYPE_TO_BLOCK, WebRTCClient
+from inference_sdk.webrtc.client import WebRTCClient
+from inference_sdk.webrtc.model_workflows import (
+    TASK_TYPE_TO_BLOCK,
+    apply_model_id_defaults,
+    build_model_workflow,
+)
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.session import SessionState, VideoMetadata, WebRTCSession
 
@@ -91,7 +96,7 @@ class TestBuildModelWorkflow:
     """Tests for the generated workflow specification."""
 
     def test_workflow_spec_built_correctly(self):
-        spec = WebRTCClient._build_model_workflow("rfdetr-nano", "object-detection")
+        spec = build_model_workflow("rfdetr-nano", "object-detection")
         assert spec == {
             "version": "1.0",
             "inputs": [{"type": "InferenceImage", "name": "image"}],
@@ -148,7 +153,7 @@ class TestBuildModelWorkflow:
         ],
     )
     def test_each_task_type_maps_to_correct_block(self, task_type, expected_block):
-        spec = WebRTCClient._build_model_workflow("some/1", task_type)
+        spec = build_model_workflow("some/1", task_type)
         assert spec["steps"][0]["type"] == expected_block
         # Every task type exposes its predictions under the "predictions" output.
         assert spec["outputs"][0]["name"] == "predictions"
@@ -157,7 +162,7 @@ class TestBuildModelWorkflow:
 
     def test_build_workflow_rejects_unknown_task_type(self):
         with pytest.raises(InvalidParameterError, match="Unsupported task_type"):
-            WebRTCClient._build_model_workflow("some/1", "not-a-task")
+            build_model_workflow("some/1", "not-a-task")
 
     def test_stream_passes_spec_to_session(self, client):
         source = MagicMock()
@@ -173,7 +178,7 @@ class TestBuildModelWorkflow:
         assert kwargs["model_mode"] is True
         assert kwargs["predictions_output"] == "predictions"
         assert kwargs["workflow_config"] == {
-            "workflow_specification": WebRTCClient._build_model_workflow(
+            "workflow_specification": build_model_workflow(
                 "rfdetr-nano", "object-detection"
             )
         }
@@ -184,7 +189,7 @@ class TestTaskTypeResolution:
 
     def test_explicit_task_type_skips_http(self, client):
         source = MagicMock()
-        with patch("inference_sdk.webrtc.client.requests.get") as mock_get, patch(
+        with patch("inference_sdk.webrtc.model_workflows.requests.get") as mock_get, patch(
             "inference_sdk.webrtc.client.WebRTCSession"
         ) as mock_session_cls:
             client.stream(
@@ -203,7 +208,7 @@ class TestTaskTypeResolution:
     def test_auto_resolution_calls_api_and_selects_block(self, client):
         source = MagicMock()
         with patch(
-            "inference_sdk.webrtc.client.requests.get",
+            "inference_sdk.webrtc.model_workflows.requests.get",
             return_value=_mock_ort_response("keypoint-detection"),
         ) as mock_get, patch(
             "inference_sdk.webrtc.client.WebRTCSession"
@@ -226,7 +231,7 @@ class TestTaskTypeResolution:
 
     def test_invalid_explicit_task_type_raises(self, client):
         source = MagicMock()
-        with patch("inference_sdk.webrtc.client.requests.get") as mock_get:
+        with patch("inference_sdk.webrtc.model_workflows.requests.get") as mock_get:
             with pytest.raises(InvalidParameterError, match="Unsupported task_type"):
                 client.stream(
                     source=source, model_id="rfdetr-nano", task_type="bogus"
@@ -247,7 +252,7 @@ class TestTaskTypeResolution:
 
     def test_versionless_model_id_raises(self, client):
         source = MagicMock()
-        with patch("inference_sdk.webrtc.client.requests.get") as mock_get:
+        with patch("inference_sdk.webrtc.model_workflows.requests.get") as mock_get:
             with pytest.raises(InvalidParameterError, match="dataset/version"):
                 client.stream(source=source, model_id="just-a-name-no-version")
         mock_get.assert_not_called()
@@ -255,7 +260,7 @@ class TestTaskTypeResolution:
     def test_lookup_failure_raises_helpful_error(self, client):
         source = MagicMock()
         with patch(
-            "inference_sdk.webrtc.client.requests.get",
+            "inference_sdk.webrtc.model_workflows.requests.get",
             side_effect=RuntimeError("boom"),
         ):
             with pytest.raises(RuntimeError, match="task_type=") as exc_info:
@@ -266,7 +271,7 @@ class TestTaskTypeResolution:
     def test_unsupported_api_task_type_raises(self, client):
         source = MagicMock()
         with patch(
-            "inference_sdk.webrtc.client.requests.get",
+            "inference_sdk.webrtc.model_workflows.requests.get",
             return_value=_mock_ort_response("some-exotic-task"),
         ):
             with pytest.raises(InvalidParameterError, match="not supported"):
@@ -277,7 +282,7 @@ class TestTaskTypeResolution:
         for task_type in TASK_TYPE_TO_BLOCK:
             source = MagicMock()
             with patch(
-                "inference_sdk.webrtc.client.requests.get",
+                "inference_sdk.webrtc.model_workflows.requests.get",
                 return_value=_mock_ort_response(task_type),
             ), patch("inference_sdk.webrtc.client.WebRTCSession") as mock_session_cls:
                 client.stream(source=source, model_id="rfdetr-nano")
@@ -293,18 +298,18 @@ class TestModelIdDefaults:
     """Tests for StreamConfig defaults in model_id mode."""
 
     def test_defaults_when_config_none(self):
-        config = WebRTCClient._apply_model_id_defaults(None)
+        config = apply_model_id_defaults(None)
         assert config.stream_output == ["image"]
         assert config.data_output == ["predictions"]
 
     def test_defaults_fill_empty_lists(self):
-        config = WebRTCClient._apply_model_id_defaults(StreamConfig())
+        config = apply_model_id_defaults(StreamConfig())
         assert config.stream_output == ["image"]
         assert config.data_output == ["predictions"]
 
     def test_user_stream_output_preserved(self):
         user = StreamConfig(stream_output=["annotated"], realtime_processing=False)
-        config = WebRTCClient._apply_model_id_defaults(user)
+        config = apply_model_id_defaults(user)
         # user-set stream_output kept, empty data_output filled
         assert config.stream_output == ["annotated"]
         assert config.data_output == ["predictions"]
@@ -313,7 +318,7 @@ class TestModelIdDefaults:
 
     def test_user_data_output_preserved(self):
         user = StreamConfig(data_output=["custom"])
-        config = WebRTCClient._apply_model_id_defaults(user)
+        config = apply_model_id_defaults(user)
         assert config.data_output == ["custom"]
         assert config.stream_output == ["image"]
 
