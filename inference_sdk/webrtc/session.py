@@ -224,11 +224,16 @@ class WebRTCSession:
         # Video-track pairing state (model mode, live sources).
         # Track-frame reader and datachannel callbacks both run on the single
         # asyncio loop thread, so plain dicts are safe (no lock needed).
-        self._pending_frames: "Dict[int, Tuple[np.ndarray, Optional[VideoMetadata]]]" = (
-            {}
-        )
+        self._pending_frames: (
+            "Dict[int, Tuple[np.ndarray, Optional[VideoMetadata]]]"
+        ) = {}
         self._pending_predictions: "Dict[int, dict]" = {}
         self._pairing_max_size = 150
+        # Pairing health counters: detect a systematic pts mismatch between the
+        # video track and the datachannel metadata (see _evict_pending_frames).
+        self._pairing_matched = 0
+        self._pairing_evicted = 0
+        self._pairing_mismatch_warned = False
 
         # Callback handlers
         self._frame_handlers: List[Callable] = []
@@ -751,7 +756,10 @@ class WebRTCSession:
             ``{"image": {"width": W, "height": H}, "predictions": []}``
         """
         height, width = frame.shape[:2]
-        return {"image": {"width": int(width), "height": int(height)}, "predictions": []}
+        return {
+            "image": {"width": int(width), "height": int(height)},
+            "predictions": [],
+        }
 
     def _pair_track_frame(
         self,
@@ -773,6 +781,7 @@ class WebRTCSession:
             return
         predictions = self._pending_predictions.pop(pts, None)
         if predictions is not None:
+            self._pairing_matched += 1
             self._enqueue((frame, predictions, metadata))
             return
         self._pending_frames[pts] = (frame, metadata)
@@ -790,6 +799,7 @@ class WebRTCSession:
         pending = self._pending_frames.pop(pts, None)
         if pending is not None:
             frame, metadata = pending
+            self._pairing_matched += 1
             self._enqueue((frame, predictions, metadata))
             return
         self._pending_predictions[pts] = predictions
@@ -802,7 +812,26 @@ class WebRTCSession:
             frame, metadata = self._pending_frames.pop(oldest_pts)
             # Predictions never arrived for this frame - deliver it anyway with
             # synthesized empty predictions so frames are never silently dropped.
+            self._pairing_evicted += 1
             self._enqueue((frame, self._empty_predictions(frame), metadata))
+        # Guard against a silent pts mismatch between the video track and the
+        # datachannel metadata: if frames keep getting evicted and NOTHING has
+        # ever paired, predictions are arriving but never matching - warn once
+        # instead of silently delivering empty predictions forever.
+        if (
+            not self._pairing_mismatch_warned
+            and self._pairing_matched == 0
+            and self._pairing_evicted >= self._pairing_max_size
+            and self._pending_predictions
+        ):
+            self._pairing_mismatch_warned = True
+            logger.warning(
+                "Frames and predictions are both arriving but none have paired "
+                "by pts after %d frames - the server's video-track pts may not "
+                "match its datachannel metadata pts. All frames are being "
+                "delivered with empty predictions.",
+                self._pairing_evicted,
+            )
 
     def _evict_pending_predictions(self) -> None:
         """Bound the pending-predictions dict, discarding oldest unmatched entries."""

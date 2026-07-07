@@ -12,12 +12,12 @@ import supervision as sv
 
 from inference_sdk.http.errors import InvalidParameterError
 from inference_sdk.webrtc.client import WebRTCClient
+from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.model_workflows import (
     TASK_TYPE_TO_BLOCK,
     apply_model_id_defaults,
     build_model_workflow,
 )
-from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.session import SessionState, VideoMetadata, WebRTCSession
 
 
@@ -167,9 +167,7 @@ class TestBuildModelWorkflow:
 
     def test_stream_passes_spec_to_session(self, client):
         source = MagicMock()
-        with patch(
-            "inference_sdk.webrtc.client.WebRTCSession"
-        ) as mock_session_cls:
+        with patch("inference_sdk.webrtc.client.WebRTCSession") as mock_session_cls:
             client.stream(
                 source=source,
                 model_id="rfdetr-nano",
@@ -190,7 +188,9 @@ class TestTaskTypeResolution:
 
     def test_explicit_task_type_skips_http(self, client):
         source = MagicMock()
-        with patch("inference_sdk.webrtc.model_workflows.requests.get") as mock_get, patch(
+        with patch(
+            "inference_sdk.webrtc.model_workflows.requests.get"
+        ) as mock_get, patch(
             "inference_sdk.webrtc.client.WebRTCSession"
         ) as mock_session_cls:
             client.stream(
@@ -234,9 +234,7 @@ class TestTaskTypeResolution:
         source = MagicMock()
         with patch("inference_sdk.webrtc.model_workflows.requests.get") as mock_get:
             with pytest.raises(InvalidParameterError, match="Unsupported task_type"):
-                client.stream(
-                    source=source, model_id="rfdetr-nano", task_type="bogus"
-                )
+                client.stream(source=source, model_id="rfdetr-nano", task_type="bogus")
         mock_get.assert_not_called()
 
     def test_task_type_with_workflow_raises(self, client):
@@ -285,6 +283,9 @@ class TestTaskTypeResolution:
                 client.stream(source=source, model_id="some/1")
         assert "super-secret-key" not in str(exc_info.value)
         assert "api_key=" in str(exc_info.value)  # redacted form remains
+        # The raw (unredacted) exception must not be chained as __cause__,
+        # or tracebacks would print the key anyway.
+        assert exc_info.value.__cause__ is None
 
     def test_unsupported_api_task_type_raises(self, client):
         source = MagicMock()
@@ -307,8 +308,7 @@ class TestTaskTypeResolution:
             _, kwargs = mock_session_cls.call_args
             spec = kwargs["workflow_config"]["workflow_specification"]
             assert (
-                spec["steps"][0]["type"]
-                == TASK_TYPE_TO_BLOCK[task_type]["block_type"]
+                spec["steps"][0]["type"] == TASK_TYPE_TO_BLOCK[task_type]["block_type"]
             )
 
 

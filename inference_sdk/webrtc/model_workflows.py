@@ -122,7 +122,9 @@ def resolve_task_type(
         resolved = payload["ort"]["type"]
     except Exception as e:
         # Exception text may embed the request URL (which carries api_key=...);
-        # redact before surfacing it to the user.
+        # redact before surfacing it to the user. Chain `from None` — keeping
+        # the raw exception as __cause__ would print its unredacted message
+        # (connection errors embed the full URL) in every traceback.
         safe_error = deduct_api_key_from_string(str(e))
         raise RuntimeError(
             f"Failed to resolve task type for model_id '{model_id}' "
@@ -130,7 +132,7 @@ def resolve_task_type(
             f"{e.__class__.__name__}: {safe_error}. You can bypass this lookup "
             "by passing task_type= explicitly (one of "
             f"{sorted(TASK_TYPE_TO_BLOCK)})."
-        ) from e
+        ) from None
 
     if resolved not in TASK_TYPE_TO_BLOCK:
         raise InvalidParameterError(
