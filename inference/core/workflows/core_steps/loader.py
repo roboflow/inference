@@ -372,6 +372,14 @@ else:
         CosineSimilarityBlockV1,
     )
 
+# HERE YOU CAN FIND NEW BLOCKS, ADDED IN THE MEANTIME, WHICH HAVE NO TENSOR-NATIVE PARITY
+from inference.core.workflows.core_steps.integrations.roboflow.visual_search.v1 import (
+    RoboflowVisualSearchBlockV1,
+)
+from inference.core.workflows.core_steps.integrations.roboflow.visual_search_classifier.v1 import (
+    RoboflowVisualSearchClassifierBlockV1,
+)
+
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     AnthropicClaudeBlockV1,
 )
@@ -1050,6 +1058,11 @@ else:
         DynamicZonesBlockV1,
     )
 
+# ANOTHER BLOCK ADDED IN THE MEANTIME W/O PARITY
+from inference.core.workflows.core_steps.transformations.geotag_detection.v1 import (
+    GeoTagDetectionBlockV1,
+)
+
 from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
     ImageSlicerBlockV1,
 )
@@ -1519,6 +1532,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionOffsetBlockV1,
         PerClassConfidenceFilterBlockV1,
         DepthEstimationBlockV1,
+        RoboflowVisualSearchBlockV1,
+        RoboflowVisualSearchClassifierBlockV1,
         ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
@@ -1640,6 +1655,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         StabilityAIImageGenBlockV1,
         StabilityAIOutpaintingBlockV1,
         StabilizeTrackedDetectionsBlockV1,
+        GeoTagDetectionBlockV1,
         StitchImagesBlockV1,
         StitchOCRDetectionsBlockV2,
         StitchOCRDetectionsBlockV1,

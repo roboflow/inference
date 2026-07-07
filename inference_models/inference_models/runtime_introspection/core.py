@@ -1,3 +1,4 @@
+import ctypes
 import os
 import platform
 import re
@@ -216,6 +217,80 @@ def get_available_gpu_devices_cc() -> List[Version]:
 
 @cache
 def get_cuda_version() -> Optional[Version]:
+    """Best-effort "usable" CUDA version for this environment.
+
+    Two distinct questions are at play here:
+
+    * runtime / toolkit version  -> which CUDA the app links / ships
+      (``cuda-cudart`` package, ``cudaRuntimeGetVersion``, or ``torch.version.cuda``);
+    * driver-supported version   -> the highest CUDA the installed driver can run
+      (``cudaDriverGetVersion``). This is NOT the ``550.xx`` / L4T driver-module
+      number reported by :func:`get_driver_version`.
+
+    The classic CUDA compatibility rule is ``driver_supported >= runtime``; otherwise
+    calls needing newer driver features fail with ``cudaErrorInsufficientDriver`` (35).
+    The effective usable ceiling is therefore the lower of the two. On Jetson there is
+    no CUDA forward-compatibility package (the JetPack toolkit and L4T driver are
+    coupled), so this ``min()`` is exact. We log a warning on the ``runtime > driver``
+    mismatch because in that regime the app does NOT silently degrade to the lower
+    level -- it errors.
+    """
+    runtime_version = _get_runtime_cuda_version()
+    driver_supported_version = _get_cuda_driver_supported_version()
+    if runtime_version is not None and driver_supported_version is not None:
+        # Compare at major.minor granularity only. CUDA compatibility is decided at the
+        # minor-version level, and the runtime version often carries a packaging suffix
+        # (e.g. dpkg "11.4.298.post1") that would otherwise read as "newer" than a
+        # driver-supported "11.4" and raise a spurious mismatch.
+        if _major_minor(runtime_version) > _major_minor(driver_supported_version):
+            LOGGER.warning(
+                "CUDA runtime/toolkit version (%s) is newer than the maximum CUDA "
+                "version supported by the installed driver (%s). CUDA calls requiring "
+                "newer driver features will fail with cudaErrorInsufficientDriver (35). "
+                "Reporting the lower, driver-supported version as the usable CUDA version.",
+                runtime_version,
+                driver_supported_version,
+            )
+            return driver_supported_version
+        return runtime_version
+    return runtime_version if runtime_version is not None else driver_supported_version
+
+
+def _get_runtime_cuda_version() -> Optional[Version]:
+    cuda_version = _get_cuda_version_loading_shared_library()
+    if cuda_version is not None:
+        return cuda_version
+    cuda_version = _get_cuda_version_with_dpkg()
+    if cuda_version is not None:
+        return cuda_version
+    return _get_cuda_version_from_torch()
+
+
+def _get_cuda_driver_supported_version() -> Optional[Version]:
+    """Highest CUDA version the installed driver supports (``cudaDriverGetVersion``).
+
+    Lives in ``libcudart`` alongside ``cudaRuntimeGetVersion``, so it reuses the same
+    library and needs no GPU context. ``cudaDriverGetVersion`` yields ``0`` when no
+    usable driver is present -- treated here as "unknown" (``None``)."""
+    try:
+        lib = ctypes.CDLL("libcudart.so")  # resolves via loader / LD_LIBRARY_PATH
+        v = ctypes.c_int()
+        return_value = lib.cudaDriverGetVersion(ctypes.byref(v))
+        if return_value != 0 or v.value == 0:
+            return None
+        major, minor, patch = v.value // 1000, (v.value % 1000) // 10, v.value % 10
+        return Version(f"{major}.{minor}.{patch}")
+    except Exception:
+        return None
+
+
+def _major_minor(version: Version) -> Tuple[int, int]:
+    """``(major, minor)`` of a version, ignoring patch/packaging suffixes — the
+    granularity at which CUDA runtime/driver compatibility is decided."""
+    return version.major, version.minor
+
+
+def _get_cuda_version_with_dpkg() -> Optional[Version]:
     try:
         result = subprocess.run(
             "dpkg -l | grep cuda-cudart", shell=True, capture_output=True, text=True
@@ -224,6 +299,25 @@ def get_cuda_version() -> Optional[Version]:
             return None
         result_chunks = result.stdout.strip().split(os.linesep)[0].split()
         return Version(result_chunks[2])
+    except Exception:
+        return None
+
+def _get_cuda_version_loading_shared_library() -> Optional[Version]:
+    try:
+        lib = ctypes.CDLL("libcudart.so")  # resolves via loader / LD_LIBRARY_PATH
+        # 1. Authoritative: ask the loaded runtime
+        v = ctypes.c_int()
+        return_value = lib.cudaRuntimeGetVersion(ctypes.byref(v))
+        if return_value != 0:
+            return None
+        major, minor, patch = v.value // 1000, (v.value % 1000) // 10, v.value % 10
+        return Version(f"{major}.{minor}.{patch}")
+    except Exception:
+        return None
+
+def _get_cuda_version_from_torch() -> Optional[Version]:
+    try:
+        return Version(torch.version.cuda)
     except Exception:
         return None
 

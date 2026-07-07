@@ -1,5 +1,6 @@
 import io
 import pickle
+import socket
 from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
@@ -18,7 +19,7 @@ from inference.core.exceptions import (
     InvalidImageTypeDeclared,
     InvalidNumpyInput,
 )
-from inference.core.utils import image_utils
+from inference.core.utils import image_utils, url_input
 from inference.core.utils.image_utils import (
     ImageType,
     attempt_loading_image_from_string,
@@ -230,6 +231,26 @@ def test_load_image_from_url_when_locations_whitelisted(
 @mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
 @mock.patch.object(
+    image_utils, "WHITELISTED_DESTINATIONS_FOR_URL_INPUT", {"www.roboflow.com"}
+)
+def test_load_image_from_url_rejects_backslash_userinfo_allowlist_bypass() -> None:
+    with mock.patch.object(
+        image_utils.requests,
+        "get",
+        side_effect=AssertionError(
+            "requests.get must not be called for a rejected URL"
+        ),
+    ) as requests_get:
+        with pytest.raises(InputImageLoadError, match="invalid|whitelisted"):
+            _ = load_image_from_url(value="https://localhost:6666\\@www.roboflow.com")
+
+    requests_get.assert_not_called()
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+@mock.patch.object(
     image_utils,
     "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT",
     {
@@ -261,6 +282,121 @@ def test_load_image_from_url_when_locations_blacklisted(
 
     # then
     assert "blacklisted" in str(error.value)
+
+
+@mock.patch.object(image_utils, "VALIDATE_IMAGE_URL_REDIRECTS", False)
+@mock.patch.object(image_utils, "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
+def test_load_image_from_url_legacy_path_follows_redirect(
+    requests_mock: Mocker,
+    image_as_numpy: np.ndarray,
+    image_as_png_bytes: bytes,
+) -> None:
+    # given - legacy path lets requests follow the redirect
+    start = "https://some.com/image.jpg"
+    target = "https://cdn.some.com/real.png"
+    requests_mock.get(start, status_code=302, headers={"Location": target})
+    requests_mock.get(target, content=image_as_png_bytes)
+
+    # when
+    result = load_image_from_url(value=start)
+
+    # then
+    assert np.allclose(image_as_numpy, result)
+
+
+@mock.patch.object(image_utils, "VALIDATE_IMAGE_URL_REDIRECTS", True)
+@mock.patch.object(image_utils, "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+def test_load_image_from_url_validated_path_follows_valid_redirect(
+    requests_mock: Mocker,
+    image_as_numpy: np.ndarray,
+    image_as_png_bytes: bytes,
+) -> None:
+    # given - hardened path re-validates the hop, which is a normal https FQDN
+    start = "https://some.com/image.jpg"
+    target = "https://cdn.some.com/real.png"
+    requests_mock.get(start, status_code=302, headers={"Location": target})
+    requests_mock.get(target, content=image_as_png_bytes)
+
+    # when
+    result = load_image_from_url(value=start)
+
+    # then
+    assert np.allclose(image_as_numpy, result)
+
+
+@mock.patch.object(image_utils, "VALIDATE_IMAGE_URL_REDIRECTS", True)
+@mock.patch.object(image_utils, "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+@mock.patch.object(
+    image_utils,
+    "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT",
+    {"metadata.internal.example"},
+)
+def test_load_image_from_url_validated_path_rejects_redirect_to_blacklisted_host(
+    requests_mock: Mocker,
+) -> None:
+    # given - a valid start URL that redirects to a block-listed internal host
+    start = "https://some.com/image.jpg"
+    internal = "https://metadata.internal.example/latest/meta-data"
+    requests_mock.get(start, status_code=302, headers={"Location": internal})
+
+    # when / then - the hop is re-validated and rejected by the block-list
+    with pytest.raises(InputImageLoadError) as error:
+        _ = load_image_from_url(value=start)
+    assert "blacklisted" in str(error.value)
+
+
+@mock.patch.object(image_utils, "VALIDATE_IMAGE_URL_REDIRECTS", False)
+@mock.patch.object(image_utils, "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+def test_load_image_from_url_blocks_non_global_ip_literal() -> None:
+    # given - URL-string checks pass (FQDN-less allowed), the adapter blocks the
+    # non-global literal at connection time; no network should be touched.
+    with pytest.raises(InputImageLoadError) as error:
+        _ = load_image_from_url(value="https://127.0.0.1/image.jpg")
+    assert "not allowed" in str(error.value).lower()
+
+
+@mock.patch.object(image_utils, "VALIDATE_IMAGE_URL_REDIRECTS", False)
+@mock.patch.object(image_utils, "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+def test_load_image_from_url_blocks_hostname_resolving_to_non_global(
+    monkeypatch,
+) -> None:
+    # End-to-end regression for the requests>=2.32 send() path: a public FQDN
+    # that DNS-resolves to loopback must be blocked (and pinned), proving the
+    # adapter actually runs on send() rather than being dead get_connection code.
+    resolved = []
+
+    def _fake_getaddrinfo(host, port, *args, **kwargs):
+        resolved.append(host)
+        return [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                ("127.0.0.1", port),
+            )
+        ]
+
+    monkeypatch.setattr(url_input.socket, "getaddrinfo", _fake_getaddrinfo)
+
+    with pytest.raises(InputImageLoadError) as error:
+        _ = load_image_from_url(value="https://evil.com/image.jpg")
+
+    # "not allowed" only appears if the adapter resolved + rejected the target;
+    # a dead adapter would surface a DNS/connection error message instead.
+    assert "not allowed" in str(error.value).lower()
+    assert resolved == ["evil.com"]  # resolution ran on the real send() path
 
 
 @mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)

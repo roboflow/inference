@@ -1,5 +1,7 @@
 import traceback
 from collections import defaultdict
+from concurrent.futures import Future
+from threading import Lock
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 import numpy as np
@@ -16,6 +18,10 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
+    IMAGE_DIMENSIONS_KEY,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
     TOP_LEVEL_LINEAGES_KEY,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
@@ -35,6 +41,11 @@ from inference.core.workflows.execution_engine.v1.executor.execution_data_manage
 from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
     ExecutionDataManager,
 )
+from inference.core.workflows.execution_engine.v1.executor.utils import (
+    contains_future,
+    maybe_resolve_futures,
+    resolve_futures,
+)
 from inference_models.models.base.instance_segmentation import (
     InstanceDetections as NativeInstanceDetections,
 )
@@ -50,6 +61,7 @@ def construct_workflow_output(
     execution_data_manager: ExecutionDataManager,
     serialize_results: bool,
     kinds_serializers: Dict[str, Callable[[Any], Any]],
+    resolve_output_futures: bool = True,
 ) -> List[Dict[str, Any]]:
     # Maybe we should make blocks to change coordinates systems:
     # https://github.com/roboflow/inference/issues/440
@@ -74,6 +86,8 @@ def construct_workflow_output(
         if output.name in batch_oriented_outputs:
             continue
         data_piece = execution_data_manager.get_non_batch_data(selector=output.selector)
+        if resolve_output_futures:
+            data_piece = _maybe_resolve_output_futures(data_piece)
         if serialize_results:
             output_kind = kinds_of_output_nodes[output.name]
             data_piece = serialize_data_piece(
@@ -119,6 +133,7 @@ def construct_workflow_output(
         non_batch_outputs=non_batch_outputs,
         dimensionality_for_output_nodes=dimensionality_for_output_nodes,
         batch_oriented_outputs=batch_oriented_outputs,
+        resolve_output_futures=resolve_output_futures,
     )
     if len(results) == 0 and len(outputs_for_generated_lineage) > 0:
         results.append({})
@@ -134,6 +149,7 @@ def construct_workflow_output(
                 kinds_serializers=kinds_serializers,
                 kinds_of_output_nodes=kinds_of_output_nodes,
                 dimensionality_for_output_nodes=dimensionality_for_output_nodes,
+                resolve_output_futures=resolve_output_futures,
             )
         )
         for output in results:
@@ -154,6 +170,7 @@ def create_outputs_for_input_induced_lineages(
     non_batch_outputs: Dict[str, Any],
     dimensionality_for_output_nodes: Dict[str, int],
     batch_oriented_outputs: Set[str],
+    resolve_output_futures: bool = True,
 ) -> List[Dict[str, Any]]:
     outputs_arrays: Dict[str, Optional[list]] = {
         name: create_array(indices=np.array(indices))
@@ -180,11 +197,13 @@ def create_outputs_for_input_induced_lineages(
             indices=indices,
         )
         for index, data_piece in zip(indices, data):
-            if (
-                name in outputs_requested_in_parent_coordinates
-                and data_contains_sv_detections(data=data_piece)
-            ):
-                data_piece = convert_sv_detections_coordinates(data=data_piece)
+            data_piece = _prepare_data_piece_for_output(
+                data_piece=data_piece,
+                resolve_output_futures=resolve_output_futures,
+                convert_to_parent_coordinates=(
+                    name in outputs_requested_in_parent_coordinates
+                ),
+            )
             if serialize_results:
                 output_kind = kinds_of_output_nodes[name]
                 data_piece = serialize_data_piece(
@@ -250,6 +269,7 @@ def create_outputs_for_generated_lineage_outputs(
         str, Union[List[Union[Kind, str]], Dict[str, List[Union[Kind, str]]]]
     ],
     dimensionality_for_output_nodes: Dict[str, int],
+    resolve_output_futures: bool = True,
 ) -> Dict[str, List[Any]]:
     outputs_arrays: Dict[str, Optional[list]] = {
         name: create_array(indices=np.array(indices))
@@ -274,11 +294,13 @@ def create_outputs_for_generated_lineage_outputs(
             indices=indices,
         )
         for index, data_piece in zip(indices, data):
-            if (
-                name in outputs_requested_in_parent_coordinates
-                and data_contains_sv_detections(data=data_piece)
-            ):
-                data_piece = convert_sv_detections_coordinates(data=data_piece)
+            data_piece = _prepare_data_piece_for_output(
+                data_piece=data_piece,
+                resolve_output_futures=resolve_output_futures,
+                convert_to_parent_coordinates=(
+                    name in outputs_requested_in_parent_coordinates
+                ),
+            )
             if serialize_results:
                 output_kind = kinds_of_output_nodes[name]
                 data_piece = serialize_data_piece(
@@ -321,6 +343,103 @@ def create_outputs_for_generated_lineage_outputs(
                 element = array[i]
             results[name].append(element)
     return results
+
+
+class _DeferredResolvedOutput(Future):
+    def __init__(
+        self,
+        value: Any,
+        transform: Callable[[Any], Any],
+    ) -> None:
+        super().__init__()
+        self._value = value
+        self._transform = transform
+        self._resolution_lock = Lock()
+
+    def result(self, timeout: Optional[float] = None) -> Any:
+        if not self.done():
+            with self._resolution_lock:
+                if not self.done():
+                    try:
+                        resolved_value = _resolve_output_futures(value=self._value)
+                        self.set_result(self._transform(resolved_value))
+                    except BaseException as error:
+                        self.set_exception(error)
+        return super().result(timeout=timeout)
+
+
+def _prepare_data_piece_for_output(
+    data_piece: Any,
+    resolve_output_futures: bool,
+    convert_to_parent_coordinates: bool,
+) -> Any:
+    if resolve_output_futures:
+        data_piece = _maybe_resolve_output_futures(value=data_piece)
+    elif convert_to_parent_coordinates and _output_contains_future(value=data_piece):
+        return _DeferredResolvedOutput(
+            value=data_piece,
+            transform=_convert_sv_detections_coordinates_if_present,
+        )
+    if convert_to_parent_coordinates:
+        return _convert_sv_detections_coordinates_if_present(data=data_piece)
+    return data_piece
+
+
+def _convert_sv_detections_coordinates_if_present(data: Any) -> Any:
+    if data_needs_sv_detections_coordinate_conversion(data=data):
+        return convert_sv_detections_coordinates(data=data)
+    return data
+
+
+def data_needs_sv_detections_coordinate_conversion(data: Any) -> bool:
+    if isinstance(data, sv.Detections):
+        return _sv_detections_need_root_coordinate_conversion(detections=data)
+    if isinstance(data, (list, tuple)):
+        return any(data_needs_sv_detections_coordinate_conversion(data=e) for e in data)
+    if isinstance(data, dict):
+        return any(
+            data_needs_sv_detections_coordinate_conversion(data=e)
+            for e in data.values()
+        )
+    return False
+
+
+def _sv_detections_need_root_coordinate_conversion(detections: sv.Detections) -> bool:
+    if len(detections) == 0:
+        return False
+    root_coordinates = detections.data.get(ROOT_PARENT_COORDINATES_KEY)
+    if root_coordinates is None:
+        return False
+    if np.any(np.asarray(root_coordinates) != 0):
+        return True
+    root_dimensions = detections.data.get(ROOT_PARENT_DIMENSIONS_KEY)
+    image_dimensions = detections.data.get(IMAGE_DIMENSIONS_KEY)
+    if (
+        root_dimensions is not None
+        and image_dimensions is not None
+        and not np.array_equal(root_dimensions, image_dimensions)
+    ):
+        return True
+    root_scale = detections.data.get(SCALING_RELATIVE_TO_ROOT_PARENT_KEY)
+    return root_scale is not None and not np.allclose(root_scale, 1.0)
+
+
+def _resolve_output_futures(value: Any) -> Any:
+    return resolve_futures(
+        value=value,
+        context="workflow_execution | output_construction",
+    )
+
+
+def _output_contains_future(value: Any) -> bool:
+    return contains_future(value=value)
+
+
+def _maybe_resolve_output_futures(value: Any) -> Any:
+    return maybe_resolve_futures(
+        value=value,
+        context="workflow_execution | output_construction",
+    )
 
 
 def create_array(indices: np.ndarray) -> Optional[list]:

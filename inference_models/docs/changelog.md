@@ -1,12 +1,55 @@
 # Changelog
 
-## `0.29.4`
+## `0.30.0`
 
 ### Added
 
 - Adjustment to `KeyPoints` interface to expose `__len__(...)` method.
 - Adjustment to `InstanceDetections` interface to expose `__len__(...)` and `__iter__(...)` method.
 - Adjustment to `Detections` interface to expose `__len__(...)` and `__iter__(...)` method.
+
+---
+
+## `0.29.7`
+
+### Added
+
+- Enriched `KeyPoints` representation to expose `covariance` and 
+`detection_confidence` to streamline changes in `supervision`
+
+- Align changes in RF-DETR model to expose pixel-space `covariance`, 
+following up on https://github.com/roboflow/rf-detr/releases/tag/1.8.0.
+- 
+
+## `0.29.6`
+
+### Added
+
+- Opt-in Triton RF-DETR instance-segmentation RLE post-processing. Set
+  `INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED=True` to generate COCO RLE
+  masks directly from sparse interpolated mask regions on supported CUDA
+  inputs.
+- Opt-in Triton RF-DETR instance-segmentation preprocessing for the TensorRT
+  backend. Set `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=True` to run the
+  supported resize and normalize path on CUDA.
+- Opt-in Triton RF-DETR instance-segmentation pipelining. Set
+  `RFDETR_PIPELINE_DEPTH=2`.
+
+## `0.29.4`
+
+### Fixed
+
+- Security issues patch, 19.06.2026 - `bleach>=6.4.0` and `tornado>=6.5.7` in `docs` extras.
+
+---
+
+## `0.29.4`
+
+### Fixed
+
+- Fixed GLM-OCR dtype mismatch on Jetson by casting HuggingFace processor floating-point
+inputs to the model dtype resolved for the target device (bfloat16 on supported CUDA hardware,
+otherwise float16).
 
 ---
 

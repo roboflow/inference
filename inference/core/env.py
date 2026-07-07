@@ -41,6 +41,26 @@ if BLACKLISTED_DESTINATIONS_FOR_URL_INPUT is not None:
         BLACKLISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
     )
 
+# SSRF hardening for URL image input (GHSA-hjmm-hr52-vrp2).
+# When enabled, redirects are followed one hop at a time and every hop URL is
+# re-validated (scheme / FQDN / allow-list / block-list) instead of being
+# followed blindly by `requests`. Default is currently False to preserve the
+# legacy behaviour; the default is scheduled to flip to True in Q4 2026.
+VALIDATE_IMAGE_URL_REDIRECTS = str2bool(
+    os.getenv("VALIDATE_IMAGE_URL_REDIRECTS", False)
+)
+# Hard cap on the number of redirect hops allowed when fetching a URL image.
+# Enforced regardless of VALIDATE_IMAGE_URL_REDIRECTS. 30 mirrors the historical
+# `requests` default.
+MAX_IMAGE_URL_REDIRECTS = int(os.getenv("MAX_IMAGE_URL_REDIRECTS", 30))
+# When False, a URL image whose hostname resolves to a non-global address
+# (loopback, private, link-local/metadata, CGNAT, ULA, ...) is rejected and the
+# connection is pinned to the validated IP. Default is currently True to preserve
+# the legacy behaviour; the default is scheduled to flip to False in Q4 2026.
+ALLOW_URL_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", True)
+)
+
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
 ALLOW_ORIGINS = ALLOW_ORIGINS.split(",")
@@ -115,6 +135,9 @@ OWLV2_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_IMAGE_CACHE_SIZE", 10000))
 
 # OWLv2 model cache size, default is 100 as memory is num_prompts * ~4kb and num_prompts is rarely above 1000 (but could be much higher)
 OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 100))
+
+# OWLv2 cache device placement, default sends cached embeddings to CPU to reduce GPU memory pressure
+OWLV2_CACHE_SEND_TO_CPU = str2bool(os.getenv("OWLV2_CACHE_SEND_TO_CPU", True))
 
 # OWLv2 CPU image cache size, default is 10000
 OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
@@ -870,6 +893,12 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 # 2048 -> ~22G
 RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
 
+# Timeout in seconds for resolving asynchronous workflow / RF-DETR stream
+# pipeline futures on the main execution path.
+WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT = float(
+    os.getenv("WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT", "60.0")
+)
+
 # Confidence lower bound to prevent OOM when inferring on instance segmentation models
 CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(
     os.getenv("CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", "0.01")
@@ -955,6 +984,16 @@ WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
     os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
 )
 
+# When enabled, force the Modal region to WEBRTC_MODAL_REQUIRED_REGION regardless of
+# the client-requested region (e.g. to enforce EU data residency)
+WEBRTC_MODAL_ENFORCE_REGION = str2bool(
+    os.getenv("WEBRTC_MODAL_ENFORCE_REGION", "False")
+)
+WEBRTC_MODAL_REQUIRED_REGION = os.getenv("WEBRTC_MODAL_REQUIRED_REGION")
+WEBRTC_MODAL_VOLUME_NAME = os.getenv("WEBRTC_MODAL_VOLUME_NAME", "rfcache")
+# Baked into the Modal class decorator at deploy time since with_options cannot set it
+WEBRTC_MODAL_ROUTING_REGION = os.getenv("WEBRTC_MODAL_ROUTING_REGION")
+
 #
 # Workspace stream quota
 #
@@ -1016,6 +1055,14 @@ HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS = int(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS", "16")
 )
+
+# Size of the anyio thread pool serving synchronous HTTP handlers.
+# Default is None, which leaves the anyio default (40 threads) untouched.
+HTTP_API_THREADPOOL_WORKERS = os.getenv("HTTP_API_THREADPOOL_WORKERS")
+if HTTP_API_THREADPOOL_WORKERS:
+    HTTP_API_THREADPOOL_WORKERS = int(HTTP_API_THREADPOOL_WORKERS)
+else:
+    HTTP_API_THREADPOOL_WORKERS = None
 
 # Workflow block filtering configuration
 # Comma-separated list of block type categories to disable (e.g., "sink,model")

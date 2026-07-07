@@ -55,6 +55,7 @@ from inference.core.roboflow_api import (
     post_to_roboflow_api,
     raise_from_lambda,
     register_image_at_roboflow,
+    search_project_images_at_roboflow,
     send_inference_results_to_model_monitoring,
     update_image_metadata_at_roboflow,
     wrap_roboflow_api_errors,
@@ -2043,6 +2044,81 @@ def test_batch_update_image_metadata_at_roboflow_when_preflight_error_occurs(
 
     # then
     assert requests_mock.last_request.query == "api_key=my_api_key"
+
+
+def test_search_project_images_at_roboflow_uses_existing_search_fields(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(
+            f"{API_BASE_URL}/my-workspace/my-project/search?api_key=my_api_key"
+        ),
+        json={"results": []},
+    )
+
+    # when
+    result = search_project_images_at_roboflow(
+        api_key="my_api_key",
+        workspace="my-workspace",
+        project="my-project",
+        image_base64="query-image",
+        limit=3,
+    )
+
+    # then
+    assert result == {"results": []}
+    assert requests_mock.last_request.json() == {
+        "image_base64": "query-image",
+        "limit": 3,
+        "fields": [
+            "id",
+            "name",
+            "filename",
+            "url",
+            "user_metadata",
+            "tags",
+            "width",
+            "height",
+            "aspectRatio",
+        ],
+    }
+
+
+def test_search_project_images_at_roboflow_forwards_requested_fields(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.post(
+        url=wrap_url(
+            f"{API_BASE_URL}/my-workspace/my-project/search?api_key=my_api_key"
+        ),
+        json={
+            "results": [
+                {"score": 1.87, "labels": [{"class": "pass"}], "annotations": []}
+            ]
+        },
+    )
+
+    # when
+    result = search_project_images_at_roboflow(
+        api_key="my_api_key",
+        workspace="my-workspace",
+        project="my-project",
+        image_base64="query-image",
+        limit=1,
+        fields=["id", "score", "labels", "annotations"],
+    )
+
+    # then
+    assert result == {
+        "results": [{"score": 1.87, "labels": [{"class": "pass"}], "annotations": []}]
+    }
+    assert requests_mock.last_request.json() == {
+        "image_base64": "query-image",
+        "limit": 1,
+        "fields": ["id", "score", "labels", "annotations"],
+    }
 
 
 @mock.patch.object(roboflow_api.requests, "get")

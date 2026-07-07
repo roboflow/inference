@@ -1,4 +1,5 @@
 from unittest import mock
+from uuid import UUID
 
 import numpy as np
 import pytest
@@ -181,6 +182,110 @@ WORKFLOW_WITH_OVERLAP_MEASUREMENT = {
 }
 
 
+FUNCTION_TO_RETURN_WORKFLOW_CONTEXT = """
+def run(self, value: int) -> BlockResult:
+    context = self.get_workflow_context()
+    context["value"] = value
+    return context
+"""
+
+
+WORKFLOW_WITH_CUSTOM_BLOCK_WORKFLOW_CONTEXT = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "value"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "ContextProbe",
+                "inputs": {
+                    "value": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["input_parameter", "step_output"],
+                    },
+                },
+                "outputs": {
+                    "step_name": {"type": "DynamicOutputDefinition", "kind": []},
+                    "step_selector": {"type": "DynamicOutputDefinition", "kind": []},
+                    "workflow_execution_id": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": [],
+                    },
+                    "block_type": {"type": "DynamicOutputDefinition", "kind": []},
+                    "value": {"type": "DynamicOutputDefinition", "kind": []},
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_TO_RETURN_WORKFLOW_CONTEXT,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "ContextProbe",
+            "name": "context_probe",
+            "value": "$inputs.value",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "step_name",
+            "selector": "$steps.context_probe.step_name",
+        },
+        {
+            "type": "JsonField",
+            "name": "step_selector",
+            "selector": "$steps.context_probe.step_selector",
+        },
+        {
+            "type": "JsonField",
+            "name": "workflow_execution_id",
+            "selector": "$steps.context_probe.workflow_execution_id",
+        },
+        {
+            "type": "JsonField",
+            "name": "block_type",
+            "selector": "$steps.context_probe.block_type",
+        },
+        {
+            "type": "JsonField",
+            "name": "value",
+            "selector": "$steps.context_probe.value",
+        },
+    ],
+}
+
+
+@_CUSTOM_PY_NATIVE_TODO
+def test_workflow_with_custom_python_block_exposes_workflow_context() -> None:
+    # given
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CUSTOM_BLOCK_WORKFLOW_CONTEXT,
+        init_parameters={"workflows_core.api_key": None},
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={"value": 37})
+
+    # then
+    assert len(result) == 1
+    assert UUID(result[0].pop("workflow_execution_id"))
+    assert result == [
+        {
+            "step_name": "context_probe",
+            "step_selector": "$steps.context_probe",
+            "block_type": "ContextProbe",
+            "value": 37,
+        }
+    ]
+
+
 @_CUSTOM_PY_NATIVE_TODO
 @add_to_workflows_gallery(
     category="Workflows with dynamic Python Blocks",
@@ -317,7 +422,6 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH = {
         },
     ],
 }
-
 
 @_CUSTOM_PY_NATIVE_TODO
 def test_workflow_with_custom_python_block_operating_on_batch(
