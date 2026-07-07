@@ -67,8 +67,8 @@ def divide(
     except (TypeError, ValueError, ZeroDivisionError) as e:
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(
-            public_message=f"While executing multiply divide(...) in context {execution_context}, encountered "
-            f"value `{value_as_str}` of type {type(value)} which cannot be multiplied with {other}",
+            public_message=f"While executing divide(...) in context {execution_context}, encountered "
+            f"value `{value_as_str}` of type {type(value)} which cannot be divided by {other}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )

@@ -177,6 +177,62 @@ def test_saving_files_when_allowed_write_directory_does_not_match(
         )
 
 
+def test_saving_separate_file_when_file_name_prefix_attempts_path_traversal(
+    empty_directory: str,
+) -> None:
+    # given
+    sandbox = os.path.join(empty_directory, "sandbox")
+    os.makedirs(sandbox, exist_ok=True)
+    escaped_target = os.path.join(empty_directory, "escaped.txt")
+    block = LocalFileSinkBlockV1(
+        allow_access_to_file_system=True, allowed_write_directory=sandbox
+    )
+
+    # when
+    with pytest.raises(ValueError):
+        _ = block.run(
+            content="content-1",
+            file_type="txt",
+            output_mode="separate_files",
+            target_directory=sandbox,
+            file_name_prefix="../escaped",
+            max_entries_per_file=100,
+        )
+
+    # then
+    assert not glob(
+        os.path.join(empty_directory, "escaped_*.txt")
+    ), "Traversal via file_name_prefix must not write outside the allowed directory"
+    assert not os.path.exists(escaped_target)
+
+
+def test_saving_append_log_when_file_name_prefix_attempts_path_traversal(
+    empty_directory: str,
+) -> None:
+    # given
+    sandbox = os.path.join(empty_directory, "sandbox")
+    os.makedirs(sandbox, exist_ok=True)
+    block = LocalFileSinkBlockV1(
+        allow_access_to_file_system=True, allowed_write_directory=sandbox
+    )
+
+    # when
+    result = block.run(
+        content="content-1",
+        file_type="txt",
+        output_mode="append_log",
+        target_directory=sandbox,
+        file_name_prefix="../escaped",
+        max_entries_per_file=100,
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert not glob(
+        os.path.join(empty_directory, "escaped_*.txt")
+    ), "Traversal via file_name_prefix must not write outside the allowed directory"
+
+
 def test_saving_json_into_separate_files(empty_directory: str) -> None:
     # given
     block = LocalFileSinkBlockV1(

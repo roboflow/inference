@@ -134,7 +134,12 @@ class SIFTComparisonBlockV1(WorkflowBlock):
         ratio_threshold: float = 0.7,
     ) -> BlockResult:
         # Check if both descriptor arrays have at least 2 descriptors
-        if len(descriptor_1) < 2 or len(descriptor_2) < 2:
+        if (
+            descriptor_1 is None
+            or descriptor_2 is None
+            or len(descriptor_1) < 2
+            or len(descriptor_2) < 2
+        ):
             return {
                 "good_matches_count": 0,
                 "images_match": False,

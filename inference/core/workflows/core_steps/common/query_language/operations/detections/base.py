@@ -204,7 +204,7 @@ def _select_detections(
             context="step_execution | roboflow_query_language_evaluation",
         )
     if mode not in DETECTIONS_SELECTORS:
-        InvalidInputTypeError(
+        raise InvalidInputTypeError(
             public_message=f"Executing select_detections(...), expected mode to be one of {DETECTIONS_SELECTORS.values()}, "
             f"got {mode}.",
             context="step_execution | roboflow_query_language_evaluation",
@@ -307,7 +307,14 @@ def _rename_detections(
             context="step_execution | roboflow_query_language_evaluation",
         )
     detections_copy = deepcopy(detections)
-    original_class_names = detections_copy.data.get("class_name", []).tolist()
+    if "class_name" not in detections_copy.data:
+        if strict and len(detections_copy) > 0:
+            _ensure_all_classes_covered_in_new_mapping(
+                original_class_names=None,
+                class_map=class_map,
+            )
+        return detections_copy
+    original_class_names = detections_copy.data["class_name"].tolist()
     original_class_ids = detections_copy.class_id.tolist()
     new_class_names = []
     new_class_ids = []
@@ -338,9 +345,15 @@ def _rename_detections(
 
 
 def _ensure_all_classes_covered_in_new_mapping(
-    original_class_names: List[str],
+    original_class_names: Optional[List[str]],
     class_map: Dict[str, str],
 ) -> None:
+    if original_class_names is None:
+        raise OperationError(
+            public_message="Executing rename_detections(...) with strict=True, but the detections "
+            "carry no `class_name` field, so coverage by `class_map` cannot be guaranteed.",
+            context="step_execution | roboflow_query_language_evaluation",
+        )
     for original_class in original_class_names:
         if original_class not in class_map:
             raise OperationError(
