@@ -216,17 +216,45 @@ as the ownership mechanism, and the status poll stays as the control channel
 - **Phase A (now)**: polling claim. Prerequisite fix regardless of queues:
   make claim a transactional compare-and-set — today two processors can race
   on the same queued job.
-- **Phase B**: `video-jobs` queue for dispatch. Functions (GCP) keep writing
-  Firestore only; a small in-cluster dispatcher bridges Firestore→RabbitMQ
-  (queue stays cluster-local = per-cell by construction). Processor consumes
-  with prefetch=1, acks on claim, compare-and-sets Firestore before starting
-  (discards stale/duplicate deliveries). Orphan reaping additionally
-  re-enqueues. Poll mode remains for local dev.
-- **Phase C**: split classes. `video-batch` = true backlog, KEDA scales the
-  pool on queue depth — this is where the processor migrates into
-  async-serverless machinery almost verbatim. Monitoring = placement problem,
-  not queueing: scale on assigned-streams-per-worker; rebalancing = drain →
-  re-enqueue → re-place (cheap because workers re-attach to relay streams
-  locally).
+- **Phase B**: **GCP Pub/Sub** for dispatch — NOT RabbitMQ. Rationale: the
+  functions already live in GCP and publish natively (no Firestore→queue
+  dispatcher bridge needed at all), and — decisively — cells must not depend
+  on infrastructure that only exists because async-serverless happens to be
+  co-deployed on the same cluster. A cell is relay + processors; it may land
+  on clusters that run nothing else. Pub/Sub keeps dispatch cell-agnostic:
+  processors consume via StreamingPull over **outbound** HTTPS from anywhere,
+  consistent with the outbound-only doctrine everywhere else in this design.
+  - Topic `video-jobs`; one subscription per cell with an attribute filter
+    (`cell="crusoe-use1"`) so jobs land where their source's relay lives.
+  - Ack on claim (not on completion — a monitoring job runs for months);
+    processor compare-and-sets Firestore before starting, discarding
+    stale/duplicate deliveries (Pub/Sub is at-least-once). Orphan reaping
+    additionally re-publishes. Poll mode remains for local dev.
+  - Processors on Crusoe authenticate to Pub/Sub with a GCP service-account
+    key from Secret Manager — same pattern the cluster already uses.
+- **Phase C**: split classes. Batch = true backlog; monitoring = placement
+  problem (scale on assigned-streams-per-worker; rebalancing = drain →
+  re-publish → re-place, cheap because workers re-attach to relay streams
+  locally, not across the customer's NAT).
+
+**Scaling signal — warm floor first, backlog second.** The primary invariant
+is not "drain the queue", it's "**at least N idle processors are always
+waiting**" so new work starts in seconds (the entire point of the warm pool):
+
+- Processor exports a `video_processor_busy` 0/1 gauge (trivial: it already
+  knows its state; add a /metrics endpoint or scrape /status). Cluster
+  Prometheus + KEDA are already installed by the addons stack.
+- KEDA prometheus scaler with `threshold: 1` and query
+  `sum(video_processor_busy) + MIN_IDLE` → desired replicas = busy + floor.
+  That single expression IS the warm-pool guarantee.
+- Compose with a Pub/Sub `num_undelivered_messages` scaler (KEDA has one
+  built in) so batch bursts scale past the floor; KEDA takes the max of its
+  triggers.
+- Scale-DOWN safety matters more than scale-up: the HPA must not kill a
+  processor mid-monitoring-job. Set `controller.kubernetes.io/pod-deletion-cost`
+  high while busy (processor updates its own pod annotation), and handle
+  SIGTERM by finishing/checkpointing batch work within the grace period;
+  evicted monitoring jobs re-publish and re-place with a seconds-long blip
+  that the relay absorbs.
 
 Never queued: heartbeats, cancel/watch signals, results to the browser.
