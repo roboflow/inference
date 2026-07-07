@@ -54,7 +54,9 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         # import time) keeps this module importable on machines without the Jetson stack.
         try:
             from jetson_utils import videoSource
-        except Exception as error:  # noqa: BLE001 - any import failure means "unavailable"
+        except (
+            Exception
+        ) as error:  # noqa: BLE001 - any import failure means "unavailable"
             raise ImportError(
                 "JetsonVideoFrameProducer requires `jetson_utils` (ships with JetPack; not "
                 "pip-installable). Probe via "

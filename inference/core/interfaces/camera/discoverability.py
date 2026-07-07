@@ -34,7 +34,9 @@ def check_jetson_utils() -> ProducerAvailability:
     try:
         import jetson_utils  # noqa: F401
     except Exception as error:  # noqa: BLE001
-        return ProducerAvailability(JETSON, False, f"jetson_utils import failed: {error!r}")
+        return ProducerAvailability(
+            JETSON, False, f"jetson_utils import failed: {error!r}"
+        )
     try:
         import torch
     except Exception as error:  # noqa: BLE001
@@ -42,7 +44,9 @@ def check_jetson_utils() -> ProducerAvailability:
     try:
         cuda_ok = torch.cuda.is_available()
     except Exception as error:  # noqa: BLE001
-        return ProducerAvailability(JETSON, False, f"torch.cuda probe failed: {error!r}")
+        return ProducerAvailability(
+            JETSON, False, f"torch.cuda probe failed: {error!r}"
+        )
     if not cuda_ok:
         return ProducerAvailability(JETSON, False, "torch.cuda.is_available() is False")
     return ProducerAvailability(JETSON, True, "ok")
@@ -114,7 +118,9 @@ def build_hw_producer(
                 )
 
                 return PyNvVideoCodecFrameProducer(video, **producer_kwargs)
-        except Exception:  # noqa: BLE001 - probe said ok but construction failed; try next
+        except (
+            Exception
+        ):  # noqa: BLE001 - probe said ok but construction failed; try next
             continue
     return None
 

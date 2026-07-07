@@ -19,6 +19,8 @@ from uuid import uuid4
 
 import numpy as np
 import torch
+from pycocotools import mask as mask_utils
+from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE
 from inference.core.workflows.execution_engine.constants import (
@@ -30,9 +32,11 @@ from inference.core.workflows.execution_engine.constants import (
     HEIGHT_KEY,
     IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
+    POLYGON_KEY_IN_SV_DETECTIONS,
     PREDICTION_TYPE_KEY,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
@@ -47,7 +51,6 @@ from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
-from pycocotools import mask as mask_utils
 
 TensorNativeDetections = Union[Detections, InstanceDetections]
 KeyPointPrediction = Tuple[KeyPoints, Optional[Detections]]
@@ -255,6 +258,112 @@ def _native_image_metadata_in_root_coordinates(image_metadata: dict) -> dict:
     return new_metadata
 
 
+# Per-box geometry payloads shifted alongside xyxy on root conversion - the same
+# set the crop side localizes (dynamic_crop subtracts the crop origin from
+# keypoints, polygons AND oriented-box corners; root conversion adds it back).
+# The numpy ``sv_detections_to_root_coordinates`` shifts the same three keys.
+_GEOMETRY_KEYS_SHIFTED_TO_ROOT = (
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+    POLYGON_KEY_IN_SV_DETECTIONS,
+    ORIENTED_BOX_COORDINATES,
+)
+
+
+def _add_offset(
+    value: Union[List, np.ndarray], offset_xy: np.ndarray
+) -> Union[List, np.ndarray]:
+    """Add ``offset_xy`` ([x, y]) to a coordinate container - the exact inverse of
+    ``dynamic_crop/v1_tensor._subtract_offset``, with the same container- and
+    dtype-preservation rules: python lists stay lists, numpy arrays stay arrays,
+    integer coordinates stay integers (crop origins are integral, so the shift is
+    lossless), floats keep float precision. Empty/None payloads pass through."""
+    if value is None:
+        return value
+    was_list = isinstance(value, list)
+    array = np.asarray(value)
+    if array.size == 0:
+        return value
+    is_integer = np.issubdtype(array.dtype, np.integer)
+    if is_integer:
+        shifted = array.astype(np.int64) + offset_xy.astype(np.int64)
+    else:
+        shifted = array.astype(float) + offset_xy
+    return shifted.tolist() if was_list else shifted
+
+
+def _shift_bboxes_metadata_to_root_coordinates(
+    bboxes_metadata: Optional[List[dict]],
+    shift_x: float,
+    shift_y: float,
+) -> Optional[List[dict]]:
+    """Copy the per-box metadata entries, shifting the geometry payloads the
+    tensor-native serialiser reads back (``keypoints_xy``, ``polygon``) - the
+    mirror of the per-row shifts numpy's ``sv_detections_to_root_coordinates``
+    applies to ``sv.Detections.data``."""
+    if bboxes_metadata is None:
+        return None
+    offset_xy = np.asarray([shift_x, shift_y])
+    shifted_entries = []
+    for entry in bboxes_metadata:
+        entry = dict(entry)
+        for key in _GEOMETRY_KEYS_SHIFTED_TO_ROOT:
+            if key in entry:
+                entry[key] = _add_offset(entry[key], offset_xy)
+        shifted_entries.append(entry)
+    return shifted_entries
+
+
+def _shift_native_masks_to_root_coordinates(
+    mask: Union[torch.Tensor, InstancesRLEMasks, None],
+    shift_x: float,
+    shift_y: float,
+    root_dimensions: Optional[Sequence[int]],
+) -> Union[torch.Tensor, InstancesRLEMasks, None]:
+    """Re-anchor crop-local instance masks onto the root-image canvas, mirroring
+    the numpy path's paste into an ``np.full((H_root, W_root), False)`` base.
+    Dense torch masks are pasted into a zeros canvas on the same device; RLE
+    masks are re-embedded without densifying the full canvas via
+    ``embed_rle_masks_in_larger_canvas``."""
+    if mask is None:
+        return None
+    if root_dimensions is None:
+        raise ValueError(
+            "Cannot shift tensor-native instance masks to root coordinates: the "
+            f"prediction carries a non-zero root offset but no "
+            f"`image_metadata['{ROOT_PARENT_DIMENSIONS_KEY}']` to size the root "
+            "canvas. The producer block must attach the root lineage keys "
+            "(see build_native_image_metadata)."
+        )
+    root_height, root_width = int(root_dimensions[0]), int(root_dimensions[1])
+    offset_x, offset_y = int(shift_x), int(shift_y)
+    if isinstance(mask, InstancesRLEMasks):
+        return embed_rle_masks_in_larger_canvas(
+            masks=mask,
+            offset_xy=(offset_x, offset_y),
+            target_size_hw=(root_height, root_width),
+        )
+    _, mask_height, mask_width = mask.shape
+    if offset_x < 0 or offset_y < 0:
+        raise ValueError(
+            f"Cannot shift tensor-native instance masks to root coordinates: got "
+            f"negative crop offset ({offset_x}, {offset_y}); offsets must be "
+            "non-negative."
+        )
+    if offset_x + mask_width > root_width or offset_y + mask_height > root_height:
+        raise ValueError(
+            f"Crop-local masks of size (h={mask_height}, w={mask_width}) at offset "
+            f"(x={offset_x}, y={offset_y}) do not fit into the root canvas of size "
+            f"(H={root_height}, W={root_width})."
+        )
+    anchored = torch.zeros(
+        (mask.shape[0], root_height, root_width), dtype=mask.dtype, device=mask.device
+    )
+    anchored[:, offset_y : offset_y + mask_height, offset_x : offset_x + mask_width] = (
+        mask
+    )
+    return anchored
+
+
 def _shift_native_detections_to_root_coordinates(
     detections: TensorNativeDetections,
     shift_x: float,
@@ -266,22 +375,34 @@ def _shift_native_detections_to_root_coordinates(
         device=detections.xyxy.device,
     )
     shifted_xyxy = detections.xyxy + shift
+    # Root canvas dims must be read BEFORE the metadata rewrite below collapses
+    # the lineage to the root frame ([0, 0] offsets, root dims everywhere).
+    root_dimensions = (
+        detections.image_metadata.get(ROOT_PARENT_DIMENSIONS_KEY)
+        if detections.image_metadata is not None
+        else None
+    )
     image_metadata = (
         _native_image_metadata_in_root_coordinates(detections.image_metadata)
         if detections.image_metadata is not None
         else None
     )
-    bboxes_metadata = (
-        [dict(entry) for entry in detections.bboxes_metadata]
-        if detections.bboxes_metadata is not None
-        else None
+    bboxes_metadata = _shift_bboxes_metadata_to_root_coordinates(
+        bboxes_metadata=detections.bboxes_metadata,
+        shift_x=shift_x,
+        shift_y=shift_y,
     )
     if isinstance(detections, InstanceDetections):
         return InstanceDetections(
             xyxy=shifted_xyxy,
             class_id=detections.class_id,
             confidence=detections.confidence,
-            mask=detections.mask,
+            mask=_shift_native_masks_to_root_coordinates(
+                mask=detections.mask,
+                shift_x=shift_x,
+                shift_y=shift_y,
+                root_dimensions=root_dimensions,
+            ),
             image_metadata=image_metadata,
             bboxes_metadata=bboxes_metadata,
         )
@@ -332,10 +453,15 @@ def native_detections_to_root_coordinates(
     Reads the crop origin from
     ``image_metadata[ROOT_PARENT_COORDINATES_KEY] = [shift_x, shift_y]`` and adds
     ``[shift_x, shift_y, shift_x, shift_y]`` to ``xyxy`` (and ``[shift_x, shift_y]``
-    to keypoint ``xy``). The keypoint-detection tuple ``(KeyPoints, Detections)``
-    has both components shifted consistently. This is the tensor-native mirror of
-    ``sv_detections_to_root_coordinates`` (utils.py), used by the execution-engine
-    output constructor when an output is requested in PARENT coordinates.
+    to keypoint ``xy``). Instance masks are re-anchored onto the root-image canvas
+    (dense torch masks pasted into a zeros canvas; RLE masks re-embedded without
+    densifying), and the per-box ``keypoints_xy`` / ``polygon`` payloads in
+    ``bboxes_metadata`` are shifted - matching the mask paste and the ``data``-key
+    shifts of numpy's ``sv_detections_to_root_coordinates``. The keypoint-detection
+    tuple ``(KeyPoints, Detections)`` has both components shifted consistently.
+    This is the tensor-native mirror of ``sv_detections_to_root_coordinates``
+    (utils.py), used by the execution-engine output constructor when an output is
+    requested in PARENT coordinates.
 
     No-op (the input is returned unchanged) when the prediction carries no root
     offset — i.e. the key is absent or the shift is ``[0, 0]`` (already

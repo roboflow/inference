@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from inference.core.workflows.core_steps.sampling.identify_changes.v1 import (
     IdentifyChangesBlockV1,
@@ -63,3 +64,26 @@ def test_identify_changes() -> None:
     # average and std should not be zero anymore
     assert not np.allclose(result.get("average"), initial_value_normalized)
     assert not np.all(result.get("std") == [0, 0, 0, 0, 0])
+
+
+def test_identify_changes_tensor_sibling_zero_variance_is_not_outlier() -> None:
+    # given
+    torch = pytest.importorskip("torch")
+    from inference.core.workflows.core_steps.sampling.identify_changes.v1_tensor import (
+        IdentifyChangesBlockV1 as IdentifyChangesTensorBlockV1,
+    )
+
+    identify_changes_block = IdentifyChangesTensorBlockV1()
+    embedding = torch.tensor([0.1, -0.4, 0.3, 0.9, -0.2])
+
+    # when - identical embedding on every step, so cosine similarity has zero
+    # variance; the zero-std guard must yield the deterministic non-outlier
+    # result instead of dividing by zero and emitting NaN downstream
+    for _ in range(10):
+        result = identify_changes_block.run(**default_inputs, embedding=embedding)
+
+    # then
+    assert not result.get("warming_up")
+    assert not result.get("is_outlier")
+    assert result.get("percentile") == 0.5
+    assert result.get("z_score") == 0

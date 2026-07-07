@@ -89,7 +89,9 @@ class WorkflowRunner:
             )
             for video_frame in video_frames
         ]
-        image_type = "numpy_object" if not ENABLE_TENSOR_DATA_REPRESENTATION else "tensor"
+        image_type = (
+            "numpy_object" if not ENABLE_TENSOR_DATA_REPRESENTATION else "tensor"
+        )
         workflows_parameters[self._image_input_name] = [
             {
                 "type": image_type,

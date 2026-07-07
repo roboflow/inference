@@ -130,7 +130,7 @@ class InferenceModelsSAM2Adapter(Model):
         self, action: Literal["embed", "segment"], **kwargs
     ) -> List[Union[SAM2ImageEmbeddings, SAM2Prediction]]:
         if action == "embed":
-            self._model.embed_images(**kwargs)
+            return self._model.embed_images(**kwargs)
         return self._model.segment_images(**kwargs)
 
     @usage_collector("model")

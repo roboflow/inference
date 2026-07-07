@@ -3,6 +3,7 @@ from datetime import datetime
 
 import cv2
 import numpy as np
+import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.common.serializers import (
@@ -1156,3 +1157,117 @@ def test_serialise_rle_sv_detections_with_parent_origin() -> None:
             },
         ],
     }
+
+
+def test_serialise_native_classification_key_ordering_matches_numpy_path() -> None:
+    # given
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common.serializers_tensor import (
+        serialise_native_classification,
+    )
+    from inference_models.models.base.classification import (
+        ClassificationPrediction,
+        MultiLabelClassificationPrediction,
+    )
+
+    base_metadata = {
+        "class_names": {0: "cat", 1: "dog"},
+        "prediction_type": "classification",
+        "image_dimensions": [480, 640],
+        "inference_id": "iid",
+        "parent_id": "p1",
+        "root_parent_id": "r1",
+    }
+
+    def single_label(metadata: dict) -> "ClassificationPrediction":
+        return ClassificationPrediction(
+            class_id=torch.tensor([1]),
+            confidence=torch.tensor([[0.25, 0.5]], dtype=torch.float32),
+            images_metadata=[metadata],
+        )
+
+    def multi_label(metadata: dict) -> "MultiLabelClassificationPrediction":
+        return MultiLabelClassificationPrediction(
+            class_ids=torch.tensor([0, 1]),
+            confidence=torch.tensor([0.5, 0.25], dtype=torch.float32),
+            image_metadata=metadata,
+        )
+
+    # when
+    single_label_result = serialise_native_classification(
+        single_label(dict(base_metadata))
+    )
+    multi_label_result = serialise_native_classification(
+        multi_label(dict(base_metadata))
+    )
+    single_label_timed_result = serialise_native_classification(
+        single_label({**base_metadata, "time": 0.0123})
+    )
+    multi_label_timed_result = serialise_native_classification(
+        multi_label({**base_metadata, "time": 0.0123})
+    )
+
+    # then
+    # top-level and per-entry key ORDER mirror the numpy flag-off path
+    # (response model_dump(by_alias=True, exclude_none=True) + the block's
+    # in-place prediction_type/parent_id/root_parent_id writes); orjson
+    # byte-parity depends on it. When the producer block stamps `time`
+    # (model-call elapsed, as `Model.infer_from_request` does on the numpy
+    # path) it must land between `inference_id` and `image`; when absent,
+    # the key is omitted entirely.
+    assert list(single_label_result.keys()) == [
+        "inference_id",
+        "image",
+        "predictions",
+        "top",
+        "confidence",
+        "prediction_type",
+        "parent_id",
+        "root_parent_id",
+    ]
+    assert [list(e.keys()) for e in single_label_result["predictions"]] == [
+        ["class", "class_id", "confidence"],
+        ["class", "class_id", "confidence"],
+    ]
+    assert single_label_result["predictions"][0] == {
+        "class": "dog",
+        "class_id": 1,
+        "confidence": 0.5,
+    }
+    assert list(multi_label_result.keys()) == [
+        "inference_id",
+        "image",
+        "predictions",
+        "predicted_classes",
+        "prediction_type",
+        "parent_id",
+        "root_parent_id",
+    ]
+    assert [list(e.keys()) for e in multi_label_result["predictions"].values()] == [
+        ["confidence", "class_id"],
+        ["confidence", "class_id"],
+    ]
+    assert list(single_label_timed_result.keys()) == [
+        "inference_id",
+        "time",
+        "image",
+        "predictions",
+        "top",
+        "confidence",
+        "prediction_type",
+        "parent_id",
+        "root_parent_id",
+    ]
+    assert single_label_timed_result["time"] == 0.0123
+    assert list(multi_label_timed_result.keys()) == [
+        "inference_id",
+        "time",
+        "image",
+        "predictions",
+        "predicted_classes",
+        "prediction_type",
+        "parent_id",
+        "root_parent_id",
+    ]
+    assert multi_label_timed_result["time"] == 0.0123

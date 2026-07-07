@@ -162,10 +162,7 @@ class DetectionOffsetBlockV1(WorkflowBlock):
         offset_height: int,
         units: str = "Pixels",
     ) -> BlockResult:
-        # NOTE: mirrors the numpy v1 block verbatim - this comparison string never
-        # matches the manifest Literal ("Percent (%)"), so percentage mode is
-        # effectively dead today. Preserved exactly to keep behaviour identical.
-        use_percentage = units == "Percent (%) - of bounding box width / height"
+        use_percentage = units == "Percent (%)"
         return [
             {
                 "predictions": offset_detections(

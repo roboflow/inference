@@ -29,7 +29,10 @@ from inference.core.workflows.core_steps.common.serializers import (
 from inference.core.workflows.core_steps.common.serializers_tensor import (
     serialise_sv_detections as serialise_tensor_native_detections,
 )
-from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
+from inference.core.workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
+    CLASS_NAMES_KEY,
+)
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
@@ -648,6 +651,46 @@ def _resolve_class_names(
     return result
 
 
+def _resolve_effective_class_names(
+    detections: TensorNativeDetections, operation_name: str
+) -> List[str]:
+    """Per-row class names, honoring the per-box ``CLASS_NAME_KEY`` override that
+    the tensor serializer prefers (its C1 convention) before falling back to the
+    image-level ``CLASS_NAMES_KEY`` map. This is the native analog of numpy's
+    per-row ``data["class_name"]`` values: producers like
+    detections_classes_replacement attach per-box labels that diverge from the
+    map, and row-level operations (rename) must see those labels. A row with an
+    override never touches the map, so a missing/incomplete map raises only for
+    rows that actually need it."""
+    if _detections_count(detections) == 0:
+        return []
+    bboxes_metadata = detections.bboxes_metadata
+    class_names_map: Optional[Dict[int, str]] = None
+    result = []
+    for index, class_id_scalar in enumerate(detections.class_id.tolist()):
+        entry = {}
+        if bboxes_metadata is not None:
+            entry = bboxes_metadata[index] or {}
+        if CLASS_NAME_KEY in entry:
+            result.append(str(entry[CLASS_NAME_KEY]))
+            continue
+        if class_names_map is None:
+            class_names_map = _class_names_lookup(
+                detections, operation_name=operation_name
+            )
+        class_id = int(class_id_scalar)
+        class_name = class_names_map.get(class_id)
+        if class_name is None:
+            raise OperationError(
+                public_message=f"Executing {operation_name}(...), class_id={class_id} "
+                f"is missing from the class_names mapping "
+                f"(keys present: {sorted(class_names_map.keys())}).",
+                context="step_execution | roboflow_query_language_evaluation",
+            )
+        result.append(class_name)
+    return result
+
+
 def _take_mask(
     mask: Union[torch.Tensor, InstancesRLEMasks], indices: List[int]
 ) -> Union[torch.Tensor, InstancesRLEMasks]:
@@ -1188,7 +1231,29 @@ def _rename_detections_tensor_native(
             f"got {value_as_str} of type {type(strict)}",
             context="step_execution | roboflow_query_language_evaluation",
         )
-    original_class_names = _resolve_class_names(
+    # Numpy-parity for detections that carry no class names (main c03c2514b): the
+    # numpy arm returns the copy unchanged unless strict-and-non-empty, in which
+    # case the shared helper raises. The native analog of a missing
+    # ``data["class_name"]`` is a missing ``image_metadata[CLASS_NAMES_KEY]`` map;
+    # a present-but-incomplete map still raises in ``_resolve_class_names`` below
+    # (real producer-contract violation, not an "absent property").
+    if (detections.image_metadata or {}).get(CLASS_NAMES_KEY) is None:
+        if strict and _detections_count(detections) > 0:
+            _ensure_all_classes_covered_in_new_mapping(
+                original_class_names=None,
+                class_map=class_map,
+            )
+        return _copy_detections(detections)
+    # Row-level rename subject, like numpy's per-row ``data["class_name"]``: the
+    # per-box ``CLASS_NAME_KEY`` override wins over the map (the serializer's C1
+    # precedence), so a classes_replacement -> rename chain renames the labels a
+    # consumer would actually see instead of leaving stale overrides behind.
+    bboxes_metadata = detections.bboxes_metadata
+    row_has_override = [
+        bboxes_metadata is not None and CLASS_NAME_KEY in (bboxes_metadata[index] or {})
+        for index in range(_detections_count(detections))
+    ]
+    original_class_names = _resolve_effective_class_names(
         detections, operation_name="rename_detections"
     )
     original_class_ids = [int(value) for value in detections.class_id.tolist()]
@@ -1208,24 +1273,43 @@ def _rename_detections_tensor_native(
             class_map=class_map,
             new_classes_id_offset=new_classes_id_offset,
         )
-    new_class_ids = [
-        new_class_mapping[class_map.get(class_name, class_name)]
-        for class_name in original_class_names
+    new_class_names = [
+        class_map.get(class_name, class_name) for class_name in original_class_names
     ]
+    new_class_ids = [new_class_mapping[class_name] for class_name in new_class_names]
     detections_copy = _copy_detections(detections)
     detections_copy.class_id = torch.tensor(
         new_class_ids,
         dtype=detections.class_id.dtype,
         device=detections.class_id.device,
     )
-    allowed_names = {class_map.get(name, name) for name in original_class_names}
+    if detections_copy.bboxes_metadata is not None:
+        # Present-only rewrite: rows that carried an override keep the channel,
+        # now pointing at the renamed label; rows without one gain nothing.
+        for index, entry in enumerate(detections_copy.bboxes_metadata):
+            if row_has_override[index]:
+                entry[CLASS_NAME_KEY] = new_class_names[index]
+    allowed_names = set(new_class_names)
     allowed_names.update(class_map.values())
     image_metadata = detections_copy.image_metadata or {}
-    image_metadata[CLASS_NAMES_KEY] = {
+    renamed_class_names_map = {
         class_id: class_name
         for class_name, class_id in new_class_mapping.items()
         if class_name in allowed_names
     }
+    # Row-level serializer guarantee: an override-less row resolves its name via
+    # the map, so its (id -> name) pair must win over a colliding inverted entry
+    # (non-strict can hold two names for one id when an override diverged from
+    # the map name at the same class_id). Identity when no overrides exist,
+    # because override-less effective names are a function of class_id.
+    for index, has_override in enumerate(row_has_override):
+        if has_override:
+            renamed_class_names_map.setdefault(
+                new_class_ids[index], new_class_names[index]
+            )
+        else:
+            renamed_class_names_map[new_class_ids[index]] = new_class_names[index]
+    image_metadata[CLASS_NAMES_KEY] = renamed_class_names_map
     detections_copy.image_metadata = image_metadata
     return detections_copy
 

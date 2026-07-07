@@ -809,3 +809,128 @@ def test_classes_replacement_with_strings_and_none_with_fallback() -> None:
     ]
     assert result["predictions"].confidence[1] == 0.0
     assert result["predictions"].class_id[1] == 99
+
+
+def test_classes_replacement_tensor_native_empty_prediction_with_fallback_and_none_class_id() -> (
+    None
+):
+    # Tensor-native mirror of
+    # test_classes_replacement_when_empty_classification_predictions_fallback_class_provided_with_default_class_id:
+    # an empty single-label distribution + fallback_class_name with
+    # fallback_class_id=None must fall back to sys.maxsize instead of raising
+    # TypeError on int(None).
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1_tensor import (
+        DetectionsClassesReplacementBlockV1 as TensorBlock,
+    )
+    from inference_models.models.base.classification import (
+        ClassificationPrediction as NativeClassificationPrediction,
+    )
+    from inference_models.models.base.object_detection import (
+        Detections as NativeDetections,
+    )
+
+    # given
+    step = TensorBlock()
+    detections = NativeDetections(
+        xyxy=torch.tensor(
+            [
+                [10.0, 20.0, 30.0, 40.0],
+                [11.0, 21.0, 31.0, 41.0],
+            ]
+        ),
+        class_id=torch.tensor([7, 7]),
+        confidence=torch.tensor([0.36, 0.91]),
+        image_metadata={"class_names": {7: "animal"}},
+        bboxes_metadata=[{"detection_id": "zero"}, {"detection_id": "one"}],
+    )
+    first_cls_prediction = NativeClassificationPrediction(
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([[0.6, 0.4]]),
+        images_metadata=[{"parent_id": "zero", "class_names": {0: "cat", 1: "dog"}}],
+    )
+    second_cls_prediction = NativeClassificationPrediction(
+        class_id=torch.tensor([0]),
+        confidence=torch.zeros((1, 0)),
+        images_metadata=[{"parent_id": "one"}],
+    )
+    classification_predictions = Batch(
+        content=[first_cls_prediction, second_cls_prediction],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name="unknown",
+        fallback_class_id=None,
+    )
+
+    # then
+    predictions = result["predictions"]
+    assert (
+        len(predictions) == 2
+    ), "Expected both detections to be preserved via fallback class"
+    assert predictions.confidence[1] == 0, "Fallback confidence expected to be 0"
+    assert (
+        int(predictions.class_id[1]) == sys.maxsize
+    ), "class id expected to fall back to sys.maxsize when fallback_class_id left as None"
+    assert (
+        predictions.image_metadata["class_names"][sys.maxsize] == "unknown"
+    ), "class_names map expected to resolve the fallback id to fallback_class_name"
+
+
+def test_classes_replacement_tensor_native_string_predictions_with_negative_fallback_class_id() -> (
+    None
+):
+    # Tensor-native mirror of the numpy fallback-id normalisation on the
+    # string-prediction path: a NEGATIVE fallback_class_id must map to
+    # sys.maxsize (main commit c03c2514b), not be used verbatim.
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1_tensor import (
+        DetectionsClassesReplacementBlockV1 as TensorBlock,
+    )
+    from inference_models.models.base.object_detection import (
+        Detections as NativeDetections,
+    )
+
+    # given
+    step = TensorBlock()
+    detections = NativeDetections(
+        xyxy=torch.tensor(
+            [
+                [10.0, 20.0, 30.0, 40.0],
+                [11.0, 21.0, 31.0, 41.0],
+            ]
+        ),
+        class_id=torch.tensor([7, 7]),
+        confidence=torch.tensor([0.36, 0.91]),
+        image_metadata={"class_names": {7: "animal"}},
+        bboxes_metadata=[{"detection_id": "zero"}, {"detection_id": "one"}],
+    )
+    classification_predictions = Batch(
+        content=["K619879", None],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name="unreadable",
+        fallback_class_id=-5,
+    )
+
+    # then
+    predictions = result["predictions"]
+    assert len(predictions) == 2
+    assert (
+        int(predictions.class_id[1]) == sys.maxsize
+    ), "negative fallback_class_id expected to normalise to sys.maxsize"
+    assert predictions.confidence[1] == 0.0
+    assert (
+        predictions.image_metadata["class_names"][sys.maxsize] == "unreadable"
+    ), "class_names map expected to resolve the fallback id to fallback_class_name"

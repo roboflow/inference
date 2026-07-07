@@ -935,7 +935,7 @@ def get_intersection_mask(mask: np.ndarray) -> np.ndarray:
 
 
 def get_union_mask(mask: np.ndarray) -> np.ndarray:
-    return np.sum(mask, axis=0)
+    return np.any(mask, axis=0)
 
 
 def get_smallest_mask(mask: np.ndarray) -> np.ndarray:

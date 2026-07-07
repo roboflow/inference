@@ -94,3 +94,47 @@ def test_size_measurement_block_with_invalid_reference_dimensions():
         match="reference_dimensions must be a string in the format 'width,height'",
     ):
         block.run(reference_predictions, object_predictions, reference_dimensions)
+
+
+def test_size_measurement_tensor_block_skips_objects_with_empty_masks():
+    # regression for the None-dimension guard ported from the numpy source
+    # (c03c2514b): an InstanceDetections row whose mask decodes to no contour
+    # yields (None, None) and must produce a None entry, not a TypeError.
+    pytest.importorskip("inference_models")
+    import torch
+
+    from inference.core.workflows.core_steps.classical_cv.size_measurement.v1_tensor import (
+        OUTPUT_KEY as TENSOR_OUTPUT_KEY,
+    )
+    from inference.core.workflows.core_steps.classical_cv.size_measurement.v1_tensor import (
+        SizeMeasurementBlockV1 as TensorSizeMeasurementBlockV1,
+    )
+    from inference_models.models.base.instance_segmentation import InstanceDetections
+    from inference_models.models.base.object_detection import Detections
+
+    # given
+    reference_predictions = Detections(
+        xyxy=torch.tensor([[10.0, 10.0, 50.0, 50.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9]),
+    )
+    valid_mask = torch.zeros((100, 100), dtype=torch.bool)
+    valid_mask[10:60, 10:60] = True
+    empty_mask = torch.zeros((100, 100), dtype=torch.bool)
+    object_predictions = InstanceDetections(
+        xyxy=torch.tensor([[10.0, 10.0, 60.0, 60.0], [30.0, 30.0, 70.0, 70.0]]),
+        class_id=torch.tensor([0, 1]),
+        confidence=torch.tensor([0.8, 0.85]),
+        mask=torch.stack([valid_mask, empty_mask]),
+    )
+
+    # when
+    block = TensorSizeMeasurementBlockV1()
+    result = block.run(reference_predictions, object_predictions, "5.0,5.0")
+
+    # then
+    dimensions = result[TENSOR_OUTPUT_KEY]
+    assert len(dimensions) == 2
+    assert dimensions[0] is not None
+    assert set(dimensions[0].keys()) == {"width", "height", "longer", "shorter"}
+    assert dimensions[1] is None

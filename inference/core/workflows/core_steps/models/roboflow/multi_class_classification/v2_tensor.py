@@ -25,6 +25,7 @@ kind is changed to the tensor-native kind. The run bodies follow the
 """
 
 import uuid
+from time import perf_counter
 from typing import Dict, List, Literal, Optional, Type, Union
 
 import torch
@@ -242,6 +243,7 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
         # Single-label returns ONE batched ClassificationPrediction (NOT a list):
         #   class_id   -> (bs,)
         #   confidence -> (bs, num_classes)  full softmax
+        inference_start = perf_counter()
         batched_prediction: ClassificationPrediction = (
             self._model_manager.run_tensor_native_inference(
                 model_id=model_id,
@@ -252,6 +254,11 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
                 active_learning_target_dataset=active_learning_target_dataset,
             )
         )
+        # numpy parity: `Model.infer_from_request` stamps `time` (elapsed around
+        # the bare model call) on every response in the batch; mirror with one
+        # elapsed value for the whole batch (numpy's per-response deltas differ
+        # only by loop overhead).
+        inference_time = perf_counter() - inference_start
         class_names = _class_names_map(self._model_manager.get_class_names(model_id))
         confidence_threshold = _resolve_confidence_threshold(confidence)
         results: List[dict] = []
@@ -267,6 +274,7 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
                 class_names=class_names,
                 inference_id=inference_id,
                 confidence_threshold=confidence_threshold,
+                inference_time=inference_time,
             )
             results.append(
                 {
@@ -321,6 +329,7 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
                 response=response,
                 inference_id=inference_id,
                 confidence_threshold=confidence_threshold,
+                inference_time=response.get("time"),
             )
             results.append(
                 {
@@ -341,9 +350,10 @@ def _build_image_metadata(
     class_names: Dict[int, str],
     inference_id: str,
     confidence_threshold: float,
+    inference_time: Optional[float] = None,
 ) -> dict:
     height, width = image._read_shape_without_materialization()
-    return {
+    metadata = {
         CLASS_NAMES_KEY: class_names,
         PREDICTION_TYPE_KEY: PREDICTION_TYPE,
         IMAGE_DIMENSIONS_KEY: [height, width],
@@ -354,6 +364,11 @@ def _build_image_metadata(
         # drops sub-threshold classes from `predictions`, matching numpy.
         CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY: confidence_threshold,
     }
+    # numpy parity: flag-off always dumps `time` — stamped around the bare model
+    # call in `Model.infer_from_request` (LOCAL) or by the server (REMOTE).
+    if inference_time is not None:
+        metadata["time"] = inference_time
+    return metadata
 
 
 def _single_row_prediction(
@@ -363,12 +378,14 @@ def _single_row_prediction(
     class_names: Dict[int, str],
     inference_id: str,
     confidence_threshold: float,
+    inference_time: Optional[float] = None,
 ) -> ClassificationPrediction:
     image_metadata = _build_image_metadata(
         image=image,
         class_names=class_names,
         inference_id=inference_id,
         confidence_threshold=confidence_threshold,
+        inference_time=inference_time,
     )
     # Slice (not index) to keep the leading batch dim: class_id -> (1,),
     # confidence -> (1, num_classes). The confidence row stays the FULL softmax.
@@ -388,6 +405,7 @@ def _native_classification_from_inference_response(
     response: dict,
     inference_id: str,
     confidence_threshold: float,
+    inference_time: Optional[float] = None,
 ) -> ClassificationPrediction:
     """Rebuild a native single-row ``ClassificationPrediction`` from a standard
     inference classification response dict.
@@ -421,6 +439,7 @@ def _native_classification_from_inference_response(
         class_names=class_names,
         inference_id=inference_id,
         confidence_threshold=confidence_threshold,
+        inference_time=inference_time,
     )
     return ClassificationPrediction(
         class_id=torch.tensor(

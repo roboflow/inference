@@ -22,6 +22,7 @@ multi-label classification prediction dict.
 """
 
 import uuid
+from time import perf_counter
 from typing import Dict, List, Literal, Optional, Type, Union
 
 import torch
@@ -267,6 +268,7 @@ class RoboflowMultiLabelClassificationModelBlockV3(WorkflowBlock):
             model_inputs = [image.numpy_image for image in images]
             image_color_format = "bgr"
         self._model_manager.add_model(model_id=model_id, api_key=self._api_key)
+        inference_start = perf_counter()
         predictions: List[MultiLabelClassificationPrediction] = (
             self._model_manager.run_tensor_native_inference(
                 model_id=model_id,
@@ -277,6 +279,11 @@ class RoboflowMultiLabelClassificationModelBlockV3(WorkflowBlock):
                 active_learning_target_dataset=active_learning_target_dataset,
             )
         )
+        # numpy parity: `Model.infer_from_request` stamps `time` (elapsed around
+        # the bare model call) on every response in the batch; mirror with one
+        # elapsed value for the whole batch (numpy's per-response deltas differ
+        # only by loop overhead).
+        inference_time = perf_counter() - inference_start
         class_names = _class_names_map(self._model_manager.get_class_names(model_id))
         results: List[dict] = []
         for image, prediction in zip(images, predictions):
@@ -298,6 +305,7 @@ class RoboflowMultiLabelClassificationModelBlockV3(WorkflowBlock):
                 image=image,
                 class_names=class_names,
                 inference_id=inference_id,
+                inference_time=inference_time,
             )
             results.append(
                 {
@@ -362,6 +370,7 @@ class RoboflowMultiLabelClassificationModelBlockV3(WorkflowBlock):
                 image=image,
                 response=response,
                 inference_id=inference_id,
+                inference_time=response.get("time"),
             )
             results.append(
                 {
@@ -381,6 +390,7 @@ def _build_native_classification_metadata(
     image: WorkflowImageData,
     class_names: Dict[int, str],
     inference_id: str,
+    inference_time: Optional[float] = None,
 ) -> dict:
     """Build the (SINGULAR) ``image_metadata`` dict carried by a tensor-native
     ``MultiLabelClassificationPrediction``.
@@ -392,7 +402,7 @@ def _build_native_classification_metadata(
     forcing a device->host materialization so tensor-only inputs stay on device.
     """
     height, width = image._read_shape_without_materialization()
-    return {
+    metadata = {
         CLASS_NAMES_KEY: class_names,
         PREDICTION_TYPE_KEY: PREDICTION_TYPE,
         IMAGE_DIMENSIONS_KEY: [height, width],
@@ -400,12 +410,18 @@ def _build_native_classification_metadata(
         PARENT_ID_KEY: image.parent_metadata.parent_id,
         ROOT_PARENT_ID_KEY: image.workflow_root_ancestor_metadata.parent_id,
     }
+    # numpy parity: flag-off always dumps `time` — stamped around the bare model
+    # call in `Model.infer_from_request` (LOCAL) or by the server (REMOTE).
+    if inference_time is not None:
+        metadata["time"] = inference_time
+    return metadata
 
 
 def _native_multi_label_from_inference_response(
     image: WorkflowImageData,
     response: dict,
     inference_id: str,
+    inference_time: Optional[float] = None,
 ) -> MultiLabelClassificationPrediction:
     """Rebuild a native ``MultiLabelClassificationPrediction`` from the standard
     inference multi-label response dict.
@@ -449,5 +465,6 @@ def _native_multi_label_from_inference_response(
             image=image,
             class_names=class_names,
             inference_id=inference_id,
+            inference_time=inference_time,
         ),
     )

@@ -293,9 +293,9 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
                 if prediction is None:
                     if fallback_class_name:
                         resolved_fallback_id = (
-                            fallback_class_id
-                            if fallback_class_id is not None
-                            else sys.maxsize
+                            sys.maxsize
+                            if fallback_class_id is None or fallback_class_id < 0
+                            else fallback_class_id
                         )
                         class_name, class_id, confidence = (
                             fallback_class_name,
@@ -536,7 +536,7 @@ def extract_leading_class_from_prediction(
         elif not has_predictions and fallback_class_name:
             try:
                 fallback_class_id = int(fallback_class_id)
-            except ValueError:
+            except (ValueError, TypeError):
                 fallback_class_id = None
             if fallback_class_id is None or fallback_class_id < 0:
                 fallback_class_id = sys.maxsize

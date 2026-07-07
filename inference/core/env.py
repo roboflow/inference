@@ -1134,3 +1134,18 @@ WORKFLOWS_IMAGE_TENSOR_DEVICE_STR: Optional[str] = os.getenv(
 if WORKFLOWS_IMAGE_TENSOR_DEVICE_STR is None:
     WORKFLOWS_IMAGE_TENSOR_DEVICE_STR = "cuda" if torch.cuda.is_available() else "cpu"
 WORKFLOWS_IMAGE_TENSOR_DEVICE = torch.device(WORKFLOWS_IMAGE_TENSOR_DEVICE_STR)
+
+# Instance-mask carrier for the tensor-native SAM video-tracker blocks
+# ("rle" = compact COCO RLE, "dense" = boolean torch tensors). This is an
+# execution-level flag, NOT a block manifest field (manifests stay identical
+# across the flag swap); GCP_SERVERLESS forces "rle" at run time regardless.
+WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION = (
+    os.getenv("WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION", "rle").strip().lower()
+)
+if WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION not in {"rle", "dense"}:
+    warnings.warn(
+        "Invalid value of `WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION` variable: "
+        f"{WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION!r} - allowed values are 'rle' "
+        "and 'dense'. Falling back to 'rle'."
+    )
+    WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION = "rle"

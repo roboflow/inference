@@ -218,7 +218,9 @@ def _build_default_producer(stream_reference: Union[str, int]) -> VideoFrameProd
     producer = None
     try:
         producer = build_hw_producer(str(stream_reference))
-    except Exception as error:  # noqa: BLE001 - decoder selection must never break startup
+    except (
+        Exception
+    ) as error:  # noqa: BLE001 - decoder selection must never break startup
         logger.warning(
             "ENABLE_TENSOR_DATA_REPRESENTATION is on, but initialising a hardware "
             f"GPU-tensor decoder for source reference {stream_reference} raised: "

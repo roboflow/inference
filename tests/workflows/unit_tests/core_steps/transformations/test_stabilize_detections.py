@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.transformations.stabilize_detections.v1 import (
@@ -205,3 +206,50 @@ def test_stabilize_detections():
     assert len(res_6["tracked_detections"]) == 2
     assert len(res_7["tracked_detections"]) == 2
     assert len(res_8["tracked_detections"]) == 0
+
+
+def test_stabilize_detections_tensor_native_accepts_empty_untracked_detections():
+    # Mirrors the numpy behavior change from PR #2614: empty detections without
+    # tracker ids must not raise - they flow through (gap-fill may still emit
+    # cached trackers; a fresh block has none, so the output is empty).
+    pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    import torch
+
+    from inference.core.workflows.core_steps.transformations.stabilize_detections.v1_tensor import (
+        OUTPUT_KEY as TENSOR_OUTPUT_KEY,
+    )
+    from inference.core.workflows.core_steps.transformations.stabilize_detections.v1_tensor import (
+        StabilizeTrackedDetectionsBlockV1 as TensorStabilizeBlockV1,
+    )
+    from inference_models.models.base.object_detection import Detections
+
+    # given
+    empty_detections = Detections(
+        xyxy=torch.zeros((0, 4), dtype=torch.float32),
+        class_id=torch.zeros((0,), dtype=torch.long),
+        confidence=torch.zeros((0,), dtype=torch.float32),
+        image_metadata={"class_names": {}},
+        bboxes_metadata=[],
+    )
+    block = TensorStabilizeBlockV1()
+    img = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(""),
+        video_metadata=VideoMetadata(
+            video_identifier="1",
+            frame_number=1,
+            frame_timestamp=0,
+        ),
+        numpy_image=np.zeros((10, 10, 3)),
+    )
+
+    # when - must not raise despite tracker ids being absent
+    result = block.run(
+        image=img,
+        detections=empty_detections,
+        smoothing_window_size=3,
+        bbox_smoothing_coefficient=0.5,
+    )
+
+    # then
+    assert int(result[TENSOR_OUTPUT_KEY].xyxy.shape[0]) == 0

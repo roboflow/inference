@@ -421,19 +421,27 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     simplified_polygon = simplified_polygon[
                         :required_number_of_vertices
                     ]
+                simplified_polygon = scale_polygon(
+                    polygon=simplified_polygon,
+                    scale=scale_ratio,
+                )
+                # The stored per-box polygon carries the SCALED (original image
+                # resolution) coordinates - mirrors the numpy block, which since
+                # PR #2614 assigns POLYGON_KEY after scale_polygon. The value is
+                # the (V, 2) polygon itself: numpy's `np.array([polygon])` is an
+                # sv COLUMN assignment whose per-ROW value is (V, 2), and the
+                # tensor serializer reads bboxes_metadata per box, so wrapping
+                # in an extra batch dim here would nest the serialized field
+                # and bypass the declared-polygon fast path.
                 per_box_meta = {
                     **(existing_meta[i] or {}),
-                    POLYGON_KEY_IN_SV_DETECTIONS: np.array([simplified_polygon]),
+                    POLYGON_KEY_IN_SV_DETECTIONS: np.array(simplified_polygon),
                 }
                 # Backfill detection_id so output rows always satisfy the
                 # per-box detection_id producer contract even when upstream
                 # omitted it (preserves any existing id).
                 per_box_meta.setdefault(DETECTION_ID_KEY, str(uuid4()))
                 new_bboxes_metadata.append(per_box_meta)
-                simplified_polygon = scale_polygon(
-                    polygon=simplified_polygon,
-                    scale=scale_ratio,
-                )
                 simplified_polygons.append(simplified_polygon.tolist())
                 new_dense_masks.append(
                     sv.polygon_to_mask(

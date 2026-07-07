@@ -195,9 +195,7 @@ def compact_mask_from_coco_rle(
         full_counts = _decode_coco_counts(masks_counts[i])
         # Split the full-frame F-order RLE into one run list per image column
         # (each column = img_h pixels). Pure run arithmetic — no pixel buffer.
-        columns = _rle_split_cols(
-            np.asarray(full_counts, dtype=np.int64), img_h, img_w
-        )
+        columns = _rle_split_cols(np.asarray(full_counts, dtype=np.int64), img_h, img_w)
         selected = [
             _trim_col_runs(columns[col], y1c, y2c) for col in range(x1c, x2c + 1)
         ]

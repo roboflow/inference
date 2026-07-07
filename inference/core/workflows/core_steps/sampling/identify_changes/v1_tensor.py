@@ -330,8 +330,15 @@ class IdentifyChangesBlockV1(WorkflowBlock):
                         self.cosine_similarity_sliding_window
                     )
 
-            z_score = (cs - self.cosine_similarity_avg) / self.cosine_similarity_std
-            percentile = 1 - 0.5 * (1 + math.erf(z_score / np.sqrt(2)))
+            if self.cosine_similarity_std == 0:
+                # No variance in cosine similarity (e.g. a static scene) means
+                # there is nothing to compare against; treat as non-outlier
+                # instead of dividing by zero and emitting NaN downstream.
+                z_score = 0
+                percentile = 0.5
+            else:
+                z_score = (cs - self.cosine_similarity_avg) / self.cosine_similarity_std
+                percentile = 1 - 0.5 * (1 + math.erf(z_score / np.sqrt(2)))
 
             # print(f"Z-score: {z_score}, Percentile: {percentile}, Cosine Similarity: {cs}, Average: {self.cosine_similarity_avg}, Std: {self.cosine_similarity_std}")
 

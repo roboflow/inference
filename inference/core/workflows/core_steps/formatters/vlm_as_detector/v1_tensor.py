@@ -540,7 +540,7 @@ def parse_florence2_object_detection_response(
             for name in detections.data.get("class_name", ["unknown"] * len(detections))
         ]
         detections.class_id = np.array(class_ids)
-    if florence_task_type in "<OPEN_VOCABULARY_DETECTION>":
+    if florence_task_type == "<OPEN_VOCABULARY_DETECTION>":
         class_name_to_id = {name: idx for idx, name in enumerate(classes)}
         class_ids = [
             class_name_to_id.get(name, -1)

@@ -11,7 +11,10 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 from inference.core.workflows.core_steps.common.query_language.operations.detections.base import (
     rename_detections,
 )
-from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
+from inference.core.workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
+    CLASS_NAMES_KEY,
+)
 from inference_models.models.base.instance_segmentation import (
     InstanceDetections as NativeInstanceDetections,
 )
@@ -225,7 +228,6 @@ def test_rename_detections_when_detections_have_no_class_name_data_and_not_stric
     ), "Expected no fabricated class_name field on the no-op path"
 
 
-
 @_NUMPY_ONLY
 def test_rename_detections_when_detections_are_empty_is_a_noop() -> None:
     # given
@@ -398,6 +400,215 @@ def test_rename_detections_when_non_strict_mode_enabled_and_not_all_classes_pres
         "A",
         "b",
     ], "Expected to change with mapping"
+
+
+@_TENSOR_ONLY
+def test_rename_detections_when_detections_have_no_class_name_data_and_not_strict_tensor_native() -> (
+    None
+):
+    # given - the native analog of sv detections without `data["class_name"]` is a
+    # missing `image_metadata[CLASS_NAMES_KEY]` map
+    detections = NativeDetections(
+        xyxy=torch.tensor([[0, 1, 2, 3], [0, 1, 2, 3]], dtype=torch.float32),
+        class_id=torch.tensor([10, 11], dtype=torch.long),
+        confidence=torch.tensor([0.3, 0.4], dtype=torch.float32),
+        image_metadata={},
+    )
+
+    # when
+    result = rename_detections(
+        detections=detections,
+        class_map={"a": "A"},
+        strict=False,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then - with no class names to rename, non-strict mode is a no-op copy: the
+    # boxes pass through unchanged and no class_names map is fabricated
+    assert isinstance(result, NativeDetections)
+    assert result is not detections, "Expected a copy, not the input object"
+    assert result.xyxy.tolist() == [[0, 1, 2, 3], [0, 1, 2, 3]]
+    assert torch.allclose(result.confidence, torch.tensor([0.3, 0.4]))
+    assert result.class_id.tolist() == [
+        10,
+        11,
+    ], "Expected class_id unchanged in the no-op path"
+    assert (result.image_metadata or {}).get(
+        CLASS_NAMES_KEY
+    ) is None, "Expected no fabricated class_names map on the no-op path"
+
+
+@_TENSOR_ONLY
+def test_rename_detections_when_detections_have_no_class_name_data_and_strict_tensor_native() -> (
+    None
+):
+    # given
+    detections = NativeDetections(
+        xyxy=torch.tensor([[0, 1, 2, 3], [0, 1, 2, 3]], dtype=torch.float32),
+        class_id=torch.tensor([10, 11], dtype=torch.long),
+        confidence=torch.tensor([0.3, 0.4], dtype=torch.float32),
+        image_metadata={},
+    )
+
+    # when - strict mode cannot guarantee class_map coverage without class names,
+    # so the shared helper raises (same OperationError as the numpy arm)
+    with pytest.raises(OperationError):
+        _ = rename_detections(
+            detections=detections,
+            class_map={"a": "A"},
+            strict=True,
+            new_classes_id_offset=1024,
+            global_parameters={},
+        )
+
+
+@_TENSOR_ONLY
+def test_rename_detections_when_detections_are_empty_is_a_noop_tensor_native() -> None:
+    # given - empty native detections without a class_names map (the mirror of
+    # sv.Detections.empty(), which carries no `class_name` data)
+    def _empty_native_detections() -> NativeDetections:
+        return NativeDetections(
+            xyxy=torch.zeros((0, 4), dtype=torch.float32),
+            class_id=torch.zeros((0,), dtype=torch.long),
+            confidence=torch.zeros((0,), dtype=torch.float32),
+            image_metadata={},
+        )
+
+    # when - empty detections have nothing to rename; both modes return a
+    # consistent (empty) result without raising
+    non_strict = rename_detections(
+        detections=_empty_native_detections(),
+        class_map={"a": "A"},
+        strict=False,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+    strict = rename_detections(
+        detections=_empty_native_detections(),
+        class_map={"a": "A"},
+        strict=True,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then
+    assert isinstance(non_strict, NativeDetections)
+    assert int(non_strict.xyxy.shape[0]) == 0
+    assert isinstance(strict, NativeDetections)
+    assert int(strict.xyxy.shape[0]) == 0
+
+
+def _native_detections_with_overrides() -> NativeDetections:
+    # classes_replacement-style input: both rows share class_id 7 whose map name is
+    # "cat"; row 1 carries a per-box CLASS_NAME_KEY override ("dog") — the label the
+    # tensor serializer would prefer (C1), hence the label rename must operate on.
+    return NativeDetections(
+        xyxy=torch.tensor([[0, 1, 2, 3], [4, 5, 6, 7]], dtype=torch.float32),
+        class_id=torch.tensor([7, 7], dtype=torch.long),
+        confidence=torch.tensor([0.3, 0.4], dtype=torch.float32),
+        image_metadata={CLASS_NAMES_KEY: {7: "cat"}},
+        bboxes_metadata=[
+            {"detection_id": "d0"},
+            {"detection_id": "d1", CLASS_NAME_KEY: "dog"},
+        ],
+    )
+
+
+@_TENSOR_ONLY
+def test_rename_detections_rewrites_per_box_class_overrides_tensor_native() -> None:
+    # given
+    detections = _native_detections_with_overrides()
+
+    # when - only the override name is in the class_map; numpy on the equivalent
+    # per-row class_names ["cat", "dog"] yields names ["cat", "canine"], ids [7, 1024]
+    result = rename_detections(
+        detections=detections,
+        class_map={"dog": "canine"},
+        strict=False,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then
+    assert result.class_id.tolist() == [7, 1024]
+    assert (
+        result.bboxes_metadata[1][CLASS_NAME_KEY] == "canine"
+    ), "Expected the per-box override rewritten to the renamed label"
+    assert (
+        CLASS_NAME_KEY not in result.bboxes_metadata[0]
+    ), "Expected no override fabricated on a row that had none"
+    assert result.image_metadata[CLASS_NAMES_KEY][7] == "cat"
+    assert (
+        detections.bboxes_metadata[1][CLASS_NAME_KEY] == "dog"
+    ), "Expected the source object untouched"
+
+
+@_TENSOR_ONLY
+def test_rename_detections_strict_mode_covers_per_box_overrides_tensor_native() -> None:
+    # given
+    detections = _native_detections_with_overrides()
+
+    # when - class_map covers the map name but not the override; numpy raises
+    # "Class 'dog' not found in class_map." for the equivalent per-row names
+    with pytest.raises(OperationError):
+        _ = rename_detections(
+            detections=detections,
+            class_map={"cat": "feline"},
+            strict=True,
+            new_classes_id_offset=1024,
+            global_parameters={},
+        )
+
+
+@_TENSOR_ONLY
+def test_rename_detections_splits_shared_class_id_on_divergent_overrides_tensor_native() -> (
+    None
+):
+    # given
+    detections = _native_detections_with_overrides()
+
+    # when - both effective names renamed to NEW targets; numpy assigns offset ids
+    # to the sorted new targets (canine=1024, feline=1025), splitting the shared id
+    result = rename_detections(
+        detections=detections,
+        class_map={"cat": "feline", "dog": "canine"},
+        strict=False,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then
+    assert result.class_id.tolist() == [1025, 1024]
+    assert (
+        result.image_metadata[CLASS_NAMES_KEY][1025] == "feline"
+    ), "Expected the override-less row to resolve via the class_names map"
+    assert result.bboxes_metadata[1][CLASS_NAME_KEY] == "canine"
+
+
+@_TENSOR_ONLY
+def test_rename_detections_keeps_uncovered_override_in_non_strict_mode_tensor_native() -> (
+    None
+):
+    # given
+    detections = _native_detections_with_overrides()
+
+    # when - the override name is not in the class_map; numpy keeps the name and
+    # its original id on the equivalent per-row input
+    result = rename_detections(
+        detections=detections,
+        class_map={"cat": "feline"},
+        strict=False,
+        new_classes_id_offset=1024,
+        global_parameters={},
+    )
+
+    # then
+    assert result.class_id.tolist() == [1024, 7]
+    assert (
+        result.bboxes_metadata[1][CLASS_NAME_KEY] == "dog"
+    ), "Expected the uncovered override kept intact"
+    assert result.image_metadata[CLASS_NAMES_KEY][1024] == "feline"
 
 
 @_TENSOR_ONLY

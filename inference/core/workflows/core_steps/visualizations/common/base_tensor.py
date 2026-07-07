@@ -4,7 +4,11 @@ from typing import List, Optional, Type, Union
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from supervision.detection.compact_mask import CompactMask
 
+from inference.core.workflows.core_steps.common.rle_compact import (
+    instances_rle_to_compact_mask,
+)
 from inference.core.workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
@@ -35,11 +39,6 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
-)
-from supervision.detection.compact_mask import CompactMask
-
-from inference.core.workflows.core_steps.common.rle_compact import (
-    instances_rle_to_compact_mask,
 )
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints

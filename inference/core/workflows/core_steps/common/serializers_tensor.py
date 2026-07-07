@@ -377,6 +377,19 @@ def serialise_native_classification(
     (``image_metadata[CLASS_NAMES_KEY]``). Single-label carries PLURAL
     ``images_metadata`` (list, [0] used); multi-label carries SINGULAR
     ``image_metadata`` (dict).
+
+    Key ordering mirrors the numpy path byte-for-byte (the response
+    ``model_dump(by_alias=True, exclude_none=True)`` followed by the block's
+    in-place ``prediction_type`` / ``parent_id`` / ``root_parent_id`` writes):
+    ``inference_id`` first, then ``image``, the predictions section, and the
+    appended lineage keys. Per-entry order follows the pydantic field order of
+    ``ClassificationPrediction`` (``class``, ``class_id``, ``confidence``) /
+    ``MultiLabelClassificationPrediction`` (``confidence``, ``class_id``).
+    ``time`` (model-call elapsed, stamped by ``Model.infer_from_request`` on
+    the numpy path or by the server on remote responses) sits between
+    ``inference_id`` and ``image`` in the dump; tensor blocks stamp/copy it
+    into the image metadata, so the output shape matches the numpy dump
+    exactly (the value itself is nondeterministic wall-clock).
     """
     if isinstance(prediction, ClassificationPrediction):
         metadata_list = prediction.images_metadata or [{}]
@@ -407,7 +420,17 @@ def serialise_native_classification(
             "height": int(image_dimensions[0]),
         }
 
-    result: dict = {"image": serialized_image_metadata}
+    result: dict = {}
+    # numpy dump order puts inference_id BEFORE image (InferenceResponse base
+    # fields precede CvInferenceResponse.image in the pydantic MRO).
+    if image_metadata.get(INFERENCE_ID_KEY) is not None:
+        result[INFERENCE_ID_KEY] = image_metadata[INFERENCE_ID_KEY]
+    # `time` sits between inference_id and image in the numpy dump
+    # (InferenceResponse declares inference_id, frame_id, time before
+    # CvInferenceResponse.image; frame_id is None-excluded in workflows).
+    if image_metadata.get("time") is not None:
+        result["time"] = image_metadata["time"]
+    result["image"] = serialized_image_metadata
 
     if isinstance(prediction, ClassificationPrediction):
         # confidence: (1, num_classes) full softmax; class_id: (1,)
@@ -424,8 +447,8 @@ def serialise_native_classification(
                 continue
             individual_classes_predictions.append(
                 {
-                    "class_id": class_id,
                     "class": str(class_names_mapping.get(class_id, class_id)),
+                    "class_id": class_id,
                     "confidence": round(class_score, 4),
                 }
             )
@@ -462,9 +485,11 @@ def serialise_native_classification(
         result["predictions"] = predictions_dict
         result["predicted_classes"] = predicted_classes
 
+    # Append order mirrors the numpy block's in-place writes after model_dump:
+    # attach_prediction_type_info, then parent_id, then root_parent_id
+    # (inference_id was already emitted first, matching the dump order).
     for source_key in (
         PREDICTION_TYPE_KEY,
-        INFERENCE_ID_KEY,
         PARENT_ID_KEY,
         ROOT_PARENT_ID_KEY,
     ):

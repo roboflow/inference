@@ -642,12 +642,20 @@ else:
         RoboflowInstanceSegmentationModelBlockV4,
     )
 
-from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
-    SegmentAnything3InteractiveBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
-    SegmentAnything3VideoBlockV1,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1 import (
+        SegmentAnything3InteractiveBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1 import (
+        SegmentAnything3VideoBlockV1,
+    )
+else:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3_interactive.v1_tensor import (
+        SegmentAnything3InteractiveBlockV1,
+    )
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3_video.v1_tensor import (
+        SegmentAnything3VideoBlockV1,
+    )
 
 if SAM3_3D_OBJECTS_ENABLED:
     if not ENABLE_TENSOR_DATA_REPRESENTATION:

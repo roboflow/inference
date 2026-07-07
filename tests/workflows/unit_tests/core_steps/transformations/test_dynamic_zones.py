@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
@@ -328,3 +329,145 @@ def test_calculate_least_squares_polygon_with_midpoint_fraction():
         least_squares_polygon,
         np.array([[1639, 1550], [1567, 1726], [1668, 1837], [1761, 1556]]),
     ), "Correct least squares polygon should be calculated based on the contour and polygon."
+
+
+def test_dynamic_zones_tensor_native_stores_scaled_polygon_in_bboxes_metadata():
+    # Mirrors the numpy behavior change from PR #2614: the per-box
+    # POLYGON_KEY_IN_SV_DETECTIONS payload must carry the SCALED polygon
+    # (assignment happens after scale_polygon), not the pre-scale one.
+    pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    import torch
+
+    from inference.core.workflows.core_steps.transformations.dynamic_zones.v1_tensor import (
+        OUTPUT_KEY as TENSOR_OUTPUT_KEY,
+    )
+    from inference.core.workflows.core_steps.transformations.dynamic_zones.v1_tensor import (
+        OUTPUT_KEY_DETECTIONS as TENSOR_OUTPUT_KEY_DETECTIONS,
+    )
+    from inference.core.workflows.core_steps.transformations.dynamic_zones.v1_tensor import (
+        DynamicZonesBlockV1 as TensorDynamicZonesBlockV1,
+    )
+    from inference.core.workflows.execution_engine.constants import (
+        POLYGON_KEY_IN_SV_DETECTIONS,
+    )
+    from inference.core.workflows.execution_engine.entities.base import Batch
+    from inference_models.models.base.instance_segmentation import InstanceDetections
+
+    # given - a single square instance and a scale ratio that visibly moves vertices
+    mask = np.zeros((1, 100, 100), dtype=bool)
+    mask[0, 20:60, 30:70] = True
+    detections = InstanceDetections(
+        xyxy=torch.tensor([[30.0, 20.0, 70.0, 60.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9]),
+        mask=torch.from_numpy(mask),
+        image_metadata={"class_names": {0: "zone"}},
+        bboxes_metadata=[{"detection_id": "det-1"}],
+    )
+    block = TensorDynamicZonesBlockV1()
+
+    # when
+    result = block.run(
+        predictions=Batch(content=[detections], indices=[(0,)]),
+        required_number_of_vertices=4,
+        scale_ratio=0.5,
+    )
+
+    # then
+    scaled_polygons = result[0][TENSOR_OUTPUT_KEY]
+    output_detections = result[0][TENSOR_OUTPUT_KEY_DETECTIONS]
+    assert len(scaled_polygons) == 1
+    stored_polygon = output_detections.bboxes_metadata[0][POLYGON_KEY_IN_SV_DETECTIONS]
+    assert stored_polygon.shape == (
+        len(scaled_polygons[0]),
+        2,
+    ), "Per-box polygon payload must be the (V, 2) polygon itself - numpy's sv COLUMN wrapping does not apply to per-box bboxes_metadata"
+    assert (
+        stored_polygon.tolist() == scaled_polygons[0]
+    ), "Per-box polygon payload must equal the scaled polygon emitted in the zones output"
+    unscaled_square = {(30, 20), (69, 20), (69, 59), (30, 59)}
+    assert (
+        set(map(tuple, stored_polygon.tolist())) != unscaled_square
+    ), "Payload must not be the pre-scale polygon (scale_ratio=0.5 moves vertices)"
+    assert output_detections.bboxes_metadata[0]["detection_id"] == "det-1"
+
+
+def test_dynamic_zones_tensor_native_serialized_polygon_payload_matches_numpy():
+    # End-to-end parity: the same segmentation input through the numpy block +
+    # numpy serializer and through the tensor sibling + tensor serializer must
+    # produce identical prediction dicts - in particular the declared-polygon
+    # response field must not be nested one extra level (a (1, V, 2) payload
+    # bypasses the serializer's declared-polygon fast path and nests the field).
+    pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    import torch
+
+    from inference.core.workflows.core_steps.common.serializers import (
+        serialise_sv_detections as numpy_serialise,
+    )
+    from inference.core.workflows.core_steps.common.serializers_tensor import (
+        serialise_sv_detections as tensor_serialise,
+    )
+    from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
+        OUTPUT_KEY_DETECTIONS,
+        DynamicZonesBlockV1,
+    )
+    from inference.core.workflows.core_steps.transformations.dynamic_zones.v1_tensor import (
+        OUTPUT_KEY_DETECTIONS as TENSOR_OUTPUT_KEY_DETECTIONS,
+    )
+    from inference.core.workflows.core_steps.transformations.dynamic_zones.v1_tensor import (
+        DynamicZonesBlockV1 as TensorDynamicZonesBlockV1,
+    )
+    from inference.core.workflows.execution_engine.constants import (
+        POLYGON_KEY_IN_SV_DETECTIONS,
+    )
+    from inference.core.workflows.execution_engine.entities.base import Batch
+    from inference_models.models.base.instance_segmentation import InstanceDetections
+
+    # given - identical single-instance input in both representations
+    mask = np.zeros((1, 100, 100), dtype=bool)
+    mask[0, 20:60, 30:70] = True
+    sv_detections = sv.Detections(
+        xyxy=np.array([[30.0, 20.0, 70.0, 60.0]], dtype=np.float32),
+        class_id=np.array([0]),
+        confidence=np.array([0.9], dtype=np.float32),
+        mask=mask.copy(),
+        data={
+            "class_name": np.array(["zone"]),
+            "detection_id": np.array(["det-1"]),
+        },
+    )
+    native_detections = InstanceDetections(
+        xyxy=torch.tensor([[30.0, 20.0, 70.0, 60.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9]),
+        mask=torch.from_numpy(mask.copy()),
+        image_metadata={"class_names": {0: "zone"}},
+        bboxes_metadata=[{"detection_id": "det-1"}],
+    )
+
+    # when
+    numpy_result = DynamicZonesBlockV1().run(
+        predictions=Batch(content=[sv_detections], indices=[(0,)]),
+        required_number_of_vertices=4,
+        scale_ratio=0.5,
+    )
+    tensor_result = TensorDynamicZonesBlockV1().run(
+        predictions=Batch(content=[native_detections], indices=[(0,)]),
+        required_number_of_vertices=4,
+        scale_ratio=0.5,
+    )
+
+    # then
+    numpy_serialised = numpy_serialise(numpy_result[0][OUTPUT_KEY_DETECTIONS])
+    tensor_serialised = tensor_serialise(tensor_result[0][TENSOR_OUTPUT_KEY_DETECTIONS])
+    numpy_prediction = numpy_serialised["predictions"][0]
+    tensor_prediction = tensor_serialised["predictions"][0]
+    assert (
+        numpy_prediction[POLYGON_KEY_IN_SV_DETECTIONS]
+        == tensor_prediction[POLYGON_KEY_IN_SV_DETECTIONS]
+    ), "Declared-polygon response field must match numpy (no extra nesting level)"
+    assert (
+        numpy_serialised == tensor_serialised
+    ), "Serialized dynamic_zones predictions must be identical across representations"

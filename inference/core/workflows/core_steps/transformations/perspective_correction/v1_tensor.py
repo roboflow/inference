@@ -41,6 +41,7 @@ import numpy as np
 import supervision as sv
 import torch
 from pydantic import AliasChoices, ConfigDict, Field
+from supervision.config import ORIENTED_BOX_COORDINATES
 from typing_extensions import Literal, Type
 
 from inference.core.workflows.core_steps.common.tensor_native import (
@@ -865,6 +866,25 @@ def _correct_keypoints_in_metadata(
     )
 
 
+def _correct_oriented_box_in_metadata(
+    entry: dict,
+    perspective_transformer: np.ndarray,
+) -> None:
+    """Warp the per-box oriented-bounding-box corners carried in
+    ``bboxes_metadata[i]["xyxyxyxy"]`` (shape ``(4, 2)`` - the per-row equivalent of
+    the sv ``detection.data[ORIENTED_BOX_COORDINATES]`` column). Mirrors the numpy
+    block's OBB warp added in PR #2521. Mutates ``entry`` in place.
+    """
+    oriented_box = entry.get(ORIENTED_BOX_COORDINATES)
+    if oriented_box is None:
+        return
+    corrected_obb: np.ndarray = cv.perspectiveTransform(
+        src=np.array([np.asarray(oriented_box)], dtype=np.float32),
+        m=perspective_transformer,
+    ).reshape(-1, 2)
+    entry[ORIENTED_BOX_COORDINATES] = np.around(corrected_obb).astype(np.float32)
+
+
 def _correct_native_detections(
     detections: Union[Detections, InstanceDetections],
     image: WorkflowImageData,
@@ -925,6 +945,9 @@ def _correct_native_detections(
         if is_instance_segmentation:
             dense_masks.append(corrected_mask)
         _correct_keypoints_in_metadata(
+            entry=entry, perspective_transformer=perspective_transformer
+        )
+        _correct_oriented_box_in_metadata(
             entry=entry, perspective_transformer=perspective_transformer
         )
         corrected_bboxes_metadata.append(entry)

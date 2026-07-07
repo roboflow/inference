@@ -14,7 +14,10 @@ producer. It differs from the SAM2 image block:
 The tensor-native surface is the IMAGE (CHW RGB tensor), the INPUT boxes
 (tensor-native prediction prompts), and the OUTPUT
 (inference_models.InstanceDetections with tracker ids), plus the RLE-by-default
-mask carriage. The layout-agnostic session/state helpers
+mask carriage (an execution-level choice driven by the
+WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION env variable — NOT a manifest field,
+so the manifest stays identical to the numpy sibling; GCP_SERVERLESS forces
+"rle"). The layout-agnostic session/state helpers
 (VideoSessionBookkeeping, decide_prompt_vs_track, build_obj_id_metadata_from_boxes,
 BoxPromptMetadata) are reused verbatim; only extract_box_prompts and
 masks_to_sv_detections get tensor-native equivalents here.
@@ -27,8 +30,13 @@ import numpy as np
 import torch
 from pydantic import ConfigDict, Field
 
-from inference.core.env import GCP_SERVERLESS, WORKFLOWS_IMAGE_TENSOR_DEVICE
+from inference.core.env import (
+    GCP_SERVERLESS,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION,
+)
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.tensor_native import (
     build_native_image_metadata,
@@ -79,6 +87,20 @@ from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 
 PromptMode = Literal["first_frame", "every_n_frames", "every_frame"]
 PREDICTION_TYPE = "instance-segmentation"
+
+
+def _resolve_mask_representation() -> str:
+    """Execution-level selection of the instance-mask carrier ("rle"/"dense").
+
+    Deliberately NOT a manifest field: the numpy sibling has no such knob and
+    manifests must stay identical across the flag swap. Driven by the
+    ``WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION`` env variable ("rle" default);
+    ``GCP_SERVERLESS`` forces the compact RLE carrier regardless.
+    """
+    if GCP_SERVERLESS:
+        return "rle"
+    return WORKFLOWS_SAM_VIDEO_MASK_REPRESENTATION
+
 
 SHORT_DESCRIPTION = (
     "Segment and track objects across video frames with SAM2's streaming "
@@ -166,11 +188,6 @@ class BlockManifest(WorkflowBlockManifest):
         description="Minimum confidence for emitted masks.",
         examples=[0.0],
     )
-    mask_representation: Literal["rle", "dense"] = Field(
-        default="rle",
-        description="Carrier for instance masks. RLE (compact) by default; forced to "
-        "'rle' on GCP_SERVERLESS regardless of this value.",
-    )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -215,18 +232,21 @@ class BlockManifest(WorkflowBlockManifest):
 class SegmentAnything2VideoBlockV1(WorkflowBlock):
     """Stateful SAM2 streaming video tracking block (tensor-native output)."""
 
+    _REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE = (
+        "SAM2 Video Tracker only supports LOCAL workflow step "
+        "execution.  Remote execution would ship each frame to a "
+        "separate process and break the per-video SAM2 session "
+        "that holds the temporal memory.  Set "
+        "WORKFLOWS_STEP_EXECUTION_MODE=local (or run on a "
+        "dedicated deployment) to use this block."
+    )
+
     def __init__(
         self,
         model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
-        if step_execution_mode is not StepExecutionMode.LOCAL:
-            raise NotImplementedError(
-                "SAM2 Video Tracker only supports LOCAL workflow step execution. "
-                "Remote execution would ship each frame to a separate process and "
-                "break the per-video SAM2 session that holds the temporal memory."
-            )
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
@@ -246,9 +266,11 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
         if self._model is None or self._current_model_id != model_id:
             from inference_models import AutoModel
 
+            extra_weights_provider_headers = get_extra_weights_provider_headers()
             self._model = AutoModel.from_pretrained(
                 model_id_or_path=model_id,
                 api_key=self._api_key,
+                weights_provider_extra_headers=extra_weights_provider_headers,
             )
             self._current_model_id = model_id
             self._sessions.clear()
@@ -262,10 +284,10 @@ class SegmentAnything2VideoBlockV1(WorkflowBlock):
         prompt_mode: PromptMode,
         prompt_interval: int,
         threshold: float,
-        mask_representation: Literal["rle", "dense"],
     ) -> BlockResult:
-        if GCP_SERVERLESS:
-            mask_representation = "rle"
+        if self._step_execution_mode is not StepExecutionMode.LOCAL:
+            raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
+        mask_representation = _resolve_mask_representation()
         model = self._get_model(model_id=model_id)
         boxes_iter = boxes if boxes is not None else [None] * len(images)
 
