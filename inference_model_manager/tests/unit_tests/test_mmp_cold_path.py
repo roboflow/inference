@@ -76,12 +76,20 @@ class TestAdmissionGate:
         decision, victims, deficit = asyncio.run(mmp._vram_admission_plan("m"))
         assert decision == "admit"
 
-    def test_admits_when_need_zero(self):
+    def test_need_zero_admits_when_headroom_satisfied(self):
+        mmp = _bare_mmp(_vram_headroom_mb=4096.0)
+        mmp._gpu_free_mb = lambda: 8192.0
+        mmp._vram_meta_cache["m"] = 0
+        decision, victims, deficit = asyncio.run(mmp._vram_admission_plan("m"))
+        assert decision == "admit"
+
+    def test_need_zero_still_enforces_headroom_floor(self):
         mmp = _bare_mmp(_vram_headroom_mb=4096.0)
         mmp._gpu_free_mb = lambda: 0.0
         mmp._vram_meta_cache["m"] = 0
         decision, victims, deficit = asyncio.run(mmp._vram_admission_plan("m"))
-        assert decision == "admit"
+        assert decision == "no_capacity"
+        assert deficit == pytest.approx(4096.0)
 
     def test_evict_returns_deficit(self):
         mmp = _bare_mmp()
