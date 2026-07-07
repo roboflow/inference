@@ -370,6 +370,22 @@ yet all in the PRs:
   pod names), a janitor for leaked non-Running working pods, and awareness that
   long-lived monitoring pods outlive Deployment rollouts (they drain via
   requeue, which the relay makes cheap).
+
+  **Documented successor: `pod-deletion-cost` annotations** (one plain
+  Deployment, all pods managed; workers annotate their pod with current load,
+  scale-in kills the emptiest). Wins vs label-detach: no orphans (no janitor,
+  no rebirth guard), PodDisruptionBudgets actually protect busy workers during
+  node drains, and cost-as-load gives the autoscaler a gradient that fits the
+  multi-stream fill/drain future far better than a binary ready/working label.
+  Why NOT yet: (a) rolling updates ignore deletion cost — every deploy would
+  rotate every months-long stream, whereas the ready-pool's rollouts only ever
+  touch idle pods; (b) cost is honored best-effort by spec; (c) the warm floor
+  becomes autoscaler arithmetic again instead of instant ReplicaSet refill.
+  **Decision trigger**: switch when stream re-placement is verifiably seamless
+  — i.e. requeue + relay reattach (done) PLUS externalized workflow-block state
+  (Pawel's EE work) make "deploy churns every stream" mean "a few seconds of
+  blur," not lost trackers. At that point the simpler managed-Deployment model
+  wins and the label-detach machinery can be retired.
 - **Dedicated Deployments converge with cells.** A DD (existing product: an
   inference server on a customer-dedicated GPU) gets extended to also run one or a
   pool of **separate, lean processor processes** on the same box — signaled via
