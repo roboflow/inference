@@ -117,8 +117,8 @@ class TestSubprocBackendPipeline:
         f2 = _submit_via_pool(shared_pool, subproc_backend, dog_image_numpy)
         r2 = f2.result(timeout=30)
         assert torch.allclose(
-            r1.confidence.cpu(),
-            r2.confidence.cpu(),
+            torch.as_tensor(r1.confidence),
+            torch.as_tensor(r2.confidence),
             atol=0.01,
         )
 
