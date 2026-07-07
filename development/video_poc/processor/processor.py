@@ -310,6 +310,16 @@ class JobRecorder:
                 json.dump(meta, f)
 
 
+# Which transport publishes the annotated output to the relay:
+#   rtsp — ffmpeg subprocess (proven, encode fully isolated from the pipeline)
+#   whip — in-process aiortc/WebRTC (real per-frame timestamps, PLI-driven
+#          keyframes, no RTSP layer — lower latency; watchdog-guarded)
+# Per-job override: claim payload's publisherTransport. The watchdog can
+# hot-swap whip→rtsp mid-job if inference latency degrades.
+PUBLISHER_TRANSPORT = os.getenv("VIDEO_PROC_PUBLISHER", "rtsp").strip().lower()
+WHIP_SIM_BASE = os.getenv("VIDEO_PROC_WHIP_BASE", "http://127.0.0.1:8889")
+
+
 class OutputPublisher:
     """Publishes one annotated image output to the relay as H.264 RTSP — but
     ONLY while the platform says someone is watching (the watch TTL rides the
@@ -322,6 +332,8 @@ class OutputPublisher:
     so WHEP viewers join fast. zerolatency/ultrafast keeps encoder buffering
     at zero frames.
     """
+
+    transport = "rtsp"
 
     def __init__(self, frames: FrameStore, publish_url: str):
         self.frames = frames
@@ -407,6 +419,149 @@ class OutputPublisher:
                 except Exception:
                     pass
             print("[processor] no viewers — stopped publishing to the relay")
+
+
+class AiortcWhipPublisher:
+    """OutputPublisher-compatible transport that encodes in-process (aiortc/PyAV)
+    and publishes to the relay over WHIP (WebRTC ingest).
+
+    Why it exists: real per-frame RTP timestamps (frames are stamped with their
+    actual arrival time, no CFR faking), keyframes on viewer demand (PLI from
+    the relay) instead of a fixed GOP, and no RTSP layer — measurably lower
+    glass-to-glass latency than the ffmpeg/RTSP transport.
+
+    v1 feeds from the serializer's JPEGs, decoded on THIS publisher's thread —
+    never the pipeline sink's. The raw-frame slot (skipping the JPEG round
+    trip entirely) is a later increment; it requires taking over result
+    serialization from InferencePipeline.
+
+    Risk containment lives OUTSIDE this class: the worker's watchdog hot-swaps
+    back to the ffmpeg/RTSP transport mid-job if inference latency degrades
+    while this publisher runs (in-process encode shares CPU/GIL with the
+    pipeline; the subprocess transport does not).
+    """
+
+    transport = "whip"
+
+    def __init__(self, frames: FrameStore, whip_url: str):
+        self.frames = frames
+        self.whip_url = whip_url
+        self.output = None
+        self._thread = None
+        self._stopped = threading.Event()
+        self._failed = False
+
+    def running(self):
+        return self._thread is not None and self._thread.is_alive() and not self._failed
+
+    def ensure(self, output: str):
+        if self.running() and output == self.output:
+            return
+        self.stop()
+        self.output = output
+        self._stopped.clear()
+        self._failed = False
+        self._thread = threading.Thread(target=self._run, args=(output,), daemon=True)
+        self._thread.start()
+
+    def _run(self, output):
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._publish(loop, output))
+        except Exception as exc:
+            print(f"[processor] whip publisher error: {exc}", file=sys.stderr)
+            self._failed = True
+        finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                pass
+            loop.close()
+
+    async def _publish(self, loop, output):
+        import asyncio
+        import fractions
+
+        import cv2
+        import numpy as np
+        from aiortc import RTCPeerConnection, RTCSessionDescription
+        from aiortc.mediastreams import MediaStreamError, MediaStreamTrack
+        from av import VideoFrame
+
+        frames = self.frames
+        stopped = self._stopped
+
+        class LatestFrameTrack(MediaStreamTrack):
+            kind = "video"
+
+            def __init__(self):
+                super().__init__()
+                self._seq = -1
+                self._t0 = None
+
+            async def recv(self):
+                # event-driven: block (off the event loop) until the pipeline
+                # produces a new frame, then stamp its actual arrival time
+                while True:
+                    if stopped.is_set():
+                        raise MediaStreamError
+                    jpeg, seq = await loop.run_in_executor(
+                        None, frames.wait_next, output, self._seq, 0.25
+                    )
+                    if jpeg is not None and seq != self._seq:
+                        self._seq = seq
+                        break
+                image = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                if image is None:
+                    raise MediaStreamError
+                # yuv420 conversion requires even dimensions
+                h, w = image.shape[:2]
+                if h % 2 or w % 2:
+                    image = image[: h - (h % 2), : w - (w % 2)]
+                frame = VideoFrame.from_ndarray(image, format="bgr24")
+                now = time.monotonic()
+                if self._t0 is None:
+                    self._t0 = now
+                frame.pts = int((now - self._t0) * 90000)
+                frame.time_base = fractions.Fraction(1, 90000)
+                return frame
+
+        pc = RTCPeerConnection()
+        pc.addTrack(LatestFrameTrack())
+        offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
+        while pc.iceGatheringState != "complete":
+            await asyncio.sleep(0.05)
+
+        # WHIP is just "POST the offer SDP, apply the answer"
+        resp = await loop.run_in_executor(
+            None,
+            lambda: requests.post(
+                self.whip_url,
+                data=pc.localDescription.sdp,
+                headers={"Content-Type": "application/sdp"},
+                timeout=10,
+            ),
+        )
+        resp.raise_for_status()
+        await pc.setRemoteDescription(RTCSessionDescription(sdp=resp.text, type="answer"))
+        print(f"[processor] viewer attached — publishing '{output}' via WHIP (in-process)")
+
+        try:
+            while not stopped.is_set() and pc.connectionState not in ("failed", "closed"):
+                await asyncio.sleep(0.5)
+        finally:
+            await pc.close()
+            print("[processor] whip publisher stopped")
+
+    def stop(self):
+        self._stopped.set()
+        thread, self._thread = self._thread, None
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=5)
 
 
 K8S_SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
@@ -542,6 +697,10 @@ class Worker:
         self.sim_process = None
         self.recorder = None
         self.publisher = None
+        # watchdog state for the in-process (whip) publisher transport
+        self._publisher_degraded = False
+        self._publish_baseline_ms = None
+        self._latency_strikes = 0
         self.job = None
         self.state = "idle"
         self.image_output = None
@@ -939,6 +1098,9 @@ class Worker:
                 return None
             self.had_job = True
             self.cancelling = False
+            self._publisher_degraded = False
+            self._publish_baseline_ms = None
+            self._latency_strikes = 0
             # leave the ready pool BEFORE the (slow) pipeline start so the
             # replacement worker is already warming while we work
             self.pod.detach_from_pool(job.get("id"))
@@ -951,23 +1113,82 @@ class Worker:
             threading.Thread(target=self.run_job, args=(job,), daemon=True).start()
             return job
 
+    def _select_transport(self, job):
+        if self._publisher_degraded:
+            return "rtsp"
+        transport = (job.get("publisherTransport") or PUBLISHER_TRANSPORT).lower()
+        if transport == "whip":
+            try:
+                import aiortc  # noqa: F401
+            except ImportError:
+                print(
+                    "[processor] aiortc not installed; using rtsp publisher",
+                    file=sys.stderr,
+                )
+                return "rtsp"
+        return transport if transport in ("whip", "rtsp") else "rtsp"
+
+    def _make_publisher(self, job, transport):
+        job_id = job.get("id", "local")
+        if transport == "whip":
+            whip_url = job.get("outWhipUrl") or f"{WHIP_SIM_BASE}/out-{job_id}/whip"
+            return AiortcWhipPublisher(self.frames, whip_url)
+        publish_url = job.get("outPublishUrl") or f"{RTSP_SIM_BASE}/out-{job_id}"
+        return OutputPublisher(self.frames, publish_url)
+
     def _handle_watch(self, watch, job):
         """React to the watch signal riding the status-poll response: publish
         the annotated output to the relay while someone is watching, stop when
-        the TTL lapses. The viewer can switch outputs mid-stream."""
+        the TTL lapses. The viewer can switch outputs mid-stream, and the
+        transport itself can hot-swap (config change or watchdog) — viewers
+        just see a ~1s reconnect through the same relay stream."""
         if self.state != "running":
             return
         if watch.get("requested"):
-            publish_url = job.get("outPublishUrl") or f"{RTSP_SIM_BASE}/out-{job.get('id', 'local')}"
             output = watch.get("output") or self.image_output
             if output is None:
                 return  # no image output produced (JSON-only workflow)
+            transport = self._select_transport(job)
+            if self.publisher is not None and self.publisher.transport != transport:
+                old, self.publisher = self.publisher, None
+                old.stop()
             if self.publisher is None:
-                self.publisher = OutputPublisher(self.frames, publish_url)
+                # baseline BEFORE encoding starts: the watchdog compares
+                # against unwatched inference latency
+                self._publish_baseline_ms = self.stats.snapshot().get("decodeToResultLatencyMs")
+                self._latency_strikes = 0
+                self.publisher = self._make_publisher(job, transport)
             self.publisher.ensure(output)
+            self._publisher_watchdog()
         elif self.publisher is not None:
             publisher, self.publisher = self.publisher, None
             publisher.stop()
+
+    def _publisher_watchdog(self):
+        """The invariant: customer inference latency beats preview transport.
+        If the in-process (whip) publisher measurably degrades decode→result
+        latency, hot-swap to the subprocess rtsp transport mid-job — viewers
+        reconnect within ~1s, the pipeline never notices."""
+        if self.publisher is None or self.publisher.transport != "whip":
+            return
+        baseline = self._publish_baseline_ms
+        current = self.stats.snapshot().get("decodeToResultLatencyMs")
+        if not baseline or not current:
+            return
+        if current > max(baseline * 1.8, baseline + 40):
+            self._latency_strikes += 1
+        else:
+            self._latency_strikes = 0
+        if self._latency_strikes >= 3:
+            print(
+                f"[processor] whip publisher degrading inference latency "
+                f"({baseline:.0f}ms → {current:.0f}ms); hot-swapping to rtsp",
+                file=sys.stderr,
+            )
+            self._publisher_degraded = True
+            old, self.publisher = self.publisher, None
+            old.stop()
+            # the next watch tick recreates the publisher on rtsp
 
     def retire_if_pool_mode(self):
         """Single-use workers: once a job ends (completed, cancelled, or failed),

@@ -8,7 +8,7 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir google-cloud-pubsub requests
+RUN pip install --no-cache-dir google-cloud-pubsub requests aiortc
 
 WORKDIR /app
 COPY processor.py /app/processor.py
