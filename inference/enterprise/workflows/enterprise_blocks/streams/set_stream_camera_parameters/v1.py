@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -112,6 +112,15 @@ class SetStreamCameraParametersBlockManifest(WorkflowBlockManifest):
         description="Reference to the upstream step output.",
         examples=["$inputs.image", "$steps.plc_read.output"],
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_register_field(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            register_key = data.get("register_key")
+            if register_key and not data.get("register"):
+                data = {**data, "register": register_key}
+        return data
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

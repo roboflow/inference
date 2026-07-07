@@ -41,6 +41,19 @@ class TestSetStreamCameraParametersBlockManifest:
         assert manifest.only_if_changed is True
         assert manifest.persist is False
 
+    def test_manifest_accepts_register_key_alias(self):
+        raw = {
+            "type": "roboflow_enterprise/set_stream_camera_parameters@v1",
+            "name": "camera_params",
+            "value": "$inputs.focus_value",
+            "register_key": "exposure_time",
+            "camera_family": "ai1",
+            "stream_name": "aione",
+            "depends_on": "$inputs.image",
+        }
+        manifest = SetStreamCameraParametersBlockManifest.model_validate(raw)
+        assert manifest.register == "exposure_time"
+
 
 class TestRegisterCatalog:
 
