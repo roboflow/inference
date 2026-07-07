@@ -402,6 +402,16 @@ def load_image_from_url(
     Returns:
         Image.Image: The loaded PIL image.
     """
+    data = fetch_image_bytes_from_url(value=value)
+    return load_image_from_encoded_bytes(value=data, cv_imread_flags=cv_imread_flags)
+
+
+def fetch_image_bytes_from_url(value: str) -> bytes:
+    """Fetches raw (still-encoded) image bytes from a URL.
+
+    Applies the same URL-input guards as ``load_image_from_url`` but returns
+    the response body without decoding pixels.
+    """
     _ensure_url_input_allowed()
     prepared_url = _validate_url_destination(value=value)
     try:
@@ -473,11 +483,15 @@ def _fetch_image_bytes_from_url(prepared_url: str) -> bytes:
             max_redirects=MAX_IMAGE_URL_REDIRECTS,
             validate_redirect=_validate_url_destination,
         )
-    return fetch_url_content_legacy(
-        url=prepared_url,
-        allow_non_global_addresses=ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
-        max_redirects=MAX_IMAGE_URL_REDIRECTS,
-    )
+    try:
+        response = requests.get(prepared_url, stream=True)
+        api_key_safe_raise_for_status(response=response)
+        return response.content
+    except (RequestException, ConnectionError) as error:
+        raise InputImageLoadError(
+            message=f"Could not load image from url: {prepared_url}. Details: {error}",
+            public_message="Data pointed by URL could not be decoded into image.",
+        )
 
 
 def _ensure_url_input_allowed() -> None:

@@ -8,6 +8,7 @@ import pytest
 
 from inference_model_manager.backends.utils.image_headers import (
     _OVERSIZED,
+    image_dims,
     image_pixels,
 )
 
@@ -35,6 +36,15 @@ def test_full_bytes_yield_dims_without_decode():
 def test_unknown_bytes_return_none():
     # Unparseable → None so the gate never false-rejects.
     assert image_pixels(b"\x00\x01\x02\x03not-an-image") is None
+
+
+@pytest.mark.parametrize("fmt", ["JPEG", "PNG", "WEBP"])
+def test_dims_from_header(fmt):
+    assert image_dims(_encode(320, 240, fmt)) == (320, 240)
+
+
+def test_dims_unknown_bytes_return_none():
+    assert image_dims(b"\x00\x01\x02\x03not-an-image") is None
 
 
 def test_bomb_returns_sentinel_not_none_and_no_global_mutation():
