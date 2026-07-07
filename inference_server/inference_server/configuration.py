@@ -43,6 +43,12 @@ INFER_STREAM_UPLOAD_TIMEOUT_S = get_float_from_env(
     "INFERENCE_STREAM_UPLOAD_TIMEOUT_S", default=5.0
 )
 
+# Hard ceiling on a single request body for the v2 dispatch path; enforced
+# both from Content-Length and while streaming (chunked uploads have none).
+MAX_BODY_BYTES = get_integer_from_env(
+    "INFERENCE_MAX_BODY_BYTES", default=100 * 1024 * 1024
+)
+
 # ── MMP connection (state.init_from_env, re-read per worker) ──────────────
 INFERENCE_MMP_ADDR_ENV = "INFERENCE_MMP_ADDR"
 INFERENCE_SHM_NAME_ENV = "INFERENCE_SHM_NAME"

@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import Request, Response
 from starlette.requests import ClientDisconnect
 
+from inference_server import configuration
 from inference_server.auth import extract_bearer
 from inference_server.errors import (
     PayloadTooLargeError,
@@ -111,6 +112,24 @@ def _coerce_param(raw: str, type_name: str) -> Any:
     raise ValueError(f"unknown type {type_name!r}")
 
 
+def _cap_request_body(request: Request, max_bytes: int) -> Request:
+    inner = request.receive
+    total = 0
+
+    async def receive():
+        nonlocal total
+        message = await inner()
+        if message["type"] == "http.request":
+            total += len(message.get("body", b""))
+            if total > max_bytes:
+                raise PayloadTooLargeError(
+                    f"request body exceeds {max_bytes} byte limit"
+                )
+        return message
+
+    return Request(request.scope, receive)
+
+
 async def handle_model_inference_request(
     request: Request, proxy: ModelManagerProxy
 ) -> Response | None:
@@ -121,6 +140,16 @@ async def handle_model_inference_request(
         return error_response(
             400, "INVALID_PARAM", "response_style must be 'compact' or 'rich'"
         )
+
+    max_body = configuration.MAX_BODY_BYTES
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit() and int(content_length) > max_body:
+        return error_response(
+            413,
+            "PAYLOAD_TOO_LARGE",
+            f"request body exceeds {max_body} byte limit",
+        )
+    request = _cap_request_body(request, max_body)
 
     try:
         model_type, action_default = await stat_model_while_checking_auth(common)
@@ -156,6 +185,8 @@ async def handle_model_inference_request(
         input_data = await description.input_parser(request, common)
     except InputParseError as exc:
         return exc.response
+    except PayloadTooLargeError as exc:
+        return error_response(413, "PAYLOAD_TOO_LARGE", str(exc))
     except ClientDisconnect:
         logger.debug("[dispatch] client disconnected during body read")
         return Response(status_code=499)
