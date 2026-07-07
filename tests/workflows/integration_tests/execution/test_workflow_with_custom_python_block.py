@@ -1509,3 +1509,142 @@ def test_workflow_with_tensor_native_custom_block_receiving_native_predictions(
     assert {"x", "y", "width", "height", "confidence", "class", "detection_id"} <= set(
         serialized[0].keys()
     )
+
+
+FUNCTION_PASSING_PREDICTIONS_THROUGH = """
+def run(self, predictions) -> BlockResult:
+    return {"passthrough": predictions}
+"""
+
+WORKFLOW_WITH_WILDCARD_PREDICTIONS_OUTPUT = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "WildcardPassthrough",
+                "inputs": {
+                    "predictions": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                    },
+                },
+                "outputs": {
+                    "passthrough": {"type": "DynamicOutputDefinition", "kind": []}
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_PASSING_PREDICTIONS_THROUGH,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "WildcardPassthrough",
+            "name": "passer",
+            "predictions": "$steps.model.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "forwarded",
+            "selector": "$steps.passer.passthrough",
+        },
+    ],
+}
+
+
+def test_workflow_with_custom_python_block_wildcard_predictions_output_serialization(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Step-6 closure: predictions routed through a custom block's WILDCARD
+    output must serialize to the standard predictions dict at workflow outputs.
+    Flag-on: the OUT boundary converts the returned sv to native and the
+    flag-swapped tensor `serialize_wildcard_kind` emits the standard dict;
+    flag-off: the numpy wildcard sv arm does — identical assertions in both
+    directions are the parity statement."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_WILDCARD_PREDICTIONS_OUTPUT,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [dogs_image]},
+        serialize_results=True,
+    )
+
+    # then
+    assert isinstance(result, list) and len(result) == 1
+    forwarded = result[0]["forwarded"]
+    assert isinstance(forwarded, dict), "Wildcard output must serialize to a dict"
+    serialized = forwarded["predictions"]
+    assert len(serialized) == 2, "Expected the two dogs the model detects"
+    assert {prediction["class"] for prediction in serialized} == {"dog"}
+    assert {
+        "x",
+        "y",
+        "width",
+        "height",
+        "confidence",
+        "class",
+        "class_id",
+        "detection_id",
+    } <= set(serialized[0].keys())
+
+
+def test_workflow_with_custom_python_block_bare_tensor_wildcard_output_serialization(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """Step-6 closure of the gap the engine-level bare-tensor test left open:
+    with serialize_results=True, a bare torch.Tensor through a wildcard output
+    now serializes to the JSON-safe nested list under the flag (the tensor
+    wildcard serialiser mirrors the `tensor` kind) instead of crashing HTTP
+    encoding. Flag-off keeps the numpy wildcard contract verbatim: raw
+    passthrough (pre-existing behavior, deliberately unchanged)."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BARE_TENSOR_WILDCARD_OUTPUT,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [dogs_image]},
+        serialize_results=True,
+    )
+
+    # then
+    import torch
+
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        assert result[0]["weird"] == [0.0, 0.0, 0.0]
+    else:
+        assert isinstance(result[0]["weird"], torch.Tensor)

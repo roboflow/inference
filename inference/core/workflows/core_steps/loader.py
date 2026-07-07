@@ -211,7 +211,6 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialize_secret,
     serialize_timestamp,
     serialize_video_metadata_kind,
-    serialize_wildcard_kind,
 )
 from inference.core.workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_KIND,
@@ -238,6 +237,7 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
         serialise_native_tensor,
         serialise_rle_sv_detections,
         serialise_sv_detections,
+        serialize_wildcard_kind,
     )
 else:
     from inference.core.workflows.core_steps.common.deserializers import (
@@ -248,6 +248,7 @@ else:
     from inference.core.workflows.core_steps.common.serializers import (
         serialise_rle_sv_detections,
         serialise_sv_detections,
+        serialize_wildcard_kind,
     )
 
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
@@ -1458,6 +1459,11 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
     # Tensor-native embedding/tensor kinds serialise to plain Python lists.
     KINDS_SERIALIZERS[EMBEDDING_KIND.name] = serialise_native_embedding
     KINDS_SERIALIZERS[TENSOR_KIND.name] = serialise_native_tensor
+    # NOTE: the wildcard (`*`) serialiser needs no override here — it is handled
+    # by the same-name symbol swap above (serializers_tensor.serialize_wildcard_kind
+    # adds native arms so wildcard outputs of legacy-mode dynamic blocks and any
+    # native value routed to a `*` output serialise to the standard dicts instead
+    # of crashing HTTP JSON encoding — the custom-python knob plan, Step 6).
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,

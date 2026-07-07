@@ -1,12 +1,19 @@
+from datetime import datetime
 from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
+import supervision as sv
 import torch
 
 from inference.core.workflows.core_steps.common.serializers import (
     _attach_parent_metadata_to_detection_dict,
     mask_to_polygon,
+    serialise_image,
 )
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_sv_detections as _serialise_legacy_sv_detections,
+)
+from inference.core.workflows.core_steps.common.serializers import serialize_timestamp
 from inference.core.workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_INFERENCE_RESPONSE,
     AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
@@ -64,6 +71,7 @@ from inference.core.workflows.execution_engine.constants import (
     X_KEY,
     Y_KEY,
 )
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference_models.models.base.classification import (
     ClassificationPrediction,
     MultiLabelClassificationPrediction,
@@ -530,3 +538,54 @@ def serialise_native_tensor(value: torch.Tensor) -> list:
     raw model tensors). The native value is a (possibly CUDA/MPS) ``torch.Tensor``;
     emit a JSON-serialisable nested list."""
     return value.detach().cpu().tolist()
+
+
+def serialize_wildcard_kind(value: Any) -> Any:
+    """Tensor-aware wildcard (`*`) serialiser — same public name as the numpy
+    sibling in ``serializers.py``; the loader swaps the symbol under
+    ``ENABLE_TENSOR_DATA_REPRESENTATION``.
+
+    Extends the numpy contract with arms for the native tensor-path values that
+    can legitimately reach a wildcard output — native detections, the
+    ``(KeyPoints, Detections)`` keypoint tuple, classification predictions
+    (e.g. wildcard outputs of ``legacy_compatibility`` dynamic blocks after
+    boundary conversion) and bare ``torch.Tensor`` values (serialised exactly
+    like the ``tensor`` kind). Legacy values keep the numpy behavior verbatim,
+    including the ``sv.Detections`` arm (defensive: non-swapped paths can still
+    route sv under the flag) — routed to the NUMPY detections serialiser, since
+    this module's same-name ``serialise_sv_detections`` consumes native objects.
+    Tuples other than the keypoint prediction pass through untouched, mirroring
+    the numpy contract.
+    """
+    if isinstance(value, WorkflowImageData):
+        return serialise_image(image=value)
+    if isinstance(value, (Detections, InstanceDetections)):
+        return serialise_sv_detections(value)
+    if _is_native_key_point_prediction(value):
+        # A (KeyPoints, None) tuple raises inside the kind serialiser — same
+        # loud behavior as a declared keypoint output missing its bbox component.
+        return serialise_native_keypoint_detection(prediction=value)
+    if isinstance(
+        value, (ClassificationPrediction, MultiLabelClassificationPrediction)
+    ):
+        return serialise_native_classification(prediction=value)
+    if isinstance(value, torch.Tensor):
+        return serialise_native_tensor(value=value)
+    if isinstance(value, dict):
+        return {key: serialize_wildcard_kind(value=item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [serialize_wildcard_kind(value=element) for element in value]
+    if isinstance(value, sv.Detections):
+        return _serialise_legacy_sv_detections(detections=value)
+    if isinstance(value, datetime):
+        return serialize_timestamp(timestamp=value)
+    return value
+
+
+def _is_native_key_point_prediction(value: Any) -> bool:
+    return (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], KeyPoints)
+        and (value[1] is None or isinstance(value[1], (Detections, InstanceDetections)))
+    )

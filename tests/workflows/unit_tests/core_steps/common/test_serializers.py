@@ -1271,3 +1271,177 @@ def test_serialise_native_classification_key_ordering_matches_numpy_path() -> No
         "root_parent_id",
     ]
     assert multi_label_timed_result["time"] == 0.0123
+
+
+def test_tensor_wildcard_serializer_dispatches_native_values_like_kind_serializers() -> (
+    None
+):
+    # given
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference_models.models.base.classification import ClassificationPrediction
+    from inference_models.models.base.instance_segmentation import InstanceDetections
+    from inference_models.models.base.keypoints_detection import KeyPoints
+    from inference_models.models.base.object_detection import Detections
+    from inference_models.models.base.types import InstancesRLEMasks
+    from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
+
+    od = Detections(
+        xyxy=torch.tensor([[10.0, 20.0, 30.0, 40.0]]),
+        class_id=torch.tensor([1]),
+        confidence=torch.tensor([0.5]),
+        image_metadata={"class_names": {1: "dog"}, "image_dimensions": [100, 200]},
+        bboxes_metadata=[{"detection_id": "det-1"}],
+    )
+    dense_mask = torch.zeros((1, 15, 15), dtype=torch.bool)
+    dense_mask[0, 2:6, 3:9] = True
+    instance_dense = InstanceDetections(
+        xyxy=torch.tensor([[3.0, 2.0, 9.0, 6.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9]),
+        mask=dense_mask,
+        image_metadata={"class_names": {0: "cat"}, "image_dimensions": [15, 15]},
+        bboxes_metadata=[{"detection_id": "det-2"}],
+    )
+    rle = torch_mask_to_coco_rle(dense_mask[0])
+    instance_rle = InstanceDetections(
+        xyxy=torch.tensor([[3.0, 2.0, 9.0, 6.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9]),
+        mask=InstancesRLEMasks(image_size=(15, 15), masks=[rle["counts"]]),
+        image_metadata={"class_names": {0: "cat"}, "image_dimensions": [15, 15]},
+        bboxes_metadata=[{"detection_id": "det-3"}],
+    )
+    key_points = KeyPoints(
+        xy=torch.tensor([[[11.0, 11.0], [12.0, 13.0]]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([[0.9, 0.8]]),
+    )
+    kp_tuple = (key_points, od)
+    classification = ClassificationPrediction(
+        class_id=torch.tensor([1]),
+        confidence=torch.tensor([[0.25, 0.5]], dtype=torch.float32),
+        images_metadata=[
+            {
+                "class_names": {0: "cat", 1: "dog"},
+                "prediction_type": "classification",
+                "image_dimensions": [480, 640],
+                "inference_id": "iid",
+            }
+        ],
+    )
+    bare_tensor = torch.tensor([[0.25, 0.5], [0.75, 1.0]])
+
+    # when
+    result = serializers_tensor.serialize_wildcard_kind(
+        value={
+            "od": od,
+            "nested": [instance_dense, {"deeper": instance_rle}],
+            "kp": kp_tuple,
+            "cls": classification,
+            "tensor": bare_tensor,
+            "untouched": "text",
+            "number": 42,
+            "none": None,
+            "plain_tuple": (1, 2),
+        }
+    )
+
+    # then - every native arm must equal its kind serialiser's output
+    assert result["od"] == serializers_tensor.serialise_sv_detections(od)
+    assert result["nested"][0] == serializers_tensor.serialise_sv_detections(
+        instance_dense
+    )
+    assert result["nested"][1]["deeper"] == serializers_tensor.serialise_sv_detections(
+        instance_rle
+    )
+    assert result["kp"] == serializers_tensor.serialise_native_keypoint_detection(
+        prediction=kp_tuple
+    )
+    assert result["cls"] == serializers_tensor.serialise_native_classification(
+        prediction=classification
+    )
+    assert result["tensor"] == [[0.25, 0.5], [0.75, 1.0]]
+    assert result["untouched"] == "text"
+    assert result["number"] == 42
+    assert result["none"] is None
+    assert result["plain_tuple"] == (1, 2), "non-KP tuples pass through like numpy"
+
+
+def test_tensor_wildcard_serializer_matches_numpy_wildcard_for_equivalent_prediction() -> (
+    None
+):
+    # given - the same logical OD prediction as sv (numpy path) and native (tensor path)
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference_models.models.base.object_detection import Detections
+
+    sv_detections = sv.Detections(
+        xyxy=np.array([[10.0, 20.0, 30.0, 40.0]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.5], dtype=np.float64),
+        data={
+            "class_name": np.array(["dog"]),
+            "detection_id": np.array(["det-1"]),
+            "image_dimensions": np.array([[100, 200]]),
+        },
+    )
+    native_detections = Detections(
+        xyxy=torch.tensor([[10.0, 20.0, 30.0, 40.0]]),
+        class_id=torch.tensor([1]),
+        confidence=torch.tensor([0.5]),
+        image_metadata={"class_names": {1: "dog"}, "image_dimensions": [100, 200]},
+        bboxes_metadata=[{"detection_id": "det-1"}],
+    )
+
+    # when
+    numpy_result = serialize_wildcard_kind(value={"predictions": sv_detections})
+    tensor_result = serializers_tensor.serialize_wildcard_kind(
+        value={"predictions": native_detections}
+    )
+
+    # then
+    assert numpy_result == tensor_result
+
+
+def test_tensor_wildcard_serializer_keeps_numpy_behavior_for_legacy_values() -> None:
+    # given - sv.Detections + datetime + image reaching the tensor wildcard
+    pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.common import serializers_tensor
+    from inference.core.workflows.execution_engine.entities.base import VideoMetadata
+
+    sv_detections = sv.Detections(
+        xyxy=np.array([[10.0, 20.0, 30.0, 40.0]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.5], dtype=np.float64),
+        data={
+            "class_name": np.array(["dog"]),
+            "detection_id": np.array(["det-1"]),
+        },
+    )
+    timestamp = datetime.now()
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin"),
+        numpy_image=np.zeros((10, 10, 3), dtype=np.uint8),
+        # explicit metadata: without it, serialisation mints frame_timestamp
+        # per call, breaking the two-call comparison below
+        video_metadata=VideoMetadata(
+            video_identifier="vid",
+            frame_number=0,
+            frame_timestamp=timestamp,
+        ),
+    )
+
+    # when
+    result = serializers_tensor.serialize_wildcard_kind(
+        value={"sv": sv_detections, "ts": timestamp, "img": image}
+    )
+
+    # then - byte-for-byte the numpy wildcard behavior for legacy values
+    expected = serialize_wildcard_kind(
+        value={"sv": sv_detections, "ts": timestamp, "img": image}
+    )
+    assert result == expected
