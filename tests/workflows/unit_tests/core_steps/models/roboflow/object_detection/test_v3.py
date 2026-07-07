@@ -6,6 +6,9 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.remote_stream_pipeline import (
+    make_prediction_future,
+)
 from inference.core.workflows.core_steps.models.roboflow.object_detection import (
     v3 as object_detection_v3,
 )
@@ -51,15 +54,13 @@ def _patch_remote_http_client(monkeypatch) -> MagicMock:
 
 
 def _stub_post_process(block: RoboflowObjectDetectionModelBlockV3) -> None:
-    block._post_process_result = (
-        lambda images, predictions, class_filter, model_id: [
-            {
-                "inference_id": None,
-                "predictions": f"post-processed-{images[0].base64_image}",
-                "model_id": model_id,
-            }
-        ]
-    )
+    block._post_process_result = lambda images, predictions, class_filter, model_id: [
+        {
+            "inference_id": None,
+            "predictions": f"post-processed-{images[0].base64_image}",
+            "model_id": model_id,
+        }
+    ]
 
 
 def _run_remotely(
@@ -274,7 +275,7 @@ def test_object_detection_pipelined_run_remotely_returns_prediction_futures(
     assert result[0]["model_id"] == "workspace/model/1"
     assert isinstance(result[0]["predictions"], Future)
     assert result[0]["predictions"].result(timeout=5) == "post-processed-a"
-    assert len(block._pending_remote_prediction_contexts) == 1
+    assert block._remote_pipeline.pending_requests == 1
 
     flushed = block.flush_stream_pipeline_outputs()
     assert flushed == [
@@ -293,7 +294,7 @@ def test_object_detection_pipelined_run_remotely_returns_prediction_futures(
     assert block.flush_stream_pipeline_outputs() == []
 
     block.close_stream_pipeline()
-    assert block._remote_request_executor is None
+    assert block._remote_pipeline is None
 
 
 def test_object_detection_pipelined_run_remotely_flushes_contexts_in_fifo_order(
@@ -314,7 +315,7 @@ def test_object_detection_pipelined_run_remotely_flushes_contexts_in_fifo_order(
     # then
     assert first[0]["predictions"].result(timeout=5) == "post-processed-a"
     assert second[0]["predictions"].result(timeout=5) == "post-processed-b"
-    assert len(block._pending_remote_prediction_contexts) == 2
+    assert block._remote_pipeline.pending_requests == 2
 
     first_flush = block.flush_stream_pipeline_outputs()
     second_flush = block.flush_stream_pipeline_outputs()
@@ -349,21 +350,18 @@ def test_object_detection_non_pipelined_run_remotely_executes_synchronously(
         }
     ]
     mock_client.infer.assert_called_once()
-    assert len(block._pending_remote_prediction_contexts) == 0
-    assert block._remote_request_executor is None
+    assert block._remote_pipeline is None
 
 
 def test_make_prediction_future_resolves_to_indexed_predictions() -> None:
     # given
     result_future: Future = Future()
-    prediction_future = object_detection_v3._make_prediction_future(
+    prediction_future = make_prediction_future(
         result_future=result_future, image_index=1
     )
 
     # when
-    result_future.set_result(
-        [{"predictions": "first"}, {"predictions": "second"}]
-    )
+    result_future.set_result([{"predictions": "first"}, {"predictions": "second"}])
 
     # then
     assert prediction_future.result(timeout=5) == "second"
@@ -372,7 +370,7 @@ def test_make_prediction_future_resolves_to_indexed_predictions() -> None:
 def test_make_prediction_future_propagates_exception() -> None:
     # given
     result_future: Future = Future()
-    prediction_future = object_detection_v3._make_prediction_future(
+    prediction_future = make_prediction_future(
         result_future=result_future, image_index=0
     )
 

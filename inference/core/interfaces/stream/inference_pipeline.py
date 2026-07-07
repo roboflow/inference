@@ -1192,13 +1192,13 @@ def _workflows_remote_stream_pipeline_enabled() -> bool:
     if os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "local") != "remote":
         return False
     try:
-        depth = int(
-            os.getenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "1").strip()
-        )
+        depth = int(os.getenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "1").strip())
     except ValueError:
         return False
     return depth > 1
 
 
 def _stream_pipeline_dispatch_enabled() -> bool:
-    return _rfdetr_stream_pipeline_enabled() or _workflows_remote_stream_pipeline_enabled()
+    return (
+        _rfdetr_stream_pipeline_enabled() or _workflows_remote_stream_pipeline_enabled()
+    )

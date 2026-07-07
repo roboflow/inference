@@ -258,9 +258,7 @@ def _stream_pipeline_steps(
     for step_name, initialised_step in steps.items():
         step_instance = getattr(initialised_step, "step", None)
         if _is_stream_pipeline_step(step_instance=step_instance):
-            stream_steps.append(
-                _StreamPipelineStep(step=step_instance, name=step_name)
-            )
+            stream_steps.append(_StreamPipelineStep(step=step_instance, name=step_name))
     return stream_steps
 
 

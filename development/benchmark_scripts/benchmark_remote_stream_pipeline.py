@@ -261,8 +261,7 @@ def run_scenario(args: argparse.Namespace, depth: int) -> Dict[str, Any]:
             len(emission["tracker_ids"]) for emission in emissions
         ),
         "tracker_ids_per_frame": {
-            str(emission["frame_id"]): emission["tracker_ids"]
-            for emission in emissions
+            str(emission["frame_id"]): emission["tracker_ids"] for emission in emissions
         },
     }
 

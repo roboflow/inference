@@ -1,8 +1,5 @@
-import weakref
-from collections import deque
-from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
-from typing import Deque, List, Literal, Optional, Tuple, Type, Union
+from functools import partial
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 
@@ -10,7 +7,6 @@ from inference.core.entities.requests.inference import ObjectDetectionInferenceR
 from inference.core.env import (
     HOSTED_DETECT_URL,
     LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -18,6 +14,10 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.remote_stream_pipeline import (
+    RemoteStreamPipeline,
+    make_prediction_future,
+)
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
@@ -199,12 +199,6 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-@dataclass(frozen=True)
-class _RemotePredictionContext:
-    images: Batch[WorkflowImageData]
-    result_future: Future
-
-
 class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
 
     def __init__(
@@ -216,11 +210,7 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
-        self._remote_request_executor: Optional[ThreadPoolExecutor] = None
-        self._remote_request_executor_finalizer = None
-        self._pending_remote_prediction_contexts: Deque[_RemotePredictionContext] = (
-            deque()
-        )
+        self._remote_pipeline: Optional[RemoteStreamPipeline] = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -385,27 +375,27 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
-        result_future = self._get_remote_request_executor().submit(
-            self._execute_remote_inference,
+        result_future = self._get_remote_pipeline().submit_request(
+            task=partial(
+                self._execute_remote_inference,
+                images=images,
+                model_id=model_id,
+                api_url=api_url,
+                class_agnostic_nms=class_agnostic_nms,
+                class_filter=class_filter,
+                confidence=confidence,
+                iou_threshold=iou_threshold,
+                max_detections=max_detections,
+                max_candidates=max_candidates,
+                disable_active_learning=disable_active_learning,
+                active_learning_target_dataset=active_learning_target_dataset,
+            ),
             images=images,
-            model_id=model_id,
-            api_url=api_url,
-            class_agnostic_nms=class_agnostic_nms,
-            class_filter=class_filter,
-            confidence=confidence,
-            iou_threshold=iou_threshold,
-            max_detections=max_detections,
-            max_candidates=max_candidates,
-            disable_active_learning=disable_active_learning,
-            active_learning_target_dataset=active_learning_target_dataset,
-        )
-        self._pending_remote_prediction_contexts.append(
-            _RemotePredictionContext(images=images, result_future=result_future)
         )
         return [
             {
                 "inference_id": None,
-                "predictions": _make_prediction_future(
+                "predictions": make_prediction_future(
                     result_future=result_future,
                     image_index=image_index,
                 ),
@@ -482,46 +472,30 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
     def flush_stream_pipeline_outputs(
         self,
     ) -> List[Tuple[List[Tuple[int, ...]], BlockResult]]:
-        # Pops a single pending context per call so the stream dispatcher can
-        # emit frames one at a time, in order, as their remote results land.
-        if not self._pending_remote_prediction_contexts:
+        if self._remote_pipeline is None:
             return []
-        context = self._pending_remote_prediction_contexts.popleft()
-        outputs = context.result_future.result(
-            timeout=WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT
-        )
-        return [(_remote_context_indices(images=context.images), outputs)]
+        return self._remote_pipeline.flush_oldest()
 
     def flush_stream_pipeline(self) -> List[BlockResult]:
         return [outputs for _, outputs in self.flush_stream_pipeline_outputs()]
 
     def close_stream_pipeline(self) -> None:
-        self._pending_remote_prediction_contexts.clear()
-        if self._remote_request_executor is None:
+        if self._remote_pipeline is None:
             return None
-        finalizer = self._remote_request_executor_finalizer
-        if finalizer is not None and finalizer.alive:
-            finalizer.detach()
-        self._remote_request_executor.shutdown(wait=False)
-        self._remote_request_executor = None
-        self._remote_request_executor_finalizer = None
+        self._remote_pipeline.close()
+        self._remote_pipeline = None
 
     def _remote_stream_pipelining_applicable(
         self, images: Batch[WorkflowImageData]
     ) -> bool:
         return self.stream_pipeline_depth() > 0 and len(images) == 1
 
-    def _get_remote_request_executor(self) -> ThreadPoolExecutor:
-        if self._remote_request_executor is None:
-            executor = ThreadPoolExecutor(
-                max_workers=max(1, WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH),
-                thread_name_prefix="workflows_remote_stream_pipeline",
+    def _get_remote_pipeline(self) -> RemoteStreamPipeline:
+        if self._remote_pipeline is None:
+            self._remote_pipeline = RemoteStreamPipeline(
+                max_in_flight_requests=WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH,
             )
-            self._remote_request_executor = executor
-            self._remote_request_executor_finalizer = weakref.finalize(
-                self, executor.shutdown, False
-            )
-        return self._remote_request_executor
+        return self._remote_pipeline
 
     def _post_process_result(
         self,
@@ -552,28 +526,3 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
             }
             for inference_id, prediction in zip(inference_ids, predictions)
         ]
-
-
-def _make_prediction_future(result_future: Future, image_index: int) -> Future:
-    # Chained via callback rather than executor.submit() — selector tasks
-    # waiting on inference tasks in the same pool could exhaust its workers.
-    prediction_future: Future = Future()
-
-    def _propagate_result(done_future: Future) -> None:
-        error = done_future.exception()
-        if error is not None:
-            prediction_future.set_exception(error)
-            return
-        prediction_future.set_result(done_future.result()[image_index]["predictions"])
-
-    result_future.add_done_callback(_propagate_result)
-    return prediction_future
-
-
-def _remote_context_indices(
-    images: Batch[WorkflowImageData],
-) -> List[Tuple[int, ...]]:
-    indices = getattr(images, "indices", None)
-    if indices is not None:
-        return list(indices)
-    return [(image_index,) for image_index in range(len(images))]

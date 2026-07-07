@@ -1031,3 +1031,85 @@ def test_close_stream_pipeline_detaches_response_executor_finalizer() -> None:
     assert block._stream_response_executor is None
     assert block._stream_response_executor_finalizer is None
     assert executor._shutdown
+
+
+class _FakeExecutionGraph:
+    def __init__(self, edges: dict) -> None:
+        self._edges = edges
+
+    def successors(self, node):
+        return iter(self._edges.get(node, []))
+
+
+def _attach_compiled_workflow_graph(engine, steps: dict, edges: dict) -> None:
+    engine._engine = SimpleNamespace(
+        _compiled_workflow=SimpleNamespace(
+            steps=steps,
+            execution_graph=_FakeExecutionGraph(edges=edges),
+        )
+    )
+
+
+def test_wrap_activates_downstream_deferral_for_linear_workflow() -> None:
+    # given: every non-pipelined step is downstream of the deferring step
+    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
+    _attach_compiled_workflow_graph(
+        engine,
+        steps={
+            "detection": SimpleNamespace(step=engine.step),
+            "tracker": SimpleNamespace(step=SimpleNamespace()),
+        },
+        edges={
+            "$steps.detection": ["$steps.tracker"],
+            "$steps.tracker": ["$outputs.tracked"],
+        },
+    )
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+
+    # when
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+
+    # then
+    assert isinstance(runner, FlushEmittingPipelinedWorkflowRunner)
+
+
+def test_wrap_falls_back_to_sequential_for_workflow_with_side_branch() -> None:
+    # given: "other" is not downstream of the deferring detection step, so its
+    # outputs would be missing from flush-emitted results
+    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
+    _attach_compiled_workflow_graph(
+        engine,
+        steps={
+            "detection": SimpleNamespace(step=engine.step),
+            "tracker": SimpleNamespace(step=SimpleNamespace()),
+            "other": SimpleNamespace(step=SimpleNamespace()),
+        },
+        edges={
+            "$steps.detection": ["$steps.tracker"],
+            "$steps.tracker": ["$outputs.tracked"],
+            "$steps.other": ["$outputs.other"],
+        },
+    )
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+
+    # when
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+
+    # then
+    assert runner is workflow_runner
