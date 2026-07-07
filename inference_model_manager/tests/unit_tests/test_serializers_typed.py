@@ -12,6 +12,7 @@ from inference_model_manager.serializers_typed import (
     serialize_classification_rich,
     serialize_embeddings,
     serialize_instance_segmentation_compact,
+    serialize_instance_segmentation_rich,
     serialize_keypoints_compact,
     serialize_multilabel_classification_compact,
     serialize_semantic_segmentation_compact,
@@ -81,6 +82,42 @@ class TestBatchedOutputs:
         out = serialize_classification_rich([_cls(), _cls((0.2, 0.8))], _MODEL)
         assert len(out["batch"]) == 2
         assert out["batch"][1]["top"][0]["class_name"] == "b"
+
+
+class _RLEMasks:
+    def to_coco_rle_masks(self):
+        return [{"size": [4, 4], "counts": b"02"}, {"size": [4, 4], "counts": "13"}]
+
+
+def _iseg_rle():
+    return SimpleNamespace(
+        xyxy=[[0, 0, 1, 1], [1, 1, 2, 2]],
+        class_id=[0, 1],
+        confidence=[0.9, 0.8],
+        mask=_RLEMasks(),
+    )
+
+
+class TestRLEMasks:
+    def test_compact_rle_masks_become_coco_dicts(self):
+        out = serialize_instance_segmentation_compact(_iseg_rle(), _MODEL)
+        assert out["mask"] == [
+            {"format": "rle", "size": [4, 4], "counts": "02"},
+            {"format": "rle", "size": [4, 4], "counts": "13"},
+        ]
+
+    def test_rich_rle_masks_are_per_detection(self):
+        out = serialize_instance_segmentation_rich(_iseg_rle(), _MODEL)
+        assert out["detections"][0]["mask"] == {
+            "format": "rle",
+            "size": [4, 4],
+            "counts": "02",
+        }
+        assert out["detections"][1]["mask"]["counts"] == "13"
+
+    def test_rich_dense_masks_unchanged(self):
+        out = serialize_instance_segmentation_rich(_iseg(), _MODEL)
+        assert out["detections"][0]["mask"] == [1]
 
 
 class TestSingleOutputsUnchanged:
