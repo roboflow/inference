@@ -6,6 +6,11 @@ name: Claude PR Review — Draft Notice
 # when a PR is opened as — or converted to — a draft, it posts a single informational
 # comment explaining that automated review is paused until the PR is marked ready, and
 # how to opt out entirely with the `skip-claude-review` label.
+#
+# The notice also leads with a (lightly comedic) advisory that the automated reviewer
+# costs real credits, nudging contributors and their local agents to arrive prepared
+# rather than treat CI review as an iterative debugging loop. Wording lives in the
+# `body=$(printf ...)` block below.
 
 permissions:
   contents: read
@@ -77,8 +82,29 @@ jobs:
             skip "draft notice already present"
           fi
 
+          # NOTE ON QUOTING: every banner line below is single-quoted, so backticks,
+          # `$`, `*`, `_` and em dashes are all literal — no shell expansion, nothing to
+          # escape. Keep it that way: do NOT introduce apostrophes into a single-quoted
+          # line (they would terminate the string). Only the label line needs `${SKIP_LABEL}`,
+          # so it stays double-quoted with escaped backticks, exactly as before.
           body="$(printf '%s\n' \
             "$MARKER" \
+            '> [!WARNING]' \
+            '> ## 💸 The Claude reviewer bills in credits, not vibes' \
+            '>' \
+            '> Marking this PR ready wakes a real agent that reads real code and spends **real credits** on every single pass. It is glad to help — but it is not a rubber duck, a linter you poke in a loop, or a substitute for reading the contributing guide. Book it like the expensive senior reviewer it is, and show up prepared.' \
+            '>' \
+            '> **Please, before you flip this to _Ready for review_:**' \
+            '>' \
+            '> - 🧱 **Bring a SOLID, thorough PR.** Point your local agent at our `skills/` to tune it to our guidelines first — or, if you are one of those fabled carbon-based contributors, read them yourself. A half-baked diff costs exactly the same to review as a finished one.' \
+            '> - ✅ **Resolve _every_ comment before you re-request review.** Re-requesting with threads still open means paying twice for the same conversation.' \
+            '> - 🔁 **Do not use CI review as an inner loop for a local agent.** The reviewer is not a step-by-step debugger — do the unfolding locally and arrive with the answer, not the search.' \
+            '> - 🙋 **If something looks off, ask a human.** One question to a maintainer is cheaper and faster than three rounds of agent re-review chasing a misread.' \
+            '>' \
+            '> _Reviews are not free. Be the contributor future-you will be proud to `git blame`._' \
+            '' \
+            '---' \
+            '' \
             '🤖 **Automated Claude review is paused while this PR is a draft.**' \
             '' \
             "- Mark this PR **Ready for review** to trigger the automatic Claude review." \
