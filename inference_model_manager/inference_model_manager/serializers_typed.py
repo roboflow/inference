@@ -23,6 +23,24 @@ def _to_list(tensor_or_array: Any) -> Any:
     return tensor_or_array
 
 
+def _mask_to_json(mask: Any) -> Any:
+    """Dense masks pass through; RLE masks become per-detection COCO RLE dicts."""
+    if hasattr(mask, "to_coco_rle_masks"):
+        return [
+            {
+                "format": "rle",
+                "size": m["size"],
+                "counts": (
+                    m["counts"].decode("utf-8")
+                    if isinstance(m["counts"], bytes)
+                    else m["counts"]
+                ),
+            }
+            for m in mask.to_coco_rle_masks()
+        ]
+    return _to_list(mask)
+
+
 # ---------------------------------------------------------------------------
 # Object detection
 # ---------------------------------------------------------------------------
@@ -136,7 +154,7 @@ def serialize_instance_segmentation_compact(output: Any, model: Any) -> dict:
                     "xyxy": _to_list(o.xyxy),
                     "class_id": _to_list(o.class_id),
                     "confidence": _to_list(o.confidence),
-                    "mask": _to_list(o.mask),
+                    "mask": _mask_to_json(o.mask),
                 }
                 for o in output
             ],
@@ -147,7 +165,7 @@ def serialize_instance_segmentation_compact(output: Any, model: Any) -> dict:
         "xyxy": _to_list(output.xyxy),
         "class_id": _to_list(output.class_id),
         "confidence": _to_list(output.confidence),
-        "mask": _to_list(output.mask),
+        "mask": _mask_to_json(output.mask),
     }
 
 
@@ -337,6 +355,9 @@ def serialize_classification_rich(output: Any, model: Any) -> dict:
 def serialize_instance_segmentation_rich(output: Any, model: Any) -> dict:
     """InstanceDetections → roboflow-instance-segmentation-rich-v1"""
     names = _class_names(model)
+    masks = None
+    if getattr(output, "mask", None) is not None:
+        masks = _mask_to_json(output.mask)
     detections = []
     for i in range(len(output.xyxy)):
         xyxy = output.xyxy[i]
@@ -348,8 +369,8 @@ def serialize_instance_segmentation_rich(output: Any, model: Any) -> dict:
         }
         if names and int(det["class_id"]) < len(names):
             det["class_name"] = names[int(det["class_id"])]
-        if hasattr(output, "mask") and output.mask is not None:
-            det["mask"] = _to_list(output.mask[i])
+        if masks is not None:
+            det["mask"] = _to_list(masks[i])
         detections.append(det)
     return {
         "type": "roboflow-instance-segmentation-rich-v1",
