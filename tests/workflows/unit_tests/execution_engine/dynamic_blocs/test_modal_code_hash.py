@@ -34,10 +34,17 @@ class _FakeModalImage:
     def debian_slim(cls, *args, **kwargs):
         return cls()
 
+    @classmethod
+    def from_registry(cls, *args, **kwargs):
+        return cls()
+
     def apt_install(self, *args, **kwargs):
         return self
 
     def pip_install(self, *args, **kwargs):
+        return self
+
+    def entrypoint(self, *args, **kwargs):
         return self
 
 
