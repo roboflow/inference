@@ -218,10 +218,12 @@ UI: POST /query/video-jobs/:id/cancel → sets cancelRequested; if the processor
 
 Orphan handling: `heartbeatAt` is written ONLY by the processor's own calls (claim +
 status) — never by cancel, which would make a dead processor look alive. Jobs in
-claimed/running whose heartbeat is >30s old are lazily reset to `error` on read
-(`listJobs`), so a crashed/killed processor cannot leave the UI stuck on
-"processing". A reaped job is terminal: a zombie processor posting status for it
-gets `{cancel: true}` back instead of resurrecting it.
+claimed/running whose heartbeat is >30s old are lazily **requeued** on read
+(`listJobs`): processor assignment cleared, `attempts` bumped, a fresh Pub/Sub
+wake-up published — so a crashed/killed/evicted processor is a seconds-long blip,
+not a stuck UI. After 3 lost processors the job goes to terminal `error` (poison
+cap). A zombie processor posting status for a requeued or terminal job gets
+`{cancel: true}` back instead of resurrecting it.
 
 ### Results path (events vs pixels)
 The processor's per-frame sink:
@@ -311,11 +313,10 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   checks it on `/events`, `/status`, `/preview.mjpeg`, `/results`. The job-addressed
   events endpoint (§6) subsumes most of this for programmatic consumers, since the
   platform authenticates at its own front door.
-- **Orphan reaping goes to `error`, not back to `queued`.** For prod the reaper must
-  re-queue (with an attempts cap) + re-publish to Pub/Sub, so crashes / node
-  reclaims / scale-downs become a seconds-long blip instead of a user-visible
-  failure. This is a prerequisite of the ready-pool scaling model (§9) — in that
-  model, an evicted worker's job MUST re-place itself.
+- ~~Orphan reaping goes to `error`~~ **CLOSED**: the reaper requeues (attempts-capped
+  at 3) and re-publishes the Pub/Sub wake-up, so crashes / node reclaims / evictions
+  re-place the job on a fresh worker in seconds — the prerequisite the ready-pool
+  model (§9) needed, now implemented alongside it.
 - **Single-workspace claim**: processors claim jobs only for the workspace of their API
   key. Real warm pools need cross-tenant scheduling, leases/heartbeats on claims, and
   model-affinity placement.
