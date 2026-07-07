@@ -771,7 +771,11 @@ class Worker:
         if not files:
             return
         try:
-            resp = self.api("POST", f"/video-jobs/{job_id}/results/upload-urls", json={})
+            resp = self.api(
+                "POST",
+                f"/video-jobs/{job_id}/results/upload-urls",
+                json={"processorId": self.processor_id},
+            )
             uploads = resp.get("uploads", {})
             uploaded = []
             for name in files:
@@ -785,7 +789,11 @@ class Worker:
                     r.raise_for_status()
                 uploaded.append(name)
             if uploaded:
-                self.api("POST", f"/video-jobs/{job_id}/results/complete", json={"files": uploaded})
+                self.api(
+                    "POST",
+                    f"/video-jobs/{job_id}/results/complete",
+                    json={"files": uploaded, "processorId": self.processor_id},
+                )
                 print(f"[processor] uploaded results for {job_id}: {', '.join(uploaded)}")
         except Exception as exc:
             print(f"[processor] results upload failed (kept locally): {exc}", file=sys.stderr)
@@ -888,8 +896,16 @@ class Worker:
     def api(self, method, path, **kwargs):
         url = f"{self.args.api_url.rstrip('/')}{path}"
         params = kwargs.pop("params", {})
-        params["api_key"] = self.args.api_key
-        resp = requests.request(method, url, params=params, timeout=10, **kwargs)
+        headers = kwargs.pop("headers", {})
+        # Managed-pool (fleet) mode: authenticate with the service secret and
+        # claim jobs across all workspaces. Without it, the worker key keeps
+        # today's self-hosted behavior: workspace API key, workspace-scoped.
+        fleet_secret = os.getenv("VIDEO_PROC_SERVICE_SECRET")
+        if fleet_secret:
+            headers["x-video-proc-service-access-token"] = fleet_secret
+        else:
+            params["api_key"] = self.args.api_key
+        resp = requests.request(method, url, params=params, headers=headers, timeout=10, **kwargs)
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
