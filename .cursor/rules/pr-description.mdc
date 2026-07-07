@@ -1,0 +1,131 @@
+---
+description: >-
+  Draft GitHub PR descriptions in Roboflow format (Linear link, testing,
+  checklist). Invoke with @pr-description — not applied automatically.
+alwaysApply: false
+---
+
+# Roboflow PR description
+
+Use this rule only when the user @mentions `pr-description` or asks to draft a
+PR body in Roboflow format. Do not apply for unrelated tasks.
+
+## Before writing
+
+1. Gather context from the branch (run in parallel when possible):
+   - `git log main...HEAD --oneline` (or the repo’s default base branch)
+   - `git diff main...HEAD`
+   - `git status`
+2. Ask for anything missing:
+   - **Linear issue ID** (e.g. `INF-1234`) and short issue title for the link
+   - **Type of change** (which checklist item applies)
+   - **Test commands** actually run, if not obvious from the diff
+3. Infer content from changed files, commit messages, and tests — do not invent
+   behavior or test results.
+
+## Output
+
+Return a single markdown block ready to paste into `gh pr create --body` or the
+GitHub UI. Use the template below exactly (headings and checklist structure).
+
+## Section guidelines
+
+### What does this PR do?
+
+Write three parts under the HTML comment (replace the comment with real text):
+
+1. **Context (2–3 sentences):** Initial problem, why this change was needed.
+2. **How it works (5–6 sentences):** High-level behavior — no implementation
+   detail, no line-by-line walkthrough.
+3. **Main elements:** Bullet list of major components touched (modules, utils,
+   new dependencies, API surface, docs).
+
+### Type of Change
+
+Check exactly one primary box. Use **Other** only when none fit; add a short label
+after the colon.
+
+### Testing
+
+Structure as:
+
+- **Unit tests** — bullet list of what is covered (files or behaviors), not
+  every assertion.
+- **Integration tests** — separate subsection; list **scenarios** exercised.
+- **Other** — benchmarks, profiling, manual/local runs during development.
+
+If a category does not apply, say so briefly (e.g. “No integration tests in
+this PR.”). Only list commands/tests that were run or are clearly added in the
+diff.
+
+### Checklist
+
+Leave boxes unchecked unless the user confirmed each item. Do not check items
+you cannot verify from the conversation or diff.
+
+### Additional Context
+
+Optional: screenshots, rollout notes, follow-ups, breaking-change migration.
+Omit the section if there is nothing to add.
+
+---
+
+## Template
+
+```markdown
+## What does this PR do?
+
+Linked issue: [<issue-id>](https://linear.app/roboflow/issue/<issue-id>/<issue-slug>)
+
+<Paragraph 1: context — problem and motivation, 2–3 sentences.>
+
+<Paragraph 2: how the feature/fix works at a high level, 5–6 sentences.>
+
+**Main elements:**
+- <component or area>
+- <component or area>
+
+## Type of Change
+
+- [ ] Bug fix (non-breaking change that fixes an issue)
+- [ ] New feature (non-breaking change that adds functionality)
+- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
+- [ ] Documentation update
+- [ ] Refactoring (no functional changes)
+- [ ] Other:
+
+## Testing
+
+### Unit tests
+
+- <what was tested>
+
+### Integration tests
+
+- <scenario> (or: None for this PR.)
+
+### Other
+
+- <commands run, e.g. pytest paths, make check_code_quality, manual checks>
+
+## Checklist
+
+- [ ] My code follows the style guidelines of this project
+- [ ] I have performed a self-review of my own code
+- [ ] I have commented my code where necessary, particularly in hard-to-understand areas
+- [ ] My changes generate no new warnings or errors
+- [ ] I have updated the documentation accordingly (if applicable)
+
+## Additional Context
+
+<!-- Optional: screenshots, migration notes, follow-ups -->
+```
+
+**Linear URL:** `issue-slug` is the lowercase hyphenated title segment Linear
+uses in the URL (e.g. `fix-dynamic-blocks-in-inner-workflow`). If unknown, use
+`i` + slug placeholder and ask the user to fix the link.
+
+## Creating the PR
+
+When the user wants the PR opened, use `gh pr create` with a HEREDOC body after
+pushing the branch. Do not push unless asked.
