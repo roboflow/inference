@@ -35,6 +35,7 @@ from inference.core.entities.responses.sam3 import (
 )
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
+    LMMInferenceResponse,
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
@@ -135,8 +136,15 @@ IMPLEMENTED_ROUTES = frozenset(
         ("semantic-segmentation", "infer"),
         ("structured-ocr", "infer"),
         ("text-only-ocr", "infer"),
+        ("vlm", "prompt"),
     ]
 )
+
+# VLM model classes whose legacy response contract the adapter cannot satisfy:
+# legacy Florence2 returns a dict keyed by task token built by the HF
+# processor's post_process_generation; the new-world prompt action returns the
+# raw decoded string.
+VLM_UNSUPPORTED_MODEL_CLASSES = frozenset(["Florence2HF"])
 
 IMPLEMENTED_TASK_TYPES = frozenset(
     task_type for task_type, _ in IMPLEMENTED_ROUTES
@@ -300,6 +308,8 @@ def build_task_params(task_type: str, action: str, request: Any) -> dict:
     params: dict = {}
     if task_type == "interactive-instance-segmentation":
         return _build_interactive_segmentation_params(action, request)
+    if task_type == "vlm":
+        return _build_vlm_params(request)
     if task_type == "structured-ocr":
         _ensure_ocr_request_supported(request)
         return params
@@ -420,6 +430,21 @@ def _build_text_prompt_params(request: Any) -> dict:
     }
 
 
+def _build_vlm_params(request: Any) -> dict:
+    prompt = getattr(request, "prompt", None)
+    if not prompt:
+        raise ModelDeploymentNotSupportedError(
+            "VLM inference requires a prompt on the MMP path."
+        )
+    params: dict = {"prompt": prompt}
+    max_new_tokens = getattr(request, "max_new_tokens", None)
+    if max_new_tokens is not None:
+        params["max_new_tokens"] = int(max_new_tokens)
+    if getattr(request, "enable_thinking", False):
+        params["enable_thinking"] = True
+    return params
+
+
 def _ensure_ocr_request_supported(request: Any) -> None:
     language_codes = getattr(request, "language_codes", None)
     if language_codes is not None and list(language_codes) != ["en"]:
@@ -533,6 +558,8 @@ def repack_prediction(
         return repack_text_ocr_response(prediction, dims)
     if task_type == "interactive-instance-segmentation":
         return repack_interactive_segmentation_response(action, prediction, request)
+    if task_type == "vlm":
+        return repack_vlm_response(prediction, dims)
     raise ModelDeploymentNotSupportedError(
         f"No response translation for task type '{task_type}' on the MMP path."
     )
@@ -915,6 +942,19 @@ def repack_text_ocr_response(
         result=text if isinstance(text, str) else str(text),
         image=InferenceResponseImage(width=width, height=height),
         time=0.0,
+    )
+
+
+def repack_vlm_response(
+    prediction: Any, dims: Tuple[int, int]
+) -> LMMInferenceResponse:
+    response = _unwrap_single_prediction(prediction)
+    if not isinstance(response, (str, dict)):
+        response = str(response)
+    width, height = dims
+    return LMMInferenceResponse(
+        response=response,
+        image=InferenceResponseImage(width=width, height=height),
     )
 
 
