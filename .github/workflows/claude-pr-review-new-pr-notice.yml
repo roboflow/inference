@@ -1,0 +1,104 @@
+name: Claude PR Review — New PR notice
+
+# Sibling to `claude-pr-review-draft-notice.yml`. Where that workflow speaks only to
+# drafts (review is paused, here is how to un-pause it), this one greets EVERY newly
+# opened PR — draft or ready alike — with a single, one-time orientation comment: how
+# automated Claude review works, that it spends real credits, and the simple rule of
+# thumb — open as a draft while you are still unsure of the PR, and mark it Ready for
+# review once you feel strong about the contents.
+#
+# A PR opened straight as a draft may receive both notices; they are complementary (this
+# one is general orientation + the draft-vs-ready nudge; the draft notice explains how to
+# trigger review). Each is idempotent via its own marker, so neither ever double-posts.
+# Wording lives in the `body=$(printf ...)` block below.
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+on:
+  pull_request:
+    branches: [main]
+    # Fires once, when a PR is first opened (draft or ready). The marker check below keeps
+    # it to a single comment per PR across any later re-run of the event.
+    types: [opened]
+
+concurrency:
+  # Never cancel an in-flight post (that could interrupt the comment mid-create); the
+  # marker check below is what prevents duplicates. Grouping on the workflow name keeps
+  # this independent from the draft-notice workflow's concurrency group.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  notice:
+    name: Post new-PR notice
+    # Cheap eligibility filter; the step re-checks authoritatively. Scope matches the
+    # review workflow so we never advertise a review that would not run: same-repo only
+    # (forks are not reviewed), human authors only, and not already opted out via
+    # `skip-claude-review`. Unlike the draft notice, there is deliberately NO `draft`
+    # condition here — this greets ready and draft PRs alike.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.type != 'Bot' &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-claude-review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post new-PR notice (once)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          MARKER='<!-- claude-pr-review:new-pr-notice -->'
+          SKIP_LABEL='skip-claude-review'
+
+          # Re-fetch authoritatively: the job-level filter reads the event payload, which
+          # can be stale by the time the runner starts (the PR may have been closed or
+          # opted out in the interim). Fail closed — post nothing — on any of those,
+          # mirroring how the review workflow re-validates before acting.
+          pr_json="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")"
+          state="$(echo "$pr_json" | jq -r '.state')"
+
+          skip() { echo "::notice::PR #${PR_NUMBER}: $1 — not posting new-PR notice."; exit 0; }
+
+          [ "$state" = "open" ] || skip "not open"
+
+          # Case-insensitive opt-out check, matching the review workflow's authoritative
+          # re-check (GitHub label names are case-insensitively unique).
+          if echo "$pr_json" | jq -e --arg l "$SKIP_LABEL" '.labels[]? | select((.name // "" | ascii_downcase) == ($l | ascii_downcase))' >/dev/null; then
+            skip "labeled '${SKIP_LABEL}'"
+          fi
+
+          # Idempotent: post the notice at most once per PR. Any re-fire finds the marker
+          # and no-ops.
+          comments="$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" | jq -s 'add // []')"
+          if echo "$comments" | jq -e --arg m "$MARKER" 'any(.[]; .body // "" | contains($m))' >/dev/null; then
+            skip "new-PR notice already present"
+          fi
+
+          # NOTE ON QUOTING: every banner line below is single-quoted, so backticks, `$`,
+          # `*`, `_` and em dashes are all literal — no shell expansion, nothing to escape.
+          # Keep it that way: do NOT introduce apostrophes into a single-quoted line (they
+          # would terminate the string). Only the label line needs `${SKIP_LABEL}`, so it
+          # stays double-quoted with escaped backticks, exactly as in the sibling workflow.
+          body="$(printf '%s\n' \
+            "$MARKER" \
+            '👋 **Thanks for opening a pull request!** A quick note on how automated Claude review works here, so you spend credits (and reviewer time) wisely.' \
+            '' \
+            '> [!TIP]' \
+            '> ## 🚦 Draft when unsure, Ready when you mean it' \
+            '>' \
+            '> Automated Claude review runs once a PR is **Ready for review**, and it spends **real credits** on every pass — so point it at work you are confident in, not work in progress.' \
+            '>' \
+            '> - 🌱 **Not yet sure the PR is in good shape?** Open it (or keep it) as a **draft**. Drafts pause automated review, so you can push, iterate, and think out loud without burning credits on a moving target.' \
+            '> - 💪 **Feel strong about the contents?** Open it **Ready for review** — or hit _Ready for review_ on your draft — and the reviewer will take a look.' \
+            '> - 🧱 **Either way, arrive prepared.** Tune your local agent with the repo `skills/`, resolve every comment before you re-request review, and ask a maintainer when something looks off rather than looping CI review to figure it out.' \
+            '>' \
+            '> _Rule of thumb: a draft costs nothing to review; a Ready PR is a promise that it is worth reviewing._')"
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
+          echo "::notice::PR #${PR_NUMBER}: posted new-PR notice."
