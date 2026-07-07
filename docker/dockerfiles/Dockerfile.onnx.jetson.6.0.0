@@ -357,6 +357,7 @@ COPY inference inference
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/config/mmp_supervisor.py mmp_supervisor.py
 
 RUN python -m pip uninstall -y boto3 botocore && python -m pip install "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
 

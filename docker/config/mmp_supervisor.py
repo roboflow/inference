@@ -38,7 +38,10 @@ def main() -> None:
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
-    stop.wait()
+    while not stop.wait(timeout=5.0):
+        if not handle.is_alive():
+            logger.error("MMP thread died; exiting so the container restarts")
+            raise SystemExit(1)
     handle.shutdown()
 
 

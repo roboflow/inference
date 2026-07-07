@@ -70,6 +70,10 @@ class LaunchHandle:
             f"LaunchHandle(mmp_addr={self.mmp_addr!r}, " f"shm_name={self.shm_name!r})"
         )
 
+    def is_alive(self) -> bool:
+        """Whether the MMP thread is still running."""
+        return self._thread.is_alive()
+
     def shutdown(self, timeout: float = 10.0) -> None:
         """Stop MMP and shut down the ModelManager."""
         self.mmp.stop()

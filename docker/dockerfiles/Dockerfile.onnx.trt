@@ -113,6 +113,7 @@ COPY examples/notebooks .
 WORKDIR /app/
 COPY inference inference
 COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/config/mmp_supervisor.py mmp_supervisor.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh
 

@@ -48,6 +48,7 @@ COPY inference inference
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli
 COPY docker/config/cpu_http.py cpu_http.py
+COPY docker/config/mmp_supervisor.py mmp_supervisor.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
