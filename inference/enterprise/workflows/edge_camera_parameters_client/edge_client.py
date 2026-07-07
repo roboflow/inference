@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 import requests
 
-from inference.enterprise.workflows.stream_camera_parameters.entities import (
+from inference.enterprise.workflows.edge_camera_parameters_client.entities import (
     ApplyCameraParametersResult,
 )
 
@@ -12,7 +12,11 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 
 
 def get_edge_base_url() -> str:
-    return os.getenv("STREAM_CAMERA_PARAMETERS_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+    return (
+        os.getenv("EDGE_CAMERA_PARAMETERS_BASE_URL")
+        or os.getenv("STREAM_CAMERA_PARAMETERS_BASE_URL")
+        or DEFAULT_BASE_URL
+    ).rstrip("/")
 
 
 def list_pipeline_ids(base_url: Optional[str] = None) -> List[str]:
@@ -20,10 +24,19 @@ def list_pipeline_ids(base_url: Optional[str] = None) -> List[str]:
     response = requests.get(url, timeout=5)
     response.raise_for_status()
     data = response.json()
-    if not isinstance(data, list):
-        return []
+
+    pipelines: List[Any] = []
+    if isinstance(data, dict):
+        nested = data.get("data")
+        if isinstance(nested, dict) and isinstance(nested.get("pipelines"), list):
+            pipelines = nested["pipelines"]
+        elif isinstance(data.get("pipelines"), list):
+            pipelines = data["pipelines"]
+    elif isinstance(data, list):
+        pipelines = data
+
     pipeline_ids: List[str] = []
-    for entry in data:
+    for entry in pipelines:
         if isinstance(entry, dict) and entry.get("pipeline_id"):
             pipeline_ids.append(str(entry["pipeline_id"]))
     return pipeline_ids

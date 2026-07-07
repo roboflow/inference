@@ -21,12 +21,12 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference.enterprise.workflows.stream_camera_parameters.register_catalog import (
+from inference.enterprise.workflows.edge_camera_parameters_client.register_catalog import (
     REGISTER_LABELS,
     build_parameter_delta,
     registers_for_camera_family,
 )
-from inference.enterprise.workflows.stream_camera_parameters.service import (
+from inference.enterprise.workflows.edge_camera_parameters_client.service import (
     apply_camera_register_parameters,
 )
 

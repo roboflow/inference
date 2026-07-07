@@ -2,13 +2,13 @@ from typing import Any, Dict, Optional
 from urllib.parse import quote
 
 from inference.core.logger import logger
-from inference.enterprise.workflows.stream_camera_parameters import edge_client
-from inference.enterprise.workflows.stream_camera_parameters.entities import (
+from inference.enterprise.workflows.edge_camera_parameters_client import edge_client
+from inference.enterprise.workflows.edge_camera_parameters_client.entities import (
     ApplyCameraParametersResult,
 )
 
 
-class StreamCameraParametersError(Exception):
+class EdgeCameraParametersError(Exception):
     pass
 
 
@@ -19,10 +19,10 @@ def resolve_pipeline_id(stream_name: Optional[str]) -> str:
     if len(pipeline_ids) == 1:
         return pipeline_ids[0]
     if not pipeline_ids:
-        raise StreamCameraParametersError(
+        raise EdgeCameraParametersError(
             "No active inference pipelines; provide stream_name"
         )
-    raise StreamCameraParametersError(
+    raise EdgeCameraParametersError(
         "Multiple active pipelines; stream_name is required"
     )
 
@@ -42,7 +42,7 @@ def apply_camera_register_parameters(
 
     try:
         pipeline_id = resolve_pipeline_id(stream_name)
-    except StreamCameraParametersError as exc:
+    except EdgeCameraParametersError as exc:
         return ApplyCameraParametersResult(success=False, message=str(exc))
 
     try:
@@ -58,7 +58,7 @@ def apply_camera_register_parameters(
             return _apply_via_configure_fallback(pipeline_id, parameters)
         return result
     except Exception as exc:
-        logger.exception("Failed to apply stream camera parameters")
+        logger.exception("Failed to apply edge camera parameters")
         return ApplyCameraParametersResult(success=False, message=str(exc))
 
 
@@ -71,7 +71,7 @@ def _apply_via_configure_fallback(
     pipeline_id: str,
     parameters: Dict[str, Any],
 ) -> ApplyCameraParametersResult:
-    from inference.enterprise.workflows.stream_camera_parameters.configure_client import (
+    from inference.enterprise.workflows.edge_camera_parameters_client.configure_client import (
         configure_usb_camera,
     )
 

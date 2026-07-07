@@ -3,15 +3,12 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from inference.enterprise.workflows.stream_camera_parameters.entities import (
+from inference.enterprise.workflows.edge_camera_parameters_client.edge_client import (
+    get_edge_base_url,
+)
+from inference.enterprise.workflows.edge_camera_parameters_client.entities import (
     ApplyCameraParametersResult,
 )
-
-DEFAULT_BASE_URL = "http://127.0.0.1:8000"
-
-
-def get_configure_base_url() -> str:
-    return os.getenv("STREAM_CAMERA_PARAMETERS_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
 
 
 def configure_usb_camera(
@@ -26,7 +23,7 @@ def configure_usb_camera(
             message="v4l2_properties must be non-empty",
         )
 
-    base = (base_url or get_configure_base_url()).rstrip("/")
+    base = (base_url or get_edge_base_url()).rstrip("/")
     url = f"{base}/cameras/configure"
     payload = {
         "video_reference": str(video_reference),

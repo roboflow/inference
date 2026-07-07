@@ -1,4 +1,4 @@
-from inference.enterprise.workflows.stream_camera_parameters.service import (
+from inference.enterprise.workflows.edge_camera_parameters_client.service import (
     apply_camera_register_parameters,
 )
 

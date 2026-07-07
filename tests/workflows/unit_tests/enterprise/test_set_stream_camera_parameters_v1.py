@@ -6,15 +6,20 @@ from inference.enterprise.workflows.enterprise_blocks.streams.set_stream_camera_
     SetStreamCameraParametersBlockManifest,
     SetStreamCameraParametersBlockV1,
 )
-from inference.enterprise.workflows.stream_camera_parameters.entities import (
+from inference.enterprise.workflows.edge_camera_parameters_client.entities import (
     ApplyCameraParametersResult,
 )
-from inference.enterprise.workflows.stream_camera_parameters.register_catalog import (
+from inference.enterprise.workflows.edge_camera_parameters_client.edge_client import (
+    list_pipeline_ids,
+)
+from inference.enterprise.workflows.edge_camera_parameters_client.register_catalog import (
     build_parameter_delta,
+    get_register_binding,
+    get_register_labels_map,
     registers_for_camera_family,
 )
-from inference.enterprise.workflows.stream_camera_parameters.service import (
-    StreamCameraParametersError,
+from inference.enterprise.workflows.edge_camera_parameters_client.service import (
+    EdgeCameraParametersError,
     apply_camera_register_parameters,
     resolve_pipeline_id,
 )
@@ -64,22 +69,49 @@ class TestRegisterCatalog:
     def test_registers_for_ai1_include_focus(self):
         assert "focus" in registers_for_camera_family("ai1")
 
+    def test_exposure_time_for_ai1_includes_exposure_mode(self):
+        delta = build_parameter_delta("exposure_time", 175, camera_family="ai1")
+        assert delta == {
+            "v4l2_camera_properties": {"exposure_mode": 0, "exposure_time": 175}
+        }
+
+    def test_register_labels_loaded_from_json(self):
+        labels = get_register_labels_map()
+        assert labels["exposure_time"] == "Exposure time"
+
+    def test_ai1_exposure_schema_from_json(self):
+        binding = get_register_binding("exposure_time", "ai1")
+        assert binding["valueSchema"]["max"] == 300
+
+
+class TestEdgeClient:
+
+    @patch("inference.enterprise.workflows.edge_camera_parameters_client.edge_client.requests.get")
+    def test_list_pipeline_ids_parses_roboflow_edge_response(self, mock_get):
+        mock_get.return_value.json.return_value = {
+            "success": True,
+            "data": {"pipelines": [{"pipeline_id": "aione", "status": "RUNNING"}]},
+        }
+        mock_get.return_value.raise_for_status = MagicMock()
+
+        assert list_pipeline_ids("http://127.0.0.1:8000") == ["aione"]
+
 
 class TestResolvePipelineId:
 
     @patch(
-        "inference.enterprise.workflows.stream_camera_parameters.service.edge_client.list_pipeline_ids"
+        "inference.enterprise.workflows.edge_camera_parameters_client.service.edge_client.list_pipeline_ids"
     )
     def test_uses_single_active_pipeline(self, mock_list):
         mock_list.return_value = ["encoded-stream"]
         assert resolve_pipeline_id(None) == "encoded-stream"
 
     @patch(
-        "inference.enterprise.workflows.stream_camera_parameters.service.edge_client.list_pipeline_ids"
+        "inference.enterprise.workflows.edge_camera_parameters_client.service.edge_client.list_pipeline_ids"
     )
     def test_requires_stream_name_for_multiple_pipelines(self, mock_list):
         mock_list.return_value = ["a", "b"]
-        with pytest.raises(StreamCameraParametersError):
+        with pytest.raises(EdgeCameraParametersError):
             resolve_pipeline_id(None)
 
     def test_encodes_stream_name(self):
@@ -89,10 +121,10 @@ class TestResolvePipelineId:
 class TestApplyCameraRegisterParameters:
 
     @patch(
-        "inference.enterprise.workflows.stream_camera_parameters.service.edge_client.post_camera_parameters"
+        "inference.enterprise.workflows.edge_camera_parameters_client.service.edge_client.post_camera_parameters"
     )
     @patch(
-        "inference.enterprise.workflows.stream_camera_parameters.service.resolve_pipeline_id"
+        "inference.enterprise.workflows.edge_camera_parameters_client.service.resolve_pipeline_id"
     )
     def test_applies_parameters(self, mock_resolve, mock_post):
         mock_resolve.return_value = "stream-1"

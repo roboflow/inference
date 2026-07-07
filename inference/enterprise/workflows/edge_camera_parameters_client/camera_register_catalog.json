@@ -1,0 +1,366 @@
+{
+    "schemaVersion": 1,
+    "cameraFamilies": {
+        "usb": { "label": "USB camera" },
+        "ai1": { "label": "AI1" },
+        "basler": { "label": "Basler area scan" },
+        "basler_line_scan": { "label": "Basler line scan" },
+        "lucid": { "label": "Lucid area scan" },
+        "lucid_line_scan": { "label": "Lucid line scan" }
+    },
+    "registers": {
+        "focus": {
+            "label": "Focus (lens position)",
+            "bindings": {
+                "ai1": {
+                    "settingsRoot": "usb_camera_settings",
+                    "parameterDelta": {
+                        "v4l2_camera_properties": { "lens_position": "{{value}}" }
+                    },
+                    "hardwareKeys": ["v4l2_camera_properties.lens_position"],
+                    "valueSchema": { "type": "integer", "min": 0, "max": 2294, "step": 1 }
+                },
+                "usb": {
+                    "settingsRoot": "usb_camera_settings",
+                    "parameterDelta": {
+                        "v4l2_camera_properties": { "lens_position": "{{value}}" }
+                    },
+                    "hardwareKeys": ["v4l2_camera_properties.lens_position"],
+                    "valueSchema": { "type": "integer" }
+                }
+            }
+        },
+        "line_rate": {
+            "label": "Line rate",
+            "bindings": {
+                "basler_line_scan": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "AcquisitionLineRate": "{{value}}" },
+                    "hardwareKeys": ["AcquisitionLineRate"],
+                    "valueSchema": { "type": "number", "unit": "hertz", "unitLabel": "Hz" }
+                },
+                "lucid_line_scan": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "AcquisitionLineRate": "{{value}}" },
+                    "hardwareKeys": ["AcquisitionLineRate"],
+                    "valueSchema": { "type": "number", "unit": "hertz", "unitLabel": "Hz" }
+                }
+            }
+        },
+        "exposure_time": {
+            "label": "Exposure time",
+            "bindings": {
+                "ai1": {
+                    "settingsRoot": "usb_camera_settings",
+                    "parameterDelta": {
+                        "v4l2_camera_properties": {
+                            "exposure_mode": 0,
+                            "exposure_time": "{{value}}"
+                        }
+                    },
+                    "hardwareKeys": [
+                        "v4l2_camera_properties.exposure_mode",
+                        "v4l2_camera_properties.exposure_time"
+                    ],
+                    "valueSchema": {
+                        "type": "integer",
+                        "unit": "microseconds",
+                        "unitLabel": "µs",
+                        "min": 50,
+                        "max": 300,
+                        "step": 1
+                    }
+                },
+                "basler_line_scan": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "ExposureTime": "{{value}}" },
+                    "hardwareKeys": ["ExposureTime"],
+                    "valueSchema": { "type": "number", "unit": "microseconds", "unitLabel": "µs" }
+                },
+                "lucid_line_scan": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "ExposureTime": "{{value}}" },
+                    "hardwareKeys": ["ExposureTime"],
+                    "valueSchema": { "type": "number", "unit": "microseconds", "unitLabel": "µs" }
+                }
+            }
+        },
+        "lines_per_frame": {
+            "label": "Lines per frame",
+            "bindings": {
+                "basler_line_scan": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "LinesPerFrame": "{{value}}" },
+                    "hardwareKeys": ["LinesPerFrame"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                },
+                "lucid_line_scan": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "LinesPerFrame": "{{value}}" },
+                    "hardwareKeys": ["LinesPerFrame"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                }
+            }
+        },
+        "brightness": {
+            "label": "Brightness",
+            "bindings": {
+                "basler": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "TARGET_BRIGHTNESS": "{{value}}" },
+                    "hardwareKeys": ["TARGET_BRIGHTNESS"],
+                    "valueSchema": { "type": "integer" }
+                },
+                "basler_line_scan": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "TARGET_BRIGHTNESS": "{{value}}" },
+                    "hardwareKeys": ["TARGET_BRIGHTNESS"],
+                    "valueSchema": { "type": "integer" }
+                },
+                "lucid": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "TargetBrightness": "{{value}}" },
+                    "hardwareKeys": ["TargetBrightness"],
+                    "valueSchema": { "type": "integer" }
+                },
+                "lucid_line_scan": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "TargetBrightness": "{{value}}" },
+                    "hardwareKeys": ["TargetBrightness"],
+                    "valueSchema": { "type": "integer" }
+                },
+                "usb": {
+                    "settingsRoot": "usb_camera_settings",
+                    "parameterDelta": { "v4l2_camera_properties": { "brightness": "{{value}}" } },
+                    "hardwareKeys": ["v4l2_camera_properties.brightness"],
+                    "valueSchema": { "type": "integer", "min": 0, "max": 255, "step": 1 }
+                },
+                "ai1": {
+                    "settingsRoot": "usb_camera_settings",
+                    "parameterDelta": { "v4l2_camera_properties": { "brightness": "{{value}}" } },
+                    "hardwareKeys": ["v4l2_camera_properties.brightness"],
+                    "valueSchema": { "type": "integer", "min": 0, "max": 255, "step": 1 }
+                }
+            }
+        },
+        "width": {
+            "label": "Width",
+            "bindings": {
+                "basler": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "pylon_nodemap": { "Width": "{{value}}" } },
+                    "hardwareKeys": ["pylon_nodemap.Width"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                },
+                "basler_line_scan": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "pylon_nodemap": { "Width": "{{value}}" } },
+                    "hardwareKeys": ["pylon_nodemap.Width"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                },
+                "lucid": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "Width": "{{value}}" },
+                    "hardwareKeys": ["Width"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                },
+                "lucid_line_scan": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "Width": "{{value}}" },
+                    "hardwareKeys": ["Width"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                },
+                "usb": {
+                    "settingsRoot": "usb_camera_settings",
+                    "parameterDelta": { "video_source_properties": { "frame_width": "{{value}}" } },
+                    "hardwareKeys": ["video_source_properties.frame_width"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                },
+                "ai1": {
+                    "settingsRoot": "usb_camera_settings",
+                    "parameterDelta": { "video_source_properties": { "frame_width": "{{value}}" } },
+                    "hardwareKeys": ["video_source_properties.frame_width"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                }
+            }
+        },
+        "height": {
+            "label": "Height",
+            "bindings": {
+                "basler": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "pylon_nodemap": { "Height": "{{value}}" } },
+                    "hardwareKeys": ["pylon_nodemap.Height"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                },
+                "lucid": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "Height": "{{value}}" },
+                    "hardwareKeys": ["Height"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                },
+                "lucid_line_scan": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "Height": "{{value}}" },
+                    "hardwareKeys": ["Height"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                },
+                "usb": {
+                    "settingsRoot": "usb_camera_settings",
+                    "parameterDelta": {
+                        "video_source_properties": { "frame_height": "{{value}}" }
+                    },
+                    "hardwareKeys": ["video_source_properties.frame_height"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                },
+                "ai1": {
+                    "settingsRoot": "usb_camera_settings",
+                    "parameterDelta": {
+                        "video_source_properties": { "frame_height": "{{value}}" }
+                    },
+                    "hardwareKeys": ["video_source_properties.frame_height"],
+                    "valueSchema": { "type": "integer", "min": 1, "step": 1 }
+                }
+            }
+        },
+        "exposure_lower": {
+            "label": "Exposure lower limit",
+            "bindings": {
+                "basler": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "EXPOSURE_LOWER_LIMIT": "{{value}}" },
+                    "hardwareKeys": ["EXPOSURE_LOWER_LIMIT"],
+                    "valueSchema": { "type": "integer", "unit": "microseconds", "unitLabel": "µs" }
+                },
+                "basler_line_scan": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "EXPOSURE_LOWER_LIMIT": "{{value}}" },
+                    "hardwareKeys": ["EXPOSURE_LOWER_LIMIT"],
+                    "valueSchema": { "type": "integer", "unit": "microseconds", "unitLabel": "µs" }
+                },
+                "lucid": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "ExposureAutoLowerLimit": "{{value}}" },
+                    "hardwareKeys": ["ExposureAutoLowerLimit"],
+                    "valueSchema": { "type": "number", "unit": "microseconds", "unitLabel": "µs" }
+                },
+                "lucid_line_scan": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "ExposureAutoLowerLimit": "{{value}}" },
+                    "hardwareKeys": ["ExposureAutoLowerLimit"],
+                    "valueSchema": { "type": "number", "unit": "microseconds", "unitLabel": "µs" }
+                }
+            }
+        },
+        "exposure_upper": {
+            "label": "Exposure upper limit",
+            "bindings": {
+                "basler": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "EXPOSURE_UPPER_LIMIT": "{{value}}" },
+                    "hardwareKeys": ["EXPOSURE_UPPER_LIMIT"],
+                    "valueSchema": { "type": "integer", "unit": "microseconds", "unitLabel": "µs" }
+                },
+                "basler_line_scan": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "EXPOSURE_UPPER_LIMIT": "{{value}}" },
+                    "hardwareKeys": ["EXPOSURE_UPPER_LIMIT"],
+                    "valueSchema": { "type": "integer", "unit": "microseconds", "unitLabel": "µs" }
+                },
+                "lucid": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "ExposureAutoUpperLimit": "{{value}}" },
+                    "hardwareKeys": ["ExposureAutoUpperLimit"],
+                    "valueSchema": { "type": "number", "unit": "microseconds", "unitLabel": "µs" }
+                },
+                "lucid_line_scan": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "ExposureAutoUpperLimit": "{{value}}" },
+                    "hardwareKeys": ["ExposureAutoUpperLimit"],
+                    "valueSchema": { "type": "number", "unit": "microseconds", "unitLabel": "µs" }
+                }
+            }
+        },
+        "gain_lower": {
+            "label": "Gain lower limit",
+            "bindings": {
+                "basler": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "GAIN_LOWER_LIMIT": "{{value}}" },
+                    "hardwareKeys": ["GAIN_LOWER_LIMIT"],
+                    "valueSchema": { "type": "number" }
+                },
+                "basler_line_scan": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "GAIN_LOWER_LIMIT": "{{value}}" },
+                    "hardwareKeys": ["GAIN_LOWER_LIMIT"],
+                    "valueSchema": { "type": "number" }
+                }
+            }
+        },
+        "gain_upper": {
+            "label": "Gain upper limit",
+            "bindings": {
+                "basler": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "GAIN_UPPER_LIMIT": "{{value}}" },
+                    "hardwareKeys": ["GAIN_UPPER_LIMIT"],
+                    "valueSchema": { "type": "number" }
+                },
+                "basler_line_scan": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "GAIN_UPPER_LIMIT": "{{value}}" },
+                    "hardwareKeys": ["GAIN_UPPER_LIMIT"],
+                    "valueSchema": { "type": "number" }
+                }
+            }
+        },
+        "timeout": {
+            "label": "Grab / heartbeat timeout",
+            "bindings": {
+                "basler": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "GEV_HEARTBEAT_TIMEOUT": "{{value}}" },
+                    "hardwareKeys": ["GEV_HEARTBEAT_TIMEOUT"],
+                    "valueSchema": { "type": "integer" }
+                },
+                "basler_line_scan": {
+                    "settingsRoot": "basler_camera_settings",
+                    "parameterDelta": { "GEV_HEARTBEAT_TIMEOUT": "{{value}}" },
+                    "hardwareKeys": ["GEV_HEARTBEAT_TIMEOUT"],
+                    "valueSchema": { "type": "integer" }
+                },
+                "lucid": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "grab_timeout_ms": "{{value}}" },
+                    "hardwareKeys": ["grab_timeout_ms"],
+                    "valueSchema": { "type": "integer", "unit": "milliseconds", "unitLabel": "ms" }
+                },
+                "lucid_line_scan": {
+                    "settingsRoot": "lucid_camera_settings",
+                    "parameterDelta": { "grab_timeout_ms": "{{value}}" },
+                    "hardwareKeys": ["grab_timeout_ms"],
+                    "valueSchema": { "type": "integer", "unit": "milliseconds", "unitLabel": "ms" }
+                }
+            }
+        },
+        "fps": {
+            "label": "FPS",
+            "bindings": {
+                "usb": {
+                    "settingsRoot": "usb_camera_settings",
+                    "parameterDelta": { "video_source_properties": { "fps": "{{value}}" } },
+                    "hardwareKeys": ["video_source_properties.fps"],
+                    "valueSchema": { "type": "number", "unit": "hertz", "unitLabel": "Hz" }
+                },
+                "ai1": {
+                    "settingsRoot": "usb_camera_settings",
+                    "parameterDelta": { "video_source_properties": { "fps": "{{value}}" } },
+                    "hardwareKeys": ["video_source_properties.fps"],
+                    "valueSchema": { "type": "number", "unit": "hertz", "unitLabel": "Hz" }
+                }
+            }
+        },
+        "manual": { "label": "Manual register" }
+    }
+}
