@@ -396,7 +396,10 @@ def test_load_image_from_url_blocks_hostname_resolving_to_non_global(
     # "not allowed" only appears if the adapter resolved + rejected the target;
     # a dead adapter would surface a DNS/connection error message instead.
     assert "not allowed" in str(error.value).lower()
-    assert resolved == ["evil.com"]  # resolution ran on the real send() path
+    # The getaddrinfo patch is process-global, so background threads (e.g. the
+    # usage tracking flush) may resolve unrelated hosts while it is active;
+    # assert on the target host only instead of the exact call list.
+    assert resolved.count("evil.com") == 1  # resolution ran on the real send() path
 
 
 @mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
