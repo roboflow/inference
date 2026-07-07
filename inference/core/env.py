@@ -15,6 +15,22 @@ from inference.core.warnings import (
 
 load_dotenv(os.getcwd() + "/.env")
 
+# Install warning filters before any module-level ``warnings.warn`` calls below,
+# so these flags also suppress warnings emitted during this module's own import
+# (e.g. the gaze deprecation stub warning), not just warnings raised afterwards.
+INFERENCE_WARNINGS_DISABLED = str2bool(
+    os.getenv("INFERENCE_WARNINGS_DISABLED", "False")
+)
+if INFERENCE_WARNINGS_DISABLED:
+    warnings.simplefilter("ignore", InferenceDeprecationWarning)
+    warnings.simplefilter("ignore", InferenceModelsStackMissing)
+
+IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
+    os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
+)
+if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
+    warnings.simplefilter("ignore", ModelDependencyMissing)
+
 # The project name, default is "roboflow-platform"
 PROJECT = os.getenv("PROJECT", "roboflow-platform")
 
@@ -129,7 +145,7 @@ GAZE_MODEL_ID = f"gaze/{GAZE_VERSION_ID}"
 # OWLv2 version ID, default is "owlv2-large-patch14-ensemble"
 OWLV2_VERSION_ID = os.getenv("OWLV2_VERSION_ID", "owlv2-large-patch14-ensemble")
 
-# OWLv2 image cache size, default is 1000 since each image has max <MAX_DETECTIONS> boxes at ~4kb each
+# OWLv2 image cache size, default is 10000 since each image has max <MAX_DETECTIONS> boxes at ~4kb each
 OWLV2_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_IMAGE_CACHE_SIZE", 10000))
 
 # OWLv2 model cache size, default is 100 as memory is num_prompts * ~4kb and num_prompts is rarely above 1000 (but could be much higher)
@@ -138,7 +154,7 @@ OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 100))
 # OWLv2 cache device placement, default sends cached embeddings to CPU to reduce GPU memory pressure
 OWLV2_CACHE_SEND_TO_CPU = str2bool(os.getenv("OWLV2_CACHE_SEND_TO_CPU", True))
 
-# OWLv2 CPU image cache size, default is 10000
+# OWLv2 CPU image cache size, default is 1000
 OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 
 # OWLv2 compile model, default is True
@@ -169,7 +185,7 @@ CLASS_AGNOSTIC_NMS = str2bool(
     os.getenv(CLASS_AGNOSTIC_NMS_ENV, DEFAULT_CLASS_AGNOSTIC_NMS)
 )
 
-# Confidence threshold, default is 50%
+# Confidence threshold, default is 40%
 CONFIDENCE_ENV = "CONFIDENCE"
 DEFAULT_CONFIDENCE = 0.4
 CONFIDENCE = float(os.getenv(CONFIDENCE_ENV, DEFAULT_CONFIDENCE))
@@ -785,14 +801,6 @@ MODAL_ANONYMOUS_WORKSPACE_NAME = os.getenv(
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))
 
-INFERENCE_WARNINGS_DISABLED = str2bool(
-    os.getenv("INFERENCE_WARNINGS_DISABLED", "False")
-)
-
-if INFERENCE_WARNINGS_DISABLED:
-    warnings.simplefilter("ignore", InferenceDeprecationWarning)
-    warnings.simplefilter("ignore", InferenceModelsStackMissing)
-
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 DEVICE = os.getenv("DEVICE")
 
@@ -882,12 +890,6 @@ if ROBOFLOW_API_REQUEST_TIMEOUT:
 # Control SSL certificate verification for requests to the Roboflow API
 # Default is True (verify SSL). Set ROBOFLOW_API_VERIFY_SSL=false to disable in local dev.
 ROBOFLOW_API_VERIFY_SSL = str2bool(os.getenv("ROBOFLOW_API_VERIFY_SSL", "True"))
-
-IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
-    os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
-)
-if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
-    warnings.simplefilter("ignore", ModelDependencyMissing)
 
 DISK_CACHE_CLEANUP = str2bool(os.getenv("DISK_CACHE_CLEANUP", "True"))
 MEMORY_FREE_THRESHOLD = float(

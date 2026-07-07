@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pytest
 import supervision as sv
@@ -392,6 +394,78 @@ def test_classes_replacement_when_empty_classification_predictions_fallback_clas
     assert (
         detections.class_id[1] == 123
     ), "class id expected to be set to value passed with fallback_class_id parameter"
+    assert (
+        detections.data["class_name"][1] == "unknown"
+    ), "class name expected to be set to value passed with fallback_class_name parameter"
+
+
+def test_classes_replacement_when_empty_classification_predictions_fallback_class_provided_with_default_class_id():
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["animal", "animal"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    first_cls_prediction = ClassificationInferenceResponse(
+        image=InferenceResponseImage(width=128, height=256),
+        predictions=[
+            ClassificationPrediction(
+                **{"class": "cat", "class_id": 0, "confidence": 0.6}
+            ),
+            ClassificationPrediction(
+                **{"class": "dog", "class_id": 1, "confidence": 0.4}
+            ),
+        ],
+        top="cat",
+        confidence=0.6,
+        parent_id="some",
+    ).dict(by_alias=True, exclude_none=True)
+    first_cls_prediction["parent_id"] = "zero"
+    second_cls_prediction = ClassificationInferenceResponse(
+        image=InferenceResponseImage(width=128, height=256),
+        predictions=[],
+        top="cat",
+        confidence=0.6,
+        parent_id="some",
+    ).dict(by_alias=True, exclude_none=True)
+    second_cls_prediction["parent_id"] = "one"
+    classification_predictions = Batch(
+        content=[
+            first_cls_prediction,
+            second_cls_prediction,
+        ],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name="unknown",
+        fallback_class_id=None,
+    )
+
+    # then
+    assert (
+        len(result["predictions"]) == 2
+    ), "Expected both detections to be preserved via fallback class"
+    detections = result["predictions"]
+    assert (
+        detections.confidence[1] == 0
+    ), "Fallback class confidence expected to be set to 0"
+    assert (
+        detections.class_id[1] == sys.maxsize
+    ), "class id expected to fall back to sys.maxsize when fallback_class_id left as None"
     assert (
         detections.data["class_name"][1] == "unknown"
     ), "class name expected to be set to value passed with fallback_class_name parameter"

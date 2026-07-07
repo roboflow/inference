@@ -5,10 +5,9 @@ CLASS_NAME_WORD_PATTERN = re.compile(r"[A-Z](?:[a-z1-9]+|[A-Z]*(?=[A-Z]|$))")
 
 
 def get_full_type_name(selected_type: type) -> str:
-    t_class = selected_type.__name__
     t_module = selected_type.__module__
     if t_module == "builtins":
-        return t_class.__qualname__
+        return selected_type.__qualname__
     return t_module + "." + selected_type.__qualname__
 
 

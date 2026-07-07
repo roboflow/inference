@@ -361,12 +361,12 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     simplified_polygon = simplified_polygon[
                         :required_number_of_vertices
                     ]
-                updated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(
-                    [simplified_polygon]
-                )
                 simplified_polygon = scale_polygon(
                     polygon=simplified_polygon,
                     scale=scale_ratio,
+                )
+                updated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(
+                    [simplified_polygon]
                 )
                 simplified_polygons.append(simplified_polygon.tolist())
                 mask_bool = sv.polygon_to_mask(

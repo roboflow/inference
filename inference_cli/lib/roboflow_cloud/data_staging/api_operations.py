@@ -1677,11 +1677,12 @@ def pull_batch_element_to_directory(
     interval=1,
 )
 def pull_file_to_directory(url: str, target_directory: str, file_name: str) -> str:
-    response = requests.get(url)
+    response = requests.get(url, stream=True, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     target_path = os.path.join(target_directory, file_name)
     with open(target_path, "wb") as f:
-        f.write(response.content)
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
     return target_path
 
 

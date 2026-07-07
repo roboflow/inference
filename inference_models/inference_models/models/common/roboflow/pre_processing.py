@@ -39,7 +39,7 @@ def pre_process_network_input(
     if network_input.input_channels != 3:
         raise ModelRuntimeError(
             message=f"`inference` currently does not support Roboflow pre-processing for model inputs with "
-            f"channels numbers different than 1. Let us know if you need this feature.",
+            f"channels numbers different than 3. Let us know if you need this feature.",
             help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     input_color_mode = None

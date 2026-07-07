@@ -1,5 +1,6 @@
 from functools import wraps
 
+from fastapi import HTTPException
 from starlette.responses import JSONResponse
 
 from inference.core import logger
@@ -597,6 +598,8 @@ def with_route_exceptions(route):
                     **error.get_structured_public_error_details(),
                 },
             )
+        except HTTPException:
+            raise
         except Exception as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
@@ -1069,6 +1072,8 @@ def with_route_exceptions_async(route):
                     **error.get_structured_public_error_details(),
                 },
             )
+        except HTTPException:
+            raise
         except Exception as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
