@@ -23,6 +23,20 @@ _OVERSIZED = 1 << 62
 _HEADER_MAX = 1 << 20
 
 
+def image_dims(data: Any) -> tuple[int, int] | None:
+    """(width, height) from an image header via Pillow, no pixel decode.
+
+    Same lazy header-only read as ``image_pixels``. Returns None when the
+    header can't be parsed (including decompression bombs) — callers decide
+    how to treat unparseable input.
+    """
+    try:
+        with Image.open(io.BytesIO(bytes(data[:_HEADER_MAX]))) as im:
+            return im.size
+    except Exception:
+        return None
+
+
 def image_pixels(data: Any) -> int | None:
     """Pixel count (width*height) from an image header via Pillow, no decode.
 

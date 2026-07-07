@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
@@ -11,6 +12,7 @@ from inference.core.exceptions import (
     ModelDeploymentNotSupportedError,
 )
 from inference.core.logger import logger
+from inference.core.managers import mmp_translation as translation
 from inference.core.managers.entities import ModelDescription
 from inference.core.registries.roboflow import ModelEndpointType
 
@@ -88,6 +90,87 @@ class ModelManagerAdapter:
         return future.result(timeout=timeout)
 
     # ------------------------------------------------------------------
+    # routing
+    # ------------------------------------------------------------------
+
+    async def _resolve_route_async(
+        self, model_id: str, api_key: Optional[str]
+    ) -> dict:
+        route = self._routes.get(model_id)
+        if route is not None:
+            if not route["supported"]:
+                raise _unsupported(model_id)
+            return route
+        if model_id == "passthrough" or model_id.startswith("passthrough/"):
+            self._routes[model_id] = {"supported": False}
+            raise _unsupported(model_id)
+        task_type, action = await translation.stat_model(
+            model_id=model_id, api_key=api_key or ""
+        )
+        if (task_type, action) not in translation.IMPLEMENTED_ROUTES:
+            self._routes[model_id] = {
+                "supported": False,
+                "task_type": task_type,
+                "action": action,
+            }
+            raise _unsupported(model_id)
+        result = await self._client.load(model_id, api_key or "")
+        translation.raise_for_lifecycle_result(result, model_id)
+        interface = await self._client.interface(model_id)
+        if action not in interface.get("tasks", {}):
+            await self._client.unload(model_id)
+            self._routes[model_id] = {
+                "supported": False,
+                "task_type": task_type,
+                "action": action,
+            }
+            raise _unsupported(model_id)
+        stats = await self._client.stats()
+        class_names = (
+            stats.get("mmp_models", {}).get(model_id, {}).get("class_names")
+        )
+        route = {
+            "supported": True,
+            "mmp_model_id": model_id,
+            "task_type": task_type,
+            "action": action,
+            "class_names": class_names,
+        }
+        self._routes[model_id] = route
+        return route
+
+    async def _infer_new_path(self, model_id: str, request, **kwargs):
+        route = await self._resolve_route_async(
+            model_id, getattr(request, "api_key", None)
+        )
+        translation.ensure_request_supported(model_id, request)
+        image_bytes, dims = translation.forward_image(request.image)
+        params = translation.build_object_detection_params(request)
+        t_start = time.perf_counter()
+        ensure = await self._client.ensure_loaded(
+            route["mmp_model_id"], api_key=getattr(request, "api_key", None) or ""
+        )
+        translation.raise_for_lifecycle_result(ensure, model_id)
+        try:
+            prediction = await self._client.infer(
+                model_id=route["mmp_model_id"],
+                image=image_bytes,
+                task=route["action"],
+                params=params,
+            )
+        except Exception as error:
+            translated = translation.translate_infer_error(error, model_id)
+            if translated is error:
+                raise
+            raise translated from error
+        response = translation.repack_object_detection_response(
+            prediction, dims, route["class_names"], request
+        )
+        response.time = time.perf_counter() - t_start
+        response.inference_id = request.id
+        return response
+
+    # ------------------------------------------------------------------
     # model operations
     # ------------------------------------------------------------------
 
@@ -100,35 +183,59 @@ class ModelManagerAdapter:
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
     ) -> None:
-        raise _unsupported(model_id)
+        route = self._run_sync(self._resolve_route_async(model_id, api_key))
+        if model_id_alias is not None:
+            self._routes[model_id_alias] = route
 
     async def infer_from_request(self, model_id: str, request, **kwargs):
-        raise _unsupported(model_id)
+        return await self._infer_new_path(model_id, request, **kwargs)
 
     def infer_from_request_sync(self, model_id: str, request, **kwargs):
-        raise _unsupported(model_id)
+        return self._run_sync(self._infer_new_path(model_id, request, **kwargs))
 
     def get_task_type(self, model_id: str, api_key: str = None) -> str:
-        raise _unsupported(model_id)
+        route = self._routes.get(model_id)
+        if route is None:
+            route = self._run_sync(self._resolve_route_async(model_id, api_key))
+        if not route.get("supported"):
+            raise _unsupported(model_id)
+        return route["task_type"]
 
     def get_class_names(self, model_id: str):
-        raise _unsupported(model_id)
+        route = self._routes.get(model_id)
+        if route is None or not route.get("supported"):
+            raise _unsupported(model_id)
+        return route["class_names"]
 
     def describe_models(self) -> List[ModelDescription]:
-        return []
+        return [
+            ModelDescription(
+                model_id=model_id,
+                task_type=route["task_type"],
+                batch_size=None,
+                input_height=None,
+                input_width=None,
+            )
+            for model_id, route in self._routes.items()
+            if route.get("supported")
+        ]
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> None:
-        if model_id not in self._routes:
+        route = self._routes.get(model_id)
+        if route is None or not route.get("supported"):
             logger.warning(
                 f"Attempted to remove model with id {model_id}, but it is not loaded. Skipping..."
             )
             return
-        self._run_sync(self._client.unload(model_id))
-        self._routes.pop(model_id, None)
+        self._run_sync(self._client.unload(route["mmp_model_id"]))
+        for key in [k for k, r in self._routes.items() if r is route]:
+            self._routes.pop(key, None)
 
     def clear(self) -> None:
         for model_id in list(self._routes):
-            self.remove(model_id)
+            if self._routes.get(model_id, {}).get("supported"):
+                self.remove(model_id)
+        self._routes.clear()
 
     def pin_model(self, model_id: str) -> None:
         pass
@@ -165,19 +272,29 @@ class ModelManagerAdapter:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._legacy, name)
 
+    def _supported_ids(self) -> List[str]:
+        return [
+            model_id
+            for model_id, route in self._routes.items()
+            if route.get("supported")
+        ]
+
     def __contains__(self, model_id: str) -> bool:
-        return model_id in self._routes
+        route = self._routes.get(model_id)
+        return bool(route and route.get("supported"))
 
     def __getitem__(self, key: str) -> _InertModelStub:
-        if key not in self._routes:
+        if key not in self:
             raise InferenceModelNotFound(f"Model with id {key} not loaded.")
         return _InertModelStub(key)
 
     def __len__(self) -> int:
-        return len(self._routes)
+        return len(self._supported_ids())
 
     def keys(self):
-        return self._routes.keys()
+        return self._supported_ids()
 
     def models(self) -> Dict[str, _InertModelStub]:
-        return {model_id: _InertModelStub(model_id) for model_id in self._routes}
+        return {
+            model_id: _InertModelStub(model_id) for model_id in self._supported_ids()
+        }
