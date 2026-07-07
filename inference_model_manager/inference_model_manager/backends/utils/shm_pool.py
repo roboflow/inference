@@ -28,11 +28,13 @@ Header layout (little-endian, 64 bytes total):
 
 from __future__ import annotations
 
+import os
 import struct
 import threading
 import time
 from collections import deque
 from enum import IntEnum
+from multiprocessing import resource_tracker
 from multiprocessing.shared_memory import SharedMemory
 from typing import NamedTuple, Optional
 
@@ -201,6 +203,10 @@ class SHMPool:
         """Attach to an existing pool. Does NOT unlink on close()."""
         data_bytes = int(input_mb * 1024 * 1024)
         shm = SharedMemory(name=name, create=False)
+        if os.name == "posix":
+            # CPython bug tracker bpo-38119 (<3.13): without this, attacher
+            # exit unlinks the pool for everyone
+            resource_tracker.unregister(shm._name, "shared_memory")
         try:
             return cls(shm, n_slots, data_bytes, owner=False)
         except Exception:

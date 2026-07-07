@@ -19,6 +19,7 @@ import pickle
 import struct
 import time
 import uuid
+from multiprocessing import resource_tracker
 from multiprocessing.shared_memory import SharedMemory
 from typing import Any, AsyncIterable, Optional
 
@@ -173,6 +174,10 @@ class MMPClient:
         self.slot_total = HEADER_SIZE + self.shm_data_size
 
         self._shm = SharedMemory(name=self.shm_name, create=False)
+        if os.name == "posix":
+            # CPython bug tracker bpo-38119 (<3.13): without this, worker
+            # recycle unlinks MMP's live pool
+            resource_tracker.unregister(self._shm._name, "shared_memory")
         # OS rounds the mmap up to a page boundary, so the buffer holds n_slots
         # slots plus < 1 slot of trailing padding. Anything outside that range
         # means slot_total disagrees with the pool — writes would corrupt slots.
