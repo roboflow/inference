@@ -297,13 +297,19 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   Locally `job.processorUrl` is localhost; in the cluster it's the processor-gateway
   path to a specific worker. The remaining production work is *job-addressing*
   (`/video-jobs/{id}/events` — see §6 "Consuming results") and **auth** (below).
-  For the video half, the designed replacement (not yet built): the processor
-  **publishes the annotated stream to the relay** (just another stream, e.g.
-  `job-<id>-<output>`, watched over WHEP like any source preview), and *wanting to
-  watch* is signaled through the existing status-poll channel — the UI stamps a
-  `watchRequestedUntil` TTL on the job, the processor sees it within 2s, publishes,
-  and stops when the TTL lapses. Identical pattern to source preview TTLs; no new
-  connection into the processor; result video never streams unwatched.
+  For the video half this is **CLOSED**: the processor **publishes the annotated
+  stream to the relay** (`out-<jobId>`, credentialed with the job's stream key,
+  watched over WHEP like any source preview), and *wanting to watch* is signaled
+  through the existing status-poll channel — `POST /video-jobs/{id}/watch` stamps
+  a 60s `watchRequestedUntil` TTL (+ desired output; the UI renews every 30s),
+  the processor sees it within 2s, publishes (H.264 ultrafast/zerolatency at a
+  12fps tick), restarts on output switches, and stops when the TTL lapses.
+  Identical pattern to source preview TTLs; no new connection into the
+  processor; result video never streams unwatched. The processor's MJPEG
+  endpoint remains for debugging only. (Historical local-dev gotcha it also
+  killed: https app pages refuse `<img>` streams from IP-literal insecure
+  hosts, so the MJPEG preview silently never painted on
+  `https://localapp.roboflow.one`.)
 - ~~Batch results are processor-local~~ **CLOSED**: on completion the processor
   uploads mp4/JSONL/meta to GCS via platform-signed PUT URLs and the review UI
   reads platform-signed GET URLs; processor-local files remain only as fallback.
@@ -394,6 +400,6 @@ yet all in the PRs:
    live annotated preview" ✅.
 3. Prod-readiness order (per §8/§9, post-review): ~~reap-to-requeue~~ ✅;
    ~~ready-pool scaling swap in the chart~~ ✅; processor endpoint auth (per-job
-   tokens); the job-addressed events endpoint; relay-published results stream +
-   `watchRequestedUntil`; multi-stream-per-GPU (needs bulkiness measurement);
+   tokens); the job-addressed events endpoint; ~~relay-published results stream +
+   `watchRequestedUntil`~~ ✅; multi-stream-per-GPU (needs bulkiness measurement);
    connector-source e2e polish (USB/RTSP got less testing than files).
