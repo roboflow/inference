@@ -84,7 +84,7 @@ def _validate_action_params(params_spec: dict, params: dict) -> Response | None:
         value = params[name]
         if isinstance(value, str):
             try:
-                _coerce_param(value, type_name)
+                params[name] = _coerce_param(value, type_name)
             except ValueError as exc:
                 return error_response(
                     400,

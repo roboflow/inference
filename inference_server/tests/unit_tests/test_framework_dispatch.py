@@ -209,6 +209,36 @@ async def test_param_validation_rejects_wrong_type(fake_handler_entry):
 
 
 @pytest.mark.asyncio
+async def test_param_coercion_converts_string_params_before_handler(fake_handler_entry):
+    """Query/multipart params arrive as strings; they must reach the handler
+    coerced to the declared type, not as raw strings."""
+    fake_handler_entry["interface"].params["confidence"] = {
+        "type": "float",
+        "required": False,
+    }
+    fake_handler_entry["interface"].params["top_k"] = {
+        "type": "int",
+        "required": False,
+    }
+    fake_handler_entry["interface"].params["nms"] = {
+        "type": "bool",
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"confidence": "0.5", "top_k": "3", "nms": "true"},
+    }
+    proxy = _mock_proxy()
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["confidence"] == 0.5
+    assert passed["top_k"] == 3
+    assert passed["nms"] is True
+
+
+@pytest.mark.asyncio
 async def test_param_validation_skips_non_coercible_types(fake_handler_entry):
     fake_handler_entry["interface"].params["images"] = {
         "type": "image",
