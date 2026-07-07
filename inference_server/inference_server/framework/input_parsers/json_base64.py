@@ -19,7 +19,7 @@ from typing import Optional
 
 from fastapi import Request, Response
 
-from inference_server.errors import error_response
+from inference_server.errors import PayloadTooLargeError, error_response
 
 
 async def extract_json_base64(
@@ -28,6 +28,8 @@ async def extract_json_base64(
     """Parse JSON body, decode base64 image(s), return (images, extra_params, err)."""
     try:
         body = await request.json()
+    except PayloadTooLargeError:
+        raise
     except Exception:
         return (
             [],

@@ -16,6 +16,7 @@ from inference_server.framework.entities import (
     ModelHandlerDescription,
     ModelInterfaceDescription,
 )
+from inference_server.framework.input_parsers import extract_images_and_params
 from inference_server.framework.registry import _HANDLERS
 from inference_server.proxies.base import ClientDisconnected
 
@@ -236,6 +237,68 @@ async def test_param_coercion_converts_string_params_before_handler(fake_handler
     assert passed["confidence"] == 0.5
     assert passed["top_k"] == 3
     assert passed["nms"] is True
+
+
+@pytest.mark.asyncio
+async def test_content_length_over_cap_returns_413_before_body_read(fake_handler_entry):
+    req = _request(
+        query=b"model_id=m",
+        headers=[
+            (b"authorization", b"Bearer k1"),
+            (b"content-length", b"999999999999"),
+        ],
+    )
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(req, _mock_proxy())
+    assert r.status_code == 413
+    assert b"PAYLOAD_TOO_LARGE" in r.body
+    fake_handler_entry["parser"].assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_chunked_raw_body_over_cap_returns_413(fake_handler_entry):
+    """No Content-Length header: cap must fire while streaming the body."""
+
+    async def real_parser(request, common):
+        images, params, err = await extract_images_and_params(request)
+        assert err is None
+        return {"images": images, "params": params}
+
+    fake_handler_entry["parser"].side_effect = real_parser
+    req = _request(query=b"model_id=m", body=b"x" * 100)
+    with _stat_returns(("fake-task", "infer")), patch(
+        "inference_server.framework.dispatch.configuration.MAX_BODY_BYTES", 16
+    ):
+        r = await handle_model_inference_request(req, _mock_proxy())
+    assert r.status_code == 413
+    assert b"PAYLOAD_TOO_LARGE" in r.body
+
+
+@pytest.mark.asyncio
+async def test_json_body_over_cap_returns_413_not_400(fake_handler_entry):
+    """PayloadTooLargeError must not be masked as INVALID_JSON."""
+
+    async def real_parser(request, common):
+        images, params, err = await extract_images_and_params(request)
+        if err is not None:
+            raise InputParseError(err)
+        return {"images": images, "params": params}
+
+    fake_handler_entry["parser"].side_effect = real_parser
+    req = _request(
+        query=b"model_id=m",
+        headers=[
+            (b"authorization", b"Bearer k1"),
+            (b"content-type", b"application/json"),
+        ],
+        body=b'{"inputs": {"pad": "' + b"x" * 100 + b'"}}',
+    )
+    with _stat_returns(("fake-task", "infer")), patch(
+        "inference_server.framework.dispatch.configuration.MAX_BODY_BYTES", 16
+    ):
+        r = await handle_model_inference_request(req, _mock_proxy())
+    assert r.status_code == 413
+    assert b"PAYLOAD_TOO_LARGE" in r.body
 
 
 @pytest.mark.asyncio
