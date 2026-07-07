@@ -40,7 +40,9 @@ app = modal.App("webexec")
 
 
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
-WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv("WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu")
+WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv(
+    "WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu"
+)
 
 
 def get_inference_image():
@@ -57,7 +59,9 @@ def get_inference_image():
             INFERENCE_VERSION = "latest"
 
     image = (
-        modal.Image.from_registry(f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{INFERENCE_VERSION}")
+        modal.Image.from_registry(
+            f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{INFERENCE_VERSION}"
+        )
         .apt_install(
             "libgl1-mesa-glx",
             "libglib2.0-0",
@@ -68,8 +72,8 @@ def get_inference_image():
             "ffmpeg",
             "wget",
         )
-        .pip_install(inference_version)
         .pip_install("fastapi[standard]", "msgpack")
+        .entrypoint([])
         # Ship the shared runtime from the repo checkout so the container runs
         # the same code as the local test stub, independent of the pinned
         # inference version installed above.
