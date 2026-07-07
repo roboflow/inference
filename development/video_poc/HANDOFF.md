@@ -302,8 +302,9 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   watched over WHEP like any source preview), and *wanting to watch* is signaled
   through the existing status-poll channel — `POST /video-jobs/{id}/watch` stamps
   a 60s `watchRequestedUntil` TTL (+ desired output; the UI renews every 30s),
-  the processor sees it within 2s, publishes (H.264 ultrafast/zerolatency at a
-  12fps tick), restarts on output switches, and stops when the TTL lapses.
+  the processor sees it within 2s, publishes (in-process aiortc→WHIP by
+  default, event-driven at native fps; ffmpeg-RTSP as fallback/hot-swap),
+  restarts on output switches, and stops when the TTL lapses.
   Identical pattern to source preview TTLs; no new connection into the
   processor; result video never streams unwatched. The processor's MJPEG
   endpoint remains for debugging only. (Historical local-dev gotcha it also
@@ -339,6 +340,24 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   at 3) and re-publishes the Pub/Sub wake-up, so crashes / node reclaims / evictions
   re-place the job on a fresh worker in seconds — the prerequisite the ready-pool
   model (§9) needed, now implemented alongside it.
+- ~~Output preview lags the source by ~600ms~~ **CLOSED — the standing
+  latency was ffmpeg's h264 decoder reorder buffer, and no cv2 option can fix
+  it.** Decomposed with `processor/latency_harness.py` (pixel-clock stream: 32
+  bars encode wallclock ms; `publish` / `probe` / `probe-ffmpeg` modes, plus
+  `latency_harness_whep.py` for the WebRTC leg). Measured on the same relay
+  stream: cv2.VideoCapture 586ms; every documented low-latency capture option
+  (nobuffer, low_delay, max_delay 0, probesize 32, threads 1) still ≥585ms;
+  ffmpeg CLI default 703ms; ffmpeg CLI with `-flags low_delay` 81-121ms; WHEP
+  40ms. Root cause: the decoder holds a DPB-sized (~16-frame ≈ 530ms at 30fps)
+  frame-reorder buffer unless `AV_CODEC_FLAG_LOW_DELAY` is set on the *codec*
+  context — `OPENCV_FFMPEG_CAPTURE_OPTIONS` only reaches the *format* context,
+  so the flag is unreachable from cv2. Fix: stream-mode jobs ingest through
+  `LowLatencyRtspProducer` (PyAV — already a dependency via aiortc — sets
+  low_delay + single-threaded decode) plugged into `VideoSource`'s
+  producer-factory path; no inference-repo changes needed. Verified
+  glass-to-glass source→annotated-output: **~20-50ms** (was ~600). Job-level
+  `captureOptions` become libavformat open options for stream mode; batch keeps
+  the cv2 path (throughput over latency).
 - **Single-workspace claim**: processors claim jobs only for the workspace of their API
   key. Real warm pools need cross-tenant scheduling, leases/heartbeats on claims, and
   model-affinity placement.
@@ -347,13 +366,15 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   target fps) so a scheduler can pack N streams per node with stability guarantees —
   see §9.
 - **No recording** (phase 3 by design).
-- **Connector camera identity is by enumeration index** (`usb:<n>`): macOS
+- ~~Connector camera identity is by enumeration index~~ **CLOSED**: macOS
   reshuffles avfoundation indices when devices come and go (lid close,
-  Continuity camera, USB replug), which relabels platform source records and
-  makes capture legs grab the wrong device or hang. Observed twice in one day
-  of local testing. Fix: key sources by the device's stable unique ID
-  (avfoundation uniqueID on macOS, udev serial on Linux) and resolve the index
-  at capture time. Until then: restarting the connector re-syncs indices.
+  Continuity camera, USB replug), which relabeled platform source records and
+  made capture legs grab the wrong device or hang (observed twice in one day
+  of local testing). Cameras are now keyed `usb:<name-slug>` and ffmpeg opens
+  the device by its exact avfoundation NAME (identically-named duplicates fall
+  back to index selection with ordinal-suffixed IDs). Existing `usb:<n>`
+  source records re-register under the new IDs on next connector restart;
+  Linux v4l2 already used stable `/dev/videoN` paths.
 - **No metering** (the intended model: stream-hours + GPU-seconds).
 - **`imageOutput` list outputs** (arrays of images) are redacted from events but not
   stored/previewable.
