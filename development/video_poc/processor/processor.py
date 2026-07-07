@@ -310,18 +310,17 @@ class JobRecorder:
                 json.dump(meta, f)
 
 
-PUBLISH_FPS = 12
-
-
 class OutputPublisher:
     """Publishes one annotated image output to the relay as H.264 RTSP — but
     ONLY while the platform says someone is watching (the watch TTL rides the
     status-poll response). One publish serves every WHEP viewer through the
     relay, and nothing is encoded while nobody watches.
 
-    Frames are re-encoded from the serializer's JPEGs at a constant tick
-    (duplicating the latest frame when inference is slower than PUBLISH_FPS),
-    which gives the encoder a clean CFR input.
+    Latency-shaped: frames are pushed the moment the pipeline produces them
+    (event-driven, native fps — no resampling tick), ffmpeg stamps them with
+    wallclock timestamps and encodes VFR, and a keyframe is forced every second
+    so WHEP viewers join fast. zerolatency/ultrafast keeps encoder buffering
+    at zero frames.
     """
 
     def __init__(self, frames: FrameStore, publish_url: str):
@@ -345,11 +344,21 @@ class OutputPublisher:
         try:
             proc = subprocess.Popen(
                 [
-                    FFMPEG_BIN, "-f", "image2pipe", "-framerate", str(PUBLISH_FPS),
-                    "-i", "-",
+                    FFMPEG_BIN,
+                    # PTS from arrival time: frames are written as the pipeline
+                    # produces them, so wallclock IS the correct timestamp and
+                    # the stream carries no resampling delay
+                    "-use_wallclock_as_timestamps", "1",
+                    "-f", "image2pipe", "-i", "-",
                     "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
                     "-profile:v", "baseline", "-pix_fmt", "yuv420p",
-                    "-g", str(PUBLISH_FPS * 2),
+                    # VFR passthrough (deprecated alias of -fps_mode vfr; kept
+                    # for the ffmpeg 4.4 in the ubuntu-based processor image)
+                    "-vsync", "vfr",
+                    # keyframe every second of stream time regardless of fps:
+                    # WHEP viewers can't render until an IDR arrives, so this
+                    # bounds join latency at ~1s (was up to 2s)
+                    "-force_key_frames", "expr:gte(t,n_forced)",
                     "-f", "rtsp", "-rtsp_transport", "tcp", self.publish_url,
                 ],
                 stdin=subprocess.PIPE,
@@ -365,18 +374,18 @@ class OutputPublisher:
         print(f"[processor] viewer attached — publishing '{output}' to the relay")
 
     def _pump(self, proc, output):
-        interval = 1.0 / PUBLISH_FPS
+        # event-driven: block until the pipeline produces a frame, ship it
+        # immediately. No tick, no duplicate frames, no resampling staleness.
+        seq = -1
         while not self._stop.is_set() and proc.poll() is None:
-            tick = time.time()
-            jpeg = self.frames.latest(output)
-            if jpeg is not None:
-                try:
-                    proc.stdin.write(jpeg)
-                except Exception:
-                    break
-            delay = interval - (time.time() - tick)
-            if delay > 0:
-                time.sleep(delay)
+            jpeg, seq = self.frames.wait_next(output, seq, timeout=0.5)
+            if jpeg is None:
+                continue
+            try:
+                proc.stdin.write(jpeg)
+                proc.stdin.flush()
+            except Exception:
+                break
 
     def stop(self):
         self._stop.set()
