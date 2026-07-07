@@ -237,6 +237,34 @@ re-rendered from each event — do not assume they're stable across a job), an M
 `<img>` on `/preview.mjpeg?output=<name>`, and a dropdown to switch outputs live, fed
 by polling `/status`.
 
+### Consuming results (the four cases)
+
+1. **Live JSON** — the SSE `/events` stream described above. Locally the browser
+   connects to the processor directly; in the cluster it goes through the
+   processor-gateway (`https://video-processors…/{worker}/events` — nginx with
+   `proxy_buffering off`, which is load-bearing: SSE dies silently behind a
+   buffering proxy). The worker reports its gateway URL as `processorUrl` at claim
+   time, so consumers never notice the indirection. **Known limitation:** this
+   subscribes to a *worker*, not a *job* — if the job is re-placed, the consumer
+   must re-read the job doc and reconnect. Fine for the interactive UI; wrong for
+   programmatic consumers. Production contract: `GET /video-jobs/{id}/events`, a
+   platform-authenticated **job-addressed** stream. Two implementations, in order
+   of effort: (a) a smart proxy in the cell that resolves jobId→current worker and
+   re-attaches upstream on worker death (do NOT put this on Firebase functions —
+   long-lived streaming responses fight the platform); (b) real fan-out: the
+   processor *publishes* events to a stream keyed by jobId (Redis stream / pub-sub)
+   and an edge service serves N subscribers with last-event-id replay — the events
+   channel getting its own "mediamtx". Bandwidth is a non-issue for JSON
+   (~1–2KB/frame, orders of magnitude under the video) — it only becomes one if
+   images sneak into the JSON, which the redaction rule exists to prevent.
+2. **Notifications on events** — Workflows sinks inside the pipeline. Nothing new.
+3. **Warehouse/storage sinks** — same: Workflows blocks.
+4. **Process now, download later** — batch already works this way (JSONL + mp4 to
+   GCS on completion, signed-URL retrieval, frame-aligned for scrubbing). For
+   continuous streams the same shape extends: roll the event stream into
+   hour-partitioned JSONL in object storage with lifecycle policies, later aligned
+   with recorded video segments (phase 3) so "everything from 2–4pm" is one call.
+
 ### Workflow output selection
 Before a job starts, the app parses the chosen workflow server-side —
 `resolveWorkflowSpecification` (Firestore) + serverless `POST
@@ -258,16 +286,17 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
 
 ## 8. Known gaps and how they're meant to close
 
-- **Browser→processor is direct HTTP** (`job.processorUrl`, localhost). Fine for the
-  POC; wrong shape for production (NAT, TLS, authz). The designed replacement, worked
-  out but not yet built: results-video goes out via the processor **publishing the
-  annotated stream to the relay** (it becomes just another stream name, e.g.
+- **Browser→processor addressing is solved (gateway), but coupled to workers.**
+  Locally `job.processorUrl` is localhost; in the cluster it's the processor-gateway
+  path to a specific worker. The remaining production work is *job-addressing*
+  (`/video-jobs/{id}/events` — see §6 "Consuming results") and **auth** (below).
+  For the video half, the designed replacement (not yet built): the processor
+  **publishes the annotated stream to the relay** (just another stream, e.g.
   `job-<id>-<output>`, watched over WHEP like any source preview), and *wanting to
   watch* is signaled through the existing status-poll channel — the UI stamps a
-  `watchRequestedUntil` TTL on the job, the processor sees it within 2s and starts
-  publishing, and stops when the TTL lapses. Identical pattern to source preview TTLs;
-  requires no new connection into the processor. Result video should not stream when
-  nobody is watching.
+  `watchRequestedUntil` TTL on the job, the processor sees it within 2s, publishes,
+  and stops when the TTL lapses. Identical pattern to source preview TTLs; no new
+  connection into the processor; result video never streams unwatched.
 - ~~Batch results are processor-local~~ **CLOSED**: on completion the processor
   uploads mp4/JSONL/meta to GCS via platform-signed PUT URLs and the review UI
   reads platform-signed GET URLs; processor-local files remain only as fallback.
@@ -275,24 +304,89 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   minted by the platform, embedded in every issued URL, validated per connection
   by mediamtx's external-auth hook → `POST /video-relay/auth`. No shared secrets
   are pushed to connectors.
-- **Processor HTTP has no auth** and CORS `*` (still open; the gateway hostname
-  is the only barrier in staging).
+- **Processor HTTP has no auth** and CORS `*` — the gateway hostname is the only
+  barrier in staging. This is the top prod-readiness item. Planned shape: the
+  platform mints a per-job access token (same pattern as stream keys), returns it
+  with the job doc to authorized UI/API callers, and the processor (or the gateway)
+  checks it on `/events`, `/status`, `/preview.mjpeg`, `/results`. The job-addressed
+  events endpoint (§6) subsumes most of this for programmatic consumers, since the
+  platform authenticates at its own front door.
+- **Orphan reaping goes to `error`, not back to `queued`.** For prod the reaper must
+  re-queue (with an attempts cap) + re-publish to Pub/Sub, so crashes / node
+  reclaims / scale-downs become a seconds-long blip instead of a user-visible
+  failure. This is a prerequisite of the ready-pool scaling model (§9) — in that
+  model, an evicted worker's job MUST re-place itself.
 - **Single-workspace claim**: processors claim jobs only for the workspace of their API
   key. Real warm pools need cross-tenant scheduling, leases/heartbeats on claims, and
   model-affinity placement.
+- **One stream per GPU**: multi-stream-per-GPU is required for monitoring economics.
+  Prerequisite: measuring workflow "bulkiness" (per-stream cost of a graph at a
+  target fps) so a scheduler can pack N streams per node with stability guarantees —
+  see §9.
 - **No recording** (phase 3 by design).
 - **No metering** (the intended model: stream-hours + GPU-seconds).
 - **`imageOutput` list outputs** (arrays of images) are redacted from events but not
   stored/previewable.
 
-## 9. Where to pick up
+## 9. Where the design is heading (team alignment, 2026-07-07)
+
+Decisions and direction that came out of team review — this is current intent, not
+yet all in the PRs:
+
+- **Scaling model: ready pool, not replica scaling.** "There are always N workers
+  ready to accept jobs." A Deployment manages only *ready* workers; claiming a job
+  **detaches** the worker (it relabels its own pod so the replica controller no
+  longer owns it → the pool refills automatically), and a finished worker
+  **deletes its own pod**. Rationale: any ordinary ReplicaSet/StatefulSet
+  scale-down picks victims blindly and will kill a mid-job box; in the pool model
+  the only workers that ever terminate chose to. Recovery for crashes/evictions =
+  heartbeats + reap-to-requeue (§8). The chart currently ships the older
+  KEDA-ScaledObject-on-StatefulSet approach and needs this swap (in progress).
+  Costs: worker RBAC (patch/delete own pod), pod-IP-based gateway routing (random
+  pod names), a janitor for leaked non-Running working pods, and awareness that
+  long-lived monitoring pods outlive Deployment rollouts (they drain via
+  requeue, which the relay makes cheap).
+- **Dedicated Deployments converge with cells.** A DD (existing product: an
+  inference server on a customer-dedicated GPU) gets extended to also run one or a
+  pool of **separate, lean processor processes** on the same box — signaled via
+  the server/platform, NOT built into the inference HTTP server; the lean
+  processor is what makes fast starts possible. Dedicated vs pooled is a
+  *placement decision* (workspace-pinned claims), not an architecture fork.
+- **Local vs remote execution is a per-block decision inside the workflow
+  execution engine** — not a top-level "decode video, ship frames" split (shipping
+  decoded frames explodes bandwidth; encoded video is orders of magnitude
+  smaller). Direction agreed with Pawel: (a) measure workflow **bulkiness**
+  (per-stream cost at a target fps) to enable multi-stream packing and stability
+  guarantees; (b) **externalizable/cacheable state** for stateful blocks
+  (trackers, counters) so a dead worker's streams *resume* elsewhere rather than
+  restart — pairs with reap-to-requeue: infra re-places in seconds, workflow state
+  makes it seamless; (c) selective externalization — pre/post-processing stays
+  local to decode, only forward passes go remote, and only when needed (big VLMs;
+  stream to/from the serving side rather than request-per-frame); (d) all of it
+  lands as coherent changes to the EE's streaming mode.
+- **Application-level stream control.** The connector control channel gets
+  extended so the platform can signal *what to send*: target fps/resolution
+  derived from the workflow's measured bulkiness (a 5fps workflow should not cost
+  a 30fps uplink), camera substream switching, and per-source protocol choice —
+  WebRTC push where network-level congestion adaptation matters (RTSP has none).
+  The relay itself stays transcode-free by default (full-quality frames, no
+  generation loss, no added latency); transcoding is possible if a use case
+  demands it but is a last resort because it alters what models see.
+- **Relationship to the rtsp-bridge spike** (github.com/roboflow/rtsp-bridge-poc):
+  same transport, independently validated — camera → outbound ffmpeg (`-c copy`
+  remux over RTSP/TCP) → mediamtx → colocated consumer. The connector is the
+  managed layer on that shape: discovery, source records, control channel,
+  on-demand streaming, per-stream keys. Transport findings transfer 1:1.
+
+## 10. Where to pick up
 
 1. Read the README for the local runbook (node 24 / redis / staging env quirks are
    documented there — they are real and will bite you).
 2. The task list that produced this: dev tooling ✅, backend API ✅, connector ✅,
    processor ✅, frontend ✅, e2e demo verified through "workflow on uploaded file with
    live annotated preview" ✅.
-3. Natural next moves, in rough order of value: batch results to object storage
-   (§8); the relay-published results stream + `watchRequestedUntil` signaling (§8);
-   connector-source e2e polish (USB/RTSP path got less testing than files); claim
-   leases.
+3. Prod-readiness order (per §8/§9, post-review): reap-to-requeue; the ready-pool
+   scaling swap in the chart; processor endpoint auth (per-job tokens); the
+   job-addressed events endpoint; relay-published results stream +
+   `watchRequestedUntil`; multi-stream-per-GPU (needs bulkiness measurement);
+   connector-source e2e polish (USB/RTSP got less testing than files).

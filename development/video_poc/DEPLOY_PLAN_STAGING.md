@@ -108,6 +108,8 @@ just a 201 from the signaling request.
    from inference-internal: `nodeSelector: {gpu_type: L40S}`, toleration
    `gpu=true:NoSchedule`, `resources.limits: {nvidia.com/gpu: 1}`, optionally
    `schedulerName: gpu-binpack-scheduler`. Env below. Image: see §3.
+   **NOTE: being revised to the ready-pool model (Deployment + label-detach +
+   self-delete) — see the revised scaling section in §8.**
 4. **processor-gateway**: nginx Deployment ×1 (CPU pool) routing
    `/{pod}/{rest}` → `http://{pod}.video-processor-headless.video-poc.svc.cluster.local:8890/{rest}`.
    Critical nginx settings: `proxy_buffering off` and `proxy_http_version 1.1`
@@ -259,24 +261,38 @@ as the ownership mechanism, and the status poll stays as the control channel
   re-publish → re-place, cheap because workers re-attach to relay streams
   locally, not across the customer's NAT).
 
-**Scaling signal — warm floor first, backlog second.** The primary invariant
-is not "drain the queue", it's "**at least N idle processors are always
-waiting**" so new work starts in seconds (the entire point of the warm pool):
+**Scaling model — REVISED (2026-07-07): ready pool, not replica scaling.**
+The first design here was a KEDA warm-floor query (`replicas = sum(busy) +
+MIN_IDLE`) scaling the StatefulSet, with `pod-deletion-cost` guarding
+scale-down. That guard doesn't exist for StatefulSets (deletion-cost is a
+ReplicaSet feature), so scale-in could still kill a mid-job worker. The
+revised model eliminates victim selection entirely:
 
-- Processor exports a `video_processor_busy` 0/1 gauge (trivial: it already
-  knows its state; add a /metrics endpoint or scrape /status). Cluster
-  Prometheus + KEDA are already installed by the addons stack.
-- KEDA prometheus scaler with `threshold: 1` and query
-  `sum(video_processor_busy) + MIN_IDLE` → desired replicas = busy + floor.
-  That single expression IS the warm-pool guarantee.
-- Compose with a Pub/Sub `num_undelivered_messages` scaler (KEDA has one
-  built in) so batch bursts scale past the floor; KEDA takes the max of its
-  triggers.
-- Scale-DOWN safety matters more than scale-up: the HPA must not kill a
-  processor mid-monitoring-job. Set `controller.kubernetes.io/pod-deletion-cost`
-  high while busy (processor updates its own pod annotation), and handle
-  SIGTERM by finishing/checkpointing batch work within the grace period;
-  evicted monitoring jobs re-publish and re-place with a seconds-long blip
-  that the relay absorbs.
+- A Deployment manages only **ready** workers; `replicas = N` means "N workers
+  ready to accept jobs" — the warm-pool guarantee is the replica count itself.
+- On claim, the worker **detaches itself** (patches its own pod label so the
+  ReplicaSet selector no longer matches). The ReplicaSet instantly creates a
+  replacement — that's the refill, native reconciliation, no controller code.
+- On finish, the worker **deletes its own pod**. The only workers that ever
+  terminate chose to; nothing ever aims at a busy pod. Single-use workers also
+  give clean GPU/memory hygiene per job.
+- Recovery for crashes / node reclaim / spot eviction: heartbeats +
+  **reap-to-requeue** (the reaper must re-queue + re-publish instead of
+  erroring — this becomes mandatory, with an attempts cap). For monitoring
+  jobs the relay makes re-placement a seconds-long blip.
+- Costs: worker RBAC (patch/delete own pod, downward-API pod name), gateway
+  routes by pod-IP DNS (`<ip-dashed>.<ns>.pod.cluster.local`) since names are
+  random, a janitor for leaked non-Running detached pods, and long-lived
+  monitoring pods outliving Deployment rollouts (they drain via requeue).
+- Elasticity composes safely on top: KEDA (Pub/Sub backlog) may scale the
+  *ready pool's* N — every pod it manages is idle by definition, so scale-down
+  is always harmless. The `video_processor_busy` gauge stays for observability
+  and pool-sizing dashboards.
 
-Never queued: heartbeats, cancel/watch signals, results to the browser.
+The chart in roboflow-infra#2290 still ships the older
+ScaledObject-on-StatefulSet approach; the swap to the ready-pool model is in
+progress and should land before anything real runs on this.
+
+Never queued: heartbeats, cancel/watch signals, results to the browser (see
+HANDOFF §6 "Consuming results" for how the events/JSON channel is addressed in
+the cluster and its job-addressed production shape).
