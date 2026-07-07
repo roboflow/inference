@@ -234,6 +234,7 @@ class JobRecorder:
         self.ffmpeg = None
         self.fps = None
         self.frames = 0
+        self.video_frames = 0
         self.video_failed = False
         self.lock = threading.Lock()
 
@@ -241,9 +242,15 @@ class JobRecorder:
         with self.lock:
             if self.events_file is None:
                 return
+            # image outputs can be conditional (e.g. visualization only when
+            # detections exist), so the mp4 can have fewer frames than the JSONL.
+            # Each event records which encoded video frame it belongs to (or
+            # null) so the review UI aligns the playhead correctly either way.
+            has_video_frame = jpeg_bytes is not None and not self.video_failed
+            event["videoFrame"] = self.video_frames if has_video_frame else None
             self.events_file.write(json.dumps(event, default=str) + "\n")
             self.frames += 1
-            if jpeg_bytes is None or self.video_failed:
+            if not has_video_frame:
                 return
             if self.ffmpeg is None:
                 self.fps = float(fps) if fps and fps > 0 else 30.0
@@ -266,6 +273,7 @@ class JobRecorder:
                     return
             try:
                 self.ffmpeg.stdin.write(jpeg_bytes)
+                self.video_frames += 1
             except Exception:
                 self.video_failed = True
 
@@ -281,10 +289,17 @@ class JobRecorder:
                     self.ffmpeg.wait(timeout=60)
                 except Exception:
                     self.video_failed = True
+                    # don't leak a wedged encoder (it also holds video.mp4 open)
+                    try:
+                        self.ffmpeg.kill()
+                        self.ffmpeg.wait(timeout=5)
+                    except Exception:
+                        pass
             meta = {
                 "jobId": self.job_id,
                 "fps": self.fps,
                 "frames": self.frames,
+                "videoFrames": self.video_frames,
                 "hasVideo": self.ffmpeg is not None and not self.video_failed,
             }
             with open(os.path.join(self.dir, "meta.json"), "w") as f:
@@ -305,8 +320,9 @@ class PodSelf:
 
     def __init__(self):
         self.pod_name = os.getenv("POD_NAME")
+        pool_mode = os.getenv("PROCESSOR_POOL_MODE", "").strip().lower()
         self.enabled = (
-            bool(os.getenv("PROCESSOR_POOL_MODE"))
+            pool_mode in ("1", "true", "yes", "on")
             and bool(self.pod_name)
             and os.path.isfile(os.path.join(K8S_SA_DIR, "token"))
         )
@@ -314,12 +330,16 @@ class PodSelf:
             return
         with open(os.path.join(K8S_SA_DIR, "namespace")) as f:
             namespace = f.read().strip()
-        with open(os.path.join(K8S_SA_DIR, "token")) as f:
-            self._token = f.read().strip()
         self._ca = os.path.join(K8S_SA_DIR, "ca.crt")
         self._pod_url = (
             f"https://kubernetes.default.svc/api/v1/namespaces/{namespace}/pods/{self.pod_name}"
         )
+
+    def _auth(self):
+        # bound service-account tokens rotate on disk and expire (~1h): a worker
+        # that idled in the pool for hours must not present a startup-time token
+        with open(os.path.join(K8S_SA_DIR, "token")) as f:
+            return {"Authorization": f"Bearer {f.read().strip()}"}
 
     def detach_from_pool(self, job_id):
         if not self.enabled:
@@ -334,7 +354,7 @@ class PodSelf:
                     }
                 },
                 headers={
-                    "Authorization": f"Bearer {self._token}",
+                    **self._auth(),
                     "Content-Type": "application/strategic-merge-patch+json",
                 },
                 verify=self._ca,
@@ -345,13 +365,27 @@ class PodSelf:
         except Exception as exc:
             print(f"[processor] pool detach failed (continuing): {exc}", file=sys.stderr)
 
+    def is_detached(self):
+        """True when this pod is already labeled pool=working — meaning this
+        process is a crash-restart inside a spent pod (kubelet restarts the
+        container in place), not a fresh pool member."""
+        if not self.enabled:
+            return False
+        try:
+            resp = requests.get(self._pod_url, headers=self._auth(), verify=self._ca, timeout=10)
+            resp.raise_for_status()
+            labels = resp.json().get("metadata", {}).get("labels", {})
+            return labels.get("pool") == "working"
+        except Exception:
+            return False
+
     def self_delete(self):
         if not self.enabled:
             return False
         try:
             resp = requests.delete(
                 self._pod_url,
-                headers={"Authorization": f"Bearer {self._token}"},
+                headers=self._auth(),
                 verify=self._ca,
                 timeout=10,
             )
@@ -383,6 +417,16 @@ class Worker:
         # serializes claims between the poll loop and the Pub/Sub wake-up so a
         # worker can never start two jobs
         self.claim_lock = threading.Lock()
+        # run_job holds this end to end; stop_job takes it — so cancel can never
+        # interleave with a still-starting job (which would leak a running
+        # pipeline with no job attached and wedge the poll loop)
+        self.lifecycle_lock = threading.Lock()
+        # pool mode is single-use: once this pod has taken a job it never claims
+        # again, closing every claim-after-detach race in one place
+        self.had_job = False
+        # set while stop_job tears a job down, so the pipeline-end watcher knows
+        # not to upload partial results or report a cancelled job as completed
+        self.cancelling = False
         self._pubsub_client = None
         self.stats = Stats()
         self.events = EventBus()
@@ -438,6 +482,10 @@ class Worker:
     # ---------- job lifecycle ----------
 
     def run_job(self, job: dict):
+        with self.lifecycle_lock:
+            self._run_job_locked(job)
+
+    def _run_job_locked(self, job: dict):
         with self.lock:
             self.job = job
             self.state = "starting"
@@ -466,9 +514,13 @@ class Worker:
                 except Exception as exc:
                     print(f"[processor] source download failed: {exc}", file=sys.stderr)
                     self._finalize_recorder()
+                    self._cleanup_download()
                     with self.lock:
                         self.state = "error"
                         self.job = {**job, "error": f"source download failed: {exc}"}
+                    # transient or not, same recovery as the sibling failure
+                    # paths: retire, let the reaper requeue (attempts-capped)
+                    self.retire_if_pool_mode()
                     return
             # Explicit strategies as a belt-and-braces: every frame, in order.
             pipeline_kwargs = {
@@ -507,7 +559,7 @@ class Worker:
                 return
 
         try:
-            self.pipeline = InferencePipeline.init_with_workflow(
+            pipeline = InferencePipeline.init_with_workflow(
                 video_reference=video_reference,
                 workflow_specification=job.get("workflowSpecification"),
                 workspace_name=job.get("workspaceName"),
@@ -520,22 +572,31 @@ class Worker:
                 max_fps=job.get("maxFps"),
                 **pipeline_kwargs,
             )
+            self.pipeline = pipeline
             self.stats.on_pipeline_start()
-            self.pipeline.start(use_main_thread=False)
+            pipeline.start(use_main_thread=False)
             with self.lock:
                 self.state = "running"
-            if mode == "batch":
-                # a batch job ends when the file does; detect it so results become
-                # scrubbable and the worker frees up for the next job
-                threading.Thread(
-                    target=self._watch_pipeline_end,
-                    args=(job.get("id"), self.pipeline),
-                    daemon=True,
-                ).start()
+            # watch BOTH modes: a batch pipeline ending means the file is done
+            # (finalize + upload + completed); a stream pipeline ending on its
+            # own means the stream died and the job must be re-placed
+            threading.Thread(
+                target=self._watch_pipeline_end,
+                args=(job.get("id"), pipeline, mode),
+                daemon=True,
+            ).start()
         except Exception as exc:
             print(f"[processor] job failed to start: {exc}", file=sys.stderr)
+            pipeline, self.pipeline = self.pipeline, None
+            if pipeline is not None:
+                try:
+                    pipeline.terminate()
+                    pipeline.join()
+                except Exception:
+                    pass
             self._stop_sim_process()
             self._finalize_recorder()
+            self._cleanup_download()
             with self.lock:
                 self.state = "error"
                 self.job = {**job, "error": str(exc)}
@@ -543,18 +604,41 @@ class Worker:
             self.retire_if_pool_mode()
             return
 
-    def _watch_pipeline_end(self, job_id, pipeline):
+    def _watch_pipeline_end(self, job_id, pipeline, mode):
         try:
             pipeline.join()
         except Exception:
             pass
-        self._finalize_recorder()
-        self._cleanup_download()
-        self._upload_results(job_id)
+        if self.cancelling:
+            # stop_job is tearing this job down and owns cleanup; partial results
+            # from a cancelled job must not be uploaded or marked complete
+            return
         with self.lock:
-            if self.job and self.job.get("id") == job_id and self.state == "running":
-                self.state = "completed"
-                print(f"[processor] job {job_id} completed; results are scrubbable")
+            current = (
+                self.job is not None
+                and self.job.get("id") == job_id
+                and self.state == "running"
+            )
+        if not current:
+            return
+        if mode == "batch":
+            self._finalize_recorder()
+            self._cleanup_download()
+            self._upload_results(job_id)
+            with self.lock:
+                if self.job and self.job.get("id") == job_id and self.state == "running":
+                    self.state = "completed"
+                    print(f"[processor] job {job_id} completed; results are scrubbable")
+        else:
+            # a live pipeline ending on its own means the stream died (camera
+            # offline, sim replay crashed). Free/retire the worker; the platform
+            # reaper requeues the job once heartbeats stop carrying it.
+            print(
+                f"[processor] stream pipeline for job {job_id} ended unexpectedly; releasing job",
+                file=sys.stderr,
+            )
+            self.stop_job()
+            self.retire_if_pool_mode()
 
     def _upload_results(self, job_id):
         """Move finished batch results to durable storage via platform-signed URLs.
@@ -567,6 +651,15 @@ class Worker:
             return
         rdir = os.path.join(RESULTS_ROOT, str(job_id))
         files = [f for f in RESULT_FILES if os.path.isfile(os.path.join(rdir, f))]
+        # a failed encode leaves an unplayable mp4 (no moov atom) — don't ship it
+        meta_path = os.path.join(rdir, "meta.json")
+        if "video.mp4" in files and os.path.isfile(meta_path):
+            try:
+                with open(meta_path) as f:
+                    if not json.load(f).get("hasVideo"):
+                        files.remove("video.mp4")
+            except Exception:
+                pass
         if not files:
             return
         try:
@@ -610,6 +703,8 @@ class Worker:
         """Fetch a batch job's file to local disk so it gets true file semantics."""
         suffix = os.path.splitext(urlparse(source_url).path)[1] or ".mp4"
         fd, path = tempfile.mkstemp(prefix=f"rfv-job-{job_id}-", suffix=suffix)
+        # track immediately so a mid-download failure still gets cleaned up
+        self._downloaded_path = path
         started = time.time()
         with os.fdopen(fd, "wb") as out:
             with requests.get(source_url, stream=True, timeout=30) as resp:
@@ -630,27 +725,46 @@ class Worker:
                 pass
 
     def stop_job(self):
-        pipeline, self.pipeline = self.pipeline, None
-        if pipeline is not None:
-            print("[processor] terminating pipeline")
-            try:
-                pipeline.terminate()
-                pipeline.join()
-            except Exception as exc:
-                print(f"[processor] error during terminate: {exc}", file=sys.stderr)
-        self._stop_sim_process()
-        self._finalize_recorder()
-        self._cleanup_download()
-        with self.lock:
-            self.job = None
-            self.state = "idle"
+        # cancelling BEFORE taking the lifecycle lock: the pipeline-end watcher
+        # must see it the instant our terminate() unblocks its join()
+        self.cancelling = True
+        # taken AFTER any in-flight start finishes — cancelling mid-start would
+        # leak a running pipeline with no job attached
+        with self.lifecycle_lock:
+            pipeline, self.pipeline = self.pipeline, None
+            if pipeline is not None:
+                print("[processor] terminating pipeline")
+                try:
+                    pipeline.terminate()
+                    pipeline.join()
+                except Exception as exc:
+                    print(f"[processor] error during terminate: {exc}", file=sys.stderr)
+            self._stop_sim_process()
+            self._finalize_recorder()
+            self._cleanup_download()
+            with self.lock:
+                self.job = None
+                self.state = "idle"
 
     def status(self) -> dict:
         with self.lock:
+            job = self.job
+            # public endpoint: never expose claim-payload internals — the job
+            # dict carries the workspace api key and credentialed/signed URLs
+            public_job = (
+                {
+                    "id": job.get("id"),
+                    "mode": job.get("mode"),
+                    "imageOutput": job.get("imageOutput"),
+                    "error": job.get("error"),
+                }
+                if job
+                else None
+            )
             return {
                 "processorId": self.processor_id,
                 "state": self.state,
-                "job": self.job,
+                "job": public_job,
                 "stats": self.stats.snapshot(),
                 # image outputs redacted from /events; each is watchable at
                 # /preview.mjpeg?output=<name>
@@ -669,11 +783,22 @@ class Worker:
         return resp.json() if resp.content else {}
 
     def try_claim(self):
-        """Claim (at most) one job if idle. Serialized so the poll loop and a
-        Pub/Sub wake-up can't both start work on this worker."""
+        """Claim (at most) one job if idle and eligible. Serialized so the poll
+        loop and a Pub/Sub wake-up can't both start work on this worker.
+
+        Returns the claimed job dict, None when the platform had no job, or
+        False when this worker was not eligible to claim (busy/retiring/spent).
+        The job pipeline is started on its OWN thread so the caller (usually the
+        poll loop) keeps heartbeating while the source downloads and the model
+        loads — otherwise any start longer than the reaper window would get the
+        job requeued and double-processed."""
         with self.claim_lock:
             if self.retiring or self.state not in ("idle", "error"):
-                return None
+                return False
+            if self.pod.enabled and self.had_job:
+                # single-use invariant: a detached pod never takes a second job,
+                # even if its retirement is still in flight or failed
+                return False
             resp = self.api(
                 "POST",
                 "/video-jobs/claim",
@@ -683,11 +808,20 @@ class Worker:
                 },
             )
             job = resp.get("job")
-            if job:
-                # leave the ready pool BEFORE the (slow) pipeline start so the
-                # replacement worker is already warming while we work
-                self.pod.detach_from_pool(job.get("id"))
-                self.run_job(job)
+            if not job:
+                return None
+            self.had_job = True
+            self.cancelling = False
+            # leave the ready pool BEFORE the (slow) pipeline start so the
+            # replacement worker is already warming while we work
+            self.pod.detach_from_pool(job.get("id"))
+            # claim the local state synchronously (no second claim can slip in),
+            # then start the pipeline off-thread
+            with self.lock:
+                self.job = job
+                self.state = "starting"
+                self.image_output = job.get("imageOutput")
+            threading.Thread(target=self.run_job, args=(job,), daemon=True).start()
             return job
 
     def retire_if_pool_mode(self):
@@ -721,14 +855,18 @@ class Worker:
             return
 
         def on_message(message):
-            if self.state not in ("idle", "error"):
-                message.nack()
-                return
             try:
-                self.try_claim()
-                message.ack()
+                claimed = self.try_claim()
             except Exception:
                 message.nack()
+                return
+            if claimed is False:
+                # not eligible (busy/retiring/spent) — let redelivery reach an
+                # idle worker and keep the backlog visible to autoscaling
+                message.nack()
+            else:
+                # claimed a job, or the queue was already drained — consume it
+                message.ack()
 
         self._pubsub_client = pubsub_v1.SubscriberClient()
         self._pubsub_client.subscribe(
@@ -745,11 +883,21 @@ class Worker:
                 if self.state in ("idle", "error"):
                     self.try_claim()
                 else:
-                    state = self.state
+                    with self.lock:
+                        job = self.job
+                        state = self.state
+                    if job is None:
+                        # mid-transition (a concurrent stop); check again shortly
+                        time.sleep(POLL_INTERVAL_S)
+                        continue
                     resp = self.api(
                         "POST",
-                        f"/video-jobs/{self.job['id']}/status",
-                        json={"state": state, "stats": self.stats.snapshot()},
+                        f"/video-jobs/{job['id']}/status",
+                        json={
+                            "state": state,
+                            "stats": self.stats.snapshot(),
+                            "processorId": self.processor_id,
+                        },
                     )
                     if state == "completed":
                         print("[processor] completed job reported")
@@ -761,6 +909,10 @@ class Worker:
                         self.retire_if_pool_mode()
             except requests.RequestException as exc:
                 print(f"[processor] poll error: {exc}", file=sys.stderr)
+            except Exception as exc:
+                # the poll loop is the worker's heartbeat and cancel channel —
+                # it must survive anything
+                print(f"[processor] poll loop error: {exc}", file=sys.stderr)
             time.sleep(POLL_INTERVAL_S)
 
     def run(self):
@@ -770,6 +922,15 @@ class Worker:
             job.setdefault("id", "local-job")
             self.run_job(job)
         else:
+            if self.pod.is_detached():
+                # crash-restarted container inside a spent (detached) pod: it
+                # must not claim work — its old job is being requeued by the
+                # reaper, and a hidden worker outside the pool breaks the
+                # single-use invariant. Retire the pod instead.
+                print("[processor] restarted inside a detached pod — retiring", file=sys.stderr)
+                self.retiring = True
+                self.pod.self_delete()
+                return
             self.start_pubsub_listener()
             threading.Thread(target=self.poll_loop, daemon=True).start()
 

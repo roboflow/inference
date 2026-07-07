@@ -118,7 +118,7 @@ depends on this) and run as a separate process: `./bin/mediamtx mediamtx.yml`. I
 | `webrtcLocalUDPAddress`, `webrtcAdditionalHosts` | `:8189`, `[127.0.0.1, localhost]` | makes browser WebRTC work on a laptop with no STUN/public IP |
 | `hls`, `rtmp`, `srt` | `no` | narrow the surface to exactly what the POC uses: RTSP in, RTSP+WHEP out |
 | `api` | `127.0.0.1:9997` | debugging only (`curl localhost:9997/v3/paths/list` shows active streams); nothing in the code depends on it |
-| `paths: all_others` | catch-all | **the biggest cheat**: any stream name can be published or read with *no auth*. Production needs per-stream publish/read credentials — this is where the deck's ingest-URL + stream-key design lands (mediamtx supports per-path auth and external auth hooks) |
+| `paths: all_others` | catch-all | any stream name can be published/read. In THIS repo's local-dev config there is **no auth** (fine on a laptop); the staging chart's ConfigMap adds `authMethod: http` pointing at the platform's `/video-relay/auth` hook, which validates per-stream keys on every connection — that's where the deck's ingest-URL + stream-key design landed |
 
 Stream naming conventions (both sides must agree; defined in
 `videoSourcesService.js` and `processor.py`):
@@ -283,8 +283,13 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   plus a commands queue (`start_stream` / `stop_stream`, drained on delivery,
   ack-by-id) — same contract shape as device-manager healthchecks.
 - **`video_jobs`**: `{workspace, sourceId, sourceName, workflowUrl|workflowSpecification,
-  imageOutput?, mode: batch|stream, state: queued|claimed|running|completed|error|cancelled,
-  cancelRequested, processorId?, processorUrl?, stats?, created_at, updated_at}`.
+  imageOutput?, mode: batch|stream, streamKey (relay credential for sim-<jobId>,
+  never sent to browsers), state: queued|claimed|running|completed|error|cancelled,
+  attempts (requeue counter, capped at 3), cancelRequested, processorId?,
+  processorUrl?, heartbeatAt?, stats?, resultsFiles?/resultsUploadedAt? (GCS),
+  error?, created_at, updated_at}`. The claim payload derives from this doc plus
+  `sourceUrl` (signed GCS URL or credentialed RTSP consume URL), `apiKey` (the
+  job workspace's inference key), and `simPublishUrl`.
 
 ## 8. Known gaps and how they're meant to close
 

@@ -131,10 +131,8 @@ just a 201 from the signaling request.
 - **processor**: new `development/video_poc/processor/Dockerfile` in the
   inference repo:
   ```dockerfile
-  FROM roboflow/roboflow-inference-server-gpu:latest
-  RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
-  COPY processor.py /app/processor.py
-  ENTRYPOINT ["python", "/app/processor.py"]
+  # see processor/Dockerfile (canonical): inference GPU base + ffmpeg CLI
+  # + google-cloud-pubsub/requests + processor.py, ENV FFMPEG_BIN=ffmpeg
   ```
   The base image ships the full `inference` package with CUDA onnxruntime; the
   runtime stage does NOT include the ffmpeg CLI (checked), hence the apt line
@@ -153,7 +151,7 @@ The full connection audit — what breaks when components leave one machine:
 | 1 | connector → platform | localhost emulator | staging functions URL | none (flag/env on connector invocation) |
 | 2 | connector → relay ingest | `rtsp://127.0.0.1:8554` | `rtsp://video-ingest.crusoe.roboflow.one:8554` | none in code — platform sends full `ingestUrl` in `start_stream`; set functions env |
 | 3 | browser → relay preview | `http://127.0.0.1:8889/...whep` | `https://video-relay.crusoe...` | none — `VIDEO_POC_WHEP_BASE` env exists |
-| 4 | browser → processor | `job.processorUrl` = `http://127.0.0.1:8890` | `https://video-processors.crusoe.../video-processor-N` | **processor change**: report `PROCESSOR_PUBLIC_URL` env (injected as `$(GATEWAY_BASE)/$(POD_NAME)` via fieldRef) instead of hardcoded `http://127.0.0.1:{port}` (processor.py, claim payload) |
+| 4 | browser → processor | `job.processorUrl` = `http://127.0.0.1:8890` | `https://video-processors.crusoe.../ip-a-b-c-d` | **done**: processor derives its public URL from `GATEWAY_PUBLIC_BASE` + `POD_IP` (pod-IP routing; ready-pool pods have random names) |
 | 5 | processor → platform (claim/status) | localhost emulator | staging functions URL | none — `--api-url` flag exists; needs staging **functions deployed from the branch** (see §5) |
 | 6 | processor → relay (consume `src-*`) | same base URL as #2 | cluster-internal `rtsp://mediamtx.video-poc.svc:8554` | **functions change**: split `VIDEO_POC_RTSP_BASE` into `VIDEO_POC_RTSP_INGEST_BASE` (public, for connector commands) and `VIDEO_POC_RTSP_CONSUME_BASE` (internal, used in claim's `sourceUrl`). One function file; fallback = one var for both (works via public LB, wastes hairpin bandwidth) |
 | 7 | processor → relay (publish `sim-*`) | `VIDEO_POC_RTSP_BASE` env | internal svc DNS | none — env exists on processor |
@@ -208,7 +206,8 @@ Afternoon (wiring):
 7. Bottom-up smoke tests, in order — each isolates one arrow:
    a. WHEP playback of the test stream in a browser via
       `https://video-relay.crusoe.roboflow.one/test/whep`.
-   b. `curl https://video-processors.crusoe.roboflow.one/video-processor-0/status`.
+   b. `curl https://video-processors.crusoe.roboflow.one/ip-<pod-ip-dashed>/status`
+      (get a worker's exact URL from a job doc's `processorUrl`).
    c. Upload a file in the app → batch job → processor claims (watch pod
       logs) → MJPEG progress in the modal → completes → scrub the results.
    d. Connector on laptop with `--files-dir` → source appears → live preview
@@ -217,7 +216,8 @@ Afternoon (wiring):
 
 ## 7. Known gaps this deployment adds (track, don't fix tomorrow)
 
-- Batch results still live on processor-local disk — a pod restart loses them.
+- ~~Batch results live on processor-local disk~~ done: uploaded to GCS on
+  completion via platform-signed URLs; local files are only the fallback.
   Next step: recorder uploads mp4+jsonl to GCS on finalize, platform stores
   the URLs on the job doc, review UI stops touching the processor entirely
   (also removes the biggest reason browsers talk to processors at all).
