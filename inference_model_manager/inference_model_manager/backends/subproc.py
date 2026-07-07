@@ -178,6 +178,11 @@ def _tensors_to_numpy(result: Any) -> Any:
     return _walk(result)
 
 
+def _model_supports_rle(model: Any) -> bool:
+    """True if the model's instance masks can be requested in RLE format."""
+    return "rle" in getattr(model, "supported_mask_formats", set())
+
+
 def _maybe_empty_cuda_cache(
     batch_count: int,
     last_check_ts: float,
@@ -282,6 +287,7 @@ def _worker_main(
         from inference_model_manager.backends.base import detect_max_batch_size
 
         model_max_bs = detect_max_batch_size(model)
+        supports_rle = _model_supports_rle(model)
         effective_bs = model_max_bs if batch_max_size <= 0 else batch_max_size
         if model_max_bs is not None and effective_bs > model_max_bs:
             effective_bs = model_max_bs
@@ -333,6 +339,7 @@ def _worker_main(
             batch_max_wait_ms,
             _log,
             decode_budget_fn=decode_budget_fn,
+            supports_rle=supports_rle,
         )
 
     except KeyboardInterrupt:
@@ -361,6 +368,7 @@ def _worker_loop(
     batch_max_wait_ms: float,
     log,
     decode_budget_fn: Optional[Callable[[], int]] = None,
+    supports_rle: bool = False,
 ) -> None:
     """Greedy batch loop — accumulate T_SLOT_READY, fire on size-or-timeout."""
     poller = zmq.Poller()
@@ -468,7 +476,14 @@ def _worker_loop(
                     )
                 try:
                     _process_slots(
-                        model, pool, chunk, sock, batch_decode_fn, log, worker_stats
+                        model,
+                        pool,
+                        chunk,
+                        sock,
+                        batch_decode_fn,
+                        log,
+                        worker_stats,
+                        supports_rle=supports_rle,
                     )
                 except Exception:
                     # A batch-level crash must not kill the worker: error out
@@ -594,6 +609,7 @@ def _process_slots(
     batch_decode_fn,
     log,
     worker_stats: dict,
+    supports_rle: bool = False,
 ) -> None:
     """Process a batch of (slot_id, req_id, params_bytes), write results to SHM, send T_RESULT."""
     t0 = time.monotonic()
@@ -738,6 +754,8 @@ def _process_slots(
     for params_key, indices in sub_batches.items():
         sub_params = json.loads(params_key)
         task = sub_params.pop("task", None)
+        if supports_rle and "mask_format" not in sub_params:
+            sub_params["mask_format"] = "rle"
         sub_images = [good_images[i] for i in indices]
         try:
             images_arg = sub_images[0] if len(sub_images) == 1 else sub_images
@@ -755,7 +773,7 @@ def _process_slots(
     n_ok = 0
     n_err = len(error_indices) if error_indices else 0
 
-    for (slot_id, req_id, _), result in zip(good_batch, results):
+    for (slot_id, req_id, _), result, params in zip(good_batch, results, good_params):
         if not _slot_owned(pool, slot_id, req_id):
             log.warning(
                 "Worker: dropping result for slot %d — ownership lost during "
@@ -808,10 +826,15 @@ def _process_slots(
                 slot_id,
             )
             mv.release()
+            hint = (
+                "; pass mask_format=rle to shrink instance segmentation results"
+                if supports_rle and params.get("mask_format") == "dense"
+                else ""
+            )
             _write_error_to_slot(
                 pool,
                 slot_id,
-                f"result {len(data)}B exceeds slot capacity {capacity}B",
+                f"result {len(data)}B exceeds slot capacity {capacity}B{hint}",
             )
             try:
                 sock.send_multipart(

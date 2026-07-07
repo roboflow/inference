@@ -39,6 +39,7 @@ from inference_model_manager.backends.subproc import (
     _MSG_SHUTDOWN,
     _MSG_STATS_REQ,
     _build_worker_stats_payload,
+    _model_supports_rle,
     _process_slots,
     _write_error_to_slot,
 )
@@ -289,7 +290,14 @@ def _shared_worker_loop(
                 model = registry.get(head_index)
                 try:
                     _process_slots(
-                        model, pool, batch, sock, batch_decode_fn, log, worker_stats
+                        model,
+                        pool,
+                        batch,
+                        sock,
+                        batch_decode_fn,
+                        log,
+                        worker_stats,
+                        supports_rle=_model_supports_rle(model),
                     )
                 except Exception:
                     log.exception("SharedWorker: _process_slots crashed for head %d", head_index)
