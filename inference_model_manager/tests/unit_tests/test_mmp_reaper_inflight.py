@@ -47,6 +47,7 @@ def _make_mmp(pool: SHMPool) -> ModelManagerProcess:
     mmp._models = {}
     mmp._model_access = {}
     mmp._model_request_times = {}
+    mmp._unloading = set()
     mmp._vram_recent_window_s = 60.0
     mmp._stale_slot_max_age_s = -1.0  # every allocated slot is instantly stale
     mmp._sent = []
