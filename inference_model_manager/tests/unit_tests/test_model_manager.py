@@ -462,6 +462,51 @@ class TestReloadAfterWorkerDeath:
         assert created[-1].is_healthy is True
 
 
+class TestEnsurePoolRace:
+    def test_concurrent_ensure_pool_creates_single_pool(self):
+        mm = ModelManager(n_slots=2, input_mb=0.1)
+        created: List[Any] = []
+        start = threading.Barrier(4)
+
+        class _FakePool:
+            def __init__(self, idx):
+                self.name = f"pool-{idx}"
+
+            def close(self):
+                pass
+
+        def slow_create(n_slots, input_mb):
+            import time
+
+            time.sleep(0.05)
+            pool = _FakePool(len(created))
+            created.append(pool)
+            return pool
+
+        try:
+            with patch(
+                "inference_model_manager.backends.utils.shm_pool.SHMPool.create",
+                side_effect=slow_create,
+            ):
+                results: List[Any] = []
+
+                def worker():
+                    start.wait(timeout=2)
+                    results.append(mm._ensure_pool())
+
+                threads = [threading.Thread(target=worker) for _ in range(4)]
+                for t in threads:
+                    t.start()
+                for t in threads:
+                    t.join(timeout=5)
+
+            assert len(created) == 1
+            assert all(r is created[0] for r in results)
+            assert mm._pool is created[0]
+        finally:
+            mm.shutdown()
+
+
 class TestSubmitSlotFutureLifecycle:
     def test_cancel_refused_and_slot_freed_only_on_resolution(self):
         mm = ModelManager(n_slots=2, input_mb=0.1)
