@@ -166,7 +166,7 @@ class TestSetStreamCameraParametersBlockV1:
 
         output = block.run(
             value=50,
-            register_key="focus",
+            register="focus",
             camera_family="ai1",
             stream_name="aione",
             device_id="",
@@ -194,7 +194,7 @@ class TestSetStreamCameraParametersBlockV1:
 
         block.run(
             value=1,
-            register_key="focus",
+            register="focus",
             camera_family="ai1",
             stream_name="",
             device_id="",

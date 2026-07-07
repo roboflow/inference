@@ -72,9 +72,8 @@ class SetStreamCameraParametersBlockManifest(WorkflowBlockManifest):
         description="Register value from an upstream step or workflow input.",
         examples=["$steps.plc_read.value", "$inputs.line_speed"],
     )
-    register_key: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
+    register: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
         default="manual",
-        alias="register",
         description="Friendly register name for the selected camera family.",
         examples=["focus", "line_rate", "brightness", "manual"],
     )
@@ -138,7 +137,7 @@ class SetStreamCameraParametersBlockV1(WorkflowBlock):
     def run(
         self,
         value: Any,
-        register_key: str,
+        register: str,
         camera_family: str,
         stream_name: str,
         device_id: str,
@@ -156,7 +155,7 @@ class SetStreamCameraParametersBlockV1(WorkflowBlock):
         if not resolved_parameters:
             try:
                 resolved_parameters = build_parameter_delta(
-                    str(register_key or "manual"),
+                    str(register or "manual"),
                     value,
                     camera_family=str(camera_family or ""),
                     manual_register_key=str(manual_register_key or "") or None,
