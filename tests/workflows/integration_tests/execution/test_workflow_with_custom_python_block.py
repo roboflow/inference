@@ -1277,3 +1277,235 @@ def test_workflow_with_custom_python_block_returning_bare_tensor_via_wildcard(
 
     assert isinstance(result[0]["weird"], torch.Tensor)
     assert result[0]["weird"].shape == (3,)
+
+
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason=(
+        "tensor_native dynamic blocks compile only under "
+        "ENABLE_TENSOR_DATA_REPRESENTATION (the flag-off compile-time error is "
+        "unit-tested in test_block_assembler.py)"
+    ),
+)
+
+FUNCTION_MINTING_NATIVE_DETECTIONS = """
+def run(self, image) -> BlockResult:
+    detections = Detections(
+        xyxy=torch.tensor(
+            [[10.0, 10.0, 60.0, 60.0]], device=WORKFLOWS_IMAGE_TENSOR_DEVICE
+        ),
+        class_id=torch.tensor([0], device=WORKFLOWS_IMAGE_TENSOR_DEVICE),
+        confidence=torch.tensor([0.9], device=WORKFLOWS_IMAGE_TENSOR_DEVICE),
+    )
+    detections = attach_native_detection_metadata(
+        detections=detections,
+        image=image,
+        class_names={0: "widget"},
+        prediction_type="object-detection",
+    )
+    return {"predictions": detections}
+"""
+
+WORKFLOW_WITH_TENSOR_NATIVE_MINTING_BLOCK = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "NativeMinter",
+                "tensor_compatibility": "tensor_native",
+                "inputs": {
+                    "image": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["input_image"],
+                    },
+                },
+                "outputs": {
+                    "predictions": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": ["object_detection_prediction"],
+                    },
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_MINTING_NATIVE_DETECTIONS,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "NativeMinter",
+            "name": "minter",
+            "image": "$inputs.image",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.minter.predictions",
+        },
+    ],
+}
+
+
+@_TENSOR_ONLY
+def test_workflow_with_tensor_native_custom_block_minting_native_detections(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """tensor_native authoring surface: the extended IMPORTS_LINES must resolve in
+    the generated module namespace (torch, Detections,
+    WORKFLOWS_IMAGE_TENSOR_DEVICE, attach_native_detection_metadata), and the
+    minted output must satisfy the tensor serializer's hard requirements
+    (class_names map + per-box detection_id) end-to-end."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_TENSOR_NATIVE_MINTING_BLOCK,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [dogs_image]},
+        serialize_results=True,
+    )
+
+    # then
+    assert isinstance(result, list) and len(result) == 1
+    serialized = result[0]["predictions"]["predictions"]
+    assert len(serialized) == 1
+    assert serialized[0]["class"] == "widget"
+    assert serialized[0]["class_id"] == 0
+    assert abs(serialized[0]["confidence"] - 0.9) < 1e-6
+    assert serialized[0]["x"] == 35.0 and serialized[0]["y"] == 35.0
+    assert serialized[0]["width"] == 50.0 and serialized[0]["height"] == 50.0
+    assert len(serialized[0]["detection_id"]) > 0
+
+
+FUNCTION_PROBING_NATIVE_PASSTHROUGH = """
+def run(self, predictions) -> BlockResult:
+    got_native = isinstance(predictions, Detections)
+    xyxy_is_tensor = isinstance(predictions.xyxy, torch.Tensor)
+    return {
+        "got_native": got_native,
+        "xyxy_is_tensor": xyxy_is_tensor,
+        "passthrough": predictions,
+    }
+"""
+
+WORKFLOW_WITH_TENSOR_NATIVE_PROBING_BLOCK = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "NativeProbe",
+                "tensor_compatibility": "tensor_native",
+                "inputs": {
+                    "predictions": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                        "selector_data_kind": {
+                            "step_output": ["object_detection_prediction"]
+                        },
+                    },
+                },
+                "outputs": {
+                    "got_native": {"type": "DynamicOutputDefinition", "kind": []},
+                    "xyxy_is_tensor": {"type": "DynamicOutputDefinition", "kind": []},
+                    "passthrough": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": ["object_detection_prediction"],
+                    },
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_PROBING_NATIVE_PASSTHROUGH,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "NativeProbe",
+            "name": "probe",
+            "predictions": "$steps.model.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "got_native",
+            "selector": "$steps.probe.got_native",
+        },
+        {
+            "type": "JsonField",
+            "name": "xyxy_is_tensor",
+            "selector": "$steps.probe.xyxy_is_tensor",
+        },
+        {
+            "type": "JsonField",
+            "name": "passthrough",
+            "selector": "$steps.probe.passthrough",
+        },
+    ],
+}
+
+
+@_TENSOR_ONLY
+def test_workflow_with_tensor_native_custom_block_receiving_native_predictions(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    """tensor_native pass-through: user code receives the NATIVE prediction from a
+    model step (no boundary conversion in either direction) and can return it
+    for downstream serialization."""
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_TENSOR_NATIVE_PROBING_BLOCK,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": [dogs_image]},
+        serialize_results=True,
+    )
+
+    # then
+    assert isinstance(result, list) and len(result) == 1
+    assert result[0]["got_native"] is True, "User code must receive native Detections"
+    assert result[0]["xyxy_is_tensor"] is True, "Native xyxy must stay a torch.Tensor"
+    serialized = result[0]["passthrough"]["predictions"]
+    assert len(serialized) >= 1
+    assert {"x", "y", "width", "height", "confidence", "class", "detection_id"} <= set(
+        serialized[0].keys()
+    )

@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Type
 
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    ENABLE_TENSOR_DATA_REPRESENTATION,
     MODAL_ANONYMOUS_WORKSPACE_NAME,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
@@ -57,6 +58,28 @@ IMPORTS_LINES = [
     "from inference.core.workflows.prototypes.block import BlockResult",
     "from inference.core.workflows.execution_engine.v1.dynamic_blocks.workflow_debug import debug_traces",
 ]
+
+# Authoring surface for `tensor_compatibility=tensor_native` dynamic blocks: the
+# native prediction types plus the metadata helpers that mint serializer-compliant
+# outputs (`image_metadata['class_names']` + per-box `detection_id`), and the
+# device native tensors pin to. Appended to IMPORTS_LINES ONLY under the flag
+# (load-time, mirroring the pivot's swap philosophy) so the flag-off generated
+# module source — including error-line offsets derived from it — stays
+# byte-identical to the legacy list above. The numpy imports stay available in
+# tensor mode too (user code may mix representations for its own math).
+# NOTE: `modal/modal_app.py` mirrors this list into the remote sandbox namespace
+# via a guarded import of this constant — keep it importable and self-contained.
+TENSOR_NATIVE_IMPORTS_LINES = [
+    "import torch",
+    "from inference.core.env import WORKFLOWS_IMAGE_TENSOR_DEVICE",
+    "from inference_models.models.base.object_detection import Detections",
+    "from inference_models.models.base.instance_segmentation import InstanceDetections",
+    "from inference_models.models.base.keypoints_detection import KeyPoints",
+    "from inference_models.models.base.classification import ClassificationPrediction, MultiLabelClassificationPrediction",
+    "from inference.core.workflows.core_steps.common.tensor_native import build_native_image_metadata, attach_native_detection_metadata",
+]
+if ENABLE_TENSOR_DATA_REPRESENTATION:
+    IMPORTS_LINES = IMPORTS_LINES + TENSOR_NATIVE_IMPORTS_LINES
 
 # Shared globals dict for all custom python blocks in local mode
 _LOCAL_SHARED_GLOBALS = {}

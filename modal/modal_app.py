@@ -39,7 +39,9 @@ app = modal.App("webexec")
 
 
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
-WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv("WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu")
+WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv(
+    "WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu"
+)
 
 WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
 WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
@@ -60,7 +62,9 @@ def get_inference_image():
             INFERENCE_VERSION = "latest"
 
     image = (
-        modal.Image.from_registry(f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{INFERENCE_VERSION}")
+        modal.Image.from_registry(
+            f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{INFERENCE_VERSION}"
+        )
         .apt_install(
             "libgl1-mesa-glx",
             "libglib2.0-0",
@@ -168,6 +172,26 @@ class Executor:
 
             # Execute imports and code in the namespace to initialize it
             import_code = "\n".join(imports) if imports else ""
+            # Mirror of block_scaffolding's tensor-native IMPORTS_LINES extension.
+            # Guarded import: this runs inside the sandbox on the PINNED inference
+            # image — releases predating the tensor pivot lack the constant (and
+            # releases that carry it keep the extension a no-op unless the sandbox
+            # env enables the flag, which today it never does; tensor_native+modal
+            # is additionally blocked at compile time). Importing the constant
+            # instead of copy-pasting the lines keeps the two lists drift-free.
+            try:
+                from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
+                from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
+                    TENSOR_NATIVE_IMPORTS_LINES,
+                )
+
+                tensor_native_imports = (
+                    "\n".join(TENSOR_NATIVE_IMPORTS_LINES)
+                    if ENABLE_TENSOR_DATA_REPRESENTATION
+                    else ""
+                )
+            except ImportError:
+                tensor_native_imports = ""
             full_imports = f"""
 from typing import Any, List, Dict, Set, Optional
 import supervision as sv
@@ -181,6 +205,7 @@ import cv2
 import shapely
 from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData
 from inference.core.workflows.prototypes.block import BlockResult
+{tensor_native_imports}
 
 {import_code}
 

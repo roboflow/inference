@@ -405,6 +405,112 @@ as if that was normal block exposed through static plugin:
 }
 ```
 
+## Tensor data representation and the `tensor_compatibility` knob
+
+Servers running the tensor data representation (`ENABLE_TENSOR_DATA_REPRESENTATION=True`)
+pass predictions between blocks as native `inference_models` objects (torch tensors on
+device) instead of `sv.Detections` / numpy. Custom Python blocks declare how they want to
+meet that world through an optional manifest field:
+
+```json
+{
+    "type": "ManifestDescription",
+    "block_type": "MyBlock",
+    "tensor_compatibility": "legacy_compatibility",
+    ...
+}
+```
+
+### `legacy_compatibility` (the default)
+
+Your existing blocks keep working **unmodified**. The execution engine converts native
+tensor predictions into the documented `sv.Detections` / numpy representations right
+before your `run(...)` receives them, and converts returned legacy objects back into
+native ones afterwards. Conversion is driven by the kinds you declare on inputs/outputs;
+undeclared (wildcard) values are recognised by type where possible, and values that
+cannot cross the boundary raise a clear error naming the block, the input/output and a
+remediation.
+
+Be aware of the conversion cost on GPU servers: every prediction crossing the boundary
+pays a device→host copy, and instance segmentation additionally materialises dense
+masks (native masks may travel in a compact RLE form). For pipelines where the custom
+block sits between heavy segmentation steps, consider `tensor_native`.
+
+### `tensor_native`
+
+Your `run(...)` receives and must return native `inference_models` objects — no
+conversion happens on either side. The standard imports are extended (only on
+tensor-enabled servers) so your code can operate on and mint native predictions:
+
+- `torch`
+- `Detections`, `InstanceDetections`, `KeyPoints`, `ClassificationPrediction`,
+  `MultiLabelClassificationPrediction` (the `inference_models` base types)
+- `WORKFLOWS_IMAGE_TENSOR_DEVICE` — the device native tensors pin to
+- `build_native_image_metadata`, `attach_native_detection_metadata` — helpers that
+  attach the metadata the engine requires
+
+The numpy/`sv` imports remain available — mixing representations inside your own code is
+fine, as long as what you *return* is native.
+
+**The native output contract.** Detections you return MUST carry
+`image_metadata["class_names"]` (a `class_id -> name` map) and a per-box
+`detection_id` — the serializer raises otherwise. The helpers guarantee both:
+
+```python
+def run(self, image) -> BlockResult:
+    detections = Detections(
+        xyxy=torch.tensor([[10.0, 10.0, 60.0, 60.0]], device=WORKFLOWS_IMAGE_TENSOR_DEVICE),
+        class_id=torch.tensor([0], device=WORKFLOWS_IMAGE_TENSOR_DEVICE),
+        confidence=torch.tensor([0.9], device=WORKFLOWS_IMAGE_TENSOR_DEVICE),
+    )
+    detections = attach_native_detection_metadata(
+        detections=detections,
+        image=image,
+        class_names={0: "widget"},
+        prediction_type="object-detection",
+    )
+    return {"predictions": detections}
+```
+
+with the block declared as:
+
+```json
+{
+    "type": "DynamicBlockDefinition",
+    "manifest": {
+        "type": "ManifestDescription",
+        "block_type": "NativeMinter",
+        "tensor_compatibility": "tensor_native",
+        "inputs": {
+            "image": {
+                "type": "DynamicInputDefinition",
+                "selector_types": ["input_image"]
+            }
+        },
+        "outputs": {
+            "predictions": {
+                "type": "DynamicOutputDefinition",
+                "kind": ["object_detection_prediction"]
+            }
+        }
+    },
+    "code": {
+        "type": "PythonCode",
+        "run_function_code": "..."
+    }
+}
+```
+
+### Compile-time errors
+
+Declaring `tensor_native` in the wrong environment fails fast at workflow compilation
+(the block's tensor-expecting code would break mid-run anyway):
+
+- on a server running the numpy representation (flag off) — use `legacy_compatibility`
+  or enable `ENABLE_TENSOR_DATA_REPRESENTATION`;
+- with `WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal` — `tensor_native` is not yet
+  supported for remote execution (`legacy_compatibility` over Modal is fully supported).
+
 ## Debugging dynamic blocks
 
 Set `debug=True` on the `/workflows/run` request to capture diagnostics from custom Python

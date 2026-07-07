@@ -723,3 +723,24 @@ def test_run_wrapper_local_forbidden_gate_wins_over_conversion_error() -> None:
         WorkflowEnvironmentConfigurationError
     ):
         _ = block_class().run(predictions=torch.tensor([1.0]))
+
+
+def test_imports_lines_tensor_native_extension_tracks_the_flag() -> None:
+    # given - the extension is resolved at import time (load-time swap philosophy):
+    # flag-on ships the tensor-native authoring imports, flag-off must keep the
+    # generated module source byte-identical to the legacy list. This test runs in
+    # both CI directions, locking each side of the contract.
+    from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
+        IMPORTS_LINES,
+        TENSOR_NATIVE_IMPORTS_LINES,
+    )
+
+    # then
+    assert len(TENSOR_NATIVE_IMPORTS_LINES) > 0
+    for line in TENSOR_NATIVE_IMPORTS_LINES:
+        assert (line in IMPORTS_LINES) == ENABLE_TENSOR_DATA_REPRESENTATION
+    # the legacy prefix is untouched in both directions
+    assert IMPORTS_LINES[0] == "from typing import Any, List, Dict, Set, Optional"
+    assert "import supervision as sv" in IMPORTS_LINES
+    assert "import numpy as np" in IMPORTS_LINES
