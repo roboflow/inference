@@ -508,6 +508,7 @@ def run_onnx_session_via_iobinding(
                 shape=input_tensor.shape,
                 buffer_ptr=input_tensor.data_ptr(),
             )
+        torch.cuda.current_stream(device).synchronize()
         binding.synchronize_inputs()
         session.run_with_iobinding(binding)
         if not some_outputs_dynamically_allocated:
