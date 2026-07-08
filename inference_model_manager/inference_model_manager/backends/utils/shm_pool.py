@@ -41,6 +41,11 @@ from typing import NamedTuple, Optional
 
 logger = logging.getLogger(__name__)
 
+# Marker prefix for worker-side errors caused by client input (bad params,
+# unknown cache references). The MMP client maps prefixed errors to a 4xx
+# instead of a 5xx.
+INPUT_ERROR_PREFIX = "INPUT_ERROR: "
+
 # ---------------------------------------------------------------------------
 # Header format
 # ---------------------------------------------------------------------------
