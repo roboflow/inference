@@ -56,6 +56,11 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             ),
         ]
 
+    @classmethod
+    def is_stateful_for_video_processing(cls) -> bool:
+        # Visualizations render purely from per-frame inputs.
+        return False
+
 
 class VisualizationBlock(WorkflowBlock, ABC):
     def __init__(self, *args, **kwargs):

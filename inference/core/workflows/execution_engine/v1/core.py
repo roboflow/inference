@@ -1,6 +1,6 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from packaging.version import Version
 
@@ -19,7 +19,12 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 )
 from inference.core.workflows.execution_engine.v1.executor.core import (
     flush_stream_pipeline_workflow,
+    resume_stream_lookahead_workflow,
+    run_stream_lookahead_workflow,
     run_workflow,
+)
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
+    ExecutionDataManager,
 )
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembler import (
     assemble_runtime_parameters,
@@ -158,6 +163,62 @@ class ExecutionEngineV1(BaseExecutionEngine):
             step_error_handler=self._step_error_handler,
             defer_stream_pipeline_flush=defer_stream_pipeline_flush,
             resolve_output_futures=resolve_output_futures,
+        )
+        self._profiler.end_workflow_run()
+        return result
+
+    def run_stream_lookahead(
+        self,
+        runtime_parameters: Dict[str, Any],
+        frontier_step_selectors: Set[str],
+        fps: float = 0,
+        _is_preview: bool = False,
+    ) -> ExecutionDataManager:
+        self._profiler.start_workflow_run()
+        runtime_parameters = assemble_runtime_parameters(
+            runtime_parameters=runtime_parameters,
+            defined_inputs=self._compiled_workflow.workflow_definition.inputs,
+            kinds_deserializers=self._compiled_workflow.kinds_deserializers,
+            prevent_local_images_loading=self._prevent_local_images_loading,
+            profiler=self._profiler,
+        )
+        validate_runtime_input(
+            runtime_parameters=runtime_parameters,
+            input_substitutions=self._compiled_workflow.input_substitutions,
+            profiler=self._profiler,
+        )
+        execution_data_manager = run_stream_lookahead_workflow(
+            workflow=self._compiled_workflow,
+            runtime_parameters=runtime_parameters,
+            max_concurrent_steps=self._max_concurrent_steps,
+            frontier_step_selectors=frontier_step_selectors,
+            usage_fps=fps,
+            usage_workflow_id=self._internal_id or self._workflow_id,
+            usage_workflow_preview=_is_preview,
+            profiler=self._profiler,
+            executor=self._executor,
+            step_error_handler=self._step_error_handler,
+        )
+        self._profiler.end_workflow_run()
+        return execution_data_manager
+
+    def resume_stream_lookahead(
+        self,
+        execution_data_manager: ExecutionDataManager,
+        frontier_step_selectors: Set[str],
+        serialize_results: bool = False,
+    ) -> List[Dict[str, Any]]:
+        self._profiler.start_workflow_run()
+        result = resume_stream_lookahead_workflow(
+            workflow=self._compiled_workflow,
+            execution_data_manager=execution_data_manager,
+            max_concurrent_steps=self._max_concurrent_steps,
+            kinds_serializers=self._compiled_workflow.kinds_serializers,
+            frontier_step_selectors=frontier_step_selectors,
+            serialize_results=serialize_results,
+            profiler=self._profiler,
+            executor=self._executor,
+            step_error_handler=self._step_error_handler,
         )
         self._profiler.end_workflow_run()
         return result

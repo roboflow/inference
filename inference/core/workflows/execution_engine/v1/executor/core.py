@@ -3,7 +3,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 from uuid import uuid4
 
 import cv2
@@ -57,6 +57,7 @@ from inference.core.workflows.execution_engine.v1.executor.execution_data_manage
 )
 from inference.core.workflows.execution_engine.v1.executor.flow_coordinator import (
     ParallelStepExecutionCoordinator,
+    establish_execution_order,
 )
 from inference.core.workflows.execution_engine.v1.executor.output_constructor import (
     construct_workflow_output,
@@ -141,37 +142,15 @@ def _run_workflow(
         execution_graph=workflow.execution_graph,
         runtime_parameters=runtime_parameters,
     )
-    execution_coordinator = ParallelStepExecutionCoordinator.init(
-        execution_graph=workflow.execution_graph,
-    )
-    workflow_execution_id = get_or_create_workflow_execution_id()
-    deferred_step_selectors = (
-        _deferred_downstream_step_selectors(workflow=workflow)
-        if defer_stream_pipeline_flush
-        else set()
-    )
     try:
-        next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
-        while next_steps is not None:
-            runnable_steps = [
-                step_selector
-                for step_selector in next_steps
-                if step_selector not in deferred_step_selectors
-            ]
-            if runnable_steps:
-                execute_steps(
-                    next_steps=runnable_steps,
-                    workflow=workflow,
-                    execution_data_manager=execution_data_manager,
-                    max_concurrent_steps=max_concurrent_steps,
-                    workflow_execution_id=workflow_execution_id,
-                    profiler=profiler,
-                    executor=executor,
-                    step_error_handler=step_error_handler,
-                )
-            next_steps = execution_coordinator.get_steps_to_execute_next(
-                profiler=profiler
-            )
+        _execute_workflow_steps(
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            max_concurrent_steps=max_concurrent_steps,
+            profiler=profiler,
+            executor=executor,
+            step_error_handler=step_error_handler,
+        )
         if not defer_stream_pipeline_flush:
             with profiler.profile_execution_phase(
                 name="stream_pipeline_flush",
@@ -212,9 +191,6 @@ def flush_stream_pipeline_workflow(
         execution_graph=workflow.execution_graph,
         runtime_parameters=runtime_parameters,
     )
-    execution_coordinator = ParallelStepExecutionCoordinator.init(
-        execution_graph=workflow.execution_graph,
-    )
     flushed_step_selectors = flush_stream_pipeline_outputs(
         workflow=workflow,
         execution_data_manager=execution_data_manager,
@@ -223,29 +199,20 @@ def flush_stream_pipeline_workflow(
         workflow=workflow,
         step_selectors=flushed_step_selectors,
     )
-    workflow_execution_id = get_or_create_workflow_execution_id()
-    next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
-    while next_steps is not None:
-        runnable_steps = [
-            step_selector
-            for step_selector in next_steps
-            if step_selector in downstream_step_selectors
+    _execute_workflow_steps(
+        workflow=workflow,
+        execution_data_manager=execution_data_manager,
+        max_concurrent_steps=max_concurrent_steps,
+        profiler=profiler,
+        executor=executor,
+        step_error_handler=step_error_handler,
+        step_execution_filter=lambda step_selector: (
+            step_selector in downstream_step_selectors
             and execution_data_manager.all_inputs_impacting_step_are_registered(
                 step_selector=step_selector
             )
-        ]
-        if runnable_steps:
-            execute_steps(
-                next_steps=runnable_steps,
-                workflow=workflow,
-                execution_data_manager=execution_data_manager,
-                max_concurrent_steps=max_concurrent_steps,
-                profiler=profiler,
-                executor=executor,
-                step_error_handler=step_error_handler,
-                workflow_execution_id=workflow_execution_id,
-            )
-        next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
+        ),
+    )
     return construct_workflow_output(
         workflow_outputs=workflow.workflow_definition.outputs,
         execution_graph=workflow.execution_graph,
@@ -302,27 +269,160 @@ def flush_stream_pipeline_outputs(
     return flushed_step_selectors
 
 
-def _deferred_downstream_step_selectors(workflow: CompiledWorkflow) -> set[str]:
-    # Steps downstream of a pipelined block that defers downstream execution
-    # (e.g. remote model steps with in-flight HTTP futures) must not run in the
-    # deferred pass — they would block on unresolved futures at input assembly.
-    # They run later, per frame, via flush_stream_pipeline_workflow.
-    deferring_step_selectors = []
+def _execute_workflow_steps(
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    max_concurrent_steps: int,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    step_execution_filter: Optional[Callable[[str], bool]] = None,
+) -> None:
+    execution_coordinator = ParallelStepExecutionCoordinator.init(
+        execution_graph=workflow.execution_graph,
+    )
+    workflow_execution_id = get_or_create_workflow_execution_id()
+    next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
+    while next_steps is not None:
+        runnable_steps = (
+            next_steps
+            if step_execution_filter is None
+            else [
+                step_selector
+                for step_selector in next_steps
+                if step_execution_filter(step_selector)
+            ]
+        )
+        if runnable_steps:
+            execute_steps(
+                next_steps=runnable_steps,
+                workflow=workflow,
+                execution_data_manager=execution_data_manager,
+                max_concurrent_steps=max_concurrent_steps,
+                workflow_execution_id=workflow_execution_id,
+                profiler=profiler,
+                executor=executor,
+                step_error_handler=step_error_handler,
+            )
+        next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
+
+
+@usage_collector("workflows")
+@execution_phase(
+    name="workflow_lookahead_execution",
+    categories=["execution_engine_operation"],
+)
+def run_stream_lookahead_workflow(
+    workflow: CompiledWorkflow,
+    runtime_parameters: Dict[str, Any],
+    max_concurrent_steps: int,
+    frontier_step_selectors: Set[str],
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[Exception], None]] = None,
+) -> ExecutionDataManager:
+    """Deferred pass of stream-lookahead execution for one video frame.
+
+    Runs only the frontier steps (pipelined model steps launch their remote
+    requests and register future-bearing outputs) and returns the live
+    ExecutionDataManager so the caller can buffer it and resume the remaining
+    steps at ordered emission time.
+    """
+    with start_span("workflow.run_stream_lookahead"):
+        execution_data_manager = ExecutionDataManager.init(
+            execution_graph=workflow.execution_graph,
+            runtime_parameters=runtime_parameters,
+        )
+        _execute_workflow_steps(
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            max_concurrent_steps=max_concurrent_steps,
+            profiler=profiler,
+            executor=executor,
+            step_error_handler=step_error_handler,
+            step_execution_filter=lambda step_selector: step_selector
+            in frontier_step_selectors,
+        )
+        return execution_data_manager
+
+
+def resume_stream_lookahead_workflow(
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    max_concurrent_steps: int,
+    kinds_serializers: Optional[Dict[str, Callable[[Any], Any]]],
+    frontier_step_selectors: Set[str],
+    serialize_results: bool = False,
+    profiler: Optional[WorkflowsProfiler] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[Exception], None]] = None,
+) -> List[Dict[str, Any]]:
+    """Emission pass of stream-lookahead execution for one buffered frame.
+
+    Resumes the frame's ExecutionDataManager from the deferred pass and runs
+    every step outside the frontier. Frontier steps must not be re-executed:
+    their outputs (including in-flight futures resolved at input assembly)
+    are already registered.
+    """
+    with start_span("workflow.resume_stream_lookahead"):
+        _execute_workflow_steps(
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            max_concurrent_steps=max_concurrent_steps,
+            profiler=profiler,
+            executor=executor,
+            step_error_handler=step_error_handler,
+            step_execution_filter=lambda step_selector: step_selector
+            not in frontier_step_selectors,
+        )
+        return construct_workflow_output(
+            workflow_outputs=workflow.workflow_definition.outputs,
+            execution_graph=workflow.execution_graph,
+            execution_data_manager=execution_data_manager,
+            serialize_results=serialize_results,
+            kinds_serializers=kinds_serializers,
+        )
+
+
+def compute_stream_lookahead_frontier(workflow: CompiledWorkflow) -> Set[str]:
+    """Steps that may execute ahead of stream order in the deferred pass.
+
+    A step belongs to the frontier when its manifest declares it stateless
+    for video processing and every step feeding it is itself in the frontier
+    and is not an async-launching (stream-pipelined) step — async steps are
+    frontier sinks: their future-bearing outputs must only be consumed at
+    resume time, otherwise input assembly would block the deferred pass.
+    """
+    step_selectors = {
+        construct_step_selector(step_name=step_name) for step_name in workflow.steps
+    }
+    async_step_selectors = set()
     for step_name, step in workflow.steps.items():
-        defers_fn = getattr(step.step, "defers_downstream_execution", None)
-        if not callable(defers_fn) or not defers_fn():
-            continue
         is_pipelined_fn = getattr(step.step, "is_stream_pipelined", None)
         if callable(is_pipelined_fn) and is_pipelined_fn():
-            deferring_step_selectors.append(
-                construct_step_selector(step_name=step_name)
-            )
-    if not deferring_step_selectors:
-        return set()
-    return _downstream_step_selectors(
-        workflow=workflow,
-        step_selectors=deferring_step_selectors,
-    )
+            async_step_selectors.add(construct_step_selector(step_name=step_name))
+    frontier: Set[str] = set()
+    for execution_layer in establish_execution_order(
+        execution_graph=workflow.execution_graph
+    ):
+        for step_selector in execution_layer:
+            step_name = get_last_chunk_of_selector(selector=step_selector)
+            manifest_class = workflow.steps[
+                step_name
+            ].block_specification.manifest_class
+            if manifest_class.is_stateful_for_video_processing():
+                continue
+            feeding_step_selectors = [
+                predecessor
+                for predecessor in workflow.execution_graph.predecessors(step_selector)
+                if predecessor in step_selectors
+            ]
+            if all(
+                predecessor in frontier and predecessor not in async_step_selectors
+                for predecessor in feeding_step_selectors
+            ):
+                frontier.add(step_selector)
+    return frontier
 
 
 def _downstream_step_selectors(

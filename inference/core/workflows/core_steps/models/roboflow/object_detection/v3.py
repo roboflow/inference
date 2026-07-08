@@ -195,6 +195,10 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
     @classmethod
+    def is_stateful_for_video_processing(cls) -> bool:
+        return False
+
+    @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
@@ -390,7 +394,6 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
             ),
-            images=images,
         )
         return [
             {
@@ -468,16 +471,6 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
         if not self.is_stream_pipelined():
             return 0
         return max(0, WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH - 1)
-
-    def flush_stream_pipeline_outputs(
-        self,
-    ) -> List[Tuple[List[Tuple[int, ...]], BlockResult]]:
-        if self._remote_pipeline is None:
-            return []
-        return self._remote_pipeline.flush_oldest()
-
-    def flush_stream_pipeline(self) -> List[BlockResult]:
-        return [outputs for _, outputs in self.flush_stream_pipeline_outputs()]
 
     def close_stream_pipeline(self) -> None:
         if self._remote_pipeline is None:

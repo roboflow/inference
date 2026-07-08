@@ -79,12 +79,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--workflow",
-        choices=["tracking", "sam3", "two-models"],
+        choices=["tracking", "sam3", "two-models", "preprocessed-tracking"],
         default="tracking",
         help=(
             "Workflow shape: tracking (model -> ByteTrack -> viz), sam3 "
             "(SAM3 text-prompt segmentation -> ByteTrack -> viz), two-models "
-            "(two detection models -> consensus -> ByteTrack -> viz)."
+            "(two detection models -> consensus -> ByteTrack -> viz), "
+            "preprocessed-tracking (static crop -> model -> ByteTrack -> viz "
+            "plus a stateless blur side branch)."
         ),
     )
     parser.add_argument(
@@ -180,6 +182,35 @@ def build_workflow_specification(args: argparse.Namespace) -> Dict[str, Any]:
             },
         ]
         tracker_detections_selector = "$steps.sam3.predictions"
+    elif args.workflow == "preprocessed-tracking":
+        # Stateless preprocessing UPSTREAM of the model plus a stateless side
+        # branch — shapes only executable ahead of stream order with the
+        # frontier scheduler.
+        detection_steps = [
+            {
+                "type": "roboflow_core/absolute_static_crop@v1",
+                "name": "crop",
+                "images": "$inputs.image",
+                "x_center": 320,
+                "y_center": 180,
+                "width": 600,
+                "height": 340,
+            },
+            {
+                "type": "roboflow_core/image_blur@v1",
+                "name": "blur",
+                "image": "$inputs.image",
+            },
+            {
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
+                "name": "model",
+                "images": "$steps.crop.crops",
+                "model_id": args.model_id,
+                "confidence_mode": "custom",
+                "custom_confidence": 0.35,
+            },
+        ]
+        tracker_detections_selector = "$steps.model.predictions"
     else:
         detection_steps = [
             {
@@ -240,7 +271,19 @@ def build_workflow_specification(args: argparse.Namespace) -> Dict[str, Any]:
                 "coordinates_system": "own",
                 "selector": "$steps.bounding_box_visualization.image",
             },
-        ],
+        ]
+        + (
+            [
+                {
+                    "type": "JsonField",
+                    "name": "blurred",
+                    "coordinates_system": "own",
+                    "selector": "$steps.blur.image",
+                }
+            ]
+            if args.workflow == "preprocessed-tracking"
+            else []
+        ),
     }
 
 

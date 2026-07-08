@@ -225,6 +225,10 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
     @classmethod
+    def is_stateful_for_video_processing(cls) -> bool:
+        return False
+
+    @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 

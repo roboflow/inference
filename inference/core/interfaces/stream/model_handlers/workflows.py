@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from inference.core import logger
 from inference.core.interfaces.camera.entities import VideoFrame
@@ -8,6 +8,9 @@ from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
 from inference.core.workflows.execution_engine.v1.compiler.utils import (
     construct_step_selector,
+)
+from inference.core.workflows.execution_engine.v1.executor.core import (
+    compute_stream_lookahead_frontier,
 )
 
 
@@ -64,6 +67,32 @@ class WorkflowRunner:
             fps=fps,
             serialize_results=self._serialize_results,
             _is_preview=self._is_preview,
+        )
+
+    def _run_stream_lookahead(
+        self,
+        video_frames: List[VideoFrame],
+        frontier_step_selectors: Set[str],
+    ) -> Any:
+        workflows_parameters, fps = self._build_workflows_parameters(
+            video_frames=video_frames
+        )
+        return self._execution_engine.run_stream_lookahead(
+            runtime_parameters=workflows_parameters,
+            frontier_step_selectors=frontier_step_selectors,
+            fps=fps,
+            _is_preview=self._is_preview,
+        )
+
+    def _resume_stream_lookahead(
+        self,
+        execution_data_manager: Any,
+        frontier_step_selectors: Set[str],
+    ) -> List[dict]:
+        return self._execution_engine.resume_stream_lookahead(
+            execution_data_manager=execution_data_manager,
+            frontier_step_selectors=frontier_step_selectors,
+            serialize_results=self._serialize_results,
         )
 
     def _build_workflows_parameters(
@@ -182,60 +211,71 @@ class PipelinedWorkflowRunner:
         )
 
 
-class FlushEmittingPipelinedWorkflowRunner(PipelinedWorkflowRunner):
+class LookaheadPipelinedWorkflowRunner:
     """Pipelined runner for steps that defer downstream execution.
 
-    The deferred pass only launches the pipelined steps (e.g. remote model
-    HTTP requests) — downstream steps are skipped by the execution engine, so
-    the deferred run's outputs are incomplete and discarded. Each buffered
-    frame is emitted through the stream-pipeline flush instead, which
-    materializes every pipelined step's oldest pending result and runs the
-    downstream steps with that frame's own inputs, preserving frame order
-    for stateful consumers like trackers.
+    Each frame gets a deferred pass that executes only the workflow's
+    stream-lookahead frontier (stateless steps; pipelined model steps launch
+    their remote requests and register future-bearing outputs), and the
+    frame's live execution state is buffered. Once the buffer exceeds the
+    pipeline depth, the oldest frame is emitted by resuming its execution
+    state: the remaining steps run with that frame's own inputs, in frame
+    order, with in-flight futures resolved at input assembly.
     """
+
+    def __init__(
+        self,
+        workflow_runner: WorkflowRunner,
+        stream_steps: List[_StreamPipelineStep],
+        frontier_step_selectors: Set[str],
+    ) -> None:
+        self._workflow_runner = workflow_runner
+        self._stream_steps = stream_steps
+        self._frontier_step_selectors = frontier_step_selectors
+        self._pending_frames: List[Tuple[List[VideoFrame], Any]] = []
 
     def __call__(
         self, video_frames: List[VideoFrame]
     ) -> Optional[InferenceHandlerResult]:
-        self._workflow_runner._run_workflow(
+        execution_data_manager = self._workflow_runner._run_stream_lookahead(
             video_frames=video_frames,
-            defer_stream_pipeline_flush=True,
-            resolve_output_futures=False,
+            frontier_step_selectors=self._frontier_step_selectors,
         )
-        self._pending_video_frames.append(video_frames)
-        if len(self._pending_video_frames) <= self._stream_buffer_depth():
+        self._pending_frames.append((video_frames, execution_data_manager))
+        if len(self._pending_frames) <= self._stream_buffer_depth():
             return None
-        emit_video_frames = self._pending_video_frames.pop(0)
-        predictions = self._workflow_runner._flush_stream_pipeline(
-            video_frames=emit_video_frames,
+        return self._emit_oldest_frame()
+
+    def flush(self) -> Optional[List[InferenceHandlerResult]]:
+        if not self._pending_frames:
+            return None
+        results = []
+        while self._pending_frames:
+            results.append(self._emit_oldest_frame())
+        return results
+
+    def close(self) -> None:
+        for stream_step in self._stream_steps:
+            close_fn = getattr(stream_step.step, "close_stream_pipeline", None)
+            if callable(close_fn):
+                close_fn()
+
+    def _emit_oldest_frame(self) -> InferenceHandlerResult:
+        emit_video_frames, execution_data_manager = self._pending_frames.pop(0)
+        predictions = self._workflow_runner._resume_stream_lookahead(
+            execution_data_manager=execution_data_manager,
+            frontier_step_selectors=self._frontier_step_selectors,
         )
         return InferenceHandlerResult(
             predictions=predictions,
             video_frames=emit_video_frames,
         )
 
-    def flush(self) -> Optional[List[InferenceHandlerResult]]:
-        # Unlike the base runner, multiple independent pipelined steps are
-        # supported: each flush pass drains one pending request from every
-        # pipelined step for the emitted frame.
-        if not self._stream_steps:
-            self._pending_video_frames.clear()
-            return None
-        if not self._pending_video_frames:
-            return None
-        results = []
-        for pending_video_frames in list(self._pending_video_frames):
-            prediction = self._workflow_runner._flush_stream_pipeline(
-                video_frames=pending_video_frames,
-            )
-            emit_video_frames = self._pending_video_frames.pop(0)
-            results.append(
-                InferenceHandlerResult(
-                    predictions=prediction,
-                    video_frames=emit_video_frames,
-                )
-            )
-        return results
+    def _stream_buffer_depth(self) -> int:
+        return max(
+            (_stream_step_depth(stream_step) for stream_step in self._stream_steps),
+            default=0,
+        )
 
 
 def wrap_workflow_runner_for_stream_pipeline(
@@ -245,30 +285,33 @@ def wrap_workflow_runner_for_stream_pipeline(
     stream_steps = _stream_pipeline_steps(execution_engine=execution_engine)
     if not stream_steps:
         return workflow_runner
-    deferring_steps = [
+    lookahead_steps = [
         stream_step
         for stream_step in stream_steps
         if _step_defers_downstream_execution(stream_step=stream_step)
     ]
-    if not deferring_steps:
+    if not lookahead_steps:
         return PipelinedWorkflowRunner(
             workflow_runner=workflow_runner,
             stream_steps=stream_steps,
         )
-    if not _workflow_supports_downstream_deferral(
-        execution_engine=execution_engine,
-        deferring_steps=deferring_steps,
+    frontier_step_selectors = _lookahead_frontier(execution_engine=execution_engine)
+    if frontier_step_selectors is None or not _steps_in_frontier(
+        stream_steps=lookahead_steps,
+        frontier_step_selectors=frontier_step_selectors,
     ):
         logger.warning(
-            "Remote stream pipelining is disabled for this workflow. It requires "
-            "independent pipelined model steps (none consuming another's output) "
-            "with every other step downstream of them; falling back to "
-            "sequential execution."
+            "Remote stream pipelining is disabled for this workflow. Every "
+            "pipelined model step must sit in the stream-lookahead frontier: "
+            "fed only by steps that are stateless for video processing and "
+            "not by another pipelined step. Falling back to sequential "
+            "execution."
         )
         return workflow_runner
-    return FlushEmittingPipelinedWorkflowRunner(
+    return LookaheadPipelinedWorkflowRunner(
         workflow_runner=workflow_runner,
         stream_steps=stream_steps,
+        frontier_step_selectors=frontier_step_selectors,
     )
 
 
@@ -306,43 +349,24 @@ def _step_defers_downstream_execution(stream_step: _StreamPipelineStep) -> bool:
     return callable(defers_fn) and defers_fn()
 
 
-def _workflow_supports_downstream_deferral(
-    execution_engine: ExecutionEngine,
-    deferring_steps: List[_StreamPipelineStep],
-) -> bool:
-    # Flush-based emission reruns only the steps downstream of the pipelined
-    # steps, so every other step's output would be missing from emitted
-    # results. Restrict activation to shapes where that cannot happen: one or
-    # more independent pipelined steps (none consuming another's output) with
-    # every remaining step downstream of at least one of them.
-    deferring_step_names = [deferring_step.name for deferring_step in deferring_steps]
+def _lookahead_frontier(execution_engine: ExecutionEngine) -> Optional[Set[str]]:
     engine = getattr(execution_engine, "_engine", None)
     compiled_workflow = getattr(engine, "_compiled_workflow", None)
-    execution_graph = getattr(compiled_workflow, "execution_graph", None)
-    if execution_graph is None or any(
-        step_name is None for step_name in deferring_step_names
-    ):
-        return len(deferring_steps) == 1
-    step_selectors = {
-        construct_step_selector(step_name=step_name)
-        for step_name in getattr(compiled_workflow, "steps", {})
-    }
-    deferring_selectors = {
-        construct_step_selector(step_name=step_name)
-        for step_name in deferring_step_names
-    }
-    downstream_selectors = set()
-    nodes_to_visit = list(deferring_selectors)
-    while nodes_to_visit:
-        node = nodes_to_visit.pop(0)
-        for successor in execution_graph.successors(node):
-            if successor in downstream_selectors:
-                continue
-            if successor in step_selectors:
-                downstream_selectors.add(successor)
-            nodes_to_visit.append(successor)
-    if deferring_selectors & downstream_selectors:
-        # A pipelined step consuming another's output would block on its
-        # upstream future; chained pipelined steps are unsupported.
-        return False
-    return step_selectors - deferring_selectors <= downstream_selectors
+    if getattr(compiled_workflow, "execution_graph", None) is None:
+        return None
+    return compute_stream_lookahead_frontier(workflow=compiled_workflow)
+
+
+def _steps_in_frontier(
+    stream_steps: List[_StreamPipelineStep],
+    frontier_step_selectors: Set[str],
+) -> bool:
+    for stream_step in stream_steps:
+        if stream_step.name is None:
+            return False
+        step_selector = construct_step_selector(step_name=stream_step.name)
+        if step_selector not in frontier_step_selectors:
+            # A pipelined step fed by a stateful (or another pipelined) step
+            # cannot launch ahead of stream order.
+            return False
+    return True
