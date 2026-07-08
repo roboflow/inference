@@ -2675,9 +2675,7 @@ class HttpInterface(BaseInterface):
                     )
             mmp_ready = getattr(self.model_manager, "mmp_ready", None)
             if mmp_ready is not None and not mmp_ready():
-                return JSONResponse(
-                    content={"status": "not ready"}, status_code=503
-                )
+                return JSONResponse(content={"status": "not ready"}, status_code=503)
             return {"status": "ready"}
 
         @app.get("/healthz", status_code=200)
