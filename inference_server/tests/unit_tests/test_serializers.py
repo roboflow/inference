@@ -187,6 +187,12 @@ class TestSerializeRawTensor:
 
         assert len(obj) == 10
 
+    def test_zero_dim_numpy_scalar(self):
+        scores = [np.array(0.5, dtype=np.float32), np.array(0.25, dtype=np.float32)]
+        obj = orjson.loads(serialize_json({"scores": scores}))
+
+        assert obj == {"scores": [0.5, 0.25]}
+
 
 class TestSerializeTuple:
     def test_ocr_style_output(self):

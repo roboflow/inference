@@ -57,6 +57,8 @@ def _convert(obj: Any) -> Any:
         return obj.detach().cpu().numpy()
 
     if isinstance(obj, np.ndarray):
+        if obj.ndim == 0:
+            return obj.item()
         return obj
 
     # List / tuple of results
