@@ -66,9 +66,12 @@ def _download_video(url: str, use_cache: bool) -> str:
         fd, target_path = tempfile.mkstemp(suffix=ext, prefix="inference-sdk-video-")
         os.close(fd)
 
-    # Download to a sibling temp file, then atomically move into place so a
-    # partially-downloaded file is never mistaken for a cached video.
-    tmp_path = f"{target_path}.part-{os.getpid()}"
+    # Download to a unique sibling temp file (same filesystem, so os.replace
+    # stays atomic), then move into place. Uniqueness matters: concurrent
+    # downloads of the same URL must not interleave writes into one staging
+    # file, and a partially-downloaded file must never look like a cached video.
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(target_path), suffix=".part")
+    os.close(fd)
     try:
         fetch_url_to_file(
             url=url,

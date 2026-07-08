@@ -81,6 +81,30 @@ class TestDownloadVideo:
 
         assert os.listdir(cache_dir) == []
 
+    def test_download_stages_in_cache_dir_with_unique_names(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        cache_dir = str(tmp_path / "cache")
+        monkeypatch.setattr(sources, "VIDEO_DOWNLOAD_CACHE_DIR", cache_dir)
+        staging_paths = []
+
+        def fetch(url: str, destination_path: str, request_timeout=None) -> None:
+            staging_paths.append(destination_path)
+            with open(destination_path, "wb") as f:
+                f.write(b"x")
+
+        with mock.patch.object(sources, "fetch_url_to_file", side_effect=fetch):
+            first = _download_video(VIDEO_URL, use_cache=True)
+            os.remove(first)  # force a re-download of the same URL
+            _download_video(VIDEO_URL, use_cache=True)
+
+        # Staging happens in the cache dir (same filesystem, atomic os.replace)
+        # with a unique name per download (concurrent-safe), never at the
+        # final path directly.
+        assert all(os.path.dirname(p) == cache_dir for p in staging_paths)
+        assert staging_paths[0] != staging_paths[1]
+        assert first not in staging_paths
+
     def test_url_without_extension_defaults_to_mp4(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(sources, "VIDEO_DOWNLOAD_CACHE_DIR", str(tmp_path))
 
