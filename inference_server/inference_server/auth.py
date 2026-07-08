@@ -13,6 +13,7 @@ Environment variables::
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -50,6 +51,7 @@ class _CacheEntry:
 
 
 _cache: dict[str, _CacheEntry] = {}
+_inflight: dict[str, asyncio.Task] = {}
 _session: Optional[aiohttp.ClientSession] = None
 
 
@@ -71,7 +73,9 @@ def _get_session() -> aiohttp.ClientSession:
 def _enforce_cache_limit() -> None:
     """Evict entries when cache exceeds max size to prevent memory DoS.
 
-    Strategy: purge expired entries first; if still over limit, clear entirely.
+    Strategy: purge expired entries first; if still over limit, evict the
+    oldest-expiring entries (drops short-TTL failures before valid keys).
+    Never clears wholesale — a token-spray attack must not flush valid keys.
     """
     if len(_cache) <= _MAX_CACHE_SIZE:
         return
@@ -79,8 +83,11 @@ def _enforce_cache_limit() -> None:
     expired_keys = [k for k, v in _cache.items() if v.expires_at <= now]
     for k in expired_keys:
         del _cache[k]
-    if len(_cache) > _MAX_CACHE_SIZE:
-        _cache.clear()
+    overflow = len(_cache) - _MAX_CACHE_SIZE
+    if overflow > 0:
+        oldest = sorted(_cache, key=lambda k: _cache[k].expires_at)[:overflow]
+        for k in oldest:
+            del _cache[k]
 
 
 async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
@@ -91,50 +98,62 @@ async def validate_api_key(api_key: str) -> tuple[bool, Optional[str]]:
         (False, None) on rejection (bad key).
 
     Raises:
-        AuthBackendUnavailable: Roboflow API unreachable (transport failure).
-            NOT cached — a brief outage must not hard-fail keys for the
-            negative-cache TTL, and must surface as 503, never 403.
+        AuthBackendUnavailable: Roboflow API unreachable (transport failure)
+            or answering 5xx/429. NOT cached — a brief outage must not
+            hard-fail keys for the negative-cache TTL, and must surface as
+            503, never 403.
 
-    Results are cached in-memory with TTL.
+    Results are cached in-memory with TTL. Concurrent misses on the same key
+    share a single upstream request (single-flight).
     """
-    now = time.monotonic()
-
-    entry = _cache.get(_key_hash(api_key))
-    if entry is not None and entry.expires_at > now:
+    key_hash = _key_hash(api_key)
+    entry = _cache.get(key_hash)
+    if entry is not None and entry.expires_at > time.monotonic():
         return entry.valid, entry.workspace_id
 
+    task = _inflight.get(key_hash)
+    if task is None:
+        task = asyncio.ensure_future(_validate_uncached(api_key, key_hash))
+        _inflight[key_hash] = task
+        task.add_done_callback(lambda _: _inflight.pop(key_hash, None))
+    return await asyncio.shield(task)
+
+
+async def _validate_uncached(api_key: str, key_hash: str) -> tuple[bool, Optional[str]]:
     try:
         session = _get_session()
         async with session.get(
             f"{API_BASE_URL}/",
             params={"api_key": api_key, "nocache": "true"},
         ) as resp:
-            if resp.status != 200:
-                _enforce_cache_limit()
-                _cache[_key_hash(api_key)] = _CacheEntry(
-                    expires_at=now + _CACHE_FAIL_TTL_S,
-                    valid=False,
+            if resp.status >= 500 or resp.status == 429:
+                raise AuthBackendUnavailable(
+                    f"auth backend returned status {resp.status}"
                 )
-                return False, None
+            if resp.status != 200:
+                return _store(key_hash, valid=False)
 
             data = await resp.json()
             workspace_id = data.get("workspace")
             if not workspace_id:
-                _enforce_cache_limit()
-                _cache[_key_hash(api_key)] = _CacheEntry(
-                    expires_at=now + _CACHE_FAIL_TTL_S,
-                    valid=False,
-                )
-                return False, None
+                return _store(key_hash, valid=False)
+            return _store(key_hash, valid=True, workspace_id=workspace_id)
 
-            _enforce_cache_limit()
-            _cache[_key_hash(api_key)] = _CacheEntry(
-                expires_at=now + _CACHE_TTL_S,
-                valid=True,
-                workspace_id=workspace_id,
-            )
-            return True, workspace_id
-
+    except AuthBackendUnavailable:
+        raise
     except Exception as exc:
         logger.warning("Auth validation failed (network error)", exc_info=True)
         raise AuthBackendUnavailable(str(exc)) from exc
+
+
+def _store(
+    key_hash: str, valid: bool, workspace_id: Optional[str] = None
+) -> tuple[bool, Optional[str]]:
+    _enforce_cache_limit()
+    ttl = _CACHE_TTL_S if valid else _CACHE_FAIL_TTL_S
+    _cache[key_hash] = _CacheEntry(
+        expires_at=time.monotonic() + ttl,
+        valid=valid,
+        workspace_id=workspace_id,
+    )
+    return valid, workspace_id
