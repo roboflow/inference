@@ -160,6 +160,9 @@ def run_per_frame_measurement(
 def main() -> None:
     args = parse_args()
     os.environ.setdefault("WORKFLOWS_STREAM_LOOKAHEAD_DEPTH", str(args.depth))
+    # DEBUG logging renders more lines on the sequential path than the
+    # lookahead path (~0.3 ms per line) and would fabricate an overhead gap.
+    os.environ["LOG_LEVEL"] = os.environ.get("OVERHEAD_BENCHMARK_LOG_LEVEL", "WARNING")
     from inference.core.interfaces.stream.model_handlers import (
         workflows as workflows_module,
     )
