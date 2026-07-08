@@ -51,3 +51,30 @@ async def test_no_image_and_no_hashes_still_400():
     with pytest.raises(InputParseError) as exc_info:
         await parse_interactive_instance_segmentation_input(req, _common())
     assert exc_info.value.response.status_code == 400
+
+
+from unittest.mock import AsyncMock, MagicMock
+
+from inference_server.framework.entities import ServerHooks
+from inference_server.handlers.interactive_instance_segmentation.handler import (
+    handle_interactive_instance_segmentation,
+)
+
+
+@pytest.mark.asyncio
+async def test_empty_images_issues_single_empty_payload_infer():
+    proxy = MagicMock()
+    proxy.infer = AsyncMock(return_value={"ok": True})
+    common = _common()
+    result = await handle_interactive_instance_segmentation(
+        "segment_with_visual_prompts",
+        {"images": [], "params": {"image_hashes": ["h1"]}},
+        proxy,
+        ServerHooks(request=None, common=common),
+    )
+    assert result == {"ok": True}
+    proxy.infer.assert_awaited_once()
+    kwargs = proxy.infer.await_args.kwargs
+    assert kwargs["image"] == b""
+    assert kwargs["task"] == "segment_with_visual_prompts"
+    assert kwargs["params"]["image_hashes"] == ["h1"]
