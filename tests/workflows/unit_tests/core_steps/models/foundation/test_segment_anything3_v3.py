@@ -1,5 +1,8 @@
 """Unit tests for SAM3 v3 block class_mapping feature."""
 
+import threading
+from concurrent.futures import Future
+from typing import List, Optional
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -7,6 +10,9 @@ import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.models.foundation.segment_anything3 import (
+    v3 as segment_anything3_v3,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
     BlockManifest,
     SegmentAnything3BlockV3,
@@ -195,3 +201,178 @@ def test_run_with_partial_class_mapping(mock_run_locally, mock_workflow_image_da
         "dog",
         "bird",
     ]
+
+
+# --- Remote stream pipelining tests ---
+
+
+class _FakeStreamImage:
+    def __init__(self, tag: str) -> None:
+        self.tag = tag
+
+
+def _make_remote_block() -> SegmentAnything3BlockV3:
+    return SegmentAnything3BlockV3(
+        model_manager=MagicMock(),
+        api_key="test_key",
+        step_execution_mode=StepExecutionMode.REMOTE,
+    )
+
+
+def _stub_execute_remote_inference(
+    block: SegmentAnything3BlockV3,
+    calls: Optional[List[dict]] = None,
+) -> None:
+    def _stub(**kwargs):
+        if calls is not None:
+            calls.append({**kwargs, "thread_id": threading.get_ident()})
+        return [{"predictions": f"seg-{kwargs['images'][0].tag}"}]
+
+    block._execute_remote_inference = _stub
+
+
+def _run_remotely(block: SegmentAnything3BlockV3, images: list):
+    return block.run_remotely(
+        images=images,
+        model_id="sam3/sam3_final",
+        class_names=["cat"],
+        confidence=0.5,
+        per_class_confidence=None,
+        apply_nms=True,
+        nms_iou_threshold=0.9,
+        output_format="rle",
+        class_mapping=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "sam3_exec_mode, execution_mode, depth, expected_pipelined, expected_depth",
+    [
+        ("local", StepExecutionMode.REMOTE, 4, True, 3),
+        ("remote", StepExecutionMode.REMOTE, 4, False, 0),
+        ("local", StepExecutionMode.LOCAL, 4, False, 0),
+        ("local", StepExecutionMode.REMOTE, 1, False, 0),
+        ("remote", StepExecutionMode.LOCAL, 1, False, 0),
+    ],
+)
+def test_stream_pipeline_protocol_gating(
+    monkeypatch,
+    sam3_exec_mode: str,
+    execution_mode: StepExecutionMode,
+    depth: int,
+    expected_pipelined: bool,
+    expected_depth: int,
+):
+    """SAM3_EXEC_MODE=remote must disable pipelining even with REMOTE + depth>1."""
+    monkeypatch.setattr(segment_anything3_v3, "SAM3_EXEC_MODE", sam3_exec_mode)
+    monkeypatch.setattr(
+        segment_anything3_v3, "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", depth
+    )
+    block = SegmentAnything3BlockV3(
+        model_manager=MagicMock(),
+        api_key="test_key",
+        step_execution_mode=execution_mode,
+    )
+
+    assert block.is_stream_pipelined() is expected_pipelined
+    assert block.can_activate_stream_pipeline() is expected_pipelined
+    assert block.stream_pipeline_depth() == expected_depth
+    assert block.defers_downstream_execution() is True
+
+
+def test_pipelined_run_remotely_returns_prediction_futures(monkeypatch):
+    """Pipelined run_remotely returns per-image futures and queues a pending request."""
+    monkeypatch.setattr(segment_anything3_v3, "SAM3_EXEC_MODE", "local")
+    monkeypatch.setattr(
+        segment_anything3_v3, "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", 4
+    )
+    block = _make_remote_block()
+    _stub_execute_remote_inference(block)
+
+    result = _run_remotely(block, images=[_FakeStreamImage("a")])
+
+    assert len(result) == 1
+    assert isinstance(result[0]["predictions"], Future)
+    assert result[0]["predictions"].result(timeout=5) == "seg-a"
+    assert block._remote_pipeline.pending_requests == 1
+
+    flushed = block.flush_stream_pipeline_outputs()
+    assert flushed == [([(0,)], [{"predictions": "seg-a"}])]
+    assert block.flush_stream_pipeline_outputs() == []
+
+    block.close_stream_pipeline()
+    assert block._remote_pipeline is None
+
+
+def test_pipelined_run_remotely_flushes_frames_in_fifo_order(monkeypatch):
+    """Two pipelined frames flush one per call, oldest first."""
+    monkeypatch.setattr(segment_anything3_v3, "SAM3_EXEC_MODE", "local")
+    monkeypatch.setattr(
+        segment_anything3_v3, "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", 4
+    )
+    block = _make_remote_block()
+    _stub_execute_remote_inference(block)
+
+    first = _run_remotely(block, images=[_FakeStreamImage("a")])
+    second = _run_remotely(block, images=[_FakeStreamImage("b")])
+
+    assert first[0]["predictions"].result(timeout=5) == "seg-a"
+    assert second[0]["predictions"].result(timeout=5) == "seg-b"
+    assert block._remote_pipeline.pending_requests == 2
+
+    first_flush = block.flush_stream_pipeline_outputs()
+    second_flush = block.flush_stream_pipeline_outputs()
+
+    assert first_flush == [([(0,)], [{"predictions": "seg-a"}])]
+    assert second_flush == [([(0,)], [{"predictions": "seg-b"}])]
+    assert block.flush_stream_pipeline_outputs() == []
+
+    block.close_stream_pipeline()
+    assert block._remote_pipeline is None
+
+
+def test_non_pipelined_run_remotely_executes_synchronously(monkeypatch):
+    """With depth 1, run_remotely runs inline on the caller thread."""
+    monkeypatch.setattr(segment_anything3_v3, "SAM3_EXEC_MODE", "local")
+    monkeypatch.setattr(
+        segment_anything3_v3, "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", 1
+    )
+    block = _make_remote_block()
+    calls = []
+    _stub_execute_remote_inference(block, calls=calls)
+
+    result = _run_remotely(block, images=[_FakeStreamImage("a")])
+
+    assert result == [{"predictions": "seg-a"}]
+    assert len(calls) == 1
+    assert calls[0]["thread_id"] == threading.get_ident()
+    assert block._remote_pipeline is None
+
+
+def test_run_defers_class_mapping_into_pipelined_remote_task(monkeypatch):
+    """With pipelining active, run() must not remap futures itself — the mapping
+    travels into the worker task applied by _execute_remote_inference."""
+    monkeypatch.setattr(segment_anything3_v3, "SAM3_EXEC_MODE", "local")
+    monkeypatch.setattr(
+        segment_anything3_v3, "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", 4
+    )
+    block = _make_remote_block()
+    calls = []
+    _stub_execute_remote_inference(block, calls=calls)
+
+    result = block.run(
+        images=[_FakeStreamImage("a")],
+        model_id="sam3/sam3_final",
+        class_names=["cat"],
+        confidence=0.5,
+        class_mapping={"cat": "gato"},
+    )
+
+    assert len(result) == 1
+    assert isinstance(result[0]["predictions"], Future)
+    assert result[0]["predictions"].result(timeout=5) == "seg-a"
+    assert len(calls) == 1
+    assert calls[0]["class_mapping"] == {"cat": "gato"}
+
+    block.close_stream_pipeline()
+    assert block._remote_pipeline is None

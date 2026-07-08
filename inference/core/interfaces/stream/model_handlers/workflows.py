@@ -185,11 +185,11 @@ class PipelinedWorkflowRunner:
 class FlushEmittingPipelinedWorkflowRunner(PipelinedWorkflowRunner):
     """Pipelined runner for steps that defer downstream execution.
 
-    The deferred pass only launches the pipelined step (e.g. a remote model
-    HTTP request) — downstream steps are skipped by the execution engine, so
+    The deferred pass only launches the pipelined steps (e.g. remote model
+    HTTP requests) — downstream steps are skipped by the execution engine, so
     the deferred run's outputs are incomplete and discarded. Each buffered
     frame is emitted through the stream-pipeline flush instead, which
-    materializes the pipelined step's oldest pending result and runs the
+    materializes every pipelined step's oldest pending result and runs the
     downstream steps with that frame's own inputs, preserving frame order
     for stateful consumers like trackers.
     """
@@ -213,6 +213,29 @@ class FlushEmittingPipelinedWorkflowRunner(PipelinedWorkflowRunner):
             predictions=predictions,
             video_frames=emit_video_frames,
         )
+
+    def flush(self) -> Optional[List[InferenceHandlerResult]]:
+        # Unlike the base runner, multiple independent pipelined steps are
+        # supported: each flush pass drains one pending request from every
+        # pipelined step for the emitted frame.
+        if not self._stream_steps:
+            self._pending_video_frames.clear()
+            return None
+        if not self._pending_video_frames:
+            return None
+        results = []
+        for pending_video_frames in list(self._pending_video_frames):
+            prediction = self._workflow_runner._flush_stream_pipeline(
+                video_frames=pending_video_frames,
+            )
+            emit_video_frames = self._pending_video_frames.pop(0)
+            results.append(
+                InferenceHandlerResult(
+                    predictions=prediction,
+                    video_frames=emit_video_frames,
+                )
+            )
+        return results
 
 
 def wrap_workflow_runner_for_stream_pipeline(
@@ -238,8 +261,9 @@ def wrap_workflow_runner_for_stream_pipeline(
     ):
         logger.warning(
             "Remote stream pipelining is disabled for this workflow. It requires "
-            "a single pipelined model step with every other step downstream of "
-            "it; falling back to sequential execution."
+            "independent pipelined model steps (none consuming another's output) "
+            "with every other step downstream of them; falling back to "
+            "sequential execution."
         )
         return workflow_runner
     return FlushEmittingPipelinedWorkflowRunner(
@@ -287,24 +311,28 @@ def _workflow_supports_downstream_deferral(
     deferring_steps: List[_StreamPipelineStep],
 ) -> bool:
     # Flush-based emission reruns only the steps downstream of the pipelined
-    # step, so every other step's output would be missing from emitted results.
-    # Restrict activation to the shape where that cannot happen: one pipelined
-    # step, all remaining steps downstream of it.
-    if len(deferring_steps) != 1:
-        return False
-    deferring_step_name = deferring_steps[0].name
+    # steps, so every other step's output would be missing from emitted
+    # results. Restrict activation to shapes where that cannot happen: one or
+    # more independent pipelined steps (none consuming another's output) with
+    # every remaining step downstream of at least one of them.
+    deferring_step_names = [deferring_step.name for deferring_step in deferring_steps]
     engine = getattr(execution_engine, "_engine", None)
     compiled_workflow = getattr(engine, "_compiled_workflow", None)
     execution_graph = getattr(compiled_workflow, "execution_graph", None)
-    if execution_graph is None or deferring_step_name is None:
-        return True
+    if execution_graph is None or any(
+        step_name is None for step_name in deferring_step_names
+    ):
+        return len(deferring_steps) == 1
     step_selectors = {
         construct_step_selector(step_name=step_name)
         for step_name in getattr(compiled_workflow, "steps", {})
     }
-    deferring_selector = construct_step_selector(step_name=deferring_step_name)
+    deferring_selectors = {
+        construct_step_selector(step_name=step_name)
+        for step_name in deferring_step_names
+    }
     downstream_selectors = set()
-    nodes_to_visit = [deferring_selector]
+    nodes_to_visit = list(deferring_selectors)
     while nodes_to_visit:
         node = nodes_to_visit.pop(0)
         for successor in execution_graph.successors(node):
@@ -313,4 +341,8 @@ def _workflow_supports_downstream_deferral(
             if successor in step_selectors:
                 downstream_selectors.add(successor)
             nodes_to_visit.append(successor)
-    return step_selectors - {deferring_selector} <= downstream_selectors
+    if deferring_selectors & downstream_selectors:
+        # A pipelined step consuming another's output would block on its
+        # upstream future; chained pipelined steps are unsupported.
+        return False
+    return step_selectors - deferring_selectors <= downstream_selectors

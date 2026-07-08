@@ -1113,3 +1113,200 @@ def test_wrap_falls_back_to_sequential_for_workflow_with_side_branch() -> None:
 
     # then
     assert runner is workflow_runner
+
+
+def test_wrap_activates_downstream_deferral_for_two_independent_models() -> None:
+    # given: two independent deferring model steps with every other step
+    # downstream of their union
+    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
+    second_step = _FakeDeferringStep(stream_buffer_depth=1)
+    _attach_compiled_workflow_graph(
+        engine,
+        steps={
+            "model_a": SimpleNamespace(step=engine.step),
+            "model_b": SimpleNamespace(step=second_step),
+            "consensus": SimpleNamespace(step=SimpleNamespace()),
+            "tracker": SimpleNamespace(step=SimpleNamespace()),
+        },
+        edges={
+            "$steps.model_a": ["$steps.consensus"],
+            "$steps.model_b": ["$steps.consensus"],
+            "$steps.consensus": ["$steps.tracker"],
+            "$steps.tracker": ["$outputs.tracked"],
+        },
+    )
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+
+    # when
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+
+    # then
+    assert isinstance(runner, FlushEmittingPipelinedWorkflowRunner)
+
+
+def test_wrap_falls_back_to_sequential_for_chained_deferring_models() -> None:
+    # given: model_b consumes model_a's output, so it would block on its
+    # upstream future in the deferred pass
+    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
+    second_step = _FakeDeferringStep(stream_buffer_depth=1)
+    _attach_compiled_workflow_graph(
+        engine,
+        steps={
+            "model_a": SimpleNamespace(step=engine.step),
+            "model_b": SimpleNamespace(step=second_step),
+            "tracker": SimpleNamespace(step=SimpleNamespace()),
+        },
+        edges={
+            "$steps.model_a": ["$steps.model_b"],
+            "$steps.model_b": ["$steps.tracker"],
+            "$steps.tracker": ["$outputs.tracked"],
+        },
+    )
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+
+    # when
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+
+    # then
+    assert runner is workflow_runner
+
+
+def test_wrap_falls_back_to_sequential_for_two_models_with_side_branch() -> None:
+    # given: "other" is downstream of neither deferring model step
+    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
+    second_step = _FakeDeferringStep(stream_buffer_depth=1)
+    _attach_compiled_workflow_graph(
+        engine,
+        steps={
+            "model_a": SimpleNamespace(step=engine.step),
+            "model_b": SimpleNamespace(step=second_step),
+            "consensus": SimpleNamespace(step=SimpleNamespace()),
+            "other": SimpleNamespace(step=SimpleNamespace()),
+        },
+        edges={
+            "$steps.model_a": ["$steps.consensus"],
+            "$steps.model_b": ["$steps.consensus"],
+            "$steps.consensus": ["$outputs.consensus"],
+            "$steps.other": ["$outputs.other"],
+        },
+    )
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+
+    # when
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+
+    # then
+    assert runner is workflow_runner
+
+
+def test_flush_emitting_runner_flush_drains_frames_with_two_stream_steps() -> None:
+    # given
+    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
+    second_step = _FakeDeferringStep(stream_buffer_depth=1)
+    _attach_compiled_workflow_graph(
+        engine,
+        steps={
+            "model_a": SimpleNamespace(step=engine.step),
+            "model_b": SimpleNamespace(step=second_step),
+            "consensus": SimpleNamespace(step=SimpleNamespace()),
+        },
+        edges={
+            "$steps.model_a": ["$steps.consensus"],
+            "$steps.model_b": ["$steps.consensus"],
+            "$steps.consensus": ["$outputs.consensus"],
+        },
+    )
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+    assert isinstance(runner, FlushEmittingPipelinedWorkflowRunner)
+    frame_1 = _make_frame(1)
+    frame_2 = _make_frame(2)
+
+    # when
+    first_result = runner([frame_1])
+    second_result = runner([frame_2])
+    flushed_results = runner.flush()
+
+    # then - flushing with two stream steps must not raise and drains the
+    # pending frame via the engine flush path
+    assert first_result is None
+    assert second_result is not None
+    assert second_result.predictions == [{"result": "flushed-frame-1"}]
+    assert second_result.video_frames == [frame_1]
+    assert flushed_results is not None
+    assert len(flushed_results) == 1
+    assert flushed_results[0].predictions == [{"result": "flushed-frame-2"}]
+    assert flushed_results[0].video_frames == [frame_2]
+    assert engine.flush_calls == [1, 2]
+    runner.close()
+    assert engine.step.close_calls == 1
+    assert second_step.close_calls == 1
+
+
+def test_base_pipelined_runner_flush_still_rejects_two_stream_steps() -> None:
+    # given: two pipelined but non-deferring steps keep the base runner, whose
+    # flush path supports exactly one pipelined step (regression guard)
+    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1, defers=False)
+    second_step = _FakeDeferringStep(stream_buffer_depth=1, defers=False)
+    _attach_compiled_workflow_graph(
+        engine,
+        steps={
+            "model_a": SimpleNamespace(step=engine.step),
+            "model_b": SimpleNamespace(step=second_step),
+        },
+        edges={
+            "$steps.model_a": ["$outputs.predictions_a"],
+            "$steps.model_b": ["$outputs.predictions_b"],
+        },
+    )
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+    runner = wrap_workflow_runner_for_stream_pipeline(
+        workflow_runner=workflow_runner,
+        execution_engine=engine,
+    )
+    assert type(runner) is PipelinedWorkflowRunner
+
+    # when
+    first_result = runner([_make_frame(1)])
+
+    # then
+    assert first_result is None
+    with pytest.raises(RuntimeError):
+        runner.flush()

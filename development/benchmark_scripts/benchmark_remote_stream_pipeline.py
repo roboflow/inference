@@ -50,6 +50,11 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--api-url", default=DEFAULT_API_URL)
+    parser.add_argument(
+        "--core-model-url",
+        default="https://infer.roboflow.com",
+        help="Hosted core-model API used by the sam3 workflow.",
+    )
     parser.add_argument("--model-id", default=DEFAULT_MODEL_ID)
     parser.add_argument("--video-url", default=DEFAULT_VIDEO_URL)
     parser.add_argument(
@@ -71,6 +76,26 @@ def parse_args() -> argparse.Namespace:
         "--depths",
         default="1,8,16,32",
         help="Comma-separated pipeline depths; depth 1 is the baseline.",
+    )
+    parser.add_argument(
+        "--workflow",
+        choices=["tracking", "sam3", "two-models"],
+        default="tracking",
+        help=(
+            "Workflow shape: tracking (model -> ByteTrack -> viz), sam3 "
+            "(SAM3 text-prompt segmentation -> ByteTrack -> viz), two-models "
+            "(two detection models -> consensus -> ByteTrack -> viz)."
+        ),
+    )
+    parser.add_argument(
+        "--second-model-id",
+        default="yolov8n-640",
+        help="Second model for the two-models workflow.",
+    )
+    parser.add_argument(
+        "--sam3-class-names",
+        default="car,truck",
+        help="Comma-separated text prompts for the sam3 workflow.",
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
@@ -131,24 +156,69 @@ def prepare_clip(
     }
 
 
-def build_workflow_specification(model_id: str) -> Dict[str, Any]:
-    return {
-        "version": "1.0.0",
-        "inputs": [{"type": "WorkflowImage", "name": "image"}],
-        "steps": [
+def build_workflow_specification(args: argparse.Namespace) -> Dict[str, Any]:
+    if args.workflow == "tracking":
+        detection_steps = [
             {
                 "type": "roboflow_core/roboflow_object_detection_model@v3",
                 "name": "model",
                 "images": "$inputs.image",
-                "model_id": model_id,
+                "model_id": args.model_id,
+                "confidence_mode": "custom",
+                "custom_confidence": 0.35,
+            },
+        ]
+        tracker_detections_selector = "$steps.model.predictions"
+    elif args.workflow == "sam3":
+        detection_steps = [
+            {
+                "type": "roboflow_core/sam3@v3",
+                "name": "sam3",
+                "images": "$inputs.image",
+                "class_names": args.sam3_class_names.split(","),
+                "output_format": "rle",
+            },
+        ]
+        tracker_detections_selector = "$steps.sam3.predictions"
+    else:
+        detection_steps = [
+            {
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
+                "name": "model_a",
+                "images": "$inputs.image",
+                "model_id": args.model_id,
                 "confidence_mode": "custom",
                 "custom_confidence": 0.35,
             },
             {
+                "type": "roboflow_core/roboflow_object_detection_model@v3",
+                "name": "model_b",
+                "images": "$inputs.image",
+                "model_id": args.second_model_id,
+                "confidence_mode": "custom",
+                "custom_confidence": 0.35,
+            },
+            {
+                "type": "roboflow_core/detections_consensus@v1",
+                "name": "consensus",
+                "predictions_batches": [
+                    "$steps.model_a.predictions",
+                    "$steps.model_b.predictions",
+                ],
+                "required_votes": 1,
+            },
+        ]
+        tracker_detections_selector = "$steps.consensus.predictions"
+    return {
+        "version": "1.0.0",
+        "inputs": [{"type": "WorkflowImage", "name": "image"}],
+        "steps": detection_steps
+        + [
+            {
                 "type": "roboflow_core/byte_tracker@v3",
                 "name": "byte_tracker",
                 "image": "$inputs.image",
-                "detections": "$steps.model.predictions",
+                "detections": tracker_detections_selector,
             },
             {
                 "type": "roboflow_core/bounding_box_visualization@v1",
@@ -177,7 +247,7 @@ def build_workflow_specification(model_id: str) -> Dict[str, Any]:
 def run_scenario(args: argparse.Namespace, depth: int) -> Dict[str, Any]:
     from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 
-    workflow_specification = build_workflow_specification(model_id=args.model_id)
+    workflow_specification = build_workflow_specification(args=args)
     clip = json.loads((args.output_dir / "clip-metadata.json").read_text())
 
     def execute_pipeline(video_path: str) -> Dict[str, Any]:
@@ -227,6 +297,11 @@ def run_scenario(args: argparse.Namespace, depth: int) -> Dict[str, Any]:
     measured = execute_pipeline(video_path=clip["clip_path"])
 
     emissions = measured["emissions"]
+    if not emissions:
+        raise RuntimeError(
+            "Scenario emitted no frames — the pipeline likely hit an error on "
+            "the inference thread (check credentials/URLs and rerun with logs)."
+        )
     frame_ids = [emission["frame_id"] for emission in emissions]
     emission_times = [emission["emitted_at"] for emission in emissions]
     wall_seconds = measured["finished_at"] - measured["started_at"]
@@ -320,6 +395,7 @@ def run_child_scenarios(args: argparse.Namespace, depths: List[int]) -> List[dic
             "WORKFLOWS_STEP_EXECUTION_MODE": "remote",
             "WORKFLOWS_REMOTE_API_TARGET": "hosted",
             "HOSTED_DETECT_URL": args.api_url,
+            "HOSTED_CORE_MODEL_URL": args.core_model_url,
             "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH": str(depth),
         }
         command = [
@@ -337,6 +413,12 @@ def run_child_scenarios(args: argparse.Namespace, depths: List[int]) -> List[dic
             str(args.warmup),
             "--resize-width",
             str(args.resize_width),
+            "--workflow",
+            args.workflow,
+            "--second-model-id",
+            args.second_model_id,
+            "--sam3-class-names",
+            args.sam3_class_names,
             "--output-dir",
             str(args.output_dir),
             "--run-single-depth",
@@ -411,6 +493,7 @@ def main() -> None:
     summary = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "api_url": args.api_url,
+        "workflow": args.workflow,
         "model_id": args.model_id,
         "video_url": args.video_url,
         "frames": args.frames,
