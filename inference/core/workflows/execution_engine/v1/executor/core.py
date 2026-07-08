@@ -374,6 +374,7 @@ def launch_async_simd_step(
             debug_trace=current_debug_trace.get(),
             otel_ctx=capture_context(),
             step_error_handler=step_error_handler,
+            expected_output_elements=len(step_input.indices),
         )
     )
     output_names = [
@@ -409,6 +410,7 @@ def _run_async_simd_step(
     debug_trace,
     otel_ctx,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+    expected_output_elements: Optional[int] = None,
 ) -> Any:
     # Lookahead workers need the same ContextVar / OTel rebinding as
     # safe_execute_step: values set on the stream thread do not propagate
@@ -426,7 +428,21 @@ def _run_async_simd_step(
     try:
         with start_span("workflow.step", {"workflow.step": step_name}):
             try:
-                return workflow.steps[step_name].step.run(**parameters)
+                result = workflow.steps[step_name].step.run(**parameters)
+                if (
+                    expected_output_elements is not None
+                    and isinstance(result, list)
+                    and len(result) != expected_output_elements
+                ):
+                    # Sequential execution fails fast at output registration
+                    # when a block breaks its batch contract; without this
+                    # check the mismatch would surface at resume time as an
+                    # index error blamed on the consuming step.
+                    raise ValueError(
+                        f"Async step {step_name} returned {len(result)} output "
+                        f"elements for {expected_output_elements} input indices."
+                    )
+                return result
             except WorkflowError:
                 raise
             except Exception as error:
@@ -435,9 +451,20 @@ def _run_async_simd_step(
                 logger.exception(
                     f"Execution of async step {step_name} encountered error."
                 )
+                error_traceback = "".join(
+                    traceback.format_exception(type(error), error, error.__traceback__)
+                )
+                block_traceback = BlockTraceback(
+                    traceback=error_traceback,
+                    error_line=getattr(error, "error_line", None),
+                    code_snippet=getattr(error, "code_snippet", None),
+                    stdout=getattr(error, "stdout", None),
+                    stderr=getattr(error, "stderr", None),
+                )
                 raise StepExecutionError(
                     block_id=step_name,
                     block_type=workflow.steps[step_name].manifest.type,
+                    block_traceback=block_traceback,
                     public_message=str(error),
                     context="workflow_execution | step_execution",
                     inner_error=error,
@@ -528,10 +555,13 @@ def resume_stream_lookahead_workflow(
 ) -> List[Dict[str, Any]]:
     """Emission pass of stream-lookahead execution for one buffered frame.
 
-    Usage is collected here rather than on the deferred pass: the deferred
-    pass returns as soon as async work is launched, so its duration would
-    not include the actual step execution; the resume pass waits on the
-    in-flight futures at input assembly and covers it.
+    Usage is collected here rather than on the deferred pass, which returns
+    as soon as async work is launched. Counting is exactly once per frame,
+    but the recorded duration is an approximation: in steady state the
+    frame's futures have already resolved by emission time (that wait is
+    hidden behind newer frames' work — the point of the lookahead), so the
+    duration reflects the resume-pass compute, not the remote inference
+    wall time.
 
     Resumes the frame's ExecutionDataManager from the deferred pass and runs
     every step outside the frontier. Frontier steps must not be re-executed:
@@ -561,11 +591,10 @@ def resume_stream_lookahead_workflow(
 def compute_stream_lookahead_frontier(workflow: CompiledWorkflow) -> Set[str]:
     """Steps that may execute ahead of stream order in the deferred pass.
 
-    Stream-lookahead terminology (the block-side half lives in
-    ``core_steps.common.remote_stream_pipeline``): per video frame, the
-    *deferred pass* (``run_stream_lookahead_workflow``) executes only the
-    *frontier*; the *resume pass* (``resume_stream_lookahead_workflow``)
-    later executes the remaining steps in frame order at emission time.
+    Stream-lookahead terminology: per video frame, the *deferred pass*
+    (``run_stream_lookahead_workflow``) executes only the *frontier*; the
+    *resume pass* (``resume_stream_lookahead_workflow``) later executes the
+    remaining steps in frame order at emission time.
 
     A step belongs to the frontier when its manifest declares it stateless
     for video processing and every step feeding it is itself in the frontier

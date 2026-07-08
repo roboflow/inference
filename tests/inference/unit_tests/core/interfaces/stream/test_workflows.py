@@ -1179,4 +1179,12 @@ def test_lookahead_runner_pool_threads_are_daemon() -> None:
     pool_threads = runner._lookahead_executor._threads
     assert len(pool_threads) == 3  # (buffer_depth + 1) * len(async_steps)
     assert all(thread.daemon for thread in pool_threads)
+
+    # after close(), the workers are detached from concurrent.futures'
+    # interpreter-shutdown hook (which joins pool threads regardless of the
+    # daemon flag) - both halves are needed for a hung request not to block
+    # process exit
     runner.close()
+    from concurrent.futures.thread import _threads_queues
+
+    assert all(thread not in _threads_queues for thread in pool_threads)

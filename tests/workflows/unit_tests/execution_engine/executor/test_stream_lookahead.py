@@ -384,6 +384,43 @@ def test_launch_async_simd_step_surfaces_errors_through_output_futures(
             outputs[0]["predictions"].result(timeout=5)
 
 
+def test_launch_async_simd_step_flags_batch_contract_violation_on_model_step() -> None:
+    # given - a block returning fewer output elements than input indices
+    # must be blamed at the model step (with a traceback attached), not
+    # surface later as an index error on the consuming step
+    block = AsyncModelBlock(
+        run_fn=lambda **kwargs: [{"predictions": "only-one", "inference_id": "i"}]
+    )
+    workflow = _lookahead_compiled_workflow(
+        steps={"model": _step_spec(block, StatelessModelManifest)},
+        edges=[],
+    )
+    execution_data_manager = MagicMock()
+    execution_data_manager.get_simd_step_input.return_value = SimpleNamespace(
+        indices=[(0,), (1,)],
+        parameters={"images": ["a", "b"]},
+    )
+
+    # when
+    with ThreadPoolExecutor(max_workers=1) as lookahead_executor:
+        launch_async_simd_step(
+            step_selector="$steps.model",
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            lookahead_executor=lookahead_executor,
+        )
+        outputs = execution_data_manager.register_simd_step_output.call_args.kwargs[
+            "outputs"
+        ]
+
+        # then
+        with pytest.raises(StepExecutionError) as error:
+            outputs[0]["predictions"].result(timeout=5)
+    assert error.value.block_id == "model"
+    assert "1 output elements for 2 input indices" in str(error.value)
+    assert error.value.block_traceback is not None
+
+
 def test_launch_async_simd_step_rebinds_execution_context_in_worker() -> None:
     # given - the offloaded run() bypasses safe_execute_step, so the launch
     # must rebind the request thread's execution context on the worker

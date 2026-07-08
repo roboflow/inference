@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import thread as _futures_thread
 from dataclasses import dataclass
 from threading import Barrier, Thread
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
@@ -314,6 +315,14 @@ class LookaheadPipelinedWorkflowRunner:
 
     def close(self) -> None:
         self._lookahead_executor.shutdown(wait=False, cancel_futures=True)
+        # shutdown(wait=False) leaves the workers registered in
+        # concurrent.futures' interpreter-shutdown hook, which joins every
+        # pool thread regardless of its daemon flag — a request hung past
+        # close() would still block process exit. Detach them so that join
+        # skips them; their daemon flag (set at spawn) keeps threading's own
+        # shutdown from waiting on them as well.
+        for worker in self._lookahead_executor._threads:
+            _futures_thread._threads_queues.pop(worker, None)
 
     def _emit_oldest_frame(self) -> InferenceHandlerResult:
         emit_video_frames, execution_data_manager = self._pending_frames.pop(0)
@@ -332,10 +341,13 @@ def _prespawn_daemon_workers(executor: ThreadPoolExecutor, max_workers: int) -> 
     """Force all lookahead pool threads into existence as daemon threads.
 
     ThreadPoolExecutor spawns worker threads lazily on submit(), and a new
-    thread inherits the daemon flag of the thread that created it. Spawning
-    every worker from a short-lived daemon thread guarantees a remote request
-    hung past close() cannot keep the interpreter alive at exit (close() uses
-    shutdown(wait=False)).
+    thread inherits the daemon flag of the thread that created it. The
+    daemon flag alone is NOT sufficient to let the interpreter exit while a
+    request hangs: concurrent.futures joins every registered pool thread at
+    interpreter shutdown regardless of daemonness. It is one half of the
+    lifecycle guarantee — close() detaches the workers from that shutdown
+    hook, and the daemon flag set here keeps threading's own shutdown from
+    waiting on them afterwards.
     """
 
     def _spawn_all_workers() -> None:
