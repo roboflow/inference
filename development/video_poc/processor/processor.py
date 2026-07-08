@@ -165,17 +165,22 @@ class Stats:
 
 
 class EventBus:
-    """Fan-out for SSE subscribers with a small replay buffer."""
+    """Fan-out for SSE subscribers with a small replay buffer, plus a
+    cursor-based poll view for clients behind response-buffering proxies
+    (Traefik's entrypoint `buffering` middleware holds an infinite SSE body
+    forever; finite Content-Length'd responses pass everything)."""
 
     def __init__(self):
         self.lock = threading.Lock()
         self.buffer = []
+        self.seq = 0  # seq of the NEXT event; buffer[-1] has seq-1
         self.subscribers = []
 
     def publish(self, event: dict):
         data = json.dumps(event, default=str)
         with self.lock:
             self.buffer.append(data)
+            self.seq += 1
             if len(self.buffer) > EVENT_BUFFER_SIZE:
                 self.buffer.pop(0)
             subs = list(self.subscribers)
@@ -184,6 +189,17 @@ class EventBus:
                 q.put_nowait(data)
             except Exception:
                 pass
+
+    def since(self, cursor):
+        """Events after `cursor` (a seq previously returned), plus the new
+        cursor. A stale/absent cursor returns the last few, not the world."""
+        with self.lock:
+            first_seq = self.seq - len(self.buffer)
+            if cursor is None or cursor < first_seq or cursor > self.seq:
+                start = max(len(self.buffer) - 10, 0)
+            else:
+                start = cursor - first_seq
+            return self.buffer[start:], self.seq
 
     def subscribe(self):
         import queue
@@ -1444,6 +1460,26 @@ def make_handler(worker: Worker):
                 self.send_response(200)
                 self._cors()
                 self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            elif path == "/events/poll":
+                # finite alternative to the SSE stream: response-buffering
+                # proxies (Traefik entrypoint `buffering`) never release an
+                # infinite body, but pass Content-Length'd responses through
+                query = parse_qs(urlparse(self.path).query)
+                try:
+                    cursor = int((query.get("cursor") or [None])[0])
+                except (TypeError, ValueError):
+                    cursor = None
+                events, new_cursor = worker.events.since(cursor)
+                body = (
+                    '{"cursor": %d, "events": [%s]}' % (new_cursor, ",".join(events))
+                ).encode()
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
