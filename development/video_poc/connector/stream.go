@@ -68,8 +68,9 @@ func (m *StreamManager) Start(src Source, ingestURL string) error {
 func (m *StreamManager) supervise(ctx context.Context, s *stream) {
 	defer close(s.done)
 	failures := 0
+	flexible := false
 	for {
-		args := ffmpegArgs(s.source, s.ingestURL)
+		args := ffmpegArgs(s.source, s.ingestURL, flexible)
 		cmd := exec.CommandContext(ctx, m.ffmpeg, args...)
 		var stderrTail tailBuffer
 		cmd.Stderr = &stderrTail
@@ -100,10 +101,25 @@ func (m *StreamManager) supervise(ctx context.Context, s *stream) {
 		if ctx.Err() != nil {
 			return
 		}
-		if stalled || time.Since(start) > 30*time.Second {
+		ranAWhile := time.Since(start) > 30*time.Second
+		if stalled || ranAWhile {
 			failures = 0 // it ran for a while; treat exit as a hiccup, not a config problem
 		} else {
 			failures++
+		}
+		if s.source.Kind == "usb" {
+			if (stalled || !ranAWhile) && !flexible {
+				// device likely shared at a different format now — reopen
+				// format-agnostic and normalize instead of fighting for
+				// exactly 1280x720@30
+				flexible = true
+				log.Printf("stream %s switching to camera-sharing mode (any format, normalized to 1280x720@30)",
+					s.source.LocalID)
+			} else if ranAWhile && !stalled && flexible {
+				// a clean long run ended (relay hiccup etc.) — try native
+				// format again; if the camera is still shared we'll be back
+				flexible = false
+			}
 		}
 		s.mu.Lock()
 		s.lastErr = fmt.Sprintf("ffmpeg exited: %v; %s", err, stderrTail.Tail())
@@ -272,7 +288,7 @@ func outputArgs(ingestURL string) []string {
 	return []string{"-progress", "pipe:1", "-f", "rtsp", "-rtsp_transport", "tcp", ingestURL}
 }
 
-func ffmpegArgs(src Source, ingestURL string) []string {
+func ffmpegArgs(src Source, ingestURL string, flexible bool) []string {
 	var args []string
 	switch src.Kind {
 	case "file":
@@ -282,7 +298,27 @@ func ffmpegArgs(src Source, ingestURL string) []string {
 		// passthrough: no decode, no encode — just remux
 		args = []string{"-hide_banner", "-loglevel", "warning", "-rtsp_transport", "tcp", "-i", src.URL, "-c", "copy", "-an"}
 	case "usb":
-		if runtime.GOOS == "darwin" {
+		if flexible {
+			// camera-sharing mode: another app renegotiated the device
+			// format (macOS shares cameras, but at ONE format) and the
+			// strict 1280x720@30 open stalls or fails while it holds the
+			// device. Take whatever format is active and normalize in the
+			// filter graph so downstream never notices.
+			if runtime.GOOS == "darwin" {
+				args = []string{
+					"-hide_banner", "-loglevel", "warning",
+					"-f", "avfoundation",
+					"-i", src.Device + ":none",
+				}
+			} else {
+				args = []string{
+					"-hide_banner", "-loglevel", "warning",
+					"-f", "v4l2",
+					"-i", src.Device,
+				}
+			}
+			args = append(args, "-vf", "fps=30,scale=1280:720")
+		} else if runtime.GOOS == "darwin" {
 			args = []string{
 				"-hide_banner", "-loglevel", "warning",
 				"-f", "avfoundation", "-framerate", "30", "-video_size", "1280x720",
