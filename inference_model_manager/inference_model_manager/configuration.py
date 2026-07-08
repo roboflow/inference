@@ -131,7 +131,7 @@ INFERENCE_VRAM_RECENT_WINDOW_S = get_float_from_env(
     "INFERENCE_VRAM_RECENT_WINDOW_S", default=30.0
 )
 
-# ── SAM3 interactive caches (backends/base.py attach_sam3_caches) ──────────
+# ── In-memory model caches (backends/base.py attach_model_caches) ──────────
 # Env names shared with the legacy inference package for deployment parity.
 SAM3_MAX_EMBEDDING_CACHE_SIZE = get_integer_from_env(
     "SAM3_MAX_EMBEDDING_CACHE_SIZE", default=100
@@ -142,6 +142,9 @@ SAM3_MAX_LOGITS_CACHE_SIZE = get_integer_from_env(
 SAM3_INTERACTIVE_CACHE_SEND_TO_CPU = get_boolean_from_env(
     "SAM3_INTERACTIVE_CACHE_SEND_TO_CPU", default=True
 )
+OWLV2_MODEL_CACHE_SIZE = get_integer_from_env("OWLV2_MODEL_CACHE_SIZE", default=100)
+OWLV2_IMAGE_CACHE_SIZE = get_integer_from_env("OWLV2_IMAGE_CACHE_SIZE", default=10000)
+OWLV2_CACHE_SEND_TO_CPU = get_boolean_from_env("OWLV2_CACHE_SEND_TO_CPU", default=True)
 
 # ── Subprocess backend (backends/subproc.py) ───────────────────────────────
 # Read inside the forked worker — names exposed here.

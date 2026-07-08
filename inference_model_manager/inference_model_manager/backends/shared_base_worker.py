@@ -18,7 +18,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import zmq
 
-from inference_model_manager.backends.base import detect_max_batch_size
+from inference_model_manager.backends.base import (
+    attach_model_caches,
+    detect_max_batch_size,
+)
 from inference_model_manager.backends.decode import Decoder, make_batch_decoder
 from inference_model_manager.backends.utils.shm_pool import SHMPool
 from inference_model_manager.backends.shared_base_protocol import (
@@ -145,6 +148,7 @@ def make_head_loader(
             device=device,
             preloaded_model_dependencies=preloaded,
         )
+        attach_model_caches(model)
         meta = {
             "model_mro_names": [cls.__name__ for cls in type(model).__mro__],
             "max_batch_size": detect_max_batch_size(model),
@@ -187,6 +191,7 @@ def _shared_worker_main(
             device=device,
             **base_model_kwargs,
         )
+        attach_model_caches(base)
         registry = HeadIndexRegistry()
         load_fn = make_head_loader(
             base, dep_name, dep_model_id, dep_metadata_package_id, device

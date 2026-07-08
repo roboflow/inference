@@ -37,12 +37,23 @@ def detect_max_batch_size(model) -> Optional[int]:
     return None
 
 
-def attach_sam3_caches(model) -> None:
-    """Replace a SAM3 model's null-object caches with real in-memory ones.
+def attach_model_caches(model) -> None:
+    """Replace null-object embedding caches with real in-memory ones.
 
     Cache objects hold locks so they cannot cross the worker spawn boundary
     in model_kwargs; they must be attached in-process after the model loads.
+    Caches that are already in-memory instances are kept — a shared-base
+    worker re-runs this per head against the same resident base and must not
+    wipe its warm cache.
     """
+    _attach_sam3_caches(model)
+    _attach_owlv2_caches(model)
+    feature_extractor = getattr(model, "_feature_extractor", None)
+    if feature_extractor is not None:
+        _attach_owlv2_caches(feature_extractor)
+
+
+def _attach_sam3_caches(model) -> None:
     if type(model).__name__ != "SAM3Torch":
         return
     from inference_model_manager import configuration as cfg
@@ -51,14 +62,47 @@ def attach_sam3_caches(model) -> None:
         Sam3LowResolutionMasksInMemoryCache,
     )
 
-    model._sam3_image_embeddings_cache = Sam3ImageEmbeddingsInMemoryCache.init(
-        size_limit=cfg.SAM3_MAX_EMBEDDING_CACHE_SIZE,
-        send_to_cpu=cfg.SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
+    if not isinstance(
+        model._sam3_image_embeddings_cache, Sam3ImageEmbeddingsInMemoryCache
+    ):
+        model._sam3_image_embeddings_cache = Sam3ImageEmbeddingsInMemoryCache.init(
+            size_limit=cfg.SAM3_MAX_EMBEDDING_CACHE_SIZE,
+            send_to_cpu=cfg.SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
+        )
+    if not isinstance(
+        model._sam3_low_resolution_masks_cache, Sam3LowResolutionMasksInMemoryCache
+    ):
+        model._sam3_low_resolution_masks_cache = (
+            Sam3LowResolutionMasksInMemoryCache.init(
+                size_limit=cfg.SAM3_MAX_LOGITS_CACHE_SIZE,
+                send_to_cpu=cfg.SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
+            )
+        )
+
+
+def _attach_owlv2_caches(model) -> None:
+    if not hasattr(model, "_owlv2_class_embeddings_cache"):
+        return
+    from inference_model_manager import configuration as cfg
+    from inference_models.models.owlv2.cache import (
+        InMemoryOwlV2ClassEmbeddingsCache,
+        InMemoryOwlV2ImageEmbeddingsCache,
     )
-    model._sam3_low_resolution_masks_cache = Sam3LowResolutionMasksInMemoryCache.init(
-        size_limit=cfg.SAM3_MAX_LOGITS_CACHE_SIZE,
-        send_to_cpu=cfg.SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
-    )
+
+    if not isinstance(
+        model._owlv2_class_embeddings_cache, InMemoryOwlV2ClassEmbeddingsCache
+    ):
+        model._owlv2_class_embeddings_cache = InMemoryOwlV2ClassEmbeddingsCache.init(
+            size_limit=cfg.OWLV2_MODEL_CACHE_SIZE,
+            send_to_cpu=cfg.OWLV2_CACHE_SEND_TO_CPU,
+        )
+    if not isinstance(
+        model._owlv2_images_embeddings_cache, InMemoryOwlV2ImageEmbeddingsCache
+    ):
+        model._owlv2_images_embeddings_cache = InMemoryOwlV2ImageEmbeddingsCache.init(
+            size_limit=cfg.OWLV2_IMAGE_CACHE_SIZE,
+            send_to_cpu=cfg.OWLV2_CACHE_SEND_TO_CPU,
+        )
 
 
 class Backend(ABC):

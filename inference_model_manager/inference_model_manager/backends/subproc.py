@@ -45,7 +45,7 @@ import numpy as np
 import zmq
 
 from inference_model_manager import configuration as cfg
-from inference_model_manager.backends.base import Backend, attach_sam3_caches
+from inference_model_manager.backends.base import Backend, attach_model_caches
 from inference_model_manager.backends.decode import (
     Decoder,
     estimate_decoded_bytes,
@@ -286,7 +286,7 @@ def _worker_main(
             model = AutoModel.from_pretrained(
                 model_id, api_key=api_key, device=device, **model_kwargs
             )
-            attach_sam3_caches(model)
+            attach_model_caches(model)
             _log.info("Worker(%s): model ready (%s)", model_id, type(model).__name__)
 
         batch_decode_fn = make_batch_decoder(device, decoder=decoder)
