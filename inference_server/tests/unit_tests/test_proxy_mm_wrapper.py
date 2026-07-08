@@ -137,3 +137,18 @@ async def test_concurrent_ensure_loaded_loads_once():
     )
     assert [r[0] for r in results] == ["model_ready", "model_ready"]
     assert mgr.load_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_infer_empty_image_becomes_images_none():
+    mgr = _fake_manager(process_return="ok")
+    wrapper = MMWrapper(mgr)
+    await wrapper.infer(
+        model_id="sam3/sam3_final",
+        image=b"",
+        task="segment_with_visual_prompts",
+        params={"image_hashes": ["h1"]},
+    )
+    kwargs = mgr.process_async.await_args.kwargs
+    assert kwargs["images"] is None
+    assert kwargs["image_hashes"] == ["h1"]
