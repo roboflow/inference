@@ -427,9 +427,7 @@ def fetch_image_bytes_from_url(value: str) -> bytes:
             message=f"Could not load image from url: {value}. Details: {error}",
             public_message="Data pointed by URL could not be decoded into image.",
         )
-    return load_image_from_encoded_bytes(
-        value=image_bytes, cv_imread_flags=cv_imread_flags
-    )
+    return image_bytes
 
 
 def _validate_url_destination(value: str) -> str:
