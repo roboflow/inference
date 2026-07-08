@@ -160,7 +160,7 @@ func (a *App) setHealth(h HealthStatus) {
 
 func main() {
 	var rtspFlags stringList
-	apiURL := flag.String("api-url", os.Getenv("RF_API_URL"), "Roboflow API base URL")
+	apiURL := flag.String("api-url", os.Getenv("RF_API_URL"), "Roboflow API base URL (default: https://api.roboflow.com; point at a staging or local emulator URL to develop)")
 	apiKey := flag.String("api-key", os.Getenv("ROBOFLOW_API_KEY"), "Roboflow API key (can also be set in the local UI)")
 	id := flag.String("id", "", "connector id (default: conn-<hostname>)")
 	name := flag.String("name", "", "display name (default: hostname)")
@@ -173,7 +173,7 @@ func main() {
 	flag.Parse()
 
 	if *apiURL == "" {
-		log.Fatal("--api-url is required (or RF_API_URL env)")
+		*apiURL = "https://api.roboflow.com"
 	}
 
 	hostname, _ := os.Hostname()
