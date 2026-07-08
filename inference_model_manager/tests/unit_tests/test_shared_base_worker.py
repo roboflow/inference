@@ -111,3 +111,83 @@ def test_handle_drop_unknown_head_acks_ok():
     reg = HeadIndexRegistry()
     ack = handle_drop_head({"req_id": 5, "head_id": "ghost"}, reg)
     assert ack == {"req_id": 5, "ok": True, "head_id": "ghost"}
+
+
+# ----------------------------- _error_slots gating -----------------------------
+
+
+class _FakeSock:
+    def __init__(self):
+        self.sent = []
+
+    def send_multipart(self, frames):
+        self.sent.append(frames)
+
+
+class _Log:
+    def warning(self, *a, **k):
+        pass
+
+    def exception(self, *a, **k):
+        pass
+
+
+def _result_frames(sock):
+    import struct
+
+    from inference_model_manager.backends.subproc import _MSG_RESULT
+
+    return [struct.unpack(">QII", f[1]) for f in sock.sent if f[0] == _MSG_RESULT]
+
+
+def test_error_slots_skips_completed_slot():
+    from inference_model_manager.backends.shared_base_worker import _error_slots
+    from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
+
+    pool = SHMPool.create(n_slots=2, input_mb=0.1)
+    try:
+        s_live = pool.alloc_slot()
+        pool.mark_allocated(s_live, request_id=11)
+        pool.mark_written(s_live, 4)
+        s_done = pool.alloc_slot()
+        pool.mark_allocated(s_done, request_id=22)
+        pool.mark_written(s_done, 4)
+        pool.mark_done(s_done, 8, request_id=22)  # already resulted pre-crash
+
+        sock = _FakeSock()
+        _error_slots(pool, sock, [(s_live, 11), (s_done, 22)], "batch crashed", _Log())
+
+        assert pool.read_header(s_live).status == SlotStatus.ERROR
+        # Completed slot untouched: no error stomp, no duplicate _MSG_RESULT.
+        hdr = pool.read_header(s_done)
+        assert hdr.status == SlotStatus.DONE
+        assert hdr.result_size == 8
+        assert _result_frames(sock) == [(11, s_live, 0)]
+    finally:
+        pool.close()
+
+
+def test_error_slots_skips_rebound_slot():
+    from inference_model_manager.backends.shared_base_worker import _error_slots
+    from inference_model_manager.backends.utils.shm_pool import SHMPool, SlotStatus
+
+    pool = SHMPool.create(n_slots=1, input_mb=0.1)
+    try:
+        s = pool.alloc_slot()
+        pool.mark_allocated(s, request_id=11)
+        pool.mark_written(s, 4)
+        # Reaper reclaimed and rebound the slot to a new request mid-crash.
+        pool.free_slot(s, request_id=11)
+        s2 = pool.alloc_slot()
+        assert s2 == s
+        pool.mark_allocated(s2, request_id=99)
+
+        sock = _FakeSock()
+        _error_slots(pool, sock, [(s, 11)], "batch crashed", _Log())
+
+        hdr = pool.read_header(s)
+        assert hdr.status == SlotStatus.ALLOCATED  # new owner untouched
+        assert hdr.request_id == 99
+        assert _result_frames(sock) == []
+    finally:
+        pool.close()

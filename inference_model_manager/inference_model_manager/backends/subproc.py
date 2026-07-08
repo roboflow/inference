@@ -494,7 +494,7 @@ def _worker_loop(
                     # every slot we still own and keep serving.
                     log.exception("Worker: _process_slots crashed — erroring batch")
                     for slot_id, req_id, _ in chunk:
-                        if not _slot_owned(pool, slot_id, req_id):
+                        if not _slot_erroneable(pool, slot_id, req_id):
                             continue
                         try:
                             _write_error_to_slot(
@@ -606,6 +606,21 @@ def _slot_owned(pool: SHMPool, slot_id: int, req_id: int) -> bool:
         return pool.read_header(slot_id).request_id == req_id
     except Exception:
         return False
+
+
+def _slot_erroneable(pool: "SHMPool", slot_id: int, req_id: int) -> bool:
+    """True if the slot may still be errored by the crash path: bound to req_id
+    AND not yet resulted. A DONE/ERROR slot already sent its _MSG_RESULT —
+    stomping it would corrupt a result the client has not read yet and emit a
+    duplicate result frame."""
+    try:
+        hdr = pool.read_header(slot_id)
+    except Exception:
+        return False
+    return hdr.request_id == req_id and hdr.status in (
+        SlotStatus.WRITTEN,
+        SlotStatus.PROCESSING,
+    )
 
 
 def _process_slots(
