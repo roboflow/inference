@@ -162,7 +162,7 @@ def register_datapoint_at_roboflow(
 def collect_tags(
     configuration: ActiveLearningConfiguration, sampling_strategy: str
 ) -> List[str]:
-    tags = ACTIVE_LEARNING_TAGS if ACTIVE_LEARNING_TAGS is not None else []
+    tags = list(ACTIVE_LEARNING_TAGS) if ACTIVE_LEARNING_TAGS is not None else []
     tags.extend(configuration.tags)
     tags.extend(configuration.strategies_tags[sampling_strategy])
     if configuration.persist_predictions:

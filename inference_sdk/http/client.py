@@ -147,7 +147,7 @@ def wrap_errors(function: callable) -> callable:
                 status_code=error.response.status_code,
                 api_message=api_message,
             ) from error
-        except ConnectionError as error:
+        except (ConnectionError, requests.exceptions.ConnectionError) as error:
             raise HTTPClientError(
                 f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error

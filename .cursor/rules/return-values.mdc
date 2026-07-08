@@ -1,0 +1,25 @@
+---
+description: Python return value style
+globs: **/*.py
+alwaysApply: false
+---
+
+# Return Values
+
+Prefer returning named variables rather than calling functions directly on
+`return` lines. This keeps the final step easy to inspect and gives the
+intermediate value a meaningful name.
+
+```python
+serialized_result = serialize_result(result=result)
+
+return serialized_result
+```
+
+Avoid:
+
+```python
+return serialize_result(result=result)
+```
+
+Simple literal or already-bound returns are fine.

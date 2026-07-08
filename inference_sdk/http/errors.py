@@ -168,3 +168,11 @@ class RetryError(Exception):
 
     def __str__(self) -> str:
         return self.__repr__()
+
+
+class InvalidURLImageInput(HTTPClientError):
+    """Raised when a URL image reference fails the SDK URL-string policy."""
+
+
+class URLAddressNotAllowedError(HTTPClientError):
+    """Raised when a URL resolves to a destination that is not permitted."""

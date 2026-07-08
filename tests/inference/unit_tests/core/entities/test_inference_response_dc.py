@@ -159,8 +159,7 @@ def test_workflow_dc_path_emits_mask_format_in_prediction_dicts() -> None:
     dumped = _is_response_dc_to_dict(response)
 
     assert all(
-        prediction["mask_format"] == "polygon"
-        for prediction in dumped["predictions"]
+        prediction["mask_format"] == "polygon" for prediction in dumped["predictions"]
     )
 
 

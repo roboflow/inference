@@ -5,16 +5,16 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 import (
-    BlockManifest,
     MODEL_VERSION_IDS,
+    BlockManifest,
     execute_gemini_request,
     prepare_generation_config,
 )
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
-    BlockManifest as V3BlockManifest,
+    MODEL_VERSION_IDS as V3_MODEL_VERSION_IDS,
 )
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v3 import (
-    MODEL_VERSION_IDS as V3_MODEL_VERSION_IDS,
+    BlockManifest as V3BlockManifest,
 )
 
 STALE_MODEL_IDS = {
@@ -69,7 +69,9 @@ def test_gemini_v3_step_validation_when_input_is_valid() -> None:
     "model_ids",
     [MODEL_VERSION_IDS, V3_MODEL_VERSION_IDS],
 )
-def test_gemini_model_catalog_uses_available_google_models(model_ids: list[str]) -> None:
+def test_gemini_model_catalog_uses_available_google_models(
+    model_ids: list[str],
+) -> None:
     assert not STALE_MODEL_IDS.intersection(model_ids)
     assert "gemini-3.1-pro-preview" in model_ids
     assert "gemini-3.1-flash-lite" in model_ids

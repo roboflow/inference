@@ -138,7 +138,7 @@ class ClipOnnx(TextImageEmbeddingModel):
     def embed_text(self, texts: Union[str, List[str]], **kwargs) -> torch.Tensor:
         if not isinstance(texts, list):
             texts = [texts]
-        tokenized_batch = clip.tokenize(texts)
+        tokenized_batch = clip.tokenize(texts).to(self._device)
         with self._textual_session_thread_lock:
             return run_onnx_session_with_batch_size_limit(
                 session=self._textual_onnx_session,
