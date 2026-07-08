@@ -69,6 +69,13 @@ def decode_common_request_params(request: Request) -> CommonRequestParams:
     )
 
 
+def _apply_param_defaults(params_spec: dict, params: dict) -> None:
+    """Fill params absent from the request with interface-declared defaults."""
+    for name, spec in params_spec.items():
+        if name not in params and "default" in spec:
+            params[name] = spec["default"]
+
+
 def _validate_action_params(params_spec: dict, params: dict) -> Response | None:
     for name, spec in params_spec.items():
         type_name = spec.get("type", "str")
@@ -192,9 +199,10 @@ async def handle_model_inference_request(
         return Response(status_code=499)
 
     params_spec = description.interface_provider().params
-    err = _validate_action_params(params_spec, input_data.get("params", {}))
+    err = _validate_action_params(params_spec, input_data.setdefault("params", {}))
     if err is not None:
         return err
+    _apply_param_defaults(params_spec, input_data["params"])
 
     status = await proxy.ensure_loaded(
         common.model_id, common.instance, common.api_key, common.device

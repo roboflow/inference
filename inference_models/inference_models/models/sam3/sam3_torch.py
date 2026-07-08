@@ -629,7 +629,7 @@ class SAM3Torch:
                     {
                         "prompt_index": idx,
                         "masks": masks,
-                        "scores": list(scores),
+                        "scores": [float(s) for s in scores],
                     }
                 )
 
