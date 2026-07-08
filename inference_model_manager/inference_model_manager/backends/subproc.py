@@ -164,7 +164,10 @@ def _tensors_to_numpy(result: Any) -> Any:
 
     def _walk(obj: Any) -> Any:
         if isinstance(obj, Tensor):
-            return obj.detach().cpu().numpy()
+            t = obj.detach()
+            if t.dtype == _torch.bfloat16:
+                t = t.float()
+            return t.cpu().numpy()
         if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
             # object.__setattr__ so frozen dataclasses (SAM predictions,
             # embeddings) convert too instead of raising FrozenInstanceError

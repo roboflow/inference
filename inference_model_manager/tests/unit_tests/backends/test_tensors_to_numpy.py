@@ -28,6 +28,12 @@ def test_frozen_dataclass_tensors_converted():
     assert isinstance(result.scores, np.ndarray)
 
 
+def test_bfloat16_tensor_upcast_to_float32():
+    result = _tensors_to_numpy({"scores": torch.ones(2, dtype=torch.bfloat16)})
+    assert isinstance(result["scores"], np.ndarray)
+    assert result["scores"].dtype == np.float32
+
+
 def test_mutable_dataclass_and_containers():
     result = _tensors_to_numpy(
         {"a": [_MutablePrediction(boxes=torch.ones(1, 4))], "b": (torch.zeros(3),)}
