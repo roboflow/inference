@@ -19,6 +19,23 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pybase64
 
+from inference.core.entities.responses.inference import (
+    ClassificationInferenceResponse,
+    InferenceResponseImage,
+    InstanceSegmentationInferenceResponse,
+    InstanceSegmentationPrediction,
+    InstanceSegmentationRLEPrediction,
+    Keypoint,
+    KeypointsDetectionInferenceResponse,
+    KeypointsPrediction,
+    LMMInferenceResponse,
+    MultiLabelClassificationInferenceResponse,
+    ObjectDetectionInferenceResponse,
+    ObjectDetectionPrediction,
+    Point,
+    SemanticSegmentationInferenceResponse,
+    SemanticSegmentationPrediction,
+)
 from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.entities.responses.sam import SamEmbeddingResponse
 from inference.core.entities.responses.sam2 import (
@@ -32,23 +49,6 @@ from inference.core.entities.responses.sam3 import (
     Sam3PromptResult,
     Sam3SegmentationPrediction,
     Sam3SegmentationResponse,
-)
-from inference.core.entities.responses.inference import (
-    ClassificationInferenceResponse,
-    LMMInferenceResponse,
-    InferenceResponseImage,
-    InstanceSegmentationInferenceResponse,
-    InstanceSegmentationPrediction,
-    InstanceSegmentationRLEPrediction,
-    Keypoint,
-    KeypointsDetectionInferenceResponse,
-    KeypointsPrediction,
-    MultiLabelClassificationInferenceResponse,
-    ObjectDetectionInferenceResponse,
-    ObjectDetectionPrediction,
-    Point,
-    SemanticSegmentationInferenceResponse,
-    SemanticSegmentationPrediction,
 )
 from inference.core.exceptions import (
     InferenceModelNotFound,
@@ -146,15 +146,11 @@ IMPLEMENTED_ROUTES = frozenset(
 # raw decoded string.
 VLM_UNSUPPORTED_MODEL_CLASSES = frozenset(["Florence2HF"])
 
-IMPLEMENTED_TASK_TYPES = frozenset(
-    task_type for task_type, _ in IMPLEMENTED_ROUTES
-)
+IMPLEMENTED_TASK_TYPES = frozenset(task_type for task_type, _ in IMPLEMENTED_ROUTES)
 
 
 def implemented_actions(task_type: str) -> frozenset:
-    return frozenset(
-        action for t, action in IMPLEMENTED_ROUTES if t == task_type
-    )
+    return frozenset(action for t, action in IMPLEMENTED_ROUTES if t == task_type)
 
 
 # Explicit foundation endpoints supply a concrete action via the request type,
@@ -178,6 +174,7 @@ def resolve_request_action(route: dict, request: Any) -> str:
         if candidate in tasks:
             return candidate
     return candidates[0]
+
 
 # Error codes returned by the MMP in ("error", code) lifecycle tuples;
 # values mirror inference_model_manager.model_manager_process.
@@ -526,7 +523,9 @@ def repack_prediction(
         requested_classes = [
             str(c)
             for c in (
-                getattr(request, "text", None) or getattr(request, "classes", None) or []
+                getattr(request, "text", None)
+                or getattr(request, "classes", None)
+                or []
             )
         ]
         return repack_object_detection_response(
@@ -793,7 +792,11 @@ def repack_classification_response(
         if class_score < confidence_threshold:
             continue
         class_predictions.append(
-            {"class_id": class_id, "class": class_name, "confidence": round(class_score, 4)}
+            {
+                "class_id": class_id,
+                "class": class_name,
+                "confidence": round(class_score, 4),
+            }
         )
     class_predictions = sorted(
         class_predictions, key=lambda x: x["confidence"], reverse=True
@@ -883,9 +886,7 @@ class _DepthAdapterResponse:
 
 
 def repack_depth_estimation_response(prediction: Any) -> _DepthAdapterResponse:
-    depth_map = np.asarray(
-        _unwrap_single_prediction(prediction), dtype=np.float32
-    )
+    depth_map = np.asarray(_unwrap_single_prediction(prediction), dtype=np.float32)
     depth_min = float(depth_map.min())
     depth_max = float(depth_map.max())
     if depth_max == depth_min:
@@ -945,9 +946,7 @@ def repack_text_ocr_response(
     )
 
 
-def repack_vlm_response(
-    prediction: Any, dims: Tuple[int, int]
-) -> LMMInferenceResponse:
+def repack_vlm_response(prediction: Any, dims: Tuple[int, int]) -> LMMInferenceResponse:
     response = _unwrap_single_prediction(prediction)
     if not isinstance(response, (str, dict)):
         response = str(response)
@@ -1073,9 +1072,7 @@ def _sam_masks_to_predictions(
 
         predictions = []
         for mask, score in zip(np.asarray(masks), scores):
-            rle = mask_utils.encode(
-                np.asfortranarray((mask > 0).astype(np.uint8))
-            )
+            rle = mask_utils.encode(np.asfortranarray((mask > 0).astype(np.uint8)))
             rle["counts"] = rle["counts"].decode("utf-8")
             predictions.append(
                 prediction_cls(masks=rle, confidence=float(score), format="rle")
@@ -1104,9 +1101,7 @@ def _split_keypoints_prediction(prediction: Any) -> Tuple[Any, Any]:
 def _dense_mask_to_coco_rle(mask: np.ndarray) -> dict:
     from pycocotools import mask as mask_utils
 
-    return mask_utils.encode(
-        np.asfortranarray(np.asarray(mask).astype(np.uint8))
-    )
+    return mask_utils.encode(np.asfortranarray(np.asarray(mask).astype(np.uint8)))
 
 
 def _rle_masks_to_polygons(masks: Any) -> List[np.ndarray]:

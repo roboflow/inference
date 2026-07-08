@@ -107,9 +107,7 @@ class ModelManagerAdapter:
     # routing
     # ------------------------------------------------------------------
 
-    async def _resolve_route_async(
-        self, model_id: str, api_key: Optional[str]
-    ) -> dict:
+    async def _resolve_route_async(self, model_id: str, api_key: Optional[str]) -> dict:
         route = self._routes.get(model_id)
         if route is not None:
             if not route["supported"]:
@@ -133,9 +131,7 @@ class ModelManagerAdapter:
         translation.raise_for_lifecycle_result(result, model_id)
         interface = await self._client.interface(model_id)
         tasks = set(interface.get("tasks", {}))
-        if not tasks.intersection(
-            translation.implemented_actions(task_type)
-        ):
+        if not tasks.intersection(translation.implemented_actions(task_type)):
             await self._client.unload(model_id)
             self._routes[model_id] = terminal
             raise _unsupported(model_id)
@@ -179,9 +175,7 @@ class ModelManagerAdapter:
         is_batch = isinstance(request.image, list)
         images = request.image if is_batch else [request.image]
         forwarded = [translation.forward_image(image) for image in images]
-        params = translation.build_task_params(
-            route["task_type"], action, request
-        )
+        params = translation.build_task_params(route["task_type"], action, request)
         t_start = time.perf_counter()
         ensure = await self._client.ensure_loaded(
             route["mmp_model_id"], api_key=getattr(request, "api_key", None) or ""
