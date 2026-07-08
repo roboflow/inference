@@ -1451,7 +1451,11 @@ def make_handler(worker: Worker):
                 self.send_response(200)
                 self._cors()
                 self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Connection", "keep-alive")
+                # HTTP/1.1 with neither Content-Length nor chunked framing is
+                # only legal when the response ends with the connection —
+                # "keep-alive" here made strict proxies (Traefik) withhold the
+                # entire stream while lenient clients happened to work
+                self.send_header("Connection", "close")
                 self.end_headers()
                 q = worker.events.subscribe()
                 try:
@@ -1472,6 +1476,8 @@ def make_handler(worker: Worker):
                 self.send_response(200)
                 self._cors()
                 self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+                # same unframed-stream rule as /events: must end with the conn
+                self.send_header("Connection", "close")
                 self.end_headers()
                 seq = -1
                 min_interval = 1.0 / MJPEG_MAX_FPS
