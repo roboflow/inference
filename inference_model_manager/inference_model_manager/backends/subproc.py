@@ -803,13 +803,14 @@ def _process_slots(
             sub_results = raw_out if isinstance(raw_out, list) else [raw_out]
             for i, r in zip(indices, sub_results):
                 results[i] = r
+        except ModelInputError as exc:
+            log.warning("Worker: invoke_task(task=%r) rejected input: %s", task, exc)
+            for i in indices:
+                results[i] = _InferenceError(INPUT_ERROR_PREFIX + str(exc))
         except Exception as exc:
             log.exception("Worker: invoke_task(task=%r) failed", task)
-            msg = str(exc)
-            if isinstance(exc, ModelInputError):
-                msg = INPUT_ERROR_PREFIX + msg
             for i in indices:
-                results[i] = _InferenceError(msg)
+                results[i] = _InferenceError(str(exc))
 
     t_infer = time.monotonic()
 
