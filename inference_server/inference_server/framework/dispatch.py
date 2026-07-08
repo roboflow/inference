@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import Request, Response
 from starlette.requests import ClientDisconnect
 
+from inference_models.errors import ModelInputError
 from inference_server import configuration
 from inference_server.auth import extract_bearer
 from inference_server.errors import (
@@ -231,6 +232,8 @@ async def handle_model_inference_request(
             headers={"Retry-After": "1"},
         )
     except ValueError as exc:
+        return error_response(400, "INVALID_PARAM", str(exc))
+    except ModelInputError as exc:
         return error_response(400, "INVALID_PARAM", str(exc))
     except asyncio.TimeoutError:
         return error_response(504, "TIMEOUT", "inference timeout")

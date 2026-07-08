@@ -522,3 +522,18 @@ async def test_client_action_overrides_api_default(fake_handler_entry):
             _request(query=b"model_id=m&action=embed_text"), _mock_proxy()
         )
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_model_input_error_maps_to_400(fake_handler_entry):
+    from inference_models.errors import ModelInputError
+
+    fake_handler_entry["handler"].side_effect = ModelInputError(
+        message="no embeddings were found in the cache"
+    )
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 400
+    assert b"no embeddings were found in the cache" in r.body
