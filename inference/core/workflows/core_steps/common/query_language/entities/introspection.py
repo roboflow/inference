@@ -16,8 +16,10 @@ class OperationDescription(BaseModel):
 
     property_name_options: Optional[List[str]] = Field(
         default=None,
-        description=("List of possible property names. \
-            Optional parameter for operations extracting property values from data. "),
+        description=(
+            "List of possible property names. \
+            Optional parameter for operations extracting property values from data. "
+        ),
         examples=[
             "size",
             "height",

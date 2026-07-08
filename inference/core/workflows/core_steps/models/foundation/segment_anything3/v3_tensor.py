@@ -34,6 +34,7 @@ no-op on InstanceDetections and cannot be reused).
 
 from typing import Dict, List, Literal, Optional, Type, Union
 
+import numpy as np
 import requests
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
@@ -96,7 +97,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceHTTPClient
-import numpy as np
 
 LONG_DESCRIPTION = """
 Run Segment Anything 3 (zero-shot, text-prompted) with per-class confidence
