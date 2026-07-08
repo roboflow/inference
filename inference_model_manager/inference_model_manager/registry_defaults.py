@@ -69,6 +69,8 @@ _P_SAM3_VISUAL_PROMPTS = {
     "return_logits": {"type": "bool", "required": False, "default": False},
     "image_hashes": {"type": "list[str]", "required": False},
     "use_embeddings_cache": {"type": "bool", "required": False, "default": True},
+    "load_from_mask_input_cache": {"type": "bool", "required": False, "default": False},
+    "save_to_mask_input_cache": {"type": "bool", "required": False, "default": False},
 }
 _P_SAM3_TEXT_PROMPTS = {
     "images": {"type": "image", "required": True},

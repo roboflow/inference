@@ -37,6 +37,30 @@ def detect_max_batch_size(model) -> Optional[int]:
     return None
 
 
+def attach_sam3_caches(model) -> None:
+    """Replace a SAM3 model's null-object caches with real in-memory ones.
+
+    Cache objects hold locks so they cannot cross the worker spawn boundary
+    in model_kwargs; they must be attached in-process after the model loads.
+    """
+    if type(model).__name__ != "SAM3Torch":
+        return
+    from inference_model_manager import configuration as cfg
+    from inference_models.models.sam3.cache import (
+        Sam3ImageEmbeddingsInMemoryCache,
+        Sam3LowResolutionMasksInMemoryCache,
+    )
+
+    model._sam3_image_embeddings_cache = Sam3ImageEmbeddingsInMemoryCache.init(
+        size_limit=cfg.SAM3_MAX_EMBEDDING_CACHE_SIZE,
+        send_to_cpu=cfg.SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
+    )
+    model._sam3_low_resolution_masks_cache = Sam3LowResolutionMasksInMemoryCache.init(
+        size_limit=cfg.SAM3_MAX_LOGITS_CACHE_SIZE,
+        send_to_cpu=cfg.SAM3_INTERACTIVE_CACHE_SEND_TO_CPU,
+    )
+
+
 class Backend(ABC):
     """Handle to a single loaded model.
 
