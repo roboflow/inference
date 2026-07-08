@@ -776,32 +776,61 @@ def test_inference_pipeline_works_correctly_against_multiple_video_files_with_ac
     ), "Order of prediction frames violated for source 1"
 
 
-@pytest.mark.parametrize(
-    "lookahead_depth, rfdetr_depth, lookahead_expected, dispatch_expected",
-    [
-        (2, None, True, True),
-        (1, "2", False, True),
-        (1, None, False, False),
-    ],
-    ids=["lookahead_only", "rfdetr_only", "neither"],
-)
-def test_stream_dispatch_gating(
-    monkeypatch,
-    lookahead_depth: int,
-    rfdetr_depth,
-    lookahead_expected: bool,
-    dispatch_expected: bool,
-) -> None:
-    # given - the lookahead gate reads the import-time env constant; the
-    # RF-DETR gate still reads the environment directly
-    monkeypatch.setattr(
-        inference_pipeline, "WORKFLOWS_STREAM_LOOKAHEAD_DEPTH", lookahead_depth
-    )
-    if rfdetr_depth is None:
-        monkeypatch.delenv("RFDETR_PIPELINE_DEPTH", raising=False)
-    else:
-        monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", rfdetr_depth)
+def test_buffered_stream_dispatch_keys_on_actual_handler_not_env() -> None:
+    # given - buffered dispatch must follow whether the handler actually
+    # buffers (exposes flush()), NOT whether a depth env var is set: a depth
+    # flag on a workflow that does not qualify for pipelining falls back to a
+    # plain WorkflowRunner, which must still use the normal dispatch path
+    class _BufferingRunner:
+        def __call__(self, video_frames):
+            return None
+
+        def flush(self):
+            return None
+
+    class _PlainRunner:
+        def __call__(self, video_frames):
+            return []
 
     # when / then
-    assert inference_pipeline._stream_lookahead_enabled() is lookahead_expected
-    assert inference_pipeline._stream_pipeline_dispatch_enabled() is dispatch_expected
+    assert inference_pipeline._uses_buffered_stream_dispatch(_BufferingRunner())
+    assert not inference_pipeline._uses_buffered_stream_dispatch(_PlainRunner())
+    assert not inference_pipeline._uses_buffered_stream_dispatch(lambda frames: [])
+
+
+def test_init_with_custom_logic_caps_queue_only_for_buffering_handler() -> None:
+    # given - the predictions queue is capped to 4 only when the handler
+    # buffers; a non-buffering handler keeps the full queue even if a depth
+    # env var happens to be set (the bug: cap + buffered path with nothing
+    # buffered starves throughput)
+    class _BufferingRunner:
+        def __call__(self, video_frames):
+            return None
+
+        def flush(self):
+            return None
+
+    class _PlainRunner:
+        def __call__(self, video_frames):
+            return []
+
+    buffering_pipeline = object.__new__(InferencePipeline)
+    buffering_pipeline.__init__(
+        on_video_frame=_BufferingRunner(),
+        video_sources=[],
+        predictions_queue=Queue(),
+        watchdog=BasePipelineWatchDog(),
+        status_update_handlers=[],
+    )
+    plain_pipeline = object.__new__(InferencePipeline)
+    plain_pipeline.__init__(
+        on_video_frame=_PlainRunner(),
+        video_sources=[],
+        predictions_queue=Queue(),
+        watchdog=BasePipelineWatchDog(),
+        status_update_handlers=[],
+    )
+
+    # then
+    assert buffering_pipeline._buffered_stream_dispatch is True
+    assert plain_pipeline._buffered_stream_dispatch is False

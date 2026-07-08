@@ -23,7 +23,6 @@ from inference.core.env import (
     MAX_ACTIVE_MODELS,
     PREDICTIONS_QUEUE_SIZE,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
-    WORKFLOWS_STREAM_LOOKAHEAD_DEPTH,
 )
 from inference.core.exceptions import CannotInitialiseModelError, MissingApiKeyError
 from inference.core.interfaces.camera.entities import (
@@ -825,7 +824,7 @@ class InferencePipeline:
         except ValueError:
             predictions_queue_size = 512
         if (
-            _stream_pipeline_dispatch_enabled()
+            _uses_buffered_stream_dispatch(on_video_frame)
             and "INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE" not in os.environ
         ):
             # Stream-pipelined runs buffer frames already; letting the
@@ -863,6 +862,7 @@ class InferencePipeline:
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
     ):
         self._on_video_frame = on_video_frame
+        self._buffered_stream_dispatch = _uses_buffered_stream_dispatch(on_video_frame)
         self._video_sources = video_sources
         self._on_prediction = on_prediction
         self._max_fps = max_fps
@@ -936,7 +936,7 @@ class InferencePipeline:
                     frames=video_frames,
                 )
                 predictions = self._on_video_frame(video_frames)
-                if _stream_pipeline_dispatch_enabled():
+                if self._buffered_stream_dispatch:
                     self._queue_inference_result(
                         inference_result=predictions,
                         fallback_video_frames=video_frames,
@@ -956,11 +956,11 @@ class InferencePipeline:
                     },
                     status_update_handlers=self._status_update_handlers,
                 )
-            if _stream_pipeline_dispatch_enabled():
+            if self._buffered_stream_dispatch:
                 self._drain_inference_handler()
 
         except Exception as error:
-            if _stream_pipeline_dispatch_enabled():
+            if self._buffered_stream_dispatch:
                 # Deliver buffered frames whose requests already completed
                 # before the stream shuts down.
                 try:
@@ -983,7 +983,7 @@ class InferencePipeline:
             )
             logger.exception(f"Encountered inference error: {error}")
         finally:
-            if _stream_pipeline_dispatch_enabled():
+            if self._buffered_stream_dispatch:
                 self._close_inference_handler()
             self._predictions_queue.put(None)
             send_inference_pipeline_status_update(
@@ -1002,7 +1002,7 @@ class InferencePipeline:
                 self._predictions_queue.task_done()
                 break
             predictions, video_frames = inference_results
-            if _stream_pipeline_dispatch_enabled():
+            if self._buffered_stream_dispatch:
                 predictions = _resolve_prediction_futures(predictions)
             if self._on_prediction is not None:
                 self._handle_predictions_dispatching(
@@ -1210,18 +1210,16 @@ def _resolve_prediction_futures(value: Any) -> Any:
     )
 
 
-def _rfdetr_stream_pipeline_enabled() -> bool:
-    try:
-        return int(os.getenv("RFDETR_PIPELINE_DEPTH", "1").strip()) > 1
-    except ValueError:
-        return False
-
-
-def _stream_lookahead_enabled() -> bool:
-    # Whether lookahead actually activates is decided at wrap time from the
-    # compiled workflow; this gate only routes stream dispatch accordingly.
-    return WORKFLOWS_STREAM_LOOKAHEAD_DEPTH > 1
-
-
-def _stream_pipeline_dispatch_enabled() -> bool:
-    return _rfdetr_stream_pipeline_enabled() or _stream_lookahead_enabled()
+def _uses_buffered_stream_dispatch(on_video_frame: InferenceHandler) -> bool:
+    # Buffered dispatch (bounded predictions queue + drain/close on stream end
+    # + late future resolution) is correct only when the handler actually
+    # buffers frames across calls. The stream-pipeline runners
+    # (RF-DETR PipelinedWorkflowRunner, LookaheadPipelinedWorkflowRunner)
+    # expose flush(); a plain WorkflowRunner does not. Keying on the actual
+    # handler rather than the env var means a depth flag set on a workflow
+    # that does not qualify for pipelining (e.g. no async steps, multi-source,
+    # stateful-fed model — wrap falls back to a plain runner) keeps the normal
+    # dispatch path instead of needlessly capping the queue and draining
+    # nothing. This mirrors how _drain_inference_handler / _close_inference_handler
+    # already discover the handler's capabilities.
+    return callable(getattr(on_video_frame, "flush", None))
