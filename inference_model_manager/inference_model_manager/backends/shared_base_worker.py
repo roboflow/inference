@@ -41,6 +41,7 @@ from inference_model_manager.backends.subproc import (
     _build_worker_stats_payload,
     _model_supports_rle,
     _process_slots,
+    _slot_erroneable,
     _write_error_to_slot,
 )
 
@@ -229,8 +230,13 @@ def _shared_worker_main(
 
 def _error_slots(pool, sock, slots: List[Tuple[int, int]], reason: str, log) -> None:
     for slot_id, req_id in slots:
+        # Gate like the plain worker's crash path: a slot already resulted
+        # (DONE/ERROR) or rebound by the reaper must not be stomped or get a
+        # duplicate _MSG_RESULT.
+        if not _slot_erroneable(pool, slot_id, req_id):
+            continue
         try:
-            _write_error_to_slot(pool, slot_id, reason)
+            _write_error_to_slot(pool, slot_id, reason, request_id=req_id)
             sock.send_multipart([_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)])
         except Exception:
             log.warning("SharedWorker: failed to error slot %d", slot_id)
@@ -291,6 +297,10 @@ def _shared_worker_loop(
             elif msg == MSG_HEAD_SLOT_READY and len(frames[1]) >= HEAD_SLOT_SIZE:
                 slot_id, req_id, head_index = unpack_head_slot(frames[1])
                 params_bytes = frames[2] if len(frames) > 2 else b"{}"
+                # Refresh the reaper timestamp like the plain worker: a slot
+                # queued behind a long batch or an inline head load must not
+                # age out and get reclaimed while it waits.
+                pool.touch_slot(slot_id)
                 if not pending:
                     batch_start = time.monotonic()
                 pending.append((slot_id, req_id, head_index, params_bytes))
