@@ -124,14 +124,17 @@ async def test_multipart_form_with_inputs_json():
 
 
 @pytest.mark.asyncio
-async def test_multipart_form_missing_image():
+async def test_multipart_form_missing_image_passes_through_params():
+    # Zero image parts is legal at the extractor layer (params-only requests);
+    # each handler-family parser enforces its own image requirement.
     from inference_server.framework.input_parsers import extract_images_and_params
 
     form = _FakeFormData({"confidence": "0.5"})
     req = _FakeRequest(content_type="multipart/form-data", form_data=form)
     imgs, params, err = await extract_images_and_params(req)
-    assert err is not None
-    assert err.status_code == 400
+    assert err is None
+    assert imgs == []
+    assert params["confidence"] == "0.5"
 
 
 @pytest.mark.asyncio

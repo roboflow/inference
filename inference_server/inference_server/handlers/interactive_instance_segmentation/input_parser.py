@@ -35,7 +35,10 @@ async def parse_interactive_instance_segmentation_input(
             raise InputParseError(err)
         extra_params.update(body_params)
 
-    if not images:
+    merged = dict(common.extra)
+    merged.update(extra_params)
+
+    if not images and not merged.get("image_hashes"):
         raise InputParseError(
             error_response(400, "EMPTY_BODY", "no image data provided")
         )
@@ -50,6 +53,4 @@ async def parse_interactive_instance_segmentation_input(
                 )
             )
 
-    merged = dict(common.extra)
-    merged.update(extra_params)
     return {"images": images, "params": merged}
