@@ -229,6 +229,9 @@ Uploads a video file to the server over the data channel; the server processes i
 ```python
 source = VideoFileSource("video.mp4")
 
+# http(s) URLs work too - the video is downloaded before upload
+source = VideoFileSource("https://example.com/videos/cars.mp4")
+
 # Track upload progress and process at original FPS (live-preview pacing)
 source = VideoFileSource(
     "video.mp4",
@@ -238,6 +241,8 @@ source = VideoFileSource(
 ```
 
 By default frames come back through the data channel (guaranteed order and quality). Pass `use_datachannel_frames=False` to receive them via a hardware-accelerated WebRTC video track instead (lower bandwidth).
+
+URL sources are cached on disk (keyed by URL) in `~/.cache/inference-sdk/videos` (override with `INFERENCE_SDK_VIDEO_CACHE_DIR`), so re-running the same video skips the download. Pass `use_cache=False` to download to a temporary file that is deleted when the session ends. Downloads honour the SDK's URL-input policy and SSRF protections (same config flags as image URL input).
 
 ### ManualSource
 
