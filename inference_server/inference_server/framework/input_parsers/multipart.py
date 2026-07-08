@@ -8,8 +8,6 @@ from typing import Optional
 
 from fastapi import Request, Response
 
-from inference_server.errors import error_response
-
 logger = logging.getLogger(__name__)
 
 
@@ -36,14 +34,7 @@ async def extract_multipart(
                 logger.warning("multipart: invalid JSON in 'inputs' form field")
         elif isinstance(value, str):
             extra_params[key] = value
-    if not images:
-        return (
-            [],
-            {},
-            error_response(
-                400,
-                "MISSING_IMAGE",
-                "multipart form must include at least one 'image' file part",
-            ),
-        )
+    # Zero image parts is legal at this layer: params-only requests carry
+    # inputs without a payload. Each handler-family parser enforces its own
+    # image requirement.
     return images, extra_params, None
