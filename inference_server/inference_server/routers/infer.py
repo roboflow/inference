@@ -24,6 +24,7 @@ from inference_server.errors import (
     ServerBusyError,
     UploadTooSlowError,
 )
+from inference_server.framework.dispatch import _cap_request_body
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.framework.input_parsers.image_check import looks_like_image
 from inference_server.framework.model_stat import stat_model_while_checking_auth
@@ -142,12 +143,16 @@ async def infer(
     content_length = _content_length(request)
     stream_infer = getattr(mm, "infer_stream", None)
     slot_size = getattr(mm, "shm_data_size", None)
-    if (
-        content_length is not None
-        and slot_size is not None
-        and content_length > slot_size
+    max_body = configuration.MAX_BODY_BYTES
+    if content_length is not None and (
+        content_length > max_body
+        or (slot_size is not None and content_length > slot_size)
     ):
         return Response(status_code=413, content=b"payload too large")
+    # Chunked uploads and the bundled (no-SHM) proxy have no length gate above;
+    # cap the byte count while streaming so the buffered path cannot grow
+    # unbounded in RAM.
+    request = _cap_request_body(request, max_body)
 
     # Known-length HTTP bodies can stream into SHM, but only after a tiny
     # prefix arrives fast enough. Slow clients stay on the old RAM path so they

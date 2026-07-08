@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-
 from fastapi import Request, Response
 from starlette.requests import ClientDisconnect
 
@@ -9,7 +7,7 @@ from inference_server.errors import error_response
 from inference_server.framework.entities import CommonRequestParams, InputParseError
 from inference_server.framework.input_parsers import (
     extract_images_and_params,
-    fetch_image_from_url,
+    fetch_images_from_urls,
 )
 from inference_server.framework.input_parsers.image_check import looks_like_image
 
@@ -25,12 +23,9 @@ async def parse_multilabel_classification_input(
 
     extra_params: dict = {}
     if image_urls:
-        results = await asyncio.gather(*(fetch_image_from_url(u) for u in image_urls))
-        images: list[bytes] = []
-        for img_bytes, err in results:
-            if err is not None:
-                raise InputParseError(err)
-            images.append(img_bytes)
+        images, err = await fetch_images_from_urls(image_urls)
+        if err is not None:
+            raise InputParseError(err)
     else:
         try:
             images, body_params, err = await extract_images_and_params(request)

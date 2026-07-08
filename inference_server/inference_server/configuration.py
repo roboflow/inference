@@ -45,9 +45,13 @@ INFER_STREAM_UPLOAD_TIMEOUT_S = get_float_from_env(
 
 # Hard ceiling on a single request body for the v2 dispatch path; enforced
 # both from Content-Length and while streaming (chunked uploads have none).
+# Also the aggregate budget for URL-sourced images, so URL inputs are bounded
+# the same as body inputs.
 MAX_BODY_BYTES = get_integer_from_env(
     "INFERENCE_MAX_BODY_BYTES", default=100 * 1024 * 1024
 )
+# Max number of ?image=<url> params fetched per request.
+MAX_IMAGE_URLS = get_integer_from_env("INFERENCE_MAX_IMAGE_URLS", default=32)
 
 # ── MMP connection (state.init_from_env, re-read per worker) ──────────────
 INFERENCE_MMP_ADDR_ENV = "INFERENCE_MMP_ADDR"

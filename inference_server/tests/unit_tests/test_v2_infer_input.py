@@ -233,3 +233,114 @@ async def test_fetch_image_from_url_bad_domain():
     )
     assert err is not None
     assert err.status_code in (502, 504)
+
+
+class _FakeContent:
+    def __init__(self, chunks: list[bytes]):
+        self._chunks = chunks
+
+    def iter_chunked(self, size: int):
+        return self._aiter()
+
+    async def _aiter(self):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _FakeResp:
+    def __init__(self, chunks: list[bytes], content_length=None):
+        self.status = 200
+        self.content_length = content_length
+        self.content = _FakeContent(chunks)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+
+class _FakeSession:
+    def __init__(self, resp: _FakeResp):
+        self._resp = resp
+
+    def get(self, url):
+        return self._resp
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+
+def _patch_http(chunks: list[bytes], content_length=None):
+    from unittest.mock import patch
+
+    resp = _FakeResp(chunks, content_length=content_length)
+    return patch(
+        "inference_server.framework.input_parsers.url_fetch.aiohttp.ClientSession",
+        return_value=_FakeSession(resp),
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_image_from_url_chunked_over_cap_413():
+    """No Content-Length on the response: cap must fire while streaming."""
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_image_from_url
+
+    with _patch_http([b"x" * 8] * 10), patch(
+        "inference_server.framework.input_parsers.url_fetch.URL_FETCH_MAX_BYTES", 16
+    ):
+        data, err = await fetch_image_from_url("https://example.com/img.jpg")
+    assert data is None
+    assert err.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_fetch_images_from_urls_too_many_urls_400():
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_images_from_urls
+
+    with patch(
+        "inference_server.framework.input_parsers.url_fetch.configuration.MAX_IMAGE_URLS",
+        2,
+    ):
+        images, err = await fetch_images_from_urls(
+            ["https://e.com/1.jpg", "https://e.com/2.jpg", "https://e.com/3.jpg"]
+        )
+    assert images is None
+    assert err.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_fetch_images_from_urls_aggregate_over_budget_413():
+    """Each URL is under the per-fetch cap but the sum exceeds the budget."""
+    from unittest.mock import patch
+
+    from inference_server.framework.input_parsers import fetch_images_from_urls
+
+    with _patch_http([b"x" * 8]), patch(
+        "inference_server.framework.input_parsers.url_fetch.configuration.MAX_BODY_BYTES",
+        20,
+    ):
+        images, err = await fetch_images_from_urls(
+            ["https://e.com/1.jpg", "https://e.com/2.jpg", "https://e.com/3.jpg"]
+        )
+    assert images is None
+    assert err.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_fetch_images_from_urls_under_limits_ok():
+    from inference_server.framework.input_parsers import fetch_images_from_urls
+
+    with _patch_http([b"x" * 8]):
+        images, err = await fetch_images_from_urls(
+            ["https://e.com/1.jpg", "https://e.com/2.jpg"]
+        )
+    assert err is None
+    assert images == [b"x" * 8, b"x" * 8]

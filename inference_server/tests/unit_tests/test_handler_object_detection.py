@@ -86,12 +86,12 @@ async def test_input_parser_fetches_image_urls_when_query_image_is_url():
     req = _request(query=b"image=https://x/a.jpg&image=https://x/b.jpg")
     common = CommonRequestParams(model_id="m", api_key="")
     with patch(
-        "inference_server.handlers.object_detection.input_parser.fetch_image_from_url",
-        new=AsyncMock(side_effect=[(_JPEG, None), (_JPEG, None)]),
+        "inference_server.handlers.object_detection.input_parser.fetch_images_from_urls",
+        new=AsyncMock(return_value=([_JPEG, _JPEG], None)),
     ) as fetch:
         out = await parse_object_detection_input(req, common)
     assert out["images"] == [_JPEG, _JPEG]
-    assert fetch.await_count == 2
+    fetch.assert_awaited_once_with(["https://x/a.jpg", "https://x/b.jpg"])
 
 
 @pytest.mark.asyncio
@@ -100,7 +100,7 @@ async def test_input_parser_propagates_url_fetch_error():
     err_resp = Response(status_code=502, content=b"upstream down")
     common = CommonRequestParams(model_id="m", api_key="")
     with patch(
-        "inference_server.handlers.object_detection.input_parser.fetch_image_from_url",
+        "inference_server.handlers.object_detection.input_parser.fetch_images_from_urls",
         new=AsyncMock(return_value=(None, err_resp)),
     ):
         with pytest.raises(InputParseError) as exc:
