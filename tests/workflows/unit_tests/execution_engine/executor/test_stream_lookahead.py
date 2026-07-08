@@ -566,6 +566,49 @@ def test_model_blocks_declare_async_stream_step_only_for_reentrant_remote_execut
     assert block.is_async_stream_step() is expected
 
 
+def test_all_registry_manifests_declare_boolean_statefulness() -> None:
+    # Every loaded block manifest must answer is_stateful_for_video_processing()
+    # with a bool (a broken override on a future adoption fails here, not at
+    # stream time).
+    from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+        load_workflow_blocks,
+    )
+
+    for block in load_workflow_blocks():
+        value = block.manifest_class.is_stateful_for_video_processing()
+        assert isinstance(value, bool), block.manifest_class.__name__
+
+
+def test_cross_frame_state_blocks_are_never_declared_stateless_for_lookahead() -> None:
+    # Registry-wide consistency guard that scales to every future adoption: a
+    # block keeping per-video HTTP state (declares
+    # STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION — trackers, counters, aggregators)
+    # must NOT also declare itself stateless for video processing. That
+    # contradiction would place it in the stream-lookahead frontier and let the
+    # scheduler run it ahead of stream order, silently corrupting its state.
+    # This is the automated declaration-level check for the class of
+    # mis-adoption the class_names shared-mutation bug demonstrated.
+    from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+        load_workflow_blocks,
+    )
+    from inference.core.workflows.prototypes.block import (
+        STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
+    )
+
+    offenders = []
+    for block in load_workflow_blocks():
+        manifest = block.manifest_class
+        keeps_cross_frame_state = (
+            STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION in manifest.get_restrictions()
+        )
+        if keeps_cross_frame_state and not manifest.is_stateful_for_video_processing():
+            offenders.append(manifest.__name__)
+    assert offenders == [], (
+        "Blocks declaring per-video HTTP state must be stateful for video "
+        f"processing (else the lookahead frontier corrupts them): {offenders}"
+    )
+
+
 def _step_spec(
     block: WorkflowBlock,
     manifest_class: Type[WorkflowBlockManifest],

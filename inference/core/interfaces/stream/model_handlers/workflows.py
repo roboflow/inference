@@ -341,6 +341,12 @@ def _shutdown_lookahead_executor(executor: ThreadPoolExecutor) -> None:
     # would still block process exit. Detach them so that join skips them;
     # their daemon flag (set at spawn) keeps threading's own shutdown from
     # waiting on them as well.
+    #
+    # `executor._threads` and `concurrent.futures.thread._threads_queues` are
+    # CPython internals (validated on 3.9-3.12; the detach degrades safely via
+    # pop(..., None) if a future CPython reworks the shutdown hook — worst case
+    # is the pre-existing "hung request blocks exit" behavior, never a crash).
+    # `test_lookahead_runner_pool_threads_are_daemon` guards the detach.
     for worker in executor._threads:
         _futures_thread._threads_queues.pop(worker, None)
 
