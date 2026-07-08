@@ -511,6 +511,8 @@ def _log_serverless_authorization_denial(
     workspace_id: Optional[str],
     cache_hit: bool,
 ) -> None:
+    if not API_LOGGING_ENABLED:
+        return
     log_fields = {
         "method": request.method,
         "path": request.url.path,

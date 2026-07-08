@@ -338,7 +338,7 @@ def _execute_direct_openrouter_request(
         temperature=temperature,
         extra_body=extra_body,
     )
-    if response.choices is None:
+    if not response.choices:
         error_detail = getattr(response, "error", {}) or {}
         if isinstance(error_detail, dict):
             error_detail = error_detail.get("message", "N/A")

@@ -184,10 +184,10 @@ class DominantColorBlockV1(WorkflowBlock):
 
         # Get the colors and their counts
         colors = centroids
-        _, counts = np.unique(labels, return_counts=True)
+        uniq, counts = np.unique(labels, return_counts=True)
 
         # Find the most dominant color
-        dominant_color = colors[np.argmax(counts)]
+        dominant_color = colors[uniq[np.argmax(counts)]]
         rgb_color = tuple(
             int(np.clip(round(x), 0, 255)) for x in reversed(dominant_color)
         )
