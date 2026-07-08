@@ -104,6 +104,7 @@ COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
 RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+RUN pip3 install --no-cache-dir ./inference_model_manager ./inference_server
 
 
 WORKDIR /notebooks

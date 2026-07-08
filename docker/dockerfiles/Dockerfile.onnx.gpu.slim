@@ -64,6 +64,11 @@ COPY inference_cli inference_cli
 
 ENV PYTHONPATH=/app
 
+# Installed (not copied into /app) so the project dirs never shadow the packages on import.
+COPY inference_model_manager /build/inference_model_manager
+COPY inference_server /build/inference_server
+RUN pip3 install --no-cache-dir /build/inference_model_manager /build/inference_server && rm -rf /build
+
 COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/config/mmp_supervisor.py mmp_supervisor.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
