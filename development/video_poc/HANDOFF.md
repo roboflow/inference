@@ -336,6 +336,23 @@ Free-text output names are gone: a mistyped name used to mean a silently empty p
   checks it on `/events`, `/status`, `/preview.mjpeg`, `/results`. The job-addressed
   events endpoint (§6) subsumes most of this for programmatic consumers, since the
   platform authenticates at its own front door.
+- **Nothing behind platform Traefik can stream** (staging deploy finding,
+  2026-07-08): `crusoe/addons/traefik.tf` attaches the `buffering` middleware
+  (`body-size-limit`, a 100MB request cap) to the whole websecure entrypoint,
+  and Traefik's buffering holds RESPONSES until completion too — an infinite
+  SSE/MJPEG body is withheld forever (verified: gateway nginx sent 110KB, the
+  client got 0). Same pattern exists in the GKE Traefik configs. POC
+  workaround SHIPPED: the UI consumes worker events via cursor-based
+  long-polling (`GET /events/poll?cursor=N` → finite `{cursor, events[]}`
+  responses pass any proxy); the SSE endpoint remains for direct/local
+  consumers. **Chosen platform fix (do when hardening): replace the
+  `buffering` middleware with a streaming request-limit Traefik plugin** —
+  reject on Content-Length when present, else abort via a counting body
+  reader past the cap; request protection is identical, the response path is
+  untouched, and the per-request 20MB buffer memory goes away. Precedent for
+  the packaging exists (`github.com/roboflow/traefik-req-logger` local
+  plugin); rollout is a one-line swap of the entrypoint middleware list.
+  WebSockets are unaffected either way (Upgrade hijacks the connection).
 - ~~Orphan reaping goes to `error`~~ **CLOSED**: the reaper requeues (attempts-capped
   at 3) and re-publishes the Pub/Sub wake-up, so crashes / node reclaims / evictions
   re-place the job on a fresh worker in seconds — the prerequisite the ready-pool
