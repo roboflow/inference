@@ -4,6 +4,7 @@ shared bearer extraction."""
 from __future__ import annotations
 
 import asyncio
+import time
 from unittest.mock import patch
 
 import pytest
@@ -27,9 +28,40 @@ class TestExtractBearer:
         assert extract_bearer("") == ""
 
 
+class _FakeResp:
+    def __init__(self, status: int, data: dict | None = None):
+        self.status = status
+        self._data = data or {}
+
+    async def __aenter__(self):
+        await asyncio.sleep(0)
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def json(self):
+        return self._data
+
+
+class _FakeSession:
+    def __init__(self, resp: _FakeResp):
+        self._resp = resp
+        self.calls = 0
+
+    def get(self, *a, **k):
+        self.calls += 1
+        return self._resp
+
+
+def _fresh_auth_state(monkeypatch):
+    monkeypatch.setattr(auth_mod, "_cache", {})
+    monkeypatch.setattr(auth_mod, "_inflight", {}, raising=False)
+
+
 class TestAuthBackendFailure:
     def test_network_error_raises_and_caches_nothing(self, monkeypatch):
-        monkeypatch.setattr(auth_mod, "_cache", {})
+        _fresh_auth_state(monkeypatch)
 
         class _BoomSession:
             def get(self, *a, **k):
@@ -39,6 +71,59 @@ class TestAuthBackendFailure:
         with pytest.raises(AuthBackendUnavailable):
             asyncio.run(validate_api_key("some-key"))
         assert auth_mod._cache == {}  # no negative-cache poisoning
+
+    def test_upstream_5xx_raises_unavailable_and_caches_nothing(self, monkeypatch):
+        _fresh_auth_state(monkeypatch)
+        session = _FakeSession(_FakeResp(500))
+        monkeypatch.setattr(auth_mod, "_get_session", lambda: session)
+        with pytest.raises(AuthBackendUnavailable):
+            asyncio.run(validate_api_key("some-key"))
+        assert auth_mod._cache == {}
+
+    def test_upstream_429_raises_unavailable_and_caches_nothing(self, monkeypatch):
+        _fresh_auth_state(monkeypatch)
+        session = _FakeSession(_FakeResp(429))
+        monkeypatch.setattr(auth_mod, "_get_session", lambda: session)
+        with pytest.raises(AuthBackendUnavailable):
+            asyncio.run(validate_api_key("some-key"))
+        assert auth_mod._cache == {}
+
+    def test_upstream_401_negative_cached(self, monkeypatch):
+        _fresh_auth_state(monkeypatch)
+        session = _FakeSession(_FakeResp(401))
+        monkeypatch.setattr(auth_mod, "_get_session", lambda: session)
+        valid, ws = asyncio.run(validate_api_key("bad-key"))
+        assert (valid, ws) == (False, None)
+        assert len(auth_mod._cache) == 1
+
+
+class TestAuthCacheBehavior:
+    def test_concurrent_validations_share_one_upstream_call(self, monkeypatch):
+        _fresh_auth_state(monkeypatch)
+        session = _FakeSession(_FakeResp(200, {"workspace": "ws1"}))
+        monkeypatch.setattr(auth_mod, "_get_session", lambda: session)
+
+        async def go():
+            return await asyncio.gather(
+                validate_api_key("k1"), validate_api_key("k1")
+            )
+
+        results = asyncio.run(go())
+        assert results == [(True, "ws1"), (True, "ws1")]
+        assert session.calls == 1
+
+    def test_cache_overflow_evicts_oldest_not_all(self, monkeypatch):
+        _fresh_auth_state(monkeypatch)
+        monkeypatch.setattr(auth_mod, "_MAX_CACHE_SIZE", 3)
+        now = time.monotonic()
+        for i in range(4):
+            auth_mod._cache[f"h{i}"] = auth_mod._CacheEntry(
+                expires_at=now + 100 + i, valid=True, workspace_id=f"w{i}"
+            )
+        auth_mod._enforce_cache_limit()
+        assert len(auth_mod._cache) == 3
+        assert "h0" not in auth_mod._cache  # oldest-expiring evicted
+        assert {"h1", "h2", "h3"} <= set(auth_mod._cache)
 
 
 def _run_middleware(scope, validate=None):
