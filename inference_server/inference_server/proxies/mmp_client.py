@@ -26,7 +26,10 @@ from typing import Any, AsyncIterable, Optional
 import zmq.asyncio
 from fastapi import Request
 
-from inference_model_manager.backends.utils.shm_pool import read_free_count
+from inference_model_manager.backends.utils.shm_pool import (
+    INPUT_ERROR_PREFIX,
+    read_free_count,
+)
 from inference_model_manager.backends.utils.transport import zmq_addr
 from inference_server import configuration
 from inference_server.errors import (
@@ -75,6 +78,12 @@ T_SHM_INFO_RESP = b"\x42"
 # Slot layout
 HEADER_SIZE = 64
 SLOT_STATUS_ERROR = 5
+
+
+def _raise_worker_error(err_msg: str) -> None:
+    if err_msg.startswith(INPUT_ERROR_PREFIX):
+        raise ValueError(err_msg[len(INPUT_ERROR_PREFIX) :])
+    raise RuntimeError(err_msg)
 _OFF_STATUS = 0
 _OFF_RESULT_SZ = 8
 _OFF_TS_NS = 24
@@ -330,7 +339,7 @@ class MMPClient:
                     err_msg = self._read_result(result_slot_id, hdr.result_size).decode(
                         "utf-8", errors="replace"
                     )
-                raise RuntimeError(err_msg)
+                _raise_worker_error(err_msg)
 
             raw = self._read_result(result_slot_id, result_sz)
             return self._decode_result(raw, raw_pickle)
@@ -439,7 +448,7 @@ class MMPClient:
                     err_msg = self._read_result(result_slot_id, hdr.result_size).decode(
                         "utf-8", errors="replace"
                     )
-                raise RuntimeError(err_msg)
+                _raise_worker_error(err_msg)
 
             return self._decode_result(
                 self._read_result(result_slot_id, result_sz), raw_pickle
