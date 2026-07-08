@@ -12,6 +12,7 @@ Example:
 
 import argparse
 import json
+import os
 import statistics
 import time
 from datetime import datetime
@@ -158,6 +159,10 @@ def run_per_frame_measurement(
 
 def main() -> None:
     args = parse_args()
+    os.environ.setdefault("WORKFLOWS_STREAM_LOOKAHEAD_DEPTH", str(args.depth))
+    from inference.core.interfaces.stream.model_handlers import (
+        workflows as workflows_module,
+    )
     from inference.core.interfaces.stream.model_handlers.workflows import (
         LookaheadPipelinedWorkflowRunner,
         WorkflowRunner,
@@ -195,7 +200,7 @@ def main() -> None:
                 video_metadata_input_name="video_metadata",
             )
 
-        object_detection_v3.WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH = 1
+        workflows_module.WORKFLOWS_STREAM_LOOKAHEAD_DEPTH = 1
         sequential_runner = build_workflow_runner()
         results["sequential_per_frame"] = run_per_frame_measurement(
             runner=sequential_runner,
@@ -205,7 +210,7 @@ def main() -> None:
             drain=lambda: None,
         )
 
-        object_detection_v3.WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH = args.depth
+        workflows_module.WORKFLOWS_STREAM_LOOKAHEAD_DEPTH = args.depth
         lookahead_engine = build_engine()
         lookahead_runner = wrap_workflow_runner_for_stream_pipeline(
             workflow_runner=WorkflowRunner(

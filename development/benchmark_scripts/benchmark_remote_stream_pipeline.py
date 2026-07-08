@@ -6,7 +6,7 @@ requested pipeline depth. Several workflow shapes are available via
 (text-prompt segmentation), two-models (two models -> consensus), and
 preprocessed-tracking (stateless crop before the model plus a stateless
 side branch). Depth 1 is the sequential baseline; depths
-above 1 enable `WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH`, which keeps that
+above 1 enable `WORKFLOWS_STREAM_LOOKAHEAD_DEPTH`, which keeps that
 many remote model requests in flight while ByteTrack consumes results in
 strict frame order.
 
@@ -442,7 +442,7 @@ def run_child_scenarios(args: argparse.Namespace, depths: List[int]) -> List[dic
             "WORKFLOWS_REMOTE_API_TARGET": "hosted",
             "HOSTED_DETECT_URL": args.api_url,
             "HOSTED_CORE_MODEL_URL": args.core_model_url,
-            "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH": str(depth),
+            "WORKFLOWS_STREAM_LOOKAHEAD_DEPTH": str(depth),
         }
         command = [
             sys.executable,
