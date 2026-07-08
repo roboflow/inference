@@ -27,14 +27,18 @@ class _FakeSock:
 
 
 class _Log:
+    def __init__(self):
+        self.warnings = []
+        self.exceptions = []
+
     def error(self, *a, **k):
         pass
 
     def warning(self, *a, **k):
-        pass
+        self.warnings.append(a)
 
     def exception(self, *a, **k):
-        pass
+        self.exceptions.append(a)
 
 
 class _Model:
@@ -136,13 +140,14 @@ def test_model_input_error_gets_typed_prefix(pool, monkeypatch):
     monkeypatch.setattr(subproc, "invoke_task", _raise)
     slot = pool.alloc_slot()
     _write_empty_input(pool, slot, req_id=11)
+    log = _Log()
     subproc._process_slots(
         _Model(),
         pool,
         [(slot, 11, b'{"image_hashes": ["h-unknown"]}')],
         _FakeSock(),
         lambda mvs: [None] * len(mvs),
-        _Log(),
+        log,
         _stats(),
         supports_rle=False,
     )
@@ -150,6 +155,7 @@ def test_model_input_error_gets_typed_prefix(pool, monkeypatch):
     text = bytes(pool.data_memoryview(slot)[: hdr.result_size]).decode()
     assert text.startswith(INPUT_ERROR_PREFIX)
     assert "no embeddings were found in the cache" in text
+    assert log.warnings and not log.exceptions
 
 
 def test_generic_error_gets_no_prefix(pool, monkeypatch):
@@ -161,16 +167,18 @@ def test_generic_error_gets_no_prefix(pool, monkeypatch):
     monkeypatch.setattr(subproc, "invoke_task", _raise)
     slot = pool.alloc_slot()
     _write_empty_input(pool, slot, req_id=12)
+    log = _Log()
     subproc._process_slots(
         _Model(),
         pool,
         [(slot, 12, b"{}")],
         _FakeSock(),
         lambda mvs: [None] * len(mvs),
-        _Log(),
+        log,
         _stats(),
         supports_rle=False,
     )
     hdr = pool.read_header(slot)
     text = bytes(pool.data_memoryview(slot)[: hdr.result_size]).decode()
     assert not text.startswith(INPUT_ERROR_PREFIX)
+    assert log.exceptions and not log.warnings
