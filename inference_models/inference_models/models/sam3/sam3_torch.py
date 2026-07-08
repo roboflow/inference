@@ -7,6 +7,7 @@ from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 import numpy as np
 import torch
 from PIL import Image
+from pycocotools import mask as coco_mask_utils
 from sam3 import build_sam3_image_model
 from sam3.eval.postprocessors import PostProcessImage
 from sam3.model.sam3_image_processor import Sam3Processor
@@ -315,8 +316,9 @@ class SAM3Torch:
         load_from_mask_input_cache: bool = False,
         save_to_mask_input_cache: bool = False,
         use_embeddings_cache: bool = True,
+        return_rle: bool = False,
         **kwargs,
-    ) -> List[SAM3Prediction]:
+    ) -> List[Union[SAM3Prediction, Dict]]:
         if images is None and embeddings is None and image_hashes is None:
             raise ModelInputError(
                 message="Attempted to use SAM3 model segment_with_visual_prompts(...) method not providing valid input - "
@@ -432,6 +434,8 @@ class SAM3Torch:
 
             predictions.append(prediction)
 
+        if return_rle:
+            return [_prediction_to_rle_dict(p) for p in predictions]
         return predictions
 
     @torch.inference_mode()
@@ -632,6 +636,34 @@ class SAM3Torch:
             results.append(image_results)
 
         return results
+
+
+def _prediction_to_rle_dict(prediction: SAM3Prediction) -> Dict:
+    masks = prediction.masks
+    if isinstance(masks, torch.Tensor):
+        masks = masks.detach().cpu().numpy()
+    masks = np.asarray(masks)
+    if masks.ndim == 4 and masks.shape[1] == 1:
+        masks = masks[:, 0, ...]
+    elif masks.ndim == 2:
+        masks = masks[None, ...]
+    rle_masks = []
+    for mask in masks:
+        rle = coco_mask_utils.encode(np.asfortranarray((mask > 0).astype(np.uint8)))
+        rle_masks.append(
+            {
+                "format": "rle",
+                "size": rle["size"],
+                "counts": rle["counts"].decode("utf-8"),
+            }
+        )
+    scores = prediction.scores
+    if isinstance(scores, torch.Tensor):
+        scores = scores.detach().cpu().numpy()
+    return {
+        "masks": rle_masks,
+        "scores": [float(s) for s in np.asarray(scores).reshape(-1)],
+    }
 
 
 def decode_sam_version(config_path: str) -> str:
