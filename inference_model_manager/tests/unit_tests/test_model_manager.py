@@ -695,3 +695,26 @@ class TestDirectDrain:
         b.drain_and_unload(timeout_s=5.0)
         assert _time.monotonic() - t0 >= 0.15
         assert b._model is None
+
+
+class TestSubmitSlotLeakOnFailure:
+    def test_failure_between_alloc_and_submit_frees_slot(self, monkeypatch):
+        mm = ModelManager(n_slots=2, input_mb=0.1)
+        try:
+
+            class _FakeSubprocBackend:
+                def submit_slot(self, slot_id, req_id, future, params_bytes):
+                    pass
+
+            mm._backends["m"] = _FakeSubprocBackend()
+            mm._ensure_pool()
+
+            def _boom(slot_id, size):
+                raise RuntimeError("header write failed")
+
+            monkeypatch.setattr(mm._pool, "mark_written", _boom)
+            with pytest.raises(RuntimeError, match="header write failed"):
+                mm.submit("m", raw_input=b"\xff\xd8abc")
+            assert mm._pool.free_count == 2  # slot released, not leaked
+        finally:
+            mm.shutdown()
