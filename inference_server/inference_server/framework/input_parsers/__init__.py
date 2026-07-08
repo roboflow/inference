@@ -5,6 +5,13 @@ URL-based input: `fetch_image_from_url(url)`.
 """
 
 from inference_server.framework.input_parsers.dispatch import extract_images_and_params
-from inference_server.framework.input_parsers.url_fetch import fetch_image_from_url
+from inference_server.framework.input_parsers.url_fetch import (
+    fetch_image_from_url,
+    fetch_images_from_urls,
+)
 
-__all__ = ["extract_images_and_params", "fetch_image_from_url"]
+__all__ = [
+    "extract_images_and_params",
+    "fetch_image_from_url",
+    "fetch_images_from_urls",
+]
