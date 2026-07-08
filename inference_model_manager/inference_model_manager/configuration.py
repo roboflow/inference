@@ -131,6 +131,18 @@ INFERENCE_VRAM_RECENT_WINDOW_S = get_float_from_env(
     "INFERENCE_VRAM_RECENT_WINDOW_S", default=30.0
 )
 
+# ── SAM3 interactive caches (backends/base.py attach_sam3_caches) ──────────
+# Env names shared with the legacy inference package for deployment parity.
+SAM3_MAX_EMBEDDING_CACHE_SIZE = get_integer_from_env(
+    "SAM3_MAX_EMBEDDING_CACHE_SIZE", default=100
+)
+SAM3_MAX_LOGITS_CACHE_SIZE = get_integer_from_env(
+    "SAM3_MAX_LOGITS_CACHE_SIZE", default=1000
+)
+SAM3_INTERACTIVE_CACHE_SEND_TO_CPU = get_boolean_from_env(
+    "SAM3_INTERACTIVE_CACHE_SEND_TO_CPU", default=True
+)
+
 # ── Subprocess backend (backends/subproc.py) ───────────────────────────────
 # Read inside the forked worker — names exposed here.
 ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV = "ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND"

@@ -7,7 +7,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
-from inference_model_manager.backends.base import Backend
+from inference_model_manager.backends.base import Backend, attach_sam3_caches
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,7 @@ class DirectBackend(Backend):
             self._model = AutoModel.from_pretrained(
                 model_id, api_key=api_key, **load_kwargs
             )
+            attach_sam3_caches(self._model)
         except Exception:
             self._model = None
             raise
