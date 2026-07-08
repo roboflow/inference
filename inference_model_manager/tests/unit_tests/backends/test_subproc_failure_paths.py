@@ -247,3 +247,33 @@ class TestCleanUnloadFailsFast:
         with pytest.raises(RuntimeError, match="recv thread is dead"):
             b.signal_slot(2, 43)
         assert b._outstanding == 0
+
+
+class TestFailedInitCleanup:
+    def test_cleanup_failed_init_releases_all_resources(self):
+        released = []
+
+        b = SubprocessBackend.__new__(SubprocessBackend)
+        b._model_id = "m"
+        b._pool = SimpleNamespace(close=lambda: released.append("pool"))
+        b._zmq_sock = SimpleNamespace(
+            close=lambda linger=0: released.append("sock")
+        )
+        b._zmq_ctx = SimpleNamespace(term=lambda: released.append("ctx"))
+        b._zmq_addr = "tcp://127.0.0.1:5555"
+        b._worker = SimpleNamespace(
+            is_alive=lambda: True,
+            kill=lambda: released.append("kill"),
+            join=lambda timeout=None: released.append("join"),
+            pid=1,
+            exitcode=None,
+        )
+
+        b._cleanup_failed_init()
+
+        assert set(released) == {"pool", "sock", "ctx", "kill", "join"}
+
+    def test_cleanup_failed_init_tolerates_missing_attrs(self):
+        b = SubprocessBackend.__new__(SubprocessBackend)
+        b._model_id = "m"
+        b._cleanup_failed_init()  # nothing acquired yet — must not raise

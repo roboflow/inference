@@ -28,6 +28,7 @@ Header layout (little-endian, 64 bytes total):
 
 from __future__ import annotations
 
+import logging
 import os
 import struct
 import threading
@@ -37,6 +38,8 @@ from enum import IntEnum
 from multiprocessing import resource_tracker
 from multiprocessing.shared_memory import SharedMemory
 from typing import NamedTuple, Optional
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Header format
@@ -463,16 +466,29 @@ class SHMPool:
     # ------------------------------------------------------------------
 
     def close(self) -> None:
-        """Detach from SHM. Owner also unlinks (destroys) the block. Idempotent."""
+        """Detach from SHM. Owner also unlinks (destroys) the block. Idempotent.
+
+        A live exported data_memoryview makes SharedMemory.close() raise
+        BufferError; the unlink must still happen (a skipped unlink leaks the
+        whole segment in /dev/shm until reboot) and _closed stays False so a
+        later retry can complete the detach once the view is released.
+        """
         if getattr(self, "_closed", False):
             return
-        self._closed = True
-        self._shm.close()
-        if self._owner:
-            try:
-                self._shm.unlink()
-            except FileNotFoundError:
-                pass
+        try:
+            self._shm.close()
+            self._closed = True
+        except BufferError:
+            logger.warning(
+                "SHMPool(%s): close deferred — exported memoryview still alive",
+                self._shm.name,
+            )
+        finally:
+            if self._owner:
+                try:
+                    self._shm.unlink()
+                except FileNotFoundError:
+                    pass
 
     # ------------------------------------------------------------------
     # Internal

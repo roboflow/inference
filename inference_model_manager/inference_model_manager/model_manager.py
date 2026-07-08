@@ -723,10 +723,18 @@ class ModelManager:
 
             req_id = uuid.uuid4().int & 0xFFFF_FFFF_FFFF_FFFF
             slot_id = self._pool.alloc_slot()
-            self._pool.mark_allocated(slot_id, req_id)
-            if input_bytes:
-                self._pool.data_memoryview(slot_id)[: len(input_bytes)] = input_bytes
-            self._pool.mark_written(slot_id, len(input_bytes))
+            try:
+                self._pool.mark_allocated(slot_id, req_id)
+                if input_bytes:
+                    self._pool.data_memoryview(slot_id)[
+                        : len(input_bytes)
+                    ] = input_bytes
+                self._pool.mark_written(slot_id, len(input_bytes))
+            except BaseException:
+                # No done-callback registered yet — free directly or the slot
+                # leaks forever (bundled mode has no stale reaper).
+                self._pool.free_slot(slot_id, request_id=req_id)
+                raise
 
             future: Future = _SlotFuture()
 

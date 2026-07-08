@@ -590,3 +590,17 @@ class TestOwnershipCheckedMarks:
             assert pool.read_header(s).status == SlotStatus.ALLOCATED
         finally:
             pool.close()
+
+
+class TestCloseWithLiveViews:
+    def test_owner_close_unlinks_even_when_view_alive(self):
+        pool = _make_pool(n_slots=2)
+        name = pool.name
+        view = pool.data_memoryview(0)  # exported pointer keeps mmap alive
+        try:
+            pool.close()  # BufferError inside must not skip the unlink
+            with pytest.raises(FileNotFoundError):
+                SHMPool.attach(name, n_slots=2, input_mb=1.0)
+        finally:
+            view.release()
+            pool.close()  # completes the close after the view is gone

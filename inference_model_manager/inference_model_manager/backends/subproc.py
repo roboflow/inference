@@ -992,6 +992,40 @@ class SubprocessBackend(Backend):
             batch_max_delay_ms,
         )
 
+        # Everything below acquires OS resources — on any failure they must be
+        # released, or the MMP load-retry loop constructing backends repeatedly
+        # accumulates fds, ZMQ IO threads, ipc files, and orphaned workers.
+        try:
+            self._init_transport_and_worker(
+                model_id,
+                api_key,
+                n_slots=n_slots,
+                input_mb=input_mb,
+                batch_max_size=batch_max_size,
+                batch_max_delay_ms=batch_max_delay_ms,
+                on_result_callback=on_result_callback,
+                on_death_callback=on_death_callback,
+                worker_start_timeout=worker_start_timeout,
+                model_kwargs=kwargs,
+            )
+        except BaseException:
+            self._cleanup_failed_init()
+            raise
+
+    def _init_transport_and_worker(
+        self,
+        model_id: str,
+        api_key: str,
+        *,
+        n_slots: int,
+        input_mb: float,
+        batch_max_size: int,
+        batch_max_delay_ms: float,
+        on_result_callback: Optional[Callable],
+        on_death_callback: Optional[Callable],
+        worker_start_timeout: float,
+        model_kwargs: dict,
+    ) -> None:
         # ── ZMQ PAIR ─────────────────────────────────────────────────
         self._zmq_ctx = zmq.Context()
         self._zmq_sock = self._zmq_ctx.socket(zmq.PAIR)
@@ -1033,15 +1067,13 @@ class SubprocessBackend(Backend):
                 batch_max_size=batch_max_size,
                 batch_max_wait_ms=batch_max_delay_ms,
                 decoder=self._decoder,
-                model_kwargs=kwargs,
+                model_kwargs=model_kwargs,
             ),
             daemon=True,
         )
         self._worker.start()
 
         if not parent_pipe.poll(timeout=worker_start_timeout):
-            self._worker.kill()
-            self._worker.join(timeout=5)
             raise RuntimeError(
                 f"SubprocessBackend({model_id!r}): worker timeout "
                 f"after {worker_start_timeout}s"
@@ -1050,6 +1082,8 @@ class SubprocessBackend(Backend):
         msg = parent_pipe.recv()
         if not isinstance(msg, dict) or not msg.get("status", "").startswith("READY"):
             err = msg if isinstance(msg, str) else msg.get("status", str(msg))
+            # Give the erroring worker a moment to exit on its own; the
+            # cleanup in __init__ kills it if it lingers.
             self._worker.join(timeout=10)
             raise RuntimeError(f"SubprocessBackend({model_id!r}): {err}")
 
@@ -1090,6 +1124,42 @@ class SubprocessBackend(Backend):
         self._recv_thread.start()
 
         self._state_value = "loaded"
+
+    def _cleanup_failed_init(self) -> None:
+        """Release everything a failed __init__ acquired. Tolerates any prefix
+        of the acquisition sequence (attributes may not exist yet)."""
+        worker = getattr(self, "_worker", None)
+        if worker is not None:
+            try:
+                if worker.is_alive():
+                    worker.kill()
+                worker.join(timeout=5)
+            except Exception:
+                pass
+        sock = getattr(self, "_zmq_sock", None)
+        if sock is not None:
+            try:
+                sock.close(linger=0)
+            except Exception:
+                pass
+        ctx = getattr(self, "_zmq_ctx", None)
+        if ctx is not None:
+            try:
+                ctx.term()
+            except Exception:
+                pass
+        addr = getattr(self, "_zmq_addr", "")
+        if addr.startswith("ipc://"):
+            try:
+                os.unlink(addr[len("ipc://") :])
+            except OSError:
+                pass
+        pool = getattr(self, "_pool", None)
+        if pool is not None:
+            try:
+                pool.close()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Orchestrated-mode API (called by MMP)
