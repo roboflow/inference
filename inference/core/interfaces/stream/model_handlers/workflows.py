@@ -1,3 +1,4 @@
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import thread as _futures_thread
 from dataclasses import dataclass
@@ -268,6 +269,9 @@ class LookaheadPipelinedWorkflowRunner:
         _prespawn_daemon_workers(
             executor=self._lookahead_executor, max_workers=max_workers
         )
+        # GC fallback: if the owner is dropped without close(), still reap
+        # the pool so it cannot outlive the runner.
+        weakref.finalize(self, _shutdown_lookahead_executor, self._lookahead_executor)
         self._pending_frames: List[Tuple[List[VideoFrame], "ExecutionDataManager"]] = []
 
     def __call__(
@@ -314,15 +318,7 @@ class LookaheadPipelinedWorkflowRunner:
         return results
 
     def close(self) -> None:
-        self._lookahead_executor.shutdown(wait=False, cancel_futures=True)
-        # shutdown(wait=False) leaves the workers registered in
-        # concurrent.futures' interpreter-shutdown hook, which joins every
-        # pool thread regardless of its daemon flag — a request hung past
-        # close() would still block process exit. Detach them so that join
-        # skips them; their daemon flag (set at spawn) keeps threading's own
-        # shutdown from waiting on them as well.
-        for worker in self._lookahead_executor._threads:
-            _futures_thread._threads_queues.pop(worker, None)
+        _shutdown_lookahead_executor(executor=self._lookahead_executor)
 
     def _emit_oldest_frame(self) -> InferenceHandlerResult:
         emit_video_frames, execution_data_manager = self._pending_frames.pop(0)
@@ -335,6 +331,18 @@ class LookaheadPipelinedWorkflowRunner:
             predictions=predictions,
             video_frames=emit_video_frames,
         )
+
+
+def _shutdown_lookahead_executor(executor: ThreadPoolExecutor) -> None:
+    executor.shutdown(wait=False, cancel_futures=True)
+    # shutdown(wait=False) leaves the workers registered in
+    # concurrent.futures' interpreter-shutdown hook, which joins every pool
+    # thread regardless of its daemon flag — a request hung past close()
+    # would still block process exit. Detach them so that join skips them;
+    # their daemon flag (set at spawn) keeps threading's own shutdown from
+    # waiting on them as well.
+    for worker in executor._threads:
+        _futures_thread._threads_queues.pop(worker, None)
 
 
 def _prespawn_daemon_workers(executor: ThreadPoolExecutor, max_workers: int) -> None:
