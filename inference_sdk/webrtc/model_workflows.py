@@ -16,20 +16,28 @@ import requests
 
 from inference_sdk.config import RF_API_BASE_URL
 from inference_sdk.http.errors import InvalidParameterError
-from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 from inference_sdk.http.utils.requests import (
     api_key_safe_raise_for_status,
     deduct_api_key_from_string,
 )
 from inference_sdk.webrtc.config import StreamConfig
 
-# Map project task type (as returned by the Roboflow /ort endpoint, and matching
-# the model-registry keys in inference/models/utils.py) to the Workflow block
-# `type` literal that wraps a Roboflow model of that task type, plus the name of
-# the block output holding the primary predictions. Every block below exposes a
-# "predictions" output (verified against each block manifest's describe_outputs),
-# so the selector is uniform; the mapping keeps the predictions-output name
-# explicit so the generated workflow can adapt if a future block renames it.
+# Map model task type (as reported by the Roboflow model-registry endpoint,
+# `GET /models/v1/external/stat` -> modelMetadata.taskType) to the Workflow
+# block `type` literal that wraps a Roboflow model of that task type, plus the
+# name of the block output holding the primary predictions.
+#
+# CONTRACT: the serialized predictions dict passes through to user handlers
+# verbatim - the SDK does not inspect or normalize it, so its shape is
+# whatever the block's output kind serializes to server-side (detection-style
+# `{"image", "predictions": [...]}` for detection-family models, `top`/
+# `confidence` keys for classification, `rle_mask` entries for semantic
+# segmentation, ...). When predictions are unavailable for a frame (pairing
+# eviction, pts=None, missing output) the session delivers `data=None` -
+# handlers must check for it. Any model wrappable by a generic
+# `roboflow_*_model` block can be listed here; VLMs cannot (each VLM family
+# has its own dedicated block and manifest, so there is no uniform block to
+# generate - stream those via workflow= instead).
 TASK_TYPE_TO_BLOCK = {
     "object-detection": {
         "block_type": "roboflow_core/roboflow_object_detection_model@v2",
@@ -57,8 +65,20 @@ TASK_TYPE_TO_BLOCK = {
     },
 }
 
-# Timeout (seconds) for the Roboflow /ort task-type lookup.
+# Timeout (seconds) for the Roboflow task-type lookup.
 _TASK_TYPE_LOOKUP_TIMEOUT = 10
+
+
+def _raise_unsupported_task_type(task_type: str, model_id: str, origin: str) -> None:
+    """Raise a uniform error for task types model_id streaming cannot serve."""
+    raise InvalidParameterError(
+        f"{origin} task type '{task_type}' for model_id '{model_id}' is not "
+        f"supported for model_id streaming. Supported task types: "
+        f"{sorted(TASK_TYPE_TO_BLOCK)}. No generic Workflow model block exists "
+        "for this task type (VLM families each have their own dedicated "
+        "block) - pass a full Workflow wrapping the model via workflow= "
+        "instead."
+    )
 
 
 def resolve_task_type(
@@ -68,78 +88,61 @@ def resolve_task_type(
 
     When ``task_type`` is provided it is validated against
     ``TASK_TYPE_TO_BLOCK`` and returned as-is (no network call). When None,
-    the model alias is resolved, the model ID is split into dataset/version,
-    and the Roboflow ``/ort`` endpoint is queried for ``ort.type``.
+    the Roboflow model-registry endpoint (``GET /models/v1/external/stat``)
+    is queried for ``modelMetadata.taskType``. The endpoint accepts the
+    ``model_id`` verbatim — aliases (e.g. "rfdetr-nano") and non-versioned
+    ids are resolved server-side.
 
     Args:
         model_id: Roboflow model ID or alias (e.g. "rfdetr-nano").
         task_type: Explicit task type, or None to auto-resolve.
-        api_key: Roboflow API key used for the lookup.
+        api_key: Roboflow API key used for the lookup (sent as a Bearer
+            header; not required for public models).
 
     Returns:
         A task type string that is a key of ``TASK_TYPE_TO_BLOCK``.
 
     Raises:
-        InvalidParameterError: If ``task_type`` is unsupported, the model ID
-            has no version after de-aliasing, or the resolved task type is
-            unsupported.
-        RuntimeError: If the API lookup fails (network / parse error).
+        InvalidParameterError: If ``task_type`` (explicit or resolved) is not
+            supported for model_id streaming.
+        RuntimeError: If the API lookup fails (network / HTTP / parse error).
     """
     if task_type is not None:
         if task_type not in TASK_TYPE_TO_BLOCK:
-            raise InvalidParameterError(
-                f"Unsupported task_type '{task_type}'. Supported task types: "
-                f"{sorted(TASK_TYPE_TO_BLOCK)}."
-            )
+            _raise_unsupported_task_type(task_type, model_id, origin="Provided")
         return task_type
 
-    resolved_model_id = resolve_roboflow_model_alias(model_id)
-    parts = resolved_model_id.split("/")
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        raise InvalidParameterError(
-            f"Could not derive a dataset/version pair from model_id "
-            f"'{model_id}' (resolved to '{resolved_model_id}'). Model IDs "
-            "must be of the form 'dataset/version'. If the task type cannot "
-            "be resolved this way, pass task_type= explicitly (one of "
-            f"{sorted(TASK_TYPE_TO_BLOCK)})."
-        )
-    dataset_id, version_id = parts
-
-    url = f"{RF_API_BASE_URL}/ort/{dataset_id}/{version_id}"
+    url = f"{RF_API_BASE_URL}/models/v1/external/stat"
+    headers = {}
+    if api_key:
+        # The key travels in a header - never in the URL - so request
+        # exceptions (whose text embeds the URL) cannot leak it.
+        headers["Authorization"] = f"Bearer {api_key}"
     try:
         response = requests.get(
             url,
-            params={
-                "api_key": api_key,
-                "nocache": "true",
-                "device": "sdk",
-                "dynamic": "true",
-            },
+            params={"modelId": model_id},
+            headers=headers,
             timeout=_TASK_TYPE_LOOKUP_TIMEOUT,
         )
         api_key_safe_raise_for_status(response=response)
-        payload = response.json()
-        resolved = payload["ort"]["type"]
+        resolved = response.json()["modelMetadata"]["taskType"]
     except Exception as e:
-        # Exception text may embed the request URL (which carries api_key=...);
-        # redact before surfacing it to the user. Chain `from None` — keeping
-        # the raw exception as __cause__ would print its unredacted message
-        # (connection errors embed the full URL) in every traceback.
+        # Defensive redaction (the key is header-borne, so exception text
+        # should never contain it) + `from None` so no unredacted exception
+        # is retained as __cause__ in tracebacks.
         safe_error = deduct_api_key_from_string(str(e))
         raise RuntimeError(
-            f"Failed to resolve task type for model_id '{model_id}' "
-            f"(resolved to '{resolved_model_id}') via the Roboflow API: "
-            f"{e.__class__.__name__}: {safe_error}. You can bypass this lookup "
-            "by passing task_type= explicitly (one of "
+            f"Failed to resolve task type for model_id '{model_id}' via the "
+            f"Roboflow API: {e.__class__.__name__}: {safe_error}. A 404 means "
+            "the model does not exist or the api_key cannot access it. If the "
+            "Roboflow API is unreachable (air-gapped / self-hosted), bypass "
+            "the lookup by passing task_type= explicitly (one of "
             f"{sorted(TASK_TYPE_TO_BLOCK)})."
         ) from None
 
     if resolved not in TASK_TYPE_TO_BLOCK:
-        raise InvalidParameterError(
-            f"Roboflow API reported task type '{resolved}' for model_id "
-            f"'{model_id}', which is not supported for model_id streaming. "
-            f"Supported task types: {sorted(TASK_TYPE_TO_BLOCK)}."
-        )
+        _raise_unsupported_task_type(resolved, model_id, origin="Roboflow API reported")
     return resolved
 
 
@@ -149,8 +152,10 @@ def build_model_workflow(model_id: str, task_type: str) -> dict:
     The Workflow model block is chosen from ``TASK_TYPE_TO_BLOCK`` based on
     ``task_type``. The block's primary predictions output is always exposed
     under the "predictions" JsonField name (the selector points at whatever
-    the block calls its predictions output), so the session's raw-dict
-    contract is task-agnostic.
+    the block calls its predictions output) - the name the session reads
+    predictions from in model mode. The serialized dict is delivered to user
+    handlers verbatim; see the ``TASK_TYPE_TO_BLOCK`` comment for the data
+    contract.
 
     Args:
         model_id: Roboflow model ID (e.g. "rfdetr-nano")

@@ -57,24 +57,29 @@ class WebRTCClient:
         under the hood and the session delivers the raw serialized predictions
         dict alongside each frame instead of raw metadata (see the model_id
         example below). The model's task type (object-detection,
-        classification, instance/semantic-segmentation, keypoint-detection,
-        multi-label-classification) is resolved automatically via a Roboflow API
-        lookup and the matching Workflow model block is selected. Pass
-        ``task_type`` explicitly to skip that lookup (see below).
+        instance-segmentation, classification, multi-label-classification,
+        keypoint-detection, semantic-segmentation) is resolved automatically
+        via a Roboflow API lookup and the matching Workflow model block is
+        selected. Pass ``task_type`` explicitly to skip that lookup (see
+        below). VLMs are not supported in model_id mode (no generic model
+        block exists for them) - stream them by passing a full ``workflow``
+        instead.
 
         Args:
             source: Stream source (WebcamSource, RTSPSource, VideoFileSource, or ManualSource)
             workflow: Either a workflow ID (str) or workflow specification (dict).
                 Mutually exclusive with ``model_id``.
-            model_id: Roboflow model ID (e.g. "rfdetr-nano"). Works for any
-                supported task type, not just detection. When provided, a
-                Workflow wrapping this model is built automatically and
-                ``on_frame`` handlers receive ``(frame, data)`` where ``data`` is
-                the raw serialized predictions dict exactly as received from the
-                server. The dict is inference-response-shaped; convert it in your
-                handler with the appropriate ``supervision`` helper for the model
-                type (e.g. ``sv.Detections.from_inference(data)`` for
-                detection/segmentation). Mutually exclusive with ``workflow``.
+            model_id: Roboflow model ID or alias (e.g. "rfdetr-nano"). When
+                provided, a Workflow wrapping this model is built
+                automatically and ``on_frame`` handlers receive
+                ``(frame, data)`` where ``data`` is the raw serialized
+                predictions dict exactly as received from the server, or None
+                when predictions are unavailable for the frame - check before
+                use. The dict's shape follows the model's task type; for
+                detection-family models it is inference-response-shaped, so
+                ``sv.Detections.from_inference(data)`` /
+                ``sv.KeyPoints.from_inference(data)`` work directly.
+                Mutually exclusive with ``workflow``.
             task_type: Optional model task type. Only valid together with
                 ``model_id``. When omitted (the default), the task type is
                 resolved automatically from the Roboflow API. Pass it explicitly
@@ -142,6 +147,8 @@ class WebRTCClient:
 
             @session.on_frame
             def show(frame, data):   # data = raw serialized predictions dict
+                if data is None:     # predictions unavailable for this frame
+                    return
                 detections = sv.Detections.from_inference(data)
                 annotated = sv.BoxAnnotator().annotate(frame.copy(), detections)
                 cv2.imshow("Frame", annotated)
@@ -150,11 +157,12 @@ class WebRTCClient:
 
             session.run()
 
-            # Classification / segmentation / keypoint models work the same way:
-            # only the shape of `data` changes to match the model's task type
-            # (e.g. classification predictions instead of boxes). The task type
-            # is auto-resolved; pass task_type="classification" to skip the
-            # lookup on air-gapped / self-hosted servers.
+            # Other task types work the same way: only the shape of `data`
+            # changes (e.g. classification predictions instead of boxes). The
+            # task type is auto-resolved; pass task_type="classification"
+            # (or another supported type) to skip the lookup on air-gapped /
+            # self-hosted servers. For VLM models, pass a full workflow=
+            # instead of model_id=.
         """
         # Validate that exactly one of workflow / model_id is provided
         if (workflow is None) == (model_id is None):

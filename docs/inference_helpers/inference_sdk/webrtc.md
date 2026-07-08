@@ -43,6 +43,9 @@ box_annotator = sv.BoxAnnotator()
 @session.on_frame
 def show(frame, data):
     # data is the raw predictions dict, exactly as returned by the server
+    # (None when predictions are unavailable for this frame)
+    if data is None:
+        return
     detections = sv.Detections.from_inference(data)
     annotated = box_annotator.annotate(frame.copy(), detections)
     cv2.imshow("Preview", annotated)
@@ -52,7 +55,7 @@ def show(frame, data):
 session.run()  # blocks until the stream ends or session.close() is called
 ```
 
-`model_id` works for any supported task type — not just object detection. The model's task type is resolved automatically via a Roboflow API lookup, and the matching model block is selected for you. Supported task types:
+`model_id` works for any task type with a generic Workflow model block. The model's task type is resolved automatically via a Roboflow API lookup, and the matching model block is selected for you. Supported task types:
 
 - `object-detection`
 - `instance-segmentation`
@@ -61,7 +64,11 @@ session.run()  # blocks until the stream ends or session.close() is called
 - `multi-label-classification`
 - `keypoint-detection`
 
-Only the shape of `data` changes to match the task type (e.g. classification predictions instead of boxes). The dict is inference-response-shaped, so you can convert it with the matching [`supervision`](https://supervision.roboflow.com/) helper — `sv.Detections.from_inference(data)` for object detection and instance segmentation, `sv.Classifications.from_inference(data)` for classification, `sv.KeyPoints.from_inference(data)` for keypoint models.
+`data` is the serialized predictions dict passed through verbatim — its shape follows the task type. For detection-family models it is inference-response-shaped, so you can convert it with the matching [`supervision`](https://supervision.roboflow.com/) helper — `sv.Detections.from_inference(data)` for object detection and instance segmentation, `sv.KeyPoints.from_inference(data)` for keypoint models. Classification predictions carry `top`/`confidence` keys, and semantic-segmentation predictions carry run-length-encoded masks (`rle_mask`) that you decode yourself.
+
+When predictions are unavailable for a frame (e.g. the paired prediction message never arrived for a live stream frame), `data` is `None` — check for it in your handler before use.
+
+VLMs are not supported in `model_id` mode (each VLM family has its own dedicated Workflow block, so there is no generic block to wrap them with) — stream them with a full [`workflow`](#streaming-a-workflow) instead.
 
 **Skipping the task-type lookup:** pass `task_type` explicitly to avoid the network call — useful for air-gapped or self-hosted deployments:
 
@@ -311,6 +318,7 @@ session.close()
 
 ```python
 # model_id mode: (frame, data) — data is the raw predictions dict
+# (None when predictions are unavailable for the frame)
 for frame, data in session.video():
     ...
 

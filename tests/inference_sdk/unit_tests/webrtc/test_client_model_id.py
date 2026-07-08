@@ -21,12 +21,21 @@ from inference_sdk.webrtc.model_workflows import (
 from inference_sdk.webrtc.session import SessionState, VideoMetadata, WebRTCSession
 
 
-def _mock_ort_response(task_type: str):
-    """Build a MagicMock mimicking the Roboflow /ort endpoint response."""
+def _mock_stat_response(task_type: str):
+    """Build a MagicMock mimicking `GET /models/v1/external/stat`."""
     response = MagicMock()
     response.status_code = 200
     response.raise_for_status.return_value = None
-    response.json.return_value = {"ort": {"type": task_type}}
+    response.json.return_value = {
+        "status": "ok",
+        "modelMetadata": {
+            "type": "external-model-stat-metadata-v1",
+            "modelId": "coco/38",
+            "modelArchitecture": "rfdetr",
+            "modelVariant": "rfdetr-nano",
+            "taskType": task_type,
+        },
+    }
     return response
 
 
@@ -210,19 +219,20 @@ class TestTaskTypeResolution:
         source = MagicMock()
         with patch(
             "inference_sdk.webrtc.model_workflows.requests.get",
-            return_value=_mock_ort_response("keypoint-detection"),
+            return_value=_mock_stat_response("keypoint-detection"),
         ) as mock_get, patch(
             "inference_sdk.webrtc.client.WebRTCSession"
         ) as mock_session_cls:
             client.stream(source=source, model_id="rfdetr-nano")
-        # Lookup happened once.
+        # Lookup happened once, against the model-registry stat endpoint.
         assert mock_get.call_count == 1
         call_url = mock_get.call_args[0][0]
-        # Alias resolved before lookup: rfdetr-nano -> coco/38.
-        assert call_url.endswith("/ort/coco/38")
-        params = mock_get.call_args.kwargs["params"]
-        assert params["api_key"] == "test_key"
-        assert params["device"] == "sdk"
+        assert call_url.endswith("/models/v1/external/stat")
+        # model_id passed verbatim - aliases are resolved server-side.
+        assert mock_get.call_args.kwargs["params"] == {"modelId": "rfdetr-nano"}
+        # The api_key travels in a Bearer header, never in the URL.
+        headers = mock_get.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "Bearer test_key"
         _, kwargs = mock_session_cls.call_args
         spec = kwargs["workflow_config"]["workflow_specification"]
         assert (
@@ -230,12 +240,30 @@ class TestTaskTypeResolution:
             == "roboflow_core/roboflow_keypoint_detection_model@v2"
         )
 
+    def test_auto_resolution_without_api_key_sends_no_auth_header(self):
+        # Public models resolve without a key - no Authorization header sent.
+        client = WebRTCClient(api_url="http://localhost:9001", api_key=None)
+        source = MagicMock()
+        with patch(
+            "inference_sdk.webrtc.model_workflows.requests.get",
+            return_value=_mock_stat_response("object-detection"),
+        ) as mock_get, patch("inference_sdk.webrtc.client.WebRTCSession"):
+            client.stream(source=source, model_id="rfdetr-nano")
+        assert "Authorization" not in mock_get.call_args.kwargs["headers"]
+
     def test_invalid_explicit_task_type_raises(self, client):
         source = MagicMock()
         with patch("inference_sdk.webrtc.model_workflows.requests.get") as mock_get:
-            with pytest.raises(InvalidParameterError, match="Unsupported task_type"):
+            with pytest.raises(InvalidParameterError, match="not supported"):
                 client.stream(source=source, model_id="rfdetr-nano", task_type="bogus")
         mock_get.assert_not_called()
+
+    def test_vlm_explicit_task_type_points_at_workflow(self, client):
+        # VLMs have no generic model block to wrap - the error must point
+        # users at workflow= instead.
+        source = MagicMock()
+        with pytest.raises(InvalidParameterError, match="workflow"):
+            client.stream(source=source, model_id="florence-2-base", task_type="vlm")
 
     def test_task_type_with_workflow_raises(self, client):
         source = MagicMock()
@@ -249,13 +277,6 @@ class TestTaskTypeResolution:
                 task_type="object-detection",
             )
 
-    def test_versionless_model_id_raises(self, client):
-        source = MagicMock()
-        with patch("inference_sdk.webrtc.model_workflows.requests.get") as mock_get:
-            with pytest.raises(InvalidParameterError, match="dataset/version"):
-                client.stream(source=source, model_id="just-a-name-no-version")
-        mock_get.assert_not_called()
-
     def test_lookup_failure_raises_helpful_error(self, client):
         source = MagicMock()
         with patch(
@@ -268,12 +289,14 @@ class TestTaskTypeResolution:
         assert "Failed to resolve task type" in str(exc_info.value)
 
     def test_lookup_failure_redacts_api_key(self, client):
-        # requests exceptions embed the request URL, which carries api_key=...;
-        # the surfaced error must never contain the raw key.
+        # The key travels in a Bearer header so request exceptions should
+        # never embed it - but the surfaced error is still defensively
+        # redacted and must never contain a raw api_key=... value.
         source = MagicMock()
         leaky_error = Exception(
             "404 Client Error: Not Found for url: "
-            "https://api.roboflow.com/ort/some/1?api_key=super-secret-key&nocache=true"
+            "https://api.roboflow.com/models/v1/external/stat"
+            "?modelId=some/1&api_key=super-secret-key"
         )
         with patch(
             "inference_sdk.webrtc.model_workflows.requests.get",
@@ -287,11 +310,12 @@ class TestTaskTypeResolution:
         # or tracebacks would print the key anyway.
         assert exc_info.value.__cause__ is None
 
-    def test_unsupported_api_task_type_raises(self, client):
+    @pytest.mark.parametrize("api_task_type", ["vlm", "some-exotic-task"])
+    def test_unsupported_api_task_type_raises(self, client, api_task_type):
         source = MagicMock()
         with patch(
             "inference_sdk.webrtc.model_workflows.requests.get",
-            return_value=_mock_ort_response("some-exotic-task"),
+            return_value=_mock_stat_response(api_task_type),
         ):
             with pytest.raises(InvalidParameterError, match="not supported"):
                 client.stream(source=source, model_id="rfdetr-nano")
@@ -302,7 +326,7 @@ class TestTaskTypeResolution:
             source = MagicMock()
             with patch(
                 "inference_sdk.webrtc.model_workflows.requests.get",
-                return_value=_mock_ort_response(task_type),
+                return_value=_mock_stat_response(task_type),
             ), patch("inference_sdk.webrtc.client.WebRTCSession") as mock_session_cls:
                 client.stream(source=source, model_id="rfdetr-nano")
             _, kwargs = mock_session_cls.call_args
@@ -381,7 +405,9 @@ class TestDatachannelVideoPairing:
         assert detections.class_id.tolist() == [0]
         assert detections.data["class_name"].tolist() == ["car"]
 
-    def test_missing_predictions_yields_synthesized_empty_dict(self):
+    def test_classification_dict_passes_through_verbatim(self):
+        # Non-detection shapes are NOT normalized or synthesized - the exact
+        # server dict (top/confidence keys and all) reaches the handler.
         session = _make_session()
         session._video_through_datachannel = True
 
@@ -390,6 +416,39 @@ class TestDatachannelVideoPairing:
         @session.on_frame
         def handler(frame, data):
             received.append(data)
+
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        classification = {
+            "image": {"width": 100, "height": 100},
+            "predictions": [{"class": "cat", "class_id": 0, "confidence": 0.97}],
+            "top": "cat",
+            "confidence": 0.97,
+        }
+        serialized = {
+            "image": {"type": "base64", "value": _encode_base64_image(img)},
+            "predictions": classification,
+        }
+        metadata = VideoMetadata(frame_id=1, received_at=datetime.now(), pts=1)
+        session._handle_datachannel_video_frame(serialized, metadata)
+        session._video_queue.put_nowait(None)
+
+        session._state = SessionState.STARTED
+        with patch.object(session, "_ensure_started"):
+            session._run_model_mode()
+
+        assert len(received) == 1
+        assert received[0] is classification
+        assert received[0]["top"] == "cat"
+
+    def test_missing_predictions_yields_none(self):
+        session = _make_session()
+        session._video_through_datachannel = True
+
+        received = []
+
+        @session.on_frame
+        def handler(frame, data):
+            received.append((frame, data))
 
         img = np.zeros((120, 80, 3), dtype=np.uint8)  # H=120, W=80
         serialized = {"image": {"type": "base64", "value": _encode_base64_image(img)}}
@@ -401,11 +460,13 @@ class TestDatachannelVideoPairing:
         with patch.object(session, "_ensure_started"):
             session._run_model_mode()
 
+        # Frame still delivered, but with data=None: predictions are passed
+        # through verbatim and their absence is not masked by a synthesized
+        # shape (which could not be honest for e.g. classification models).
         assert len(received) == 1
-        data = received[0]
-        # Synthesized inference-shaped dict from the frame's shape, never None.
-        assert data == {"image": {"width": 80, "height": 120}, "predictions": []}
-        assert len(sv.Detections.from_inference(data)) == 0
+        frame, data = received[0]
+        assert frame.shape == (120, 80, 3)
+        assert data is None
 
 
 class TestTrackPairing:
@@ -451,18 +512,18 @@ class TestTrackPairing:
         assert data is predictions
         assert 9 not in session._pending_predictions
 
-    def test_overflow_evicts_frame_with_synthesized_empty_dict(self):
+    def test_overflow_evicts_frame_with_none_data(self):
         session = _make_session()
         session._pairing_max_size = 3
 
         # Insert more frames than the pairing buffer allows, none matched.
-        # Distinct shapes so we can assert width/height come from the frame.
         for pts in range(5):
             img = np.zeros((10 + pts, 20 + pts, 3), dtype=np.uint8)
             md = VideoMetadata(frame_id=pts, received_at=datetime.now(), pts=pts)
             session._pair_track_frame(pts, img, md)
 
-        # 5 inserted, buffer capped at 3 -> 2 evicted onto the queue as empty.
+        # 5 inserted, buffer capped at 3 -> 2 evicted onto the queue with
+        # data=None (frames are never silently dropped).
         assert len(session._pending_frames) == 3
         evicted = []
         while not session._video_queue.empty():
@@ -471,22 +532,17 @@ class TestTrackPairing:
         # pts 0 and 1 are the oldest, so evicted first.
         for expected_pts, (frame, data, md) in zip((0, 1), evicted):
             assert md.pts == expected_pts
-            height, width = frame.shape[:2]
-            assert data == {
-                "image": {"width": width, "height": height},
-                "predictions": [],
-            }
-            assert len(sv.Detections.from_inference(data)) == 0
+            assert frame.shape == (10 + expected_pts, 20 + expected_pts, 3)
+            assert data is None
 
-    def test_pts_none_delivers_synthesized_empty_dict_immediately(self):
+    def test_pts_none_delivers_none_data_immediately(self):
         session = _make_session()
         img = np.zeros((30, 40, 3), dtype=np.uint8)  # H=30, W=40
         md = VideoMetadata(frame_id=0, received_at=datetime.now(), pts=None)
         session._pair_track_frame(None, img, md)
         frame, data, _ = session._video_queue.get_nowait()
         assert np.array_equal(frame, img)
-        assert data == {"image": {"width": 40, "height": 30}, "predictions": []}
-        assert len(sv.Detections.from_inference(data)) == 0
+        assert data is None
 
 
 class TestOnDataMessagePairing:

@@ -122,9 +122,10 @@ class _VideoStream:
 
         In default mode yields ``(frame, metadata)`` tuples. In model mode
         (model_id) yields ``(frame, data)`` tuples where ``data`` is the raw
-        serialized predictions output dict (inference-response-shaped, e.g.
-        ``sv.Detections.from_inference(data)``). Iteration continues until the
-        stream ends (None received) or the session is closed.
+        serialized predictions output dict passed through verbatim (e.g.
+        ``sv.Detections.from_inference(data)`` for detection models), or None
+        when predictions are unavailable for the frame. Iteration continues
+        until the stream ends (None received) or the session is closed.
         """
         self._session._ensure_started()
         while True:
@@ -190,12 +191,17 @@ class WebRTCSession:
             model_mode: When True (model_id mode), the session pairs each
                 frame with the workflow predictions and delivers the raw
                 serialized predictions dict to ``on_frame`` handlers and the
-                ``video()`` iterator instead of ``VideoMetadata``. The dict is
-                inference-response-shaped, so user code can call
-                ``sv.Detections.from_inference(data)`` on it.
+                ``video()`` iterator instead of ``VideoMetadata``. The dict
+                is passed through verbatim - its shape is whatever the
+                model's output kind serializes to server-side (e.g.
+                detection-style for detection models, ``top``/``confidence``
+                for classification). When predictions are unavailable for a
+                frame (pairing eviction, pts=None, missing output), ``data``
+                is None - handlers must check for it.
             predictions_output: Name of the workflow output holding the
                 serialized predictions dict (paired with each frame in model
-                mode). Defaults to "predictions".
+                mode). Defaults to "predictions" - must match the JsonField
+                name emitted by ``model_workflows.build_model_workflow``.
         """
 
         self._state: SessionState = SessionState.NOT_STARTED
@@ -589,7 +595,8 @@ class WebRTCSession:
         Consumes the internal (frame, data, metadata) queue and invokes each
         frame handler with ``(frame, data)`` or, for 3-arg handlers,
         ``(frame, data, metadata)`` (arity auto-detected). ``data`` is the raw
-        serialized predictions dict (inference-response-shaped).
+        serialized predictions dict passed through verbatim, or None when
+        predictions are unavailable for the frame.
         """
         self._ensure_started()
         while True:
@@ -611,7 +618,7 @@ class WebRTCSession:
     def _invoke_frame_handler(
         handler: Callable,
         frame: np.ndarray,
-        data: dict,
+        data: Optional[dict],
         metadata: Optional[VideoMetadata],
     ) -> None:
         """Invoke a model-mode frame handler with the right arity.
@@ -740,27 +747,6 @@ class WebRTCSession:
             logger.debug("Successfully converted TURN config to iceServers format")
         return turn_config
 
-    @staticmethod
-    def _empty_predictions(frame: np.ndarray) -> dict:
-        """Synthesize an inference-response-shaped dict with no predictions.
-
-        Used whenever predictions are unavailable for a frame (pairing-buffer
-        eviction, pts=None, missing/unparseable output) so that ``data`` is
-        never None and ``sv.Detections.from_inference(data)`` still works in
-        user code. Image ``width``/``height`` are taken from the frame shape.
-
-        Args:
-            frame: BGR numpy array (H, W, 3) the empty predictions belong to.
-
-        Returns:
-            ``{"image": {"width": W, "height": H}, "predictions": []}``
-        """
-        height, width = frame.shape[:2]
-        return {
-            "image": {"width": int(width), "height": int(height)},
-            "predictions": [],
-        }
-
     def _pair_track_frame(
         self,
         pts: Optional[int],
@@ -772,12 +758,14 @@ class WebRTCSession:
         Called from the track reader on the asyncio loop thread. If the matching
         predictions have already arrived, enqueue the paired item immediately;
         otherwise stash the frame until they do. On overflow, evict the oldest
-        pending frame with synthesized empty predictions so frames are never
-        silently lost.
+        pending frame with ``data=None`` so frames are never silently lost -
+        the predictions dict is passed through verbatim, and its absence is
+        represented honestly as None rather than a synthesized empty response
+        (whose shape would have to vary per task type).
         """
         if pts is None:
-            # No pts to pair on: deliver immediately with empty predictions.
-            self._enqueue((frame, self._empty_predictions(frame), metadata))
+            # No pts to pair on: deliver immediately without predictions.
+            self._enqueue((frame, None, metadata))
             return
         predictions = self._pending_predictions.pop(pts, None)
         if predictions is not None:
@@ -806,18 +794,18 @@ class WebRTCSession:
         self._evict_pending_predictions()
 
     def _evict_pending_frames(self) -> None:
-        """Bound the pending-frames dict, flushing evicted frames as empty."""
+        """Bound the pending-frames dict, flushing evicted frames with data=None."""
         while len(self._pending_frames) > self._pairing_max_size:
             oldest_pts = next(iter(self._pending_frames))
             frame, metadata = self._pending_frames.pop(oldest_pts)
             # Predictions never arrived for this frame - deliver it anyway with
-            # synthesized empty predictions so frames are never silently dropped.
+            # data=None so frames are never silently dropped.
             self._pairing_evicted += 1
-            self._enqueue((frame, self._empty_predictions(frame), metadata))
+            self._enqueue((frame, None, metadata))
         # Guard against a silent pts mismatch between the video track and the
         # datachannel metadata: if frames keep getting evicted and NOTHING has
         # ever paired, predictions are arriving but never matching - warn once
-        # instead of silently delivering empty predictions forever.
+        # instead of silently delivering predictionless frames forever.
         if (
             not self._pairing_mismatch_warned
             and self._pairing_matched == 0
@@ -829,7 +817,7 @@ class WebRTCSession:
                 "Frames and predictions are both arriving but none have paired "
                 "by pts after %d frames - the server's video-track pts may not "
                 "match its datachannel metadata pts. All frames are being "
-                "delivered with empty predictions.",
+                "delivered with data=None.",
                 self._pairing_evicted,
             )
 
@@ -871,9 +859,11 @@ class WebRTCSession:
                     if self._model_mode:
                         # Predictions live in the SAME message as the image, so
                         # pairing is trivial for the datachannel-video path.
+                        # Missing/malformed output -> data=None (verbatim
+                        # pass-through contract, no synthesized shapes).
                         predictions = serialized_data.get(self._predictions_output)
                         if not isinstance(predictions, dict):
-                            predictions = self._empty_predictions(frame)
+                            predictions = None
                         self._enqueue((frame, predictions, metadata))
                     else:
                         self._enqueue((frame, metadata))
