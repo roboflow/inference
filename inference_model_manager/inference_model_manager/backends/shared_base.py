@@ -83,6 +83,31 @@ class SharedHeadControlPlane:
             future = self._pending.pop(req_id, None)
         if future is not None and not future.done():
             future.set_result(payload)
+            return
+        # Late ack after a control timeout — the worker DID act, the parent gave
+        # up waiting. Reconcile so the head is neither orphaned in the worker
+        # (unloadable, VRAM leak) nor stuck registered here (blocks retirement).
+        head_id = payload.get("head_id")
+        if not payload.get("ok") or not head_id:
+            return
+        if "head_index" in payload:  # load ack
+            metadata = HeadMetadata(
+                head_index=payload["head_index"],
+                model_mro_names=payload.get("model_mro_names", []),
+                max_batch_size=payload.get("max_batch_size"),
+                class_names=payload.get("class_names"),
+            )
+            with self._lock:
+                self._heads.setdefault(head_id, metadata)
+            logger.warning(
+                "SharedBase control: late load ack reconciled head '%s'", head_id
+            )
+        else:  # drop ack
+            with self._lock:
+                self._heads.pop(head_id, None)
+            logger.warning(
+                "SharedBase control: late drop ack reconciled head '%s'", head_id
+            )
 
     def fail_all(self, exc: BaseException) -> None:
         with self._lock:
@@ -127,8 +152,11 @@ class SharedHeadControlPlane:
         timeout_s: float = _DEFAULT_CONTROL_TIMEOUT_S,
     ) -> HeadMetadata:
         with self._lock:
-            if head_id in self._heads:
-                raise ValueError(f"head '{head_id}' already loaded")
+            existing = self._heads.get(head_id)
+            if existing is not None:
+                # Already loaded (possibly via late-ack reconciliation after a
+                # control timeout) — idempotent, hand back the live head.
+                return existing
             req_id = self._next_req_id()
         ack = self._round_trip(
             MSG_LOAD_HEAD, req_id, {"head_id": head_id, **fields}, timeout_s
@@ -152,7 +180,23 @@ class SharedHeadControlPlane:
             if head_id not in self._heads:
                 return
             req_id = self._next_req_id()
-        ack = self._round_trip(MSG_DROP_HEAD, req_id, {"head_id": head_id}, timeout_s)
+        try:
+            ack = self._round_trip(
+                MSG_DROP_HEAD, req_id, {"head_id": head_id}, timeout_s
+            )
+        except TimeoutError:
+            # Worker state unknown — forget parent-side anyway so head_count can
+            # reach 0 and the owner can retire; retirement kills the whole worker,
+            # reclaiming the head's VRAM even if the drop never landed. Keeping
+            # the entry made the head (and the base worker) permanently stuck.
+            logger.warning(
+                "SharedBase control: drop_head('%s') timed out — forgetting "
+                "parent-side; a late ack reconciles, retirement reaps the worker",
+                head_id,
+            )
+            with self._lock:
+                self._heads.pop(head_id, None)
+            return
         if not ack.get("ok"):
             raise RuntimeError(ack.get("error", f"drop_head failed for '{head_id}'"))
         # Only forget the head once the worker has confirmed removal.

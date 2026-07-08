@@ -49,6 +49,7 @@ def test_handle_load_head_registers_and_acks():
     assert ack == {
         "req_id": 1,
         "ok": True,
+        "head_id": "h1",
         "head_index": 0,
         "model_mro_names": ["H"],
         "max_batch_size": 8,
@@ -73,16 +74,23 @@ def test_handle_load_head_failure_is_isolated():
     assert "existing" in reg
 
 
-def test_handle_load_head_rejects_duplicate():
+def test_handle_load_head_duplicate_is_idempotent():
+    # Retry after a parent-side control timeout must re-ack the existing head
+    # (same index) instead of erroring — the error made the head permanently
+    # unloadable after one timed-out load.
     reg = HeadIndexRegistry()
-    reg.add("h1", object())
+    model = object()
+    reg.add("h1", model)
 
-    ack = handle_load_head(
-        {"req_id": 3, "head_id": "h1"}, reg, lambda p: (object(), {})
-    )
+    def load_fn(payload):
+        raise AssertionError("must not reload an already-loaded head")
 
-    assert ack["ok"] is False
-    assert "already loaded" in ack["error"]
+    ack = handle_load_head({"req_id": 3, "head_id": "h1"}, reg, load_fn)
+
+    assert ack["ok"] is True
+    assert ack["head_id"] == "h1"
+    assert ack["head_index"] == 0
+    assert reg.get(0) is model
 
 
 def test_handle_drop_head_removes_then_acks():
@@ -94,7 +102,7 @@ def test_handle_drop_head_removes_then_acks():
         {"req_id": 4, "head_id": "h1"}, reg, on_removed=lambda idx, hid: removed.append((idx, hid))
     )
 
-    assert ack == {"req_id": 4, "ok": True}
+    assert ack == {"req_id": 4, "ok": True, "head_id": "h1"}
     assert "h1" not in reg
     assert removed == [(0, "h1")]
 
@@ -102,4 +110,4 @@ def test_handle_drop_head_removes_then_acks():
 def test_handle_drop_unknown_head_acks_ok():
     reg = HeadIndexRegistry()
     ack = handle_drop_head({"req_id": 5, "head_id": "ghost"}, reg)
-    assert ack == {"req_id": 5, "ok": True}
+    assert ack == {"req_id": 5, "ok": True, "head_id": "ghost"}

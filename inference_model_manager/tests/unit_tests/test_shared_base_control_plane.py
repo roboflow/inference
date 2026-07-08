@@ -68,15 +68,6 @@ def test_load_head_raises_on_negative_ack():
     assert not cp.has_head("head/1")
 
 
-def test_load_head_rejects_duplicate():
-    cp = SharedHeadControlPlane(send=lambda *a: None)
-    cp._send = _auto_ack(cp, {"ok": True, "head_index": 0})
-    cp.load_head("head/1", {})
-
-    with pytest.raises(ValueError, match="already loaded"):
-        cp.load_head("head/1", {})
-
-
 def test_load_head_times_out_when_no_ack():
     cp = SharedHeadControlPlane(send=lambda *a: None)  # never acks
 
@@ -276,3 +267,58 @@ def test_view_set_on_result_callback_routes_to_owner():
     _view(owner).set_on_result_callback(cb)
 
     assert owner.result_cb is cb
+
+
+# ----------------- control-timeout split-brain reconciliation -----------------
+
+
+def test_late_load_ack_reconciles_head():
+    cp = SharedHeadControlPlane(send=lambda *a: None)  # never acks in time
+    with pytest.raises(TimeoutError):
+        cp.load_head("head/1", {}, timeout_s=0.05)
+
+    # Worker finished the load after the timeout — late ack must register the
+    # head parent-side instead of being dropped (orphaned head = VRAM leak).
+    cp.on_ack(
+        {
+            "req_id": 1,
+            "ok": True,
+            "head_id": "head/1",
+            "head_index": 7,
+            "model_mro_names": ["Foo"],
+        }
+    )
+    assert cp.has_head("head/1")
+    assert cp.metadata("head/1").head_index == 7
+
+
+def test_load_head_returns_existing_metadata_for_loaded_head():
+    cp = SharedHeadControlPlane(send=lambda *a: None)
+    cp._send = _auto_ack(cp, {"ok": True, "head_index": 0, "model_mro_names": ["Foo"]})
+    first = cp.load_head("head/1", {})
+    # Retry (e.g. after a reconciled timeout) must be idempotent, not an error.
+    second = cp.load_head("head/1", {})
+    assert second == first
+
+
+def test_late_drop_ack_removes_head():
+    cp = SharedHeadControlPlane(send=lambda *a: None)
+    cp._send = _auto_ack(cp, {"ok": True, "head_index": 0})
+    cp.load_head("head/1", {})
+
+    cp.on_ack({"req_id": 99, "ok": True, "head_id": "head/1"})
+    assert not cp.has_head("head/1")
+
+
+def test_drop_head_timeout_forgets_head_and_returns():
+    cp = SharedHeadControlPlane(send=lambda *a: None)
+    cp._send = _auto_ack(cp, {"ok": True, "head_index": 0})
+    cp.load_head("head/1", {})
+
+    cp._send = lambda *a: None  # drop never acked
+    cp.drop_head("head/1", timeout_s=0.05)  # must not raise
+    # Forgotten parent-side so head_count reaches 0 and the owner can retire —
+    # retirement kills the worker, reclaiming the head even if the drop never landed.
+    assert not cp.has_head("head/1")
+    assert cp.head_count() == 0
+    assert cp._pending == {}
