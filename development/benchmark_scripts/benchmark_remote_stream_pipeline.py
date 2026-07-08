@@ -1,8 +1,11 @@
 """Benchmark remote workflow stream pipelining against sequential execution.
 
-Runs the same video workflow (remote object-detection model -> ByteTrack ->
-bounding-box visualization) through `InferencePipeline.init_with_workflow`
-once per requested pipeline depth. Depth 1 is the sequential baseline; depths
+Runs a video workflow through `InferencePipeline.init_with_workflow` once per
+requested pipeline depth. Several workflow shapes are available via
+--workflow: tracking (remote model -> ByteTrack -> visualization), sam3
+(text-prompt segmentation), two-models (two models -> consensus), and
+preprocessed-tracking (stateless crop before the model plus a stateless
+side branch). Depth 1 is the sequential baseline; depths
 above 1 enable `WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH`, which keeps that
 many remote model requests in flight while ByteTrack consumes results in
 strict frame order.

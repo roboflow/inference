@@ -107,7 +107,7 @@ def run_workflow(
     serialize_results: bool = False,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
-    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     defer_stream_pipeline_flush: bool = False,
     resolve_output_futures: bool = True,
 ) -> List[Dict[str, Any]]:
@@ -134,7 +134,7 @@ def _run_workflow(
     serialize_results: bool = False,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
-    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     defer_stream_pipeline_flush: bool = False,
     resolve_output_futures: bool = True,
 ) -> List[Dict[str, Any]]:
@@ -185,7 +185,7 @@ def flush_stream_pipeline_workflow(
     serialize_results: bool = False,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
-    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> List[Dict[str, Any]]:
     execution_data_manager = ExecutionDataManager.init(
         execution_graph=workflow.execution_graph,
@@ -275,7 +275,7 @@ def _execute_workflow_steps(
     max_concurrent_steps: int,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
-    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     step_execution_filter: Optional[Callable[[str], bool]] = None,
 ) -> None:
     execution_coordinator = ParallelStepExecutionCoordinator.init(
@@ -319,7 +319,7 @@ def run_stream_lookahead_workflow(
     frontier_step_selectors: Set[str],
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
-    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> ExecutionDataManager:
     """Deferred pass of stream-lookahead execution for one video frame.
 
@@ -355,7 +355,7 @@ def resume_stream_lookahead_workflow(
     serialize_results: bool = False,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
-    step_error_handler: Optional[Callable[[Exception], None]] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> List[Dict[str, Any]]:
     """Emission pass of stream-lookahead execution for one buffered frame.
 
@@ -386,6 +386,12 @@ def resume_stream_lookahead_workflow(
 
 def compute_stream_lookahead_frontier(workflow: CompiledWorkflow) -> Set[str]:
     """Steps that may execute ahead of stream order in the deferred pass.
+
+    Stream-lookahead terminology (the block-side half lives in
+    ``core_steps.common.remote_stream_pipeline``): per video frame, the
+    *deferred pass* (``run_stream_lookahead_workflow``) executes only the
+    *frontier*; the *resume pass* (``resume_stream_lookahead_workflow``)
+    later executes the remaining steps in frame order at emission time.
 
     A step belongs to the frontier when its manifest declares it stateless
     for video processing and every step feeding it is itself in the frontier

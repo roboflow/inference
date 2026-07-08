@@ -23,6 +23,8 @@ from inference.core.env import (
     MAX_ACTIVE_MODELS,
     PREDICTIONS_QUEUE_SIZE,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH,
+    WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.exceptions import CannotInitialiseModelError, MissingApiKeyError
 from inference.core.interfaces.camera.entities import (
@@ -670,6 +672,9 @@ class InferencePipeline:
             on_video_frame = wrap_workflow_runner_for_stream_pipeline(
                 workflow_runner=workflow_runner,
                 execution_engine=execution_engine,
+                allow_lookahead=(
+                    not isinstance(video_reference, list) or len(video_reference) <= 1
+                ),
             )
         except ImportError as error:
             raise CannotInitialiseModelError(
@@ -824,9 +829,10 @@ class InferencePipeline:
             _stream_pipeline_dispatch_enabled()
             and "INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE" not in os.environ
         ):
-            # Stream-pipelined RF-DETR returns async response futures. Letting
-            # the producer queue hundreds of full-resolution VideoFrame objects
-            # can exhaust host memory on 4K videos before dispatch catches up.
+            # Stream-pipelined runs buffer frames already; letting the
+            # producer queue hundreds of full-resolution VideoFrame objects
+            # on top can exhaust host memory on 4K videos before dispatch
+            # catches up.
             predictions_queue_size = min(predictions_queue_size, 4)
         predictions_queue = Queue(maxsize=predictions_queue_size)
         return cls(
@@ -955,6 +961,16 @@ class InferencePipeline:
                 self._drain_inference_handler()
 
         except Exception as error:
+            if _stream_pipeline_dispatch_enabled():
+                # Deliver buffered frames whose requests already completed
+                # before the stream shuts down.
+                try:
+                    self._drain_inference_handler()
+                except Exception as drain_error:
+                    logger.exception(
+                        "Failed to drain buffered frames after inference " "error: %s",
+                        drain_error,
+                    )
             payload = {
                 "error_type": error.__class__.__name__,
                 "error_message": str(error),
@@ -1189,13 +1205,12 @@ def _rfdetr_stream_pipeline_enabled() -> bool:
 
 
 def _workflows_remote_stream_pipeline_enabled() -> bool:
-    if os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "local") != "remote":
-        return False
-    try:
-        depth = int(os.getenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "1").strip())
-    except ValueError:
-        return False
-    return depth > 1
+    # Reads the same import-time constants the workflow blocks use, so the
+    # dispatch gate and block behavior cannot diverge.
+    return (
+        WORKFLOWS_STEP_EXECUTION_MODE == "remote"
+        and WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH > 1
+    )
 
 
 def _stream_pipeline_dispatch_enabled() -> bool:

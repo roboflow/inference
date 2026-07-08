@@ -396,8 +396,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
-        if class_names is None:
-            class_names = []
+        class_names = [] if class_names is None else list(class_names)
         if len(class_names) == 0:
             class_names.append(None)
 
@@ -488,31 +487,8 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         output_format: Literal["rle", "polygons"] = "rle",
         class_mapping: Optional[Dict[str, str]] = None,
     ) -> BlockResult:
-        if self._remote_stream_pipelining_applicable(images=images):
-            result_future = self._get_remote_pipeline().submit_request(
-                task=partial(
-                    self._execute_remote_inference,
-                    images=images,
-                    model_id=model_id,
-                    class_names=class_names,
-                    confidence=confidence,
-                    per_class_confidence=per_class_confidence,
-                    apply_nms=apply_nms,
-                    nms_iou_threshold=nms_iou_threshold,
-                    output_format=output_format,
-                    class_mapping=class_mapping,
-                ),
-            )
-            return [
-                {
-                    "predictions": make_prediction_future(
-                        result_future=result_future,
-                        image_index=image_index,
-                    )
-                }
-                for image_index in range(len(images))
-            ]
-        return self._execute_remote_inference(
+        execute_remote_inference = partial(
+            self._execute_remote_inference,
             images=images,
             model_id=model_id,
             class_names=class_names,
@@ -523,6 +499,20 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             output_format=output_format,
             class_mapping=class_mapping,
         )
+        if self._remote_stream_pipelining_applicable(images=images):
+            result_future = self._get_remote_pipeline().submit_request(
+                task=execute_remote_inference,
+            )
+            return [
+                {
+                    "predictions": make_prediction_future(
+                        result_future=result_future,
+                        image_index=image_index,
+                    )
+                }
+                for image_index in range(len(images))
+            ]
+        return execute_remote_inference()
 
     def _execute_remote_inference(
         self,
@@ -536,8 +526,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         output_format: Literal["rle", "polygons"] = "rle",
         class_mapping: Optional[Dict[str, str]] = None,
     ) -> BlockResult:
-        if class_names is None:
-            class_names = []
+        class_names = [] if class_names is None else list(class_names)
         if len(class_names) == 0:
             class_names.append(None)
 
@@ -624,8 +613,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
-        if class_names is None:
-            class_names = []
+        class_names = [] if class_names is None else list(class_names)
         if len(class_names) == 0:
             class_names.append(None)
 

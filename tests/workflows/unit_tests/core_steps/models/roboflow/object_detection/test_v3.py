@@ -6,9 +6,6 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.remote_stream_pipeline import (
-    make_prediction_future,
-)
 from inference.core.workflows.core_steps.models.roboflow.object_detection import (
     v3 as object_detection_v3,
 )
@@ -275,56 +272,10 @@ def test_object_detection_pipelined_run_remotely_returns_prediction_futures(
     assert result[0]["model_id"] == "workspace/model/1"
     assert isinstance(result[0]["predictions"], Future)
     assert result[0]["predictions"].result(timeout=5) == "post-processed-a"
-    assert block._remote_pipeline.pending_requests == 1
-
-    flushed = block.flush_stream_pipeline_outputs()
-    assert flushed == [
-        (
-            [(0,)],
-            [
-                {
-                    "inference_id": None,
-                    "predictions": "post-processed-a",
-                    "model_id": "workspace/model/1",
-                }
-            ],
-        )
-    ]
-    # A single context is drained per call; the emptied deque yields nothing.
-    assert block.flush_stream_pipeline_outputs() == []
+    assert block._remote_pipeline is not None
 
     block.close_stream_pipeline()
     assert block._remote_pipeline is None
-
-
-def test_object_detection_pipelined_run_remotely_flushes_contexts_in_fifo_order(
-    monkeypatch,
-) -> None:
-    # given
-    monkeypatch.setattr(
-        object_detection_v3, "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", 4
-    )
-    _patch_remote_http_client(monkeypatch)
-    block = _make_remote_block()
-    _stub_post_process(block)
-
-    # when
-    first = _run_remotely(block, images=[_FakeRemoteImage("a")])
-    second = _run_remotely(block, images=[_FakeRemoteImage("b")])
-
-    # then
-    assert first[0]["predictions"].result(timeout=5) == "post-processed-a"
-    assert second[0]["predictions"].result(timeout=5) == "post-processed-b"
-    assert block._remote_pipeline.pending_requests == 2
-
-    first_flush = block.flush_stream_pipeline_outputs()
-    second_flush = block.flush_stream_pipeline_outputs()
-
-    assert first_flush[0][1][0]["predictions"] == "post-processed-a"
-    assert second_flush[0][1][0]["predictions"] == "post-processed-b"
-    assert block.flush_stream_pipeline_outputs() == []
-
-    block.close_stream_pipeline()
 
 
 def test_object_detection_non_pipelined_run_remotely_executes_synchronously(
@@ -351,32 +302,3 @@ def test_object_detection_non_pipelined_run_remotely_executes_synchronously(
     ]
     mock_client.infer.assert_called_once()
     assert block._remote_pipeline is None
-
-
-def test_make_prediction_future_resolves_to_indexed_predictions() -> None:
-    # given
-    result_future: Future = Future()
-    prediction_future = make_prediction_future(
-        result_future=result_future, image_index=1
-    )
-
-    # when
-    result_future.set_result([{"predictions": "first"}, {"predictions": "second"}])
-
-    # then
-    assert prediction_future.result(timeout=5) == "second"
-
-
-def test_make_prediction_future_propagates_exception() -> None:
-    # given
-    result_future: Future = Future()
-    prediction_future = make_prediction_future(
-        result_future=result_future, image_index=0
-    )
-
-    # when
-    result_future.set_exception(RuntimeError("remote failed"))
-
-    # then
-    with pytest.raises(RuntimeError, match="remote failed"):
-        prediction_future.result(timeout=5)

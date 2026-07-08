@@ -1,5 +1,5 @@
 from functools import partial
-from typing import List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
 
@@ -337,21 +337,8 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
             else HOSTED_DETECT_URL
         )
-        if self._remote_stream_pipelining_applicable(images=images):
-            return self._run_remotely_pipelined(
-                images=images,
-                model_id=model_id,
-                api_url=api_url,
-                class_agnostic_nms=class_agnostic_nms,
-                class_filter=class_filter,
-                confidence=confidence,
-                iou_threshold=iou_threshold,
-                max_detections=max_detections,
-                max_candidates=max_candidates,
-                disable_active_learning=disable_active_learning,
-                active_learning_target_dataset=active_learning_target_dataset,
-            )
-        return self._execute_remote_inference(
+        execute_remote_inference = partial(
+            self._execute_remote_inference,
             images=images,
             model_id=model_id,
             api_url=api_url,
@@ -364,48 +351,22 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
         )
-
-    def _run_remotely_pipelined(
-        self,
-        images: Batch[WorkflowImageData],
-        model_id: str,
-        api_url: str,
-        class_agnostic_nms: Optional[bool],
-        class_filter: Optional[List[str]],
-        confidence: Union[None, float, Literal["best", "default"]],
-        iou_threshold: Optional[float],
-        max_detections: Optional[int],
-        max_candidates: Optional[int],
-        disable_active_learning: Optional[bool],
-        active_learning_target_dataset: Optional[str],
-    ) -> BlockResult:
-        result_future = self._get_remote_pipeline().submit_request(
-            task=partial(
-                self._execute_remote_inference,
-                images=images,
-                model_id=model_id,
-                api_url=api_url,
-                class_agnostic_nms=class_agnostic_nms,
-                class_filter=class_filter,
-                confidence=confidence,
-                iou_threshold=iou_threshold,
-                max_detections=max_detections,
-                max_candidates=max_candidates,
-                disable_active_learning=disable_active_learning,
-                active_learning_target_dataset=active_learning_target_dataset,
-            ),
-        )
-        return [
-            {
-                "inference_id": None,
-                "predictions": make_prediction_future(
-                    result_future=result_future,
-                    image_index=image_index,
-                ),
-                "model_id": model_id,
-            }
-            for image_index in range(len(images))
-        ]
+        if self._remote_stream_pipelining_applicable(images=images):
+            result_future = self._get_remote_pipeline().submit_request(
+                task=execute_remote_inference,
+            )
+            return [
+                {
+                    "inference_id": None,
+                    "predictions": make_prediction_future(
+                        result_future=result_future,
+                        image_index=image_index,
+                    ),
+                    "model_id": model_id,
+                }
+                for image_index in range(len(images))
+            ]
+        return execute_remote_inference()
 
     def _execute_remote_inference(
         self,

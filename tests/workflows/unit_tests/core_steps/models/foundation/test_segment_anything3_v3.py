@@ -281,7 +281,7 @@ def test_stream_pipeline_protocol_gating(
 
 
 def test_pipelined_run_remotely_returns_prediction_futures(monkeypatch):
-    """Pipelined run_remotely returns per-image futures and queues a pending request."""
+    """Pipelined run_remotely returns per-image futures from the request pool."""
     monkeypatch.setattr(segment_anything3_v3, "SAM3_EXEC_MODE", "local")
     monkeypatch.setattr(
         segment_anything3_v3, "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", 4
@@ -294,38 +294,7 @@ def test_pipelined_run_remotely_returns_prediction_futures(monkeypatch):
     assert len(result) == 1
     assert isinstance(result[0]["predictions"], Future)
     assert result[0]["predictions"].result(timeout=5) == "seg-a"
-    assert block._remote_pipeline.pending_requests == 1
-
-    flushed = block.flush_stream_pipeline_outputs()
-    assert flushed == [([(0,)], [{"predictions": "seg-a"}])]
-    assert block.flush_stream_pipeline_outputs() == []
-
-    block.close_stream_pipeline()
-    assert block._remote_pipeline is None
-
-
-def test_pipelined_run_remotely_flushes_frames_in_fifo_order(monkeypatch):
-    """Two pipelined frames flush one per call, oldest first."""
-    monkeypatch.setattr(segment_anything3_v3, "SAM3_EXEC_MODE", "local")
-    monkeypatch.setattr(
-        segment_anything3_v3, "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", 4
-    )
-    block = _make_remote_block()
-    _stub_execute_remote_inference(block)
-
-    first = _run_remotely(block, images=[_FakeStreamImage("a")])
-    second = _run_remotely(block, images=[_FakeStreamImage("b")])
-
-    assert first[0]["predictions"].result(timeout=5) == "seg-a"
-    assert second[0]["predictions"].result(timeout=5) == "seg-b"
-    assert block._remote_pipeline.pending_requests == 2
-
-    first_flush = block.flush_stream_pipeline_outputs()
-    second_flush = block.flush_stream_pipeline_outputs()
-
-    assert first_flush == [([(0,)], [{"predictions": "seg-a"}])]
-    assert second_flush == [([(0,)], [{"predictions": "seg-b"}])]
-    assert block.flush_stream_pipeline_outputs() == []
+    assert block._remote_pipeline is not None
 
     block.close_stream_pipeline()
     assert block._remote_pipeline is None

@@ -257,6 +257,9 @@ class WorkflowBlockManifest(BaseModel, ABC):
         scheduler overlap several frames' expensive steps (e.g. remote model
         requests).
 
+        This is a scheduling contract about video-frame ordering, distinct
+        from the "stateless HTTP runtime" caveats in ``RuntimeRestriction``.
+
         The default is conservative: blocks are assumed stateful unless they
         override this to return ``False``.
         """

@@ -4,7 +4,7 @@ from datetime import datetime
 from functools import partial
 from queue import Queue
 from threading import Lock
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Union
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -29,6 +29,7 @@ from inference.core.interfaces.camera.video_source import (
     VideoSource,
     lock_state_transition,
 )
+from inference.core.interfaces.stream import inference_pipeline
 from inference.core.interfaces.stream.entities import (
     InferenceHandlerResult,
     ModelConfig,
@@ -747,12 +748,21 @@ def test_inference_pipeline_works_correctly_against_multiple_video_files_with_ac
     ), "Order of prediction frames violated for source 1"
 
 
+def _set_workflows_gate(monkeypatch, execution_mode: str, depth: int) -> None:
+    # The gate reads the import-time env constants, not os.environ.
+    monkeypatch.setattr(
+        inference_pipeline, "WORKFLOWS_STEP_EXECUTION_MODE", execution_mode
+    )
+    monkeypatch.setattr(
+        inference_pipeline, "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", depth
+    )
+
+
 def test_workflows_remote_stream_pipeline_enabled_when_remote_and_depth_above_one(
     monkeypatch,
 ) -> None:
     # given
-    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
-    monkeypatch.setenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "2")
+    _set_workflows_gate(monkeypatch, execution_mode="remote", depth=2)
 
     # when / then
     assert _workflows_remote_stream_pipeline_enabled() is True
@@ -762,8 +772,7 @@ def test_workflows_remote_stream_pipeline_disabled_when_execution_mode_is_local(
     monkeypatch,
 ) -> None:
     # given
-    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "local")
-    monkeypatch.setenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "2")
+    _set_workflows_gate(monkeypatch, execution_mode="local", depth=2)
 
     # when / then
     assert _workflows_remote_stream_pipeline_enabled() is False
@@ -773,19 +782,7 @@ def test_workflows_remote_stream_pipeline_disabled_when_depth_is_one(
     monkeypatch,
 ) -> None:
     # given
-    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
-    monkeypatch.setenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "1")
-
-    # when / then
-    assert _workflows_remote_stream_pipeline_enabled() is False
-
-
-def test_workflows_remote_stream_pipeline_disabled_when_depth_is_not_an_integer(
-    monkeypatch,
-) -> None:
-    # given
-    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
-    monkeypatch.setenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "not-a-number")
+    _set_workflows_gate(monkeypatch, execution_mode="remote", depth=1)
 
     # when / then
     assert _workflows_remote_stream_pipeline_enabled() is False
@@ -793,8 +790,7 @@ def test_workflows_remote_stream_pipeline_disabled_when_depth_is_not_an_integer(
 
 def test_stream_pipeline_dispatch_enabled_for_remote_workflows(monkeypatch) -> None:
     # given
-    monkeypatch.setenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
-    monkeypatch.setenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", "2")
+    _set_workflows_gate(monkeypatch, execution_mode="remote", depth=2)
     monkeypatch.delenv("RFDETR_PIPELINE_DEPTH", raising=False)
 
     # when / then
@@ -803,8 +799,7 @@ def test_stream_pipeline_dispatch_enabled_for_remote_workflows(monkeypatch) -> N
 
 def test_stream_pipeline_dispatch_enabled_for_rfdetr_alone(monkeypatch) -> None:
     # given
-    monkeypatch.delenv("WORKFLOWS_STEP_EXECUTION_MODE", raising=False)
-    monkeypatch.delenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", raising=False)
+    _set_workflows_gate(monkeypatch, execution_mode="local", depth=1)
     monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "2")
 
     # when / then
@@ -813,8 +808,7 @@ def test_stream_pipeline_dispatch_enabled_for_rfdetr_alone(monkeypatch) -> None:
 
 def test_stream_pipeline_dispatch_disabled_by_default(monkeypatch) -> None:
     # given
-    monkeypatch.delenv("WORKFLOWS_STEP_EXECUTION_MODE", raising=False)
-    monkeypatch.delenv("WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", raising=False)
+    _set_workflows_gate(monkeypatch, execution_mode="local", depth=1)
     monkeypatch.delenv("RFDETR_PIPELINE_DEPTH", raising=False)
 
     # when / then

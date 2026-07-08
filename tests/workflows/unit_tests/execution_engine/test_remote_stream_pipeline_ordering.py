@@ -25,7 +25,7 @@ import numpy as np
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.model_handlers.workflows import (
-    FlushEmittingPipelinedWorkflowRunner,
+    LookaheadPipelinedWorkflowRunner,
     WorkflowRunner,
     wrap_workflow_runner_for_stream_pipeline,
 )
@@ -185,38 +185,44 @@ def test_remote_stream_pipelining_emits_in_frame_order_with_tracker_parity(
         monkeypatch, delays=delays, completion_order=completion_order
     )
     execution_engine, runner = _init_wrapped_runner(monkeypatch, pipeline_depth=4)
-    assert isinstance(runner, FlushEmittingPipelinedWorkflowRunner)
-
-    # when
-    emissions = []
-    for frame_id in range(FRAMES_NUMBER):
-        result = runner([_make_frame(frame_id)])
-        if result is not None:
-            emissions.append(result)
-    flushed_results = runner.flush()
-    emissions.extend(flushed_results or [])
-
-    # then - the delays actually reversed completion of the in-flight batch
-    assert completion_order.index(3) < completion_order.index(0)
-
-    # then - every frame emitted exactly once, in strictly ascending order
-    emitted_frame_ids = [emission.video_frames[0].frame_id for emission in emissions]
-    assert emitted_frame_ids == list(range(FRAMES_NUMBER))
-
-    # then - each emission carries its own frame's detections
-    for frame_index, emission in enumerate(emissions):
-        tracked_detections = emission.predictions[0]["tracked_detections"]
-        canned_xyxy = [_moving_box_xyxy(frame_index)] + (
-            [[170, 170, 190, 190]] if frame_index >= STATIC_OBJECT_FIRST_FRAME else []
-        )
-        assert tracked_detections.xyxy[0].tolist() == _moving_box_xyxy(frame_index)
-        for tracked_xyxy in tracked_detections.xyxy.tolist():
-            assert tracked_xyxy in canned_xyxy
-
-    # then - the pipelined block drained fully and closes cleanly
+    assert isinstance(runner, LookaheadPipelinedWorkflowRunner)
     model_block = execution_engine._engine._compiled_workflow.steps["model"].step
-    assert model_block._remote_pipeline.pending_requests == 0
-    runner.close()
+
+    try:
+        # when
+        emissions = []
+        for frame_id in range(FRAMES_NUMBER):
+            result = runner([_make_frame(frame_id)])
+            if result is not None:
+                emissions.append(result)
+        flushed_results = runner.flush()
+        emissions.extend(flushed_results or [])
+
+        # then - the delays actually reversed completion of the in-flight batch
+        assert completion_order.index(3) < completion_order.index(0)
+
+        # then - every frame emitted exactly once, in strictly ascending order
+        emitted_frame_ids = [
+            emission.video_frames[0].frame_id for emission in emissions
+        ]
+        assert emitted_frame_ids == list(range(FRAMES_NUMBER))
+
+        # then - each emission carries its own frame's detections
+        for frame_index, emission in enumerate(emissions):
+            tracked_detections = emission.predictions[0]["tracked_detections"]
+            canned_xyxy = [_moving_box_xyxy(frame_index)] + (
+                [[170, 170, 190, 190]]
+                if frame_index >= STATIC_OBJECT_FIRST_FRAME
+                else []
+            )
+            assert tracked_detections.xyxy[0].tolist() == _moving_box_xyxy(frame_index)
+            for tracked_xyxy in tracked_detections.xyxy.tolist():
+                assert tracked_xyxy in canned_xyxy
+
+        # then - the pipelined block was engaged
+        assert model_block._remote_pipeline is not None
+    finally:
+        runner.close()
     assert model_block._remote_pipeline is None
 
     # given - a sequential reference run: same canned responses, no delays,

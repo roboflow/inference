@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from inference.core import logger
 from inference.core.interfaces.camera.entities import VideoFrame
@@ -12,6 +12,11 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
 from inference.core.workflows.execution_engine.v1.executor.core import (
     compute_stream_lookahead_frontier,
 )
+
+if TYPE_CHECKING:
+    from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
+        ExecutionDataManager,
+    )
 
 
 @dataclass(frozen=True)
@@ -73,7 +78,7 @@ class WorkflowRunner:
         self,
         video_frames: List[VideoFrame],
         frontier_step_selectors: Set[str],
-    ) -> Any:
+    ) -> "ExecutionDataManager":
         workflows_parameters, fps = self._build_workflows_parameters(
             video_frames=video_frames
         )
@@ -86,7 +91,7 @@ class WorkflowRunner:
 
     def _resume_stream_lookahead(
         self,
-        execution_data_manager: Any,
+        execution_data_manager: "ExecutionDataManager",
         frontier_step_selectors: Set[str],
     ) -> List[dict]:
         return self._execution_engine.resume_stream_lookahead(
@@ -199,16 +204,10 @@ class PipelinedWorkflowRunner:
         return results
 
     def close(self) -> None:
-        for stream_step in self._stream_steps:
-            close_fn = getattr(stream_step.step, "close_stream_pipeline", None)
-            if callable(close_fn):
-                close_fn()
+        _close_stream_steps(stream_steps=self._stream_steps)
 
     def _stream_buffer_depth(self) -> int:
-        return max(
-            (_stream_step_depth(stream_step) for stream_step in self._stream_steps),
-            default=0,
-        )
+        return _max_stream_buffer_depth(stream_steps=self._stream_steps)
 
 
 class LookaheadPipelinedWorkflowRunner:
@@ -232,7 +231,7 @@ class LookaheadPipelinedWorkflowRunner:
         self._workflow_runner = workflow_runner
         self._stream_steps = stream_steps
         self._frontier_step_selectors = frontier_step_selectors
-        self._pending_frames: List[Tuple[List[VideoFrame], Any]] = []
+        self._pending_frames: List[Tuple[List[VideoFrame], "ExecutionDataManager"]] = []
 
     def __call__(
         self, video_frames: List[VideoFrame]
@@ -251,14 +250,20 @@ class LookaheadPipelinedWorkflowRunner:
             return None
         results = []
         while self._pending_frames:
-            results.append(self._emit_oldest_frame())
+            try:
+                results.append(self._emit_oldest_frame())
+            except Exception as error:
+                # One failed frame must not drop the rest of the buffered
+                # frames whose requests already completed.
+                logger.exception(
+                    "Failed to emit a buffered frame during stream-lookahead "
+                    "drain: %s",
+                    error,
+                )
         return results
 
     def close(self) -> None:
-        for stream_step in self._stream_steps:
-            close_fn = getattr(stream_step.step, "close_stream_pipeline", None)
-            if callable(close_fn):
-                close_fn()
+        _close_stream_steps(stream_steps=self._stream_steps)
 
     def _emit_oldest_frame(self) -> InferenceHandlerResult:
         emit_video_frames, execution_data_manager = self._pending_frames.pop(0)
@@ -272,15 +277,13 @@ class LookaheadPipelinedWorkflowRunner:
         )
 
     def _stream_buffer_depth(self) -> int:
-        return max(
-            (_stream_step_depth(stream_step) for stream_step in self._stream_steps),
-            default=0,
-        )
+        return _max_stream_buffer_depth(stream_steps=self._stream_steps)
 
 
 def wrap_workflow_runner_for_stream_pipeline(
     workflow_runner: WorkflowRunner,
     execution_engine: ExecutionEngine,
+    allow_lookahead: bool = True,
 ):
     stream_steps = _stream_pipeline_steps(execution_engine=execution_engine)
     if not stream_steps:
@@ -295,8 +298,35 @@ def wrap_workflow_runner_for_stream_pipeline(
             workflow_runner=workflow_runner,
             stream_steps=stream_steps,
         )
+    if not allow_lookahead:
+        # Multi-source pipelines feed frame batches larger than one image, so
+        # the model steps would run synchronously and buffering would add
+        # latency without any overlap.
+        logger.warning(
+            "Remote stream pipelining is disabled: it currently supports "
+            "single-source pipelines only. Falling back to sequential "
+            "execution."
+        )
+        return workflow_runner
+    if len(lookahead_steps) != len(stream_steps):
+        # A workflow mixing lookahead steps with other pipelined steps (e.g.
+        # a local RF-DETR stream pipeline) would leave the latter's flush
+        # queue undrained under the lookahead runner.
+        logger.warning(
+            "Remote stream pipelining is disabled for this workflow: it mixes "
+            "remote lookahead-pipelined steps with other stream-pipelined "
+            "steps. Falling back to sequential execution."
+        )
+        return workflow_runner
     frontier_step_selectors = _lookahead_frontier(execution_engine=execution_engine)
-    if frontier_step_selectors is None or not _steps_in_frontier(
+    if frontier_step_selectors is None:
+        logger.warning(
+            "Remote stream pipelining is disabled: the compiled workflow does "
+            "not expose an execution graph to compute the stream-lookahead "
+            "frontier from. Falling back to sequential execution."
+        )
+        return workflow_runner
+    if not _steps_in_frontier(
         stream_steps=lookahead_steps,
         frontier_step_selectors=frontier_step_selectors,
     ):
@@ -335,6 +365,24 @@ def _is_stream_pipeline_step(step_instance: Any) -> bool:
         return True
     can_activate_pipeline = getattr(step_instance, "can_activate_stream_pipeline", None)
     return callable(can_activate_pipeline) and can_activate_pipeline()
+
+
+def _close_stream_steps(stream_steps: List[_StreamPipelineStep]) -> None:
+    for stream_step in stream_steps:
+        close_fn = getattr(stream_step.step, "close_stream_pipeline", None)
+        if not callable(close_fn):
+            continue
+        try:
+            close_fn()
+        except Exception as error:
+            logger.exception("Failed to close stream pipeline step: %s", error)
+
+
+def _max_stream_buffer_depth(stream_steps: List[_StreamPipelineStep]) -> int:
+    return max(
+        (_stream_step_depth(stream_step) for stream_step in stream_steps),
+        default=0,
+    )
 
 
 def _stream_step_depth(stream_step: _StreamPipelineStep) -> int:
