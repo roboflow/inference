@@ -747,23 +747,25 @@ def merge_crop_predictions(
                     # Image dimensions for this detection
                     merged_data[key].append(list(parent_image_shape))
                 elif key == "root_parent_coordinates":
-                    # Root parent coordinates [y, x] - should be [0, 0] for the root
-                    if (
-                        pred["class_id"] in class_id_to_data
-                        and key in class_id_to_data[pred["class_id"]]
-                    ):
-                        merged_data[key].append(class_id_to_data[pred["class_id"]][key])
-                    else:
-                        merged_data[key].append([0, 0])
+                    # The merged geometry lives in the PARENT's frame, so the
+                    # root offset is the parent prediction's root offset - the
+                    # child entries carry their crop origins, which no longer
+                    # apply after rollup (sampling them made the output
+                    # constructor re-shift already-rolled-up predictions and
+                    # crash re-anchoring parent-canvas masks).
+                    merged_data[key].append(
+                        list(
+                            parent_image_metadata.get(ROOT_PARENT_COORDINATES_KEY)
+                            or [0, 0]
+                        )
+                    )
                 elif key == "parent_coordinates":
-                    # Parent coordinates [y, x]
-                    if (
-                        pred["class_id"] in class_id_to_data
-                        and key in class_id_to_data[pred["class_id"]]
-                    ):
-                        merged_data[key].append(class_id_to_data[pred["class_id"]][key])
-                    else:
-                        merged_data[key].append([0, 0])
+                    # Same frame argument as root_parent_coordinates above.
+                    merged_data[key].append(
+                        list(
+                            parent_image_metadata.get(PARENT_COORDINATES_KEY) or [0, 0]
+                        )
+                    )
                 elif key == "root_parent_id":
                     # Root parent ID
                     if (
