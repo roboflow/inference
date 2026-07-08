@@ -95,12 +95,16 @@ class ExecutionEngine(BaseExecutionEngine):
         self,
         runtime_parameters: Dict[str, Any],
         frontier_step_selectors: Set[str],
+        async_step_selectors: Set[str],
+        lookahead_executor: ThreadPoolExecutor,
         fps: float = 0,
         _is_preview: bool = False,
     ) -> "ExecutionDataManager":
         return self._engine.run_stream_lookahead(
             runtime_parameters=runtime_parameters,
             frontier_step_selectors=frontier_step_selectors,
+            async_step_selectors=async_step_selectors,
+            lookahead_executor=lookahead_executor,
             fps=fps,
             _is_preview=_is_preview,
         )

@@ -116,3 +116,29 @@ def maybe_resolve_futures(
     if not contains_future(value):
         return value
     return resolve_futures(value=value, timeout=timeout, context=context)
+
+
+def chain_output_future(
+    result_future: Future,
+    element_index: int,
+    output_name: str,
+) -> Future:
+    # Chained via callback rather than executor.submit() — selector tasks
+    # waiting on the producing task in the same pool could exhaust its workers.
+    output_future: Future = Future()
+
+    def _propagate_result(done_future: Future) -> None:
+        error = done_future.exception()
+        if error is not None:
+            output_future.set_exception(error)
+            return
+        try:
+            output_future.set_result(done_future.result()[element_index][output_name])
+        except Exception as selection_error:
+            # concurrent.futures swallows callback exceptions — without this
+            # the chained future would never resolve and consumers would hang
+            # until the future-resolution timeout.
+            output_future.set_exception(selection_error)
+
+    result_future.add_done_callback(_propagate_result)
+    return output_future

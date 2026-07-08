@@ -63,6 +63,7 @@ from inference.core.workflows.execution_engine.v1.executor.output_constructor im
     construct_workflow_output,
 )
 from inference.core.workflows.execution_engine.v1.executor.utils import (
+    chain_output_future,
     run_steps_in_parallel,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
@@ -277,6 +278,8 @@ def _execute_workflow_steps(
     executor: Optional[ThreadPoolExecutor] = None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     step_execution_filter: Optional[Callable[[str], bool]] = None,
+    async_step_selectors: Optional[Set[str]] = None,
+    lookahead_executor: Optional[ThreadPoolExecutor] = None,
 ) -> None:
     execution_coordinator = ParallelStepExecutionCoordinator.init(
         execution_graph=workflow.execution_graph,
@@ -293,6 +296,20 @@ def _execute_workflow_steps(
                 if step_execution_filter(step_selector)
             ]
         )
+        if async_step_selectors and lookahead_executor is not None:
+            for step_selector in runnable_steps:
+                if step_selector in async_step_selectors:
+                    launch_async_simd_step(
+                        step_selector=step_selector,
+                        workflow=workflow,
+                        execution_data_manager=execution_data_manager,
+                        lookahead_executor=lookahead_executor,
+                    )
+            runnable_steps = [
+                step_selector
+                for step_selector in runnable_steps
+                if step_selector not in async_step_selectors
+            ]
         if runnable_steps:
             execute_steps(
                 next_steps=runnable_steps,
@@ -307,6 +324,82 @@ def _execute_workflow_steps(
         next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
 
 
+def launch_async_simd_step(
+    step_selector: str,
+    workflow: CompiledWorkflow,
+    execution_data_manager: ExecutionDataManager,
+    lookahead_executor: ThreadPoolExecutor,
+) -> None:
+    """Execute a declared async step on the lookahead pool.
+
+    Inputs are assembled on the calling thread; the block's whole ``run()``
+    executes on a worker thread, and per-output future placeholders (built
+    from the block's declared outputs) are registered so downstream steps
+    resolve them at input assembly during the resume pass.
+    """
+    step_name = get_last_chunk_of_selector(selector=step_selector)
+    step = workflow.steps[step_name]
+    step_input = execution_data_manager.get_simd_step_input(
+        step_selector=step_selector,
+    )
+    if not step_input.indices:
+        execution_data_manager.register_simd_step_output(
+            step_selector=step_selector,
+            indices=[],
+            outputs=[],
+        )
+        return
+    result_future = lookahead_executor.submit(
+        partial(step.step.run, **step_input.parameters)
+    )
+    output_names = [
+        output.name
+        for output in step.block_specification.manifest_class.describe_outputs()
+    ]
+    outputs = [
+        {
+            output_name: chain_output_future(
+                result_future=result_future,
+                element_index=element_index,
+                output_name=output_name,
+            )
+            for output_name in output_names
+        }
+        for element_index in range(len(step_input.indices))
+    ]
+    execution_data_manager.register_simd_step_output(
+        step_selector=step_selector,
+        indices=step_input.indices,
+        outputs=outputs,
+    )
+
+
+def compute_async_stream_step_selectors(workflow: CompiledWorkflow) -> Set[str]:
+    """Steps declared and eligible for async launch in the deferred pass.
+
+    A step qualifies when its block declares ``is_async_stream_step()`` and
+    the engine can offload it generically: SIMD with batch input, no output
+    dimensionality offset, and concrete declared outputs to build future
+    placeholders from.
+    """
+    async_step_selectors = set()
+    for step_name, step in workflow.steps.items():
+        declares_fn = getattr(step.step, "is_async_stream_step", None)
+        if not callable(declares_fn) or not declares_fn():
+            continue
+        manifest_class = step.block_specification.manifest_class
+        output_names = [output.name for output in manifest_class.describe_outputs()]
+        if (
+            not manifest_class.accepts_batch_input()
+            or manifest_class.get_output_dimensionality_offset() != 0
+            or not output_names
+            or any("*" in output_name for output_name in output_names)
+        ):
+            continue
+        async_step_selectors.add(construct_step_selector(step_name=step_name))
+    return async_step_selectors
+
+
 @usage_collector("workflows")
 @execution_phase(
     name="workflow_lookahead_execution",
@@ -317,16 +410,18 @@ def run_stream_lookahead_workflow(
     runtime_parameters: Dict[str, Any],
     max_concurrent_steps: int,
     frontier_step_selectors: Set[str],
+    async_step_selectors: Set[str],
+    lookahead_executor: ThreadPoolExecutor,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> ExecutionDataManager:
     """Deferred pass of stream-lookahead execution for one video frame.
 
-    Runs only the frontier steps (pipelined model steps launch their remote
-    requests and register future-bearing outputs) and returns the live
-    ExecutionDataManager so the caller can buffer it and resume the remaining
-    steps at ordered emission time.
+    Runs only the frontier steps — declared async steps have their whole
+    ``run()`` offloaded to the lookahead pool and register future-bearing
+    outputs — and returns the live ExecutionDataManager so the caller can
+    buffer it and resume the remaining steps at ordered emission time.
     """
     with start_span("workflow.run_stream_lookahead"):
         execution_data_manager = ExecutionDataManager.init(
@@ -342,6 +437,8 @@ def run_stream_lookahead_workflow(
             step_error_handler=step_error_handler,
             step_execution_filter=lambda step_selector: step_selector
             in frontier_step_selectors,
+            async_step_selectors=async_step_selectors,
+            lookahead_executor=lookahead_executor,
         )
         return execution_data_manager
 
@@ -402,11 +499,7 @@ def compute_stream_lookahead_frontier(workflow: CompiledWorkflow) -> Set[str]:
     step_selectors = {
         construct_step_selector(step_name=step_name) for step_name in workflow.steps
     }
-    async_step_selectors = set()
-    for step_name, step in workflow.steps.items():
-        is_pipelined_fn = getattr(step.step, "is_stream_pipelined", None)
-        if callable(is_pipelined_fn) and is_pipelined_fn():
-            async_step_selectors.add(construct_step_selector(step_name=step_name))
+    async_step_selectors = compute_async_stream_step_selectors(workflow=workflow)
     frontier: Set[str] = set()
     for execution_layer in establish_execution_order(
         execution_graph=workflow.execution_graph
@@ -416,7 +509,13 @@ def compute_stream_lookahead_frontier(workflow: CompiledWorkflow) -> Set[str]:
             manifest_class = workflow.steps[
                 step_name
             ].block_specification.manifest_class
-            if manifest_class.is_stateful_for_video_processing():
+            is_stateful_fn = getattr(
+                manifest_class, "is_stateful_for_video_processing", None
+            )
+            if not callable(is_stateful_fn) or is_stateful_fn():
+                # Manifests without the declaration (e.g. dynamic Custom
+                # Python blocks, built without the WorkflowBlockManifest
+                # base) are conservatively treated as stateful.
                 continue
             feeding_step_selectors = [
                 predecessor

@@ -179,6 +179,12 @@ class RoboflowObjectDetectionModelBlockV2(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
+    def is_async_stream_step(self) -> bool:
+        # The remote request path is re-entrant (fresh client per call,
+        # thread-local connection pooling in the SDK executors), so the
+        # stream scheduler may execute run() ahead of stream order.
+        return self._step_execution_mode is StepExecutionMode.REMOTE
+
     def run(
         self,
         images: Batch[WorkflowImageData],

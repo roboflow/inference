@@ -3,6 +3,7 @@ from typing import List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     LONG_DESCRIPTION,
     BaseManifest,
@@ -22,6 +23,10 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 
 
 class V2BlockManifest(BaseManifest):
+    @classmethod
+    def is_stateful_for_video_processing(cls) -> bool:
+        return False
+
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
         """Return list of model_id variants that can satisfy this block."""
@@ -64,6 +69,12 @@ class Florence2BlockV2(Florence2BlockV1):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return V2BlockManifest
+
+    def is_async_stream_step(self) -> bool:
+        # The remote request path is re-entrant (fresh client per call,
+        # thread-local connection pooling in the SDK executors), so the
+        # stream scheduler may execute run() ahead of stream order.
+        return self._step_execution_mode is StepExecutionMode.REMOTE
 
     def run(
         self,

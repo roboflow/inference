@@ -182,6 +182,8 @@ class ExecutionEngineV1(BaseExecutionEngine):
         self,
         runtime_parameters: Dict[str, Any],
         frontier_step_selectors: Set[str],
+        async_step_selectors: Set[str],
+        lookahead_executor: ThreadPoolExecutor,
         fps: float = 0,
         _is_preview: bool = False,
     ) -> ExecutionDataManager:
@@ -194,6 +196,8 @@ class ExecutionEngineV1(BaseExecutionEngine):
             runtime_parameters=runtime_parameters,
             max_concurrent_steps=self._max_concurrent_steps,
             frontier_step_selectors=frontier_step_selectors,
+            async_step_selectors=async_step_selectors,
+            lookahead_executor=lookahead_executor,
             usage_fps=fps,
             usage_workflow_id=self._resolve_usage_workflow_id(),
             usage_workflow_preview=_is_preview,

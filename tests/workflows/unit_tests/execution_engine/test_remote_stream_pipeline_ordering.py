@@ -24,6 +24,9 @@ import numpy as np
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.stream.model_handlers import (
+    workflows as workflows_module,
+)
 from inference.core.interfaces.stream.model_handlers.workflows import (
     LookaheadPipelinedWorkflowRunner,
     WorkflowRunner,
@@ -148,8 +151,8 @@ def _patch_remote_http_client(
 
 def _init_wrapped_runner(monkeypatch, pipeline_depth: int):
     monkeypatch.setattr(
-        object_detection_v3,
-        "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH",
+        workflows_module,
+        "WORKFLOWS_STREAM_LOOKAHEAD_DEPTH",
         pipeline_depth,
     )
     execution_engine = ExecutionEngine.init(
@@ -184,9 +187,8 @@ def test_remote_stream_pipelining_emits_in_frame_order_with_tracker_parity(
     _patch_remote_http_client(
         monkeypatch, delays=delays, completion_order=completion_order
     )
-    execution_engine, runner = _init_wrapped_runner(monkeypatch, pipeline_depth=4)
+    _, runner = _init_wrapped_runner(monkeypatch, pipeline_depth=4)
     assert isinstance(runner, LookaheadPipelinedWorkflowRunner)
-    model_block = execution_engine._engine._compiled_workflow.steps["model"].step
 
     try:
         # when
@@ -218,12 +220,9 @@ def test_remote_stream_pipelining_emits_in_frame_order_with_tracker_parity(
             assert tracked_detections.xyxy[0].tolist() == _moving_box_xyxy(frame_index)
             for tracked_xyxy in tracked_detections.xyxy.tolist():
                 assert tracked_xyxy in canned_xyxy
-
-        # then - the pipelined block was engaged
-        assert model_block._remote_pipeline is not None
     finally:
         runner.close()
-    assert model_block._remote_pipeline is None
+    assert runner._lookahead_executor._shutdown
 
     # given - a sequential reference run: same canned responses, no delays,
     # pipelining disabled, fresh engine (fresh tracker state)

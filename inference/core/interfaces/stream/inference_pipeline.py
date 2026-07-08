@@ -23,8 +23,7 @@ from inference.core.env import (
     MAX_ACTIVE_MODELS,
     PREDICTIONS_QUEUE_SIZE,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH,
-    WORKFLOWS_STEP_EXECUTION_MODE,
+    WORKFLOWS_STREAM_LOOKAHEAD_DEPTH,
 )
 from inference.core.exceptions import CannotInitialiseModelError, MissingApiKeyError
 from inference.core.interfaces.camera.entities import (
@@ -1204,16 +1203,11 @@ def _rfdetr_stream_pipeline_enabled() -> bool:
         return False
 
 
-def _workflows_remote_stream_pipeline_enabled() -> bool:
-    # Reads the same import-time constants the workflow blocks use, so the
-    # dispatch gate and block behavior cannot diverge.
-    return (
-        WORKFLOWS_STEP_EXECUTION_MODE == "remote"
-        and WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH > 1
-    )
+def _stream_lookahead_enabled() -> bool:
+    # Whether lookahead actually activates is decided at wrap time from the
+    # compiled workflow; this gate only routes stream dispatch accordingly.
+    return WORKFLOWS_STREAM_LOOKAHEAD_DEPTH > 1
 
 
 def _stream_pipeline_dispatch_enabled() -> bool:
-    return (
-        _rfdetr_stream_pipeline_enabled() or _workflows_remote_stream_pipeline_enabled()
-    )
+    return _rfdetr_stream_pipeline_enabled() or _stream_lookahead_enabled()

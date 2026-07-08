@@ -1,4 +1,3 @@
-from functools import partial
 from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
@@ -25,16 +24,11 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     SAM3_EXEC_MODE,
     WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.remote_stream_pipeline import (
-    RemoteStreamPipeline,
-    make_prediction_future,
-)
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
@@ -272,51 +266,23 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
-        self._remote_pipeline: Optional[RemoteStreamPipeline] = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
         return ["model_manager", "api_key", "step_execution_mode"]
 
-    def is_stream_pipelined(self) -> bool:
-        return (
-            SAM3_EXEC_MODE != "remote"
-            and self._step_execution_mode is StepExecutionMode.REMOTE
-            and WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH > 1
-        )
-
-    def can_activate_stream_pipeline(self) -> bool:
-        return self.is_stream_pipelined()
-
-    def defers_downstream_execution(self) -> bool:
-        return True
-
-    def stream_pipeline_depth(self) -> int:
-        if not self.is_stream_pipelined():
-            return 0
-        return max(0, WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH - 1)
-
-    def close_stream_pipeline(self) -> None:
-        if self._remote_pipeline is None:
-            return None
-        self._remote_pipeline.close()
-        self._remote_pipeline = None
-
-    def _remote_stream_pipelining_applicable(
-        self, images: Batch[WorkflowImageData]
-    ) -> bool:
-        return self.stream_pipeline_depth() > 0 and len(images) == 1
-
-    def _get_remote_pipeline(self) -> RemoteStreamPipeline:
-        if self._remote_pipeline is None:
-            self._remote_pipeline = RemoteStreamPipeline(
-                max_in_flight_requests=WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH,
-            )
-        return self._remote_pipeline
-
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
+
+    def is_async_stream_step(self) -> bool:
+        # The remote request path is re-entrant (fresh client per call,
+        # thread-local connection pooling in the SDK executors), so the
+        # stream scheduler may execute run() ahead of stream order.
+        return (
+            SAM3_EXEC_MODE != "remote"
+            and self._step_execution_mode is StepExecutionMode.REMOTE
+        )
 
     def run(
         self,
@@ -363,9 +329,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             logger.debug("Running SAM3 v3 remotely via SDK")
-            # class_mapping is applied inside the remote path so it composes
-            # with stream pipelining, where results may still be futures here.
-            return self.run_remotely(
+            result = self.run_remotely(
                 images=images,
                 model_id=model_id,
                 class_names=class_names,
@@ -374,7 +338,6 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 apply_nms=apply_nms,
                 nms_iou_threshold=nms_iou_threshold,
                 output_format=output_format,
-                class_mapping=class_mapping,
             )
         else:
             raise ValueError(
@@ -485,46 +448,6 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
         output_format: Literal["rle", "polygons"] = "rle",
-        class_mapping: Optional[Dict[str, str]] = None,
-    ) -> BlockResult:
-        execute_remote_inference = partial(
-            self._execute_remote_inference,
-            images=images,
-            model_id=model_id,
-            class_names=class_names,
-            confidence=confidence,
-            per_class_confidence=per_class_confidence,
-            apply_nms=apply_nms,
-            nms_iou_threshold=nms_iou_threshold,
-            output_format=output_format,
-            class_mapping=class_mapping,
-        )
-        if self._remote_stream_pipelining_applicable(images=images):
-            result_future = self._get_remote_pipeline().submit_request(
-                task=execute_remote_inference,
-            )
-            return [
-                {
-                    "predictions": make_prediction_future(
-                        result_future=result_future,
-                        image_index=image_index,
-                    )
-                }
-                for image_index in range(len(images))
-            ]
-        return execute_remote_inference()
-
-    def _execute_remote_inference(
-        self,
-        images: Batch[WorkflowImageData],
-        model_id: str,
-        class_names: Optional[List[str]],
-        confidence: float,
-        per_class_confidence: Optional[List[float]] = None,
-        apply_nms: bool = True,
-        nms_iou_threshold: float = 0.9,
-        output_format: Literal["rle", "polygons"] = "rle",
-        class_mapping: Optional[Dict[str, str]] = None,
     ) -> BlockResult:
         class_names = [] if class_names is None else list(class_names)
         if len(class_names) == 0:
@@ -594,14 +517,11 @@ class SegmentAnything3BlockV3(WorkflowBlock):
 
             all_detections.append(detections)
 
-        result = self._post_process_result(
+        return self._post_process_result(
             images=images,
             predictions=all_detections,
             output_format=output_format,
         )
-        if class_mapping:
-            result = self._apply_class_mapping(result, class_mapping)
-        return result
 
     def run_via_request(
         self,

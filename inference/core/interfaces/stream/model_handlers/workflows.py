@@ -1,15 +1,15 @@
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from inference.core import logger
+from inference.core.env import WORKFLOWS_STREAM_LOOKAHEAD_DEPTH
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import InferenceHandlerResult
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
-from inference.core.workflows.execution_engine.v1.compiler.utils import (
-    construct_step_selector,
-)
 from inference.core.workflows.execution_engine.v1.executor.core import (
+    compute_async_stream_step_selectors,
     compute_stream_lookahead_frontier,
 )
 
@@ -78,6 +78,8 @@ class WorkflowRunner:
         self,
         video_frames: List[VideoFrame],
         frontier_step_selectors: Set[str],
+        async_step_selectors: Set[str],
+        lookahead_executor: "ThreadPoolExecutor",
     ) -> "ExecutionDataManager":
         workflows_parameters, fps = self._build_workflows_parameters(
             video_frames=video_frames
@@ -85,6 +87,8 @@ class WorkflowRunner:
         return self._execution_engine.run_stream_lookahead(
             runtime_parameters=workflows_parameters,
             frontier_step_selectors=frontier_step_selectors,
+            async_step_selectors=async_step_selectors,
+            lookahead_executor=lookahead_executor,
             fps=fps,
             _is_preview=self._is_preview,
         )
@@ -225,12 +229,18 @@ class LookaheadPipelinedWorkflowRunner:
     def __init__(
         self,
         workflow_runner: WorkflowRunner,
-        stream_steps: List[_StreamPipelineStep],
         frontier_step_selectors: Set[str],
+        async_step_selectors: Set[str],
+        buffer_depth: int,
     ) -> None:
         self._workflow_runner = workflow_runner
-        self._stream_steps = stream_steps
         self._frontier_step_selectors = frontier_step_selectors
+        self._async_step_selectors = async_step_selectors
+        self._buffer_depth = buffer_depth
+        self._lookahead_executor = ThreadPoolExecutor(
+            max_workers=max(1, (buffer_depth + 1) * len(async_step_selectors)),
+            thread_name_prefix="workflows_stream_lookahead",
+        )
         self._pending_frames: List[Tuple[List[VideoFrame], "ExecutionDataManager"]] = []
 
     def __call__(
@@ -239,9 +249,11 @@ class LookaheadPipelinedWorkflowRunner:
         execution_data_manager = self._workflow_runner._run_stream_lookahead(
             video_frames=video_frames,
             frontier_step_selectors=self._frontier_step_selectors,
+            async_step_selectors=self._async_step_selectors,
+            lookahead_executor=self._lookahead_executor,
         )
         self._pending_frames.append((video_frames, execution_data_manager))
-        if len(self._pending_frames) <= self._stream_buffer_depth():
+        if len(self._pending_frames) <= self._buffer_depth:
             return None
         return self._emit_oldest_frame()
 
@@ -263,7 +275,7 @@ class LookaheadPipelinedWorkflowRunner:
         return results
 
     def close(self) -> None:
-        _close_stream_steps(stream_steps=self._stream_steps)
+        self._lookahead_executor.shutdown(wait=False)
 
     def _emit_oldest_frame(self) -> InferenceHandlerResult:
         emit_video_frames, execution_data_manager = self._pending_frames.pop(0)
@@ -276,9 +288,6 @@ class LookaheadPipelinedWorkflowRunner:
             video_frames=emit_video_frames,
         )
 
-    def _stream_buffer_depth(self) -> int:
-        return _max_stream_buffer_depth(stream_steps=self._stream_steps)
-
 
 def wrap_workflow_runner_for_stream_pipeline(
     workflow_runner: WorkflowRunner,
@@ -286,63 +295,65 @@ def wrap_workflow_runner_for_stream_pipeline(
     allow_lookahead: bool = True,
 ):
     stream_steps = _stream_pipeline_steps(execution_engine=execution_engine)
-    if not stream_steps:
+    compiled_workflow = _compiled_workflow_with_graph(
+        execution_engine=execution_engine
+    )
+    async_step_selectors = (
+        compute_async_stream_step_selectors(workflow=compiled_workflow)
+        if compiled_workflow is not None and WORKFLOWS_STREAM_LOOKAHEAD_DEPTH > 1
+        else set()
+    )
+    if not async_step_selectors:
+        if stream_steps:
+            return PipelinedWorkflowRunner(
+                workflow_runner=workflow_runner,
+                stream_steps=stream_steps,
+            )
         return workflow_runner
-    lookahead_steps = [
-        stream_step
-        for stream_step in stream_steps
-        if _step_defers_downstream_execution(stream_step=stream_step)
-    ]
-    if not lookahead_steps:
-        return PipelinedWorkflowRunner(
-            workflow_runner=workflow_runner,
-            stream_steps=stream_steps,
-        )
     if not allow_lookahead:
-        # Multi-source pipelines feed frame batches larger than one image, so
-        # the model steps would run synchronously and buffering would add
-        # latency without any overlap.
+        # Multi-source pipelines feed frame batches larger than one image;
+        # buffering them would add latency without any overlap.
         logger.warning(
-            "Remote stream pipelining is disabled: it currently supports "
+            "Stream lookahead is disabled: it currently supports "
             "single-source pipelines only. Falling back to sequential "
             "execution."
         )
         return workflow_runner
-    if len(lookahead_steps) != len(stream_steps):
-        # A workflow mixing lookahead steps with other pipelined steps (e.g.
-        # a local RF-DETR stream pipeline) would leave the latter's flush
-        # queue undrained under the lookahead runner.
+    if stream_steps:
+        # A workflow mixing async lookahead steps with a local stream
+        # pipeline (RF-DETR) would leave the latter's flush queue undrained
+        # under the lookahead runner.
         logger.warning(
-            "Remote stream pipelining is disabled for this workflow: it mixes "
-            "remote lookahead-pipelined steps with other stream-pipelined "
-            "steps. Falling back to sequential execution."
+            "Stream lookahead is disabled for this workflow: it mixes async "
+            "steps with a locally stream-pipelined model. Falling back to "
+            "sequential execution."
         )
         return workflow_runner
-    frontier_step_selectors = _lookahead_frontier(execution_engine=execution_engine)
-    if frontier_step_selectors is None:
+    frontier_step_selectors = compute_stream_lookahead_frontier(
+        workflow=compiled_workflow
+    )
+    if not async_step_selectors <= frontier_step_selectors:
         logger.warning(
-            "Remote stream pipelining is disabled: the compiled workflow does "
-            "not expose an execution graph to compute the stream-lookahead "
-            "frontier from. Falling back to sequential execution."
-        )
-        return workflow_runner
-    if not _steps_in_frontier(
-        stream_steps=lookahead_steps,
-        frontier_step_selectors=frontier_step_selectors,
-    ):
-        logger.warning(
-            "Remote stream pipelining is disabled for this workflow. Every "
-            "pipelined model step must sit in the stream-lookahead frontier: "
-            "fed only by steps that are stateless for video processing and "
-            "not by another pipelined step. Falling back to sequential "
-            "execution."
+            "Stream lookahead is disabled for this workflow. Every async "
+            "step must sit in the stream-lookahead frontier: fed only by "
+            "steps that are stateless for video processing and not by "
+            "another async step. Falling back to sequential execution."
         )
         return workflow_runner
     return LookaheadPipelinedWorkflowRunner(
         workflow_runner=workflow_runner,
-        stream_steps=stream_steps,
         frontier_step_selectors=frontier_step_selectors,
+        async_step_selectors=async_step_selectors,
+        buffer_depth=WORKFLOWS_STREAM_LOOKAHEAD_DEPTH - 1,
     )
+
+
+def _compiled_workflow_with_graph(execution_engine: ExecutionEngine) -> Optional[Any]:
+    engine = getattr(execution_engine, "_engine", None)
+    compiled_workflow = getattr(engine, "_compiled_workflow", None)
+    if getattr(compiled_workflow, "execution_graph", None) is None:
+        return None
+    return compiled_workflow
 
 
 def _stream_pipeline_steps(
@@ -392,29 +403,3 @@ def _stream_step_depth(stream_step: _StreamPipelineStep) -> int:
     return max(0, int(get_depth()))
 
 
-def _step_defers_downstream_execution(stream_step: _StreamPipelineStep) -> bool:
-    defers_fn = getattr(stream_step.step, "defers_downstream_execution", None)
-    return callable(defers_fn) and defers_fn()
-
-
-def _lookahead_frontier(execution_engine: ExecutionEngine) -> Optional[Set[str]]:
-    engine = getattr(execution_engine, "_engine", None)
-    compiled_workflow = getattr(engine, "_compiled_workflow", None)
-    if getattr(compiled_workflow, "execution_graph", None) is None:
-        return None
-    return compute_stream_lookahead_frontier(workflow=compiled_workflow)
-
-
-def _steps_in_frontier(
-    stream_steps: List[_StreamPipelineStep],
-    frontier_step_selectors: Set[str],
-) -> bool:
-    for stream_step in stream_steps:
-        if stream_step.name is None:
-            return False
-        step_selector = construct_step_selector(step_name=stream_step.name)
-        if step_selector not in frontier_step_selectors:
-            # A pipelined step fed by a stateful (or another pipelined) step
-            # cannot launch ahead of stream order.
-            return False
-    return True

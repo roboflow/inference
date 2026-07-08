@@ -1,13 +1,16 @@
 from concurrent.futures import Future
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Optional
+from typing import List, Literal, Optional
 
 import networkx as nx
 import numpy as np
 import pytest
 
 from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.stream.model_handlers import (
+    workflows as workflows_module,
+)
 from inference.core.interfaces.stream.model_handlers.workflows import (
     LookaheadPipelinedWorkflowRunner,
     PipelinedWorkflowRunner,
@@ -21,8 +24,13 @@ from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
 )
-from inference.core.workflows.execution_engine.entities.base import Batch, VideoMetadata
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+    VideoMetadata,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import NodeCategory
+from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 from inference_models.models.base.async_handoff import attach_async_response_future
 
 
@@ -196,92 +204,6 @@ class _FakeDownstreamPipelinedExecutionEngine:
         frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
         self.flush_calls.append(frame_number)
         return [{"result": f"downstream-frame-{frame_number}"}]
-
-
-class _FakeDeferringStep:
-    def __init__(self, stream_buffer_depth: int, defers: bool = True) -> None:
-        self._stream_buffer_depth = stream_buffer_depth
-        self._defers = defers
-        self.close_calls = 0
-
-    def is_stream_pipelined(self) -> bool:
-        return self._stream_buffer_depth > 0
-
-    def defers_downstream_execution(self) -> bool:
-        return self._defers
-
-    def stream_pipeline_depth(self) -> int:
-        return self._stream_buffer_depth
-
-    def close_stream_pipeline(self) -> None:
-        self.close_calls += 1
-
-
-class _FakeDeferringExecutionEngine:
-    def __init__(self, stream_buffer_depth: int, defers: bool = True) -> None:
-        self.step = _FakeDeferringStep(
-            stream_buffer_depth=stream_buffer_depth, defers=defers
-        )
-        self._engine = SimpleNamespace(
-            _compiled_workflow=SimpleNamespace(
-                steps={"detection": SimpleNamespace(step=self.step)}
-            )
-        )
-        self.calls = []
-        self.lookahead_calls = []
-        self.edms = []
-        self.resume_calls = []
-        self.fail_resume_for_frames = set()
-
-    def run(
-        self,
-        runtime_parameters,
-        fps,
-        serialize_results,
-        _is_preview,
-        defer_stream_pipeline_flush=False,
-        resolve_output_futures=True,
-    ):
-        frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
-        self.calls.append(
-            {
-                "frame_number": frame_number,
-                "defer_stream_pipeline_flush": defer_stream_pipeline_flush,
-                "resolve_output_futures": resolve_output_futures,
-            }
-        )
-        return [{"result": f"deferred-frame-{frame_number}"}]
-
-    def run_stream_lookahead(
-        self,
-        runtime_parameters,
-        frontier_step_selectors,
-        fps,
-        _is_preview,
-    ):
-        frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
-        self.lookahead_calls.append(
-            {
-                "frame_number": frame_number,
-                "frontier_step_selectors": set(frontier_step_selectors),
-            }
-        )
-        execution_data_manager = SimpleNamespace(frame_number=frame_number)
-        self.edms.append(execution_data_manager)
-        return execution_data_manager
-
-    def resume_stream_lookahead(
-        self,
-        execution_data_manager,
-        frontier_step_selectors,
-        serialize_results,
-    ):
-        self.resume_calls.append(execution_data_manager)
-        if execution_data_manager.frame_number in self.fail_resume_for_frames:
-            raise RuntimeError(
-                f"resume failed for frame {execution_data_manager.frame_number}"
-            )
-        return [{"result": f"resumed-frame-{execution_data_manager.frame_number}"}]
 
 
 class _ImmediateExecutor:
@@ -634,133 +556,6 @@ def test_pipelined_workflow_runner_preserves_frame_alignment_for_downstream_step
     assert engine.flush_calls == [2]
 
 
-def test_wrap_falls_back_to_sequential_without_execution_graph() -> None:
-    # given: a deferring step but no compiled execution graph, so the
-    # lookahead frontier cannot be computed
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-    )
-
-    assert runner is workflow_runner
-
-
-def test_wrap_returns_plain_pipelined_runner_when_step_does_not_defer() -> None:
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1, defers=False)
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-    )
-
-    assert type(runner) is PipelinedWorkflowRunner
-
-
-def test_lookahead_runner_preserves_emission_order_with_buffer_depth_two() -> None:
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=2)
-    _attach_compiled_workflow_graph(
-        engine,
-        steps={
-            "detection": _initialised_step(engine.step),
-            "tracker": _initialised_step(SimpleNamespace(), stateful=True),
-        },
-        edges={
-            "$steps.detection": ["$steps.tracker"],
-            "$steps.tracker": ["$outputs.tracked"],
-        },
-    )
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-    )
-    assert isinstance(runner, LookaheadPipelinedWorkflowRunner)
-    frames = [_make_frame(frame_id) for frame_id in range(1, 5)]
-
-    results = [runner([frame]) for frame in frames]
-    flushed_results = runner.flush()
-
-    assert results[0] is None
-    assert results[1] is None
-    assert results[2].predictions == [{"result": "resumed-frame-1"}]
-    assert results[2].video_frames == [frames[0]]
-    assert results[3].predictions == [{"result": "resumed-frame-2"}]
-    assert results[3].video_frames == [frames[1]]
-    assert flushed_results is not None
-    assert [result.video_frames for result in flushed_results] == [
-        [frames[2]],
-        [frames[3]],
-    ]
-    assert flushed_results[0].predictions == [{"result": "resumed-frame-3"}]
-    assert flushed_results[1].predictions == [{"result": "resumed-frame-4"}]
-    # Every frame is emitted by resuming ITS OWN buffered execution state,
-    # in strict frame order, with the computed frontier passed to each pass.
-    assert [edm.frame_number for edm in engine.resume_calls] == [1, 2, 3, 4]
-    assert all(resumed is edm for resumed, edm in zip(engine.resume_calls, engine.edms))
-    assert engine.lookahead_calls[0]["frontier_step_selectors"] == {"$steps.detection"}
-    runner.close()
-    assert engine.step.close_calls == 1
-
-
-def test_lookahead_runner_flush_skips_failing_frame_and_drains_the_rest() -> None:
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=2)
-    _attach_compiled_workflow_graph(
-        engine,
-        steps={
-            "detection": _initialised_step(engine.step),
-            "tracker": _initialised_step(SimpleNamespace(), stateful=True),
-        },
-        edges={
-            "$steps.detection": ["$steps.tracker"],
-            "$steps.tracker": ["$outputs.tracked"],
-        },
-    )
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-    )
-    assert isinstance(runner, LookaheadPipelinedWorkflowRunner)
-    frame_1 = _make_frame(1)
-    frame_2 = _make_frame(2)
-    assert runner([frame_1]) is None
-    assert runner([frame_2]) is None
-    engine.fail_resume_for_frames.add(1)
-
-    flushed_results = runner.flush()
-
-    # The failing frame is skipped; the drain still emits the healthy frame.
-    assert flushed_results is not None
-    assert len(flushed_results) == 1
-    assert flushed_results[0].predictions == [{"result": "resumed-frame-2"}]
-    assert flushed_results[0].video_frames == [frame_2]
-    assert [edm.frame_number for edm in engine.resume_calls] == [1, 2]
-
-
 def test_instance_segmentation_stream_pipeline_activation_requires_depth_above_one(
     monkeypatch,
 ) -> None:
@@ -1052,28 +847,92 @@ def test_close_stream_pipeline_detaches_response_executor_finalizer() -> None:
     assert executor._shutdown
 
 
-class _StatelessManifest:
+# --- Stream lookahead (engine-offloaded async steps) ---
+
+
+class _AsyncModelManifest(WorkflowBlockManifest):
+    type: Literal["test/async_model@v1"]
+    name: str
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="predictions")]
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
+
     @classmethod
     def is_stateful_for_video_processing(cls) -> bool:
         return False
 
 
-class _StatefulManifest:
+class _StatefulStepManifest(WorkflowBlockManifest):
+    type: Literal["test/stateful_step@v1"]
+    name: str
+
     @classmethod
-    def is_stateful_for_video_processing(cls) -> bool:
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="consumed")]
+
+
+class _FakeAsyncStep:
+    def is_async_stream_step(self) -> bool:
         return True
 
 
-def _initialised_step(step, stateful: bool = False) -> SimpleNamespace:
+class _FakeLookaheadExecutionEngine:
+    def __init__(self) -> None:
+        self._engine = SimpleNamespace(_compiled_workflow=SimpleNamespace(steps={}))
+        self.lookahead_calls = []
+        self.edms = []
+        self.resume_calls = []
+        self.fail_resume_for_frames = set()
+
+    def run_stream_lookahead(
+        self,
+        runtime_parameters,
+        frontier_step_selectors,
+        async_step_selectors,
+        lookahead_executor,
+        fps,
+        _is_preview,
+    ):
+        frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
+        self.lookahead_calls.append(
+            {
+                "frame_number": frame_number,
+                "frontier_step_selectors": set(frontier_step_selectors),
+                "async_step_selectors": set(async_step_selectors),
+                "lookahead_executor": lookahead_executor,
+            }
+        )
+        execution_data_manager = SimpleNamespace(frame_number=frame_number)
+        self.edms.append(execution_data_manager)
+        return execution_data_manager
+
+    def resume_stream_lookahead(
+        self,
+        execution_data_manager,
+        frontier_step_selectors,
+        serialize_results,
+    ):
+        self.resume_calls.append(execution_data_manager)
+        if execution_data_manager.frame_number in self.fail_resume_for_frames:
+            raise RuntimeError(
+                f"resume failed for frame {execution_data_manager.frame_number}"
+            )
+        return [{"result": f"resumed-frame-{execution_data_manager.frame_number}"}]
+
+
+def _initialised_step(step, manifest_class) -> SimpleNamespace:
     return SimpleNamespace(
         step=step,
-        block_specification=SimpleNamespace(
-            manifest_class=_StatefulManifest if stateful else _StatelessManifest,
-        ),
+        block_specification=SimpleNamespace(manifest_class=manifest_class),
     )
 
 
-def _attach_compiled_workflow_graph(engine, steps: dict, edges: dict) -> None:
+def _compiled_workflow_namespace(steps: dict, edges: dict) -> SimpleNamespace:
     graph = nx.DiGraph()
     for step_name in steps:
         graph.add_node(
@@ -1096,302 +955,202 @@ def _attach_compiled_workflow_graph(engine, steps: dict, edges: dict) -> None:
                     },
                 )
             graph.add_edge(edge_start, edge_end)
-    engine._engine = SimpleNamespace(
-        _compiled_workflow=SimpleNamespace(
-            steps=steps,
-            execution_graph=graph,
+    return SimpleNamespace(steps=steps, execution_graph=graph)
+
+
+def _make_wrap_case_engine(case: str) -> SimpleNamespace:
+    if case == "async_linear":
+        compiled_workflow = _compiled_workflow_namespace(
+            steps={
+                "model": _initialised_step(_FakeAsyncStep(), _AsyncModelManifest),
+                "tracker": _initialised_step(SimpleNamespace(), _StatefulStepManifest),
+            },
+            edges={
+                "$steps.model": ["$steps.tracker"],
+                "$steps.tracker": ["$outputs.tracked"],
+            },
         )
-    )
+    elif case == "rfdetr_only":
+        compiled_workflow = _compiled_workflow_namespace(
+            steps={
+                "segmentation": _initialised_step(
+                    _FakePipelinedStep(stream_buffer_depth=1), _StatefulStepManifest
+                ),
+            },
+            edges={"$steps.segmentation": ["$outputs.predictions"]},
+        )
+    elif case == "mixed":
+        compiled_workflow = _compiled_workflow_namespace(
+            steps={
+                "model": _initialised_step(_FakeAsyncStep(), _AsyncModelManifest),
+                "segmentation": _initialised_step(
+                    _FakePipelinedStep(stream_buffer_depth=1), _StatefulStepManifest
+                ),
+            },
+            edges={
+                "$steps.model": ["$outputs.model"],
+                "$steps.segmentation": ["$outputs.predictions"],
+            },
+        )
+    elif case == "no_graph":
+        compiled_workflow = SimpleNamespace(
+            steps={"model": _initialised_step(_FakeAsyncStep(), _AsyncModelManifest)}
+        )
+    elif case == "stateful_fed_async":
+        compiled_workflow = _compiled_workflow_namespace(
+            steps={
+                "stateful_pre": _initialised_step(
+                    SimpleNamespace(), _StatefulStepManifest
+                ),
+                "model": _initialised_step(_FakeAsyncStep(), _AsyncModelManifest),
+            },
+            edges={
+                "$steps.stateful_pre": ["$steps.model"],
+                "$steps.model": ["$outputs.predictions"],
+            },
+        )
+    else:
+        raise ValueError(f"Unknown wrap case: {case}")
+    return SimpleNamespace(_engine=SimpleNamespace(_compiled_workflow=compiled_workflow))
 
 
-def test_wrap_activates_lookahead_for_linear_workflow() -> None:
-    # given: a stateless pipelined model feeding a stateful tracker - the
-    # model sits in the lookahead frontier
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
-    _attach_compiled_workflow_graph(
-        engine,
-        steps={
-            "detection": _initialised_step(engine.step),
-            "tracker": _initialised_step(SimpleNamespace(), stateful=True),
-        },
-        edges={
-            "$steps.detection": ["$steps.tracker"],
-            "$steps.tracker": ["$outputs.tracked"],
-        },
-    )
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-
-    # when
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-    )
-
-    # then
-    assert isinstance(runner, LookaheadPipelinedWorkflowRunner)
-
-
-def test_wrap_activates_lookahead_for_two_independent_models() -> None:
-    # given: two independent pipelined models fanning into a consensus step
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
-    second_step = _FakeDeferringStep(stream_buffer_depth=1)
-    _attach_compiled_workflow_graph(
-        engine,
-        steps={
-            "model_a": _initialised_step(engine.step),
-            "model_b": _initialised_step(second_step),
-            "consensus": _initialised_step(SimpleNamespace()),
-            "tracker": _initialised_step(SimpleNamespace(), stateful=True),
-        },
-        edges={
-            "$steps.model_a": ["$steps.consensus"],
-            "$steps.model_b": ["$steps.consensus"],
-            "$steps.consensus": ["$steps.tracker"],
-            "$steps.tracker": ["$outputs.tracked"],
-        },
-    )
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-
-    # when
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-    )
-
-    # then
-    assert isinstance(runner, LookaheadPipelinedWorkflowRunner)
-
-
-def test_wrap_falls_back_to_sequential_for_chained_models() -> None:
-    # given: model_b consumes model_a's output, so it sits outside the
-    # frontier - it would block on model_a's future in the lookahead pass
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
-    second_step = _FakeDeferringStep(stream_buffer_depth=1)
-    _attach_compiled_workflow_graph(
-        engine,
-        steps={
-            "model_a": _initialised_step(engine.step),
-            "model_b": _initialised_step(second_step),
-            "tracker": _initialised_step(SimpleNamespace(), stateful=True),
-        },
-        edges={
-            "$steps.model_a": ["$steps.model_b"],
-            "$steps.model_b": ["$steps.tracker"],
-            "$steps.tracker": ["$outputs.tracked"],
-        },
-    )
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-
-    # when
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-    )
-
-    # then
-    assert runner is workflow_runner
-
-
-def test_wrap_falls_back_when_model_fed_by_stateful_step() -> None:
-    # given: the pipelined model consumes a stateful step's output, so it
-    # cannot launch ahead of stream order
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
-    _attach_compiled_workflow_graph(
-        engine,
-        steps={
-            "stateful_pre": _initialised_step(SimpleNamespace(), stateful=True),
-            "detection": _initialised_step(engine.step),
-        },
-        edges={
-            "$steps.stateful_pre": ["$steps.detection"],
-            "$steps.detection": ["$outputs.predictions"],
-        },
-    )
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-
-    # when
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-    )
-
-    # then
-    assert runner is workflow_runner
-
-
-def test_wrap_activates_lookahead_with_stateless_side_branch() -> None:
-    # given: a stateless crop feeds both the pipelined model and a stateless
-    # side branch - all three join the frontier
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
-    _attach_compiled_workflow_graph(
-        engine,
-        steps={
-            "crop": _initialised_step(SimpleNamespace()),
-            "detection": _initialised_step(engine.step),
-            "side": _initialised_step(SimpleNamespace()),
-            "tracker": _initialised_step(SimpleNamespace(), stateful=True),
-        },
-        edges={
-            "$steps.crop": ["$steps.detection", "$steps.side"],
-            "$steps.detection": ["$steps.tracker"],
-            "$steps.tracker": ["$outputs.tracked"],
-            "$steps.side": ["$outputs.side"],
-        },
-    )
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-
-    # when
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-    )
-
-    # then
-    assert isinstance(runner, LookaheadPipelinedWorkflowRunner)
-
-
-def test_wrap_falls_back_to_sequential_when_lookahead_disallowed() -> None:
-    # given: a workflow shape that would otherwise activate lookahead, but the
-    # caller (e.g. a multi-source pipeline) disallows it
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
-    _attach_compiled_workflow_graph(
-        engine,
-        steps={
-            "detection": _initialised_step(engine.step),
-            "tracker": _initialised_step(SimpleNamespace(), stateful=True),
-        },
-        edges={
-            "$steps.detection": ["$steps.tracker"],
-            "$steps.tracker": ["$outputs.tracked"],
-        },
-    )
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-
-    # when
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-        allow_lookahead=False,
-    )
-
-    # then
-    assert runner is workflow_runner
-
-
-def test_lookahead_runner_flush_drains_frames_with_two_stream_steps() -> None:
+@pytest.mark.parametrize(
+    "case, lookahead_depth, allow_lookahead, expected",
+    [
+        ("async_linear", 4, True, "lookahead"),
+        ("rfdetr_only", 4, True, "pipelined"),
+        ("mixed", 4, True, "fallback"),
+        ("async_linear", 1, True, "fallback"),
+        ("async_linear", 4, False, "fallback"),
+        ("no_graph", 4, True, "fallback"),
+        ("stateful_fed_async", 4, True, "fallback"),
+    ],
+    ids=[
+        "async_in_frontier_activates",
+        "rfdetr_only_keeps_pipelined_runner",
+        "mixed_async_and_pipelined_falls_back",
+        "lookahead_depth_disabled_falls_back",
+        "lookahead_disallowed_falls_back",
+        "missing_execution_graph_falls_back",
+        "async_fed_by_stateful_step_falls_back",
+    ],
+)
+def test_wrap_selects_runner_for_workflow_shape_and_configuration(
+    monkeypatch,
+    case: str,
+    lookahead_depth: int,
+    allow_lookahead: bool,
+    expected: str,
+) -> None:
     # given
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1)
-    second_step = _FakeDeferringStep(stream_buffer_depth=1)
-    _attach_compiled_workflow_graph(
-        engine,
-        steps={
-            "model_a": _initialised_step(engine.step),
-            "model_b": _initialised_step(second_step),
-            "consensus": _initialised_step(SimpleNamespace()),
-        },
-        edges={
-            "$steps.model_a": ["$steps.consensus"],
-            "$steps.model_b": ["$steps.consensus"],
-            "$steps.consensus": ["$outputs.consensus"],
-        },
+    monkeypatch.setattr(
+        workflows_module, "WORKFLOWS_STREAM_LOOKAHEAD_DEPTH", lookahead_depth
     )
+    engine = _make_wrap_case_engine(case)
     workflow_runner = WorkflowRunner(
         workflows_parameters=None,
         execution_engine=engine,
         image_input_name="image",
         video_metadata_input_name="video_metadata",
     )
+
+    # when
     runner = wrap_workflow_runner_for_stream_pipeline(
         workflow_runner=workflow_runner,
         execution_engine=engine,
+        allow_lookahead=allow_lookahead,
     )
-    assert isinstance(runner, LookaheadPipelinedWorkflowRunner)
-    frame_1 = _make_frame(1)
-    frame_2 = _make_frame(2)
+
+    # then
+    if expected == "lookahead":
+        assert isinstance(runner, LookaheadPipelinedWorkflowRunner)
+        runner.close()
+    elif expected == "pipelined":
+        assert type(runner) is PipelinedWorkflowRunner
+    else:
+        assert runner is workflow_runner
+
+
+def test_lookahead_runner_emits_frames_in_order_from_their_own_execution_state() -> (
+    None
+):
+    # given
+    engine = _FakeLookaheadExecutionEngine()
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+    runner = LookaheadPipelinedWorkflowRunner(
+        workflow_runner=workflow_runner,
+        frontier_step_selectors={"$steps.model"},
+        async_step_selectors={"$steps.model"},
+        buffer_depth=2,
+    )
+    frames = [_make_frame(frame_id) for frame_id in range(1, 5)]
 
     # when
-    first_result = runner([frame_1])
-    second_result = runner([frame_2])
+    results = [runner([frame]) for frame in frames]
     flushed_results = runner.flush()
 
-    # then - flushing with two stream steps drains the pending frame by
-    # resuming its buffered execution state
-    assert first_result is None
-    assert second_result is not None
-    assert second_result.predictions == [{"result": "resumed-frame-1"}]
-    assert second_result.video_frames == [frame_1]
+    # then - frames 1..4 at buffer depth 2 emit [1, 2], flush yields [3, 4],
+    # each emission resuming ITS OWN buffered execution state, in frame order
+    assert results[0] is None
+    assert results[1] is None
+    assert results[2].predictions == [{"result": "resumed-frame-1"}]
+    assert results[2].video_frames == [frames[0]]
+    assert results[3].predictions == [{"result": "resumed-frame-2"}]
+    assert results[3].video_frames == [frames[1]]
+    assert [result.video_frames for result in flushed_results] == [
+        [frames[2]],
+        [frames[3]],
+    ]
+    assert flushed_results[0].predictions == [{"result": "resumed-frame-3"}]
+    assert flushed_results[1].predictions == [{"result": "resumed-frame-4"}]
+    assert [edm.frame_number for edm in engine.resume_calls] == [1, 2, 3, 4]
+    assert all(
+        resumed is edm for resumed, edm in zip(engine.resume_calls, engine.edms)
+    )
+    assert engine.lookahead_calls[0]["frontier_step_selectors"] == {"$steps.model"}
+    assert engine.lookahead_calls[0]["async_step_selectors"] == {"$steps.model"}
+    assert (
+        engine.lookahead_calls[0]["lookahead_executor"] is runner._lookahead_executor
+    )
+
+    # then - close shuts down the runner-owned lookahead pool
+    runner.close()
+    assert runner._lookahead_executor._shutdown
+
+
+def test_lookahead_runner_flush_skips_failing_frame_and_drains_the_rest() -> None:
+    # given
+    engine = _FakeLookaheadExecutionEngine()
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+    runner = LookaheadPipelinedWorkflowRunner(
+        workflow_runner=workflow_runner,
+        frontier_step_selectors={"$steps.model"},
+        async_step_selectors={"$steps.model"},
+        buffer_depth=2,
+    )
+    frame_1 = _make_frame(1)
+    frame_2 = _make_frame(2)
+    assert runner([frame_1]) is None
+    assert runner([frame_2]) is None
+    engine.fail_resume_for_frames.add(1)
+
+    # when
+    flushed_results = runner.flush()
+
+    # then - the failing frame is skipped; the drain still emits the rest
     assert flushed_results is not None
     assert len(flushed_results) == 1
     assert flushed_results[0].predictions == [{"result": "resumed-frame-2"}]
     assert flushed_results[0].video_frames == [frame_2]
     assert [edm.frame_number for edm in engine.resume_calls] == [1, 2]
     runner.close()
-    assert engine.step.close_calls == 1
-    assert second_step.close_calls == 1
-
-
-def test_base_pipelined_runner_flush_still_rejects_two_stream_steps() -> None:
-    # given: two pipelined but non-deferring steps keep the base runner, whose
-    # flush path supports exactly one pipelined step (regression guard)
-    engine = _FakeDeferringExecutionEngine(stream_buffer_depth=1, defers=False)
-    second_step = _FakeDeferringStep(stream_buffer_depth=1, defers=False)
-    _attach_compiled_workflow_graph(
-        engine,
-        steps={
-            "model_a": _initialised_step(engine.step),
-            "model_b": _initialised_step(second_step),
-        },
-        edges={
-            "$steps.model_a": ["$outputs.predictions_a"],
-            "$steps.model_b": ["$outputs.predictions_b"],
-        },
-    )
-    workflow_runner = WorkflowRunner(
-        workflows_parameters=None,
-        execution_engine=engine,
-        image_input_name="image",
-        video_metadata_input_name="video_metadata",
-    )
-    runner = wrap_workflow_runner_for_stream_pipeline(
-        workflow_runner=workflow_runner,
-        execution_engine=engine,
-    )
-    assert type(runner) is PipelinedWorkflowRunner
-
-    # when
-    first_result = runner([_make_frame(1)])
-
-    # then
-    assert first_result is None
-    with pytest.raises(RuntimeError, match="one pipelined step"):
-        runner.flush()

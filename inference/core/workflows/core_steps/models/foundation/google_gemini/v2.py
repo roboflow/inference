@@ -331,6 +331,10 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
     @classmethod
+    def is_stateful_for_video_processing(cls) -> bool:
+        return False
+
+    @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.4.0,<2.0.0"
 
@@ -352,6 +356,10 @@ class GoogleGeminiBlockV2(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
+
+    def is_async_stream_step(self) -> bool:
+        # External API call — remote regardless of execution mode; request path is re-entrant.
+        return True
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:

@@ -1,4 +1,3 @@
-from functools import partial
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, PositiveInt, model_validator
@@ -10,14 +9,9 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-    WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.remote_stream_pipeline import (
-    RemoteStreamPipeline,
-    make_prediction_future,
-)
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
@@ -214,7 +208,6 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
-        self._remote_pipeline: Optional[RemoteStreamPipeline] = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -223,6 +216,12 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
+
+    def is_async_stream_step(self) -> bool:
+        # The remote request path is re-entrant (fresh client per call,
+        # thread-local connection pooling in the SDK executors), so the
+        # stream scheduler may execute run() ahead of stream order.
+        return self._step_execution_mode is StepExecutionMode.REMOTE
 
     def run(
         self,
@@ -337,51 +336,6 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
             else HOSTED_DETECT_URL
         )
-        execute_remote_inference = partial(
-            self._execute_remote_inference,
-            images=images,
-            model_id=model_id,
-            api_url=api_url,
-            class_agnostic_nms=class_agnostic_nms,
-            class_filter=class_filter,
-            confidence=confidence,
-            iou_threshold=iou_threshold,
-            max_detections=max_detections,
-            max_candidates=max_candidates,
-            disable_active_learning=disable_active_learning,
-            active_learning_target_dataset=active_learning_target_dataset,
-        )
-        if self._remote_stream_pipelining_applicable(images=images):
-            result_future = self._get_remote_pipeline().submit_request(
-                task=execute_remote_inference,
-            )
-            return [
-                {
-                    "inference_id": None,
-                    "predictions": make_prediction_future(
-                        result_future=result_future,
-                        image_index=image_index,
-                    ),
-                    "model_id": model_id,
-                }
-                for image_index in range(len(images))
-            ]
-        return execute_remote_inference()
-
-    def _execute_remote_inference(
-        self,
-        images: Batch[WorkflowImageData],
-        model_id: str,
-        api_url: str,
-        class_agnostic_nms: Optional[bool],
-        class_filter: Optional[List[str]],
-        confidence: Union[None, float, Literal["best", "default"]],
-        iou_threshold: Optional[float],
-        max_detections: Optional[int],
-        max_candidates: Optional[int],
-        disable_active_learning: Optional[bool],
-        active_learning_target_dataset: Optional[str],
-    ) -> BlockResult:
         client = InferenceHTTPClient(
             api_url=api_url,
             api_key=self._api_key,
@@ -415,41 +369,6 @@ class RoboflowObjectDetectionModelBlockV3(WorkflowBlock):
             class_filter=class_filter,
             model_id=model_id,
         )
-
-    def is_stream_pipelined(self) -> bool:
-        return (
-            self._step_execution_mode is StepExecutionMode.REMOTE
-            and WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH > 1
-        )
-
-    def can_activate_stream_pipeline(self) -> bool:
-        return self.is_stream_pipelined()
-
-    def defers_downstream_execution(self) -> bool:
-        return True
-
-    def stream_pipeline_depth(self) -> int:
-        if not self.is_stream_pipelined():
-            return 0
-        return max(0, WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH - 1)
-
-    def close_stream_pipeline(self) -> None:
-        if self._remote_pipeline is None:
-            return None
-        self._remote_pipeline.close()
-        self._remote_pipeline = None
-
-    def _remote_stream_pipelining_applicable(
-        self, images: Batch[WorkflowImageData]
-    ) -> bool:
-        return self.stream_pipeline_depth() > 0 and len(images) == 1
-
-    def _get_remote_pipeline(self) -> RemoteStreamPipeline:
-        if self._remote_pipeline is None:
-            self._remote_pipeline = RemoteStreamPipeline(
-                max_in_flight_requests=WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH,
-            )
-        return self._remote_pipeline
 
     def _post_process_result(
         self,

@@ -4,7 +4,7 @@ from datetime import datetime
 from functools import partial
 from queue import Queue
 from threading import Lock
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional, Tuple, Union
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -37,8 +37,6 @@ from inference.core.interfaces.stream.entities import (
 from inference.core.interfaces.stream.inference_pipeline import (
     InferencePipeline,
     _resolve_prediction_futures,
-    _stream_pipeline_dispatch_enabled,
-    _workflows_remote_stream_pipeline_enabled,
 )
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
@@ -748,68 +746,32 @@ def test_inference_pipeline_works_correctly_against_multiple_video_files_with_ac
     ), "Order of prediction frames violated for source 1"
 
 
-def _set_workflows_gate(monkeypatch, execution_mode: str, depth: int) -> None:
-    # The gate reads the import-time env constants, not os.environ.
+@pytest.mark.parametrize(
+    "lookahead_depth, rfdetr_depth, lookahead_expected, dispatch_expected",
+    [
+        (2, None, True, True),
+        (1, "2", False, True),
+        (1, None, False, False),
+    ],
+    ids=["lookahead_only", "rfdetr_only", "neither"],
+)
+def test_stream_dispatch_gating(
+    monkeypatch,
+    lookahead_depth: int,
+    rfdetr_depth,
+    lookahead_expected: bool,
+    dispatch_expected: bool,
+) -> None:
+    # given - the lookahead gate reads the import-time env constant; the
+    # RF-DETR gate still reads the environment directly
     monkeypatch.setattr(
-        inference_pipeline, "WORKFLOWS_STEP_EXECUTION_MODE", execution_mode
+        inference_pipeline, "WORKFLOWS_STREAM_LOOKAHEAD_DEPTH", lookahead_depth
     )
-    monkeypatch.setattr(
-        inference_pipeline, "WORKFLOWS_REMOTE_EXECUTION_PIPELINE_DEPTH", depth
-    )
-
-
-def test_workflows_remote_stream_pipeline_enabled_when_remote_and_depth_above_one(
-    monkeypatch,
-) -> None:
-    # given
-    _set_workflows_gate(monkeypatch, execution_mode="remote", depth=2)
+    if rfdetr_depth is None:
+        monkeypatch.delenv("RFDETR_PIPELINE_DEPTH", raising=False)
+    else:
+        monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", rfdetr_depth)
 
     # when / then
-    assert _workflows_remote_stream_pipeline_enabled() is True
-
-
-def test_workflows_remote_stream_pipeline_disabled_when_execution_mode_is_local(
-    monkeypatch,
-) -> None:
-    # given
-    _set_workflows_gate(monkeypatch, execution_mode="local", depth=2)
-
-    # when / then
-    assert _workflows_remote_stream_pipeline_enabled() is False
-
-
-def test_workflows_remote_stream_pipeline_disabled_when_depth_is_one(
-    monkeypatch,
-) -> None:
-    # given
-    _set_workflows_gate(monkeypatch, execution_mode="remote", depth=1)
-
-    # when / then
-    assert _workflows_remote_stream_pipeline_enabled() is False
-
-
-def test_stream_pipeline_dispatch_enabled_for_remote_workflows(monkeypatch) -> None:
-    # given
-    _set_workflows_gate(monkeypatch, execution_mode="remote", depth=2)
-    monkeypatch.delenv("RFDETR_PIPELINE_DEPTH", raising=False)
-
-    # when / then
-    assert _stream_pipeline_dispatch_enabled() is True
-
-
-def test_stream_pipeline_dispatch_enabled_for_rfdetr_alone(monkeypatch) -> None:
-    # given
-    _set_workflows_gate(monkeypatch, execution_mode="local", depth=1)
-    monkeypatch.setenv("RFDETR_PIPELINE_DEPTH", "2")
-
-    # when / then
-    assert _stream_pipeline_dispatch_enabled() is True
-
-
-def test_stream_pipeline_dispatch_disabled_by_default(monkeypatch) -> None:
-    # given
-    _set_workflows_gate(monkeypatch, execution_mode="local", depth=1)
-    monkeypatch.delenv("RFDETR_PIPELINE_DEPTH", raising=False)
-
-    # when / then
-    assert _stream_pipeline_dispatch_enabled() is False
+    assert inference_pipeline._stream_lookahead_enabled() is lookahead_expected
+    assert inference_pipeline._stream_pipeline_dispatch_enabled() is dispatch_expected
