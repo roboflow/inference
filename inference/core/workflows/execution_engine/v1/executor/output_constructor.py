@@ -394,6 +394,12 @@ def _convert_sv_detections_coordinates_if_present(data: Any) -> Any:
 def data_needs_sv_detections_coordinate_conversion(data: Any) -> bool:
     if isinstance(data, sv.Detections):
         return _sv_detections_need_root_coordinate_conversion(detections=data)
+    if ENABLE_TENSOR_DATA_REPRESENTATION and _is_native_prediction(data):
+        # native_detections_to_root_coordinates() no-ops on predictions that
+        # carry no root offset, so natives are always admitted here; this
+        # branch must precede the generic tuple recursion below, which would
+        # otherwise swallow the (KeyPoints, Detections) prediction tuple.
+        return True
     if isinstance(data, (list, tuple)):
         return any(data_needs_sv_detections_coordinate_conversion(data=e) for e in data)
     if isinstance(data, dict):

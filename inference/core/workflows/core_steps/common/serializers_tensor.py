@@ -479,12 +479,18 @@ def serialise_native_classification(
     else:
         # MultiLabel: confidence (num_classes,) sigmoid; class_ids = predicted ids
         confidence_vector = prediction.confidence.detach().cpu().reshape(-1).tolist()
+        # Same C2 opt-in cutoff as the multi-class branch above: producers that
+        # gap-fill a dense vector (e.g. visual_search_classifier) attach the
+        # threshold so their synthetic zero-confidence entries are dropped;
+        # model predictions attach no threshold and keep every class.
+        confidence_threshold = image_metadata.get("classification_confidence_threshold")
         predictions_dict = {
             str(class_names_mapping.get(class_id, class_id)): {
                 "confidence": float(score),
                 "class_id": class_id,
             }
             for class_id, score in enumerate(confidence_vector)
+            if confidence_threshold is None or float(score) >= confidence_threshold
         }
         predicted_classes = [
             str(class_names_mapping.get(int(class_id), int(class_id)))

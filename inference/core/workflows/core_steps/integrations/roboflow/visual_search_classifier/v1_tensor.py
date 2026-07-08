@@ -441,9 +441,12 @@ def _build_classification_prediction(
         class_id=torch.tensor(
             [class_id], dtype=torch.long, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
         ),
+        # float64 for the same reason as the multi-label sibling: float32 would
+        # push the API-provided confidence below its own serialization
+        # threshold and off the numpy byte-parity value.
         confidence=torch.tensor(
             [confidence_vector],
-            dtype=torch.float32,
+            dtype=torch.float64,
             device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
         ),
         images_metadata=[image_metadata],
@@ -481,13 +484,21 @@ def _build_multi_label_classification_prediction(
         width=width,
         height=height,
     )
+    if confidence > 0.0:
+        # Filters the gap-filled zero-confidence classes at serialization so the
+        # output keeps numpy's real-labels-only shape (see P2 in the module
+        # docstring) - same opt-in as the single-class path below.
+        image_metadata[CLASSIFICATION_CONFIDENCE_THRESHOLD_KEY] = confidence
     return MultiLabelClassificationPrediction(
         class_ids=torch.tensor(
             predicted_class_ids, dtype=torch.long, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
         ),
+        # float64: the confidence is an API-provided python float; float32
+        # storage would shift it below its own serialization threshold and off
+        # the numpy byte-parity value (0.82 -> 0.8199999928...).
         confidence=torch.tensor(
             confidence_vector,
-            dtype=torch.float32,
+            dtype=torch.float64,
             device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
         ),
         # MultiLabel carries SINGULAR image_metadata (dict) - see
