@@ -1156,6 +1156,23 @@ class ModelManagerProcess:
         done_ok: bool,
     ) -> None:
         if result_sz == 0:
+            hdr = self._pool.read_header(slot_id)
+            if (
+                hdr.status == SlotStatus.ERROR
+                and hdr.request_id == req_id
+                and hdr.result_size > 0
+            ):
+                # Worker left an error message in the slot — point the client
+                # at it. The slot header carries status=ERROR, so the client
+                # reads the message instead of a pickle, then frees via T_FREE.
+                sent = await self._send(
+                    identity,
+                    T_RESULT_READY,
+                    struct.pack(">QII", req_id, slot_id, hdr.result_size),
+                )
+                if not sent:
+                    self._pool.free_slot(slot_id, request_id=req_id)
+                return
             await self._send(
                 identity, T_ERROR, struct.pack(">QB", req_id, _ERR_BACKEND)
             )
