@@ -295,9 +295,7 @@ def wrap_workflow_runner_for_stream_pipeline(
     allow_lookahead: bool = True,
 ):
     stream_steps = _stream_pipeline_steps(execution_engine=execution_engine)
-    compiled_workflow = _compiled_workflow_with_graph(
-        execution_engine=execution_engine
-    )
+    compiled_workflow = _compiled_workflow_with_graph(execution_engine=execution_engine)
     async_step_selectors = (
         compute_async_stream_step_selectors(workflow=compiled_workflow)
         if compiled_workflow is not None and WORKFLOWS_STREAM_LOOKAHEAD_DEPTH > 1
@@ -401,5 +399,3 @@ def _stream_step_depth(stream_step: _StreamPipelineStep) -> int:
     if not callable(get_depth):
         return 0
     return max(0, int(get_depth()))
-
-
