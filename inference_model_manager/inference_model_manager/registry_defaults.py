@@ -71,6 +71,7 @@ _P_SAM3_VISUAL_PROMPTS = {
     "use_embeddings_cache": {"type": "bool", "required": False, "default": True},
     "load_from_mask_input_cache": {"type": "bool", "required": False, "default": False},
     "save_to_mask_input_cache": {"type": "bool", "required": False, "default": False},
+    "return_rle": {"type": "bool", "required": False, "default": True},
 }
 _P_SAM3_TEXT_PROMPTS = {
     "images": {"type": "image", "required": True},
