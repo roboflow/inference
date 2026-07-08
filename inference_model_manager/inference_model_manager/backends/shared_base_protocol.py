@@ -68,6 +68,9 @@ class HeadIndexRegistry:
         entry = self._entry_by_index.get(head_index)
         return entry[0] if entry is not None else None
 
+    def index_for(self, head_id: str) -> Optional[int]:
+        return self._index_by_id.get(head_id)
+
     def remove(self, head_id: str) -> Optional[int]:
         index = self._index_by_id.pop(head_id, None)
         if index is None:

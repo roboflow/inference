@@ -68,17 +68,39 @@ def handle_load_head(
     load_fn: Callable[[Dict[str, Any]], Tuple[Any, Dict[str, Any]]],
 ) -> Dict[str, Any]:
     """Load a head and register it. Any failure (incl. CUDA OOM) returns a negative
-    ack — the base and existing heads are never touched."""
+    ack — the base and existing heads are never touched.
+
+    Idempotent: an already-loaded head re-acks positively with its existing
+    index, so a parent retry after a control timeout converges instead of
+    erroring forever."""
     req_id = payload.get("req_id")
     head_id = payload.get("head_id")
     try:
         if head_id in registry:
-            raise ValueError(f"head '{head_id}' already loaded")
-        model, meta = load_fn(payload)
-        head_index = registry.add(head_id, model)
-        return {"req_id": req_id, "ok": True, "head_index": head_index, **meta}
+            head_index = registry.index_for(head_id)
+            model = registry.get(head_index)
+            meta = {
+                "model_mro_names": [cls.__name__ for cls in type(model).__mro__],
+                "max_batch_size": detect_max_batch_size(model),
+                "class_names": getattr(model, "class_names", None),
+            }
+        else:
+            model, meta = load_fn(payload)
+            head_index = registry.add(head_id, model)
+        return {
+            "req_id": req_id,
+            "ok": True,
+            "head_id": head_id,
+            "head_index": head_index,
+            **meta,
+        }
     except Exception as exc:  # noqa: BLE001 — failure must stay isolated to this head
-        return {"req_id": req_id, "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        return {
+            "req_id": req_id,
+            "ok": False,
+            "head_id": head_id,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
 
 
 def handle_drop_head(
@@ -93,7 +115,7 @@ def handle_drop_head(
     index = registry.remove(head_id)
     if index is not None and on_removed is not None:
         on_removed(index, head_id)
-    return {"req_id": req_id, "ok": True}
+    return {"req_id": req_id, "ok": True, "head_id": head_id}
 
 
 def make_head_loader(
