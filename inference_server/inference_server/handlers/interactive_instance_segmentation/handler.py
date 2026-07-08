@@ -17,6 +17,16 @@ async def handle_interactive_instance_segmentation(
     common = hooks.common
     task = action if action and action != "infer" else None
 
+    if not images:
+        return await proxy.infer(
+            model_id=common.model_id,
+            image=b"",
+            task=task,
+            instance=common.instance,
+            params=params,
+            request=hooks.request,
+        )
+
     if len(images) == 1:
         return await proxy.infer(
             model_id=common.model_id,
