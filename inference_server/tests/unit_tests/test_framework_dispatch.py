@@ -240,6 +240,44 @@ async def test_param_coercion_converts_string_params_before_handler(fake_handler
 
 
 @pytest.mark.asyncio
+async def test_param_defaults_injected_when_absent(fake_handler_entry):
+    fake_handler_entry["interface"].params["return_rle"] = {
+        "type": "bool",
+        "required": False,
+        "default": True,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {},
+    }
+    proxy = _mock_proxy()
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["return_rle"] is True
+
+
+@pytest.mark.asyncio
+async def test_param_default_not_overriding_explicit_value(fake_handler_entry):
+    fake_handler_entry["interface"].params["return_rle"] = {
+        "type": "bool",
+        "required": False,
+        "default": True,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"return_rle": "false"},
+    }
+    proxy = _mock_proxy()
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["return_rle"] is False
+
+
+@pytest.mark.asyncio
 async def test_content_length_over_cap_returns_413_before_body_read(fake_handler_entry):
     req = _request(
         query=b"model_id=m",

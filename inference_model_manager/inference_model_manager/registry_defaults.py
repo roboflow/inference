@@ -74,6 +74,7 @@ _P_SAM3_TEXT_PROMPTS = {
     "images": {"type": "image", "required": True},
     "prompts": {"type": "list", "required": True},
     "output_prob_thresh": {"type": "float", "required": False, "default": 0.5},
+    "return_rle": {"type": "bool", "required": False, "default": True},
 }
 _P_SAM3_EMBED = {
     "images": {"type": "image", "required": True},
