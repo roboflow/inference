@@ -112,13 +112,17 @@ class _InferenceError:
         self.message = message
 
 
-def _write_error_to_slot(pool: "SHMPool", slot_id: int, message: str) -> None:
+def _write_error_to_slot(
+    pool: "SHMPool", slot_id: int, message: str, request_id: Optional[int] = None
+) -> None:
     """Write error detail to DATA area before mark_error, so app.py can read it."""
+    if request_id is not None and not _slot_owned(pool, slot_id, request_id):
+        return
     err_bytes = message.encode("utf-8", errors="replace")[:1024]  # cap at 1KB
     mv = pool.data_memoryview(slot_id)
     mv[: len(err_bytes)] = err_bytes
     mv.release()
-    pool.mark_error(slot_id, error_code=1, error_size=len(err_bytes))
+    pool.mark_error(slot_id, error_code=1, error_size=len(err_bytes), request_id=request_id)
 
 
 def _to_bytes(raw_input: Any) -> bytes:
@@ -494,7 +498,10 @@ def _worker_loop(
                             continue
                         try:
                             _write_error_to_slot(
-                                pool, slot_id, "batch processing crashed"
+                                pool,
+                                slot_id,
+                                "batch processing crashed",
+                                request_id=req_id,
                             )
                             sock.send_multipart(
                                 [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
@@ -631,7 +638,8 @@ def _process_slots(
                 req_id,
             )
             continue
-        pool.mark_processing(slot_id, os.getpid())
+        if not pool.mark_processing(slot_id, os.getpid(), request_id=req_id):
+            continue
         owned.append((slot_id, req_id, params_bytes))
     if not owned:
         return
@@ -718,7 +726,9 @@ def _process_slots(
             slot_id, req_id, _ = batch[i]
             if not _slot_owned(pool, slot_id, req_id):
                 continue
-            _write_error_to_slot(pool, slot_id, "image decode failed")
+            _write_error_to_slot(
+                pool, slot_id, "image decode failed", request_id=req_id
+            )
             try:
                 sock.send_multipart(
                     [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
@@ -788,7 +798,7 @@ def _process_slots(
                 if isinstance(result, _InferenceError)
                 else "inference returned None"
             )
-            _write_error_to_slot(pool, slot_id, err_msg)
+            _write_error_to_slot(pool, slot_id, err_msg, request_id=req_id)
             try:
                 sock.send_multipart(
                     [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
@@ -807,7 +817,12 @@ def _process_slots(
             # Unserializable result (numpy fields without .cpu(), unpicklable
             # objects) must error this slot, not kill the worker.
             log.exception("Worker: result serialization failed for slot %d", slot_id)
-            _write_error_to_slot(pool, slot_id, f"result serialization failed: {exc}")
+            _write_error_to_slot(
+                pool,
+                slot_id,
+                f"result serialization failed: {exc}",
+                request_id=req_id,
+            )
             try:
                 sock.send_multipart(
                     [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, 0)]
@@ -835,6 +850,7 @@ def _process_slots(
                 pool,
                 slot_id,
                 f"result {len(data)}B exceeds slot capacity {capacity}B{hint}",
+                request_id=req_id,
             )
             try:
                 sock.send_multipart(
@@ -846,7 +862,14 @@ def _process_slots(
             continue
         mv[: len(data)] = data
         mv.release()
-        pool.mark_done(slot_id, len(data))
+        if not pool.mark_done(slot_id, len(data), request_id=req_id):
+            log.warning(
+                "Worker: dropping result for slot %d — ownership lost at "
+                "mark_done (req_id=%d)",
+                slot_id,
+                req_id,
+            )
+            continue
         try:
             sock.send_multipart(
                 [_MSG_RESULT, struct.pack(">QII", req_id, slot_id, len(data))]

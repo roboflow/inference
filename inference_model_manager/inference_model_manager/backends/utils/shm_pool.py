@@ -356,14 +356,20 @@ class SHMPool:
         struct.pack_into("<Q", self._shm.buf, off + _OFF_TS_NS, time.monotonic_ns())
         self._shm.buf[off + _OFF_STATUS] = SlotStatus.WRITTEN
 
-    def mark_processing(self, slot_id: int, owner_pid: int) -> None:
+    def mark_processing(
+        self, slot_id: int, owner_pid: int, request_id: Optional[int] = None
+    ) -> bool:
         """Worker sets status=PROCESSING and records its pid.
         Refreshes timestamp_ns so the reaper ages from batch start, not alloc.
+        With request_id, refuses (returns False) if the slot was rebound.
         """
         off = self._slot_offset(slot_id)
+        if not self._owned(off, request_id):
+            return False
         self._shm.buf[off + _OFF_STATUS] = SlotStatus.PROCESSING
         struct.pack_into("<i", self._shm.buf, off + _OFF_OWNER_PID, owner_pid)
         struct.pack_into("<Q", self._shm.buf, off + _OFF_TS_NS, time.monotonic_ns())
+        return True
 
     def touch_slot(self, slot_id: int) -> None:
         """Refresh timestamp_ns. Workers call this for queued slots so the
@@ -372,22 +378,46 @@ class SHMPool:
         off = self._slot_offset(slot_id)
         struct.pack_into("<Q", self._shm.buf, off + _OFF_TS_NS, time.monotonic_ns())
 
-    def mark_done(self, slot_id: int, result_size: int) -> None:
+    def mark_done(
+        self, slot_id: int, result_size: int, request_id: Optional[int] = None
+    ) -> bool:
         """Worker sets status=DONE + result_size after writing result area.
         Size written first so cross-process readers never see DONE with stale size.
+        With request_id, refuses (returns False) if the slot was rebound.
+        Refreshes timestamp_ns so the reader gets a full stale-age window to
+        fetch the result — a long batch would otherwise leave near-zero time.
         """
         off = self._slot_offset(slot_id)
+        if not self._owned(off, request_id):
+            return False
         struct.pack_into("<I", self._shm.buf, off + _OFF_RESULT_SZ, result_size)
+        struct.pack_into("<Q", self._shm.buf, off + _OFF_TS_NS, time.monotonic_ns())
         self._shm.buf[off + _OFF_STATUS] = SlotStatus.DONE
+        return True
 
     def mark_error(
-        self, slot_id: int, error_code: int = 1, error_size: int = 0
-    ) -> None:
-        """Set status=ERROR + error_code. error_size = bytes of error detail in DATA area."""
+        self,
+        slot_id: int,
+        error_code: int = 1,
+        error_size: int = 0,
+        request_id: Optional[int] = None,
+    ) -> bool:
+        """Set status=ERROR + error_code. error_size = bytes of error detail in DATA area.
+        With request_id, refuses (returns False) if the slot was rebound."""
         off = self._slot_offset(slot_id)
+        if not self._owned(off, request_id):
+            return False
         struct.pack_into("<I", self._shm.buf, off + _OFF_RESULT_SZ, error_size)
+        struct.pack_into("<Q", self._shm.buf, off + _OFF_TS_NS, time.monotonic_ns())
         self._shm.buf[off + _OFF_STATUS] = SlotStatus.ERROR
         self._shm.buf[off + _OFF_ERROR] = error_code
+        return True
+
+    def _owned(self, off: int, request_id: Optional[int]) -> bool:
+        if request_id is None:
+            return True
+        (current,) = struct.unpack_from("<Q", self._shm.buf, off + _OFF_REQ_ID)
+        return current == request_id
 
     # ------------------------------------------------------------------
     # Data area access (zero-copy)

@@ -431,3 +431,18 @@ def test_shm_admission_skips_alloc_when_pool_full():
             pool.close()
 
     asyncio.run(_run())
+
+
+def test_write_input_touches_slot_timestamp():
+    """A slow upload streaming chunks must refresh the slot timestamp so the
+    MMP reaper does not free (and rebind) the slot mid-write."""
+    from types import SimpleNamespace
+
+    client, _ = _make_client()
+    client._shm = SimpleNamespace(buf=bytearray(client.slot_total * 2))
+
+    client._write_input(1, b"abc", 0)
+
+    ts_off = 1 * client.slot_total + 24  # _OFF_TS_NS
+    ts = struct.unpack_from("<Q", client._shm.buf, ts_off)[0]
+    assert ts > 0
