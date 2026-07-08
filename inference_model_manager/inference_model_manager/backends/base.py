@@ -62,6 +62,8 @@ def _attach_sam3_caches(model) -> None:
         Sam3LowResolutionMasksInMemoryCache,
     )
 
+    model._sam3_allow_client_generated_hash_ids = True
+
     if not isinstance(
         model._sam3_image_embeddings_cache, Sam3ImageEmbeddingsInMemoryCache
     ):
