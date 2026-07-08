@@ -257,8 +257,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         threshold: float,
     ) -> BlockResult:
         predictions = []
-        if class_names is None:
-            class_names = []
+        class_names = [] if class_names is None else list(class_names)
         if len(class_names) == 0:
             class_names.append(None)
 
@@ -332,8 +331,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         threshold: float,
     ) -> BlockResult:
         predictions = []
-        if class_names is None:
-            class_names = []
+        class_names = [] if class_names is None else list(class_names)
         if len(class_names) == 0:
             class_names.append(None)
 
@@ -406,8 +404,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         threshold: float,
     ) -> BlockResult:
         predictions = []
-        if class_names is None:
-            class_names = []
+        class_names = [] if class_names is None else list(class_names)
         if len(class_names) == 0:
             class_names.append(None)
 
