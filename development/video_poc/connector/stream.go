@@ -1,17 +1,28 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 const maxConsecutiveFailures = 5
+
+// ffmpeg can wedge without exiting — e.g. another app grabs the camera and
+// avfoundation silently stops delivering frames. If the progress counters
+// stop advancing for this long, the leg is dead and only a restart helps.
+const stallTimeout = 15 * time.Second
+
+// cadence of the per-leg "still alive" stats line
+const statsLogInterval = 30 * time.Second
 
 type stream struct {
 	source    Source
@@ -62,13 +73,34 @@ func (m *StreamManager) supervise(ctx context.Context, s *stream) {
 		cmd := exec.CommandContext(ctx, m.ffmpeg, args...)
 		var stderrTail tailBuffer
 		cmd.Stderr = &stderrTail
+		stdout, pipeErr := cmd.StdoutPipe()
 
 		start := time.Now()
-		err := cmd.Run()
+		var err error
+		stalled := false
+		if pipeErr != nil {
+			err = pipeErr
+		} else if err = cmd.Start(); err == nil {
+			watchCtx, stopWatch := context.WithCancel(ctx)
+			stallCh := make(chan struct{}, 1)
+			go m.watchProgress(watchCtx, s, stdout, stallCh)
+			waitCh := make(chan error, 1)
+			go func() { waitCh <- cmd.Wait() }()
+			select {
+			case err = <-waitCh:
+			case <-stallCh:
+				stalled = true
+				log.Printf("stream %s STALLED (no frames for %s — camera grabbed by another app?), restarting ffmpeg",
+					s.source.LocalID, stallTimeout)
+				_ = cmd.Process.Kill()
+				err = <-waitCh
+			}
+			stopWatch()
+		}
 		if ctx.Err() != nil {
 			return
 		}
-		if time.Since(start) > 30*time.Second {
+		if stalled || time.Since(start) > 30*time.Second {
 			failures = 0 // it ran for a while; treat exit as a hiccup, not a config problem
 		} else {
 			failures++
@@ -83,11 +115,90 @@ func (m *StreamManager) supervise(ctx context.Context, s *stream) {
 		}
 		s.state = "starting"
 		s.mu.Unlock()
-		log.Printf("stream %s ffmpeg exited (%v), restarting", s.source.LocalID, err)
+		if !stalled {
+			log.Printf("stream %s ffmpeg exited (%v), restarting", s.source.LocalID, err)
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+// watchProgress consumes ffmpeg's -progress output (key=value blocks) and
+// fires stallCh if the frame/time counters stop advancing. It also promotes
+// the leg to "running" on first real progress (a positive signal, unlike the
+// process-stayed-up heuristic) and logs a periodic stats line.
+func (m *StreamManager) watchProgress(ctx context.Context, s *stream, r io.Reader, stallCh chan struct{}) {
+	type progress struct{ frame, timeUS int64 }
+	lines := make(chan progress, 8)
+	go func() {
+		defer close(lines)
+		var cur progress
+		sc := bufio.NewScanner(r)
+		for sc.Scan() {
+			key, val, found := strings.Cut(strings.TrimSpace(sc.Text()), "=")
+			if !found {
+				continue
+			}
+			switch key {
+			case "frame":
+				cur.frame, _ = strconv.ParseInt(val, 10, 64)
+			case "out_time_us":
+				cur.timeUS, _ = strconv.ParseInt(val, 10, 64)
+			case "progress": // end of a block
+				select {
+				case lines <- cur:
+				default:
+				}
+			}
+		}
+	}()
+
+	started := time.Now()
+	last := progress{-1, -1}
+	lastAdvance := time.Now()
+	lastLog := time.Now()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case p, ok := <-lines:
+			if !ok {
+				return // ffmpeg exited; supervise handles it
+			}
+			// -c copy legs don't count frames, so time progress counts too
+			if p.frame > last.frame || p.timeUS > last.timeUS {
+				last = p
+				lastAdvance = time.Now()
+				s.mu.Lock()
+				if s.state == "starting" {
+					s.state = "running"
+					s.mu.Unlock()
+					log.Printf("stream %s delivering (first frames after %.1fs)",
+						s.source.LocalID, time.Since(started).Seconds())
+				} else {
+					s.mu.Unlock()
+				}
+			}
+			if time.Since(lastLog) >= statsLogInterval {
+				lastLog = time.Now()
+				log.Printf("stream %s: frame=%d stream_time=%s uptime=%s",
+					s.source.LocalID, last.frame,
+					(time.Duration(last.timeUS) * time.Microsecond).Round(time.Second),
+					time.Since(started).Round(time.Second))
+			}
+		case <-ticker.C:
+			if time.Since(lastAdvance) > stallTimeout {
+				select {
+				case stallCh <- struct{}{}:
+				default:
+				}
+				return
+			}
 		}
 	}
 }
@@ -157,7 +268,8 @@ func encodeArgs() []string {
 }
 
 func outputArgs(ingestURL string) []string {
-	return []string{"-f", "rtsp", "-rtsp_transport", "tcp", ingestURL}
+	// -progress pipe:1 feeds the stall watchdog and stats (see watchProgress)
+	return []string{"-progress", "pipe:1", "-f", "rtsp", "-rtsp_transport", "tcp", ingestURL}
 }
 
 func ffmpegArgs(src Source, ingestURL string) []string {

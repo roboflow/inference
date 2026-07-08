@@ -227,8 +227,17 @@ func main() {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Print("shutting down, stopping streams")
+			log.Print("shutting down: stopping streams, telling the platform goodbye")
 			app.mgr.StopAll()
+			// explicit offline beats the platform waiting out the lastSeen
+			// window; best-effort — a dead network changes nothing here
+			if client := app.client(); client != nil {
+				if err := client.Goodbye(app.Name, app.Hostname); err != nil {
+					log.Printf("goodbye failed (platform will notice via lastSeen): %v", err)
+				} else {
+					log.Print("platform acknowledged shutdown")
+				}
+			}
 			return
 		case <-ticker.C:
 		}
@@ -282,6 +291,9 @@ func handleCommand(client *APIClient, mgr *StreamManager, sources []Source, cmd 
 		err = mgr.Start(src, ingestURL)
 	case "stop_stream":
 		localID, _ := cmd.Data["sourceLocalId"].(string)
+		if reason, _ := cmd.Data["reason"].(string); reason != "" {
+			log.Printf("stream %s stop requested by platform: %s", localID, reason)
+		}
 		mgr.Stop(localID)
 	default:
 		err = fmt.Errorf("unknown action %q", cmd.Action)

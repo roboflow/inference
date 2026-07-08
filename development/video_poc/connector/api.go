@@ -35,6 +35,10 @@ type HealthcheckRequest struct {
 	Platform string        `json:"platform"`
 	Sources  []Source      `json:"sources"`
 	Streams  []StreamState `json:"streams"`
+	// final healthcheck of a clean shutdown: the platform marks the
+	// connector (and its sources) offline immediately instead of waiting
+	// out the lastSeen window
+	ShuttingDown bool `json:"shuttingDown,omitempty"`
 }
 
 type Command struct {
@@ -91,6 +95,16 @@ func (c *APIClient) Healthcheck(hb HealthcheckRequest) (HealthcheckResponse, err
 	}{c.ConnectorID, hb}
 	err := c.post("/video-connectors/healthcheck", body, &resp)
 	return resp, err
+}
+
+// Goodbye sends the final shutting-down healthcheck (no sources, no streams).
+func (c *APIClient) Goodbye(name, hostname string) error {
+	var resp HealthcheckResponse
+	body := struct {
+		ConnectorID string `json:"connectorId"`
+		HealthcheckRequest
+	}{c.ConnectorID, HealthcheckRequest{Name: name, Hostname: hostname, ShuttingDown: true}}
+	return c.post("/video-connectors/healthcheck", body, &resp)
 }
 
 func (c *APIClient) Ack(commandID string, cmdErr error) error {
