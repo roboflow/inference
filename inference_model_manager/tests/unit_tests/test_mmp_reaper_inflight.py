@@ -151,3 +151,73 @@ def test_schedule_reload_clears_inflight_for_dead_model(pool):
 
     asyncio.run(_run())
     assert mmp._inflight == {2: "other"}
+
+
+def test_result_stamps_done_before_dropping_reaper_protection(pool):
+    mmp = _make_mmp(pool)
+    mmp._stale_slot_max_age_s = 5.0
+    s = _alloc_written(pool, 101)
+    mmp._inflight[s] = "m"
+    mmp._pending[101] = (b"id1", s, "m")
+
+    async def _run():
+        mmp._on_result_on_loop(101, s, 4)
+        # BEFORE the reply task runs: DONE must already be stamped with a
+        # fresh timestamp, so a reaper tick in this gap cannot free the slot.
+        hdr = pool.read_header(s)
+        assert hdr.status == SlotStatus.DONE
+        assert hdr.result_size == 4
+        mmp._reap()
+        assert pool.read_header(s).status == SlotStatus.DONE
+        await asyncio.sleep(0)
+
+    asyncio.run(_run())
+    assert pool.free_count == pool.n_slots - 1  # still held for client read
+
+
+def test_reply_after_ticket_void_and_rebind_does_not_stamp_foreign_slot(pool):
+    mmp = _make_mmp(pool)
+    s = _alloc_written(pool, 101)
+    mmp._pending[101] = (b"id1", s, "m")
+    # Ticket was voided (reload) and the reaper rebound the slot to a new request.
+    pool.alloc_slot()  # occupy the other slot so the rebind reuses s
+    pool.free_slot(s, request_id=101)
+    s2 = pool.alloc_slot()
+    assert s2 == s
+    pool.mark_allocated(s2, request_id=202)
+
+    async def _run():
+        mmp._on_result_on_loop(101, s, 4)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    asyncio.run(_run())
+    hdr = pool.read_header(s)
+    assert hdr.request_id == 202
+    assert hdr.status == SlotStatus.ALLOCATED  # new owner untouched
+    _, msg_type, payload = mmp._sent[0]
+    assert msg_type == T_ERROR
+    assert struct.unpack(">QB", payload) == (101, _ERR_STALE)
+
+
+def test_schedule_reload_keeps_tickets_while_worker_alive(pool):
+    from types import SimpleNamespace
+
+    mmp = _make_mmp(pool)
+    mmp._models["m"] = ModelState(loaded=True)
+    mmp._backends["m"] = SimpleNamespace(worker_pid=4242)
+    mmp._inflight = {1: "m", 2: "other"}
+    mmp._load_calls = []
+
+    async def _load_model(model_id, api_key="", device=""):
+        mmp._load_calls.append(model_id)
+
+    mmp._load_model = _load_model
+
+    async def _run():
+        mmp._schedule_reload("m")
+        await asyncio.sleep(0)
+
+    asyncio.run(_run())
+    assert mmp._inflight == {1: "m", 2: "other"}  # live worker keeps tickets
+    assert mmp._load_calls == ["m"]

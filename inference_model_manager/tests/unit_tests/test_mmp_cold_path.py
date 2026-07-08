@@ -48,6 +48,7 @@ class TestNvmlTelemetry:
 def _bare_mmp(**attrs) -> ModelManagerProcess:
     mmp = ModelManagerProcess.__new__(ModelManagerProcess)
     mmp._pending = {}
+    mmp._inflight = {}
     mmp._models = {}
     mmp._backends = {}
     mmp._model_access = {}

@@ -77,6 +77,7 @@ HEADER_SIZE = 64
 SLOT_STATUS_ERROR = 5
 _OFF_STATUS = 0
 _OFF_RESULT_SZ = 8
+_OFF_TS_NS = 24
 
 
 class _SlotHeaderView:
@@ -663,6 +664,15 @@ class MMPClient:
                 f"offset={offset} len={len(chunk)}"
             )
         self._shm.buf[base + offset : end] = chunk
+        # Refresh the reaper timestamp per chunk: a slow upload otherwise ages
+        # past the stale cutoff mid-stream and MMP frees + rebinds the slot
+        # under this write.
+        struct.pack_into(
+            "<Q",
+            self._shm.buf,
+            slot_id * self.slot_total + _OFF_TS_NS,
+            time.monotonic_ns(),
+        )
 
     def _read_result(self, slot_id: int, result_sz: int) -> bytes:
         if result_sz > self.shm_data_size or result_sz < 0:

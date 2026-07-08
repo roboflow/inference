@@ -534,3 +534,59 @@ def test_bad_version_returns_none():
     buf = bytearray(n_slots * slot_bytes + 64)
     struct.pack_into(_META_FMT, buf, n_slots * slot_bytes, _META_MAGIC, 999, 2)
     assert read_free_count(buf, n_slots, slot_bytes) is None
+
+
+class TestOwnershipCheckedMarks:
+    def test_mark_done_wrong_request_id_refused(self):
+        pool = _make_pool(n_slots=2)
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=111)
+            assert pool.mark_done(s, 10, request_id=999) is False
+            assert pool.read_header(s).status == SlotStatus.ALLOCATED
+        finally:
+            pool.close()
+
+    def test_mark_done_matching_request_id_stamps(self):
+        pool = _make_pool(n_slots=2)
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=111)
+            assert pool.mark_done(s, 10, request_id=111) is True
+            hdr = pool.read_header(s)
+            assert hdr.status == SlotStatus.DONE
+            assert hdr.result_size == 10
+        finally:
+            pool.close()
+
+    def test_mark_done_refreshes_timestamp(self):
+        pool = _make_pool(n_slots=2)
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=111)
+            _age_slot(pool, s, seconds=100)
+            assert pool.stale_slots(max_age_s=30) == [s]
+            pool.mark_done(s, 10, request_id=111)
+            assert pool.stale_slots(max_age_s=30) == []
+        finally:
+            pool.close()
+
+    def test_mark_error_wrong_request_id_refused(self):
+        pool = _make_pool(n_slots=2)
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=111)
+            assert pool.mark_error(s, request_id=999) is False
+            assert pool.read_header(s).status == SlotStatus.ALLOCATED
+        finally:
+            pool.close()
+
+    def test_mark_processing_wrong_request_id_refused(self):
+        pool = _make_pool(n_slots=2)
+        try:
+            s = pool.alloc_slot()
+            pool.mark_allocated(s, request_id=111)
+            assert pool.mark_processing(s, 1234, request_id=999) is False
+            assert pool.read_header(s).status == SlotStatus.ALLOCATED
+        finally:
+            pool.close()

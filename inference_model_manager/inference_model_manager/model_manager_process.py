@@ -516,10 +516,14 @@ class ModelManagerProcess:
         fs = self._models.get(model_id)
         if fs is None:
             return
-        # Worker is dead: its tickets are void. Drop them so the reaper can
-        # reclaim the slots once stale.
-        for slot_id in [s for s, m in self._inflight.items() if m == model_id]:
-            del self._inflight[slot_id]
+        # Void tickets only when the worker is actually dead. A merely
+        # unhealthy-but-alive worker (busy leash) can still write its slots —
+        # voiding lets the reaper free + rebind them under a live writer.
+        # An alive worker's leftover tickets are voided after the reload's
+        # unload kills it (_load_model_inner).
+        backend = self._backends.get(model_id)
+        if backend is None or getattr(backend, "worker_pid", None) is None:
+            self._void_inflight(model_id)
         if fs.loading:
             return  # already reloading
         if model_id in self._unloading:
@@ -930,6 +934,7 @@ class ModelManagerProcess:
             else:
                 self._preloaded_shared_bases.pop(model_id, None)
                 self._untrack_shared_head(model_id)
+                self._void_inflight(model_id)
             await self._send(identity, T_OK, struct.pack(">Q", req_id))
         except Exception:
             logger.exception("MMP: T_UNLOAD '%s' failed", model_id)
@@ -1121,6 +1126,13 @@ class ModelManagerProcess:
 
     def _on_result_on_loop(self, req_id: int, slot_id: int, result_sz: int) -> None:
         """Must be called on the event loop thread."""
+        # Stamp DONE while _inflight/_pending still protect the slot from the
+        # reaper — deferring it to the reply task left a gap where the reaper
+        # could free + rebind the slot, and the late mark_done then corrupted
+        # the new owner's header. Ownership-guarded: a no-op if already rebound.
+        done_ok = False
+        if result_sz > 0:
+            done_ok = self._pool.mark_done(slot_id, result_sz, request_id=req_id)
         self._inflight.pop(slot_id, None)
         pending = self._pending.pop(req_id, None)
         if pending is None:
@@ -1131,7 +1143,7 @@ class ModelManagerProcess:
             return
         identity, _, _ = pending
         asyncio.create_task(
-            self._reply_result(identity, req_id, slot_id, result_sz),
+            self._reply_result(identity, req_id, slot_id, result_sz, done_ok),
             name=f"mmp-reply-{req_id}",
         )
 
@@ -1141,6 +1153,7 @@ class ModelManagerProcess:
         req_id: int,
         slot_id: int,
         result_sz: int,
+        done_ok: bool,
     ) -> None:
         if result_sz == 0:
             await self._send(
@@ -1148,7 +1161,11 @@ class ModelManagerProcess:
             )
             self._pool.free_slot(slot_id, request_id=req_id)
             return
-        self._pool.mark_done(slot_id, result_sz)
+        if not done_ok:
+            # Slot no longer bound to this request (ticket voided + reaped
+            # mid-flight) — never point the client at another request's slot.
+            await self._send(identity, T_ERROR, struct.pack(">QB", req_id, _ERR_STALE))
+            return
         sent = await self._send(
             identity,
             T_RESULT_READY,
@@ -1288,6 +1305,9 @@ class ModelManagerProcess:
                 await loop.run_in_executor(None, lambda: self._manager.unload(model_id))
             except Exception:
                 self._manager._backends.pop(model_id, None)
+            # The stale worker is dead now — void its remaining tickets
+            # (kept while it was alive) so the reaper can reclaim the slots.
+            self._void_inflight(model_id)
 
         for attempt in range(max_retries):
             logger.info(
@@ -1641,8 +1661,16 @@ class ModelManagerProcess:
                 self._untrack_shared_head(model_id)
                 self._model_access.pop(model_id, None)
                 self._model_request_times.pop(model_id, None)
+                self._void_inflight(model_id)
         self._kick_pending_load(model_id)
         return ok
+
+    def _void_inflight(self, model_id: str) -> None:
+        """Drop a dead worker's tickets so the reaper can reclaim the slots.
+        Only call once the worker is confirmed gone — a live worker's tickets
+        guard its slots against free-and-rebind mid-write."""
+        for slot_id in [s for s, m in self._inflight.items() if m == model_id]:
+            del self._inflight[slot_id]
 
     # ------------------------------------------------------------------
     # VRAM-aware admission control
