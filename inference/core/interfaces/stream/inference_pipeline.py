@@ -1059,10 +1059,24 @@ class InferencePipeline:
         return inference_result, fallback_video_frames
 
     def _drain_inference_handler(self) -> None:
+        from inference.core.interfaces.stream.model_handlers.workflows import (
+            StreamLookaheadDrainError,
+        )
+
         flush_fn = getattr(self._on_video_frame, "flush", None)
         if not callable(flush_fn):
             return None
-        flush_result = flush_fn()
+        try:
+            flush_result = flush_fn()
+        except StreamLookaheadDrainError as error:
+            # Dispatch the frames that did drain, then let the emission
+            # failure surface through the normal inference error path.
+            for result in error.drained_results:
+                self._queue_inference_result(
+                    inference_result=result,
+                    fallback_video_frames=[],
+                )
+            raise
         if flush_result is None:
             return None
         if isinstance(flush_result, list) and all(

@@ -14,6 +14,7 @@ from inference.core.interfaces.stream.model_handlers import (
 from inference.core.interfaces.stream.model_handlers.workflows import (
     LookaheadPipelinedWorkflowRunner,
     PipelinedWorkflowRunner,
+    StreamLookaheadDrainError,
     WorkflowRunner,
     wrap_workflow_runner_for_stream_pipeline,
 )
@@ -895,8 +896,6 @@ class _FakeLookaheadExecutionEngine:
         frontier_step_selectors,
         async_step_selectors,
         lookahead_executor,
-        fps,
-        _is_preview,
     ):
         frame_number = runtime_parameters["image"][0]["video_metadata"].frame_number
         self.lookahead_calls.append(
@@ -916,6 +915,8 @@ class _FakeLookaheadExecutionEngine:
         execution_data_manager,
         frontier_step_selectors,
         serialize_results,
+        fps,
+        _is_preview,
     ):
         self.resume_calls.append(execution_data_manager)
         if execution_data_manager.frame_number in self.fail_resume_for_frames:
@@ -1011,7 +1012,9 @@ def _make_wrap_case_engine(case: str) -> SimpleNamespace:
         )
     else:
         raise ValueError(f"Unknown wrap case: {case}")
-    return SimpleNamespace(_engine=SimpleNamespace(_compiled_workflow=compiled_workflow))
+    return SimpleNamespace(
+        _engine=SimpleNamespace(_compiled_workflow=compiled_workflow)
+    )
 
 
 @pytest.mark.parametrize(
@@ -1109,14 +1112,10 @@ def test_lookahead_runner_emits_frames_in_order_from_their_own_execution_state()
     assert flushed_results[0].predictions == [{"result": "resumed-frame-3"}]
     assert flushed_results[1].predictions == [{"result": "resumed-frame-4"}]
     assert [edm.frame_number for edm in engine.resume_calls] == [1, 2, 3, 4]
-    assert all(
-        resumed is edm for resumed, edm in zip(engine.resume_calls, engine.edms)
-    )
+    assert all(resumed is edm for resumed, edm in zip(engine.resume_calls, engine.edms))
     assert engine.lookahead_calls[0]["frontier_step_selectors"] == {"$steps.model"}
     assert engine.lookahead_calls[0]["async_step_selectors"] == {"$steps.model"}
-    assert (
-        engine.lookahead_calls[0]["lookahead_executor"] is runner._lookahead_executor
-    )
+    assert engine.lookahead_calls[0]["lookahead_executor"] is runner._lookahead_executor
 
     # then - close shuts down the runner-owned lookahead pool
     runner.close()
@@ -1144,13 +1143,40 @@ def test_lookahead_runner_flush_skips_failing_frame_and_drains_the_rest() -> Non
     assert runner([frame_2]) is None
     engine.fail_resume_for_frames.add(1)
 
-    # when
-    flushed_results = runner.flush()
+    # when - the drain still emits the remaining frames, then re-raises so
+    # a failed tail frame cannot disappear as a normal empty drain
+    with pytest.raises(StreamLookaheadDrainError) as error:
+        runner.flush()
 
-    # then - the failing frame is skipped; the drain still emits the rest
-    assert flushed_results is not None
-    assert len(flushed_results) == 1
-    assert flushed_results[0].predictions == [{"result": "resumed-frame-2"}]
-    assert flushed_results[0].video_frames == [frame_2]
+    # then
+    drained_results = error.value.drained_results
+    assert len(drained_results) == 1
+    assert drained_results[0].predictions == [{"result": "resumed-frame-2"}]
+    assert drained_results[0].video_frames == [frame_2]
+    assert isinstance(error.value.__cause__, RuntimeError)
     assert [edm.frame_number for edm in engine.resume_calls] == [1, 2]
+    runner.close()
+
+
+def test_lookahead_runner_pool_threads_are_daemon() -> None:
+    # given - a hung remote request must not keep the interpreter alive
+    # after close() (close() uses shutdown(wait=False))
+    engine = _FakeLookaheadExecutionEngine()
+    workflow_runner = WorkflowRunner(
+        workflows_parameters=None,
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+    )
+    runner = LookaheadPipelinedWorkflowRunner(
+        workflow_runner=workflow_runner,
+        frontier_step_selectors={"$steps.model"},
+        async_step_selectors={"$steps.model"},
+        buffer_depth=2,
+    )
+
+    # when / then - every pool worker exists already and is a daemon thread
+    pool_threads = runner._lookahead_executor._threads
+    assert len(pool_threads) == 3  # (buffer_depth + 1) * len(async_steps)
+    assert all(thread.daemon for thread in pool_threads)
     runner.close()

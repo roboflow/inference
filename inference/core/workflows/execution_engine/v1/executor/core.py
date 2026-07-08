@@ -304,6 +304,8 @@ def _execute_workflow_steps(
                         workflow=workflow,
                         execution_data_manager=execution_data_manager,
                         lookahead_executor=lookahead_executor,
+                        workflow_execution_id=workflow_execution_id,
+                        step_error_handler=step_error_handler,
                     )
             runnable_steps = [
                 step_selector
@@ -329,6 +331,8 @@ def launch_async_simd_step(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     lookahead_executor: ThreadPoolExecutor,
+    workflow_execution_id: Optional[str] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> None:
     """Execute a declared async step on the lookahead pool.
 
@@ -349,8 +353,28 @@ def launch_async_simd_step(
             outputs=[],
         )
         return
+    if remote_processing_times is not None:
+        processing_time_collector = remote_processing_times.get()
+    else:
+        processing_time_collector = None
+    if apply_duration_minimum is not None:
+        duration_minimum_value = apply_duration_minimum.get()
+    else:
+        duration_minimum_value = None
     result_future = lookahead_executor.submit(
-        partial(step.step.run, **step_input.parameters)
+        partial(
+            _run_async_simd_step,
+            step_name=step_name,
+            workflow=workflow,
+            parameters=step_input.parameters,
+            workflow_execution_id=workflow_execution_id,
+            processing_time_collector=processing_time_collector,
+            duration_minimum_value=duration_minimum_value,
+            debug_collector=current_debug_collector.get(),
+            debug_trace=current_debug_trace.get(),
+            otel_ctx=capture_context(),
+            step_error_handler=step_error_handler,
+        )
     )
     output_names = [
         output.name
@@ -372,6 +396,54 @@ def launch_async_simd_step(
         indices=step_input.indices,
         outputs=outputs,
     )
+
+
+def _run_async_simd_step(
+    step_name: str,
+    workflow: CompiledWorkflow,
+    parameters: Dict[str, Any],
+    workflow_execution_id: Optional[str],
+    processing_time_collector,
+    duration_minimum_value,
+    debug_collector,
+    debug_trace,
+    otel_ctx,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
+) -> Any:
+    # Lookahead workers need the same ContextVar / OTel rebinding as
+    # safe_execute_step: values set on the stream thread do not propagate
+    # into pool threads, and pool threads are reused across frames.
+    if execution_id is not None and workflow_execution_id:
+        execution_id.set(workflow_execution_id)
+    if remote_processing_times is not None and processing_time_collector is not None:
+        remote_processing_times.set(processing_time_collector)
+    if apply_duration_minimum is not None and duration_minimum_value is not None:
+        apply_duration_minimum.set(duration_minimum_value)
+    current_debug_collector.set(debug_collector)
+    current_debug_trace.set(debug_trace)
+    current_debug_step_name.set(step_name)
+    _otel_token = attach_context(otel_ctx)
+    try:
+        with start_span("workflow.step", {"workflow.step": step_name}):
+            try:
+                return workflow.steps[step_name].step.run(**parameters)
+            except WorkflowError:
+                raise
+            except Exception as error:
+                if step_error_handler:
+                    step_error_handler(step_name, error)
+                logger.exception(
+                    f"Execution of async step {step_name} encountered error."
+                )
+                raise StepExecutionError(
+                    block_id=step_name,
+                    block_type=workflow.steps[step_name].manifest.type,
+                    public_message=str(error),
+                    context="workflow_execution | step_execution",
+                    inner_error=error,
+                ) from error
+    finally:
+        detach_context(_otel_token)
 
 
 def compute_async_stream_step_selectors(workflow: CompiledWorkflow) -> Set[str]:
@@ -400,7 +472,6 @@ def compute_async_stream_step_selectors(workflow: CompiledWorkflow) -> Set[str]:
     return async_step_selectors
 
 
-@usage_collector("workflows")
 @execution_phase(
     name="workflow_lookahead_execution",
     categories=["execution_engine_operation"],
@@ -443,6 +514,7 @@ def run_stream_lookahead_workflow(
         return execution_data_manager
 
 
+@usage_collector("workflows")
 def resume_stream_lookahead_workflow(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
@@ -455,6 +527,11 @@ def resume_stream_lookahead_workflow(
     step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> List[Dict[str, Any]]:
     """Emission pass of stream-lookahead execution for one buffered frame.
+
+    Usage is collected here rather than on the deferred pass: the deferred
+    pass returns as soon as async work is launched, so its duration would
+    not include the actual step execution; the resume pass waits on the
+    in-flight futures at input assembly and covers it.
 
     Resumes the frame's ExecutionDataManager from the deferred pass and runs
     every step outside the frontier. Frontier steps must not be re-executed:

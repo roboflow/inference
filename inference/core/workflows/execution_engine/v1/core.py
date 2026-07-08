@@ -184,8 +184,6 @@ class ExecutionEngineV1(BaseExecutionEngine):
         frontier_step_selectors: Set[str],
         async_step_selectors: Set[str],
         lookahead_executor: ThreadPoolExecutor,
-        fps: float = 0,
-        _is_preview: bool = False,
     ) -> ExecutionDataManager:
         self._profiler.start_workflow_run()
         runtime_parameters = self._prepare_runtime_parameters(
@@ -198,9 +196,6 @@ class ExecutionEngineV1(BaseExecutionEngine):
             frontier_step_selectors=frontier_step_selectors,
             async_step_selectors=async_step_selectors,
             lookahead_executor=lookahead_executor,
-            usage_fps=fps,
-            usage_workflow_id=self._resolve_usage_workflow_id(),
-            usage_workflow_preview=_is_preview,
             profiler=self._profiler,
             executor=self._executor,
             step_error_handler=self._step_error_handler,
@@ -213,6 +208,8 @@ class ExecutionEngineV1(BaseExecutionEngine):
         execution_data_manager: ExecutionDataManager,
         frontier_step_selectors: Set[str],
         serialize_results: bool = False,
+        fps: float = 0,
+        _is_preview: bool = False,
     ) -> List[Dict[str, Any]]:
         self._profiler.start_workflow_run()
         result = resume_stream_lookahead_workflow(
@@ -222,6 +219,9 @@ class ExecutionEngineV1(BaseExecutionEngine):
             kinds_serializers=self._compiled_workflow.kinds_serializers,
             frontier_step_selectors=frontier_step_selectors,
             serialize_results=serialize_results,
+            usage_fps=fps,
+            usage_workflow_id=self._resolve_usage_workflow_id(),
+            usage_workflow_preview=_is_preview,
             profiler=self._profiler,
             executor=self._executor,
             step_error_handler=self._step_error_handler,

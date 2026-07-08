@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from threading import Barrier, Thread
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from inference.core import logger
@@ -23,6 +24,21 @@ if TYPE_CHECKING:
 class _StreamPipelineStep:
     step: Any
     name: Optional[str] = None
+
+
+class StreamLookaheadDrainError(RuntimeError):
+    """A frame emission failed while draining the stream-lookahead buffer.
+
+    Raised only after every buffered frame was drained best-effort; the
+    frames that did emit successfully are carried in ``drained_results`` so
+    the pipeline can dispatch them before propagating the error.
+    """
+
+    def __init__(
+        self, message: str, drained_results: List[InferenceHandlerResult]
+    ) -> None:
+        super().__init__(message)
+        self.drained_results = drained_results
 
 
 class WorkflowRunner:
@@ -81,7 +97,7 @@ class WorkflowRunner:
         async_step_selectors: Set[str],
         lookahead_executor: "ThreadPoolExecutor",
     ) -> "ExecutionDataManager":
-        workflows_parameters, fps = self._build_workflows_parameters(
+        workflows_parameters, _ = self._build_workflows_parameters(
             video_frames=video_frames
         )
         return self._execution_engine.run_stream_lookahead(
@@ -89,19 +105,20 @@ class WorkflowRunner:
             frontier_step_selectors=frontier_step_selectors,
             async_step_selectors=async_step_selectors,
             lookahead_executor=lookahead_executor,
-            fps=fps,
-            _is_preview=self._is_preview,
         )
 
     def _resume_stream_lookahead(
         self,
         execution_data_manager: "ExecutionDataManager",
         frontier_step_selectors: Set[str],
+        video_frames: List[VideoFrame],
     ) -> List[dict]:
         return self._execution_engine.resume_stream_lookahead(
             execution_data_manager=execution_data_manager,
             frontier_step_selectors=frontier_step_selectors,
             serialize_results=self._serialize_results,
+            fps=_resolve_stream_fps(video_frames=video_frames),
+            _is_preview=self._is_preview,
         )
 
     def _build_workflows_parameters(
@@ -110,12 +127,7 @@ class WorkflowRunner:
     ) -> tuple[Dict[str, Any], float]:
         workflows_parameters: Dict[str, Any] = dict(self._workflows_parameters or {})
         # TODO: pass fps reflecting each stream to workflows_parameters
-        fps = video_frames[0].fps
-        if video_frames[0].measured_fps:
-            fps = video_frames[0].measured_fps
-        if fps is None:
-            # for FPS reporting we expect 0 when FPS cannot be determined
-            fps = 0
+        fps = _resolve_stream_fps(video_frames=video_frames)
         video_metadata_for_images = [
             VideoMetadata(
                 video_identifier=(
@@ -145,6 +157,16 @@ class WorkflowRunner:
             video_metadata_for_images
         )
         return workflows_parameters, fps
+
+
+def _resolve_stream_fps(video_frames: List[VideoFrame]) -> float:
+    fps = video_frames[0].fps
+    if video_frames[0].measured_fps:
+        fps = video_frames[0].measured_fps
+    if fps is None:
+        # for FPS reporting we expect 0 when FPS cannot be determined
+        fps = 0
+    return fps
 
 
 class PipelinedWorkflowRunner:
@@ -237,9 +259,13 @@ class LookaheadPipelinedWorkflowRunner:
         self._frontier_step_selectors = frontier_step_selectors
         self._async_step_selectors = async_step_selectors
         self._buffer_depth = buffer_depth
+        max_workers = max(1, (buffer_depth + 1) * len(async_step_selectors))
         self._lookahead_executor = ThreadPoolExecutor(
-            max_workers=max(1, (buffer_depth + 1) * len(async_step_selectors)),
+            max_workers=max_workers,
             thread_name_prefix="workflows_stream_lookahead",
+        )
+        _prespawn_daemon_workers(
+            executor=self._lookahead_executor, max_workers=max_workers
         )
         self._pending_frames: List[Tuple[List[VideoFrame], "ExecutionDataManager"]] = []
 
@@ -261,32 +287,66 @@ class LookaheadPipelinedWorkflowRunner:
         if not self._pending_frames:
             return None
         results = []
+        first_error: Optional[Exception] = None
+        failed_frames = 0
         while self._pending_frames:
             try:
                 results.append(self._emit_oldest_frame())
             except Exception as error:
                 # One failed frame must not drop the rest of the buffered
-                # frames whose requests already completed.
+                # frames whose requests already completed — keep draining
+                # and re-raise the first failure afterwards.
+                failed_frames += 1
+                if first_error is None:
+                    first_error = error
                 logger.exception(
                     "Failed to emit a buffered frame during stream-lookahead "
                     "drain: %s",
                     error,
                 )
+        if first_error is not None:
+            raise StreamLookaheadDrainError(
+                f"Failed to emit {failed_frames} buffered frame(s) during "
+                "stream-lookahead drain.",
+                drained_results=results,
+            ) from first_error
         return results
 
     def close(self) -> None:
-        self._lookahead_executor.shutdown(wait=False)
+        self._lookahead_executor.shutdown(wait=False, cancel_futures=True)
 
     def _emit_oldest_frame(self) -> InferenceHandlerResult:
         emit_video_frames, execution_data_manager = self._pending_frames.pop(0)
         predictions = self._workflow_runner._resume_stream_lookahead(
             execution_data_manager=execution_data_manager,
             frontier_step_selectors=self._frontier_step_selectors,
+            video_frames=emit_video_frames,
         )
         return InferenceHandlerResult(
             predictions=predictions,
             video_frames=emit_video_frames,
         )
+
+
+def _prespawn_daemon_workers(executor: ThreadPoolExecutor, max_workers: int) -> None:
+    """Force all lookahead pool threads into existence as daemon threads.
+
+    ThreadPoolExecutor spawns worker threads lazily on submit(), and a new
+    thread inherits the daemon flag of the thread that created it. Spawning
+    every worker from a short-lived daemon thread guarantees a remote request
+    hung past close() cannot keep the interpreter alive at exit (close() uses
+    shutdown(wait=False)).
+    """
+
+    def _spawn_all_workers() -> None:
+        all_workers_started = Barrier(parties=max_workers + 1)
+        for _ in range(max_workers):
+            executor.submit(all_workers_started.wait)
+        all_workers_started.wait()
+
+    spawner = Thread(target=_spawn_all_workers, daemon=True)
+    spawner.start()
+    spawner.join()
 
 
 def wrap_workflow_runner_for_stream_pipeline(

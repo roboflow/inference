@@ -27,6 +27,7 @@ from inference.core.workflows.core_steps.visualizations.heatmap.v1 import (
     HeatmapManifest,
 )
 from inference.core.workflows.core_steps.visualizations.trace.v1 import TraceManifest
+from inference.core.workflows.errors import StepExecutionError
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
 )
@@ -188,7 +189,13 @@ class ConsumerBlock(WorkflowBlock):
         (DimensionalityOffsetModelManifest, AsyncModelBlock, set()),
         (StatelessModelManifest, PlainStepBlock, set()),
     ],
-    ids=["declared_and_eligible", "scalar", "wildcard_output", "dim_offset", "undeclared"],
+    ids=[
+        "declared_and_eligible",
+        "scalar",
+        "wildcard_output",
+        "dim_offset",
+        "undeclared",
+    ],
 )
 def test_compute_async_stream_step_selectors_eligibility(
     manifest_class: Type[WorkflowBlockManifest],
@@ -333,7 +340,11 @@ def test_launch_async_simd_step_with_empty_indices_registers_empty_output() -> N
 @pytest.mark.parametrize(
     "run_fn, expected_error",
     [
-        (lambda **kwargs: (_ for _ in ()).throw(RuntimeError("remote failed")), RuntimeError),
+        # a raising run() is wrapped the same way as on the sync path
+        (
+            lambda **kwargs: (_ for _ in ()).throw(RuntimeError("remote failed")),
+            StepExecutionError,
+        ),
         (lambda **kwargs: [{}], KeyError),
     ],
     ids=["run_raises", "malformed_payload"],
@@ -373,6 +384,46 @@ def test_launch_async_simd_step_surfaces_errors_through_output_futures(
             outputs[0]["predictions"].result(timeout=5)
 
 
+def test_launch_async_simd_step_rebinds_execution_context_in_worker() -> None:
+    # given - the offloaded run() bypasses safe_execute_step, so the launch
+    # must rebind the request thread's execution context on the worker
+    from inference_sdk.config import execution_id
+
+    seen_context = {}
+
+    def run_fn(**kwargs) -> BlockResult:
+        seen_context["execution_id"] = execution_id.get()
+        return [{"predictions": "p", "inference_id": "i"}]
+
+    block = AsyncModelBlock(run_fn=run_fn)
+    workflow = _lookahead_compiled_workflow(
+        steps={"model": _step_spec(block, StatelessModelManifest)},
+        edges=[],
+    )
+    execution_data_manager = MagicMock()
+    execution_data_manager.get_simd_step_input.return_value = SimpleNamespace(
+        indices=[(0,)],
+        parameters={"images": ["a"]},
+    )
+
+    # when
+    with ThreadPoolExecutor(max_workers=1) as lookahead_executor:
+        launch_async_simd_step(
+            step_selector="$steps.model",
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            lookahead_executor=lookahead_executor,
+            workflow_execution_id="test-execution-id",
+        )
+        outputs = execution_data_manager.register_simd_step_output.call_args.kwargs[
+            "outputs"
+        ]
+        assert outputs[0]["predictions"].result(timeout=5) == "p"
+
+    # then
+    assert seen_context["execution_id"] == "test-execution-id"
+
+
 def test_stream_lookahead_run_and_resume_split_execution_between_passes() -> None:
     # given
     model = PlainStepBlock()
@@ -408,7 +459,9 @@ def test_stream_lookahead_run_and_resume_split_execution_between_passes() -> Non
     assert model.run_calls == 1
     assert consumer.seen_predictions == []
 
-    # when - the resume pass runs only the remainder on the same state
+    # when - the resume pass runs only the remainder on the same state;
+    # usage kwargs are accepted here (and only here): the deferred pass
+    # returns before async work completes, so it must not record usage
     result = resume_stream_lookahead_workflow(
         workflow=workflow,
         execution_data_manager=execution_data_manager,
@@ -416,6 +469,8 @@ def test_stream_lookahead_run_and_resume_split_execution_between_passes() -> Non
         kinds_serializers={},
         frontier_step_selectors=frontier,
         serialize_results=False,
+        usage_fps=30,
+        usage_workflow_id="test-workflow",
         profiler=NullWorkflowsProfiler.init(),
     )
 

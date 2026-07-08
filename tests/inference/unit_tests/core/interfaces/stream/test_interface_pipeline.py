@@ -41,6 +41,9 @@ from inference.core.interfaces.stream.inference_pipeline import (
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
+from inference.core.interfaces.stream.model_handlers.workflows import (
+    StreamLookaheadDrainError,
+)
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 
@@ -202,6 +205,33 @@ def test_inference_pipeline_drain_enqueues_flush_results_with_bound_frames() -> 
     assert pipeline._predictions_queue.get_nowait() == (["p1"], [frame_1])
     assert pipeline._predictions_queue.get_nowait() == (["p2"], [frame_2])
     assert watchdog.ready_frames == [[frame_1], [frame_2]]
+
+
+def test_inference_pipeline_drain_dispatches_partial_results_and_reraises() -> None:
+    # given - a failed tail frame must not disappear as a normal empty drain:
+    # the frames that drained are dispatched, the failure propagates
+    frame_1 = VideoFrame(
+        image=np.zeros((8, 8, 3), dtype=np.uint8),
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+        source_id=0,
+    )
+    drained = [InferenceHandlerResult(predictions=["p1"], video_frames=[frame_1])]
+    handler = _FlushableInferenceHandler(results=None)
+    handler.flush = lambda: (_ for _ in ()).throw(
+        StreamLookaheadDrainError("final frame failed", drained_results=drained)
+    )
+    pipeline = object.__new__(InferencePipeline)
+    pipeline._on_video_frame = handler
+    pipeline._watchdog = _PredictionReadyWatchdog()
+    pipeline._predictions_queue = Queue()
+    pipeline._status_update_handlers = []
+
+    # when / then
+    with pytest.raises(StreamLookaheadDrainError):
+        pipeline._drain_inference_handler()
+    assert pipeline._predictions_queue.get_nowait() == (["p1"], [frame_1])
+    assert pipeline._predictions_queue.empty()
 
 
 def test_resolve_prediction_futures_recursively_resolves_nested_values() -> None:

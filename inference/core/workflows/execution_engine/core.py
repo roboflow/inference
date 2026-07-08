@@ -97,16 +97,12 @@ class ExecutionEngine(BaseExecutionEngine):
         frontier_step_selectors: Set[str],
         async_step_selectors: Set[str],
         lookahead_executor: ThreadPoolExecutor,
-        fps: float = 0,
-        _is_preview: bool = False,
     ) -> "ExecutionDataManager":
         return self._engine.run_stream_lookahead(
             runtime_parameters=runtime_parameters,
             frontier_step_selectors=frontier_step_selectors,
             async_step_selectors=async_step_selectors,
             lookahead_executor=lookahead_executor,
-            fps=fps,
-            _is_preview=_is_preview,
         )
 
     def resume_stream_lookahead(
@@ -114,11 +110,15 @@ class ExecutionEngine(BaseExecutionEngine):
         execution_data_manager: "ExecutionDataManager",
         frontier_step_selectors: Set[str],
         serialize_results: bool = False,
+        fps: float = 0,
+        _is_preview: bool = False,
     ) -> List[Dict[str, Any]]:
         return self._engine.resume_stream_lookahead(
             execution_data_manager=execution_data_manager,
             frontier_step_selectors=frontier_step_selectors,
             serialize_results=serialize_results,
+            fps=fps,
+            _is_preview=_is_preview,
         )
 
     def flush_stream_pipeline(
