@@ -130,3 +130,39 @@ def test_pp_ocrv6_two_stage_pipeline_transcribes_all_lines(
     texts = recognizer(crops)
 
     assert texts == TEXT_LINES
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_pp_ocrv6_small_variant_reads_all_words(
+    pp_ocrv6_small_det_onnx_package: str,
+    pp_ocrv6_small_rec_onnx_package: str,
+) -> None:
+    # Guards against per-variant drift in `inference.yml` / vocab handling:
+    # the small packages must parse and predict just like tiny.
+    from inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx import (
+        PPOCRv6DetectionOnnx,
+    )
+    from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx import (
+        PPOCRv6RecognitionOnnx,
+    )
+
+    detector = PPOCRv6DetectionOnnx.from_pretrained(
+        pp_ocrv6_small_det_onnx_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+    recognizer = PPOCRv6RecognitionOnnx.from_pretrained(
+        pp_ocrv6_small_rec_onnx_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+    image = _render_text_image()
+
+    detections = detector(image)[0]
+    crops = _crops_in_reading_order(image=image, detections=detections)
+    texts = recognizer(crops)
+
+    # The small detector may split a line into more boxes than tiny, so
+    # compare recognized words rather than exact per-line strings.
+    recognized_words = set(" ".join(texts).split())
+    expected_words = set(" ".join(TEXT_LINES).split())
+    assert recognized_words == expected_words

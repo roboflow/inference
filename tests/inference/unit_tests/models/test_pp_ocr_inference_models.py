@@ -102,12 +102,8 @@ def test_infer_from_request_builds_response_full_mode() -> None:
             confidence=_FakeArray([0.9, 0.8]),
         ),
     )
-    image_metadata = pp_ocr_inference_models.InferenceResponseImage(
-        width=20, height=12
-    )
-    with patch.object(
-        adapter, "infer", return_value=(pipeline_result, image_metadata)
-    ):
+    image_metadata = pp_ocr_inference_models.InferenceResponseImage(width=20, height=12)
+    with patch.object(adapter, "infer", return_value=(pipeline_result, image_metadata)):
         response = adapter.infer_from_request(
             PPOCRInferenceRequest(
                 image={"type": "url", "value": "https://some/image.jpg"}
@@ -137,12 +133,8 @@ def test_infer_from_request_detect_only_empty_result() -> None:
             confidence=_FakeArray([0.9, 0.8]),
         ),
     )
-    image_metadata = pp_ocr_inference_models.InferenceResponseImage(
-        width=20, height=12
-    )
-    with patch.object(
-        adapter, "infer", return_value=(pipeline_result, image_metadata)
-    ):
+    image_metadata = pp_ocr_inference_models.InferenceResponseImage(width=20, height=12)
+    with patch.object(adapter, "infer", return_value=(pipeline_result, image_metadata)):
         response = adapter.infer_from_request(
             PPOCRInferenceRequest(
                 image={"type": "url", "value": "https://some/image.jpg"},
@@ -162,12 +154,8 @@ def test_infer_from_request_recognize_only_empty_predictions() -> None:
         line_texts=["a single line"],
         detections=None,
     )
-    image_metadata = pp_ocr_inference_models.InferenceResponseImage(
-        width=20, height=12
-    )
-    with patch.object(
-        adapter, "infer", return_value=(pipeline_result, image_metadata)
-    ):
+    image_metadata = pp_ocr_inference_models.InferenceResponseImage(width=20, height=12)
+    with patch.object(adapter, "infer", return_value=(pipeline_result, image_metadata)):
         response = adapter.infer_from_request(
             PPOCRInferenceRequest(
                 image={"type": "url", "value": "https://some/image.jpg"},
@@ -190,9 +178,7 @@ def test_infer_from_request_handles_list_of_images() -> None:
         ),
     )
     image_metadata = pp_ocr_inference_models.InferenceResponseImage(width=8, height=4)
-    with patch.object(
-        adapter, "infer", return_value=(pipeline_result, image_metadata)
-    ):
+    with patch.object(adapter, "infer", return_value=(pipeline_result, image_metadata)):
         response = adapter.infer_from_request(
             PPOCRInferenceRequest(
                 image=[
