@@ -249,6 +249,15 @@ RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${T
 #   library, which r38 does not ship, so it would land OFF anyway. Non-NVMM
 #   decode stages frames through cudaAllocMapped (zero-copy CPU/GPU on the
 #   iGPU): one extra copy vs NVMM, acceptable baseline.
+# - g++13 (noble) no longer provides uint32_t transitively through libstdc++
+#   headers: filesystem.h fails outright (observed in CI) and every sibling
+#   header with a pure-libc include chain is one shuffle from the same error,
+#   so <cstdint> is prepended to each header that uses fixed-width ints
+#   without including stdint itself (idempotent, self-adapting list).
+# - CUDA 13 removed nppGetStreamContext() (observed in CI). cudaBayer.cpp is
+#   upstream's only NPP user and nothing in the tree calls cudaBayerToRGB -
+#   it exists for raw Bayer CSI sensors, not NVDEC decode - so it is stubbed
+#   to fail loudly like its cudaBayerToRGBA sibling already does.
 # - nvv4l2decoder on r38 does not decode JPEG/MJPEG (per the L4T release
 #   notes); H.264/H.265 files and RTSP are the supported baseline here.
 WORKDIR /build/jetson-utils
@@ -261,7 +270,24 @@ RUN git clone https://github.com/dusty-nv/jetson-utils.git src && \
     sed -i '/-gencode arch=compute_72,code=sm_72)/d;/-gencode arch=compute_87,code=sm_87)/d' src/CMakeLists.txt && \
     sed -i 's/-gencode arch=compute_53,code=sm_53 -gencode arch=compute_62,code=sm_62/-gencode arch=compute_110,code=sm_110/' src/CMakeLists.txt && \
     test "$(grep -c -- '-gencode' src/CMakeLists.txt)" = "1" && \
-    grep -q 'compute_110' src/CMakeLists.txt
+    grep -q 'compute_110' src/CMakeLists.txt && \
+    # g++13 <cstdint> patch (see notes above); runs before cmake so the
+    # build-tree header copies inherit it. Prepending is idempotent, so every
+    # flagged header AND translation unit gets it (54 .cpp/.cu files share
+    # the latent issue) rather than chasing failures one CI round at a time.
+    grep -rl 'uint[0-9]*_t' src/cpp src/cuda src/python/bindings \
+        --include='*.h' --include='*.hpp' --include='*.cuh' \
+        --include='*.cpp' --include='*.cu' | xargs -r grep -L 'stdint' | \
+        xargs -r sed -i '1i #include <cstdint>' && \
+    grep -q '^#include <cstdint>' src/cpp/parsers/filesystem.h && \
+    # CUDA 13 Bayer stub (see notes above): early-return before the NPP
+    # context setup and drop the removed getter call - the NPP code below the
+    # return is dead but still compiles (nppiCFAToRGB_8u_C1C3R_Ctx is still
+    # declared in CUDA 13, only the getter is gone).
+    sed -i 's|^\tNppStreamContext nppStreamContext;$|\treturn cudaErrorNotSupported; // CUDA 13: nppGetStreamContext() removed; Bayer-to-RGB unused by NVDEC decode\n\tNppStreamContext nppStreamContext;|' src/cuda/cudaBayer.cpp && \
+    sed -i '/nppGetStreamContext(&nppStreamContext);/d' src/cuda/cudaBayer.cpp && \
+    grep -q 'cudaErrorNotSupported' src/cuda/cudaBayer.cpp && \
+    ! grep -q 'nppGetStreamContext' src/cuda/cudaBayer.cpp
 RUN mkdir -p src/build && cd src/build && \
     cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
           -DCMAKE_POLICY_DEFAULT_CMP0146=OLD \
