@@ -33,6 +33,7 @@ from inference.core.env import (
     MODAL_TOKEN_SECRET,
     MODAL_WORKSPACE_NAME,
     WEBEXEC_JPEG_QUALITY,
+    WEBEXEC_MODAL_APP_NAME,
     WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS,
     WEBEXEC_WS_CONNECTION_POOL_SIZE,
     WEBEXEC_WS_READ_TIMEOUT_SECONDS,
@@ -318,6 +319,29 @@ class ModalExecutor:
                     method_label=_WEBEXEC_HTTP_METHOD_LABEL
                 )
 
+                # If we couldn't get it dynamically, construct it based on expected pattern
+                if not self._base_url:
+                    # URL pattern: https://{workspace}--{app}-{class}-{method_truncated}.modal.run
+                    # Note: Modal truncates long labels to 63 chars with a hash suffix
+                    workspace = MODAL_WORKSPACE_NAME
+                    app_name = WEBEXEC_MODAL_APP_NAME
+                    class_name = "executor"
+                    method_name = "execute-block"
+
+                    # The label would be: inference-custom-blocks-web-customblockexecutor-execute-block
+                    # This is 62 chars, which might get truncated
+                    label = f"{app_name}-{class_name}-{method_name}"
+                    if (
+                        len(label) > 56
+                    ):  # Modal truncates at 56 chars and adds 7-char hash
+                        import hashlib
+
+                        hash_str = hashlib.sha256(label.encode()).hexdigest()[:6]
+                        label = f"{label[:56]}-{hash_str}"
+
+                    self._base_url = f"https://{workspace}--{label}.modal.run"
+
+        # Add workspace_id as query parameter
         return f"{self._base_url}?workspace_id={workspace_id}"
 
     def execute_remote(
