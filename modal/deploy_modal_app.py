@@ -81,6 +81,7 @@ try:
     print(f"  Version: {inference_version}")
     # Try to get the actual URLs from the deployed app
     print("\n📡 Web Endpoint URLs:")
+    try:
         cls = modal.Cls.from_name(
             app_name=WEBEXEC_MODAL_APP_NAME,
             name="Executor",
