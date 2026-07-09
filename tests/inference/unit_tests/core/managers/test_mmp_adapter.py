@@ -931,9 +931,9 @@ class TestSamRouting:
             "sam3/sam3_interactive", request
         )
         params = running_adapter._client.infer_calls[0]["params"]
-        assert params["boxes"] == [[8.0, 8.0, 12.0, 12.0]]
-        assert params["point_coordinates"] == [[[1.0, 2.0]]]
-        assert params["point_labels"] == [[1]]
+        assert params["boxes"] == [[[8.0, 8.0, 12.0, 12.0]]]
+        assert params["point_coordinates"] == [[[[1.0, 2.0]]]]
+        assert params["point_labels"] == [[[1]]]
         assert params["image_hashes"] == ["img1"]
         assert params["multi_mask_output"] is True
         assert len(response.predictions) == 1

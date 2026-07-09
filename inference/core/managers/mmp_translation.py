@@ -377,17 +377,15 @@ def _build_visual_prompt_params(request: Any) -> dict:
     boxes = args.get("box")
     if point_coords or point_labels:
         point_coords, point_labels = _pad_points(point_coords, point_labels)
-    if not point_coords and not point_labels and not boxes:
-        point_coords, point_labels = [[0, 0]], [-1]
     params: dict = {
         "multi_mask_output": bool(getattr(request, "multimask_output", True)),
     }
     if point_coords:
-        params["point_coordinates"] = point_coords
+        params["point_coordinates"] = [point_coords]
     if point_labels:
-        params["point_labels"] = point_labels
+        params["point_labels"] = [point_labels]
     if boxes:
-        params["boxes"] = boxes
+        params["boxes"] = [boxes]
     image_id = getattr(request, "image_id", None)
     if image_id:
         params["image_hashes"] = [image_id]
