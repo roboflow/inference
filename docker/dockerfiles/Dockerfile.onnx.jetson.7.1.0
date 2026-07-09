@@ -413,12 +413,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     # jetson-utils runtime closure: GStreamer core/base/good for videoSource,
     # plugins-bad libs (gstwebrtc/gstsdp) + rtspserver + json-glib + soup +
     # GLEW/GLU because libjetson-utils.so links its WebRTC/RTSP output stack
-    # unconditionally. nvidia-l4t-gstreamer pulls the NV decode elements
-    # (nvv4l2decoder & deps) from the r38.4 repo - unlike the JP6.2 image this
-    # one installs the NVIDIA userspace from apt instead of relying on host
-    # CSV mounts. VERIFY-ON-DEVICE: package name/installability of
-    # nvidia-l4t-gstreamer on the Thor r38.4 feed (postinst scripts of some
-    # nvidia-l4t-* packages misbehave in containers).
+    # unconditionally. The NV decode elements (nvv4l2decoder & deps) are NOT
+    # apt-installed here - see the dpkg-deb extraction RUN below.
     libgstreamer1.0-0 \
     libgstreamer-plugins-base1.0-0 \
     gstreamer1.0-plugins-base \
@@ -429,7 +425,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     libsoup2.4-1 \
     libglew2.2 \
     libglu1-mesa \
-    nvidia-l4t-gstreamer \
+    # Link deps of the extracted NV gstreamer/multimedia libs (their Depends
+    # can't install transitively because the debs below are dpkg-deb -x'd):
+    libegl1 \
+    libgles2 \
+    libasound2t64 \
+    libwayland-client0 \
+    libwayland-egl1 \
+    libpcre3 \
     libatlas3-base \
     libgl1 \
     libglib2.0-0 \
@@ -438,6 +441,37 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     python3-dev \
     zlib1g-dev \
     libxml2-dev
+
+# NV decode elements (nvv4l2decoder & deps) for jetson-utils: EXTRACTED, not
+# apt-installed. `apt-get install nvidia-l4t-gstreamer` drags in
+# nvidia-l4t-core, whose maintainer scripts probe the tegra device tree
+# (/proc/device-tree) and exit 1 on the generic ARM CI builders this image is
+# built on (observed in CI: "Errors were encountered while processing:
+# .../nvidia-l4t-core_38.4.0...deb"). /proc cannot be faked during a docker
+# build, so dpkg-deb -x unpacks the payloads without running any maintainer
+# script - same files on disk, no platform probe.
+# Closure (resolved live from the r38.4 indices; gstreamer sits in
+# jetson/common, the rest in jetson/som): gstreamer -> camera, core,
+# multimedia, multimedia-utils, nvsci -> adaruntime. nvidia-l4t-cuda is
+# EXCLUDED: it ships libcuda.so, the iGPU *driver* library, which must come
+# from the host at container start (--runtime=nvidia / CDI injection) - a
+# baked copy risks skew against the host driver. Ordinary library deps come
+# from the ubuntu packages installed above. The trailing ls asserts the
+# decode plugins actually landed (fail at build, not first decode).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-runtime-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp71-runtime-${TARGETARCH} \
+    apt-get update -y && \
+    mkdir -p /tmp/l4t-debs && cd /tmp/l4t-debs && \
+    apt-get download $(apt-cache depends --recurse --no-recommends --no-suggests \
+        --no-conflicts --no-breaks --no-replaces --no-enhances \
+        nvidia-l4t-gstreamer | grep '^nvidia-l4t' | grep -v '^nvidia-l4t-cuda$' | sort -u) && \
+    for deb in ./*.deb; do dpkg-deb -x "$deb" /; done && \
+    cd / && rm -rf /tmp/l4t-debs && \
+    # Loader path for the extracted tegra libs (the postinst that would have
+    # run ldconfig never executed) - same conf the JP6.2 image ships.
+    printf '/usr/lib/aarch64-linux-gnu/tegra\n/usr/lib/aarch64-linux-gnu/gstreamer-1.0\n' > /etc/ld.so.conf.d/nvidia-tegra.conf && \
+    ldconfig && \
+    ls /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnv*.so >/dev/null
 
 # Copy GDAL (skip headers - not needed in runtime)
 COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
