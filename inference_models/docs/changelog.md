@@ -14,8 +14,10 @@
 - `PPOCRv6Pipeline` two-stage OCR pipeline
   (`inference_models.models.pp_ocrv6.pp_ocrv6_pipeline`) chaining detection and
   recognition: perspective-crops each detected line via its polygon, groups them
-  into reading order, and returns per-line and assembled text. Construct from
-  loaded models or via `PPOCRv6Pipeline.from_pretrained(...)`. Either stage is
+  into reading order, and returns per-line and assembled text. Registered as
+  the `pp-ocrv6` model pipeline, loadable via
+  `AutoModelPipeline.from_pretrained("pp-ocrv6")`, or construct directly from
+  loaded models. Either stage is
   optional: passing only a detection model runs detect-only (boxes, no text),
   passing only a recognition model runs recognize-only (each image treated as a
   single text-line crop); passing neither raises `ValueError`.

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from unittest import mock
-
 import numpy as np
 import pytest
 import torch
@@ -205,44 +203,29 @@ def test_construct_without_any_model_raises() -> None:
         PPOCRv6Pipeline(det_model=None, rec_model=None)
 
 
-def test_from_pretrained_forwards_kwargs_to_both_models() -> None:
+def test_with_models_builds_pipeline_from_model_list() -> None:
     det_model = object()
     rec_model = object()
-    fake_auto_model = mock.MagicMock()
-    fake_auto_model.from_pretrained.side_effect = [det_model, rec_model]
 
-    with mock.patch(
-        "inference_models.models.pp_ocrv6.pp_ocrv6_pipeline.AutoModel",
-        fake_auto_model,
-    ):
-        pipeline = PPOCRv6Pipeline.from_pretrained(
-            det_model_name_or_path="pp-ocrv6-det/medium",
-            rec_model_name_or_path="pp-ocrv6-rec/tiny",
-            onnx_execution_providers=["CPUExecutionProvider"],
-        )
+    pipeline = PPOCRv6Pipeline.with_models([det_model, rec_model])
 
     assert pipeline._det_model is det_model
     assert pipeline._rec_model is rec_model
-    assert fake_auto_model.from_pretrained.call_args_list == [
-        mock.call(
-            "pp-ocrv6-det/medium",
-            onnx_execution_providers=["CPUExecutionProvider"],
-        ),
-        mock.call(
-            "pp-ocrv6-rec/tiny",
-            onnx_execution_providers=["CPUExecutionProvider"],
-        ),
+
+
+def test_with_models_rejects_wrong_model_count() -> None:
+    with pytest.raises(ValueError):
+        PPOCRv6Pipeline.with_models([object()])
+
+
+def test_pipeline_registered_for_auto_model_pipeline() -> None:
+    from inference_models.model_pipelines.auto_loaders.pipelines_registry import (
+        DEFAULT_PIPELINES_PARAMETERS,
+        resolve_pipeline_class,
+    )
+
+    assert resolve_pipeline_class("pp-ocrv6") is PPOCRv6Pipeline
+    assert DEFAULT_PIPELINES_PARAMETERS["pp-ocrv6"] == [
+        "pp-ocrv6-det/small",
+        "pp-ocrv6-rec/small",
     ]
-
-
-def test_from_pretrained_uses_default_small_variants() -> None:
-    fake_auto_model = mock.MagicMock()
-
-    with mock.patch(
-        "inference_models.models.pp_ocrv6.pp_ocrv6_pipeline.AutoModel",
-        fake_auto_model,
-    ):
-        PPOCRv6Pipeline.from_pretrained()
-
-    called_ids = [call.args[0] for call in fake_auto_model.from_pretrained.call_args_list]
-    assert called_ids == ["pp-ocrv6-det/small", "pp-ocrv6-rec/small"]

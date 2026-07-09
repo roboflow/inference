@@ -63,8 +63,6 @@ class PPOCRInferenceRequest(BaseRequest):
         if rec not in PP_OCR_STAGE_VALUES:
             raise ValueError(f"Invalid PP-OCR text_recognition value: {rec}")
         if det == "none" and rec == "none":
-            raise ValueError(
-                "PP-OCR requires at least one of detection or recognition"
-            )
+            raise ValueError("PP-OCR requires at least one of detection or recognition")
         values["pp_ocr_version_id"] = f"{det}-{rec}"
         return f"pp_ocr/{det}-{rec}"

@@ -6,14 +6,10 @@ import numpy as np
 import torch
 
 from inference_models.entities import ColorFormat
-from inference_models.models.auto_loaders.core import AutoModel
 from inference_models.models.base.object_detection import Detections
 from inference_models.models.pp_ocrv6.pp_ocrv6_common import (
     images_to_numpy_bgr_for_cropping,
 )
-
-DEFAULT_DETECTION_MODEL = "pp-ocrv6-det/small"
-DEFAULT_RECOGNITION_MODEL = "pp-ocrv6-rec/small"
 
 
 @dataclass
@@ -47,23 +43,18 @@ class PPOCRv6Pipeline:
         self._rec_model = rec_model
 
     @classmethod
-    def from_pretrained(
-        cls,
-        det_model_name_or_path: Optional[str] = DEFAULT_DETECTION_MODEL,
-        rec_model_name_or_path: Optional[str] = DEFAULT_RECOGNITION_MODEL,
-        **kwargs,
-    ) -> "PPOCRv6Pipeline":
-        det_model = (
-            AutoModel.from_pretrained(det_model_name_or_path, **kwargs)
-            if det_model_name_or_path is not None
-            else None
-        )
-        rec_model = (
-            AutoModel.from_pretrained(rec_model_name_or_path, **kwargs)
-            if rec_model_name_or_path is not None
-            else None
-        )
-        return cls(det_model=det_model, rec_model=rec_model)
+    def with_models(cls, models: List, **kwargs) -> "PPOCRv6Pipeline":
+        """Build the pipeline from pre-loaded models: ``[detection, recognition]``.
+
+        Entry point used by ``AutoModelPipeline.from_pretrained("pp-ocrv6")``;
+        either entry may be ``None`` to skip that stage.
+        """
+        if len(models) != 2:
+            raise ValueError(
+                "PPOCRv6Pipeline expects exactly two models: [detection, recognition]."
+            )
+        det_model, rec_model = models
+        return cls(det_model=det_model, rec_model=rec_model, **kwargs)
 
     def infer(
         self,

@@ -119,9 +119,7 @@ class InferenceModelsPPOCRAdapter(Model):
             return response
         return self.single_request(request)
 
-    def single_request(
-        self, request: PPOCRInferenceRequest
-    ) -> OCRInferenceResponse:
+    def single_request(self, request: PPOCRInferenceRequest) -> OCRInferenceResponse:
         t1 = perf_counter()
         pipeline_result, image_metadata = self.infer(**request.model_dump())
         detections = pipeline_result.detections

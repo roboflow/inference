@@ -69,23 +69,30 @@ Both models accept `np.ndarray` (`bgr` assumed), `torch.Tensor` (`rgb` assumed, 
 
 ### Pipeline class (recommended)
 
-`PPOCRv6Pipeline` bundles detection, perspective-cropping, reading-order grouping, and recognition behind a single call. It takes model ids directly and returns one `PPOCRv6PipelineResult` per input image, with `text` (all lines joined in reading order), `line_texts` (one per kept detection), and the reordered `detections` (`None` when the detection stage is disabled).
+`PPOCRv6Pipeline` bundles detection, perspective-cropping, reading-order grouping, and recognition behind a single call. It is registered as the `pp-ocrv6` model pipeline and loads via `AutoModelPipeline` (defaulting to the `small` variant of both stages). It returns one `PPOCRv6PipelineResult` per input image, with `text` (all lines joined in reading order), `line_texts` (one per kept detection), and the reordered `detections` (`None` when the detection stage is disabled).
 
 ```python
 import cv2
 
-from inference_models.models.pp_ocrv6.pp_ocrv6_pipeline import PPOCRv6Pipeline
+from inference_models import AutoModelPipeline
 
-pipeline = PPOCRv6Pipeline.from_pretrained(
-    "pp-ocrv6-det/small", "pp-ocrv6-rec/small"
-)
+pipeline = AutoModelPipeline.from_pretrained("pp-ocrv6")
 
 image = cv2.imread("document.png")
 result = pipeline(image)[0]
 print(result.text)
 ```
 
-`from_pretrained` forwards any extra keyword arguments (e.g. `onnx_execution_providers`) to both underlying models. To reuse already-loaded models, construct the pipeline directly with `PPOCRv6Pipeline(det_model=detector, rec_model=recognizer)`.
+Override stage variants through `models_parameters` (order: `[detection, recognition]`):
+
+```python
+pipeline = AutoModelPipeline.from_pretrained(
+    "pp-ocrv6",
+    models_parameters=["pp-ocrv6-det/medium", "pp-ocrv6-rec/medium"],
+)
+```
+
+To reuse already-loaded models, construct the pipeline directly with `PPOCRv6Pipeline(det_model=detector, rec_model=recognizer)`.
 
 ### Two-stage composition
 
@@ -112,7 +119,7 @@ print("\n".join(texts))
 
 `from_pretrained` also accepts a local package directory containing `inference.onnx` and `inference.yml`.
 
-Either stage is optional (passing only one model, or `None` for the other path in `from_pretrained`, skips it; passing neither raises `ValueError`):
+Either stage is optional when constructing `PPOCRv6Pipeline` directly (passing `None` for the other model skips it; passing neither raises `ValueError`):
 
 - **Detect-only** (recognition skipped) — construct with `rec_model=None`. Each result carries reading-order `detections` with empty `line_texts` and `text=""`; recognition is never invoked.
-- **Recognize-only** (detection skipped) — construct with `det_model=None`. Each input image is treated as a single text-line crop and passed straight to recognition; each result has `text` set to the recognized string, `line_texts=[text]`, and empty `detections`.
+- **Recognize-only** (detection skipped) — construct with `det_model=None`. Each input image is treated as a single text-line crop and passed straight to recognition; each result has `text` set to the recognized string, `line_texts=[text]`, and `detections=None`.

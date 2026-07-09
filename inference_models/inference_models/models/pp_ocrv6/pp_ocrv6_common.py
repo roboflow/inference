@@ -20,8 +20,9 @@ def normalize_input_images(
 ) -> List[np.ndarray]:
     """Normalize numpy image inputs into a list of ``uint8`` arrays.
 
-    Numpy-only: ``torch.Tensor`` inputs are pre-processed on-device by the
-    models (see ``normalize_torch_images_to_device``) and never reach this path.
+    Numpy-only: callers dispatch ``torch.Tensor`` inputs to
+    ``normalize_torch_images_to_device`` first (via ``is_torch_input``), so
+    tensors never reach this path.
     Integer images are read as ``[0, 255]`` (clipped and cast); floating-point
     images are assumed to already be on the ``[0, 255]`` scale (clipped, rounded
     and cast). Channels are emitted in ``target_color_format`` order via a single
@@ -36,16 +37,6 @@ def normalize_input_images(
                 target_color_format=target_color_format,
             )
         ]
-    if isinstance(images, torch.Tensor) or (
-        isinstance(images, list) and images and isinstance(images[0], torch.Tensor)
-    ):
-        raise ModelInputError(
-            message=(
-                "normalize_input_images accepts numpy images only; torch.Tensor "
-                "inputs are pre-processed on-device by the PP-OCRv6 models."
-            ),
-            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
-        )
     if not isinstance(images, list):
         raise ModelInputError(
             message="PP-OCRv6 models support np.ndarray, torch.Tensor, or lists of those inputs.",
@@ -99,9 +90,7 @@ def images_to_numpy_bgr_for_cropping(
                 for numpy_image in torch_images_to_numpy_list(images=image)
             )
         return result
-    return normalize_input_images(
-        images=images, input_color_format=input_color_format
-    )
+    return normalize_input_images(images=images, input_color_format=input_color_format)
 
 
 def torch_images_to_numpy_list(images: torch.Tensor) -> List[np.ndarray]:
@@ -165,7 +154,11 @@ def is_torch_input(
     """
     if isinstance(images, torch.Tensor):
         return True
-    return isinstance(images, list) and bool(images) and isinstance(images[0], torch.Tensor)
+    return (
+        isinstance(images, list)
+        and bool(images)
+        and isinstance(images[0], torch.Tensor)
+    )
 
 
 def normalize_torch_images_to_device(
