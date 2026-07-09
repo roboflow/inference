@@ -85,13 +85,18 @@ def _build_webexec_endpoint_base(method_label: str) -> str:
 
 
 def _coerce_http_endpoint_to_ws_endpoint(endpoint_url: str) -> str:
-    """Map a legacy execute_block endpoint URL to the wsapp endpoint URL."""
+    """Map a legacy execute_block endpoint URL to the wsapp endpoint URL.
+
+    Operates on the subdomain label only, so it survives regional hosts
+    (e.g. ``...-execute-block.eu-west.modal.run``).
+    """
     parts = urlsplit(endpoint_url.rstrip("/"))
-    netloc = parts.netloc.replace(
-        f"-{_WEBEXEC_HTTP_METHOD_LABEL}.modal.run",
-        f"-{_WEBEXEC_WS_METHOD_LABEL}.modal.run",
-        1,
-    )
+    subdomain, dot, rest = parts.netloc.partition(".")
+    if subdomain.endswith(f"-{_WEBEXEC_HTTP_METHOD_LABEL}"):
+        subdomain = (
+            subdomain[: -len(_WEBEXEC_HTTP_METHOD_LABEL)] + _WEBEXEC_WS_METHOD_LABEL
+        )
+    netloc = subdomain + dot + rest
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
