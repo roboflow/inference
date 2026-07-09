@@ -109,12 +109,22 @@ def preprocess_text_lines_torch(
 def ctc_decode(
     predictions: np.ndarray, characters: List[str]
 ) -> List[Tuple[str, float]]:
-    blank_idx = 0
-    character_by_idx = [""] + characters + [" "]
     predictions_idx = predictions.argmax(axis=2)
     predictions_prob = predictions.max(axis=2)
+    return ctc_decode_indices(
+        indices=predictions_idx,
+        probs=predictions_prob,
+        characters=characters,
+    )
+
+
+def ctc_decode_indices(
+    indices: np.ndarray, probs: np.ndarray, characters: List[str]
+) -> List[Tuple[str, float]]:
+    blank_idx = 0
+    character_by_idx = [""] + characters + [" "]
     decoded = []
-    for batch_idx, sequence in enumerate(predictions_idx):
+    for batch_idx, sequence in enumerate(indices):
         tokens = []
         token_scores = []
         previous_idx = None
@@ -125,7 +135,7 @@ def ctc_decode(
                 continue
             if token_idx < len(character_by_idx):
                 tokens.append(character_by_idx[token_idx])
-                token_scores.append(float(predictions_prob[batch_idx][step_idx]))
+                token_scores.append(float(probs[batch_idx][step_idx]))
             previous_idx = token_idx
         score = float(np.mean(token_scores)) if token_scores else 0.0
         decoded.append(("".join(tokens), score))

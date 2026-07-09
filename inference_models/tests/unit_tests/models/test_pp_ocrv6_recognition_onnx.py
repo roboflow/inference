@@ -19,6 +19,7 @@ if _ONNXRUNTIME_AVAILABLE:
     )
 from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_utils import (
     ctc_decode,
+    ctc_decode_indices,
     load_inference_config,
     preprocess_text_lines,
     resize_and_pad_text_line,
@@ -169,6 +170,42 @@ def test_ctc_decode_removes_blanks_and_collapses_repeated_tokens() -> None:
     result = ctc_decode(predictions=predictions, characters=["A", "B"])
 
     assert result == [("AB ", 1.0)]
+
+
+def test_ctc_decode_indices_handles_blanks_repeats_ranges_and_empty() -> None:
+    indices = np.array(
+        [
+            [0, 1, 1, 0, 1, 99, 2, 2, 3],
+            [0, 0, 99, 99, 0, 0, 0, 0, 0],
+        ],
+        dtype=np.int64,
+    )
+    probs = np.array(
+        [
+            [0.10, 0.90, 0.80, 0.70, 0.60, 0.50, 0.40, 0.30, 0.20],
+            [0.90, 0.80, 0.70, 0.60, 0.50, 0.40, 0.30, 0.20, 0.10],
+        ],
+        dtype=np.float32,
+    )
+
+    result = ctc_decode_indices(indices=indices, probs=probs, characters=["A", "B"])
+
+    assert result == [("AAB ", pytest.approx(0.525)), ("", 0.0)]
+
+
+def test_ctc_decode_matches_ctc_decode_indices_for_random_logits() -> None:
+    rng = np.random.default_rng(0)
+    predictions = rng.normal(size=(3, 20, 10)).astype(np.float32)
+    characters = [str(idx) for idx in range(8)]
+
+    result = ctc_decode(predictions=predictions, characters=characters)
+    expected = ctc_decode_indices(
+        indices=predictions.argmax(axis=2),
+        probs=predictions.max(axis=2),
+        characters=characters,
+    )
+
+    assert result == expected
 
 
 @requires_onnxruntime

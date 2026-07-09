@@ -19,7 +19,7 @@ from inference_models.models.pp_ocrv6.pp_ocrv6_common import (
     normalize_torch_images_to_device,
 )
 from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_utils import (
-    ctc_decode,
+    ctc_decode_indices,
     load_inference_config,
     preprocess_text_lines,
     preprocess_text_lines_torch,
@@ -165,10 +165,12 @@ class PPOCRv6RecognitionOnnx(TextOnlyOCRModel[torch.Tensor, torch.Tensor]):
             )[0]
 
     def post_process(self, model_results: torch.Tensor, **kwargs) -> List[str]:
+        probs, indices = torch.max(model_results, dim=2)
         return [
             text
-            for text, _ in ctc_decode(
-                predictions=model_results.detach().cpu().numpy(),
+            for text, _ in ctc_decode_indices(
+                indices=indices.detach().cpu().numpy(),
+                probs=probs.detach().cpu().numpy(),
                 characters=self._characters,
             )
         ]

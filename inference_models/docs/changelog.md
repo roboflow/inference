@@ -32,6 +32,11 @@
   heuristic). Pre-processing was also cleaned up: a single net channel
   permutation replaces the earlier BGR round-trip-and-flip, and detection
   pre-processing metadata is threaded as a `NamedTuple`.
+- PP-OCRv6 recognition CTC decode now reduces logits with `torch.max` on the
+  model's device before the host transfer, copying only `(batch, T)`
+  indices/probabilities instead of the full `(batch, T, vocab)` logits
+  (~24 MB for the 18.7k-vocab variants). Post-processing drops from ~5 ms to
+  ~0.6 ms per batch of 8 on an RTX 3060 Ti; identical decoded strings.
 
 ## `0.29.7`
 
