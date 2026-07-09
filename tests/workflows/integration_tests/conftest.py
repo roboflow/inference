@@ -14,6 +14,11 @@ def roboflow_api_key() -> str:
     return os.environ["ROBOFLOW_API_KEY"]
 
 
+@pytest.fixture
+def deep_lab_v3_api_key() -> str:
+    return os.environ["DEEP_LAB_V3_API_KEY"]
+
+
 @pytest.fixture(scope="function")
 def model_manager() -> ModelManager:
     model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
