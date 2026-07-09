@@ -1758,15 +1758,15 @@ def sam3_package() -> str:
     )
 
 
-PP_OCRV6_TINY_DET_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-tiny-det-onnx.zip"
-PP_OCRV6_TINY_REC_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-tiny-rec-onnx.zip"
+PP_OCRV6_TINY_DET_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-det-tiny.zip"
+PP_OCRV6_TINY_REC_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-rec-tiny.zip"
 
 
 @pytest.fixture(scope="module")
 def pp_ocrv6_tiny_det_onnx_package() -> str:
     return download_model_package(
         model_package_zip_url=PP_OCRV6_TINY_DET_PACKAGE_URL,
-        package_name="pp-ocrv6-tiny-det-onnx",
+        package_name="pp-ocrv6-det-tiny",
     )
 
 
@@ -1774,5 +1774,5 @@ def pp_ocrv6_tiny_det_onnx_package() -> str:
 def pp_ocrv6_tiny_rec_onnx_package() -> str:
     return download_model_package(
         model_package_zip_url=PP_OCRV6_TINY_REC_PACKAGE_URL,
-        package_name="pp-ocrv6-tiny-rec-onnx",
+        package_name="pp-ocrv6-rec-tiny",
     )

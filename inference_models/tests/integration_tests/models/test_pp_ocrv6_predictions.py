@@ -79,11 +79,11 @@ def test_pp_ocrv6_recognition_reads_text_line(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-def test_pp_ocrv6_recognition_unit_range_float_tensor_matches_uint8(
+def test_pp_ocrv6_recognition_float_tensor_matches_uint8(
     pp_ocrv6_tiny_rec_onnx_package: str,
 ) -> None:
-    # Regression: float [0, 1] tensors were previously interpreted as
-    # near-black images and produced garbage text with no error raised.
+    # Package-wide input contract: float images are assumed to already be on
+    # the [0, 255] scale, so a float tensor must match its uint8 counterpart.
     from inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx import (
         PPOCRv6RecognitionOnnx,
     )
@@ -97,7 +97,6 @@ def test_pp_ocrv6_recognition_unit_range_float_tensor_matches_uint8(
         torch.from_numpy(np.ascontiguousarray(crop_bgr[:, :, ::-1]))
         .permute(2, 0, 1)
         .float()
-        / 255.0
     )
 
     assert model(crop_tensor) == model(crop_bgr) == ["hello world"]
