@@ -2,6 +2,11 @@ import numpy as np
 import pytest
 import supervision as sv
 
+pytest.importorskip(
+    "inference_models.models.pp_ocrv6",
+    reason="Installed `inference_models` version does not ship PP-OCRv6.",
+)
+
 from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
