@@ -305,6 +305,15 @@ RUN mkdir -p src/build && cd src/build && \
     make -j$(nproc) && \
     make install && \
     ldconfig && \
+    # jetson_utils' __init__ eagerly imports every submodule (os/types/
+    # network/cuda), whose module-level deps are termcolor/tabulate/docker/
+    # numpy (upstream pyproject) + requests (imported by network/requests.py
+    # but missing from the pyproject). The cmake install path, unlike pip,
+    # installs no dependencies - and the runtime import in jetson_producer.py
+    # needs them too (they ride into the runtime stage via the dist-packages
+    # COPY; numpy/requests/docker are in the image anyway via requirements).
+    python3 -m pip install --break-system-packages --no-cache-dir \
+        termcolor tabulate docker requests && \
     # Import smoke test (loads the C++ lib + GStreamer/GL deps; no GPU or
     # driver needed at import time), then stage the python bindings into ONE
     # known dir - `make install` picks the dist-packages dir itself and the
