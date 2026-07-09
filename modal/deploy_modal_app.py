@@ -24,6 +24,9 @@ Usage:
 import sys
 from utils import initialize_modal, prepare_deployment, validate_deployment_prerequisites
 
+from inference.core.env import WEBEXEC_MODAL_APP_NAME
+
+
 prepare_deployment()
 
 # Initialize Modal and get credentials
@@ -62,7 +65,10 @@ try:
     print("\n📡 Web Endpoint URL:")
     try:
         # Get the Executor class
-        cls = modal.Cls.from_name("webexec", "Executor")
+        cls = modal.Cls.from_name(
+            app_name=WEBEXEC_MODAL_APP_NAME,
+            name="Executor",
+        )
         # Create an instance to get the method
         instance = cls(workspace_id="test")
         # Get the execute_block method's web URL

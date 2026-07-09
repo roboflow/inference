@@ -15,6 +15,7 @@ import traceback
 
 import modal
 
+from inference.core.env import WEBEXEC_MODAL_APP_NAME
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     capture_output,
 )
@@ -35,7 +36,7 @@ class _NoopDebugTraces:
 
 
 # Create the Modal App
-app = modal.App("webexec")
+app = modal.App(WEBEXEC_MODAL_APP_NAME)
 
 
 INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
