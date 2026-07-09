@@ -69,20 +69,14 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_video_metadata_kind,
 )
 
-_DEFAULT_WEBEXEC_APP_NAME = "webexec"
 _WEBEXEC_EXECUTOR_CLASS_LABEL = "executor"
 _WEBEXEC_HTTP_METHOD_LABEL = "execute-block"
 _WEBEXEC_WS_METHOD_LABEL = "wsapp"
 
 
-def _resolve_webexec_app_name() -> str:
-    """Return the single legacy webexec app name."""
-    return _DEFAULT_WEBEXEC_APP_NAME
-
-
 def _build_webexec_endpoint_base(method_label: str) -> str:
     workspace = MODAL_WORKSPACE_NAME
-    app_name = _resolve_webexec_app_name()
+    app_name = WEBEXEC_MODAL_APP_NAME
     label = f"{app_name}-{_WEBEXEC_EXECUTOR_CLASS_LABEL}-{method_label}"
     if len(label) > 56:
         hash_str = hashlib.sha256(label.encode()).hexdigest()[:6]
