@@ -19,6 +19,7 @@ from inference.core.env import (
     MODAL_TOKEN_ID,
     MODAL_TOKEN_SECRET,
     MODAL_WORKSPACE_NAME,
+    WEBEXEC_MODAL_APP_NAME,
 )
 from inference.core.logger import logger
 from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockError
@@ -213,7 +214,7 @@ class ModalExecutor:
                     # URL pattern: https://{workspace}--{app}-{class}-{method_truncated}.modal.run
                     # Note: Modal truncates long labels to 63 chars with a hash suffix
                     workspace = MODAL_WORKSPACE_NAME
-                    app_name = "webexec"
+                    app_name = WEBEXEC_MODAL_APP_NAME
                     class_name = "executor"
                     method_name = "execute-block"
 

@@ -15,6 +15,7 @@ import traceback
 
 import modal
 
+from inference.core.env import WEBEXEC_INFERENCE_VERSION, WEBEXEC_MODAL_APP_NAME
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     capture_output,
 )
@@ -35,10 +36,9 @@ class _NoopDebugTraces:
 
 
 # Create the Modal App
-app = modal.App("webexec")
+app = modal.App(WEBEXEC_MODAL_APP_NAME)
 
 
-INFERENCE_VERSION = os.getenv("INFERENCE_VERSION")
 WEBEXEC_INFERENCE_DOCKER_IMAGE = os.getenv("WEBEXEC_INFERENCE_DOCKER_IMAGE", "roboflow/roboflow-inference-server-cpu")
 
 WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
@@ -50,17 +50,17 @@ def get_inference_image():
     """Get the Modal Image for inference."""
 
     # Use the pre-built shared image or create on-the-fly
-    global INFERENCE_VERSION
-    if not INFERENCE_VERSION:
+    inference_version = WEBEXEC_INFERENCE_VERSION
+    if not inference_version:
         try:
             from inference.core.version import __version__
 
-            INFERENCE_VERSION = __version__
+            inference_version = __version__
         except ImportError:
-            INFERENCE_VERSION = "latest"
+            inference_version = "latest"
 
     image = (
-        modal.Image.from_registry(f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{INFERENCE_VERSION}")
+        modal.Image.from_registry(f"{WEBEXEC_INFERENCE_DOCKER_IMAGE}:{inference_version}")
         .apt_install(
             "libgl1-mesa-glx",
             "libglib2.0-0",
