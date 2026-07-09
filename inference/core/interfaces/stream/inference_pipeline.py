@@ -69,6 +69,10 @@ from inference.core.workflows.execution_engine.profiling.core import (
 from inference.core.workflows.execution_engine.v1.executor.utils import resolve_futures
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
+from inference.usage_tracking.stream_session import (
+    mint_stream_session_id,
+    stream_session_id,
+)
 
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
 SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT = "SOURCE_CONNECTION_ATTEMPT_FAILED"
@@ -873,6 +877,9 @@ class InferencePipeline:
         self._on_pipeline_end = on_pipeline_end
         self._batch_collection_timeout = batch_collection_timeout
         self._sink_mode = sink_mode
+        # Distinguishes this pipeline's usage from other pipelines in the same
+        # process; usage-based stream billing counts concurrent ids.
+        self._stream_session_id = mint_stream_session_id()
 
     def start(self, use_main_thread: bool = True) -> None:
         self._stop = False
@@ -919,6 +926,10 @@ class InferencePipeline:
             self._on_pipeline_end()
 
     def _execute_inference(self) -> None:
+        # Tag everything recorded from this thread (workflow runs, model
+        # inferences) with this pipeline's stream session id; the contextvar
+        # is thread-scoped so concurrent pipelines don't see each other's id.
+        stream_session_id.set(self._stream_session_id)
         send_inference_pipeline_status_update(
             severity=UpdateSeverity.INFO,
             event_type=INFERENCE_THREAD_STARTED_EVENT,

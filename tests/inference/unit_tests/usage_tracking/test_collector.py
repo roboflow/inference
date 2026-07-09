@@ -1205,3 +1205,147 @@ def test_external_source_info_not_persisted_into_resource_details(
         usage_collector._usage["test_key"]["model:unknown"]["resource_details"]
     )
     assert "source_info" not in resource_details
+
+
+def test_record_usage_separates_concurrent_streams_by_stream_session_id(
+    usage_collector_with_mocked_threads,
+):
+    """Two pipelines sharing an API key and a workflow must not aggregate into
+    one usage entry: stream billing counts concurrent stream session ids, so
+    collapsing them under-counts a device's cameras.
+    """
+    # given
+    from inference.usage_tracking.stream_session import stream_session_id
+
+    collector = usage_collector_with_mocked_threads
+    api_key = "fake"
+    resource_id = "workflow-1"
+
+    # when - same (api_key, category, resource) recorded under two stream sessions
+    token = stream_session_id.set("stream-a")
+    try:
+        collector.record_usage(
+            source="rtsp://camera-1",
+            category="workflows",
+            frames=2,
+            api_key=api_key,
+            resource_id=resource_id,
+            fps=10,
+        )
+        stream_session_id.set("stream-b")
+        collector.record_usage(
+            source="rtsp://camera-2",
+            category="workflows",
+            frames=3,
+            api_key=api_key,
+            resource_id=resource_id,
+            fps=10,
+        )
+    finally:
+        stream_session_id.reset(token)
+
+    # then - two separate entries, each tagged with its own stream session id
+    usage = collector._usage[api_key]
+    assert f"workflows:{resource_id}:stream-a" in usage
+    assert f"workflows:{resource_id}:stream-b" in usage
+    assert f"workflows:{resource_id}" not in usage
+    entry_a = usage[f"workflows:{resource_id}:stream-a"]
+    entry_b = usage[f"workflows:{resource_id}:stream-b"]
+    assert entry_a["stream_session_id"] == "stream-a"
+    assert entry_b["stream_session_id"] == "stream-b"
+    assert entry_a["processed_frames"] == 2
+    assert entry_b["processed_frames"] == 3
+
+
+def test_record_usage_without_stream_session_id_keeps_legacy_key(
+    usage_collector_with_mocked_threads,
+):
+    # given
+    from inference.usage_tracking.stream_session import stream_session_id
+
+    collector = usage_collector_with_mocked_threads
+    assert stream_session_id.get() is None
+
+    # when
+    collector.record_usage(
+        source="img.jpg",
+        category="workflows",
+        frames=1,
+        api_key="fake",
+        resource_id="workflow-1",
+    )
+
+    # then - key format and payload fields unchanged for non-pipeline callers
+    usage = collector._usage["fake"]
+    assert "workflows:workflow-1" in usage
+    assert "stream_session_id" not in usage["workflows:workflow-1"]
+
+
+def test_stream_session_id_does_not_leak_across_threads():
+    # given
+    from threading import Thread
+
+    from inference.usage_tracking.stream_session import stream_session_id
+
+    seen_in_thread = []
+
+    def pipeline_thread():
+        stream_session_id.set("thread-local-stream")
+        seen_in_thread.append(stream_session_id.get())
+
+    # when
+    thread = Thread(target=pipeline_thread)
+    thread.start()
+    thread.join()
+
+    # then - the id set inside the pipeline thread is invisible outside it
+    assert seen_in_thread == ["thread-local-stream"]
+    assert stream_session_id.get() is None
+
+
+def test_zip_usage_payloads_keeps_stream_sessions_separate():
+    # given - same resource under two stream-session-suffixed keys
+    def make_payload(key, ssid, frames, ts):
+        return {
+            "fake_api1_hash": {
+                key: {
+                    "api_key_hash": "fake_api1_hash",
+                    "resource_id": "workflow-1",
+                    "stream_session_id": ssid,
+                    "exec_session_id": "session-1",
+                    "timestamp_start": ts,
+                    "timestamp_stop": ts + 1,
+                    "processed_frames": frames,
+                    "fps": 10,
+                    "source_duration": frames / 10,
+                    "execution_duration": 1,
+                }
+            }
+        }
+
+    dumped_usage_payloads = [
+        make_payload(
+            "workflows:workflow-1:stream-a", "stream-a", 2, 1721032989934855000
+        ),
+        make_payload(
+            "workflows:workflow-1:stream-b", "stream-b", 3, 1721032989934856000
+        ),
+        make_payload(
+            "workflows:workflow-1:stream-a", "stream-a", 5, 1721032989934857000
+        ),
+    ]
+
+    # when
+    zipped_usage_payloads = zip_usage_payloads(usage_payloads=dumped_usage_payloads)
+
+    # then - same stream merges, different streams stay separate
+    merged = {}
+    for payload in zipped_usage_payloads:
+        for resource_payloads in payload.values():
+            for key, resource_usage in resource_payloads.items():
+                assert key not in merged
+                merged[key] = resource_usage
+    assert merged["workflows:workflow-1:stream-a"]["processed_frames"] == 7
+    assert merged["workflows:workflow-1:stream-a"]["stream_session_id"] == "stream-a"
+    assert merged["workflows:workflow-1:stream-b"]["processed_frames"] == 3
+    assert merged["workflows:workflow-1:stream-b"]["stream_session_id"] == "stream-b"

@@ -71,6 +71,7 @@ from .payload_helpers import (
 from .plan_details import PlanDetails
 from .redis_queue import RedisQueue
 from .sqlite_queue import SQLiteQueue
+from .stream_session import stream_session_id as stream_session_id_var
 from .utils import collect_func_params
 
 T = TypeVar("T")
@@ -386,8 +387,15 @@ class UsageCollector:
             ip_address_hash = self._system_info["ip_address_hash"]
             is_gpu_available = self._system_info["is_gpu_available"]
             hostname = self._system_info["hostname"]
+        # A pipeline-scoped stream session id keeps concurrently running video
+        # pipelines separate in the usage payload even when they share an API
+        # key and a workflow (resource_id) — required for per-stream billing.
+        stream_session_id = stream_session_id_var.get()
+        usage_key = f"{category}:{resource_id}"
+        if stream_session_id:
+            usage_key = f"{usage_key}:{stream_session_id}"
         with UsageCollector._lock:
-            source_usage = self._usage[api_key_hash][f"{category}:{resource_id}"]
+            source_usage = self._usage[api_key_hash][usage_key]
             if not source_usage["timestamp_start"]:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
@@ -411,6 +419,9 @@ class UsageCollector:
             ):
                 source_usage["roboflow_service_name"] = roboflow_service_name
                 source_usage["roboflow_internal_secret"] = roboflow_internal_secret
+
+            if stream_session_id:
+                source_usage["stream_session_id"] = stream_session_id
 
             exec_session_id = None
             if execution_id is not None:

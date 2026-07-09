@@ -743,3 +743,66 @@ def test_inference_pipeline_works_correctly_against_multiple_video_files_with_ac
     assert frames_by_sources[1] == list(
         range(1, 431 * 2 + 1)
     ), "Order of prediction frames violated for source 1"
+
+
+def _make_minimal_pipeline(on_video_frame) -> InferencePipeline:
+    from unittest.mock import MagicMock
+
+    return InferencePipeline(
+        on_video_frame=on_video_frame,
+        video_sources=[],
+        predictions_queue=Queue(maxsize=8),
+        watchdog=MagicMock(),
+        status_update_handlers=[],
+    )
+
+
+def test_inference_pipeline_instances_get_distinct_stream_session_ids() -> None:
+    # given
+    pipeline_1 = _make_minimal_pipeline(on_video_frame=lambda frames: [])
+    pipeline_2 = _make_minimal_pipeline(on_video_frame=lambda frames: [])
+
+    # then - each pipeline mints its own usage identity
+    assert pipeline_1._stream_session_id
+    assert pipeline_2._stream_session_id
+    assert pipeline_1._stream_session_id != pipeline_2._stream_session_id
+
+
+def test_execute_inference_tags_thread_with_pipeline_stream_session_id() -> None:
+    # given - two pipelines sharing a process, as on a multi-camera edge device
+    from threading import Thread
+    from unittest.mock import MagicMock
+
+    from inference.usage_tracking.stream_session import stream_session_id
+
+    ids_seen_by_inference: dict = {}
+
+    def make_on_video_frame(name):
+        def on_video_frame(video_frames):
+            # stands in for the workflow run, where usage is recorded
+            ids_seen_by_inference[name] = stream_session_id.get()
+            return []
+
+        return on_video_frame
+
+    pipeline_1 = _make_minimal_pipeline(make_on_video_frame("pipeline_1"))
+    pipeline_2 = _make_minimal_pipeline(make_on_video_frame("pipeline_2"))
+    for pipeline in (pipeline_1, pipeline_2):
+        fake_frame = MagicMock()
+        pipeline._generate_frames = lambda frame=fake_frame: iter([[frame]])
+
+    # when - each pipeline runs inference in its own thread, like start() does
+    threads = [
+        Thread(target=pipeline_1._execute_inference),
+        Thread(target=pipeline_2._execute_inference),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    # then - usage recorded in each inference thread carries that pipeline's
+    # id, and nothing leaks into the calling thread
+    assert ids_seen_by_inference["pipeline_1"] == pipeline_1._stream_session_id
+    assert ids_seen_by_inference["pipeline_2"] == pipeline_2._stream_session_id
+    assert stream_session_id.get() is None
