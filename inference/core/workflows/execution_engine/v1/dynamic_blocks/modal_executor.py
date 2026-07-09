@@ -73,6 +73,23 @@ _WEBEXEC_EXECUTOR_CLASS_LABEL = "executor"
 _WEBEXEC_HTTP_METHOD_LABEL = "execute-block"
 _WEBEXEC_WS_METHOD_LABEL = "wsapp"
 
+# Modal's ASGI data plane rejects websocket messages above ~2 MiB (it falls
+# back to a blob upload that fails inside the container), so frames above this
+# limit are split into a chunk-control frame plus raw chunks. Must match
+# WEBEXEC_WS_MAX_FRAME_BYTES in modal/modal_app.py.
+_WS_MAX_FRAME_BYTES = 1024 * 1024
+
+
+def _split_ws_frames(frame_bytes: bytes, msgpack: Any) -> list:
+    """Split an oversized frame into a chunk-control frame plus raw chunks."""
+    if len(frame_bytes) <= _WS_MAX_FRAME_BYTES:
+        return [frame_bytes]
+    chunks = [
+        frame_bytes[i : i + _WS_MAX_FRAME_BYTES]
+        for i in range(0, len(frame_bytes), _WS_MAX_FRAME_BYTES)
+    ]
+    return [msgpack.packb({"_chunked": len(chunks)}, use_bin_type=True), *chunks]
+
 
 def _build_webexec_endpoint_base(method_label: str) -> str:
     workspace = MODAL_WORKSPACE_NAME
@@ -957,6 +974,9 @@ class WebSocketModalExecutor:
         an ambiguous outcome, so we do not resend the frame and risk duplicate
         side effects.
         """
+        import msgpack
+
+        frames = _split_ws_frames(frame_bytes, msgpack)
         last_exc: Optional[Exception] = None
         for attempt in range(2):
             sent_ok = False
@@ -965,9 +985,10 @@ class WebSocketModalExecutor:
                 # Hold the lock across send+recv so concurrent callers sharing
                 # this executor's socket can't interleave a request/response.
                 with self._io_lock:
-                    self._ws.send_binary(frame_bytes)
+                    for frame in frames:
+                        self._ws.send_binary(frame)
                     sent_ok = True
-                    resp_bytes = self._ws.recv()
+                    resp_bytes = self._recv_reassembled(msgpack)
                 self._last_activity = _time.monotonic()
                 return resp_bytes
             except Exception as e:
@@ -1001,6 +1022,15 @@ class WebSocketModalExecutor:
             public_message=f"WebSocket connection to Modal endpoint failed after retry: {last_exc}",
             context="modal_executor | websocket_connection",
         )
+
+    def _recv_reassembled(self, msgpack: Any) -> bytes:
+        """Receive one logical frame, joining chunked frames if signalled."""
+        resp_bytes = self._ws.recv()
+        if isinstance(resp_bytes, bytes) and len(resp_bytes) < 64:
+            head = msgpack.unpackb(resp_bytes, raw=False)
+            if isinstance(head, dict) and "_chunked" in head:
+                return b"".join(self._ws.recv() for _ in range(head["_chunked"]))
+        return resp_bytes
 
     def _execute_ws(
         self,

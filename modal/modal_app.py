@@ -37,6 +37,12 @@ WEBEXEC_WS_MAX_CONNECTION_SECONDS = int(
 WEBEXEC_WS_IDLE_TIMEOUT_SECONDS = int(
     os.getenv("WEBEXEC_WS_IDLE_TIMEOUT_SECONDS", "10")
 )
+# Modal's ASGI data plane rejects websocket messages above ~2 MiB (it falls
+# back to a blob upload that fails inside the container), so frames above this
+# limit are split into a chunk-control frame plus raw chunks. Must match
+# _WS_MAX_FRAME_BYTES in
+# inference/core/workflows/execution_engine/v1/dynamic_blocks/modal_executor.py.
+WEBEXEC_WS_MAX_FRAME_BYTES = 1024 * 1024
 
 
 class _NoopDebugTraces:
@@ -792,6 +798,16 @@ from datetime import datetime
                         await websocket.close(code=1000)
                         return
                     request = msgpack.unpackb(raw, raw=False)
+                    if isinstance(request, dict) and "_chunked" in request:
+                        parts = []
+                        for _ in range(request["_chunked"]):
+                            parts.append(
+                                await asyncio.wait_for(
+                                    websocket.receive_bytes(),
+                                    timeout=WEBEXEC_WS_IDLE_TIMEOUT_SECONDS,
+                                )
+                            )
+                        request = msgpack.unpackb(b"".join(parts), raw=False)
 
                     code_str = request.get("code_str", "")
                     imports = request.get("imports", [])
@@ -817,7 +833,23 @@ from datetime import datetime
                             resp["result"]
                         )
 
-                    await websocket.send_bytes(msgpack.packb(resp, use_bin_type=True))
+                    payload = msgpack.packb(resp, use_bin_type=True)
+                    if len(payload) > WEBEXEC_WS_MAX_FRAME_BYTES:
+                        chunks = [
+                            payload[i : i + WEBEXEC_WS_MAX_FRAME_BYTES]
+                            for i in range(
+                                0, len(payload), WEBEXEC_WS_MAX_FRAME_BYTES
+                            )
+                        ]
+                        await websocket.send_bytes(
+                            msgpack.packb(
+                                {"_chunked": len(chunks)}, use_bin_type=True
+                            )
+                        )
+                        for chunk in chunks:
+                            await websocket.send_bytes(chunk)
+                    else:
+                        await websocket.send_bytes(payload)
             except WebSocketDisconnect:
                 pass
 
