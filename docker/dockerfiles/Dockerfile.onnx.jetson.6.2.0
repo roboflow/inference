@@ -26,6 +26,10 @@ ARG OPENCV_PYTHON_INSTALL_PATH=/usr/local/lib/python3.10/dist-packages
 ARG OPENCV_PYTHON_INCLUDE_DIR=/usr/include/python3.10
 ARG OPENCV_PYTHON_VERSION=310
 ARG ONNXRUNTIME_VERSION=1.20.0
+# jetson-utils (NVDEC GPU-tensor decode for the v2 video pipeline). Upstream
+# tags no releases - pinned to master (2026-07-08); master's python bindings
+# select by Ubuntu codename (jammy -> 3.10, this image's Python).
+ARG JETSON_UTILS_COMMIT=fae4b4250f985ab92180b6ec955b79995b7a34ff
 ENV LANG=en_US.UTF-8
 
 WORKDIR /build
@@ -65,6 +69,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-bu
     libavutil-dev \
     libgstreamer1.0-dev \
     libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-bad1.0-dev \
+    libgstrtspserver-1.0-dev \
+    libjson-glib-dev \
+    libsoup2.4-dev \
+    libglew-dev \
+    libglu1-mesa-dev \
+    freeglut3-dev \
+    lsb-release \
     unzip \
     libatlas-base-dev \
     liblapack-dev \
@@ -251,6 +263,59 @@ RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${T
     python3 -m pip install --break-system-packages --no-cache-dir "$1"; \
     rm -rf /tmp/triton-wheels; \
     python3 -c "import triton; print('triton', triton.__version__)"
+
+# Build jetson-utils (dusty-nv) - hardware NVDEC decode for the v2 video
+# pipeline: inference/core/interfaces/camera/jetson_producer.py wraps
+# jetson_utils.videoSource and hands frames to torch as CUDA tensors via
+# cudaImage's __cuda_array_interface__. Pure cmake + make install (no pip),
+# so it cannot clobber the from-source cv2 built later in this stage. Placed
+# before the `COPY . .` layers so source edits never force a rebuild (the
+# build is ~2 min; no cache mount needed).
+# - Arch list: upstream hardcodes gencodes for SM 53/62/72/87; patched down to
+#   SM 87 only (Orin) - the pre-Orin gencodes are deprecated on CUDA 12.6 and
+#   dead weight in this image.
+# - Upstream still uses legacy find_package(CUDA), removed-by-policy in CMake
+#   3.27 (CMP0146). The Kitware cmake 4.2 installed above still ships the
+#   module when the policy is forced OLD - same CMAKE_POLICY_VERSION_MINIMUM
+#   family of workarounds the onnxruntime build in this file already uses.
+# - ENABLE_NVMM=off (explicit): upstream autodetects the legacy nvbuf_utils
+#   library, which r36 no longer ships, so it would land OFF anyway - pinning
+#   it keeps the choice visible. Non-NVMM decode stages frames through
+#   cudaAllocMapped (zero-copy CPU/GPU on the iGPU): one extra copy vs NVMM,
+#   acceptable baseline; NVMM via jetson-multimedia-api headers is a follow-up.
+# - The NVIDIA GStreamer elements it drives (nvv4l2decoder & co.) are NOT in
+#   this image - they arrive from the host BSP at container start via the same
+#   nvidia-container-runtime CSV mounts documented above the runtime stage.
+WORKDIR /build/jetson-utils
+RUN git clone https://github.com/dusty-nv/jetson-utils.git src && \
+    git -C src checkout ${JETSON_UTILS_COMMIT} && \
+    # Delete the standalone SM 72 / SM 87 gencode lines FIRST, then retarget
+    # the SM 53/62 line to SM 87 (substituting first would create a line the
+    # deletes also match). The greps assert the patch took: exactly one
+    # gencode line, targeting Orin.
+    sed -i '/-gencode arch=compute_72,code=sm_72)/d;/-gencode arch=compute_87,code=sm_87)/d' src/CMakeLists.txt && \
+    sed -i 's/-gencode arch=compute_53,code=sm_53 -gencode arch=compute_62,code=sm_62/-gencode arch=compute_87,code=sm_87/' src/CMakeLists.txt && \
+    test "$(grep -c -- '-gencode' src/CMakeLists.txt)" = "1" && \
+    grep -q 'compute_87' src/CMakeLists.txt
+RUN mkdir -p src/build && cd src/build && \
+    cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+          -DCMAKE_POLICY_DEFAULT_CMP0146=OLD \
+          -DENABLE_NVMM=off \
+          ../ && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    # Import smoke test (loads the C++ lib + GStreamer/GL deps; no GPU or
+    # driver needed at import time), then stage the python bindings into ONE
+    # known dir - `make install` picks the dist-packages dir itself and the
+    # runtime stage needs a stable COPY source. Handles both layouts (package
+    # dir vs single extension module).
+    LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH python3 -c "import jetson_utils; assert hasattr(jetson_utils, 'videoSource'), 'jetson_utils imported without the C extension'; print('jetson_utils import OK:', jetson_utils.__file__)" && \
+    BINDINGS_DIR=$(LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH python3 -c "import jetson_utils, pathlib; p = pathlib.Path(jetson_utils.__file__).resolve(); print(p.parent.parent if p.parent.name == 'jetson_utils' else p.parent)") && \
+    mkdir -p /build/out/jetson-utils-py && \
+    cp -a "${BINDINGS_DIR}"/jetson_utils* /build/out/jetson-utils-py/ && \
+    (cp -a "${BINDINGS_DIR}"/jetson "${BINDINGS_DIR}"/Jetson* /build/out/jetson-utils-py/ 2>/dev/null || true) && \
+    ls -la /build/out/jetson-utils-py/
 
 # Copy requirements files (done after compilation to improve cache efficiency)
 WORKDIR /build/reqs
@@ -484,6 +549,11 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 # libegl1/libgles2 (glvnd loaders, ~1.8MB) are required by the host-injected NV
 # GStreamer plugins (nvarguscamerasrc/nvivafilter/nveglglessink/...); the actual
 # EGL/GLES drivers come from the host's tegra-egl mount at container start.
+# libgstreamer-plugins-bad1.0-0 (gstwebrtc/gstsdp), libgstrtspserver-1.0-0,
+# libjson-glib-1.0-0, libsoup2.4-1, libglew2.2/libglu1-mesa/libgl1: the link
+# closure of libjetson-utils.so (built in the builder stage); jetson-utils
+# links its WebRTC/RTSP output stack unconditionally even though this image
+# only uses videoSource decode.
 # The dpkg path-exclude keeps docs/man/locale out of every package this layer installs.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-runtime-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-runtime-${TARGETARCH} \
@@ -519,6 +589,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     libgstreamer-plugins-base1.0-0 \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
+    libgstreamer-plugins-bad1.0-0 \
+    libgstrtspserver-1.0-0 \
+    libjson-glib-1.0-0 \
+    libsoup2.4-1 \
+    libglew2.2 \
+    libglu1-mesa \
+    libgl1 \
     libegl1 \
     libgles2 \
     build-essential \
@@ -637,6 +714,13 @@ COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt /usr/local/lib/py
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt-10.7.0.dist-info
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean /usr/local/lib/python3.10/dist-packages/tensorrt_lean
 COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info /usr/local/lib/python3.10/dist-packages/tensorrt_lean-10.7.0.dist-info
+# jetson-utils: NVDEC decode library + python bindings (staged by the builder
+# into one dir regardless of which dist-packages `make install` picked).
+# Resolved via LD_LIBRARY_PATH=/usr/local/lib (set above); the nvv4l2decoder
+# GStreamer elements it drives come from the host CSV mounts per the NOTE
+# above.
+COPY --from=builder /usr/local/lib/libjetson-utils.so /usr/local/lib/
+COPY --from=builder /build/out/jetson-utils-py/ /usr/local/lib/python3.10/dist-packages/
 COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
 
 ENV PYTHONPATH=/usr/local/lib/python3.10/dist-packages:$PYTHONPATH

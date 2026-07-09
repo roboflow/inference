@@ -10,6 +10,10 @@ ARG TORCHVISION_VERSION=0.25.0
 ARG TRITON_VERSION=3.6.0
 ARG OPENCV_VERSION=4.10.0
 ARG ONNXRUNTIME_VERSION=1.24.2
+# jetson-utils (NVDEC GPU-tensor decode for the v2 video pipeline). Upstream
+# tags no releases - pinned to master (2026-07-08); master's python bindings
+# select by Ubuntu codename (noble -> 3.12, this image's Python).
+ARG JETSON_UTILS_COMMIT=fae4b4250f985ab92180b6ec955b79995b7a34ff
 ENV LANG=en_US.UTF-8
 
 WORKDIR /build
@@ -67,6 +71,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-bu
     libavformat-dev \
     libswscale-dev \
     libv4l-dev \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-bad1.0-dev \
+    libgstrtspserver-1.0-dev \
+    libjson-glib-dev \
+    libsoup2.4-dev \
+    libglew-dev \
+    libglu1-mesa-dev \
+    freeglut3-dev \
+    lsb-release \
     libatlas-base-dev \
     liblapack-dev \
     gfortran \
@@ -217,6 +231,57 @@ RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${T
     rm -rf /tmp/triton-wheels; \
     python3 -c "import triton; print('triton', triton.__version__)"
 
+# Build jetson-utils (dusty-nv) - hardware NVDEC decode for the v2 video
+# pipeline: inference/core/interfaces/camera/jetson_producer.py wraps
+# jetson_utils.videoSource and hands frames to torch as CUDA tensors via
+# cudaImage's __cuda_array_interface__. Pure cmake + make install (no pip).
+# Placed before the `COPY . .` layers so source edits never force a rebuild.
+# JP7/Thor-specific notes (upstream has no published r38/CUDA-13 support - this
+# is the frontier part of the build; expect to iterate on-device):
+# - The arch patch below is REQUIRED, not an optimization: upstream hardcodes
+#   gencodes for SM 53/62/72(/87), which nvcc 13 rejects outright (CUDA 13
+#   removed pre-Turing targets). Retargeted to SM 110 (Thor).
+# - Upstream still uses legacy find_package(CUDA), removed-by-policy in CMake
+#   3.27 (CMP0146); forcing the policy OLD re-enables the module on the
+#   Kitware cmake 4.2 installed above. Whether FindCUDA's probing copes with
+#   the CUDA 13 toolkit layout is a known verify-on-device point.
+# - ENABLE_NVMM=off (explicit): upstream autodetects the legacy nvbuf_utils
+#   library, which r38 does not ship, so it would land OFF anyway. Non-NVMM
+#   decode stages frames through cudaAllocMapped (zero-copy CPU/GPU on the
+#   iGPU): one extra copy vs NVMM, acceptable baseline.
+# - nvv4l2decoder on r38 does not decode JPEG/MJPEG (per the L4T release
+#   notes); H.264/H.265 files and RTSP are the supported baseline here.
+WORKDIR /build/jetson-utils
+RUN git clone https://github.com/dusty-nv/jetson-utils.git src && \
+    git -C src checkout ${JETSON_UTILS_COMMIT} && \
+    # Delete the standalone SM 72 / SM 87 gencode lines FIRST, then retarget
+    # the SM 53/62 line to SM 110 (substituting first would create a line the
+    # deletes also match). The greps assert the patch took: exactly one
+    # gencode line, targeting Thor.
+    sed -i '/-gencode arch=compute_72,code=sm_72)/d;/-gencode arch=compute_87,code=sm_87)/d' src/CMakeLists.txt && \
+    sed -i 's/-gencode arch=compute_53,code=sm_53 -gencode arch=compute_62,code=sm_62/-gencode arch=compute_110,code=sm_110/' src/CMakeLists.txt && \
+    test "$(grep -c -- '-gencode' src/CMakeLists.txt)" = "1" && \
+    grep -q 'compute_110' src/CMakeLists.txt
+RUN mkdir -p src/build && cd src/build && \
+    cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+          -DCMAKE_POLICY_DEFAULT_CMP0146=OLD \
+          -DENABLE_NVMM=off \
+          ../ && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    # Import smoke test (loads the C++ lib + GStreamer/GL deps; no GPU or
+    # driver needed at import time), then stage the python bindings into ONE
+    # known dir - `make install` picks the dist-packages dir itself and the
+    # runtime stage needs a stable COPY source. Handles both layouts (package
+    # dir vs single extension module).
+    LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH python3 -c "import jetson_utils; assert hasattr(jetson_utils, 'videoSource'), 'jetson_utils imported without the C extension'; print('jetson_utils import OK:', jetson_utils.__file__)" && \
+    BINDINGS_DIR=$(LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH python3 -c "import jetson_utils, pathlib; p = pathlib.Path(jetson_utils.__file__).resolve(); print(p.parent.parent if p.parent.name == 'jetson_utils' else p.parent)") && \
+    mkdir -p /build/out/jetson-utils-py && \
+    cp -a "${BINDINGS_DIR}"/jetson_utils* /build/out/jetson-utils-py/ && \
+    (cp -a "${BINDINGS_DIR}"/jetson "${BINDINGS_DIR}"/Jetson* /build/out/jetson-utils-py/ 2>/dev/null || true) && \
+    ls -la /build/out/jetson-utils-py/
+
 # Copy requirements files (done after compilation to improve cache efficiency)
 WORKDIR /build/reqs
 COPY requirements/_requirements.txt \
@@ -345,6 +410,26 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp71-ru
     libavformat60 \
     libswscale7 \
     ffmpeg \
+    # jetson-utils runtime closure: GStreamer core/base/good for videoSource,
+    # plugins-bad libs (gstwebrtc/gstsdp) + rtspserver + json-glib + soup +
+    # GLEW/GLU because libjetson-utils.so links its WebRTC/RTSP output stack
+    # unconditionally. nvidia-l4t-gstreamer pulls the NV decode elements
+    # (nvv4l2decoder & deps) from the r38.4 repo - unlike the JP6.2 image this
+    # one installs the NVIDIA userspace from apt instead of relying on host
+    # CSV mounts. VERIFY-ON-DEVICE: package name/installability of
+    # nvidia-l4t-gstreamer on the Thor r38.4 feed (postinst scripts of some
+    # nvidia-l4t-* packages misbehave in containers).
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    libgstreamer-plugins-bad1.0-0 \
+    libgstrtspserver-1.0-0 \
+    libjson-glib-1.0-0 \
+    libsoup2.4-1 \
+    libglew2.2 \
+    libglu1-mesa \
+    nvidia-l4t-gstreamer \
     libatlas3-base \
     libgl1 \
     libglib2.0-0 \
@@ -373,6 +458,12 @@ RUN ldconfig
 COPY --from=builder /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
 COPY --from=builder /root/.triton/nvidia /root/.triton/nvidia
 COPY --from=builder /root/.triton/json /root/.triton/json
+
+# jetson-utils: NVDEC decode library + python bindings (staged by the builder
+# into one dir regardless of which dist-packages `make install` picked).
+# Resolved via LD_LIBRARY_PATH=/usr/local/lib (set above).
+COPY --from=builder /usr/local/lib/libjetson-utils.so /usr/local/lib/
+COPY --from=builder /build/out/jetson-utils-py/ /usr/local/lib/python3.12/dist-packages/
 
 # Copy TensorRT Python bindings (installed via apt in runtime stage, but ensure paths are correct)
 # Note: python3-libnvinfer packages install to /usr/lib/python3.12/dist-packages
@@ -406,6 +497,7 @@ ENV CUDA_HOME=/usr/local/cuda \
     ORT_TENSORRT_MAX_WORKSPACE_SIZE=4294967296 \
     ORT_TENSORRT_BUILDER_OPTIMIZATION_LEVEL=5 \
     OPENBLAS_CORETYPE=ARMV8 \
+    GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0 \
     LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
     WORKFLOWS_STEP_EXECUTION_MODE=local \
     WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
