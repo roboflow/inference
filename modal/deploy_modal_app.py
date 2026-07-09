@@ -21,10 +21,12 @@ Usage:
     python modal/deploy_modal_app.py
 """
 
+import os
 import sys
 from utils import initialize_modal, prepare_deployment, validate_deployment_prerequisites
 
-from inference.core.env import WEBEXEC_MODAL_APP_NAME
+from inference.core.env import WEBEXEC_INFERENCE_VERSION, WEBEXEC_MODAL_APP_NAME
+from inference.core.version import __version__
 
 
 prepare_deployment()
@@ -43,6 +45,15 @@ except ImportError as e:
     print("\nPlease make sure you're running this script from the correct directory.")
     sys.exit(1)
 
+inference_version = WEBEXEC_INFERENCE_VERSION
+if not inference_version:
+    try:
+        from inference.core.version import __version__
+
+        inference_version = __version__
+    except ImportError:
+        inference_version = "latest"
+
 validate_deployment_prerequisites(app, MODAL_INSTALLED)
 
 # Deploy the app
@@ -50,16 +61,18 @@ print("=" * 60)
 print("Deploying Modal Web Endpoint for Custom Python Blocks")
 print("=" * 60)
 print(f"App name: {app.name}")
+print(f"Inference version: {inference_version}")
 print("\nDeploying...")
 
 try:
     with modal.enable_output():
-        deployed_app = app.deploy()
-    
+        deployed_app = app.deploy(tag=inference_version)
+
     print("\n✅ Deployment successful!")
     print(f"\nDeployed app details:")
     print(f"  Name: {deployed_app.name}")
     print(f"  App ID: {deployed_app.app_id}")
+    print(f"  Version: {inference_version}")
     
     # Try to get the actual URL from the deployed app
     print("\n📡 Web Endpoint URL:")

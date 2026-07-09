@@ -761,6 +761,7 @@ MODAL_WORKSPACE_NAME = os.getenv("MODAL_WORKSPACE_NAME", "roboflow")
 WEBEXEC_MODAL_APP_NAME = os.getenv(
     "WEBEXEC_MODAL_APP_NAME", f"webexec-{PROJECT}"
 )
+WEBEXEC_INFERENCE_VERSION = os.getenv("WEBEXEC_INFERENCE_VERSION")
 
 # Control whether anonymous Modal execution is allowed (when no api_key is available)
 MODAL_ALLOW_ANONYMOUS_EXECUTION = str2bool(
