@@ -240,9 +240,6 @@ from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 i
 from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
     EasyOCRBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1 import (
-    PPOCRBlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     Florence2BlockV1,
 )
@@ -312,6 +309,7 @@ from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import 
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1 import PPOCRBlockV1
 from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
     Qwen35OpenRouterBlockV1,
 )

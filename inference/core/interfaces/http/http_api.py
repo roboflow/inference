@@ -65,12 +65,12 @@ from inference.core.entities.requests.inference import (
     SemanticSegmentationInferenceRequest,
 )
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
-from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
 from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderCompareRequest,
     PerceptionEncoderImageEmbeddingRequest,
     PerceptionEncoderTextEmbeddingRequest,
 )
+from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
