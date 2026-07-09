@@ -125,8 +125,10 @@ class InferenceModelsPPOCRAdapter(Model):
         t1 = perf_counter()
         pipeline_result, image_metadata = self.infer(**request.model_dump())
         detections = pipeline_result.detections
-        boxes = detections.xyxy.tolist()
-        confidences = detections.confidence.tolist()
+        # detections is None when the detection stage was disabled
+        # (recognition-only pipeline) - no boxes to report then.
+        boxes = detections.xyxy.tolist() if detections is not None else []
+        confidences = detections.confidence.tolist() if detections is not None else []
         line_texts = pipeline_result.line_texts
         predictions = []
         for index, (box, confidence) in enumerate(zip(boxes, confidences)):

@@ -127,7 +127,13 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_supported_model_variants(cls) -> Optional[List[str]]:
-        """Return list of model_id variants that can satisfy this block."""
+        """Return list of model_id variants that can satisfy this block.
+
+        These are core-model ids in the standard ``<core_model>/<version>``
+        form; for PP-OCR the version token encodes the two stage sizes as
+        ``<text_detection>-<text_recognition>`` and is parsed back into the
+        stage sizes by ``PPOCRInferenceRequest``.
+        """
         return [
             "pp_ocr/small-small",
             "pp_ocr/tiny-tiny",

@@ -160,10 +160,7 @@ def test_infer_from_request_recognize_only_empty_predictions() -> None:
     pipeline_result = SimpleNamespace(
         text="a single line",
         line_texts=["a single line"],
-        detections=SimpleNamespace(
-            xyxy=_FakeArray([]),
-            confidence=_FakeArray([]),
-        ),
+        detections=None,
     )
     image_metadata = pp_ocr_inference_models.InferenceResponseImage(
         width=20, height=12

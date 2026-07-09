@@ -69,7 +69,7 @@ Both models accept `np.ndarray` (`bgr` assumed), `torch.Tensor` (`rgb` assumed, 
 
 ### Pipeline class (recommended)
 
-`PPOCRv6Pipeline` bundles detection, perspective-cropping, reading-order grouping, and recognition behind a single call. It takes model ids directly and returns one `PPOCRv6PipelineResult` per input image, with `text` (all lines joined in reading order), `line_texts` (one per kept detection), and the reordered `detections`.
+`PPOCRv6Pipeline` bundles detection, perspective-cropping, reading-order grouping, and recognition behind a single call. It takes model ids directly and returns one `PPOCRv6PipelineResult` per input image, with `text` (all lines joined in reading order), `line_texts` (one per kept detection), and the reordered `detections` (`None` when the detection stage is disabled).
 
 ```python
 import cv2

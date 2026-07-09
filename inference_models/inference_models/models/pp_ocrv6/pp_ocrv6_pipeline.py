@@ -6,6 +6,7 @@ import numpy as np
 import torch
 
 from inference_models.entities import ColorFormat
+from inference_models.models.auto_loaders.core import AutoModel
 from inference_models.models.base.object_detection import Detections
 from inference_models.models.pp_ocrv6.pp_ocrv6_common import (
     images_to_numpy_bgr_for_cropping,
@@ -17,9 +18,16 @@ DEFAULT_RECOGNITION_MODEL = "pp-ocrv6-rec/small"
 
 @dataclass
 class PPOCRv6PipelineResult:
+    """Result of a single image passed through the pipeline.
+
+    ``detections`` is ``None`` when the detection stage did not run
+    (recognition-only pipeline); it holds zero boxes when the detector ran
+    but found no text.
+    """
+
     text: str
     line_texts: List[str]
-    detections: Detections
+    detections: Optional[Detections]
 
 
 class PPOCRv6Pipeline:
@@ -45,8 +53,6 @@ class PPOCRv6Pipeline:
         rec_model_name_or_path: Optional[str] = DEFAULT_RECOGNITION_MODEL,
         **kwargs,
     ) -> "PPOCRv6Pipeline":
-        from inference_models.models.auto_loaders.core import AutoModel
-
         det_model = (
             AutoModel.from_pretrained(det_model_name_or_path, **kwargs)
             if det_model_name_or_path is not None
@@ -73,7 +79,7 @@ class PPOCRv6Pipeline:
                 PPOCRv6PipelineResult(
                     text=line_text,
                     line_texts=[line_text],
-                    detections=_empty_detections(),
+                    detections=None,
                 )
                 for line_text in line_texts
             ]
@@ -93,9 +99,7 @@ class PPOCRv6Pipeline:
     ) -> PPOCRv6PipelineResult:
         order = _reading_order(detections)
         if not order:
-            return PPOCRv6PipelineResult(
-                text="", line_texts=[], detections=_empty_detections()
-            )
+            return PPOCRv6PipelineResult(text="", line_texts=[], detections=detections)
         ordered_detections = _reorder_detections(detections, order)
         if self._rec_model is None:
             return PPOCRv6PipelineResult(
@@ -150,15 +154,6 @@ def _reorder_detections(detections: Detections, order: List[int]) -> Detections:
         confidence=detections.confidence[index],
         image_metadata=detections.image_metadata,
         bboxes_metadata=[detections.bboxes_metadata[i] for i in order],
-    )
-
-
-def _empty_detections() -> Detections:
-    return Detections(
-        xyxy=torch.zeros((0, 4), dtype=torch.float32),
-        class_id=torch.zeros((0,), dtype=torch.int64),
-        confidence=torch.zeros((0,), dtype=torch.float32),
-        bboxes_metadata=[],
     )
 
 

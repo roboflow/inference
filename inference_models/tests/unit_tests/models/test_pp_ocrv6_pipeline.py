@@ -195,8 +195,7 @@ def test_infer_recognize_only_runs_on_full_images() -> None:
     assert len(results) == 2
     assert results[0].text == "line-0"
     assert results[0].line_texts == ["line-0"]
-    assert len(results[0].detections.xyxy) == 0
-    assert results[0].detections.bboxes_metadata == []
+    assert results[0].detections is None  # detection stage never ran
     assert results[1].text == "line-1"
     assert results[1].line_texts == ["line-1"]
 
@@ -212,11 +211,9 @@ def test_from_pretrained_forwards_kwargs_to_both_models() -> None:
     fake_auto_model = mock.MagicMock()
     fake_auto_model.from_pretrained.side_effect = [det_model, rec_model]
 
-    with mock.patch.dict(
-        "sys.modules",
-        {"inference_models.models.auto_loaders.core": mock.MagicMock(
-            AutoModel=fake_auto_model
-        )},
+    with mock.patch(
+        "inference_models.models.pp_ocrv6.pp_ocrv6_pipeline.AutoModel",
+        fake_auto_model,
     ):
         pipeline = PPOCRv6Pipeline.from_pretrained(
             det_model_name_or_path="pp-ocrv6-det/medium",
@@ -241,11 +238,9 @@ def test_from_pretrained_forwards_kwargs_to_both_models() -> None:
 def test_from_pretrained_uses_default_small_variants() -> None:
     fake_auto_model = mock.MagicMock()
 
-    with mock.patch.dict(
-        "sys.modules",
-        {"inference_models.models.auto_loaders.core": mock.MagicMock(
-            AutoModel=fake_auto_model
-        )},
+    with mock.patch(
+        "inference_models.models.pp_ocrv6.pp_ocrv6_pipeline.AutoModel",
+        fake_auto_model,
     ):
         PPOCRv6Pipeline.from_pretrained()
 
