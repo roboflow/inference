@@ -115,13 +115,17 @@ class _VideoStream:
         self._session = session
         self._frames = frames
 
-    def __call__(self) -> Iterator[Tuple[np.ndarray, VideoMetadata]]:
-        """Iterate over video frames with metadata.
+    def __call__(self) -> Iterator[Tuple]:
+        """Iterate over video frames.
 
         Automatically starts the session if not already started.
-        Yields tuples of (BGR numpy array, VideoMetadata) until the stream ends (None received)
-        or session is closed.
-        The metadata is extracted directly from the video frame (pts, time_base, etc.).
+
+        In default mode yields ``(frame, metadata)`` tuples. In model mode
+        (model_id) yields ``(frame, data)`` tuples where ``data`` is the raw
+        serialized predictions output dict passed through verbatim (e.g.
+        ``sv.Detections.from_inference(data)`` for detection models), or None
+        when predictions are unavailable for the frame. Iteration continues
+        until the stream ends (None received) or the session is closed.
         """
         self._session._ensure_started()
         while True:
@@ -134,7 +138,13 @@ class _VideoStream:
             if frame_data is None:
                 break
 
-            yield frame_data
+            # In model mode queue items are (frame, data, metadata);
+            # the public iterator only exposes (frame, data).
+            if self._session._model_mode:
+                frame, data, _metadata = frame_data
+                yield frame, data
+            else:
+                yield frame_data
 
 
 class WebRTCSession:
@@ -166,6 +176,8 @@ class WebRTCSession:
         image_input_name: str,
         workflow_config: dict,
         stream_config: StreamConfig,
+        model_mode: bool = False,
+        predictions_output: Optional[str] = None,
     ) -> None:
         """Initialize WebRTC session.
 
@@ -176,6 +188,20 @@ class WebRTCSession:
             image_input_name: Name of image input in workflow
             workflow_config: Workflow configuration dict
             stream_config: Stream configuration
+            model_mode: When True (model_id mode), the session pairs each
+                frame with the workflow predictions and delivers the raw
+                serialized predictions dict to ``on_frame`` handlers and the
+                ``video()`` iterator instead of ``VideoMetadata``. The dict
+                is passed through verbatim - its shape is whatever the
+                model's output kind serializes to server-side (e.g.
+                detection-style for detection models, ``top``/``confidence``
+                for classification). When predictions are unavailable for a
+                frame (pairing eviction, pts=None, missing output), ``data``
+                is None - handlers must check for it.
+            predictions_output: Name of the workflow output holding the
+                serialized predictions dict (paired with each frame in model
+                mode). Defaults to "predictions" - must match the JsonField
+                name emitted by ``model_workflows.build_model_workflow``.
         """
 
         self._state: SessionState = SessionState.NOT_STARTED
@@ -187,15 +213,33 @@ class WebRTCSession:
         self._image_input_name = image_input_name
         self._workflow_config = workflow_config
         self._config = stream_config
+        self._model_mode = model_mode
+        self._predictions_output = predictions_output or "predictions"
 
         # Internal state
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
         self._pc: Optional["RTCPeerConnection"] = None
-        self._video_queue: "Queue[Optional[tuple[np.ndarray, VideoMetadata]]]" = Queue(
+        # In model mode queue items carry an extra raw-predictions-dict element:
+        # (frame, data, metadata). In default mode: (frame, metadata).
+        self._video_queue: "Queue[Optional[tuple]]" = Queue(
             maxsize=WEBRTC_VIDEO_QUEUE_MAX_SIZE
         )
         self._video_through_datachannel = False
+
+        # Video-track pairing state (model mode, live sources).
+        # Track-frame reader and datachannel callbacks both run on the single
+        # asyncio loop thread, so plain dicts are safe (no lock needed).
+        self._pending_frames: (
+            "Dict[int, Tuple[np.ndarray, Optional[VideoMetadata]]]"
+        ) = {}
+        self._pending_predictions: "Dict[int, dict]" = {}
+        self._pairing_max_size = 150
+        # Pairing health counters: detect a systematic pts mismatch between the
+        # video track and the datachannel metadata (see _evict_pending_frames).
+        self._pairing_matched = 0
+        self._pairing_evicted = 0
+        self._pairing_mismatch_warned = False
 
         # Callback handlers
         self._frame_handlers: List[Callable] = []
@@ -534,13 +578,59 @@ class WebRTCSession:
             session.run()  # Auto-starts, auto-closes, blocks here
         """
         with self:
-            for frame, metadata in self.video():
-                # Invoke all registered frame handlers with both parameters
-                for handler in self._frame_handlers:
-                    try:
-                        handler(frame, metadata)
-                    except Exception:
-                        logger.warning("Error in frame handler", exc_info=True)
+            if self._model_mode:
+                self._run_model_mode()
+            else:
+                for frame, metadata in self.video():
+                    # Invoke all registered frame handlers with both parameters
+                    for handler in self._frame_handlers:
+                        try:
+                            handler(frame, metadata)
+                        except Exception:
+                            logger.warning("Error in frame handler", exc_info=True)
+
+    def _run_model_mode(self) -> None:
+        """Frame loop for model_id (model) mode.
+
+        Consumes the internal (frame, data, metadata) queue and invokes each
+        frame handler with ``(frame, data)`` or, for 3-arg handlers,
+        ``(frame, data, metadata)`` (arity auto-detected). ``data`` is the raw
+        serialized predictions dict passed through verbatim, or None when
+        predictions are unavailable for the frame.
+        """
+        self._ensure_started()
+        while True:
+            if self._state == SessionState.CLOSED:
+                break
+
+            item = self._video_queue.get()
+            if item is None:
+                break
+
+            frame, data, metadata = item
+            for handler in self._frame_handlers:
+                try:
+                    self._invoke_frame_handler(handler, frame, data, metadata)
+                except Exception:
+                    logger.warning("Error in frame handler", exc_info=True)
+
+    @staticmethod
+    def _invoke_frame_handler(
+        handler: Callable,
+        frame: np.ndarray,
+        data: Optional[dict],
+        metadata: Optional[VideoMetadata],
+    ) -> None:
+        """Invoke a model-mode frame handler with the right arity.
+
+        Supports:
+        - handler(frame, data)
+        - handler(frame, data, metadata)
+        """
+        if WebRTCSession._data_handler_length(handler) >= 3:
+            handler(frame, data, metadata)
+        else:
+            handler(frame, data)
 
     @staticmethod
     @functools.lru_cache(maxsize=100)
@@ -657,6 +747,98 @@ class WebRTCSession:
             logger.debug("Successfully converted TURN config to iceServers format")
         return turn_config
 
+    def _pair_track_frame(
+        self,
+        pts: Optional[int],
+        frame: np.ndarray,
+        metadata: Optional[VideoMetadata],
+    ) -> None:
+        """Pair a video-track frame with its predictions by pts (model mode).
+
+        Called from the track reader on the asyncio loop thread. If the matching
+        predictions have already arrived, enqueue the paired item immediately;
+        otherwise stash the frame until they do. On overflow, evict the oldest
+        pending frame with ``data=None`` so frames are never silently lost -
+        the predictions dict is passed through verbatim, and its absence is
+        represented honestly as None rather than a synthesized empty response
+        (whose shape would have to vary per task type).
+        """
+        if pts is None:
+            # No pts to pair on: deliver immediately without predictions.
+            self._enqueue((frame, None, metadata))
+            return
+        predictions = self._pending_predictions.pop(pts, None)
+        if predictions is not None:
+            self._pairing_matched += 1
+            self._enqueue((frame, predictions, metadata))
+            return
+        self._pending_frames[pts] = (frame, metadata)
+        self._evict_pending_frames()
+
+    def _pair_track_predictions(self, pts: Optional[int], predictions: dict) -> None:
+        """Pair datachannel predictions with a video-track frame by pts.
+
+        Called from the datachannel message handler on the asyncio loop thread.
+        If the matching frame is already waiting, enqueue the paired item;
+        otherwise stash the predictions dict until the frame arrives.
+        """
+        if pts is None:
+            return
+        pending = self._pending_frames.pop(pts, None)
+        if pending is not None:
+            frame, metadata = pending
+            self._pairing_matched += 1
+            self._enqueue((frame, predictions, metadata))
+            return
+        self._pending_predictions[pts] = predictions
+        self._evict_pending_predictions()
+
+    def _evict_pending_frames(self) -> None:
+        """Bound the pending-frames dict, flushing evicted frames with data=None."""
+        while len(self._pending_frames) > self._pairing_max_size:
+            oldest_pts = next(iter(self._pending_frames))
+            frame, metadata = self._pending_frames.pop(oldest_pts)
+            # Predictions never arrived for this frame - deliver it anyway with
+            # data=None so frames are never silently dropped.
+            self._pairing_evicted += 1
+            self._enqueue((frame, None, metadata))
+        # Guard against a silent pts mismatch between the video track and the
+        # datachannel metadata: if frames keep getting evicted and NOTHING has
+        # ever paired, predictions are arriving but never matching - warn once
+        # instead of silently delivering predictionless frames forever.
+        if (
+            not self._pairing_mismatch_warned
+            and self._pairing_matched == 0
+            and self._pairing_evicted >= self._pairing_max_size
+            and self._pending_predictions
+        ):
+            self._pairing_mismatch_warned = True
+            logger.warning(
+                "Frames and predictions are both arriving but none have paired "
+                "by pts after %d frames - the server's video-track pts may not "
+                "match its datachannel metadata pts. All frames are being "
+                "delivered with data=None.",
+                self._pairing_evicted,
+            )
+
+    def _evict_pending_predictions(self) -> None:
+        """Bound the pending-predictions dict, discarding oldest unmatched entries."""
+        while len(self._pending_predictions) > self._pairing_max_size:
+            oldest_pts = next(iter(self._pending_predictions))
+            self._pending_predictions.pop(oldest_pts)
+
+    def _enqueue(self, item: tuple) -> None:
+        """Put a queue item, dropping the oldest frame if the queue is full."""
+        if self._video_queue.full():
+            try:
+                self._video_queue.get_nowait()
+            except Exception:
+                pass
+        try:
+            self._video_queue.put_nowait(item)
+        except Exception:
+            pass
+
     def _handle_datachannel_video_frame(
         self, serialized_data: Any, metadata: Optional[VideoMetadata]
     ) -> None:
@@ -674,13 +856,17 @@ class WebRTCSession:
                 try:
                     # Decode base64 image and queue it
                     frame = _decode_base64_image(img_data["value"])
-                    # Backpressure: drop oldest frame if queue full
-                    if self._video_queue.full():
-                        try:
-                            self._video_queue.get_nowait()
-                        except Exception:
-                            pass
-                    self._video_queue.put_nowait((frame, metadata))
+                    if self._model_mode:
+                        # Predictions live in the SAME message as the image, so
+                        # pairing is trivial for the datachannel-video path.
+                        # Missing/malformed output -> data=None (verbatim
+                        # pass-through contract, no synthesized shapes).
+                        predictions = serialized_data.get(self._predictions_output)
+                        if not isinstance(predictions, dict):
+                            predictions = None
+                        self._enqueue((frame, predictions, metadata))
+                    else:
+                        self._enqueue((frame, metadata))
                 except Exception:
                     logger.warning(
                         f"Failed to decode base64 image from {output_name}",
@@ -795,16 +981,13 @@ class WebRTCSession:
                         declared_fps=None,
                         measured_fps=None,
                     )
-                    # Backpressure: drop oldest frame if queue full
-                    if self._video_queue.full():
-                        try:
-                            _ = self._video_queue.get_nowait()
-                        except Exception:
-                            pass
-                    try:
-                        self._video_queue.put_nowait((img, current_metadata))
-                    except Exception:
-                        pass
+                    if self._model_mode:
+                        # Pair the track frame with datachannel predictions by
+                        # pts (both run on this loop thread).
+                        self._pair_track_frame(f.pts, img, current_metadata)
+                    else:
+                        # Backpressure: drop oldest frame if queue full
+                        self._enqueue((img, current_metadata))
 
             asyncio.ensure_future(_reader())
 
@@ -880,6 +1063,20 @@ class WebRTCSession:
                 # This enables receiving frames via data channel instead of video track
                 if serialized_data and self._video_through_datachannel:
                     self._handle_datachannel_video_frame(serialized_data, metadata)
+                elif self._model_mode:
+                    # Video-track path (webcam/RTSP): the image arrives on the
+                    # video track; pair its raw predictions dict here by pts.
+                    predictions = None
+                    if isinstance(serialized_data, dict):
+                        predictions = serialized_data.get(self._predictions_output)
+                    # Only pair when we actually received a predictions dict.
+                    # If missing/unparseable, the frame stays pending and is
+                    # eventually flushed with predictions synthesized from its
+                    # own shape (so data is always an inference-shaped dict).
+                    if isinstance(predictions, dict):
+                        self._pair_track_predictions(
+                            metadata.pts if metadata else None, predictions
+                        )
 
                 # Call global handler if registered
                 if self._data_global_handler:
