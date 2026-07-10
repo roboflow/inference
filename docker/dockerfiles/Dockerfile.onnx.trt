@@ -86,8 +86,8 @@ RUN set -eux; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
         libxext6 \
         libopencv-dev \
-        uvicorn \
-        python3-pip \
+        python3 \
+        make \
         git \
         libgdal-dev \
         libvips-dev \
@@ -100,7 +100,10 @@ WORKDIR /build
 COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
-RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+# apt-installed Python packages under /usr/lib/python3/dist-packages are stale and unused
+# (everything we run lives in /usr/local) but get flagged by CVE scanners - drop them
+RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0" \
+    && rm -rf /usr/lib/python3/dist-packages
 
 WORKDIR /notebooks
 COPY examples/notebooks .
