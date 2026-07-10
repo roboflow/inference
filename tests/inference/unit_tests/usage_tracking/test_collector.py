@@ -1,6 +1,7 @@
 import hashlib
 import json
 import sys
+from copy import deepcopy
 from unittest import mock
 
 import pytest
@@ -10,6 +11,7 @@ from inference.core.version import __version__ as inference_version
 from inference.usage_tracking.payload_helpers import (
     get_api_key_usage_containing_resource,
     merge_usage_dicts,
+    send_usage_payload,
     sha256_hash,
     zip_usage_payloads,
 )
@@ -1349,3 +1351,151 @@ def test_zip_usage_payloads_keeps_stream_sessions_separate():
     assert merged["workflows:workflow-1:stream-a"]["stream_session_id"] == "stream-a"
     assert merged["workflows:workflow-1:stream-b"]["processed_frames"] == 3
     assert merged["workflows:workflow-1:stream-b"]["stream_session_id"] == "stream-b"
+
+
+@mock.patch("inference.usage_tracking.payload_helpers.requests.post")
+def test_send_usage_payload_serializes_stream_sessions_as_exec_session_ids(
+    post_mock,
+):
+    # given - two pipeline rows collected under one process session and resource
+    def make_payload(key, stream_id, frames):
+        return {
+            "fake_hash": {
+                key: {
+                    "api_key_hash": "fake_hash",
+                    "resource_id": "workflow-1",
+                    "stream_session_id": stream_id,
+                    "exec_session_id": "process-session",
+                    "processed_frames": frames,
+                    "fps": 10,
+                    "source_duration": frames / 10,
+                    "execution_duration": 1,
+                }
+            }
+        }
+
+    payloads = zip_usage_payloads(
+        usage_payloads=[
+            make_payload("workflows:workflow-1:stream-a", "stream-a", 2),
+            make_payload("workflows:workflow-1:stream-b", "stream-b", 3),
+        ]
+    )
+    assert len(payloads) == 1
+    original_payload = deepcopy(payloads[0])
+    post_mock.return_value.status_code = 200
+
+    # when
+    failed_hashes = send_usage_payload(
+        payload=payloads[0],
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+    )
+
+    # then - both rows share one HTTP request but carry distinct wire IDs
+    assert failed_hashes == set()
+    post_mock.assert_called_once()
+    outbound_rows = post_mock.call_args.kwargs["json"]
+    assert {row["exec_session_id"] for row in outbound_rows} == {
+        "stream-a",
+        "stream-b",
+    }
+    assert all("stream_session_id" not in row for row in outbound_rows)
+    assert payloads[0] == original_payload
+
+
+@mock.patch("inference.usage_tracking.payload_helpers.requests.post")
+def test_send_usage_payload_leaves_legacy_and_non_billable_exec_session_ids(
+    post_mock,
+):
+    # given
+    payload = {
+        "fake_hash": {
+            "workflows:legacy": {
+                "api_key_hash": "fake_hash",
+                "resource_id": "legacy",
+                "exec_session_id": "process-session",
+                "processed_frames": 3,
+                "source_duration": 0.3,
+            },
+            "workflows:non-billable:stream-a": {
+                "api_key_hash": "fake_hash",
+                "resource_id": "non-billable",
+                "stream_session_id": "stream-a",
+                "exec_session_id": "process-session",
+                "processed_frames": 0,
+                "source_duration": 0,
+            },
+            "workflows:non-numeric:stream-b": {
+                "api_key_hash": "fake_hash",
+                "resource_id": "non-numeric",
+                "stream_session_id": "stream-b",
+                "exec_session_id": "process-session",
+                "processed_frames": 1,
+                "source_duration": "0.1",
+            },
+        }
+    }
+    original_payload = deepcopy(payload)
+    post_mock.return_value.status_code = 200
+
+    # when
+    failed_hashes = send_usage_payload(
+        payload=payload,
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+    )
+
+    # then
+    assert failed_hashes == set()
+    outbound_rows = post_mock.call_args.kwargs["json"]
+    assert {row["resource_id"]: row["exec_session_id"] for row in outbound_rows} == {
+        "legacy": "process-session",
+        "non-billable": "process-session",
+        "non-numeric": "process-session",
+    }
+    assert all("stream_session_id" not in row for row in outbound_rows)
+    assert payload == original_payload
+
+
+@mock.patch("inference.usage_tracking.payload_helpers.requests.post")
+def test_send_usage_payload_does_not_mutate_failed_payload_before_retry(post_mock):
+    # given
+    payload = {
+        "fake_hash": {
+            "workflows:workflow-1:stream-a": {
+                "api_key_hash": "fake_hash",
+                "resource_id": "workflow-1",
+                "stream_session_id": "stream-a",
+                "exec_session_id": "process-session",
+                "processed_frames": 3,
+                "source_duration": 0.3,
+            }
+        }
+    }
+    original_payload = deepcopy(payload)
+    failed_response = mock.MagicMock(status_code=500)
+    successful_response = mock.MagicMock(status_code=200)
+    post_mock.side_effect = [failed_response, successful_response]
+
+    # when - retry the exact object that would have been requeued after failure
+    first_result = send_usage_payload(
+        payload=payload,
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+    )
+    payload_after_failure = deepcopy(payload)
+    second_result = send_usage_payload(
+        payload=payload,
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+    )
+
+    # then
+    assert first_result == {"fake_hash"}
+    assert second_result == set()
+    assert payload_after_failure == original_payload
+    assert payload == original_payload
+    assert (
+        post_mock.call_args_list[0].kwargs["json"]
+        == post_mock.call_args_list[1].kwargs["json"]
+    )

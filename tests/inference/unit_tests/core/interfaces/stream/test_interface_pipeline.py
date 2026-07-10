@@ -2,6 +2,7 @@ from collections import defaultdict
 from concurrent.futures import Future
 from datetime import datetime
 from functools import partial
+from inspect import signature
 from queue import Queue
 from threading import Lock
 from typing import Any, List, Optional, Tuple, Union
@@ -745,7 +746,9 @@ def test_inference_pipeline_works_correctly_against_multiple_video_files_with_ac
     ), "Order of prediction frames violated for source 1"
 
 
-def _make_minimal_pipeline(on_video_frame) -> InferencePipeline:
+def _make_minimal_pipeline(
+    on_video_frame, exec_session_id: Optional[str] = None
+) -> InferencePipeline:
     from unittest.mock import MagicMock
 
     return InferencePipeline(
@@ -754,6 +757,7 @@ def _make_minimal_pipeline(on_video_frame) -> InferencePipeline:
         predictions_queue=Queue(maxsize=8),
         watchdog=MagicMock(),
         status_update_handlers=[],
+        exec_session_id=exec_session_id,
     )
 
 
@@ -766,6 +770,55 @@ def test_inference_pipeline_instances_get_distinct_stream_session_ids() -> None:
     assert pipeline_1._stream_session_id
     assert pipeline_2._stream_session_id
     assert pipeline_1._stream_session_id != pipeline_2._stream_session_id
+
+
+def test_inference_pipeline_factory_uses_supplied_exec_session_id(monkeypatch) -> None:
+    # given
+    monkeypatch.setattr(
+        "inference.core.interfaces.stream.inference_pipeline.prepare_video_sources",
+        lambda **kwargs: [],
+    )
+
+    # when
+    pipeline = InferencePipeline.init_with_custom_logic(
+        video_reference="rtsp://camera-7",
+        on_video_frame=lambda frames: [],
+        exec_session_id="camera-7",
+    )
+
+    # then
+    assert pipeline._stream_session_id == "camera-7"
+
+
+def test_inference_pipeline_empty_exec_session_id_mints_fallback() -> None:
+    # when
+    pipeline_1 = _make_minimal_pipeline(
+        on_video_frame=lambda frames: [], exec_session_id=""
+    )
+    pipeline_2 = _make_minimal_pipeline(
+        on_video_frame=lambda frames: [], exec_session_id=""
+    )
+
+    # then
+    assert pipeline_1._stream_session_id
+    assert pipeline_2._stream_session_id
+    assert pipeline_1._stream_session_id != pipeline_2._stream_session_id
+
+
+@pytest.mark.parametrize(
+    "factory_name",
+    ["init", "init_with_yolo_world", "init_with_workflow", "init_with_custom_logic"],
+)
+def test_inference_pipeline_factories_expose_optional_exec_session_id(
+    factory_name: str,
+) -> None:
+    # when
+    parameter = signature(getattr(InferencePipeline, factory_name)).parameters[
+        "exec_session_id"
+    ]
+
+    # then - all public construction paths remain backward compatible
+    assert parameter.default is None
 
 
 def test_execute_inference_tags_thread_with_pipeline_stream_session_id() -> None:
