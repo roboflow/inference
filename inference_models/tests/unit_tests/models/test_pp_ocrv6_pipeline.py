@@ -76,7 +76,27 @@ def test_infer_sorts_detections_into_reading_order() -> None:
         [60, 100, 100, 130],
     ]
     assert len(result.line_texts) == 4
-    assert result.text == "\n".join(result.line_texts)
+    # Fragments on the same visual line join with spaces, lines with newlines.
+    assert result.text == "40x30 40x30\n40x30 40x30"
+
+
+def test_infer_joins_same_row_fragments_with_space() -> None:
+    # One visual row split by the detector into two horizontally adjacent boxes
+    # (mirrors "This is a test image for " + "OCR." from the e2e image).
+    boxes = [
+        [0, 0, 638, 90],
+        [613, 0, 788, 72],
+    ]
+    detector = _FakeDetector([_detections(boxes, [_polygon(box) for box in boxes])])
+    recognizer = _FakeRecognizer()
+    pipeline = PPOCRv6Pipeline(det_model=detector, rec_model=recognizer)
+    image = np.zeros((200, 800, 3), dtype=np.uint8)
+
+    result = pipeline(image)[0]
+
+    assert len(result.line_texts) == 2
+    assert "\n" not in result.text
+    assert result.text == "638x90 175x72"
 
 
 def test_infer_perspective_crops_from_polygons() -> None:
