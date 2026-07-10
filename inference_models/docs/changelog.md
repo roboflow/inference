@@ -1,5 +1,14 @@
 # Changelog
 
+## `0.30.1`
+
+### Fixed
+
+- PP-OCRv6 pipeline assembles `text` by joining fragments detected on the same
+  visual line with spaces; newlines now separate only distinct lines. Previously
+  every detected fragment was joined with a newline, splitting single sentences
+  the detector returned as multiple boxes.
+
 ## `0.30.0`
 
 ### Added
