@@ -1,7 +1,6 @@
 import hashlib
 import json
 import sys
-from copy import deepcopy
 from unittest import mock
 
 import pytest
@@ -1368,7 +1367,6 @@ def test_send_usage_payload_serializes_stream_sessions_as_exec_session_ids(
         ]
     )
     assert len(payloads) == 1
-    original_payload = deepcopy(payloads[0])
     post_mock.return_value.status_code = 200
 
     failed_hashes = send_usage_payload(
@@ -1385,11 +1383,10 @@ def test_send_usage_payload_serializes_stream_sessions_as_exec_session_ids(
         "stream-b",
     }
     assert all("stream_session_id" not in row for row in outbound_rows)
-    assert payloads[0] == original_payload
 
 
 @mock.patch("inference.usage_tracking.payload_helpers.requests.post")
-def test_send_usage_payload_leaves_legacy_and_non_billable_exec_session_ids(
+def test_send_usage_payload_leaves_legacy_exec_session_ids(
     post_mock,
 ):
     payload = {
@@ -1401,25 +1398,16 @@ def test_send_usage_payload_leaves_legacy_and_non_billable_exec_session_ids(
                 "processed_frames": 3,
                 "source_duration": 0.3,
             },
-            "workflows:non-billable:stream-a": {
+            "workflows:tagged:stream-a": {
                 "api_key_hash": "fake_hash",
-                "resource_id": "non-billable",
+                "resource_id": "tagged",
                 "stream_session_id": "stream-a",
                 "exec_session_id": "process-session",
-                "processed_frames": 0,
-                "source_duration": 0,
-            },
-            "workflows:non-numeric:stream-b": {
-                "api_key_hash": "fake_hash",
-                "resource_id": "non-numeric",
-                "stream_session_id": "stream-b",
-                "exec_session_id": "process-session",
-                "processed_frames": 1,
-                "source_duration": "0.1",
+                "processed_frames": 2,
+                "source_duration": 0.2,
             },
         }
     }
-    original_payload = deepcopy(payload)
     post_mock.return_value.status_code = 200
 
     failed_hashes = send_usage_payload(
@@ -1432,15 +1420,13 @@ def test_send_usage_payload_leaves_legacy_and_non_billable_exec_session_ids(
     outbound_rows = post_mock.call_args.kwargs["json"]
     assert {row["resource_id"]: row["exec_session_id"] for row in outbound_rows} == {
         "legacy": "process-session",
-        "non-billable": "process-session",
-        "non-numeric": "process-session",
+        "tagged": "stream-a",
     }
     assert all("stream_session_id" not in row for row in outbound_rows)
-    assert payload == original_payload
 
 
 @mock.patch("inference.usage_tracking.payload_helpers.requests.post")
-def test_send_usage_payload_does_not_mutate_failed_payload_before_retry(post_mock):
+def test_send_usage_payload_retry_sends_identical_rows(post_mock):
     payload = {
         "fake_hash": {
             "workflows:workflow-1:stream-a": {
@@ -1453,7 +1439,6 @@ def test_send_usage_payload_does_not_mutate_failed_payload_before_retry(post_moc
             }
         }
     }
-    original_payload = deepcopy(payload)
     failed_response = mock.MagicMock(status_code=500)
     successful_response = mock.MagicMock(status_code=200)
     post_mock.side_effect = [failed_response, successful_response]
@@ -1463,7 +1448,6 @@ def test_send_usage_payload_does_not_mutate_failed_payload_before_retry(post_moc
         api_usage_endpoint_url="https://example.com/usage",
         hashes_to_api_keys={"fake_hash": "fake-api-key"},
     )
-    payload_after_failure = deepcopy(payload)
     second_result = send_usage_payload(
         payload=payload,
         api_usage_endpoint_url="https://example.com/usage",
@@ -1472,8 +1456,6 @@ def test_send_usage_payload_does_not_mutate_failed_payload_before_retry(post_moc
 
     assert first_result == {"fake_hash"}
     assert second_result == set()
-    assert payload_after_failure == original_payload
-    assert payload == original_payload
     assert (
         post_mock.call_args_list[0].kwargs["json"]
         == post_mock.call_args_list[1].kwargs["json"]

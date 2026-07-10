@@ -163,24 +163,17 @@ def send_usage_payload(
         if not api_key:
             api_keys_hashes_failed.add(api_key_hash)
             continue
-        complete_workflow_payloads = []
-        for workflow_payload in workflow_payloads.values():
-            if "processed_frames" not in workflow_payload:
-                continue
-            outbound_payload = workflow_payload.copy()
-            outbound_payload.pop("api_key_hash", None)
-            stream_session_id = outbound_payload.pop("stream_session_id", None)
-            source_duration = outbound_payload.get("source_duration")
-            if (
-                stream_session_id
-                and isinstance(source_duration, (int, float))
-                and not isinstance(source_duration, bool)
-                and source_duration > 0
-            ):
-                outbound_payload["exec_session_id"] = stream_session_id
-            outbound_payload["api_key"] = api_key
-            complete_workflow_payloads.append(outbound_payload)
+        complete_workflow_payloads = [
+            w for w in workflow_payloads.values() if "processed_frames" in w
+        ]
         try:
+            for workflow_payload in complete_workflow_payloads:
+                if "api_key_hash" in workflow_payload:
+                    del workflow_payload["api_key_hash"]
+                stream_session_id = workflow_payload.pop("stream_session_id", None)
+                if stream_session_id:
+                    workflow_payload["exec_session_id"] = stream_session_id
+                workflow_payload["api_key"] = api_key
             if not extra_headers:
                 extra_headers = {}
             response = requests.post(
