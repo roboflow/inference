@@ -1,3 +1,4 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -159,6 +160,10 @@ class YOLOLiteForObjectDetectionOnnx(
             else inference_config.forward_pass.max_dynamic_batch_size
         )
         self._session_thread_lock = Lock()
+        self._thread_local_storage = threading.local()
+        self._inference_stream = (
+            torch.cuda.Stream(device=device) if device.type == "cuda" else None
+        )
         self.recommended_parameters = recommended_parameters
 
     @property
@@ -173,15 +178,20 @@ class YOLOLiteForObjectDetectionOnnx(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            image_size_wh=image_size,
-            pre_processing_overrides=pre_processing_overrides,
-        )
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
@@ -192,6 +202,7 @@ class YOLOLiteForObjectDetectionOnnx(
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._min_batch_size,
                 max_batch_size=self._max_batch_size,
+                stream=self._inference_stream,
             )
         return tuple(outputs)
 
@@ -211,33 +222,40 @@ class YOLOLiteForObjectDetectionOnnx(
             default_confidence=INFERENCE_MODELS_YOLOLITE_DEFAULT_CONFIDENCE,
         )
         confidence = confidence_filter.get_threshold(self.class_names)
-        # Backward compatibility: earlier model packages have no post_processing config — always unfused 3-tensor output
-        if (
-            self._inference_config.post_processing
-            and self._inference_config.post_processing.fused
-        ):
-            nms_results = self._post_process_fused(model_results, confidence)
-        else:
-            nms_results = self._post_process_unfused(
-                model_results,
-                confidence,
-                iou_threshold,
-                max_detections,
-                class_agnostic_nms,
-            )
-        rescaled_results = rescale_detections(
-            detections=nms_results,
-            images_metadata=pre_processing_meta,
-        )
-        results = []
-        for result in rescaled_results:
-            results.append(
-                Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=result[:, 5].int(),
-                    confidence=result[:, 4],
+        post_process_stream = self._post_process_stream
+        with torch.cuda.stream(post_process_stream):
+            if post_process_stream is not None:
+                for result_element in model_results:
+                    result_element.record_stream(post_process_stream)
+            # Backward compatibility: earlier model packages have no post_processing config — always unfused 3-tensor output
+            if (
+                self._inference_config.post_processing
+                and self._inference_config.post_processing.fused
+            ):
+                nms_results = self._post_process_fused(model_results, confidence)
+            else:
+                nms_results = self._post_process_unfused(
+                    model_results,
+                    confidence,
+                    iou_threshold,
+                    max_detections,
+                    class_agnostic_nms,
                 )
+            rescaled_results = rescale_detections(
+                detections=nms_results,
+                images_metadata=pre_processing_meta,
             )
+            results = []
+            for result in rescaled_results:
+                results.append(
+                    Detections(
+                        xyxy=result[:, :4].round().int(),
+                        class_id=result[:, 5].int(),
+                        confidence=result[:, 4],
+                    )
+                )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
         return results
 
     def _post_process_fused(
@@ -281,3 +299,23 @@ class YOLOLiteForObjectDetectionOnnx(
             class_agnostic=class_agnostic_nms,
             box_format="xyxy",
         )
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

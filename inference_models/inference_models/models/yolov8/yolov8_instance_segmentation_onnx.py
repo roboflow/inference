@@ -1,3 +1,4 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Set, Tuple, Union
 
@@ -171,6 +172,10 @@ class YOLOv8ForInstanceSegmentationOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self._thread_local_storage = threading.local()
+        self._inference_stream = (
+            torch.cuda.Stream(device=device) if device.type == "cuda" else None
+        )
         self.recommended_parameters = recommended_parameters
 
     @property
@@ -189,15 +194,20 @@ class YOLOv8ForInstanceSegmentationOnnx(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            image_size_wh=image_size,
-            pre_processing_overrides=pre_processing_overrides,
-        )
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
@@ -208,6 +218,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
+                stream=self._inference_stream,
             )
             return instances, protos
 
@@ -240,31 +251,60 @@ class YOLOv8ForInstanceSegmentationOnnx(
             default_confidence=INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
         )
         confidence = confidence_filter.get_threshold(self.class_names)
-        instances, protos = model_results
-        if self._inference_config.post_processing.fused:
-            nms_results = post_process_nms_fused_model_output(
-                output=instances, conf_thresh=confidence
+        post_process_stream = self._post_process_stream
+        with torch.cuda.stream(post_process_stream):
+            if post_process_stream is not None:
+                for result_element in model_results:
+                    result_element.record_stream(post_process_stream)
+            instances, protos = model_results
+            if self._inference_config.post_processing.fused:
+                nms_results = post_process_nms_fused_model_output(
+                    output=instances, conf_thresh=confidence
+                )
+            else:
+                nms_results = run_nms_for_instance_segmentation(
+                    output=instances,
+                    conf_thresh=confidence,
+                    iou_thresh=iou_threshold,
+                    max_detections=max_detections,
+                    class_agnostic=class_agnostic_nms,
+                )
+            if mask_format == "dense":
+                final_results = prepare_dense_masks(
+                    nms_results=nms_results,
+                    protos=protos,
+                    pre_processing_meta=pre_processing_meta,
+                    masks_smoothing_enabled=masks_smoothing_enabled,
+                    masks_binarization_threshold=masks_binarization_threshold,
+                )
+            else:
+                final_results = prepare_rle_masks(
+                    nms_results=nms_results,
+                    protos=protos,
+                    pre_processing_meta=pre_processing_meta,
+                    masks_smoothing_enabled=masks_smoothing_enabled,
+                    masks_binarization_threshold=masks_binarization_threshold,
+                )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
+        return final_results
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
             )
-        else:
-            nms_results = run_nms_for_instance_segmentation(
-                output=instances,
-                conf_thresh=confidence,
-                iou_thresh=iou_threshold,
-                max_detections=max_detections,
-                class_agnostic=class_agnostic_nms,
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
             )
-        if mask_format == "dense":
-            return prepare_dense_masks(
-                nms_results=nms_results,
-                protos=protos,
-                pre_processing_meta=pre_processing_meta,
-                masks_smoothing_enabled=masks_smoothing_enabled,
-                masks_binarization_threshold=masks_binarization_threshold,
-            )
-        return prepare_rle_masks(
-            nms_results=nms_results,
-            protos=protos,
-            pre_processing_meta=pre_processing_meta,
-            masks_smoothing_enabled=masks_smoothing_enabled,
-            masks_binarization_threshold=masks_binarization_threshold,
-        )
+        return self._thread_local_storage.post_process_stream

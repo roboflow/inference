@@ -1,3 +1,4 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Union
 
@@ -117,6 +118,10 @@ class ClipOnnx(TextImageEmbeddingModel):
         self._max_batch_size = max_batch_size
         self._visual_session_thread_lock = Lock()
         self._textual_session_thread_lock = Lock()
+        self._thread_local_storage = threading.local()
+        self._inference_stream = (
+            torch.cuda.Stream(device=device) if device.type == "cuda" else None
+        )
         self._preprocessor = create_clip_preprocessor(image_size=image_size)
 
     def embed_images(
@@ -125,23 +130,43 @@ class ClipOnnx(TextImageEmbeddingModel):
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> torch.Tensor:
-        pre_processed_images = self._preprocessor(
-            images, input_color_format, self._device
-        )
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images = self._preprocessor(
+                images, input_color_format, self._device
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
         with self._visual_session_thread_lock:
             return run_onnx_session_with_batch_size_limit(
                 session=self._visual_onnx_session,
                 inputs={self._visual_input_name: pre_processed_images},
                 max_batch_size=self._max_batch_size,
+                stream=self._inference_stream,
             )[0]
 
     def embed_text(self, texts: Union[str, List[str]], **kwargs) -> torch.Tensor:
         if not isinstance(texts, list):
             texts = [texts]
-        tokenized_batch = clip.tokenize(texts).to(self._device)
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            tokenized_batch = clip.tokenize(texts).to(self._device)
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
         with self._textual_session_thread_lock:
             return run_onnx_session_with_batch_size_limit(
                 session=self._textual_onnx_session,
                 inputs={self._textual_input_name: tokenized_batch},
                 max_batch_size=self._max_batch_size,
+                stream=self._inference_stream,
             )[0]
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream

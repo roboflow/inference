@@ -1,3 +1,4 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -31,15 +32,15 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.common.roboflow.semantic_segmentation import (
-    resolve_background_class_id,
-    validate_class_names,
-)
 from inference_models.models.common.roboflow.post_processing import (
     post_process_semantic_segmentation_logits,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
+)
+from inference_models.models.common.roboflow.semantic_segmentation import (
+    resolve_background_class_id,
+    validate_class_names,
 )
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
@@ -157,6 +158,10 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self._thread_local_storage = threading.local()
+        self._inference_stream = (
+            torch.cuda.Stream(device=device) if device.type == "cuda" else None
+        )
         self.recommended_parameters = recommended_parameters
 
     @property
@@ -170,14 +175,19 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            pre_processing_overrides=pre_processing_overrides,
-        )
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self, pre_processed_images: PreprocessedInputs, **kwargs
@@ -188,6 +198,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
+                stream=self._inference_stream,
             )[0]
 
     def post_process(
@@ -197,13 +208,40 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         confidence: Confidence = "default",
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
-        return post_process_semantic_segmentation_logits(
-            model_results=model_results,
-            pre_processing_meta=pre_processing_meta,
-            class_names=self._class_names,
-            background_class_id=self._background_class_id,
-            device=self._device,
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
-        )
+        post_process_stream = self._post_process_stream
+        with torch.cuda.stream(post_process_stream):
+            if post_process_stream is not None:
+                model_results.record_stream(post_process_stream)
+            results = post_process_semantic_segmentation_logits(
+                model_results=model_results,
+                pre_processing_meta=pre_processing_meta,
+                class_names=self._class_names,
+                background_class_id=self._background_class_id,
+                device=self._device,
+                confidence=confidence,
+                recommended_parameters=self.recommended_parameters,
+                default_confidence=INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
+            )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
+        return results
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

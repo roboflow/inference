@@ -1,3 +1,4 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -167,6 +168,10 @@ class YOLO26ForKeyPointsDetectionOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self._thread_local_storage = threading.local()
+        self._inference_stream = (
+            torch.cuda.Stream(device=device) if device.type == "cuda" else None
+        )
         self._parsed_key_points_metadata = parsed_key_points_metadata
         self.recommended_parameters = recommended_parameters
         self._key_points_classes_for_instances = torch.tensor(
@@ -196,15 +201,20 @@ class YOLO26ForKeyPointsDetectionOnnx(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            image_size_wh=image_size,
-            pre_processing_overrides=pre_processing_overrides,
-        )
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._session_thread_lock:
@@ -213,6 +223,7 @@ class YOLO26ForKeyPointsDetectionOnnx(
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
+                stream=self._inference_stream,
             )[0]
 
     def post_process(
@@ -229,48 +240,76 @@ class YOLO26ForKeyPointsDetectionOnnx(
             default_confidence=INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
         )
         confidence = confidence_filter.get_threshold(self.class_names)
-        filtered_results = post_process_nms_fused_model_output(
-            output=model_results, conf_thresh=confidence
-        )
-        rescaled_results = rescale_key_points_detections(
-            detections=filtered_results,
-            images_metadata=pre_processing_meta,
-            num_classes=len(self._class_names),
-            key_points_slots_in_prediction=self._key_points_slots_in_prediction,
-        )
-        detections, all_key_points = [], []
-        for result in rescaled_results:
-            class_id = result[:, 5].int()
-            detections.append(
-                Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=class_id,
-                    confidence=result[:, 4],
+        post_process_stream = self._post_process_stream
+        with torch.cuda.stream(post_process_stream):
+            if post_process_stream is not None:
+                model_results.record_stream(post_process_stream)
+            filtered_results = post_process_nms_fused_model_output(
+                output=model_results, conf_thresh=confidence
+            )
+            rescaled_results = rescale_key_points_detections(
+                detections=filtered_results,
+                images_metadata=pre_processing_meta,
+                num_classes=len(self._class_names),
+                key_points_slots_in_prediction=self._key_points_slots_in_prediction,
+            )
+            detections, all_key_points = [], []
+            for result in rescaled_results:
+                class_id = result[:, 5].int()
+                detections.append(
+                    Detections(
+                        xyxy=result[:, :4].round().int(),
+                        class_id=class_id,
+                        confidence=result[:, 4],
+                    )
                 )
-            )
-            key_points_reshaped = result[:, 6:].view(
-                result.shape[0], self._key_points_slots_in_prediction, 3
-            )
-            xy = key_points_reshaped[:, :, :2]
-            kp_confidence = key_points_reshaped[:, :, 2]
-            key_points_classes_for_instance_class = (
-                (self._key_points_classes_for_instances[class_id])
-                .unsqueeze(1)
-                .to(device=result.device)
-            )
-            invalid_slot_keypoints = (
-                torch.arange(self._key_points_slots_in_prediction, device=result.device)
-                .unsqueeze(0)
-                .repeat(result.shape[0], 1)
-                >= key_points_classes_for_instance_class
-            )
-            keypoints_below_threshold = kp_confidence < key_points_threshold
-            mask = invalid_slot_keypoints | keypoints_below_threshold
-            xy[mask] = 0.0
-            kp_confidence[mask] = 0.0
-            all_key_points.append(
-                KeyPoints(
-                    xy=xy.round().int(), class_id=class_id, confidence=kp_confidence
+                key_points_reshaped = result[:, 6:].view(
+                    result.shape[0], self._key_points_slots_in_prediction, 3
                 )
-            )
+                xy = key_points_reshaped[:, :, :2]
+                kp_confidence = key_points_reshaped[:, :, 2]
+                key_points_classes_for_instance_class = (
+                    (self._key_points_classes_for_instances[class_id])
+                    .unsqueeze(1)
+                    .to(device=result.device)
+                )
+                invalid_slot_keypoints = (
+                    torch.arange(
+                        self._key_points_slots_in_prediction, device=result.device
+                    )
+                    .unsqueeze(0)
+                    .repeat(result.shape[0], 1)
+                    >= key_points_classes_for_instance_class
+                )
+                keypoints_below_threshold = kp_confidence < key_points_threshold
+                mask = invalid_slot_keypoints | keypoints_below_threshold
+                xy[mask] = 0.0
+                kp_confidence[mask] = 0.0
+                all_key_points.append(
+                    KeyPoints(
+                        xy=xy.round().int(), class_id=class_id, confidence=kp_confidence
+                    )
+                )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
         return all_key_points, detections
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

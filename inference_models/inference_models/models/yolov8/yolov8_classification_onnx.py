@@ -1,3 +1,4 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -148,6 +149,10 @@ class YOLOv8ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self._thread_local_storage = threading.local()
+        self._inference_stream = (
+            torch.cuda.Stream(device=device) if device.type == "cuda" else None
+        )
 
     @property
     def class_names(self) -> List[str]:
@@ -161,15 +166,20 @@ class YOLOv8ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> torch.Tensor:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            image_size_wh=image_size,
-            pre_processing_overrides=pre_processing_overrides,
-        )[0]
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
+            )[0]
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images
 
     def forward(
         self, pre_processed_images: PreprocessedInputs, **kwargs
@@ -180,6 +190,7 @@ class YOLOv8ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
+                stream=self._inference_stream,
             )[0]
 
     def post_process(
@@ -187,11 +198,38 @@ class YOLOv8ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         model_results: torch.Tensor,
         **kwargs,
     ) -> ClassificationPrediction:
-        if self._inference_config.post_processing.fused:
-            confidence = model_results
-        else:
-            confidence = torch.nn.functional.softmax(model_results, dim=-1)
-        return ClassificationPrediction(
-            class_id=confidence.argmax(dim=-1),
-            confidence=confidence,
-        )
+        post_process_stream = self._post_process_stream
+        with torch.cuda.stream(post_process_stream):
+            if post_process_stream is not None:
+                model_results.record_stream(post_process_stream)
+            if self._inference_config.post_processing.fused:
+                confidence = model_results
+            else:
+                confidence = torch.nn.functional.softmax(model_results, dim=-1)
+            results = ClassificationPrediction(
+                class_id=confidence.argmax(dim=-1),
+                confidence=confidence,
+            )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
+        return results
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

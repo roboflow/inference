@@ -185,6 +185,7 @@ def run_onnx_session_with_batch_size_limit(
     output_shape_mapping: Optional[Dict[str, tuple]] = None,
     max_batch_size: Optional[int] = None,
     min_batch_size: Optional[int] = None,
+    stream: Optional[torch.cuda.Stream] = None,
 ) -> List[torch.Tensor]:
     """Run ONNX inference session with automatic batch splitting.
 
@@ -211,6 +212,11 @@ def run_onnx_session_with_batch_size_limit(
         min_batch_size: Minimum batch size for the model. If the last chunk is
             smaller, it will be padded to this size. Useful for models with
             static batch size requirements.
+        stream: Optional CUDA stream to run the torch side of the operation on
+            (batch chunking, input casts, result concatenation). Defaults to the
+            calling thread's current stream. The stream is synchronized before
+            each dispatch to ONNX Runtime and after results are assembled, so
+            returned tensors are fully materialized. Ignored for CPU inputs.
 
     Returns:
         List of output tensors from the ONNX model, in the order defined by
@@ -263,11 +269,46 @@ def run_onnx_session_with_batch_size_limit(
         - `run_onnx_session_via_iobinding()`: Lower-level ONNX execution
         - `generate_batch_chunks()`: Utility for creating batch chunks
     """
+    device = get_input_device(inputs=inputs)
+    if device.type != "cuda":
+        return _run_onnx_session_with_batch_size_limit(
+            session=session,
+            inputs=inputs,
+            output_shape_mapping=output_shape_mapping,
+            max_batch_size=max_batch_size,
+            min_batch_size=min_batch_size,
+        )
+    if stream is None:
+        stream = torch.cuda.current_stream(device)
+    with torch.cuda.stream(stream):
+        for input_tensor in inputs.values():
+            input_tensor.record_stream(stream)
+        results = _run_onnx_session_with_batch_size_limit(
+            session=session,
+            inputs=inputs,
+            output_shape_mapping=output_shape_mapping,
+            max_batch_size=max_batch_size,
+            min_batch_size=min_batch_size,
+            stream=stream,
+        )
+    stream.synchronize()
+    return results
+
+
+def _run_onnx_session_with_batch_size_limit(
+    session: onnxruntime.InferenceSession,
+    inputs: Dict[str, torch.Tensor],
+    output_shape_mapping: Optional[Dict[str, tuple]] = None,
+    max_batch_size: Optional[int] = None,
+    min_batch_size: Optional[int] = None,
+    stream: Optional[torch.cuda.Stream] = None,
+) -> List[torch.Tensor]:
     if max_batch_size is None:
         return run_onnx_session_via_iobinding(
             session=session,
             inputs=inputs,
             output_shape_mapping=output_shape_mapping,
+            stream=stream,
         )
     input_batch_sizes = set()
     for input_tensor in inputs.values():
@@ -289,6 +330,7 @@ def run_onnx_session_with_batch_size_limit(
             session=session,
             inputs=inputs,
             output_shape_mapping=output_shape_mapping,
+            stream=stream,
         )
     all_results = []
     for _ in session.get_outputs():
@@ -323,6 +365,7 @@ def run_onnx_session_with_batch_size_limit(
             session=session,
             inputs=batch_inputs,
             output_shape_mapping=batch_output_shape_mapping,
+            stream=stream,
         )
         if reminder > 0:
             batch_results = [r[:-reminder] for r in batch_results]
@@ -335,6 +378,7 @@ def run_onnx_session_via_iobinding(
     session: onnxruntime.InferenceSession,
     inputs: Dict[str, torch.Tensor],
     output_shape_mapping: Optional[Dict[str, tuple]] = None,
+    stream: Optional[torch.cuda.Stream] = None,
 ) -> List[torch.Tensor]:
     """Run ONNX inference session using IO binding for optimal GPU performance.
 
@@ -356,6 +400,12 @@ def run_onnx_session_via_iobinding(
             expected shapes. Used for pre-allocating output buffers on GPU,
             which improves performance. If not provided or if output has dynamic
             shape, outputs are allocated dynamically.
+
+        stream: Optional CUDA stream to run the torch side of the operation on
+            (input casts, output buffer allocation). Defaults to the calling
+            thread's current stream. The stream is synchronized right before the
+            session run, so all pending torch writes to the bound buffers are
+            complete when ONNX Runtime reads them. Ignored for CPU inputs.
 
     Returns:
         List of output tensors from the ONNX model, in the order defined by
@@ -412,6 +462,9 @@ def run_onnx_session_via_iobinding(
         - Automatically casts input types to match model requirements
         - Uses IO binding for CUDA devices, standard execution for CPU
         - Requires PyCUDA for CUDA execution
+        - Synchronizes `stream` (the current stream by default) before the session
+          run - ONNX Runtime executes on its own internal stream, so all pending
+          torch work on the bound buffers must be complete before it reads them
         - Pre-allocating outputs via output_shape_mapping improves performance
         - Handles both static and dynamic output shapes
 
@@ -419,12 +472,12 @@ def run_onnx_session_via_iobinding(
         - `run_onnx_session_with_batch_size_limit()`: Higher-level function with batching
         - `set_onnx_execution_provider_defaults()`: Configure execution providers
     """
-    inputs = auto_cast_session_inputs(
-        session=session,
-        inputs=inputs,
-    )
     device = get_input_device(inputs=inputs)
     if device.type != "cuda":
+        inputs = auto_cast_session_inputs(
+            session=session,
+            inputs=inputs,
+        )
         inputs_np = {name: value.cpu().numpy() for name, value in inputs.items()}
         results = session.run(None, inputs_np)
         return [torch.from_numpy(element).to(device=device) for element in results]
@@ -445,9 +498,17 @@ def run_onnx_session_via_iobinding(
             help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
         ) from import_error
 
+    if stream is None:
+        stream = torch.cuda.current_stream(device)
     cuda.init()
     cuda_device = cuda.Device(device.index or 0)
-    with use_primary_cuda_context(cuda_device=cuda_device):
+    with use_primary_cuda_context(cuda_device=cuda_device), torch.cuda.stream(stream):
+        for input_tensor in inputs.values():
+            input_tensor.record_stream(stream)
+        inputs = auto_cast_session_inputs(
+            session=session,
+            inputs=inputs,
+        )
         if output_shape_mapping is None:
             output_shape_mapping = {}
         binding = session.io_binding()
@@ -508,8 +569,12 @@ def run_onnx_session_via_iobinding(
                 shape=input_tensor.shape,
                 buffer_ptr=input_tensor.data_ptr(),
             )
-        torch.cuda.current_stream(device).synchronize()
-        binding.synchronize_inputs()
+        # ORT executes on its own internal stream and binding.synchronize_inputs()
+        # cannot be relied upon to order it against torch work (it resolves to
+        # cudaDeviceSynchronize under CUDA EP - a device-wide barrier - and to a no-op
+        # under TensorrtExecutionProvider), so the torch stream carrying all pending
+        # writes to the bound buffers is synchronized here instead.
+        stream.synchronize()
         session.run_with_iobinding(binding)
         if not some_outputs_dynamically_allocated:
             return pre_allocated_outputs

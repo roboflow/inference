@@ -38,7 +38,9 @@ from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
-from inference_models.models.rfdetr.common import post_process_keypoint_detection_results
+from inference_models.models.rfdetr.common import (
+    post_process_keypoint_detection_results,
+)
 from inference_models.models.rfdetr.pre_processing import pre_process_network_input
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
@@ -64,7 +66,9 @@ except ImportError as import_error:
 class RFDetrForKeyPointsONNX(
     (
         KeyPointsDetectionModel[
-            torch.Tensor, PreProcessingMetadata, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+            torch.Tensor,
+            PreProcessingMetadata,
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         ]
     )
 ):
@@ -191,6 +195,10 @@ class RFDetrForKeyPointsONNX(
             else inference_config.forward_pass.max_dynamic_batch_size
         )
         self._session_thread_lock = threading.Lock()
+        self._thread_local_storage = threading.local()
+        self._inference_stream = (
+            torch.cuda.Stream(device=device) if device.type == "cuda" else None
+        )
         self.recommended_parameters = recommended_parameters
         self._key_points_classes_for_instances = torch.tensor(
             [len(e) for e in self._parsed_key_points_metadata], device=device
@@ -218,14 +226,19 @@ class RFDetrForKeyPointsONNX(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            pre_processing_overrides=pre_processing_overrides,
-        )
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
@@ -236,6 +249,7 @@ class RFDetrForKeyPointsONNX(
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._min_batch_size,
                 max_batch_size=self._max_batch_size,
+                stream=self._inference_stream,
             )
             return bboxes, logits, keypoints
 
@@ -252,18 +266,45 @@ class RFDetrForKeyPointsONNX(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         )
-        bboxes, logits, keypoints = model_results
-        return post_process_keypoint_detection_results(
-            bboxes=bboxes,
-            out_logits=logits,
-            out_keypoints=keypoints,
-            pre_processing_meta=pre_processing_meta,
-            threshold=confidence_filter.get_threshold(self.class_names),
-            key_points_threshold=key_points_threshold,
-            num_classes=len(self.class_names),
-            classes_re_mapping=self._classes_re_mapping,
-            key_points_classes_for_instances=self._key_points_classes_for_instances,
-            key_points_slots_in_prediction=self._key_points_slots_in_prediction, 
-            device=self._device,
-        )
+        post_process_stream = self._post_process_stream
+        with torch.cuda.stream(post_process_stream):
+            if post_process_stream is not None:
+                for result_element in model_results:
+                    result_element.record_stream(post_process_stream)
+            bboxes, logits, keypoints = model_results
+            results = post_process_keypoint_detection_results(
+                bboxes=bboxes,
+                out_logits=logits,
+                out_keypoints=keypoints,
+                pre_processing_meta=pre_processing_meta,
+                threshold=confidence_filter.get_threshold(self.class_names),
+                key_points_threshold=key_points_threshold,
+                num_classes=len(self.class_names),
+                classes_re_mapping=self._classes_re_mapping,
+                key_points_classes_for_instances=self._key_points_classes_for_instances,
+                key_points_slots_in_prediction=self._key_points_slots_in_prediction,
+                device=self._device,
+            )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
+        return results
 
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

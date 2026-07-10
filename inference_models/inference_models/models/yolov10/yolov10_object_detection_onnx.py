@@ -1,3 +1,4 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -152,6 +153,10 @@ class YOLOv10ForObjectDetectionOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
+        self._thread_local_storage = threading.local()
+        self._inference_stream = (
+            torch.cuda.Stream(device=device) if device.type == "cuda" else None
+        )
         self.recommended_parameters = recommended_parameters
 
     @property
@@ -165,14 +170,19 @@ class YOLOv10ForObjectDetectionOnnx(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            pre_processing_overrides=pre_processing_overrides,
-        )
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._session_thread_lock:
@@ -181,6 +191,7 @@ class YOLOv10ForObjectDetectionOnnx(
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
+                stream=self._inference_stream,
             )[0]
 
     def post_process(
@@ -201,23 +212,49 @@ class YOLOv10ForObjectDetectionOnnx(
             threshold = threshold.to(
                 dtype=model_results.dtype, device=model_results.device
             )
-        results = []
-        for image_result, metadata in zip(model_results, pre_processing_meta):
-            mask = image_result[:, 4] > (
-                threshold[image_result[:, 5].long()]
-                if isinstance(threshold, torch.Tensor)
-                else threshold
-            )
-            filtered = image_result[mask][:max_detections]
-            rescaled = rescale_image_detections(
-                image_detections=filtered,
-                image_metadata=metadata,
-            )
-            results.append(
-                Detections(
-                    xyxy=rescaled[:, :4].round().int(),
-                    class_id=rescaled[:, 5].int(),
-                    confidence=rescaled[:, 4],
+        post_process_stream = self._post_process_stream
+        with torch.cuda.stream(post_process_stream):
+            if post_process_stream is not None:
+                model_results.record_stream(post_process_stream)
+            results = []
+            for image_result, metadata in zip(model_results, pre_processing_meta):
+                mask = image_result[:, 4] > (
+                    threshold[image_result[:, 5].long()]
+                    if isinstance(threshold, torch.Tensor)
+                    else threshold
                 )
-            )
+                filtered = image_result[mask][:max_detections]
+                rescaled = rescale_image_detections(
+                    image_detections=filtered,
+                    image_metadata=metadata,
+                )
+                results.append(
+                    Detections(
+                        xyxy=rescaled[:, :4].round().int(),
+                        class_id=rescaled[:, 5].int(),
+                        confidence=rescaled[:, 4],
+                    )
+                )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
         return results
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "post_process_stream"):
+            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.post_process_stream

@@ -1,3 +1,4 @@
+import threading
 from dataclasses import dataclass
 from threading import Lock
 from typing import List, Optional, Tuple, Union
@@ -105,6 +106,10 @@ class L2CSNetOnnx:
         self._device = device
         self._input_name = input_name
         self._session_thread_lock = Lock()
+        self._thread_local_storage = threading.local()
+        self._inference_stream = (
+            torch.cuda.Stream(device=device) if device.type == "cuda" else None
+        )
         self._numpy_transformations = transforms.Compose(
             [
                 transforms.ToTensor(),
@@ -138,6 +143,23 @@ class L2CSNetOnnx:
         return self.post_process(model_results, **kwargs)
 
     def pre_process(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: Optional[ColorFormat] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images = self._pre_process(
+                images=images,
+                input_color_format=input_color_format,
+                **kwargs,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images
+
+    def _pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
@@ -197,7 +219,9 @@ class L2CSNetOnnx:
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
             yaw, pitch = run_onnx_session_with_batch_size_limit(
-                session=self._session, inputs={self._input_name: pre_processed_images}
+                session=self._session,
+                inputs={self._input_name: pre_processed_images},
+                stream=self._inference_stream,
             )
             return yaw, pitch
 
@@ -214,3 +238,13 @@ class L2CSNetOnnx:
         **kwargs,
     ) -> L2CSGazeDetection:
         return self.infer(images, **kwargs)
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        if self._device.type != "cuda":
+            return None
+        if not hasattr(self._thread_local_storage, "pre_process_stream"):
+            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
+                device=self._device
+            )
+        return self._thread_local_storage.pre_process_stream
