@@ -535,6 +535,61 @@ class TestTrackPairing:
             assert frame.shape == (10 + expected_pts, 20 + expected_pts, 3)
             assert data is None
 
+    def test_off_by_one_pts_pairs_within_tolerance(self):
+        # Serverless was observed delivering track frames with a pts a few
+        # 90kHz ticks off the datachannel metadata pts; nearest-match pairing
+        # within tolerance must absorb that.
+        session = _make_session()
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        predictions = _predictions_dict()
+
+        session._pair_track_predictions(6000, predictions)
+        md = VideoMetadata(frame_id=1, received_at=datetime.now(), pts=6001)
+        session._pair_track_frame(6001, img, md)
+
+        frame, data, _ = session._video_queue.get_nowait()
+        assert data is predictions
+        assert not session._pending_predictions
+
+    def test_off_by_one_pts_pairs_frame_first(self):
+        session = _make_session()
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        md = VideoMetadata(frame_id=1, received_at=datetime.now(), pts=6000)
+        session._pair_track_frame(6000, img, md)
+
+        predictions = _predictions_dict()
+        session._pair_track_predictions(6001, predictions)
+
+        frame, data, _ = session._video_queue.get_nowait()
+        assert data is predictions
+        assert not session._pending_frames
+
+    def test_pts_beyond_tolerance_does_not_pair(self):
+        session = _make_session()
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        session._pair_track_predictions(6000, _predictions_dict())
+        md = VideoMetadata(frame_id=1, received_at=datetime.now(), pts=6200)
+        session._pair_track_frame(6200, img, md)
+
+        assert session._video_queue.empty()
+        assert 6200 in session._pending_frames
+        assert 6000 in session._pending_predictions
+
+    def test_exact_pts_wins_over_near_neighbour(self):
+        session = _make_session()
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        exact = _predictions_dict()
+        near = _predictions_dict()
+        session._pair_track_predictions(6001, near)
+        session._pair_track_predictions(6000, exact)
+
+        md = VideoMetadata(frame_id=1, received_at=datetime.now(), pts=6000)
+        session._pair_track_frame(6000, img, md)
+
+        frame, data, _ = session._video_queue.get_nowait()
+        assert data is exact
+        assert 6001 in session._pending_predictions
+
     def test_pts_none_delivers_none_data_immediately(self):
         session = _make_session()
         img = np.zeros((30, 40, 3), dtype=np.uint8)  # H=30, W=40
