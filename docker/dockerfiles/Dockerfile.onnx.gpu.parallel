@@ -6,7 +6,6 @@ WORKDIR /app
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     libxext6 \
     libopencv-dev \
-    uvicorn \
     python3-pip \
     git \
     rustc \
@@ -41,6 +40,11 @@ RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyri
 RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
 RUN apt-get update && apt-get install -y redis
 RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
+
+# apt-installed Python packages under /usr/lib/python3/dist-packages are stale and unused
+# (everything we run lives in /usr/local) but get flagged by CVE scanners - drop them
+# here, before the whole base stage gets squashed into the final image below
+RUN rm -rf /usr/lib/python3/dist-packages
 
 FROM scratch
 COPY --from=base / /
