@@ -6,11 +6,17 @@ WORKDIR /app
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     libxext6 \
     libopencv-dev \
+    uvicorn \
     python3-pip \
     git \
     rustc \
     cargo \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+# apt's uvicorn drags in python3-h11 0.13.0 (CVE-2025-43859); the served process uses
+# pip's h11 from /usr/local, but scanners flag the apt copy - upgrade it in place in the
+# same layer so the vulnerable version never lands in any image layer
+    && pip3 install --no-cache-dir --upgrade --target=/usr/lib/python3/dist-packages "h11>=0.16.0" \
+    && rm -rf /usr/lib/python3/dist-packages/h11-*.egg-info
 
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
@@ -40,11 +46,6 @@ RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyri
 RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
 RUN apt-get update && apt-get install -y redis
 RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
-
-# apt-installed Python packages under /usr/lib/python3/dist-packages are stale and unused
-# (everything we run lives in /usr/local) but get flagged by CVE scanners - drop them
-# here, before the whole base stage gets squashed into the final image below
-RUN rm -rf /usr/lib/python3/dist-packages
 
 FROM scratch
 COPY --from=base / /
