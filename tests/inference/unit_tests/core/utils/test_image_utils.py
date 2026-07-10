@@ -3,7 +3,7 @@ import pickle
 import socket
 from typing import Any
 from unittest import mock
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import cv2
 import numpy as np
@@ -368,8 +368,9 @@ def test_load_image_from_url_blocks_non_global_ip_literal() -> None:
 @mock.patch.object(image_utils, "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES", False)
 @mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
 @mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(url_input.socket, "getaddrinfo")
 def test_load_image_from_url_blocks_hostname_resolving_to_non_global(
-    monkeypatch,
+    getaddrinfo_mock: Mock,
 ) -> None:
     # End-to-end regression for the requests>=2.32 send() path: a public FQDN
     # that DNS-resolves to loopback must be blocked (and pinned), proving the
@@ -388,7 +389,7 @@ def test_load_image_from_url_blocks_hostname_resolving_to_non_global(
             )
         ]
 
-    monkeypatch.setattr(url_input.socket, "getaddrinfo", _fake_getaddrinfo)
+    getaddrinfo_mock.side_effect = _fake_getaddrinfo
 
     with pytest.raises(InputImageLoadError) as error:
         _ = load_image_from_url(value="https://evil.com/image.jpg")
@@ -396,7 +397,10 @@ def test_load_image_from_url_blocks_hostname_resolving_to_non_global(
     # "not allowed" only appears if the adapter resolved + rejected the target;
     # a dead adapter would surface a DNS/connection error message instead.
     assert "not allowed" in str(error.value).lower()
-    assert resolved == ["evil.com"]  # resolution ran on the real send() path
+    # The getaddrinfo patch is process-global, so background threads (e.g. the
+    # usage tracking flush) may resolve unrelated hosts while it is active;
+    # assert on the target host only instead of the exact call list.
+    assert resolved.count("evil.com") == 1  # resolution ran on the real send() path
 
 
 @mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)

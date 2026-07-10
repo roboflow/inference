@@ -965,3 +965,299 @@ def test_batch_selector_on_scalar_field_passes_compile_check() -> None:
         batch_compatibility_of_properties=batch_compat,
     )
     assert isinstance(result, set)
+
+
+# === Built-in Rate Limiter (ENT-1438) ===
+
+
+def test_manifest_cooldown_defaults_to_one_second() -> None:
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_vision_events@v1",
+            "name": "test_step",
+            "event_type": "quality_check",
+            "solution": "my-solution",
+        }
+    )
+    assert manifest.cooldown_seconds == 1
+
+
+def test_manifest_cooldown_accepts_float_and_selector() -> None:
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_vision_events@v1",
+            "name": "test_step",
+            "event_type": "quality_check",
+            "solution": "my-solution",
+            "cooldown_seconds": 0.5,
+        }
+    )
+    assert manifest.cooldown_seconds == 0.5
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/roboflow_vision_events@v1",
+            "name": "test_step",
+            "event_type": "quality_check",
+            "solution": "my-solution",
+            "cooldown_seconds": "$inputs.cooldown_seconds",
+        }
+    )
+    assert manifest.cooldown_seconds == "$inputs.cooldown_seconds"
+
+
+def test_describe_outputs_includes_throttling_status() -> None:
+    output_names = {output.name for output in BlockManifest.describe_outputs()}
+    assert output_names == {"error_status", "throttling_status", "event_id", "message"}
+
+
+def test_manifest_declares_cooldown_restriction() -> None:
+    from inference.core.workflows.prototypes.block import COOLDOWN_HTTP_SOFT_RESTRICTION
+
+    assert COOLDOWN_HTTP_SOFT_RESTRICTION in BlockManifest.get_restrictions()
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
+)
+def test_run_throttles_second_event_within_cooldown(mock_execute: MagicMock) -> None:
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+    )
+
+    first_result = block.run(**run_kwargs)
+    second_result = block.run(**run_kwargs)
+
+    mock_execute.assert_called_once()
+    assert first_result["throttling_status"] is False
+    assert first_result["event_id"] == "evt-123"
+    assert second_result["error_status"] is False
+    assert second_result["throttling_status"] is True
+    assert second_result["event_id"] == ""
+    assert "cooldown" in second_result["message"].lower()
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
+)
+def test_run_sends_again_once_cooldown_expires(mock_execute: MagicMock) -> None:
+    """The cooldown window reopens after cooldown_seconds, and throttled calls
+    must not refresh the timestamp (which would postpone reopening)."""
+    from datetime import datetime, timedelta
+
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+    )
+
+    first_result = block.run(**run_kwargs)
+    throttled_result = block.run(**run_kwargs)
+    # backdate the last dispatch beyond the cooldown instead of sleeping;
+    # the throttled call above must not have refreshed this timestamp
+    block._last_event_fired = datetime.now() - timedelta(seconds=1.5)
+    reopened_result = block.run(**run_kwargs)
+
+    assert mock_execute.call_count == 2
+    assert first_result["throttling_status"] is False
+    assert throttled_result["throttling_status"] is True
+    assert reopened_result["throttling_status"] is False
+    assert reopened_result["event_id"] == "evt-123"
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
+)
+def test_run_throttled_call_does_not_refresh_cooldown_timestamp(
+    mock_execute: MagicMock,
+) -> None:
+    """A throttled call must leave _last_event_fired untouched, otherwise a
+    steady stream of over-rate calls would postpone the window forever."""
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+    )
+
+    block.run(**run_kwargs)
+    fired_at = block._last_event_fired
+    throttled_result = block.run(**run_kwargs)
+
+    assert throttled_result["throttling_status"] is True
+    assert block._last_event_fired == fired_at
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
+)
+def test_run_cooldown_zero_disables_rate_limiting(mock_execute: MagicMock) -> None:
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+        cooldown_seconds=0,
+    )
+
+    first_result = block.run(**run_kwargs)
+    second_result = block.run(**run_kwargs)
+
+    assert mock_execute.call_count == 2
+    assert first_result["throttling_status"] is False
+    assert second_result["throttling_status"] is False
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1._execute_local_event"
+)
+def test_run_cooldown_applies_to_local_event_store(mock_execute: MagicMock) -> None:
+    mock_execute.return_value = (
+        False,
+        "Event written to local event store successfully",
+        "42",
+    )
+    block = RoboflowVisionEventsBlockV1(
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+        write_to_event_store=True,
+    )
+
+    first_result = block.run(**run_kwargs)
+    second_result = block.run(**run_kwargs)
+
+    mock_execute.assert_called_once()
+    assert first_result["throttling_status"] is False
+    assert second_result["throttling_status"] is True
+    assert second_result["error_status"] is False
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
+)
+def test_run_throttled_when_disabled_does_not_start_cooldown(
+    mock_execute: MagicMock,
+) -> None:
+    """disable_sink and throttled runs must not update the cooldown timestamp."""
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+    )
+
+    disabled_result = block.run(disable_sink=True, **run_kwargs)
+    first_result = block.run(disable_sink=False, **run_kwargs)
+
+    mock_execute.assert_called_once()
+    assert disabled_result["throttling_status"] is False
+    assert first_result["throttling_status"] is False
+
+
+@pytest.mark.parametrize("cooldown_seconds", [-1, -0.5])
+def test_manifest_cooldown_rejects_negative_values(cooldown_seconds) -> None:
+    with pytest.raises(Exception):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/roboflow_vision_events@v1",
+                "name": "test_step",
+                "event_type": "quality_check",
+                "solution": "my-solution",
+                "cooldown_seconds": cooldown_seconds,
+            }
+        )
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
+)
+def test_run_negative_cooldown_treated_as_disabled(mock_execute: MagicMock) -> None:
+    """Selector-resolved negative values bypass manifest validation; the block
+    must treat them as 0 (no rate limiting) rather than misbehave."""
+    mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    run_kwargs = dict(
+        input_image=None,
+        output_image=None,
+        predictions=None,
+        event_type="custom",
+        solution="test",
+        custom_metadata={},
+        fire_and_forget=False,
+        disable_sink=False,
+        cooldown_seconds=-1,
+    )
+
+    first_result = block.run(**run_kwargs)
+    second_result = block.run(**run_kwargs)
+
+    assert mock_execute.call_count == 2
+    assert first_result["throttling_status"] is False
+    assert second_result["throttling_status"] is False
