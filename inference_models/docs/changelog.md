@@ -1,5 +1,26 @@
 # Changelog
 
+## `0.31.0`
+
+### Fixed
+
+- Synchronisation of pre-processing and forward-pass for models running with `onnxruntime` backend.
+  Pre-processed input tensors could be consumed by the ONNX session before the CUDA stream that
+  produced them finished writing, yielding phantom predictions (in particular under
+  `TensorrtExecutionProvider`, where onnxruntime's own input synchronisation is a no-op). Forward
+  pass now explicitly synchronises with pre-processing on the torch side. Additionally, CUDA
+  streams are shared per `(thread, device, purpose)` instead of being created per model instance,
+  which bounds the GPU memory segregated by the torch caching allocator across streams.
+
+### Added
+
+- `align_device_with_onnx_session(...)` exposed in developer tools (public dev API) - makes sure
+  the `torch.device` declared for a model is in line with what the `onnxruntime` session can
+  actually consume (avoiding runtime errors), with `resolution_mode` (`"fallback"` / `"fail"`)
+  and optional `fallback_device` parameters. For now only CUDA primary devices are verified.
+
+---
+
 ## `0.30.1`
 
 ### Fixed
@@ -8,6 +29,8 @@
   visual line with spaces; newlines now separate only distinct lines. Previously
   every detected fragment was joined with a newline, splitting single sentences
   the detector returned as multiple boxes.
+
+---
 
 ## `0.30.0`
 
@@ -19,6 +42,8 @@
   `pp-ocrv6` pipeline chaining both stages into end-to-end OCR. See the
   [model documentation](models/pp-ocrv6.md) for details.
 
+---
+
 ## `0.29.7`
 
 ### Added
@@ -28,7 +53,8 @@
 
 - Align changes in RF-DETR model to expose pixel-space `covariance`, 
 following up on https://github.com/roboflow/rf-detr/releases/tag/1.8.0.
-- 
+
+---
 
 ## `0.29.6`
 
@@ -44,12 +70,15 @@ following up on https://github.com/roboflow/rf-detr/releases/tag/1.8.0.
 - Opt-in Triton RF-DETR instance-segmentation pipelining. Set
   `RFDETR_PIPELINE_DEPTH=2`.
 
+---
+
 ## `0.29.4`
 
 ### Fixed
 
 - Security issues patch, 19.06.2026 - `bleach>=6.4.0` and `tornado>=6.5.7` in `docs` extras.
 
+---
 
 ## `0.29.4`
 
