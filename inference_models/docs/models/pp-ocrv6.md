@@ -15,6 +15,23 @@ Key features:
 
 ## Models
 
+### Pre-trained Model IDs
+
+Pre-trained PP-OCRv6 models are registered on the Roboflow platform and **require a Roboflow API key**.
+
+!!! info "Getting a Roboflow API Key"
+    To use PP-OCRv6 models, you'll need a [Roboflow account](https://app.roboflow.com/) (free) and [API key](https://docs.roboflow.com/developer/authentication/find-your-roboflow-api-key).
+
+| Model ID | Task | Description |
+|---|---|---|
+| `pp-ocrv6-det/tiny` | `object-detection` | Smallest, fastest text detector |
+| `pp-ocrv6-det/small` | `object-detection` | Balanced text detector (pipeline default) |
+| `pp-ocrv6-det/medium` | `object-detection` | Most accurate text detector |
+| `pp-ocrv6-rec/tiny` | `text-only-ocr` | Smallest, fastest text recognizer |
+| `pp-ocrv6-rec/small` | `text-only-ocr` | Balanced text recognizer (pipeline default) |
+| `pp-ocrv6-rec/medium` | `text-only-ocr` | Most accurate text recognizer |
+| `pp-ocrv6` | pipeline | Two-stage OCR pipeline (defaults to `small` detection + recognition) |
+
 ### Text Detection (`pp-ocrv6-det`)
 
 **Task**: `object-detection`. Detects text regions with a DBNet probability map. Returns axis-aligned bounding boxes; the tight four-point quadrilateral of each region is preserved in `Detections.bboxes_metadata["polygon"]` so downstream recognition can crop rotated text lines accurately.
@@ -76,7 +93,7 @@ import cv2
 
 from inference_models import AutoModelPipeline
 
-pipeline = AutoModelPipeline.from_pretrained("pp-ocrv6")
+pipeline = AutoModelPipeline.from_pretrained("pp-ocrv6", api_key="your_roboflow_api_key")
 
 image = cv2.imread("document.png")
 result = pipeline(image)[0]
@@ -89,6 +106,7 @@ Override stage variants through `models_parameters` (order: `[detection, recogni
 pipeline = AutoModelPipeline.from_pretrained(
     "pp-ocrv6",
     models_parameters=["pp-ocrv6-det/medium", "pp-ocrv6-rec/medium"],
+    api_key="your_roboflow_api_key",
 )
 ```
 
@@ -103,8 +121,8 @@ import cv2
 
 from inference_models import AutoModel
 
-det = AutoModel.from_pretrained("pp-ocrv6-det/small")
-rec = AutoModel.from_pretrained("pp-ocrv6-rec/small")
+det = AutoModel.from_pretrained("pp-ocrv6-det/small", api_key="your_roboflow_api_key")
+rec = AutoModel.from_pretrained("pp-ocrv6-rec/small", api_key="your_roboflow_api_key")
 
 image = cv2.imread("document.png")
 

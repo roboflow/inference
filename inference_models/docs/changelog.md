@@ -4,39 +4,11 @@
 
 ### Added
 
-- PP-OCRv6 text detection model (`pp-ocrv6-det`, DBNet, ONNX backend) with
-  `tiny` / `small` / `medium` variants. Returns axis-aligned boxes with the
-  tight four-point quadrilateral preserved in
-  `Detections.bboxes_metadata["polygon"]` for downstream crops.
-- PP-OCRv6 text recognition model (`pp-ocrv6-rec`, ONNX backend) with
-  `tiny` / `small` / `medium` variants, running recognition over cropped
-  text-line images.
-- `PPOCRv6Pipeline` two-stage OCR pipeline
-  (`inference_models.models.pp_ocrv6.pp_ocrv6_pipeline`) chaining detection and
-  recognition: perspective-crops each detected line via its polygon, groups them
-  into reading order, and returns per-line and assembled text. Registered as
-  the `pp-ocrv6` model pipeline, loadable via
-  `AutoModelPipeline.from_pretrained("pp-ocrv6")`, or construct directly from
-  loaded models. Either stage is
-  optional: passing only a detection model runs detect-only (boxes, no text),
-  passing only a recognition model runs recognize-only (each image treated as a
-  single text-line crop); passing neither raises `ValueError`.
-- New direct dependencies: `PyYAML`, `pyclipper`, `shapely` (all previously
-  present transitively).
-
-### Fixed
-
-- PP-OCRv6 models now make the input pixel-scale contract explicit and aligned
-  with sibling ONNX models: integer images are read as `[0, 255]`, float images
-  are assumed already on the `[0, 255]` scale (no `[0, 1]` auto-detection
-  heuristic). Pre-processing was also cleaned up: a single net channel
-  permutation replaces the earlier BGR round-trip-and-flip, and detection
-  pre-processing metadata is threaded as a `NamedTuple`.
-- PP-OCRv6 recognition CTC decode now reduces logits with `torch.max` on the
-  model's device before the host transfer, copying only `(batch, T)`
-  indices/probabilities instead of the full `(batch, T, vocab)` logits
-  (~24 MB for the 18.7k-vocab variants). Post-processing drops from ~5 ms to
-  ~0.6 ms per batch of 8 on an RTX 3060 Ti; identical decoded strings.
+- Support for [PP-OCRv6](https://github.com/PaddlePaddle/PaddleOCR),
+  PaddlePaddle's ultra-lightweight OCR system: text detection
+  (`pp-ocrv6-det`) and text recognition (`pp-ocrv6-rec`) models, plus the
+  `pp-ocrv6` pipeline chaining both stages into end-to-end OCR. See the
+  [model documentation](models/pp-ocrv6.md) for details.
 
 ## `0.29.7`
 
