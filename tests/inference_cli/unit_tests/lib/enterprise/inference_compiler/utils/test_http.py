@@ -4,8 +4,8 @@
 signed GCS URL returned by the Roboflow API. On edge deployments locked down
 to only allow egress to api.roboflow.com/repo.roboflow.com, an unwrapped PUT
 straight to storage.googleapis.com hangs until it times out. These tests pin
-that the URL is routed through `wrap_url()` (SECURE_GATEWAY proxy) when
-configured, and passed through unchanged otherwise.
+that the URL is routed through `roboflow_secure_gateway_proxy_url_builder()`
+(SECURE_GATEWAY proxy) when configured, and passed through unchanged otherwise.
 """
 
 from unittest.mock import MagicMock
@@ -24,7 +24,11 @@ def _fake_response(status_code: int = 200) -> MagicMock:
 
 
 def test_upload_wraps_url_when_secure_gateway_configured(monkeypatch, tmp_path):
-    monkeypatch.setattr(http_module, "wrap_url", lambda url: f"http://gateway/proxy?url={url}")
+    monkeypatch.setattr(
+        http_module,
+        "roboflow_secure_gateway_proxy_url_builder",
+        lambda url, query: f"http://gateway/proxy?url={url}",
+    )
     put = MagicMock(return_value=_fake_response())
     monkeypatch.setattr(http_module.requests, "put", put)
     file_path = tmp_path / "engine.plan"
@@ -41,7 +45,11 @@ def test_upload_wraps_url_when_secure_gateway_configured(monkeypatch, tmp_path):
 
 
 def test_upload_leaves_url_untouched_when_no_secure_gateway(monkeypatch, tmp_path):
-    monkeypatch.setattr(http_module, "wrap_url", lambda url: url)
+    monkeypatch.setattr(
+        http_module,
+        "roboflow_secure_gateway_proxy_url_builder",
+        lambda url, query: url,
+    )
     put = MagicMock(return_value=_fake_response())
     monkeypatch.setattr(http_module.requests, "put", put)
     file_path = tmp_path / "engine.plan"
@@ -54,7 +62,11 @@ def test_upload_leaves_url_untouched_when_no_secure_gateway(monkeypatch, tmp_pat
 
 
 def test_upload_sets_an_explicit_timeout(monkeypatch, tmp_path):
-    monkeypatch.setattr(http_module, "wrap_url", lambda url: url)
+    monkeypatch.setattr(
+        http_module,
+        "roboflow_secure_gateway_proxy_url_builder",
+        lambda url, query: url,
+    )
     put = MagicMock(return_value=_fake_response())
     monkeypatch.setattr(http_module.requests, "put", put)
     file_path = tmp_path / "engine.plan"
