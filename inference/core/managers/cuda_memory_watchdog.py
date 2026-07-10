@@ -8,6 +8,27 @@ BYTES_IN_MB = 1024 * 1024
 MIN_RECLAMATION_INTERVAL_SECONDS = 5.0
 
 
+def cuda_is_available() -> bool:
+    """Return True only if torch is importable *and* a CUDA device is present.
+
+    Used to short-circuit the watchdog before it ever starts: on a CPU-only or
+    torch-less deployment there is nothing to reclaim, so we must not spin a daemon
+    that wakes up every interval only to no-op.
+    """
+    try:
+        import torch
+    except ImportError:
+        return False
+    try:
+        return bool(torch.cuda.is_available())
+    except Exception as error:
+        logger.warning(
+            f"Could not determine CUDA availability for the memory reclamation "
+            f"watchdog: {error}"
+        )
+        return False
+
+
 def reclaim_cuda_memory() -> None:
     """Return cached-but-unused CUDA blocks to the driver via ``torch.cuda.empty_cache()``.
 
@@ -18,13 +39,11 @@ def reclaim_cuda_memory() -> None:
     driver. Live allocations are unaffected, so it is safe to call at any time (only
     the reclaimable slack is freed).
     """
-    try:
-        import torch
-    except ImportError:
+    if not cuda_is_available():
         return None
     try:
-        if not torch.cuda.is_available():
-            return None
+        import torch
+
         free_before, total = torch.cuda.mem_get_info()
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
@@ -75,6 +94,13 @@ class CudaMemoryReclamationWatchdog:
         if self._thread is not None and self._thread.is_alive():
             logger.warning("CUDA memory reclamation daemon is already running")
             return
+        if not cuda_is_available():
+            logger.info(
+                "CUDA memory reclamation watchdog was enabled but no CUDA device is "
+                "available (torch missing or torch.cuda.is_available() is False) - "
+                "the daemon will not start, so it never wakes up to do nothing."
+            )
+            return
         self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._run_loop,
@@ -87,10 +113,11 @@ class CudaMemoryReclamationWatchdog:
         )
 
     def stop(self, timeout: Optional[float] = None) -> None:
+        if self._thread is None:
+            return
         self._stop_event.set()
-        if self._thread is not None:
-            self._thread.join(timeout=timeout)
-            self._thread = None
+        self._thread.join(timeout=timeout)
+        self._thread = None
         logger.info("CUDA memory reclamation daemon stopped")
 
     def _run_loop(self) -> None:
