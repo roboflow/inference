@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
-from inference_models.developer_tools import align_cuda_device_with_onnx_session
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -87,7 +87,7 @@ class ClipOnnx(TextImageEmbeddingModel):
             path_or_bytes=model_package_content["textual.onnx"],
             providers=onnx_execution_providers,
         )
-        device = align_cuda_device_with_onnx_session(
+        device = align_device_with_onnx_session(
             session=visual_onnx_session, device=device
         )
         image_size = visual_onnx_session.get_inputs()[0].shape[2]

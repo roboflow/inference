@@ -1,9 +1,10 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import numpy as np
 import torch
 
 from inference_models.errors import (
+    EnvironmentConfigurationError,
     MissingDependencyError,
     ModelInputError,
     ModelRuntimeError,
@@ -188,21 +189,32 @@ def set_onnx_execution_provider_defaults(
     return result
 
 
-def align_cuda_device_with_onnx_session(
+DeviceMismatchResolutionMode = Literal["fail", "fallback"]
+
+ALLOWED_DEVICE_MISMATCH_RESOLUTION_MODES = {"fail", "fallback"}
+
+
+def align_device_with_onnx_session(
     session: onnxruntime.InferenceSession,
     device: torch.device,
+    resolution_mode: DeviceMismatchResolutionMode = "fallback",
+    fallback_device: Optional[torch.device] = None,
 ) -> torch.device:
-    """Reconcile the model's torch device with the session's actual providers.
+    """Make sure the declared torch device is in line with onnxruntime session capacity.
 
     An onnxruntime session can only consume GPU-resident tensors when it runs a
     GPU-capable execution provider. When a model is initialized with a CUDA
     torch device (e.g. the auto-selected default on a GPU machine) but the
     session ended up CPU-only - either because the caller requested only
     `CPUExecutionProvider` or because onnxruntime silently fell back during
-    initialization - binding CUDA tensors would fail with a cryptic
+    initialization - binding CUDA tensors would fail at runtime with a cryptic
     "no data transfer registered" error. This function detects that mismatch
-    and returns the CPU device instead, so pre- and post-processing stay on the
-    same device the session can read from.
+    upfront and resolves it according to `resolution_mode`, so pre- and
+    post-processing stay on a device the session can read from.
+
+    Limitations:
+        For now, only CUDA devices passed as the primary `device` are verified -
+        any non-CUDA device is returned unchanged without validation.
 
     Args:
         session: Initialized ONNX Runtime session. Its effective (post-fallback)
@@ -210,9 +222,24 @@ def align_cuda_device_with_onnx_session(
 
         device: Torch device requested for the model.
 
+        resolution_mode: How to resolve a detected mismatch. `"fallback"`
+            (default) logs a warning and returns the fallback device,
+            `"fail"` raises `EnvironmentConfigurationError`.
+
+        fallback_device: Device to return when a mismatch is resolved in
+            `"fallback"` mode. Default value (`None`) means default behaviour -
+            falling back to the CPU device.
+
     Returns:
         The requested device when it is compatible with the session's providers,
-        otherwise the CPU device.
+        otherwise the fallback device (in `"fallback"` mode).
+
+    Raises:
+        ModelInputError: When `resolution_mode` is not one of `"fail"`,
+            `"fallback"`.
+
+        EnvironmentConfigurationError: When a mismatch is detected and
+            `resolution_mode` is `"fail"`.
 
     Examples:
         Align device in a model's `from_pretrained`:
@@ -220,24 +247,55 @@ def align_cuda_device_with_onnx_session(
         >>> session = onnxruntime.InferenceSession(
         ...     "model.onnx", providers=["CPUExecutionProvider"]
         ... )
-        >>> device = align_cuda_device_with_onnx_session(
+        >>> device = align_device_with_onnx_session(
         ...     session=session, device=torch.device("cuda:0")
         ... )
         >>> device
         device(type='cpu')
+
+        Raise instead of falling back:
+
+        >>> device = align_device_with_onnx_session(
+        ...     session=session,
+        ...     device=torch.device("cuda:0"),
+        ...     resolution_mode="fail",
+        ... )
+        Traceback (most recent call last):
+        EnvironmentConfigurationError: ...
     """
+    if resolution_mode not in ALLOWED_DEVICE_MISMATCH_RESOLUTION_MODES:
+        raise ModelInputError(
+            message=f"`align_device_with_onnx_session(...)` supports the following values of "
+            f"`resolution_mode` parameter: {sorted(ALLOWED_DEVICE_MISMATCH_RESOLUTION_MODES)}. "
+            f"Requested mode: {resolution_mode} is not supported. Please verify your integration "
+            f"to make sure that appropriate value of `resolution_mode` parameter is set.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
     if device.type != "cuda":
         return device
     session_providers = set(session.get_providers())
     if session_providers & GPU_CAPABLE_EXECUTION_PROVIDERS:
         return device
+    if resolution_mode == "fail":
+        raise EnvironmentConfigurationError(
+            message=f"Model requested device {device}, but the onnxruntime session runs only CPU-bound "
+            f"execution providers ({', '.join(sorted(session_providers))}), so it cannot consume "
+            f"GPU-resident tensors. If you run model locally - adjust your setup (either request a "
+            f"GPU-capable execution provider or initialize the model with CPU device), otherwise "
+            f"contact the platform support.",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
+        )
+    resolved_fallback_device = (
+        fallback_device if fallback_device is not None else torch.device("cpu")
+    )
     LOGGER.warning(
         "Model requested device %s, but the onnxruntime session runs only CPU-bound "
-        "execution providers (%s) - falling back to CPU tensors for this model.",
+        "execution providers (%s) - falling back to %s tensors for this model.",
         device,
         ", ".join(sorted(session_providers)),
+        resolved_fallback_device,
     )
-    return torch.device("cpu")
+    return resolved_fallback_device
 
 
 def run_onnx_session_with_batch_size_limit(
@@ -567,7 +625,7 @@ def run_onnx_session_via_iobinding(
             message="Model inputs reside on CUDA device, but the onnxruntime session does not run any "
             "GPU-capable execution provider, so it cannot consume GPU-resident tensors. This is a bug in "
             "the model implementation - the model should align its processing device with the session "
-            "providers (see `align_cuda_device_with_onnx_session(...)`). Submit issue to help us solve this "
+            "providers (see `align_device_with_onnx_session(...)`). Submit issue to help us solve this "
             "problem: https://github.com/roboflow/inference/issues",
             help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )

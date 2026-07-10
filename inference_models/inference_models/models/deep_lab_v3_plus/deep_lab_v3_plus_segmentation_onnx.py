@@ -8,7 +8,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
 )
-from inference_models.developer_tools import align_cuda_device_with_onnx_session
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -125,7 +125,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
-        device = align_cuda_device_with_onnx_session(session=session, device=device)
+        device = align_device_with_onnx_session(session=session, device=device)
         input_batch_size = session.get_inputs()[0].shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None

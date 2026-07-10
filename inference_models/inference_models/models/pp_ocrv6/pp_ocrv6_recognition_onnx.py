@@ -10,7 +10,7 @@ from inference_models.errors import EnvironmentConfigurationError
 from inference_models.models.base.documents_parsing import TextOnlyOCRModel
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
-    align_cuda_device_with_onnx_session,
+    align_device_with_onnx_session,
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
@@ -96,7 +96,7 @@ class PPOCRv6RecognitionOnnx(TextOnlyOCRModel[torch.Tensor, torch.Tensor]):
             path_or_bytes=model_package_content[PP_OCRV6_RECOGNITION_MODEL_FILE],
             providers=onnx_execution_providers,
         )
-        device = align_cuda_device_with_onnx_session(session=session, device=device)
+        device = align_device_with_onnx_session(session=session, device=device)
         return cls(
             session=session,
             input_name=session.get_inputs()[0].name,

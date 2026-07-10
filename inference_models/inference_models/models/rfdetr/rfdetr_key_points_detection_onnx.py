@@ -15,7 +15,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_RFDETR_DEFAULT_KEY_POINTS_THRESHOLD,
 )
-from inference_models.developer_tools import align_cuda_device_with_onnx_session
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -139,7 +139,7 @@ class RFDetrForKeyPointsONNX(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
-        device = align_cuda_device_with_onnx_session(session=session, device=device)
+        device = align_device_with_onnx_session(session=session, device=device)
         classes_re_mapping = None
         if inference_config.class_names_operations:
             class_names, classes_re_mapping = prepare_class_remapping(

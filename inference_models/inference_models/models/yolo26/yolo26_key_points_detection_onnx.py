@@ -15,7 +15,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_YOLO26_DEFAULT_KEY_POINTS_THRESHOLD,
 )
-from inference_models.developer_tools import align_cuda_device_with_onnx_session
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -133,7 +133,7 @@ class YOLO26ForKeyPointsDetectionOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
-        device = align_cuda_device_with_onnx_session(session=session, device=device)
+        device = align_device_with_onnx_session(session=session, device=device)
         input_batch_size = session.get_inputs()[0].shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None

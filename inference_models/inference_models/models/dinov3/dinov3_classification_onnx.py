@@ -14,7 +14,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE,
 )
-from inference_models.developer_tools import align_cuda_device_with_onnx_session
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -132,7 +132,7 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
             path_or_bytes=model_package_content[weights_file],
             providers=onnx_execution_providers,
         )
-        device = align_cuda_device_with_onnx_session(session=session, device=device)
+        device = align_device_with_onnx_session(session=session, device=device)
         input_shape = session.get_inputs()[0].shape
         input_batch_size = input_shape[0]
         if isinstance(input_batch_size, str):
@@ -316,7 +316,7 @@ class DinoV3ForMultiLabelClassificationOnnx(
             path_or_bytes=model_package_content[weights_file],
             providers=onnx_execution_providers,
         )
-        device = align_cuda_device_with_onnx_session(session=session, device=device)
+        device = align_device_with_onnx_session(session=session, device=device)
         input_shape = session.get_inputs()[0].shape
         input_batch_size = input_shape[0]
         if isinstance(input_batch_size, str):

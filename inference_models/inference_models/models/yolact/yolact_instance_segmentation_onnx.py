@@ -18,7 +18,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLACT_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS,
 )
-from inference_models.developer_tools import align_cuda_device_with_onnx_session
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -134,7 +134,7 @@ class YOLOACTForInstanceSegmentationOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
-        device = align_cuda_device_with_onnx_session(session=session, device=device)
+        device = align_device_with_onnx_session(session=session, device=device)
         input_batch_size = session.get_inputs()[0].shape[0]
         if input_batch_size != 1:
             raise ModelRuntimeError(

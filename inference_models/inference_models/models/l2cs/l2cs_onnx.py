@@ -7,7 +7,7 @@ import torch
 from torchvision import transforms
 
 from inference_models.configuration import DEFAULT_DEVICE
-from inference_models.developer_tools import align_cuda_device_with_onnx_session
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -87,7 +87,7 @@ class L2CSNetOnnx:
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
-        device = align_cuda_device_with_onnx_session(session=session, device=device)
+        device = align_device_with_onnx_session(session=session, device=device)
         input_name = session.get_inputs()[0].name
         return cls(
             session=session,

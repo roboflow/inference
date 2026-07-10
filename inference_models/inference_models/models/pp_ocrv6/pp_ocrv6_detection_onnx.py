@@ -6,7 +6,7 @@ import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.developer_tools import (
-    align_cuda_device_with_onnx_session,
+    align_device_with_onnx_session,
     run_onnx_session_via_iobinding,
     set_onnx_execution_provider_defaults,
 )
@@ -109,7 +109,7 @@ class PPOCRv6DetectionOnnx(
             path_or_bytes=model_package_content[PP_OCRV6_DETECTION_MODEL_FILE],
             providers=onnx_execution_providers,
         )
-        device = align_cuda_device_with_onnx_session(session=session, device=device)
+        device = align_device_with_onnx_session(session=session, device=device)
         return cls(
             session=session,
             input_name=session.get_inputs()[0].name,
