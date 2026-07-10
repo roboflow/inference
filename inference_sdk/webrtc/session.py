@@ -235,6 +235,12 @@ class WebRTCSession:
         ) = {}
         self._pending_predictions: "Dict[int, dict]" = {}
         self._pairing_max_size = 150
+        # Some server paths (observed on serverless) deliver the returned
+        # track frame with a pts a few 90kHz ticks off the datachannel
+        # metadata pts (timebase-conversion rounding in transit). Frames are
+        # tens of milliseconds (thousands of ticks) apart, so a ±1ms window
+        # pairs those without ever being ambiguous between neighbours.
+        self._pairing_pts_tolerance = 90
         # Pairing health counters: detect a systematic pts mismatch between the
         # video track and the datachannel metadata (see _evict_pending_frames).
         self._pairing_matched = 0
@@ -767,8 +773,9 @@ class WebRTCSession:
             # No pts to pair on: deliver immediately without predictions.
             self._enqueue((frame, None, metadata))
             return
-        predictions = self._pending_predictions.pop(pts, None)
-        if predictions is not None:
+        matched_pts = self._nearest_pts(pts, self._pending_predictions)
+        if matched_pts is not None:
+            predictions = self._pending_predictions.pop(matched_pts)
             self._pairing_matched += 1
             self._enqueue((frame, predictions, metadata))
             return
@@ -784,14 +791,30 @@ class WebRTCSession:
         """
         if pts is None:
             return
-        pending = self._pending_frames.pop(pts, None)
-        if pending is not None:
-            frame, metadata = pending
+        matched_pts = self._nearest_pts(pts, self._pending_frames)
+        if matched_pts is not None:
+            frame, metadata = self._pending_frames.pop(matched_pts)
             self._pairing_matched += 1
             self._enqueue((frame, predictions, metadata))
             return
         self._pending_predictions[pts] = predictions
         self._evict_pending_predictions()
+
+    def _nearest_pts(self, pts: int, pending: dict) -> Optional[int]:
+        """Find the key in ``pending`` closest to ``pts`` within the pairing
+        tolerance, preferring an exact hit. Returns None when nothing is close
+        enough. Pending dicts are bounded by ``_pairing_max_size``, so the
+        fallback scan is cheap."""
+        if pts in pending:
+            return pts
+        best = None
+        best_delta = self._pairing_pts_tolerance + 1
+        for candidate in pending:
+            delta = abs(candidate - pts)
+            if delta < best_delta:
+                best = candidate
+                best_delta = delta
+        return best
 
     def _evict_pending_frames(self) -> None:
         """Bound the pending-frames dict, flushing evicted frames with data=None."""
