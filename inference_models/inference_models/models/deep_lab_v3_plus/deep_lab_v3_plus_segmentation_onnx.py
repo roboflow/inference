@@ -1,4 +1,3 @@
-import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -9,6 +8,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE,
 )
+from inference_models.developer_tools import align_cuda_device_with_onnx_session
 from inference_models.entities import Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -42,6 +42,7 @@ from inference_models.models.common.roboflow.semantic_segmentation import (
     resolve_background_class_id,
     validate_class_names,
 )
+from inference_models.models.common.streams import get_cuda_stream
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -124,6 +125,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
+        device = align_cuda_device_with_onnx_session(session=session, device=device)
         input_batch_size = session.get_inputs()[0].shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None
@@ -158,10 +160,6 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
-        self._thread_local_storage = threading.local()
-        self._inference_stream = (
-            torch.cuda.Stream(device=device) if device.type == "cuda" else None
-        )
         self.recommended_parameters = recommended_parameters
 
     @property
@@ -228,20 +226,12 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
 
     @property
     def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
-        if self._device.type != "cuda":
-            return None
-        if not hasattr(self._thread_local_storage, "pre_process_stream"):
-            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.pre_process_stream
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
 
     @property
     def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
-        if self._device.type != "cuda":
-            return None
-        if not hasattr(self._thread_local_storage, "post_process_stream"):
-            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.post_process_stream
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")

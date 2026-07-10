@@ -8,6 +8,7 @@ from inference_models.errors import (
     ModelInputError,
     ModelRuntimeError,
 )
+from inference_models.logger import LOGGER
 
 try:
     import onnxruntime
@@ -24,6 +25,14 @@ except ImportError as import_error:
         help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
+
+GPU_CAPABLE_EXECUTION_PROVIDERS = {
+    "CUDAExecutionProvider",
+    "TensorrtExecutionProvider",
+    "NvTensorRTRTXExecutionProvider",
+    "ROCMExecutionProvider",
+    "MIGraphXExecutionProvider",
+}
 
 TORCH_TYPES_MAPPING = {
     torch.float32: np.float32,
@@ -177,6 +186,58 @@ def set_onnx_execution_provider_defaults(
             provider = ("CUDAExecutionProvider", device_id_options)
         result.append(provider)
     return result
+
+
+def align_cuda_device_with_onnx_session(
+    session: onnxruntime.InferenceSession,
+    device: torch.device,
+) -> torch.device:
+    """Reconcile the model's torch device with the session's actual providers.
+
+    An onnxruntime session can only consume GPU-resident tensors when it runs a
+    GPU-capable execution provider. When a model is initialized with a CUDA
+    torch device (e.g. the auto-selected default on a GPU machine) but the
+    session ended up CPU-only - either because the caller requested only
+    `CPUExecutionProvider` or because onnxruntime silently fell back during
+    initialization - binding CUDA tensors would fail with a cryptic
+    "no data transfer registered" error. This function detects that mismatch
+    and returns the CPU device instead, so pre- and post-processing stay on the
+    same device the session can read from.
+
+    Args:
+        session: Initialized ONNX Runtime session. Its effective (post-fallback)
+            providers are read via `session.get_providers()`.
+
+        device: Torch device requested for the model.
+
+    Returns:
+        The requested device when it is compatible with the session's providers,
+        otherwise the CPU device.
+
+    Examples:
+        Align device in a model's `from_pretrained`:
+
+        >>> session = onnxruntime.InferenceSession(
+        ...     "model.onnx", providers=["CPUExecutionProvider"]
+        ... )
+        >>> device = align_cuda_device_with_onnx_session(
+        ...     session=session, device=torch.device("cuda:0")
+        ... )
+        >>> device
+        device(type='cpu')
+    """
+    if device.type != "cuda":
+        return device
+    session_providers = set(session.get_providers())
+    if session_providers & GPU_CAPABLE_EXECUTION_PROVIDERS:
+        return device
+    LOGGER.warning(
+        "Model requested device %s, but the onnxruntime session runs only CPU-bound "
+        "execution providers (%s) - falling back to CPU tensors for this model.",
+        device,
+        ", ".join(sorted(session_providers)),
+    )
+    return torch.device("cpu")
 
 
 def run_onnx_session_with_batch_size_limit(
@@ -498,6 +559,18 @@ def run_onnx_session_via_iobinding(
             help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
         ) from import_error
 
+    if not any(
+        provider in GPU_CAPABLE_EXECUTION_PROVIDERS
+        for provider in session.get_providers()
+    ):
+        raise ModelRuntimeError(
+            message="Model inputs reside on CUDA device, but the onnxruntime session does not run any "
+            "GPU-capable execution provider, so it cannot consume GPU-resident tensors. This is a bug in "
+            "the model implementation - the model should align its processing device with the session "
+            "providers (see `align_cuda_device_with_onnx_session(...)`). Submit issue to help us solve this "
+            "problem: https://github.com/roboflow/inference/issues",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+        )
     if stream is None:
         stream = torch.cuda.current_stream(device)
     cuda.init()

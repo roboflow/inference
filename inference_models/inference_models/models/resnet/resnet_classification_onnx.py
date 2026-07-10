@@ -1,4 +1,3 @@
-import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -16,6 +15,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
 )
+from inference_models.developer_tools import align_cuda_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
@@ -38,6 +38,7 @@ from inference_models.models.common.roboflow.post_processing import ConfidenceFi
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.common.streams import get_cuda_stream
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -126,6 +127,7 @@ class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
+        device = align_cuda_device_with_onnx_session(session=session, device=device)
         input_shape = session.get_inputs()[0].shape
         input_batch_size = input_shape[0]
         if isinstance(input_batch_size, str):
@@ -156,10 +158,6 @@ class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
-        self._thread_local_storage = threading.local()
-        self._inference_stream = (
-            torch.cuda.Stream(device=device) if device.type == "cuda" else None
-        )
 
     @property
     def class_names(self) -> List[str]:
@@ -222,23 +220,15 @@ class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
 
     @property
     def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
-        if self._device.type != "cuda":
-            return None
-        if not hasattr(self._thread_local_storage, "pre_process_stream"):
-            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.pre_process_stream
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
 
     @property
     def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
-        if self._device.type != "cuda":
-            return None
-        if not hasattr(self._thread_local_storage, "post_process_stream"):
-            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.post_process_stream
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")
 
 
 class ResNetForMultiLabelClassificationOnnx(
@@ -311,6 +301,7 @@ class ResNetForMultiLabelClassificationOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
+        device = align_cuda_device_with_onnx_session(session=session, device=device)
         input_shape = session.get_inputs()[0].shape
         input_batch_size = input_shape[0]
         if isinstance(input_batch_size, str):
@@ -343,10 +334,6 @@ class ResNetForMultiLabelClassificationOnnx(
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
-        self._thread_local_storage = threading.local()
-        self._inference_stream = (
-            torch.cuda.Stream(device=device) if device.type == "cuda" else None
-        )
         self.recommended_parameters = recommended_parameters
 
     @property
@@ -429,20 +416,12 @@ class ResNetForMultiLabelClassificationOnnx(
 
     @property
     def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
-        if self._device.type != "cuda":
-            return None
-        if not hasattr(self._thread_local_storage, "pre_process_stream"):
-            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.pre_process_stream
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
 
     @property
     def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
-        if self._device.type != "cuda":
-            return None
-        if not hasattr(self._thread_local_storage, "post_process_stream"):
-            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.post_process_stream
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")

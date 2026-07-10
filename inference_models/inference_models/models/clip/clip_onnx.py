@@ -1,4 +1,3 @@
-import threading
 from threading import Lock
 from typing import List, Optional, Union
 
@@ -7,6 +6,7 @@ import numpy as np
 import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.developer_tools import align_cuda_device_with_onnx_session
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -19,6 +19,7 @@ from inference_models.models.common.onnx import (
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
+from inference_models.models.common.streams import get_cuda_stream
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -86,6 +87,9 @@ class ClipOnnx(TextImageEmbeddingModel):
             path_or_bytes=model_package_content["textual.onnx"],
             providers=onnx_execution_providers,
         )
+        device = align_cuda_device_with_onnx_session(
+            session=visual_onnx_session, device=device
+        )
         image_size = visual_onnx_session.get_inputs()[0].shape[2]
         visual_input_name = visual_onnx_session.get_inputs()[0].name
         textual_input_name = textual_onnx_session.get_inputs()[0].name
@@ -118,10 +122,6 @@ class ClipOnnx(TextImageEmbeddingModel):
         self._max_batch_size = max_batch_size
         self._visual_session_thread_lock = Lock()
         self._textual_session_thread_lock = Lock()
-        self._thread_local_storage = threading.local()
-        self._inference_stream = (
-            torch.cuda.Stream(device=device) if device.type == "cuda" else None
-        )
         self._preprocessor = create_clip_preprocessor(image_size=image_size)
 
     def embed_images(
@@ -163,10 +163,8 @@ class ClipOnnx(TextImageEmbeddingModel):
 
     @property
     def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
-        if self._device.type != "cuda":
-            return None
-        if not hasattr(self._thread_local_storage, "pre_process_stream"):
-            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.pre_process_stream
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")

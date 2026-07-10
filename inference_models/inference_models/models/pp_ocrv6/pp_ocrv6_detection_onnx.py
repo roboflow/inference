@@ -5,6 +5,11 @@ import numpy as np
 import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.developer_tools import (
+    align_cuda_device_with_onnx_session,
+    run_onnx_session_via_iobinding,
+    set_onnx_execution_provider_defaults,
+)
 from inference_models.entities import ColorFormat
 from inference_models.errors import EnvironmentConfigurationError
 from inference_models.models.base.object_detection import (
@@ -12,10 +17,6 @@ from inference_models.models.base.object_detection import (
     ObjectDetectionModel,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
-from inference_models.models.common.onnx import (
-    run_onnx_session_via_iobinding,
-    set_onnx_execution_provider_defaults,
-)
 from inference_models.models.pp_ocrv6.pp_ocrv6_common import (
     PreProcessingMetadata,
     is_torch_input,
@@ -108,6 +109,7 @@ class PPOCRv6DetectionOnnx(
             path_or_bytes=model_package_content[PP_OCRV6_DETECTION_MODEL_FILE],
             providers=onnx_execution_providers,
         )
+        device = align_cuda_device_with_onnx_session(session=session, device=device)
         return cls(
             session=session,
             input_name=session.get_inputs()[0].name,

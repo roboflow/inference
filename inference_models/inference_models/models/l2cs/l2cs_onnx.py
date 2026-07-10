@@ -1,4 +1,3 @@
-import threading
 from dataclasses import dataclass
 from threading import Lock
 from typing import List, Optional, Tuple, Union
@@ -8,6 +7,7 @@ import torch
 from torchvision import transforms
 
 from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.developer_tools import align_cuda_device_with_onnx_session
 from inference_models.entities import ColorFormat
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -21,6 +21,7 @@ from inference_models.models.common.onnx import (
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
+from inference_models.models.common.streams import get_cuda_stream
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -86,6 +87,7 @@ class L2CSNetOnnx:
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
+        device = align_cuda_device_with_onnx_session(session=session, device=device)
         input_name = session.get_inputs()[0].name
         return cls(
             session=session,
@@ -106,10 +108,6 @@ class L2CSNetOnnx:
         self._device = device
         self._input_name = input_name
         self._session_thread_lock = Lock()
-        self._thread_local_storage = threading.local()
-        self._inference_stream = (
-            torch.cuda.Stream(device=device) if device.type == "cuda" else None
-        )
         self._numpy_transformations = transforms.Compose(
             [
                 transforms.ToTensor(),
@@ -241,10 +239,8 @@ class L2CSNetOnnx:
 
     @property
     def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
-        if self._device.type != "cuda":
-            return None
-        if not hasattr(self._thread_local_storage, "pre_process_stream"):
-            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.pre_process_stream
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")

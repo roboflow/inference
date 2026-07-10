@@ -15,6 +15,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
     INFERENCE_MODELS_RFDETR_DEFAULT_KEY_POINTS_THRESHOLD,
 )
+from inference_models.developer_tools import align_cuda_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -34,6 +35,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_key_points_metadata,
 )
 from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
+from inference_models.models.common.streams import get_cuda_stream
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
@@ -133,6 +135,11 @@ class RFDetrForKeyPointsONNX(
             },
             max_allowed_input_size=rf_detr_max_input_resolution,
         )
+        session = onnxruntime.InferenceSession(
+            path_or_bytes=model_package_content["weights.onnx"],
+            providers=onnx_execution_providers,
+        )
+        device = align_cuda_device_with_onnx_session(session=session, device=device)
         classes_re_mapping = None
         if inference_config.class_names_operations:
             class_names, classes_re_mapping = prepare_class_remapping(
@@ -140,10 +147,6 @@ class RFDetrForKeyPointsONNX(
                 class_names_operations=inference_config.class_names_operations,
                 device=device,
             )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
-            providers=onnx_execution_providers,
-        )
         input_batch_size = session.get_inputs()[0].shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None
@@ -195,10 +198,6 @@ class RFDetrForKeyPointsONNX(
             else inference_config.forward_pass.max_dynamic_batch_size
         )
         self._session_thread_lock = threading.Lock()
-        self._thread_local_storage = threading.local()
-        self._inference_stream = (
-            torch.cuda.Stream(device=device) if device.type == "cuda" else None
-        )
         self.recommended_parameters = recommended_parameters
         self._key_points_classes_for_instances = torch.tensor(
             [len(e) for e in self._parsed_key_points_metadata], device=device
@@ -291,20 +290,12 @@ class RFDetrForKeyPointsONNX(
 
     @property
     def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
-        if self._device.type != "cuda":
-            return None
-        if not hasattr(self._thread_local_storage, "pre_process_stream"):
-            self._thread_local_storage.pre_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.pre_process_stream
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
 
     @property
     def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
-        if self._device.type != "cuda":
-            return None
-        if not hasattr(self._thread_local_storage, "post_process_stream"):
-            self._thread_local_storage.post_process_stream = torch.cuda.Stream(
-                device=self._device
-            )
-        return self._thread_local_storage.post_process_stream
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")

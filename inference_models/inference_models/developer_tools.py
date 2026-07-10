@@ -63,6 +63,10 @@ OPTIONAL_IMPORTS: Dict[str, Union[LazyFunction, LazyClass]] = {
         module_name="inference_models.models.common.onnx",
         function_name="run_onnx_session_via_iobinding",
     ),
+    "align_cuda_device_with_onnx_session": LazyFunction(
+        module_name="inference_models.models.common.onnx",
+        function_name="align_cuda_device_with_onnx_session",
+    ),
     "generate_batch_chunks": LazyFunction(
         module_name="inference_models.models.common.torch",
         function_name="generate_batch_chunks",
