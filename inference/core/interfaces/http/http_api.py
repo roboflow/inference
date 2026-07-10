@@ -70,6 +70,7 @@ from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderImageEmbeddingRequest,
     PerceptionEncoderTextEmbeddingRequest,
 )
+from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
@@ -154,6 +155,7 @@ from inference.core.env import (
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_PE_ENABLED,
+    CORE_MODEL_PPOCR_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
     CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_SAM_ENABLED,
@@ -1533,6 +1535,16 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The TrOCR model ID.
+        """
+
+        load_pp_ocr_model = partial(load_core_model, core_model="pp_ocr")
+        """Loads the PP-OCRv6 model into the model manager.
+
+        Args:
+        Same as `load_core_model`.
+
+        Returns:
+        The PP-OCRv6 model ID.
         """
 
         @app.get(
@@ -3977,6 +3989,54 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(trocr_model_id, actor)
+                    return orjson_response_keeping_parent_id(response)
+
+            if CORE_MODEL_PPOCR_ENABLED:
+
+                @app.post(
+                    "/ocr/pp-ocr",
+                    response_model=OCRInferenceResponse,
+                    summary="PP-OCRv6 OCR response",
+                    description="Run PP-OCRv6 two-stage OCR to retrieve text in an image.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def pp_ocr_retrieve_text(
+                    inference_request: PPOCRInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """
+                    Retrieves text from image data using the PP-OCRv6 model.
+
+                    Args:
+                        inference_request (PPOCRInferenceRequest): The request containing the image from which to retrieve text.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        OCRInferenceResponse: The response containing the retrieved text.
+                    """
+                    logger.debug(f"Reached /ocr/pp-ocr")
+                    pp_ocr_model_id = load_pp_ocr_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    response = self.model_manager.infer_from_request_sync(
+                        pp_ocr_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(pp_ocr_model_id, actor)
                     return orjson_response_keeping_parent_id(response)
 
         if not (LAMBDA or GCP_SERVERLESS):
