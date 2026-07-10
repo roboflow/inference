@@ -65,6 +65,7 @@ nav:
           - EasyOCR: models/easyocr.md
           - TrOCR: models/trocr.md
           - GLM-OCR: models/glm-ocr.md
+          - PP-OCRv6: models/pp-ocrv6.md
       - Keypoint Detection:
           - YOLOv8: models/yolov8-keypoint-detection.md
           - YOLOv11: models/yolov11-keypoint-detection.md

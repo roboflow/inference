@@ -29,6 +29,7 @@ def get_model_id_chunks(
         "sam3",
         "owlv2",
         "trocr",
+        "pp_ocr",
         "yolo_world",
         "smolvlm2",
         "moondream2",

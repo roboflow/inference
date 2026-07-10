@@ -1,5 +1,15 @@
 # Changelog
 
+## `0.30.0`
+
+### Added
+
+- Support for [PP-OCRv6](https://github.com/PaddlePaddle/PaddleOCR),
+  PaddlePaddle's ultra-lightweight OCR system: text detection
+  (`pp-ocrv6-det`) and text recognition (`pp-ocrv6-rec`) models, plus the
+  `pp-ocrv6` pipeline chaining both stages into end-to-end OCR. See the
+  [model documentation](models/pp-ocrv6.md) for details.
+
 ## `0.29.7`
 
 ### Added
