@@ -2216,6 +2216,105 @@ def test_ocr_image_when_trocr_selected_in_specific_variant(
     }, "Request must contain API key and image encoded in standard format"
 
 
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_when_pp_ocr_selected(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/ocr/pp-ocr",
+        json={
+            "response": "Image text 1.",
+            "time": 0.33,
+        },
+    )
+
+    # when
+    result = http_client.ocr_image(inference_input="/some/image.jpg", model="pp_ocr")
+
+    # then
+    assert result == {
+        "response": "Image text 1.",
+        "time": 0.33,
+    }, "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+    }, "Request must contain API key and image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_when_pp_ocr_selected_in_specific_variant(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/ocr/pp-ocr",
+        json={
+            "response": "Image text 1.",
+            "time": 0.33,
+        },
+    )
+
+    # when
+    result = http_client.ocr_image(
+        inference_input="/some/image.jpg", model="pp_ocr", version="medium"
+    )
+
+    # then
+    assert result == {
+        "response": "Image text 1.",
+        "time": 0.33,
+    }, "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+        "pp_ocr_version_id": "medium",
+    }, "Request must contain API key and image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_when_pp_ocr_selected_with_compound_version(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/ocr/pp-ocr",
+        json={
+            "response": "",
+            "time": 0.33,
+        },
+    )
+
+    # when
+    result = http_client.ocr_image(
+        inference_input="/some/image.jpg", model="pp_ocr", version="small-none"
+    )
+
+    # then
+    assert result == {
+        "response": "",
+        "time": 0.33,
+    }, "Result must match the value returned by HTTP endpoint"
+    request_json = requests_mock.request_history[0].json()
+    assert request_json == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+        "pp_ocr_version_id": "small-none",
+    }, "Request must carry the compound pp_ocr_version_id untouched"
+    assert "quantize" not in request_json
+    assert "language_codes" not in request_json
+
+
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
 async def test_ocr_image_async_when_single_image_given_in_v1_mode(
@@ -2330,6 +2429,89 @@ async def test_ocr_image_async_when_trocr_selected_in_specific_variant(
                 "api_key": "my-api-key",
                 "image": {"type": "base64", "value": "base64_image"},
                 "trocr_version_id": "trocr-small-printed",
+            },
+            params=None,
+            data=None,
+            headers={"Content-Type": "application/json"},
+        )
+
+
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_ocr_image_async_when_pp_ocr_selected(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/ocr/pp-ocr",
+            payload={
+                "response": "Image text 1.",
+                "time": 0.33,
+            },
+        )
+        # when
+        result = await http_client.ocr_image_async(
+            inference_input="/some/image.jpg", model="pp_ocr"
+        )
+
+        # then
+        assert result == {
+            "response": "Image text 1.",
+            "time": 0.33,
+        }, "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/ocr/pp-ocr",
+            "POST",
+            json={
+                "api_key": "my-api-key",
+                "image": {"type": "base64", "value": "base64_image"},
+            },
+            params=None,
+            data=None,
+            headers={"Content-Type": "application/json"},
+        )
+
+
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_ocr_image_async_when_pp_ocr_selected_in_specific_variant(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/ocr/pp-ocr",
+            payload={
+                "response": "Image text 1.",
+                "time": 0.33,
+            },
+        )
+        # when
+        result = await http_client.ocr_image_async(
+            inference_input="/some/image.jpg",
+            model="pp_ocr",
+            version="medium",
+        )
+
+        # then
+        assert result == {
+            "response": "Image text 1.",
+            "time": 0.33,
+        }, "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/ocr/pp-ocr",
+            "POST",
+            json={
+                "api_key": "my-api-key",
+                "image": {"type": "base64", "value": "base64_image"},
+                "pp_ocr_version_id": "medium",
             },
             params=None,
             data=None,

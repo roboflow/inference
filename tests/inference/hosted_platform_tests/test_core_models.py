@@ -106,6 +106,49 @@ def test_infer_from_easy_ocr_model_when_valid_input_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+def test_infer_from_pp_ocr_model_when_valid_input_given(
+    core_models_service_url: str,
+) -> None:
+    # given
+    client = InferenceHTTPClient(
+        api_url=core_models_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    ).select_api_v0()
+
+    # when
+    result = client.ocr_image(IMAGE_URL, model="pp_ocr")
+
+    # then
+    assert isinstance(result, dict), "Expected dict as response"
+    assert {
+        "result",
+        "time",
+    }.issubset(result.keys()), "Expected all fields to be present in output"
+    assert isinstance(result["result"], str)
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_infer_from_pp_ocr_model_with_explicit_stage_sizes(
+    core_models_service_url: str,
+) -> None:
+    # given
+    client = InferenceHTTPClient(
+        api_url=core_models_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    ).select_api_v0()
+
+    # when
+    result = client.ocr_image(IMAGE_URL, model="pp_ocr", version="small-small")
+
+    # then
+    assert isinstance(result, dict), "Expected dict as response"
+    assert {
+        "result",
+        "time",
+    }.issubset(result.keys()), "Expected all fields to be present in output"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_ocr_model_when_non_https_input_url_given(
     core_models_service_url: str,
 ) -> None:
