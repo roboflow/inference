@@ -13,6 +13,10 @@ from inference.core.workflows.errors import (
     ClientCausedStepExecutionError,
     RuntimeLimitsCausedStepExecutionError,
 )
+from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
+    InnerWorkflowCompositionCycleError,
+    InnerWorkflowParameterBindingsUnknownInputError,
+)
 from inference_models.errors import (
     FileHashSumMissmatch,
     ModelInputError,
@@ -121,6 +125,60 @@ async def test_with_route_exceptions_async_when_model_input_error_raised():
 
     assert resp.status_code == 400
     assert "model input" in resp.body.decode().lower()
+
+
+def test_with_route_exceptions_when_inner_workflow_parameter_bindings_error_raised():
+    @with_route_exceptions
+    def my_route():
+        raise InnerWorkflowParameterBindingsUnknownInputError(
+            public_message="inner workflow parameter bindings reference unknown input"
+        )
+
+    resp = my_route()
+
+    assert resp.status_code == 400
+    assert "unknown input" in resp.body.decode().lower()
+
+
+@pytest.mark.asyncio
+async def test_with_route_exceptions_async_when_inner_workflow_parameter_bindings_error_raised():
+    @with_route_exceptions_async
+    async def my_route():
+        raise InnerWorkflowParameterBindingsUnknownInputError(
+            public_message="inner workflow parameter bindings reference unknown input"
+        )
+
+    resp = await my_route()
+
+    assert resp.status_code == 400
+    assert "unknown input" in resp.body.decode().lower()
+
+
+def test_with_route_exceptions_when_inner_workflow_composition_error_raised():
+    @with_route_exceptions
+    def my_route():
+        raise InnerWorkflowCompositionCycleError(
+            public_message="inner workflow composition contains a cycle"
+        )
+
+    resp = my_route()
+
+    assert resp.status_code == 400
+    assert "cycle" in resp.body.decode().lower()
+
+
+@pytest.mark.asyncio
+async def test_with_route_exceptions_async_when_inner_workflow_composition_error_raised():
+    @with_route_exceptions_async
+    async def my_route():
+        raise InnerWorkflowCompositionCycleError(
+            public_message="inner workflow composition contains a cycle"
+        )
+
+    resp = await my_route()
+
+    assert resp.status_code == 400
+    assert "cycle" in resp.body.decode().lower()
 
 
 def test_with_route_exceptions_when_cannot_initialise_model_due_to_input_size_error_raised():

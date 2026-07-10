@@ -74,6 +74,10 @@ from inference.core.workflows.errors import (
     WorkflowExecutionEngineVersionError,
     WorkflowSyntaxError,
 )
+from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
+    InnerWorkflowCompositionError,
+    InnerWorkflowParameterBindingsError,
+)
 from inference_models.errors import (
     EnvironmentConfigurationError,
     FileHashSumMissmatch,
@@ -245,6 +249,8 @@ def with_route_exceptions(route):
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
             DynamicBlockError,
+            InnerWorkflowCompositionError,
+            InnerWorkflowParameterBindingsError,
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
@@ -719,6 +725,8 @@ def with_route_exceptions_async(route):
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
             DynamicBlockError,
+            InnerWorkflowCompositionError,
+            InnerWorkflowParameterBindingsError,
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
