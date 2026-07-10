@@ -14,13 +14,17 @@ from inference.core.env import (
     LOG_LEVEL,
     MODAL_TOKEN_ID,
     MODAL_TOKEN_SECRET,
+    MODAL_WEB_ENDPOINT_URL,
     MODAL_WORKSPACE_NAME,
+    MODAL_WS_ENDPOINT_URL,
     MODEL_CACHE_DIR,
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
     PROJECT,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    WEBEXEC_TRANSPORT,
+    WEBEXEC_WS_CONNECTION_POOL_SIZE,
     WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
     WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION,
@@ -64,6 +68,9 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.interfaces.webrtc_worker.request_utils import (
+    reuse_resolved_workspace_id_for_webrtc_request,
+)
 from inference.core.interfaces.webrtc_worker.utils import (
     warmup_cuda,
     workflow_contains_instant_model,
@@ -72,10 +79,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
 from inference.core.interfaces.webrtc_worker.watchdog import Watchdog
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.core.roboflow_api import (
-    get_roboflow_workspace,
-    get_workflow_specification,
-)
+from inference.core.roboflow_api import get_workflow_specification
 from inference.core.version import __version__
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.owlv2.owlv2 import PRELOADED_HF_MODELS, preload_owlv2_model
@@ -127,7 +131,9 @@ if modal is not None:
         )
 
     video_processing_image = (
-        video_processing_image.apt_install("ffmpeg").pip_install("modal").entrypoint([])
+        video_processing_image.apt_install("ffmpeg")
+        .pip_install("modal", "msgpack", "websocket-client")
+        .entrypoint([])
     )
 
     # https://modal.com/docs/reference/modal.Volume
@@ -163,7 +169,9 @@ if modal is not None:
             "METRICS_ENABLED": "False",
             "MODAL_TOKEN_ID": MODAL_TOKEN_ID,
             "MODAL_TOKEN_SECRET": MODAL_TOKEN_SECRET,
+            "MODAL_WEB_ENDPOINT_URL": MODAL_WEB_ENDPOINT_URL,
             "MODAL_WORKSPACE_NAME": MODAL_WORKSPACE_NAME,
+            "MODAL_WS_ENDPOINT_URL": MODAL_WS_ENDPOINT_URL,
             "MODEL_CACHE_DIR": MODEL_CACHE_DIR,
             "MODELS_CACHE_AUTH_CACHE_MAX_SIZE": str(MODELS_CACHE_AUTH_CACHE_MAX_SIZE),
             "MODELS_CACHE_AUTH_CACHE_TTL": str(MODELS_CACHE_AUTH_CACHE_TTL),
@@ -178,6 +186,8 @@ if modal is not None:
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+            "WEBEXEC_TRANSPORT": WEBEXEC_TRANSPORT,
+            "WEBEXEC_WS_CONNECTION_POOL_SIZE": str(WEBEXEC_WS_CONNECTION_POOL_SIZE),
             "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
             "TELEMETRY_API_PLAN_CACHE_TTL_SECONDS": str(
                 os.getenv("TELEMETRY_API_PLAN_CACHE_TTL_SECONDS", 60)
@@ -297,7 +307,9 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
-            _workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
+            _workspace_id = reuse_resolved_workspace_id_for_webrtc_request(
+                webrtc_request
+            )
 
             workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
@@ -357,9 +369,9 @@ if modal is not None:
             logger.info("declared_fps: %s", webrtc_request.declared_fps)
             logger.info("rtsp_url: %s", webrtc_request.rtsp_url)
             logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
+            logger.info("requested_region: %s", webrtc_request.requested_region)
             logger.info("watchdog_timeout: %s", WEBRTC_MODAL_WATCHDOG_TIMEMOUT)
             logger.info("requested_plan: %s", webrtc_request.requested_plan)
-            logger.info("requested_region: %s", webrtc_request.requested_region)
             logger.info(
                 "ICE servers: %s",
                 len(
@@ -612,10 +624,7 @@ if modal is not None:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client, tag=docker_tag)
 
-        workspace_id = webrtc_request.workflow_configuration.workspace_name
-        if not workspace_id:
-            workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
-            webrtc_request.workflow_configuration.workspace_name = workspace_id
+        workspace_id = reuse_resolved_workspace_id_for_webrtc_request(webrtc_request)
         if not webrtc_request.workflow_configuration.workflow_specification:
             webrtc_request.workflow_configuration.workflow_specification = get_workflow_specification(
                 api_key=webrtc_request.api_key,
@@ -725,8 +734,14 @@ if modal is not None:
                     q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
                 )
             except Empty:
-                logger.error("Modal function call timed out, terminating containers")
-                function_call.cancel(terminate_containers=True)
+                logger.error("Modal function call timed out, cancelling function call")
+                try:
+                    function_call.cancel()
+                except Exception as cancel_exc:
+                    logger.warning(
+                        "Failed to cancel timed-out Modal function call: %s",
+                        cancel_exc,
+                    )
                 raise RoboflowAPITimeoutError("Modal function call timed out")
             except Exception as exc:
                 logger.error(exc)
