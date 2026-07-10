@@ -135,11 +135,11 @@ def test_start_launches_daemon_and_reclaims_then_stop_joins() -> None:
         wd.start()
         try:
             # then - the loop runs at least one reclamation cycle promptly
-            assert reclaimed.wait(timeout=3.0)
+            assert reclaimed.wait(timeout=1.0)
             assert wd._thread is not None
             assert wd._thread.is_alive()
         finally:
-            wd.stop(timeout=3.0)
+            wd.stop(timeout=1.0)
     # and stop() joins and clears the thread handle
     assert wd._thread is None
 
@@ -156,7 +156,7 @@ def test_start_is_idempotent_while_running() -> None:
             wd.start()
             assert wd._thread is first_thread
         finally:
-            wd.stop(timeout=3.0)
+            wd.stop(timeout=1.0)
 
 
 def test_stop_is_quiet_noop_when_never_started() -> None:
