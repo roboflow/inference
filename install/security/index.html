@@ -1014,6 +1014,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#5-restrict-image-fetching-from-urls-ssrf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Restrict image fetching from URLs (SSRF)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Restrict image fetching from URLs (SSRF)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#turn-url-input-off-if-you-dont-need-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Turn URL input off if you don't need it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#harden-url-input-when-you-do-need-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Harden URL input when you do need it
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#recommended-baseline" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1422,6 +1461,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#5-restrict-image-fetching-from-urls-ssrf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Restrict image fetching from URLs (SSRF)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Restrict image fetching from URLs (SSRF)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#turn-url-input-off-if-you-dont-need-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Turn URL input off if you don't need it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#harden-url-input-when-you-do-need-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Harden URL input when you do need it
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#recommended-baseline" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1463,7 +1541,7 @@ A locally deployed server does not enforce authentication, encryption, or
 network restrictions by default — it is built to be easy to start, not to be
 safe to expose. Out of the box it will answer any request that reaches it,
 including requests to run models and execute Workflows.</p>
-<p>This page covers the four controls every self-hosted deployment should
+<p>This page covers the five controls every self-hosted deployment should
 review before it handles anything beyond local development traffic. They are
 complementary — apply as many as your environment allows.</p>
 <div class="admonition warning">
@@ -1578,6 +1656,126 @@ keep working after that date. Otherwise, leave it disabled — and prefer
 enabling it only on deployments where the network and authentication
 controls above are already in place.</p>
 </div>
+<h2 id="5-restrict-image-fetching-from-urls-ssrf">5. Restrict image fetching from URLs (SSRF)<a class="headerlink" href="#5-restrict-image-fetching-from-urls-ssrf" title="Permanent link">&para;</a></h2>
+<p>Inference can load images straight from a URL supplied in the request
+(<code>{"image": {"type": "url", "value": "https://..."}}</code>). Any time a server
+fetches a URL that a caller controls, the caller can try to steer it into
+making requests on their behalf — a class of attack called <strong>Server-Side
+Request Forgery (SSRF)</strong>. Someone who cannot reach your internal network
+directly can ask <em>your server</em> to fetch, for example:</p>
+<ul>
+<li><code>http://169.254.169.254/latest/meta-data/</code> — the cloud metadata service
+  (AWS/GCP/Azure), which can hand back instance credentials.</li>
+<li><code>http://127.0.0.1:9001/...</code> and other <code>localhost</code> services — admin panels,
+  databases, or the inference server's own unauthenticated endpoints.</li>
+<li><code>http://10.0.0.5/</code>, <code>http://192.168.1.1/</code>, and other private (RFC1918),
+  link-local, CGNAT, or IPv6 ULA hosts that sit behind your perimeter.</li>
+</ul>
+<p>A public-looking hostname is not proof of a public target: it may resolve to a
+private IP, redirect to one, or use <strong>DNS rebinding</strong> (resolve to a public IP
+for the validation check, then a private IP for the actual connection).
+Inference ships controls for all of these.</p>
+<h3 id="turn-url-input-off-if-you-dont-need-it">Turn URL input off if you don't need it<a class="headerlink" href="#turn-url-input-off-if-you-dont-need-it" title="Permanent link">&para;</a></h3>
+<p>The strongest control is to not accept URL images at all. If your clients
+always send images as base64 or file uploads, disable URL fetching outright:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-p<span class="w"> </span><span class="m">9001</span>:9001<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">ALLOW_URL_INPUT</span><span class="o">=</span><span class="nb">false</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>roboflow/roboflow-inference-server-cpu:latest
+</code></pre></div>
+<h3 id="harden-url-input-when-you-do-need-it">Harden URL input when you do need it<a class="headerlink" href="#harden-url-input-when-you-do-need-it" title="Permanent link">&para;</a></h3>
+<p>When URL images are required, these flags narrow what the server is allowed to
+fetch. Together they reject internal targets, <strong>pin the connection to the
+validated IP</strong> (defeating DNS rebinding), and re-check every redirect hop:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ALLOW_URL_INPUT</code></td>
+<td><code>True</code></td>
+<td>Master switch for URL image input. <code>False</code> rejects all URL images.</td>
+</tr>
+<tr>
+<td><code>ALLOW_URL_TO_NON_GLOBAL_ADDRESSES</code></td>
+<td><code>True</code></td>
+<td>When <code>False</code>, a URL whose host resolves to a <strong>non-global</strong> address (loopback, private, link-local/metadata, CGNAT, IPv6 ULA, …) is rejected, and the connection is pinned to the validated IP so a second DNS answer cannot swap the target.</td>
+</tr>
+<tr>
+<td><code>VALIDATE_IMAGE_URL_REDIRECTS</code></td>
+<td><code>False</code></td>
+<td>When <code>True</code>, redirects are followed <strong>one hop at a time</strong> and each hop URL is re-validated, instead of being followed blindly.</td>
+</tr>
+<tr>
+<td><code>MAX_IMAGE_URL_REDIRECTS</code></td>
+<td><code>30</code></td>
+<td>Hard cap on redirect hops, enforced regardless of the flag above.</td>
+</tr>
+<tr>
+<td><code>ALLOW_NON_HTTPS_URL_INPUT</code></td>
+<td><code>False</code></td>
+<td>When <code>False</code>, only <code>https://</code> URLs are accepted.</td>
+</tr>
+<tr>
+<td><code>ALLOW_URL_INPUT_WITHOUT_FQDN</code></td>
+<td><code>False</code></td>
+<td>When <code>False</code>, URLs whose host is a bare IP or has no public suffix are rejected — callers must use a real domain name.</td>
+</tr>
+<tr>
+<td><code>WHITELISTED_DESTINATIONS_FOR_URL_INPUT</code></td>
+<td><em>(unset)</em></td>
+<td>Comma-separated allow-list of destinations (<code>subdomain.domain.suffix</code>). When set, <strong>only</strong> these are permitted.</td>
+</tr>
+<tr>
+<td><code>BLACKLISTED_DESTINATIONS_FOR_URL_INPUT</code></td>
+<td><em>(unset)</em></td>
+<td>Comma-separated block-list of destinations that are always rejected.</td>
+</tr>
+</tbody>
+</table>
+<p>A hardened configuration that still allows public HTTPS image URLs:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-p<span class="w"> </span><span class="m">9001</span>:9001<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">ALLOW_URL_TO_NON_GLOBAL_ADDRESSES</span><span class="o">=</span><span class="nb">false</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">VALIDATE_IMAGE_URL_REDIRECTS</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>roboflow/roboflow-inference-server-cpu:latest
+</code></pre></div>
+<p>For the tightest control, add an allow-list so the server can only reach the
+exact hosts you serve images from:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-p<span class="w"> </span><span class="m">9001</span>:9001<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">ALLOW_URL_TO_NON_GLOBAL_ADDRESSES</span><span class="o">=</span><span class="nb">false</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">VALIDATE_IMAGE_URL_REDIRECTS</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">WHITELISTED_DESTINATIONS_FOR_URL_INPUT</span><span class="o">=</span>images.example.com,cdn.example.com<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>roboflow/roboflow-inference-server-cpu:latest
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Two defaults are changing in Q4 2026</p>
+<p><code>ALLOW_URL_TO_NON_GLOBAL_ADDRESSES</code> (→ <code>False</code>) and
+<code>VALIDATE_IMAGE_URL_REDIRECTS</code> (→ <code>True</code>) currently default to the legacy,
+permissive behaviour for backward compatibility. Both defaults are
+scheduled to flip to the secure values in <strong>Q4 2026</strong>. Set them explicitly
+now — to the secure values to opt in early, or to the legacy values if a
+workflow genuinely depends on fetching internal URLs — so the change does
+not surprise you.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Proxies bypass this protection</p>
+<p>If an HTTP(S) proxy is configured for the server, the proxy — not
+Inference — resolves the destination, so non-global blocking and
+connection pinning cannot be enforced (the server emits a warning when it
+detects this). Restrict what the proxy itself can reach if you rely on
+these controls.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Same controls in the Python SDK</p>
+<p>The <code>inference-sdk</code> client applies the same URL policy and SSRF protections
+— and reads the same environment variables — when it loads images from
+URLs, so a client that hydrates URL images before sending them is covered
+too.</p>
+</div>
 <h2 id="recommended-baseline">Recommended baseline<a class="headerlink" href="#recommended-baseline" title="Permanent link">&para;</a></h2>
 <p>For any self-hosted server that is reachable beyond <code>localhost</code>:</p>
 <ul>
@@ -1585,6 +1783,7 @@ controls above are already in place.</p>
 <li>[ ] <code>WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT</code> set, or your own auth in front.</li>
 <li>[ ] TLS terminated at the server or an upstream proxy.</li>
 <li>[ ] <code>ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=false</code> unless you genuinely need it.</li>
+<li>[ ] URL image input disabled (<code>ALLOW_URL_INPUT=false</code>), or hardened with <code>ALLOW_URL_TO_NON_GLOBAL_ADDRESSES=false</code> and <code>VALIDATE_IMAGE_URL_REDIRECTS=true</code> (plus an allow-list where you can).</li>
 </ul>
 
 

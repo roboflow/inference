@@ -48,6 +48,8 @@ Hardware device detection and selection helpers.
 
 ::: inference.core.entities.requests.perception_encoder
 
+::: inference.core.entities.requests.pp_ocr
+
 ::: inference.core.entities.requests.sam
 
 ::: inference.core.entities.requests.sam2
@@ -168,6 +170,8 @@ Model lifecycle managers: loading, unloading, registry, and resolution.
 
 ::: inference.core.managers.base
 
+::: inference.core.managers.cuda_memory_watchdog
+
 ::: inference.core.managers.metrics
 
 ::: inference.core.managers.model_load_collector
@@ -239,6 +243,8 @@ General-purpose utilities: image encoding, file I/O, hashing, URL handling, and 
 ::: inference.core.utils.sqlite_wrapper
 
 ::: inference.core.utils.torchscript_guard
+
+::: inference.core.utils.url_input
 
 ## `core/workflows/core_steps/analytics/detection_event_log`
 

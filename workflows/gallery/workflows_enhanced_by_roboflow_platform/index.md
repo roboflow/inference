@@ -10,7 +10,7 @@ in the output of prediction. Additionally, we register cropped images in Roboflo
 
 Thanks to this setup, we are able to collect production data and continuously train better models over time.
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiY2k5bkswb1I2SDBtaGlObHpyQmYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODMzMjY5MTN9.-ErPToGEBWBgIEswFPBKQj2T-5PGSEbIt_0uC7_Otb0?showGraph=true" loading="lazy" title="Roboflow Workflow for data collection active learning" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiY2k5bkswb1I2SDBtaGlObHpyQmYiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODM3MTMyMjN9.Kt4ir6IBKgdqNFZGeNrrySs-7WDbx3obrsjEBDXUNtM?showGraph=true" loading="lazy" title="Roboflow Workflow for data collection active learning" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 

@@ -655,6 +655,8 @@
       
         
       
+        
+      
     
     
     
@@ -947,6 +949,34 @@
     
   
     Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./webrtc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WebRTC Streaming
   
 
     
@@ -1512,7 +1542,7 @@ then the load of single node can be optimised and parallel requests to different
 <li><code>detect_gazes(...)</code> and <code>detect_gazes_async(...)</code> — <strong>deprecated</strong>, always raises <code>inference_sdk.http.errors.FeatureDeprecatedError</code></li>
 <li><code>get_clip_image_embeddings(...)</code> and <code>get_clip_image_embeddings_async(...)</code></li>
 </ul>
-<p>The client also supports <a href="../inference_sdk/core_models/">core foundation models</a> (CLIP, DocTR) and <a href="../inference_sdk/workflows/">running Workflows</a> for multi-step pipelines.</p>
+<p>The client also supports <a href="../inference_sdk/core_models/">core foundation models</a> (CLIP, DocTR), <a href="../inference_sdk/workflows/">running Workflows</a> for multi-step pipelines, and <a href="../inference_sdk/webrtc/">WebRTC streaming</a> for real-time video inference.</p>
 <h2 id="inference-against-stream">Inference against stream<a class="headerlink" href="#inference-against-stream" title="Permanent link">&para;</a></h2>
 <p>One may want to infer against video or a directory of images, and those modes are supported in <code>inference-sdk</code>.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>

@@ -653,6 +653,8 @@
       
         
       
+        
+      
     
     
     
@@ -1455,6 +1457,16 @@
 <td><code>INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES</code></td>
 <td>Variable to controll frequency of <code>inference-models</code> cache watchdog cycles - min is 15 mins.</td>
 <td><code>60</code></td>
+</tr>
+<tr>
+<td><code>ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG</code></td>
+<td>Flag to enable a background daemon that periodically returns cached-but-unused CUDA memory to the driver via <code>torch.cuda.empty_cache()</code>. PyTorch's caching allocator retains freed device blocks in its own pool and never releases them on its own, so on a long-running server the high-water mark of concurrent/batched inference is sticky - reserved VRAM only ever grows. This watchdog reclaims that reclaimable slack on a fixed interval (live allocations are untouched). It relieves the <em>sticky high-water mark</em> accumulated across sequential/batched requests; it does not prevent an OOM caused by a genuinely oversubscribed concurrent peak (that live working set is not reclaimable). Only meaningful with <code>USE_INFERENCE_MODELS=True</code> on CUDA.</td>
+<td><code>False</code></td>
+</tr>
+<tr>
+<td><code>CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS</code></td>
+<td>Interval (in seconds) between reclamation cycles of the CUDA memory watchdog - min is <code>5</code> seconds (lower values are clamped up). Only applies when <code>ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG=True</code>.</td>
+<td><code>300</code></td>
 </tr>
 <tr>
 <td><code>ENABLE_HTTPS</code></td>

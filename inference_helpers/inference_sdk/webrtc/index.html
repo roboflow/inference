@@ -1,0 +1,2235 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Stream video to an Inference server over WebRTC and receive live predictions, using a model ID or a Workflow, from webcams, RTSP cameras, video files, or manually sent frames.">
+      
+      
+        <meta name="author" content="Roboflow">
+      
+      
+        <link rel="canonical" href="https://inference.roboflow.com/inference_helpers/inference_sdk/webrtc/">
+      
+      
+        <link rel="prev" href="../workflows/">
+      
+      
+        <link rel="next" href="../../../reference/inference_sdk/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../favicon.png">
+      <meta name="generator" content="zensical-0.0.33">
+    
+    
+      
+        <title>WebRTC Streaming - Roboflow Inference</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.53a7feaf.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.dfe2e883.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7Cui-monospace:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"ui-monospace"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../styles/cookbooks.css">
+    
+      <link rel="stylesheet" href="../../../styles.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+  
+
+
+  
+  
+
+<script id="__analytics">function __md_analytics(){function e(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],e("js",new Date),e("config","G-T0CED2YY8K"),document.addEventListener("DOMContentLoaded",(function(){document.forms.search&&document.forms.search.query.addEventListener("blur",(function(){this.value&&e("event","search",{search_term:this.value})}));document$.subscribe((function(){var t=document.forms.feedback;if(void 0!==t)for(var a of t.querySelectorAll("[type=submit]"))a.addEventListener("click",(function(a){a.preventDefault();var n=document.location.pathname,d=this.getAttribute("data-md-value");e("event","feedback",{page:n,data:d}),t.firstElementChild.disabled=!0;var r=t.querySelector(".md-feedback__note [data-md-value='"+d+"']");r&&(r.hidden=!1)})),t.hidden=!1})),location$.subscribe((function(t){e("config","G-T0CED2YY8K",{page_path:t.pathname})}))}));var t=document.createElement("script");t.async=!0,t.src="https://www.googletagmanager.com/gtag/js?id=G-T0CED2YY8K",document.getElementById("__analytics").insertAdjacentElement("afterEnd",t)}</script>
+  
+    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
+  
+
+    
+    
+
+<link href="https://cdnassets.roboflow.com/_vendor/fontawesome/6.4.0/css/all.min.css" rel="stylesheet">
+<link href="https://cdnassets.roboflow.com/_vendor/fontawesome/kit/custom-icons.css" rel="stylesheet">
+
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#webrtc-streaming" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Roboflow Inference" class="md-header__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../../roboflow-logomark-color.svg" alt="Roboflow Inference">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Roboflow Inference
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              WebRTC Streaming
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search" aria-label="Search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../start/overview/" class="md-tabs__link">
+          
+  
+  Start
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../quickstart/run_a_model/" class="md-tabs__link">
+          
+  
+  Models
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../workflows/about/" class="md-tabs__link">
+          
+  
+  Workflows
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../../reference/overview/" class="md-tabs__link">
+          
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+
+        
+      
+
+
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Roboflow Inference" class="md-nav__button md-logo" aria-label="Roboflow Inference" data-md-component="logo">
+      
+  <img src="../../../roboflow-logomark-color.svg" alt="Roboflow Inference">
+
+    </a>
+    Roboflow Inference
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/roboflow/inference" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../start/overview/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../quickstart/run_a_model/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../workflows/about/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference SDK
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Inference SDK
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core_models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../model_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WebRTC Streaming
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WebRTC Streaming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quickstart-stream-a-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quickstart: stream a model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streaming-a-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming a Workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#video-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Video sources
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Video sources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#webcamsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WebcamSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rtspsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RTSPSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#localstreamsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LocalStreamSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mjpegsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MJPEGSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#videofilesource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VideoFileSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manualsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ManualSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consuming-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consuming results
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Consuming results">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-session-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The session lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#receiving-frames-on_frame-and-video" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Receiving frames: on_frame and video()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#receiving-data-on_data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Receiving data: on_data
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#handling-errors-on_error" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Handling errors: on_error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frame-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frame metadata
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streamconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StreamConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/inference_sdk/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../inference_cli/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference CLI
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../quickstart/docker/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference Server
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+      
+        
+        
+      
+    
+    <li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+      
+        
+  
+  
+  
+    <a href="../../../using_inference/about/" class="md-nav__link">
+      
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference Python Package
+  
+
+    
+  </span>
+  
+  
+
+      
+        <span class="md-nav__icon md-icon"></span>
+      
+    </a>
+  
+
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribute »
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/roboflow/inference/releases" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog »
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quickstart-stream-a-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quickstart: stream a model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streaming-a-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming a Workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#video-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Video sources
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Video sources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#webcamsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WebcamSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rtspsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RTSPSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#localstreamsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LocalStreamSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mjpegsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MJPEGSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#videofilesource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VideoFileSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manualsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ManualSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consuming-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consuming results
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Consuming results">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-session-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The session lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#receiving-frames-on_frame-and-video" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Receiving frames: on_frame and video()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#receiving-data-on_data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Receiving data: on_data
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#handling-errors-on_error" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Handling errors: on_error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frame-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frame metadata
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streamconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StreamConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+
+
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+    <a href="https://github.com/roboflow/inference/tree/main/docs/inference_helpers/inference_sdk/webrtc.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-file-pen" viewBox="0 0 24 24"><path d="M12.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v9.34"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10.378 12.622a1 1 0 0 1 3 3.003L8.36 20.637a2 2 0 0 1-.854.506l-2.867.837a.5.5 0 0 1-.62-.62l.836-2.869a2 2 0 0 1 .506-.853z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="webrtc-streaming">WebRTC Streaming<a class="headerlink" href="#webrtc-streaming" title="Permanent link">&para;</a></h1>
+<p>The <code>inference-sdk</code> includes a WebRTC client for low-latency, real-time video inference. Instead of sending images one HTTP request at a time, you open a streaming session: video frames flow to the server over a WebRTC connection, and processed frames plus prediction data flow back continuously.</p>
+<div class="admonition warning">
+<p class="admonition-title">Experimental</p>
+<p>The WebRTC SDK is experimental and under active development. The API may change in future
+releases. Please report issues at <a href="https://github.com/roboflow/inference/issues">github.com/roboflow/inference/issues</a>.</p>
+</div>
+<p>WebRTC streaming requires extra dependencies:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;inference-sdk[webrtc]&quot;</span>
+</code></pre></div>
+<h2 id="quickstart-stream-a-model">Quickstart: stream a model<a class="headerlink" href="#quickstart-stream-a-model" title="Permanent link">&para;</a></h2>
+<p>The fastest way to get live predictions is to pass a <code>model_id</code> — no Workflow required. The SDK builds a minimal single-model Workflow under the hood, and your <code>on_frame</code> handler receives each video frame together with the raw predictions dict for that frame:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">cv2</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">supervision</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">sv</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk.webrtc</span><span class="w"> </span><span class="kn">import</span> <span class="n">WebcamSource</span>
+
+<span class="c1"># Replace ROBOFLOW_API_KEY with your Roboflow API Key</span>
+<span class="n">client</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
+    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:9001&quot;</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">session</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">webrtc</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span>
+    <span class="n">source</span><span class="o">=</span><span class="n">WebcamSource</span><span class="p">(),</span>
+    <span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;rfdetr-nano&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">box_annotator</span> <span class="o">=</span> <span class="n">sv</span><span class="o">.</span><span class="n">BoxAnnotator</span><span class="p">()</span>
+
+<span class="nd">@session</span><span class="o">.</span><span class="n">on_frame</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">show</span><span class="p">(</span><span class="n">frame</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="c1"># data is the raw predictions dict, exactly as returned by the server</span>
+    <span class="c1"># (None when predictions are unavailable for this frame)</span>
+    <span class="k">if</span> <span class="n">data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">detections</span> <span class="o">=</span> <span class="n">sv</span><span class="o">.</span><span class="n">Detections</span><span class="o">.</span><span class="n">from_inference</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="n">annotated</span> <span class="o">=</span> <span class="n">box_annotator</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">frame</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">detections</span><span class="p">)</span>
+    <span class="n">cv2</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="s2">&quot;Preview&quot;</span><span class="p">,</span> <span class="n">annotated</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">cv2</span><span class="o">.</span><span class="n">waitKey</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="mh">0xFF</span> <span class="o">==</span> <span class="nb">ord</span><span class="p">(</span><span class="s2">&quot;q&quot;</span><span class="p">):</span>
+        <span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+<span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>  <span class="c1"># blocks until the stream ends or session.close() is called</span>
+</code></pre></div>
+<p><code>model_id</code> works for any task type with a generic Workflow model block. The model's task type is resolved automatically via a Roboflow API lookup, and the matching model block is selected for you. Supported task types:</p>
+<ul>
+<li><code>object-detection</code></li>
+<li><code>instance-segmentation</code></li>
+<li><code>semantic-segmentation</code></li>
+<li><code>classification</code></li>
+<li><code>multi-label-classification</code></li>
+<li><code>keypoint-detection</code></li>
+</ul>
+<p><code>data</code> is the serialized predictions dict passed through verbatim — its shape follows the task type. For detection-family models it is inference-response-shaped, so you can convert it with the matching <a href="https://supervision.roboflow.com/"><code>supervision</code></a> helper — <code>sv.Detections.from_inference(data)</code> for object detection and instance segmentation, <code>sv.KeyPoints.from_inference(data)</code> for keypoint models. Classification predictions carry <code>top</code>/<code>confidence</code> keys, and semantic-segmentation predictions carry run-length-encoded masks (<code>rle_mask</code>) that you decode yourself.</p>
+<p>When predictions are unavailable for a frame (e.g. the paired prediction message never arrived for a live stream frame), <code>data</code> is <code>None</code> — check for it in your handler before use.</p>
+<p>VLMs are not supported in <code>model_id</code> mode (each VLM family has its own dedicated Workflow block, so there is no generic block to wrap them with) — stream them with a full <a href="#streaming-a-workflow"><code>workflow</code></a> instead.</p>
+<p><strong>Skipping the task-type lookup:</strong> pass <code>task_type</code> explicitly to avoid the network call — useful for air-gapped or self-hosted deployments:</p>
+<div class="highlight"><pre><span></span><code><span class="n">session</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">webrtc</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span>
+    <span class="n">source</span><span class="o">=</span><span class="n">WebcamSource</span><span class="p">(),</span>
+    <span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;my-project/3&quot;</span><span class="p">,</span>
+    <span class="n">task_type</span><span class="o">=</span><span class="s2">&quot;object-detection&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<p>In <code>model_id</code> mode, <code>on_frame</code> handlers can take either <code>(frame, data)</code> or <code>(frame, data, metadata)</code> — the third argument is the <a href="#frame-metadata"><code>VideoMetadata</code></a> for the frame.</p>
+<h2 id="streaming-a-workflow">Streaming a Workflow<a class="headerlink" href="#streaming-a-workflow" title="Permanent link">&para;</a></h2>
+<p>For multi-step pipelines, pass a <code>workflow</code> instead of a <code>model_id</code>. Reference a Workflow saved in your Roboflow workspace by ID, or provide a full specification dict:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="workflow-id" name="__tabbed_1" type="radio" /><input id="workflow-specification" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="workflow-id">Workflow ID</label><label for="workflow-specification">Workflow specification</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">cv2</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk.webrtc</span><span class="w"> </span><span class="kn">import</span> <span class="n">WebcamSource</span><span class="p">,</span> <span class="n">StreamConfig</span>
+
+<span class="n">client</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
+    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:9001&quot;</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">session</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">webrtc</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span>
+    <span class="n">source</span><span class="o">=</span><span class="n">WebcamSource</span><span class="p">(),</span>
+    <span class="n">workflow</span><span class="o">=</span><span class="s2">&quot;my-workflow-id&quot;</span><span class="p">,</span>
+    <span class="n">workspace</span><span class="o">=</span><span class="s2">&quot;my-workspace-name&quot;</span><span class="p">,</span>
+    <span class="n">config</span><span class="o">=</span><span class="n">StreamConfig</span><span class="p">(</span>
+        <span class="n">stream_output</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;output_image&quot;</span><span class="p">],</span>   <span class="c1"># workflow output streamed back as video</span>
+        <span class="n">data_output</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;predictions&quot;</span><span class="p">],</span>      <span class="c1"># workflow outputs delivered via data channel</span>
+    <span class="p">),</span>
+<span class="p">)</span>
+
+<span class="nd">@session</span><span class="o">.</span><span class="n">on_frame</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">show</span><span class="p">(</span><span class="n">frame</span><span class="p">,</span> <span class="n">metadata</span><span class="p">):</span>
+    <span class="n">cv2</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="s2">&quot;Preview&quot;</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">cv2</span><span class="o">.</span><span class="n">waitKey</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="mh">0xFF</span> <span class="o">==</span> <span class="nb">ord</span><span class="p">(</span><span class="s2">&quot;q&quot;</span><span class="p">):</span>
+        <span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+<span class="nd">@session</span><span class="o">.</span><span class="n">on_data</span><span class="p">(</span><span class="s2">&quot;predictions&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">handle_predictions</span><span class="p">(</span><span class="n">predictions</span><span class="p">,</span> <span class="n">metadata</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Frame </span><span class="si">{</span><span class="n">metadata</span><span class="o">.</span><span class="n">frame_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">predictions</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">cv2</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceHTTPClient</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk.webrtc</span><span class="w"> </span><span class="kn">import</span> <span class="n">WebcamSource</span><span class="p">,</span> <span class="n">StreamConfig</span>
+
+<span class="n">client</span> <span class="o">=</span> <span class="n">InferenceHTTPClient</span><span class="p">(</span>
+    <span class="n">api_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:9001&quot;</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;ROBOFLOW_API_KEY&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">workflow_spec</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;version&quot;</span><span class="p">:</span> <span class="s2">&quot;1.0&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;inputs&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;InferenceImage&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">}],</span>
+    <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;roboflow_core/roboflow_object_detection_model@v2&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;model&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;images&quot;</span><span class="p">:</span> <span class="s2">&quot;$inputs.image&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;model_id&quot;</span><span class="p">:</span> <span class="s2">&quot;rfdetr-nano&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">],</span>
+    <span class="s2">&quot;outputs&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;JsonField&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;predictions&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;selector&quot;</span><span class="p">:</span> <span class="s2">&quot;$steps.model.predictions&quot;</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;JsonField&quot;</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">,</span> <span class="s2">&quot;selector&quot;</span><span class="p">:</span> <span class="s2">&quot;$inputs.image&quot;</span><span class="p">},</span>
+    <span class="p">],</span>
+<span class="p">}</span>
+
+<span class="n">session</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">webrtc</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span>
+    <span class="n">source</span><span class="o">=</span><span class="n">WebcamSource</span><span class="p">(),</span>
+    <span class="n">workflow</span><span class="o">=</span><span class="n">workflow_spec</span><span class="p">,</span>
+    <span class="n">config</span><span class="o">=</span><span class="n">StreamConfig</span><span class="p">(</span>
+        <span class="n">stream_output</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;image&quot;</span><span class="p">],</span>
+        <span class="n">data_output</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;predictions&quot;</span><span class="p">],</span>
+    <span class="p">),</span>
+<span class="p">)</span>
+
+<span class="nd">@session</span><span class="o">.</span><span class="n">on_frame</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">show</span><span class="p">(</span><span class="n">frame</span><span class="p">,</span> <span class="n">metadata</span><span class="p">):</span>
+    <span class="n">cv2</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="s2">&quot;Preview&quot;</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">cv2</span><span class="o">.</span><span class="n">waitKey</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="mh">0xFF</span> <span class="o">==</span> <span class="nb">ord</span><span class="p">(</span><span class="s2">&quot;q&quot;</span><span class="p">):</span>
+        <span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+<span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<p>Notes:</p>
+<ul>
+<li><code>workflow</code> and <code>model_id</code> are mutually exclusive — pass exactly one.</li>
+<li><code>workspace</code> is required when <code>workflow</code> is an ID string; it is not needed for a specification dict.</li>
+<li><code>image_input</code> (default <code>"image"</code>) names the Workflow image input the video frames are bound to.</li>
+<li>In workflow mode, <code>on_frame</code> handlers receive <code>(frame, metadata)</code> — prediction data arrives separately through <a href="#receiving-data-on_data"><code>on_data</code></a> handlers, routed by the <code>data_output</code> names in <code>StreamConfig</code>.</li>
+</ul>
+<h2 id="video-sources">Video sources<a class="headerlink" href="#video-sources" title="Permanent link">&para;</a></h2>
+<p>The first argument to <code>stream()</code> selects where video comes from:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk.webrtc</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">WebcamSource</span><span class="p">,</span>
+    <span class="n">RTSPSource</span><span class="p">,</span>
+    <span class="n">LocalStreamSource</span><span class="p">,</span>
+    <span class="n">MJPEGSource</span><span class="p">,</span>
+    <span class="n">VideoFileSource</span><span class="p">,</span>
+    <span class="n">ManualSource</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<h3 id="webcamsource">WebcamSource<a class="headerlink" href="#webcamsource" title="Permanent link">&para;</a></h3>
+<p>Captures frames from a local camera device and sends them to the server:</p>
+<div class="highlight"><pre><span></span><code><span class="n">source</span> <span class="o">=</span> <span class="n">WebcamSource</span><span class="p">()</span>                                    <span class="c1"># default camera</span>
+<span class="n">source</span> <span class="o">=</span> <span class="n">WebcamSource</span><span class="p">(</span><span class="n">device_id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">resolution</span><span class="o">=</span><span class="p">(</span><span class="mi">1920</span><span class="p">,</span> <span class="mi">1080</span><span class="p">))</span>
+</code></pre></div>
+<p>The camera's FPS is auto-detected and reported to the server.</p>
+<h3 id="rtspsource">RTSPSource<a class="headerlink" href="#rtspsource" title="Permanent link">&para;</a></h3>
+<p>The <strong>server</strong> connects to the RTSP camera and streams processed video back to you — use this when the camera is reachable from the server:</p>
+<div class="highlight"><pre><span></span><code><span class="n">source</span> <span class="o">=</span> <span class="n">RTSPSource</span><span class="p">(</span><span class="s2">&quot;rtsp://user:pass@camera.local/stream&quot;</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="localstreamsource">LocalStreamSource<a class="headerlink" href="#localstreamsource" title="Permanent link">&para;</a></h3>
+<p>Captures an RTSP/RTMP stream <strong>locally</strong> (on the client machine) and sends frames to the server — use this when the camera is only reachable from your machine, not from the server:</p>
+<div class="highlight"><pre><span></span><code><span class="n">source</span> <span class="o">=</span> <span class="n">LocalStreamSource</span><span class="p">(</span><span class="s2">&quot;rtsp://192.168.1.10/stream&quot;</span><span class="p">)</span>   <span class="c1"># also rtsps://, rtmp://, rtmps://</span>
+</code></pre></div>
+<h3 id="mjpegsource">MJPEGSource<a class="headerlink" href="#mjpegsource" title="Permanent link">&para;</a></h3>
+<p>Like <code>RTSPSource</code>, but for MJPEG streams captured by the server:</p>
+<div class="highlight"><pre><span></span><code><span class="n">source</span> <span class="o">=</span> <span class="n">MJPEGSource</span><span class="p">(</span><span class="s2">&quot;http://camera.local/mjpeg&quot;</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="videofilesource">VideoFileSource<a class="headerlink" href="#videofilesource" title="Permanent link">&para;</a></h3>
+<p>Uploads a video file to the server over the data channel; the server processes it and streams results back. More efficient than frame-by-frame streaming for pre-recorded video:</p>
+<div class="highlight"><pre><span></span><code><span class="n">source</span> <span class="o">=</span> <span class="n">VideoFileSource</span><span class="p">(</span><span class="s2">&quot;video.mp4&quot;</span><span class="p">)</span>
+
+<span class="c1"># Track upload progress and process at original FPS (live-preview pacing)</span>
+<span class="n">source</span> <span class="o">=</span> <span class="n">VideoFileSource</span><span class="p">(</span>
+    <span class="s2">&quot;video.mp4&quot;</span><span class="p">,</span>
+    <span class="n">on_upload_progress</span><span class="o">=</span><span class="k">lambda</span> <span class="n">uploaded</span><span class="p">,</span> <span class="n">total</span><span class="p">:</span> <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">uploaded</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">total</span><span class="si">}</span><span class="s2"> chunks&quot;</span><span class="p">),</span>
+    <span class="n">realtime_processing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>   <span class="c1"># default False = process as fast as possible</span>
+<span class="p">)</span>
+</code></pre></div>
+<p>By default frames come back through the data channel (guaranteed order and quality). Pass <code>use_datachannel_frames=False</code> to receive them via a hardware-accelerated WebRTC video track instead (lower bandwidth).</p>
+<h3 id="manualsource">ManualSource<a class="headerlink" href="#manualsource" title="Permanent link">&para;</a></h3>
+<p>Send frames programmatically — useful when frames come from a custom pipeline:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">cv2</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk.webrtc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ManualSource</span><span class="p">,</span> <span class="n">StreamConfig</span>
+
+<span class="n">source</span> <span class="o">=</span> <span class="n">ManualSource</span><span class="p">()</span>
+<span class="n">session</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">webrtc</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span>
+    <span class="n">source</span><span class="o">=</span><span class="n">source</span><span class="p">,</span>
+    <span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;rfdetr-nano&quot;</span><span class="p">,</span>
+    <span class="n">config</span><span class="o">=</span><span class="n">StreamConfig</span><span class="p">(</span><span class="n">declared_fps</span><span class="o">=</span><span class="mi">30</span><span class="p">),</span>
+<span class="p">)</span>
+
+<span class="nd">@session</span><span class="o">.</span><span class="n">on_frame</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">handle</span><span class="p">(</span><span class="n">frame</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+<span class="c1"># run() establishes the connection and dispatches handlers; start it in a</span>
+<span class="c1"># background thread so this thread can feed frames.</span>
+<span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">,</span> <span class="n">daemon</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+<span class="n">cap</span> <span class="o">=</span> <span class="n">cv2</span><span class="o">.</span><span class="n">VideoCapture</span><span class="p">(</span><span class="s2">&quot;video.mp4&quot;</span><span class="p">)</span>
+<span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+    <span class="n">ret</span><span class="p">,</span> <span class="n">frame</span> <span class="o">=</span> <span class="n">cap</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">ret</span><span class="p">:</span>
+        <span class="k">break</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">source</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>   <span class="c1"># BGR numpy array</span>
+    <span class="k">except</span> <span class="ne">RuntimeError</span><span class="p">:</span>
+        <span class="k">pass</span>                 <span class="c1"># session still connecting — frame skipped</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="mi">30</span><span class="p">)</span>       <span class="c1"># pace sends to the declared FPS</span>
+
+<span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<p><code>send()</code> raises <code>RuntimeError</code> until the connection is established, and queued frames are dropped oldest-first if you send faster than the stream is consumed. <code>ManualSource</code> has no FPS auto-detection, so declare the frame rate via <code>StreamConfig(declared_fps=...)</code>.</p>
+<h2 id="consuming-results">Consuming results<a class="headerlink" href="#consuming-results" title="Permanent link">&para;</a></h2>
+<h3 id="the-session-lifecycle">The session lifecycle<a class="headerlink" href="#the-session-lifecycle" title="Permanent link">&para;</a></h3>
+<p><code>stream()</code> returns a <code>WebRTCSession</code>. The connection starts lazily on first use (<code>run()</code>, <code>video()</code>, or <code>wait()</code>) and must be closed to release resources. Three equivalent patterns:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 1. run() — auto-closes when it exits (recommended with handlers)</span>
+<span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+
+<span class="c1"># 2. Context manager — auto-closes on exit (recommended with the video() iterator)</span>
+<span class="k">with</span> <span class="n">client</span><span class="o">.</span><span class="n">webrtc</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="n">source</span><span class="p">,</span> <span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;rfdetr-nano&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">frame</span><span class="p">,</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">session</span><span class="o">.</span><span class="n">video</span><span class="p">():</span>
+        <span class="o">...</span>
+
+<span class="c1"># 3. Manual — you must call close() yourself</span>
+<span class="n">session</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">webrtc</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="n">source</span><span class="p">,</span> <span class="n">model_id</span><span class="o">=</span><span class="s2">&quot;rfdetr-nano&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">frame</span><span class="p">,</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">session</span><span class="o">.</span><span class="n">video</span><span class="p">():</span>
+    <span class="o">...</span>
+<span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<p><code>session.close()</code> is idempotent and safe to call from inside a handler — it ends <code>run()</code> and the <code>video()</code> iterator. <code>session.wait(timeout=None)</code> blocks until the stream ends without consuming frames yourself.</p>
+<h3 id="receiving-frames-on_frame-and-video">Receiving frames: <code>on_frame</code> and <code>video()</code><a class="headerlink" href="#receiving-frames-on_frame-and-video" title="Permanent link">&para;</a></h3>
+<p><code>@session.on_frame</code> registers a handler invoked for every processed video frame when using <code>run()</code>. <code>session.video()</code> is the iterator equivalent — same data, pull-based:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model_id mode: (frame, data) — data is the raw predictions dict</span>
+<span class="c1"># (None when predictions are unavailable for the frame)</span>
+<span class="k">for</span> <span class="n">frame</span><span class="p">,</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">session</span><span class="o">.</span><span class="n">video</span><span class="p">():</span>
+    <span class="o">...</span>
+
+<span class="c1"># workflow mode: (frame, metadata)</span>
+<span class="k">for</span> <span class="n">frame</span><span class="p">,</span> <span class="n">metadata</span> <span class="ow">in</span> <span class="n">session</span><span class="o">.</span><span class="n">video</span><span class="p">():</span>
+    <span class="o">...</span>
+</code></pre></div>
+<p>Frames are BGR numpy arrays. If your handler falls behind in realtime mode, the oldest frames are dropped so the stream stays live.</p>
+<h3 id="receiving-data-on_data">Receiving data: <code>on_data</code><a class="headerlink" href="#receiving-data-on_data" title="Permanent link">&para;</a></h3>
+<p>Workflow outputs listed in <code>StreamConfig.data_output</code> arrive over the data channel. Register handlers per output name, or one global handler for the whole payload:</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@session</span><span class="o">.</span><span class="n">on_data</span><span class="p">(</span><span class="s2">&quot;predictions&quot;</span><span class="p">)</span>           <span class="c1"># a single output field</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">handle_predictions</span><span class="p">(</span><span class="n">predictions</span><span class="p">,</span> <span class="n">metadata</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Frame </span><span class="si">{</span><span class="n">metadata</span><span class="o">.</span><span class="n">frame_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">predictions</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nd">@session</span><span class="o">.</span><span class="n">on_data</span>                          <span class="c1"># global: full output dict</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">handle_all</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">metadata</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+</code></pre></div>
+<p>Handlers may accept <code>(value, metadata)</code> or just <code>(value)</code> — the signature is auto-detected.</p>
+<h3 id="handling-errors-on_error">Handling errors: <code>on_error</code><a class="headerlink" href="#handling-errors-on_error" title="Permanent link">&para;</a></h3>
+<p>The server reports per-frame errors (workflow execution failures, output serialization failures) alongside each data channel message. <code>on_error</code> handlers fire only for frames with a non-empty error list:</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@session</span><span class="o">.</span><span class="n">on_error</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">on_err</span><span class="p">(</span><span class="n">errors</span><span class="p">,</span> <span class="n">metadata</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Frame </span><span class="si">{</span><span class="n">metadata</span><span class="o">.</span><span class="n">frame_id</span><span class="si">}</span><span class="s2"> failed: </span><span class="si">{</span><span class="n">errors</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>   <span class="c1"># e.g. bail out on first error</span>
+</code></pre></div>
+<p>These are server-side per-frame failures; connection and setup errors surface as exceptions from <code>run()</code> instead. Errors are also attached to <code>metadata.errors</code> on every frame, so <code>on_frame</code> / <code>on_data</code> handlers can inspect them directly.</p>
+<h3 id="frame-metadata">Frame metadata<a class="headerlink" href="#frame-metadata" title="Permanent link">&para;</a></h3>
+<p><code>VideoMetadata</code> accompanies each frame and data message:</p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>frame_id</code></td>
+<td>Unique identifier of the frame in the stream</td>
+</tr>
+<tr>
+<td><code>received_at</code></td>
+<td>When the server received the frame</td>
+</tr>
+<tr>
+<td><code>pts</code> / <code>time_base</code></td>
+<td>Presentation timestamp of the video stream</td>
+</tr>
+<tr>
+<td><code>declared_fps</code> / <code>measured_fps</code></td>
+<td>Declared vs. measured stream FPS</td>
+</tr>
+<tr>
+<td><code>errors</code></td>
+<td>Per-frame errors reported by the server (empty when the frame processed cleanly)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="streamconfig">StreamConfig<a class="headerlink" href="#streamconfig" title="Permanent link">&para;</a></h2>
+<p><code>StreamConfig</code> controls output routing, processing behavior, and network settings:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">inference_sdk.webrtc</span><span class="w"> </span><span class="kn">import</span> <span class="n">StreamConfig</span>
+
+<span class="n">config</span> <span class="o">=</span> <span class="n">StreamConfig</span><span class="p">(</span>
+    <span class="n">stream_output</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;output_image&quot;</span><span class="p">],</span>
+    <span class="n">data_output</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;predictions&quot;</span><span class="p">],</span>
+    <span class="n">realtime_processing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">session</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">webrtc</span><span class="o">.</span><span class="n">stream</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="n">source</span><span class="p">,</span> <span class="n">workflow</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="n">workspace</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">)</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stream_output</code></td>
+<td><code>[]</code></td>
+<td>Workflow output names streamed back as video</td>
+</tr>
+<tr>
+<td><code>data_output</code></td>
+<td><code>[]</code></td>
+<td>Workflow output names delivered via the data channel</td>
+</tr>
+<tr>
+<td><code>realtime_processing</code></td>
+<td><code>True</code></td>
+<td>Drop frames to keep up in real time; set <code>False</code> to queue and process every frame</td>
+</tr>
+<tr>
+<td><code>declared_fps</code></td>
+<td><code>None</code></td>
+<td>FPS declaration for sources without auto-detection (e.g. <code>ManualSource</code>)</td>
+</tr>
+<tr>
+<td><code>turn_server</code></td>
+<td><code>None</code></td>
+<td>TURN server config: <code>{"urls": "turn:...", "username": "...", "credential": "..."}</code></td>
+</tr>
+<tr>
+<td><code>workflow_parameters</code></td>
+<td><code>{}</code></td>
+<td>Parameters passed to the Workflow execution</td>
+</tr>
+<tr>
+<td><code>requested_plan</code></td>
+<td><code>None</code></td>
+<td>Compute plan for Roboflow serverless endpoints (e.g. <code>"webrtc-gpu-small"</code>)</td>
+</tr>
+<tr>
+<td><code>requested_region</code></td>
+<td><code>None</code></td>
+<td>Processing region for serverless endpoints (e.g. <code>"us"</code>, <code>"eu"</code>)</td>
+</tr>
+<tr>
+<td><code>processing_timeout</code></td>
+<td><code>None</code></td>
+<td>Server-side session time limit in seconds (serverless endpoints)</td>
+</tr>
+</tbody>
+</table>
+<p>In <code>model_id</code> mode, empty <code>stream_output</code> / <code>data_output</code> are filled automatically (<code>["image"]</code> and <code>["predictions"]</code>); any other settings you provide are preserved.</p>
+<p><strong>TURN servers:</strong> when connecting to Roboflow-hosted endpoints, TURN configuration is fetched automatically. For self-hosted servers behind restrictive NATs or firewalls, provide <code>turn_server</code> explicitly; direct connection is attempted when it is not set.</p>
+
+
+
+
+
+
+
+
+
+  
+  
+
+
+
+  
+
+
+
+
+                
+              </article>
+            </div>
+          
+
+
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../workflows/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Workflows">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Workflows
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../../reference/inference_sdk/" class="md-footer__link md-footer__link--next" aria-label="Next: Reference">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Reference
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Roboflow 2026. All rights reserved.
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/roboflow" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/roboflow" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M549.7 124.1c-6.2-23.7-24.8-42.3-48.3-48.6C458.9 64 288.1 64 288.1 64S117.3 64 74.7 75.5c-23.5 6.3-42 24.9-48.3 48.6C15 167 15 256.4 15 256.4s0 89.4 11.4 132.3c6.3 23.6 24.8 41.5 48.3 47.8C117.3 448 288.1 448 288.1 448s170.8 0 213.4-11.5c23.5-6.3 42-24.2 48.3-47.8 11.4-42.9 11.4-132.3 11.4-132.3s0-89.4-11.4-132.3zM232.2 337.6V175.2l142.7 81.2z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/company/roboflow-ai/mycompany/" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://twitter.com/roboflow" target="_blank" rel="noopener" title="twitter.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M459.4 151.7c.3 4.5.3 9.1.3 13.6 0 138.7-105.6 298.6-298.6 298.6-59.5 0-114.7-17.2-161.1-47.1 8.4 1 16.6 1.3 25.3 1.3 49.1 0 94.2-16.6 130.3-44.8-46.1-1-84.8-31.2-98.1-72.8 6.5 1 13 1.6 19.8 1.6 9.4 0 18.8-1.3 27.6-3.6-48.1-9.7-84.1-52-84.1-103v-1.3c14 7.8 30.2 12.7 47.4 13.3-28.3-18.8-46.8-51-46.8-87.4 0-19.5 5.2-37.4 14.3-53C87.4 130.8 165 172.4 252.1 176.9c-1.6-7.8-2.6-15.9-2.6-24C249.5 95.1 296.3 48 354.4 48c30.2 0 57.5 12.7 76.7 33.1 23.7-4.5 46.5-13.3 66.6-25.3-7.8 24.4-24.4 44.8-46.1 57.8 21.1-2.3 41.6-8.1 60.4-16.2-14.3 20.8-32.2 39.3-52.6 54.3"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["announce.dismiss","content.action.edit","content.code.copy","content.tabs.link","navigation.footer","navigation.indexes","navigation.instant","navigation.instant.prefetch","navigation.instant.preview","navigation.instant.progress","navigation.prune","navigation.tabs","navigation.tabs.sticky","navigation.top","navigation.tracking","optimize","search.share","search.suggest","toc.follow"],"search":"../../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"default":1.0}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.63456bd9.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+      
+        <script src="../../../javascript/init_kapa_widget.js"></script>
+      
+        <script src="../../../javascript/cookbooks.js"></script>
+      
+        <script src="../../../javascript/workflows.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+      
+        <script src="https://unpkg.com/@rive-app/canvas"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+      
+        <script src="../../../assets/home.js"></script>
+      
+        <script src="../../../js/segment.js"></script>
+      
+    
+  </body>
+</html>

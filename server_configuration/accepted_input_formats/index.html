@@ -653,6 +653,8 @@
       
         
       
+        
+      
     
     
     
@@ -1511,7 +1513,18 @@ other targets will be rejected.
 * <code>BLACKLISTED_DESTINATIONS_FOR_URL_INPUT</code> - Optionally, you can specify a comma-separated list of forbidden 
 destinations for URL requests. For example:  <code>BLACKLISTED_DESTINATIONS_FOR_URL_INPUT=192.168.0.15,some.site.com</code>.
 URLs pointing to these targets will be rejected.
-* <code>ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM</code> - Set to <code>False</code> to disable local filesystem access to images - default: <code>True</code>.</p>
+* <code>ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM</code> - Set to <code>False</code> to disable local filesystem access to images - default: <code>True</code>.
+* <code>ALLOW_URL_TO_NON_GLOBAL_ADDRESSES</code> - Set to <code>False</code> to reject URLs whose host resolves to a non-global address
+(loopback, private/RFC1918, link-local/cloud-metadata <code>169.254.169.254</code>, CGNAT, IPv6 ULA, ...) and pin the connection to
+the validated IP so DNS rebinding cannot swap the target after validation - default: <code>True</code> (scheduled to change to
+<code>False</code> in Q4 2026).
+* <code>VALIDATE_IMAGE_URL_REDIRECTS</code> - Set to <code>True</code> to follow redirects one hop at a time and re-validate every hop URL
+(scheme / FQDN / allow-list / block-list / non-global address) instead of letting the client follow redirects blindly -
+default: <code>False</code> (scheduled to change to <code>True</code> in Q4 2026).
+* <code>MAX_IMAGE_URL_REDIRECTS</code> - Hard cap on the number of redirect hops allowed when fetching a URL image, enforced
+regardless of <code>VALIDATE_IMAGE_URL_REDIRECTS</code> - default: <code>30</code>.</p>
+<p>See <a href="../../install/security/">Securing a Self-Hosted Server</a> for a fuller explanation of the SSRF controls and
+recommended configurations.</p>
 <p>Check <a href="../../inference_helpers/inference_cli/">inference cli docs</a> to see how to run server with specific flags.</p>
 
 

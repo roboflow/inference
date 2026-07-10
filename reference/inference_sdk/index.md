@@ -40,6 +40,8 @@ Internal utilities for request building, image encoding/decoding, response post-
 
 ::: inference_sdk.http.utils.requests
 
+::: inference_sdk.http.utils.url_utils
+
 ## `utils`
 
 General-purpose helpers: lifecycle decorators (`@deprecated`, `@experimental`), environment variable parsing, and SDK logging.
@@ -59,6 +61,8 @@ WebRTC streaming client for real-time video inference over peer connections. Sup
 ::: inference_sdk.webrtc.config
 
 ::: inference_sdk.webrtc.datachannel
+
+::: inference_sdk.webrtc.model_workflows
 
 ::: inference_sdk.webrtc.session
 

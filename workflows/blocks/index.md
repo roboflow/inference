@@ -458,6 +458,21 @@ hide:
 
 
 
+            <a href="ppocr">
+              <div class="block">
+                
+                <div class="block_name"> <i class="far fa-text" > </i>  PP-OCR</div>
+                <div class="block_description">Extract text from an image using PP-OCR (PaddleOCR) optical character recognition.</div>
+                <!-- <div class="block_license">APACHE-2.0</div> -->
+              </div>
+            </a>
+
+
+          
+          
+
+
+
             <a href="barcode_detection">
               <div class="block">
                 

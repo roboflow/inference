@@ -653,6 +653,8 @@
       
         
       
+        
+      
     
     
     
@@ -2969,9 +2971,7 @@
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_cli/lib/enterprise/inference_compiler/core/local_trt_install.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 40</span>
-<span class="normal"> 41</span>
-<span class="normal"> 42</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 42</span>
 <span class="normal"> 43</span>
 <span class="normal"> 44</span>
 <span class="normal"> 45</span>
@@ -3054,7 +3054,11 @@
 <span class="normal">122</span>
 <span class="normal">123</span>
 <span class="normal">124</span>
-<span class="normal">125</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">install_compiled_trt_package</span><span class="p">(</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">install_compiled_trt_package</span><span class="p">(</span>
     <span class="n">model_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">model_architecture</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">task_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
@@ -3077,7 +3081,9 @@
     <span class="p">)</span>
 
     <span class="n">package_id</span> <span class="o">=</span> <span class="n">local_package_id_for_manifest</span><span class="p">(</span><span class="n">package_manifest</span><span class="p">)</span>
-    <span class="n">install_dir</span> <span class="o">=</span> <span class="n">generate_model_package_cache_path</span><span class="p">(</span><span class="n">model_id</span><span class="o">=</span><span class="n">model_id</span><span class="p">,</span> <span class="n">package_id</span><span class="o">=</span><span class="n">package_id</span><span class="p">)</span>
+    <span class="n">install_dir</span> <span class="o">=</span> <span class="n">generate_model_package_cache_path</span><span class="p">(</span>
+        <span class="n">model_id</span><span class="o">=</span><span class="n">model_id</span><span class="p">,</span> <span class="n">package_id</span><span class="o">=</span><span class="n">package_id</span>
+    <span class="p">)</span>
     <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">install_dir</span><span class="p">):</span>
         <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">install_dir</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">install_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -3295,8 +3301,7 @@
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_cli/lib/roboflow_cloud/data_staging/api_operations.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2231</span>
-<span class="normal">2232</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2232</span>
 <span class="normal">2233</span>
 <span class="normal">2234</span>
 <span class="normal">2235</span>
@@ -3393,7 +3398,8 @@
 <span class="normal">2326</span>
 <span class="normal">2327</span>
 <span class="normal">2328</span>
-<span class="normal">2329</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">create_images_batch_from_cloud_storage</span><span class="p">(</span>
+<span class="normal">2329</span>
+<span class="normal">2330</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">create_images_batch_from_cloud_storage</span><span class="p">(</span>
     <span class="n">bucket_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">batch_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">api_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -3605,8 +3611,7 @@
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>inference_cli/lib/roboflow_cloud/data_staging/api_operations.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2332</span>
-<span class="normal">2333</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2333</span>
 <span class="normal">2334</span>
 <span class="normal">2335</span>
 <span class="normal">2336</span>
@@ -3688,7 +3693,8 @@
 <span class="normal">2412</span>
 <span class="normal">2413</span>
 <span class="normal">2414</span>
-<span class="normal">2415</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">create_videos_batch_from_cloud_storage</span><span class="p">(</span>
+<span class="normal">2415</span>
+<span class="normal">2416</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">create_videos_batch_from_cloud_storage</span><span class="p">(</span>
     <span class="n">bucket_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">batch_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">api_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>

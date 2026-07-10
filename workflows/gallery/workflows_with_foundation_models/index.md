@@ -9,7 +9,7 @@ has capabilities of producing segmentation masks for instances of objects.
 
 **EXAMPLE REQUIRES DEDICATED DEPLOYMENT** and will not run in preview!
 
-<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoibEUwWDhUMDBkQ25sSGFBWm5kdVoiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODMzMjY5OTF9.3xekqK5ooDbpeLK_QuAbnT_R1S1GYmm4XJ4qMBk0UCo?showGraph=true" loading="lazy" title="Roboflow Workflow for simple sam2" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoibEUwWDhUMDBkQ25sSGFBWm5kdVoiLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiZG9jcy1nZW5lcmF0ZWQiLCJpYXQiOjE3ODM3MTMzMTB9.vJ6nzb0CTyXH1_kyacKXYMPV3MFLrjP0dwHNyMLdyv4?showGraph=true" loading="lazy" title="Roboflow Workflow for simple sam2" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ??? tip "Workflow definition"
 
