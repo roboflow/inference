@@ -10,7 +10,6 @@ that the URL is routed through `roboflow_secure_gateway_proxy_url_builder()`
 
 from unittest.mock import MagicMock
 
-from inference_cli.lib.enterprise.inference_compiler.constants import REQUEST_TIMEOUT
 from inference_cli.lib.enterprise.inference_compiler.utils import http as http_module
 
 RAW_UPLOAD_URL = "https://storage.googleapis.com/bucket/object?X-Goog-Signature=abc"
@@ -74,5 +73,4 @@ def test_upload_sets_an_explicit_timeout(monkeypatch, tmp_path):
 
     http_module.upload_file_to_cloud(file_path=str(file_path), url=RAW_UPLOAD_URL, headers={})
 
-    assert put.call_args.kwargs["timeout"] == REQUEST_TIMEOUT
-    assert REQUEST_TIMEOUT is not None
+    assert put.call_args.kwargs["timeout"] == http_module.UPLOAD_TIMEOUT_SECONDS
