@@ -163,11 +163,13 @@ from inference.core.env import (
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
     CORRELATION_ID_HEADER,
+    CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DEPTH_ESTIMATION_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
+    ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG,
     ENABLE_DASHBOARD,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
@@ -273,6 +275,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
     refresh_webrtc_session,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.managers.cuda_memory_watchdog import CudaMemoryReclamationWatchdog
 from inference.core.managers.inference_models_cache_watchdog import (
     InferenceModelsCacheWatchdog,
 )
@@ -632,6 +635,8 @@ class HttpInterface(BaseInterface):
             await usage_collector.async_push_usage_payloads()
             if OTEL_TRACING_ENABLED:
                 shutdown_telemetry()
+            if self.cuda_memory_reclamation_daemon is not None:
+                self.cuda_memory_reclamation_daemon.stop()
 
         self._instrumentator = InferenceInstrumentator(
             app, model_manager=model_manager, endpoint="/metrics"
@@ -1261,6 +1266,15 @@ class HttpInterface(BaseInterface):
                 interval_minutes=INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
             )
             self.inference_models_cache_daemon.start()
+
+        self.cuda_memory_reclamation_daemon: Optional[CudaMemoryReclamationWatchdog] = (
+            None
+        )
+        if ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG:
+            self.cuda_memory_reclamation_daemon = CudaMemoryReclamationWatchdog(
+                interval_seconds=CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS,
+            )
+            self.cuda_memory_reclamation_daemon.start()
 
         if ENABLE_STREAM_API:
             operations_timeout = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")

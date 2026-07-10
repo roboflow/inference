@@ -302,6 +302,16 @@ INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES = int(
     os.getenv("INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES", "60")
 )
 
+# Periodically returns cached-but-unused CUDA memory to the driver
+# (torch.cuda.empty_cache) from a daemon thread, to bound the PyTorch caching
+# allocator high-water mark on long-running servers. Disabled by default.
+ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG = str2bool(
+    os.getenv("ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG", "False")
+)
+CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS = float(
+    os.getenv("CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS", "300")
+)
+
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 
