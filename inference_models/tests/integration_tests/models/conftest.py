@@ -1798,8 +1798,10 @@ def pp_ocrv6_small_rec_onnx_package() -> str:
 
 @pytest.fixture(autouse=True)
 def cuda_memory_probe(request):
-    # Temporary diagnostic for GPU OOM in CI: after each test, log this process's
-    # torch allocator state and device-wide free memory to a per-xdist-worker file.
+    # Per-test GPU memory telemetry for the integration suite: after each test, log
+    # this process's torch allocator state and device-wide free memory to a
+    # per-xdist-worker file (cuda_memory_probe_<worker>.log in the CWD). Kept
+    # permanently to make GPU OOMs and memory growth attributable to specific tests.
     # Set CUDA_MEMORY_PROBE_EMPTY_CACHE=True to also flush the torch cache after
     # each test (counterfactual run - proves/disproves cache-growth attribution).
     yield
