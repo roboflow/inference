@@ -46,7 +46,7 @@ def test_pp_ocrv6_detection_finds_text_lines(
 
     model = PPOCRv6DetectionOnnx.from_pretrained(
         pp_ocrv6_tiny_det_onnx_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     image = _render_text_image()
 
@@ -68,7 +68,7 @@ def test_pp_ocrv6_recognition_reads_text_line(
 
     model = PPOCRv6RecognitionOnnx.from_pretrained(
         pp_ocrv6_tiny_rec_onnx_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     image = _render_text_image()
 
@@ -90,7 +90,7 @@ def test_pp_ocrv6_recognition_float_tensor_matches_uint8(
 
     model = PPOCRv6RecognitionOnnx.from_pretrained(
         pp_ocrv6_tiny_rec_onnx_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     crop_bgr = _render_text_image()[30:90, 20:400]
     crop_tensor = (
@@ -117,11 +117,11 @@ def test_pp_ocrv6_two_stage_pipeline_transcribes_all_lines(
 
     detector = PPOCRv6DetectionOnnx.from_pretrained(
         pp_ocrv6_tiny_det_onnx_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     recognizer = PPOCRv6RecognitionOnnx.from_pretrained(
         pp_ocrv6_tiny_rec_onnx_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     image = _render_text_image()
 
@@ -149,11 +149,11 @@ def test_pp_ocrv6_small_variant_reads_all_words(
 
     detector = PPOCRv6DetectionOnnx.from_pretrained(
         pp_ocrv6_small_det_onnx_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     recognizer = PPOCRv6RecognitionOnnx.from_pretrained(
         pp_ocrv6_small_rec_onnx_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     image = _render_text_image()
 

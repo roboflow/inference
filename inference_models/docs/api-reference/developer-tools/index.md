@@ -29,6 +29,7 @@ Low-level CUDA context management for custom models using CUDA/TensorRT.
 Utilities for working with ONNX Runtime in custom models.
 
 - **[set_onnx_execution_provider_defaults](onnx/set-onnx-execution-provider-defaults.md)** - Configure ONNX execution provider defaults
+- **[align_device_with_onnx_session](onnx/align-device-with-onnx-session.md)** - Make sure declared torch device is in line with ONNX session capacity
 - **[run_onnx_session_with_batch_size_limit](onnx/run-onnx-session-with-batch-size-limit.md)** - Run ONNX session with batch size constraints
 - **[run_onnx_session_via_iobinding](onnx/run-onnx-session-via-iobinding.md)** - Run ONNX session using IO binding for performance
 
