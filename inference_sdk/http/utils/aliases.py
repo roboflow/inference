@@ -175,6 +175,7 @@ OCR_ENDPOINTS = {
     "doctr": "/doctr/ocr",
     "trocr": "/ocr/trocr",
     "easy_ocr": "/easy_ocr/ocr",
+    "pp_ocr": "/ocr/pp-ocr",
 }
 
 

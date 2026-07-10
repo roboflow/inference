@@ -487,6 +487,14 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.trocr.trocr_hf",
         class_name="TROcrHF",
     ),
+    ("pp-ocrv6-rec", TEXT_ONLY_OCR_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.pp_ocrv6.pp_ocrv6_recognition_onnx",
+        class_name="PPOCRv6RecognitionOnnx",
+    ),
+    ("pp-ocrv6-det", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.pp_ocrv6.pp_ocrv6_detection_onnx",
+        class_name="PPOCRv6DetectionOnnx",
+    ),
     ("l2cs-net", GAZE_DETECTION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.l2cs.l2cs_onnx",
         class_name="L2CSNetOnnx",

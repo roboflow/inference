@@ -36,6 +36,9 @@ dependencies = [
   "rf-segment-anything==1.0",
   "rf-sam-2==1.0.3",
   "pycocotools>=2.0.10,<2.1.0",
+  "PyYAML>=6.0.0,<7.0.0",
+  "pyclipper>=1.3.0,<2.0.0",
+  "shapely>=2.0.0,<3.0.0",
   # transitive-dependencies pinning
   "urllib3>=2.7.0,<3.0.0",
   "pillow>=12.2.0,<13.0.0",

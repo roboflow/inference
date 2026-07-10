@@ -1,0 +1,3 @@
+from inference.models.pp_ocr.pp_ocr_inference_models import (
+    InferenceModelsPPOCRAdapter,
+)

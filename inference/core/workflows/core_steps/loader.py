@@ -309,6 +309,7 @@ from inference.core.workflows.core_steps.models.foundation.openrouter.v1 import 
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.pp_ocr.v1 import PPOCRBlockV1
 from inference.core.workflows.core_steps.models.foundation.qwen3_5_openrouter.v1 import (
     Qwen35OpenRouterBlockV1,
 )
@@ -1020,6 +1021,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowVisionEventsBlockV1,
         GLMOCRBlockV1,
         EasyOCRBlockV1,
+        PPOCRBlockV1,
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
         MaskAreaMeasurementBlockV1,
