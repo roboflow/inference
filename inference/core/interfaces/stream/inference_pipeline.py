@@ -894,8 +894,6 @@ class InferencePipeline:
         self._on_pipeline_end = on_pipeline_end
         self._batch_collection_timeout = batch_collection_timeout
         self._sink_mode = sink_mode
-        # Distinguishes this pipeline's usage from other pipelines in the same
-        # process; usage-based stream billing counts concurrent ids.
         self._stream_session_id = exec_session_id or mint_stream_session_id()
 
     def start(self, use_main_thread: bool = True) -> None:
@@ -943,9 +941,6 @@ class InferencePipeline:
             self._on_pipeline_end()
 
     def _execute_inference(self) -> None:
-        # Tag everything recorded from this thread (workflow runs, model
-        # inferences) with this pipeline's stream session id; the contextvar
-        # is thread-scoped so concurrent pipelines don't see each other's id.
         stream_session_id.set(self._stream_session_id)
         send_inference_pipeline_status_update(
             severity=UpdateSeverity.INFO,

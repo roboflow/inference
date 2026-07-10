@@ -1216,14 +1216,12 @@ def test_record_usage_separates_concurrent_streams_by_stream_session_id(
     one usage entry: stream billing counts concurrent stream session ids, so
     collapsing them under-counts a device's cameras.
     """
-    # given
     from inference.usage_tracking.stream_session import stream_session_id
 
     collector = usage_collector_with_mocked_threads
     api_key = "fake"
     resource_id = "workflow-1"
 
-    # when - same (api_key, category, resource) recorded under two stream sessions
     token = stream_session_id.set("stream-a")
     try:
         collector.record_usage(
@@ -1246,7 +1244,6 @@ def test_record_usage_separates_concurrent_streams_by_stream_session_id(
     finally:
         stream_session_id.reset(token)
 
-    # then - two separate entries, each tagged with its own stream session id
     usage = collector._usage[api_key]
     assert f"workflows:{resource_id}:stream-a" in usage
     assert f"workflows:{resource_id}:stream-b" in usage
@@ -1262,13 +1259,11 @@ def test_record_usage_separates_concurrent_streams_by_stream_session_id(
 def test_record_usage_without_stream_session_id_keeps_legacy_key(
     usage_collector_with_mocked_threads,
 ):
-    # given
     from inference.usage_tracking.stream_session import stream_session_id
 
     collector = usage_collector_with_mocked_threads
     assert stream_session_id.get() is None
 
-    # when
     collector.record_usage(
         source="img.jpg",
         category="workflows",
@@ -1277,14 +1272,12 @@ def test_record_usage_without_stream_session_id_keeps_legacy_key(
         resource_id="workflow-1",
     )
 
-    # then - key format and payload fields unchanged for non-pipeline callers
     usage = collector._usage["fake"]
     assert "workflows:workflow-1" in usage
     assert "stream_session_id" not in usage["workflows:workflow-1"]
 
 
 def test_stream_session_id_does_not_leak_across_threads():
-    # given
     from threading import Thread
 
     from inference.usage_tracking.stream_session import stream_session_id
@@ -1295,18 +1288,15 @@ def test_stream_session_id_does_not_leak_across_threads():
         stream_session_id.set("thread-local-stream")
         seen_in_thread.append(stream_session_id.get())
 
-    # when
     thread = Thread(target=pipeline_thread)
     thread.start()
     thread.join()
 
-    # then - the id set inside the pipeline thread is invisible outside it
     assert seen_in_thread == ["thread-local-stream"]
     assert stream_session_id.get() is None
 
 
 def test_zip_usage_payloads_keeps_stream_sessions_separate():
-    # given - same resource under two stream-session-suffixed keys
     def make_payload(key, ssid, frames, ts):
         return {
             "fake_api1_hash": {
@@ -1337,10 +1327,8 @@ def test_zip_usage_payloads_keeps_stream_sessions_separate():
         ),
     ]
 
-    # when
     zipped_usage_payloads = zip_usage_payloads(usage_payloads=dumped_usage_payloads)
 
-    # then - same stream merges, different streams stay separate
     merged = {}
     for payload in zipped_usage_payloads:
         for resource_payloads in payload.values():
@@ -1357,7 +1345,6 @@ def test_zip_usage_payloads_keeps_stream_sessions_separate():
 def test_send_usage_payload_serializes_stream_sessions_as_exec_session_ids(
     post_mock,
 ):
-    # given - two pipeline rows collected under one process session and resource
     def make_payload(key, stream_id, frames):
         return {
             "fake_hash": {
@@ -1384,14 +1371,12 @@ def test_send_usage_payload_serializes_stream_sessions_as_exec_session_ids(
     original_payload = deepcopy(payloads[0])
     post_mock.return_value.status_code = 200
 
-    # when
     failed_hashes = send_usage_payload(
         payload=payloads[0],
         api_usage_endpoint_url="https://example.com/usage",
         hashes_to_api_keys={"fake_hash": "fake-api-key"},
     )
 
-    # then - both rows share one HTTP request but carry distinct wire IDs
     assert failed_hashes == set()
     post_mock.assert_called_once()
     outbound_rows = post_mock.call_args.kwargs["json"]
@@ -1407,7 +1392,6 @@ def test_send_usage_payload_serializes_stream_sessions_as_exec_session_ids(
 def test_send_usage_payload_leaves_legacy_and_non_billable_exec_session_ids(
     post_mock,
 ):
-    # given
     payload = {
         "fake_hash": {
             "workflows:legacy": {
@@ -1438,14 +1422,12 @@ def test_send_usage_payload_leaves_legacy_and_non_billable_exec_session_ids(
     original_payload = deepcopy(payload)
     post_mock.return_value.status_code = 200
 
-    # when
     failed_hashes = send_usage_payload(
         payload=payload,
         api_usage_endpoint_url="https://example.com/usage",
         hashes_to_api_keys={"fake_hash": "fake-api-key"},
     )
 
-    # then
     assert failed_hashes == set()
     outbound_rows = post_mock.call_args.kwargs["json"]
     assert {row["resource_id"]: row["exec_session_id"] for row in outbound_rows} == {
@@ -1459,7 +1441,6 @@ def test_send_usage_payload_leaves_legacy_and_non_billable_exec_session_ids(
 
 @mock.patch("inference.usage_tracking.payload_helpers.requests.post")
 def test_send_usage_payload_does_not_mutate_failed_payload_before_retry(post_mock):
-    # given
     payload = {
         "fake_hash": {
             "workflows:workflow-1:stream-a": {
@@ -1477,7 +1458,6 @@ def test_send_usage_payload_does_not_mutate_failed_payload_before_retry(post_moc
     successful_response = mock.MagicMock(status_code=200)
     post_mock.side_effect = [failed_response, successful_response]
 
-    # when - retry the exact object that would have been requeued after failure
     first_result = send_usage_payload(
         payload=payload,
         api_usage_endpoint_url="https://example.com/usage",
@@ -1490,7 +1470,6 @@ def test_send_usage_payload_does_not_mutate_failed_payload_before_retry(post_moc
         hashes_to_api_keys={"fake_hash": "fake-api-key"},
     )
 
-    # then
     assert first_result == {"fake_hash"}
     assert second_result == set()
     assert payload_after_failure == original_payload

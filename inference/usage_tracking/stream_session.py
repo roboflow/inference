@@ -26,6 +26,4 @@ stream_session_id: ContextVar[Optional[str]] = ContextVar(
 
 
 def mint_stream_session_id() -> str:
-    # Same shape as UsageCollector's exec_session_id so downstream consumers
-    # can treat both identifiers uniformly.
     return f"{time.time_ns()}_{uuid4().hex[:4]}"

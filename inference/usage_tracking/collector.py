@@ -387,9 +387,6 @@ class UsageCollector:
             ip_address_hash = self._system_info["ip_address_hash"]
             is_gpu_available = self._system_info["is_gpu_available"]
             hostname = self._system_info["hostname"]
-        # A pipeline-scoped stream session id keeps concurrently running video
-        # pipelines separate in the usage payload even when they share an API
-        # key and a workflow (resource_id) — required for per-stream billing.
         stream_session_id = stream_session_id_var.get()
         usage_key = f"{category}:{resource_id}"
         if stream_session_id:
