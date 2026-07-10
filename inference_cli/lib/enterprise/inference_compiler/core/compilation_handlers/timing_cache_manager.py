@@ -3,6 +3,7 @@ import os.path
 import tempfile
 from typing import Any, Dict, Union
 
+from inference.core.utils.url_utils import wrap_url
 from inference_cli.lib.enterprise.inference_compiler.adapters.models_service import (
     ExternalPrivateTRTTimingCompilationEntryV1,
     ExternalPublicTRTTimingCompilationEntryV1,
@@ -57,7 +58,7 @@ class TimingCacheManager:
             md5_hash = compilation_features_specs.md5_hash
             download_results = download_files_to_directory(
                 target_dir=self._cache_root,
-                files_specs=[(file_handle, download_url, md5_hash)],
+                files_specs=[(file_handle, wrap_url(download_url), md5_hash)],
             )
             logger.info(
                 "TRT timing cache hit for compilation features: %s",

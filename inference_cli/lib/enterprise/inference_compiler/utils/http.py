@@ -5,8 +5,10 @@ import backoff
 import requests  # type: ignore
 from requests import Response, Timeout
 
+from inference.core.utils.url_utils import wrap_url
 from inference_cli.lib.enterprise.inference_compiler.constants import (
     HTTP_CODES_TO_RETRY,
+    REQUEST_TIMEOUT,
 )
 from inference_cli.lib.enterprise.inference_compiler.errors import (
     RequestError,
@@ -27,7 +29,9 @@ def upload_file_to_cloud(
 ) -> None:
     try:
         with open(file_path, "rb") as f:
-            response = requests.put(url, headers=headers, data=f)
+            response = requests.put(
+                wrap_url(url), headers=headers, data=f, timeout=REQUEST_TIMEOUT
+            )
             response.raise_for_status()
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError("Connectivity error")
