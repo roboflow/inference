@@ -88,7 +88,8 @@ class PPOCRv6Pipeline:
     def _recognize_image(
         self, image: np.ndarray, detections: Detections
     ) -> PPOCRv6PipelineResult:
-        order = _reading_order(detections)
+        lines = _reading_order(detections)
+        order = [index for line in lines for index in line]
         if not order:
             return PPOCRv6PipelineResult(text="", line_texts=[], detections=detections)
         ordered_detections = _reorder_detections(detections, order)
@@ -102,7 +103,7 @@ class PPOCRv6Pipeline:
         ]
         line_texts = self._rec_model(crops)
         return PPOCRv6PipelineResult(
-            text="\n".join(line_texts),
+            text=_assemble_text(line_texts, lines),
             line_texts=line_texts,
             detections=ordered_detections,
         )
@@ -115,8 +116,8 @@ class PPOCRv6Pipeline:
         return self.infer(images, **kwargs)
 
 
-def _reading_order(detections: Detections) -> List[int]:
-    """Order detection indices top-to-bottom by line, each line left-to-right."""
+def _reading_order(detections: Detections) -> List[List[int]]:
+    """Group detection indices into visual lines, top-to-bottom, each left-to-right."""
     boxes = detections.xyxy.tolist()
     items = sorted(range(len(boxes)), key=lambda index: boxes[index][1])
     lines, current, line_bottom = [], [], None
@@ -131,10 +132,20 @@ def _reading_order(detections: Detections) -> List[int]:
             line_bottom = max(line_bottom, bottom)
     if current:
         lines.append(current)
-    ordered = []
+    return [sorted(line, key=lambda index: boxes[index][0]) for line in lines]
+
+
+def _assemble_text(line_texts: List[str], lines: List[List[int]]) -> str:
+    """Join fragments on the same visual line with spaces, lines with newlines.
+
+    ``line_texts`` follows the flattened reading order of ``lines``.
+    """
+    rows, cursor = [], 0
     for line in lines:
-        ordered.extend(sorted(line, key=lambda index: boxes[index][0]))
-    return ordered
+        fragments = line_texts[cursor : cursor + len(line)]
+        rows.append(" ".join(f for f in (t.strip() for t in fragments) if f))
+        cursor += len(line)
+    return "\n".join(rows)
 
 
 def _reorder_detections(detections: Detections, order: List[int]) -> Detections:
