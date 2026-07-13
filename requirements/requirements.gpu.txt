@@ -1,3 +1,3 @@
 onnxruntime-gpu>=1.15.1,<1.22.0
-inference-models[torch-cu124,onnx-cu12]~=0.30.0rc2 # keep in sync between requirements.jetson requirements.gpu.txt, requirements.cpu.txt, requirements.vino.txt
+inference-models[torch-cu124,onnx-cu12]~=0.32.0rc1 # keep in sync between requirements.jetson requirements.gpu.txt, requirements.cpu.txt, requirements.vino.txt
 pynvvideocodec~=2.1.0

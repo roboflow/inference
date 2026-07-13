@@ -248,6 +248,9 @@ CORE_MODEL_EASYOCR_ENABLED = str2bool(os.getenv("CORE_MODEL_EASYOCR_ENABLED", Tr
 # Flag to enable TrOCR core model, default is True
 CORE_MODEL_TROCR_ENABLED = str2bool(os.getenv("CORE_MODEL_TROCR_ENABLED", True))
 
+# Flag to enable PP-OCR core model, default is True
+CORE_MODEL_PPOCR_ENABLED = str2bool(os.getenv("CORE_MODEL_PPOCR_ENABLED", True))
+
 # Flag to enable GROUNDINGDINO core model, default is True
 CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
     os.getenv("CORE_MODEL_GROUNDINGDINO_ENABLED", True)
@@ -298,6 +301,16 @@ MAX_INFERENCE_MODELS_CACHE_SIZE_MB = int(
 )
 INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES = int(
     os.getenv("INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES", "60")
+)
+
+# Periodically returns cached-but-unused CUDA memory to the driver
+# (torch.cuda.empty_cache) from a daemon thread, to bound the PyTorch caching
+# allocator high-water mark on long-running servers. Disabled by default.
+ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG = str2bool(
+    os.getenv("ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG", "False")
+)
+CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS = float(
+    os.getenv("CUDA_MEMORY_RECLAMATION_WATCHDOG_INTERVAL_SECONDS", "300")
 )
 
 # ID of host device, default is None
@@ -751,6 +764,35 @@ WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
     "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
 ).lower()  # "local" or "modal"
 
+# JPEG quality used when serializing images for the webexec round-trip.
+# Default 95 matches WorkflowImageData.base64_image; lower values (e.g. 50-75)
+# shrink payloads significantly for WebRTC preview with minimal visual impact.
+WEBEXEC_JPEG_QUALITY = int(os.getenv("WEBEXEC_JPEG_QUALITY", "95"))
+
+# Transport protocol for webexec execution: "http" or "websocket".
+# Modal code validation always uses the HTTP execute-block endpoint, so
+# websocket deployments must keep both execute-block and wsapp deployed.
+WEBEXEC_TRANSPORT = os.getenv("WEBEXEC_TRANSPORT", "http").lower().strip()
+
+# Websocket transport timeouts. Keep connection establishment fast, but allow
+# reads to wait for Modal's custom block execution budget.
+WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS", "30")
+)
+# Set slightly above the server's 700s execution budget (modal_app.py Executor
+# timeout) so that when a block hits the server limit, the server's error frame
+# arrives before the client read times out. Equal values race and surface an
+# ambiguous "connection lost after send" instead of the real server error.
+WEBEXEC_WS_READ_TIMEOUT_SECONDS = int(
+    os.getenv("WEBEXEC_WS_READ_TIMEOUT_SECONDS", "720")
+)
+
+WEBEXEC_WS_CONNECTION_POOL_SIZE = int(os.getenv("WEBEXEC_WS_CONNECTION_POOL_SIZE", "1"))
+WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS = int(
+    os.getenv("WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", "1800")
+)
+
+
 # Strip quotes from Modal credentials in case users include them
 _modal_token_id = os.getenv("MODAL_TOKEN_ID")
 _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
@@ -759,6 +801,10 @@ _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
 MODAL_TOKEN_ID = _modal_token_id.strip("\"'") if _modal_token_id else None
 MODAL_TOKEN_SECRET = _modal_token_secret.strip("\"'") if _modal_token_secret else None
 MODAL_WORKSPACE_NAME = os.getenv("MODAL_WORKSPACE_NAME", "roboflow")
+MODAL_WEB_ENDPOINT_URL = os.getenv("MODAL_WEB_ENDPOINT_URL", "")
+MODAL_WS_ENDPOINT_URL = os.getenv("MODAL_WS_ENDPOINT_URL", "")
+WEBEXEC_MODAL_APP_NAME = os.getenv("WEBEXEC_MODAL_APP_NAME", f"webexec-{PROJECT}")
+WEBEXEC_INFERENCE_VERSION = os.getenv("WEBEXEC_INFERENCE_VERSION")
 
 # Control whether anonymous Modal execution is allowed (when no api_key is available)
 MODAL_ALLOW_ANONYMOUS_EXECUTION = str2bool(

@@ -18,6 +18,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLACT_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS,
 )
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -41,6 +42,7 @@ from inference_models.models.common.roboflow.post_processing import ConfidenceFi
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.common.streams import get_cuda_stream
 from inference_models.models.yolact.common import prepare_dense_masks, prepare_rle_masks
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
@@ -132,6 +134,7 @@ class YOLOACTForInstanceSegmentationOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
+        device = align_device_with_onnx_session(session=session, device=device)
         input_batch_size = session.get_inputs()[0].shape[0]
         if input_batch_size != 1:
             raise ModelRuntimeError(
@@ -183,14 +186,19 @@ class YOLOACTForInstanceSegmentationOnnx(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            pre_processing_overrides=pre_processing_overrides,
-        )
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
@@ -208,6 +216,7 @@ class YOLOACTForInstanceSegmentationOnnx(
                     run_onnx_session_with_batch_size_limit(
                         session=self._session,
                         inputs={self._input_name: image.unsqueeze(0).contiguous()},
+                        stream=self._inference_stream,
                     )
                 )
                 all_loc_data.append(loc_data)
@@ -215,13 +224,16 @@ class YOLOACTForInstanceSegmentationOnnx(
                 all_mask_data.append(mask_data)
                 all_prior_data.append(prior_data)
                 all_proto_data.append(proto_data)
-            return (
+            results = (
                 torch.cat(all_loc_data, dim=0),
                 torch.cat(all_conf_data, dim=0),
                 torch.cat(all_mask_data, dim=0),
                 torch.stack(all_prior_data, dim=0),
                 torch.cat(all_proto_data, dim=0),
             )
+            if self._device.type == "cuda":
+                torch.cuda.current_stream(self._device).synchronize()
+            return results
 
     def post_process(
         self,
@@ -252,51 +264,81 @@ class YOLOACTForInstanceSegmentationOnnx(
             default_confidence=INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE,
         )
         confidence = confidence_filter.get_threshold(self.class_names)
-        all_loc_data, all_conf_data, all_mask_data, all_prior_data, all_proto_data = (
-            model_results
-        )
-        batch_size = all_loc_data.shape[0]
-        num_priors = all_loc_data.shape[1]
-        boxes = torch.zeros((batch_size, num_priors, 4), device=self._device)
-        for batch_element_id, (
-            batch_element_loc_data,
-            batch_element_priors,
-            image_prep_meta,
-        ) in enumerate(zip(all_loc_data, all_prior_data, pre_processing_meta)):
-            image_boxes = decode_predicted_bboxes(
-                loc_data=batch_element_loc_data,
-                priors=batch_element_priors,
+        post_process_stream = self._post_process_stream
+        with torch.cuda.stream(post_process_stream):
+            if post_process_stream is not None:
+                for result_element in model_results:
+                    result_element.record_stream(post_process_stream)
+            (
+                all_loc_data,
+                all_conf_data,
+                all_mask_data,
+                all_prior_data,
+                all_proto_data,
+            ) = model_results
+            batch_size = all_loc_data.shape[0]
+            num_priors = all_loc_data.shape[1]
+            boxes = torch.zeros((batch_size, num_priors, 4), device=self._device)
+            for batch_element_id, (
+                batch_element_loc_data,
+                batch_element_priors,
+                image_prep_meta,
+            ) in enumerate(zip(all_loc_data, all_prior_data, pre_processing_meta)):
+                image_boxes = decode_predicted_bboxes(
+                    loc_data=batch_element_loc_data,
+                    priors=batch_element_priors,
+                )
+                inference_height, inference_width = (
+                    image_prep_meta.inference_size.height,
+                    image_prep_meta.inference_size.width,
+                )
+                scale = torch.tensor(
+                    [
+                        inference_width,
+                        inference_height,
+                        inference_width,
+                        inference_height,
+                    ],
+                    device=self._device,
+                )
+                image_boxes = image_boxes.mul_(scale)
+                boxes[batch_element_id, :, :] = image_boxes
+            all_conf_data = all_conf_data[:, :, 1:]  # remove background class
+            instances = torch.cat([boxes, all_conf_data, all_mask_data], dim=2)
+            nms_results = run_nms_for_instance_segmentation(
+                output=instances,
+                conf_thresh=confidence,
+                iou_thresh=iou_threshold,
+                max_detections=max_detections,
+                class_agnostic=class_agnostic_nms,
             )
-            inference_height, inference_width = (
-                image_prep_meta.inference_size.height,
-                image_prep_meta.inference_size.width,
-            )
-            scale = torch.tensor(
-                [inference_width, inference_height, inference_width, inference_height],
-                device=self._device,
-            )
-            image_boxes = image_boxes.mul_(scale)
-            boxes[batch_element_id, :, :] = image_boxes
-        all_conf_data = all_conf_data[:, :, 1:]  # remove background class
-        instances = torch.cat([boxes, all_conf_data, all_mask_data], dim=2)
-        nms_results = run_nms_for_instance_segmentation(
-            output=instances,
-            conf_thresh=confidence,
-            iou_thresh=iou_threshold,
-            max_detections=max_detections,
-            class_agnostic=class_agnostic_nms,
-        )
-        if mask_format == "dense":
-            return prepare_dense_masks(
-                nms_results=nms_results,
-                all_proto_data=all_proto_data,
-                pre_processing_meta=pre_processing_meta,
-            )
-        return prepare_rle_masks(
-            nms_results=nms_results,
-            all_proto_data=all_proto_data,
-            pre_processing_meta=pre_processing_meta,
-        )
+            if mask_format == "dense":
+                final_results = prepare_dense_masks(
+                    nms_results=nms_results,
+                    all_proto_data=all_proto_data,
+                    pre_processing_meta=pre_processing_meta,
+                )
+            else:
+                final_results = prepare_rle_masks(
+                    nms_results=nms_results,
+                    all_proto_data=all_proto_data,
+                    pre_processing_meta=pre_processing_meta,
+                )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
+        return final_results
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")
 
 
 def decode_predicted_bboxes(

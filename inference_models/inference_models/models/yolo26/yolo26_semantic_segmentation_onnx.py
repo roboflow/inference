@@ -9,6 +9,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
 )
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -30,16 +31,17 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.common.roboflow.semantic_segmentation import (
-    resolve_background_class_id,
-    validate_class_names,
-)
 from inference_models.models.common.roboflow.post_processing import (
     post_process_semantic_segmentation_logits,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.common.roboflow.semantic_segmentation import (
+    resolve_background_class_id,
+    validate_class_names,
+)
+from inference_models.models.common.streams import get_cuda_stream
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
@@ -128,6 +130,7 @@ class YOLO26ForSemanticSegmentationOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
+        device = align_device_with_onnx_session(session=session, device=device)
         input_batch_size = session.get_inputs()[0].shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None
@@ -176,25 +179,29 @@ class YOLO26ForSemanticSegmentationOnnx(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            image_size_wh=image_size,
-            pre_processing_overrides=pre_processing_overrides,
-        )
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
-    def forward(
-        self, pre_processed_images: torch.Tensor, **kwargs
-    ) -> torch.Tensor:
+    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._session_thread_lock:
             return run_onnx_session_with_batch_size_limit(
                 session=self._session,
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
+                stream=self._inference_stream,
             )[0]
 
     def post_process(
@@ -204,13 +211,32 @@ class YOLO26ForSemanticSegmentationOnnx(
         confidence: Confidence = "default",
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
-        return post_process_semantic_segmentation_logits(
-            model_results=model_results,
-            pre_processing_meta=pre_processing_meta,
-            class_names=self._class_names,
-            background_class_id=self._background_class_id,
-            device=self._device,
-            confidence=confidence,
-            recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
-        )
+        post_process_stream = self._post_process_stream
+        with torch.cuda.stream(post_process_stream):
+            if post_process_stream is not None:
+                model_results.record_stream(post_process_stream)
+            results = post_process_semantic_segmentation_logits(
+                model_results=model_results,
+                pre_processing_meta=pre_processing_meta,
+                class_names=self._class_names,
+                background_class_id=self._background_class_id,
+                device=self._device,
+                confidence=confidence,
+                recommended_parameters=self.recommended_parameters,
+                default_confidence=INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE,
+            )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
+        return results
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")

@@ -12,6 +12,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_YOLOV5_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_YOLOV5_DEFAULT_MAX_DETECTIONS,
 )
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -36,6 +37,7 @@ from inference_models.models.common.roboflow.post_processing import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.common.streams import get_cuda_stream
 from inference_models.models.yolov5.nms import run_nms_yolov5
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
@@ -123,6 +125,7 @@ class YOLOv5ForObjectDetectionOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
+        device = align_device_with_onnx_session(session=session, device=device)
         input_batch_size = session.get_inputs()[0].shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None
@@ -167,14 +170,19 @@ class YOLOv5ForObjectDetectionOnnx(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            pre_processing_overrides=pre_processing_overrides,
-        )
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._session_thread_lock:
@@ -183,6 +191,7 @@ class YOLOv5ForObjectDetectionOnnx(
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
+                stream=self._inference_stream,
             )[0]
 
     def post_process(
@@ -201,24 +210,42 @@ class YOLOv5ForObjectDetectionOnnx(
             default_confidence=INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE,
         )
         confidence = confidence_filter.get_threshold(self.class_names)
-        nms_results = run_nms_yolov5(
-            output=model_results.permute(0, 2, 1),
-            conf_thresh=confidence,
-            iou_thresh=iou_threshold,
-            max_detections=max_detections,
-            class_agnostic=class_agnostic_nms,
-        )
-        rescaled_results = rescale_detections(
-            detections=nms_results,
-            images_metadata=pre_processing_meta,
-        )
-        results = []
-        for result in rescaled_results:
-            results.append(
-                Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=result[:, 5].int(),
-                    confidence=result[:, 4],
-                )
+        post_process_stream = self._post_process_stream
+        with torch.cuda.stream(post_process_stream):
+            if post_process_stream is not None:
+                model_results.record_stream(post_process_stream)
+            nms_results = run_nms_yolov5(
+                output=model_results.permute(0, 2, 1),
+                conf_thresh=confidence,
+                iou_thresh=iou_threshold,
+                max_detections=max_detections,
+                class_agnostic=class_agnostic_nms,
             )
+            rescaled_results = rescale_detections(
+                detections=nms_results,
+                images_metadata=pre_processing_meta,
+            )
+            results = []
+            for result in rescaled_results:
+                results.append(
+                    Detections(
+                        xyxy=result[:, :4].round().int(),
+                        class_id=result[:, 5].int(),
+                        confidence=result[:, 4],
+                    )
+                )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
         return results
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")

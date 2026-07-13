@@ -23,6 +23,20 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
 )
 
 
+class _FakeModalExecutor:
+    def __init__(self, workspace_id: str) -> None:
+        self.workspace_id = workspace_id
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _clear_modal_executor_cache() -> None:
+    with block_scaffolding._MODAL_EXECUTOR_CACHE_LOCK:
+        block_scaffolding._MODAL_EXECUTOR_CACHE.clear()
+
+
 def test_create_dynamic_module_when_syntax_error_happens() -> None:
     # given
     init_function = """
@@ -744,3 +758,75 @@ def test_imports_lines_tensor_native_extension_tracks_the_flag() -> None:
     assert IMPORTS_LINES[0] == "from typing import Any, List, Dict, Set, Optional"
     assert "import supervision as sv" in IMPORTS_LINES
     assert "import numpy as np" in IMPORTS_LINES
+
+
+def test_modal_executor_cache_closes_idle_entries(monkeypatch) -> None:
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+        modal_executor,
+    )
+
+    _clear_modal_executor_cache()
+    created_executors = []
+    clock = [0.0]
+
+    def fake_get_modal_executor(workspace_id: str) -> _FakeModalExecutor:
+        executor = _FakeModalExecutor(workspace_id=workspace_id)
+        created_executors.append(executor)
+        return executor
+
+    monkeypatch.setattr(modal_executor, "get_modal_executor", fake_get_modal_executor)
+    monkeypatch.setattr(
+        block_scaffolding, "WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", 10
+    )
+    monkeypatch.setattr(block_scaffolding.time, "monotonic", lambda: clock[0])
+
+    with block_scaffolding._acquire_modal_executor("workspace-a") as executor_a:
+        assert executor_a.workspace_id == "workspace-a"
+
+    clock[0] = 11.0
+    with block_scaffolding._acquire_modal_executor("workspace-b") as executor_b:
+        assert executor_b.workspace_id == "workspace-b"
+
+    assert [executor.workspace_id for executor in created_executors] == [
+        "workspace-a",
+        "workspace-b",
+    ]
+    assert created_executors[0].closed is True
+    assert created_executors[1].closed is False
+    assert list(block_scaffolding._MODAL_EXECUTOR_CACHE.keys()) == ["workspace-b"]
+    _clear_modal_executor_cache()
+
+
+def test_modal_executor_cache_does_not_close_active_entry(monkeypatch) -> None:
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+        modal_executor,
+    )
+
+    _clear_modal_executor_cache()
+    created_executors = []
+    clock = [0.0]
+
+    def fake_get_modal_executor(workspace_id: str) -> _FakeModalExecutor:
+        executor = _FakeModalExecutor(workspace_id=workspace_id)
+        created_executors.append(executor)
+        return executor
+
+    monkeypatch.setattr(modal_executor, "get_modal_executor", fake_get_modal_executor)
+    monkeypatch.setattr(
+        block_scaffolding, "WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS", 10
+    )
+    monkeypatch.setattr(block_scaffolding.time, "monotonic", lambda: clock[0])
+
+    with block_scaffolding._acquire_modal_executor("workspace-a") as executor_a:
+        clock[0] = 11.0
+        with block_scaffolding._acquire_modal_executor("workspace-b"):
+            pass
+        assert executor_a.closed is False
+
+    assert [executor.workspace_id for executor in created_executors] == [
+        "workspace-a",
+        "workspace-b",
+    ]
+    assert created_executors[0].closed is False
+    assert "workspace-a" in block_scaffolding._MODAL_EXECUTOR_CACHE
+    _clear_modal_executor_cache()
