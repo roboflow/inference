@@ -1,44 +1,68 @@
 #!/usr/bin/env python3
-"""Run an InferencePipeline against a registered Roboflow workflow over a local video
-file and report the processing FPS (throughput).
+"""Run an InferencePipeline against a registered Roboflow workflow over one or more
+video sources (local files or live streams) and report the processing FPS (throughput).
 
-Every frame of the video is streamed through the workflow as fast as the workflow
+Every frame of every source is streamed through the workflow as fast as the workflow
 allows (no max-fps cap by default), and FPS is counted synchronously in the prediction
 sink — both a rolling FPS (supervision's FPSMonitor) and a cumulative average.
 
 The workflow is fetched from the Roboflow platform by workspace + id, so an API key is
 required (via --api-key or the ROBOFLOW_API_KEY / API_KEY environment variable).
 
+Sources: `--video` accepts a local file path or a stream reference (rtsp://...,
+/dev/video0, ...) and may be repeated for multiple concurrent sources. `--n` instead
+replicates a SINGLE --video into N identical streams — the two forms are mutually
+exclusive. Live streams run until Ctrl+C.
+
 Examples:
     # minimal
     python development/stream_interface/run_workflow_on_video.py \\
         --workspace my-workspace --workflow-id my-workflow --video /path/clip.mp4
+
+    # the same file decoded by 4 concurrent streams (multi-camera throughput test)
+    python development/stream_interface/run_workflow_on_video.py \\
+        --workspace my-workspace --workflow-id my-workflow --video /path/clip.mp4 --n 4
+
+    # two different live sources
+    python development/stream_interface/run_workflow_on_video.py \\
+        --workspace my-workspace --workflow-id my-workflow \\
+        --video rtsp://camera-1/stream --video rtsp://camera-2/stream
 
     # steer an optional `model_id` workflow parameter from the CLI
     python development/stream_interface/run_workflow_on_video.py \\
         --workspace my-workspace --workflow-id my-workflow --video /path/clip.mp4 \\
         --model-id yolov8n-640
 """
+
+# jetson_utils must be imported before anything that initialises CUDA or GStreamer
+# state (cv2/torch, pulled in below via `inference`), so it comes first. It only
+# exists on the Jetson images — on dGPU builds the import fails and the hardware
+# decoder probes in VideoSource handle the absence at runtime.
+try:
+    import jetson_utils  # noqa: F401
+except Exception:  # noqa: BLE001 - any failure means "not a Jetson build"
+    jetson_utils = None
+
 import argparse
 import json
 import os
 import sys
 import time
 from collections import deque
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import cv2
 import numpy as np
 import supervision as sv
-
-from inference import InferencePipeline
-from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 
 # Modules whose module-level globals we patch to wire in the workflow profiler.
 # Both functions read these names as module globals at call time, so patching the
 # attribute after import is enough to steer the behaviour.
 import inference.core.interfaces.stream.inference_pipeline as _ip_module
 import inference.core.interfaces.stream.utils as _ip_utils
+from inference import InferencePipeline
+from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
+from inference.core.utils.drawing import create_tiles
 from inference.core.workflows.execution_engine.profiling.core import (
     BaseWorkflowsProfiler,
 )
@@ -114,27 +138,31 @@ def _enable_workflow_profiler(trace_path: str, max_frames: int) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run a registered Roboflow workflow over a local video file and count FPS.",
+        description="Run a registered Roboflow workflow over video files / streams and count FPS.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--workspace", required=True, help="Roboflow workspace name (the URL slug)."
     )
+    parser.add_argument("--workflow-id", required=True, help="Registered workflow id.")
     parser.add_argument(
-        "--workflow-id", required=True, help="Registered workflow id."
-    )
-    parser.add_argument(
-        "--video", required=True, help="Path to a local video file."
+        "--video",
+        required=True,
+        action="append",
+        help="Video source: a local file path or a stream reference (rtsp://..., "
+        "/dev/video0, ...). Repeat the flag for multiple concurrent sources "
+        "(mutually exclusive with --n).",
     )
     parser.add_argument(
         "-n",
         "--n",
         type=int,
-        default=1,
+        default=None,
         dest="n",
-        help="Number of concurrent streams to run, all decoding the SAME --video "
-        "(multi-source / multi-camera throughput test). The video is passed N times "
-        "as the pipeline's video_reference; aggregate (and per-stream) FPS is reported.",
+        help="Number of concurrent streams to run, all decoding the SAME single "
+        "--video (multi-source / multi-camera throughput test). The source is passed "
+        "N times as the pipeline's video_reference; aggregate (and per-stream) FPS is "
+        "reported. Mutually exclusive with passing multiple --video arguments.",
     )
     parser.add_argument(
         "--model-id",
@@ -184,8 +212,10 @@ def parse_args() -> argparse.Namespace:
         "--output-video",
         default=None,
         metavar="PATH",
-        help="Optionally write the visualization video for source [0] to this exact path "
-        "(e.g. ./out.mp4). Requires --output-key. Only the first stream is captured.",
+        help="Optionally write the visualization video to this exact path (e.g. "
+        "./out.mp4). Requires --output-key. With a single stream, source [0] is "
+        "written verbatim; with multiple streams, every source's output is tiled "
+        "into one grid frame (inference's create_tiles) per processing round.",
     )
     parser.add_argument(
         "--output-key",
@@ -221,7 +251,9 @@ class FPSCounter:
     @property
     def rolling_fps(self) -> float:
         # supervision >= 0.18 exposes `.fps`; older versions are callable.
-        return float(self._monitor.fps if hasattr(self._monitor, "fps") else self._monitor())
+        return float(
+            self._monitor.fps if hasattr(self._monitor, "fps") else self._monitor()
+        )
 
     @property
     def overall_fps(self) -> float:
@@ -249,7 +281,9 @@ class VisualizationVideoWriter:
     def write(self, image_bgr: np.ndarray) -> None:
         height, width = image_bgr.shape[:2]
         if self._writer is None:
-            os.makedirs(os.path.dirname(os.path.abspath(self._path)) or ".", exist_ok=True)
+            os.makedirs(
+                os.path.dirname(os.path.abspath(self._path)) or ".", exist_ok=True
+            )
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             self._writer = cv2.VideoWriter(
                 self._path, fourcc, self._fps, (width, height)
@@ -288,17 +322,32 @@ def _to_bgr_image(value: Any) -> Optional[np.ndarray]:
 
 
 class OutputCapture:
-    """Pulls the named visualization output out of each source-[0] workflow result and
-    feeds it to the video writer. Warns once (then stays quiet) on a missing key or a
-    non-image value so a misconfigured run is obvious without spamming per frame."""
+    """Pulls the named visualization output out of workflow results and feeds it to
+    the video writer.
 
-    def __init__(self, writer: VisualizationVideoWriter, output_key: str) -> None:
+    With a single stream, source [0]'s frames are written directly (legacy
+    behaviour). With multiple streams, the latest image of EVERY source is kept and
+    one `create_tiles` mosaic is written per sink round (see `end_round`) — the
+    first frame waits until every source has delivered once so the grid never
+    changes size mid-video, and a source that ends early keeps showing its last
+    frame. Warns once (then stays quiet) on a missing key or a non-image value so a
+    misconfigured run is obvious without spamming per frame."""
+
+    def __init__(
+        self,
+        writer: VisualizationVideoWriter,
+        output_key: str,
+        num_streams: int = 1,
+    ) -> None:
         self.writer = writer
         self.output_key = output_key
+        self._num_streams = num_streams
+        self._latest: Dict[int, np.ndarray] = {}
+        self._round_dirty = False
         self._warned_missing = False
         self._warned_type = False
 
-    def handle(self, prediction: Any) -> None:
+    def handle(self, prediction: Any, source_id: int) -> None:
         if not isinstance(prediction, dict):
             return
         if self.output_key not in prediction:
@@ -322,7 +371,24 @@ class OutputCapture:
                     flush=True,
                 )
             return
-        self.writer.write(image)
+        if self._num_streams == 1:
+            self.writer.write(image)
+            return
+        self._latest[source_id] = image
+        self._round_dirty = True
+
+    def end_round(self) -> None:
+        """Multi-stream only: write ONE tiled frame per sink round in which any
+        source updated, once all sources have been seen (stable tile grid)."""
+        if self._num_streams == 1 or not self._round_dirty:
+            return
+        self._round_dirty = False
+        if len(self._latest) < self._num_streams:
+            return
+        tile = create_tiles(
+            images=[self._latest[source_id] for source_id in sorted(self._latest)]
+        )
+        self.writer.write(tile)
 
 
 def build_sink(
@@ -339,18 +405,28 @@ def build_sink(
             if frame is None:
                 continue
             counter.tick()
-            # Capture only the first stream: source_id is 0 for multi-source and None
-            # for a single source.
-            if capture is not None and getattr(frame, "source_id", None) in (None, 0):
-                capture.handle(prediction)
+            if capture is not None:
+                # source_id is an int for multi-source pipelines and None for a
+                # single source - normalise so the capture can key its tiles.
+                source_id = getattr(frame, "source_id", None)
+                capture.handle(prediction, source_id if source_id is not None else 0)
             if report_every and counter.frames % report_every == 0:
                 print(
                     f"[{counter.frames:>7} frames] rolling FPS: {counter.rolling_fps:6.1f} "
                     f"| avg FPS: {counter.overall_fps:6.1f}",
                     flush=True,
                 )
+        if capture is not None:
+            capture.end_round()
 
     return sink
+
+
+def _looks_like_stream(reference: str) -> bool:
+    """Anything with a URI scheme (rtsp://, http://, ...) or a V4L2 device path is a
+    live stream/camera; only bare paths are validated (and FPS-probed) as local
+    files."""
+    return "://" in reference or reference.startswith("/dev/video")
 
 
 def _source_video_fps(video_path: str) -> Optional[float]:
@@ -367,10 +443,19 @@ def main() -> None:
             "A Roboflow API key is required (registered workflows are fetched from the "
             "platform). Pass --api-key or set ROBOFLOW_API_KEY."
         )
-    if not os.path.isfile(args.video):
-        raise SystemExit(f"Video file not found: {args.video}")
-    if args.n < 1:
-        raise SystemExit("--n must be >= 1")
+    references: List[str] = args.video
+    if args.n is not None:
+        if len(references) > 1:
+            raise SystemExit(
+                "--n and multiple --video arguments are mutually exclusive: --n "
+                "replicates a SINGLE --video into N identical streams, while "
+                "repeating --video enumerates distinct sources explicitly."
+            )
+        if args.n < 1:
+            raise SystemExit("--n must be >= 1")
+    for reference in references:
+        if not _looks_like_stream(reference) and not os.path.isfile(reference):
+            raise SystemExit(f"Video file not found: {reference}")
     if args.profile_trace:
         if args.profile_frames < 1:
             raise SystemExit("--profile-frames must be >= 1")
@@ -382,7 +467,17 @@ def main() -> None:
             f"'{args.profile_trace}'"
         )
 
-    # Optional capture of the visualization output from source [0].
+    # --n multiplies the single source into N concurrent copies; repeated --video
+    # enumerates distinct sources. A single reference keeps the exact legacy
+    # behaviour; a list makes InferencePipeline run one VideoSource per entry.
+    video_references = (
+        references * args.n if args.n is not None and args.n > 1 else list(references)
+    )
+    num_streams = len(video_references)
+    video_reference = video_references[0] if num_streams == 1 else video_references
+
+    # Optional capture of the visualization output: source [0] verbatim for a single
+    # stream, a create_tiles mosaic of every source for multi-stream runs.
     capture: Optional[OutputCapture] = None
     if args.output_video:
         if not args.output_key:
@@ -390,21 +485,30 @@ def main() -> None:
                 "--output-key (the workflow output field holding the visualization "
                 "image) is required when --output-video is given."
             )
-        out_fps = args.output_fps or _source_video_fps(args.video) or 30.0
+        # cv2.VideoCapture can block on live sources, so only local files are
+        # FPS-probed for the writer default; streams fall back to --output-fps / 30.
+        probed_fps = (
+            _source_video_fps(references[0])
+            if not _looks_like_stream(references[0])
+            else None
+        )
+        out_fps = args.output_fps or probed_fps or 30.0
         capture = OutputCapture(
             writer=VisualizationVideoWriter(args.output_video, out_fps),
             output_key=args.output_key,
+            num_streams=num_streams,
+        )
+        target_desc = (
+            "source [0]"
+            if num_streams == 1
+            else f"all {num_streams} sources (create_tiles mosaic)"
         )
         print(
-            f"Capturing workflow output '{args.output_key}' from source [0] -> "
+            f"Capturing workflow output '{args.output_key}' from {target_desc} -> "
             f"'{args.output_video}' @ {out_fps:.2f} fps"
         )
     elif args.output_key:
         raise SystemExit("--output-key requires --output-video to also be given.")
-
-    # Multiply the same video into N concurrent sources. A single reference keeps the
-    # exact legacy behaviour; a list makes InferencePipeline run one VideoSource per copy.
-    video_reference = args.video if args.n == 1 else [args.video] * args.n
 
     # Only steer `model_id` when explicitly provided, so the workflow keeps its own
     # default otherwise.
@@ -428,14 +532,21 @@ def main() -> None:
 
     cap = f"capped at {args.max_fps} FPS" if args.max_fps else "uncapped"
     model = f" model_id='{args.model_id}'" if args.model_id else ""
+    sources_desc = (
+        f"'{video_references[0]}' x{num_streams} stream(s)"
+        if len(set(video_references)) == 1
+        else f"{num_streams} sources: " + ", ".join(f"'{r}'" for r in video_references)
+    )
     print(
-        f"Running '{args.workspace}/{args.workflow_id}' over '{args.video}' "
-        f"x{args.n} stream(s) ({cap}){model}\n"
+        f"Running '{args.workspace}/{args.workflow_id}' over {sources_desc} "
+        f"({cap}){model}\n"
     )
     wall_start = time.monotonic()
     try:
         try:
-            pipeline.start()  # blocks (use_main_thread) until the video file is exhausted
+            # Blocks (use_main_thread) until file sources are exhausted; live
+            # streams run until Ctrl+C.
+            pipeline.start()
             pipeline.join()
         except KeyboardInterrupt:
             print("\nInterrupted — terminating pipeline...")
@@ -447,9 +558,14 @@ def main() -> None:
             capture.writer.release()
     elapsed = time.monotonic() - wall_start
 
-    per_stream = f"  ({counter.overall_fps / args.n:.2f}/stream)" if args.n > 1 else ""
+    per_stream = (
+        f"  ({counter.overall_fps / num_streams:.2f}/stream)" if num_streams > 1 else ""
+    )
+    same_video = (
+        "  (same source)" if num_streams > 1 and len(set(video_references)) == 1 else ""
+    )
     print("\n=== Summary ===")
-    print(f"streams (same video) : {args.n}")
+    print(f"streams              : {num_streams}{same_video}")
     print(f"frames processed     : {counter.frames}  (aggregate across streams)")
     print(f"total wall time      : {elapsed:.2f} s (includes model load / warm-up)")
     print(f"average processing FPS: {counter.overall_fps:.2f} aggregate{per_stream}")
@@ -459,9 +575,14 @@ def main() -> None:
             f"(first {args.profile_frames} frame(s))"
         )
     if capture is not None:
+        captured_desc = (
+            "from source [0]"
+            if num_streams == 1
+            else f"tiled across {num_streams} sources"
+        )
         print(
             f"output video          : {os.path.abspath(args.output_video)} "
-            f"({capture.writer.frames_written} frame(s) from source [0])"
+            f"({capture.writer.frames_written} frame(s) {captured_desc})"
         )
 
 
