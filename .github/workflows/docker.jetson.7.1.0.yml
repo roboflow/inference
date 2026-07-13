@@ -81,9 +81,9 @@ jobs:
       - name: Build and Push
         uses: depot/build-push-action@v1
         with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
+          push: ${{ inputs.image_target != 'media-jp72' && (github.event_name == 'release' || github.event.inputs.force_push == 'true') }}
           save: ${{ github.event_name == 'workflow_dispatch' && inputs.image_target == 'media-jp72' }}
-          save-tag: media-jp72-${{ github.sha }}
+          save-tag: ${{ inputs.image_target == 'media-jp72' && format('media-jp72-{0}', github.sha) || '' }}
           project: v1xzfwkc4b
           tags: ${{ steps.tags.outputs.image_tags }}
           platforms: linux/arm64
