@@ -131,13 +131,13 @@ def test_semantic_segmentation_workflow_when_single_image_provided(
 def test_semantic_segmentation_workflow_when_single_image_provided_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
-    roboflow_api_key: str,
+    deep_lab_v3_api_key: str,
     block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.api_key": deep_lab_v3_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
@@ -193,13 +193,13 @@ def test_semantic_segmentation_workflow_when_single_image_provided_tensor_native
 def test_semantic_segmentation_workflow_when_single_image_provided_with_tensor_input(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
-    roboflow_api_key: str,
+    deep_lab_v3_api_key: str,
     block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.api_key": deep_lab_v3_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
@@ -296,13 +296,13 @@ def test_semantic_segmentation_workflow_when_batch_input_provided(
 def test_semantic_segmentation_workflow_when_batch_input_provided_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
-    roboflow_api_key: str,
+    deep_lab_v3_api_key: str,
     block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.api_key": deep_lab_v3_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
@@ -344,13 +344,13 @@ def test_semantic_segmentation_workflow_when_batch_input_provided_tensor_native(
 def test_semantic_segmentation_workflow_when_batch_input_provided_with_tensor_input(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
-    roboflow_api_key: str,
+    deep_lab_v3_api_key: str,
     block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.api_key": deep_lab_v3_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
