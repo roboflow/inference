@@ -14,7 +14,9 @@ connector (Go, laptop/LAN)  --RTSP push-->  mediamtx  --RTSP-->  processor (Pyth
 
 Components in this folder (branch `hansent/video-poc`):
 
-- `connector/` — Go agent. Discovers USB cameras (avfoundation/v4l2), RTSP URLs (flags), and
+- connector — Go agent, now in its own repo: [roboflow/rf-video-connector](https://github.com/roboflow/rf-video-connector)
+  (single binary + bundled ffmpeg, released via goreleaser; install script in that repo).
+  Discovers USB cameras (avfoundation/v4l2), RTSP URLs (flags), and
   video files (a folder); polls the platform for commands; pushes streams via ffmpeg. Stdlib only.
 - `processor/processor.py` — warm worker. Polls the platform for jobs, runs
   `InferencePipeline.init_with_workflow` on the assigned source in one of two modes
@@ -35,7 +37,8 @@ Terminal 0 — deps (once):
 cd development/video_poc && ./fetch-deps.sh
 cd ../.. && uv venv development/video_poc/.venv --python 3.11
 uv pip install --python development/video_poc/.venv/bin/python -e . onnxruntime requests
-cd development/video_poc/connector && go build -o ../bin/rfv-connector .
+# connector lives in roboflow/rf-video-connector now — install a release:
+gh api repos/roboflow/rf-video-connector/contents/install.sh -H "Accept: application/vnd.github.raw" | sh
 ```
 
 Terminal 1 — the app (roboflow worktree). Environment quirks discovered on 2026-07-06:
@@ -71,7 +74,7 @@ cd development/video_poc/processor && \
 
 Terminal 4 — connector (the thing a customer runs):
 ```bash
-cd development/video_poc && ./bin/rfv-connector \
+rfv-connector \
   --api-url http://localhost:5001/roboflow-staging/us-central1/light-v2-device \
   --api-key $ROBOFLOW_API_KEY \
   --files-dir ./videos          # plus e.g. --rtsp cam1=rtsp://... ; USB cams auto-discovered

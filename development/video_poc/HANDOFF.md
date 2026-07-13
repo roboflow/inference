@@ -10,7 +10,7 @@ The POC spans two repos:
 
 | Repo | Branch | Draft PR | What lives there |
 |---|---|---|---|
-| `roboflow/inference` | `hansent/video-poc` | [#2616](https://github.com/roboflow/inference/pull/2616) | `development/video_poc/` — Go connector agent, Python processor (warm worker), local media plane (mediamtx), this doc |
+| `roboflow/inference` | `hansent/video-poc` | [#2616](https://github.com/roboflow/inference/pull/2616) | `development/video_poc/` — Python processor (warm worker), local media plane (mediamtx), this doc. The Go connector agent moved to its own repo: [roboflow/rf-video-connector](https://github.com/roboflow/rf-video-connector) (releases bundle a static ffmpeg) |
 | `roboflow/roboflow` | `hansent/video-sources-poc` | [#13264](https://github.com/roboflow/roboflow/pull/13264) | Video Sources page (React), `/query/video-sources*` routes, connector/processor API endpoints, Firestore DAOs |
 
 There is also an internal video strategy deck that motivates all of this — the POC
