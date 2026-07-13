@@ -37,6 +37,18 @@ def _clear_modal_executor_cache() -> None:
         block_scaffolding._MODAL_EXECUTOR_CACHE.clear()
 
 
+@pytest.fixture
+def isolated_modal_executor_cache():
+    # The modal arm reuses executors through the module-level
+    # _MODAL_EXECUTOR_CACHE, so a warm entry left by an earlier test starves
+    # the current test's patched ModalExecutor of the construction call its
+    # assertions depend on - and the current test's mock would leak to later
+    # ones. Clear on both sides, like the cache-lifecycle tests below do.
+    _clear_modal_executor_cache()
+    yield
+    _clear_modal_executor_cache()
+
+
 def test_create_dynamic_module_when_syntax_error_happens() -> None:
     # given
     init_function = """
@@ -603,7 +615,9 @@ def _legacy_sv_fixture():
     )
 
 
-def test_run_wrapper_modal_arm_converts_kwargs_and_remote_result() -> None:
+def test_run_wrapper_modal_arm_converts_kwargs_and_remote_result(
+    isolated_modal_executor_cache,
+) -> None:
     # given - D2-REVISED Option A: the Modal arm must ship CONVERTED (sv) inputs
     # to the executor and convert the sv result coming back into native objects.
     from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
@@ -658,7 +672,9 @@ def test_run_wrapper_modal_arm_converts_kwargs_and_remote_result() -> None:
     assert result["result"].bboxes_metadata[0]["detection_id"] == "det-remote-1"
 
 
-def test_run_wrapper_modal_arm_is_passthrough_when_flag_off() -> None:
+def test_run_wrapper_modal_arm_is_passthrough_when_flag_off(
+    isolated_modal_executor_cache,
+) -> None:
     # given
     from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
         block_scaffolding,
