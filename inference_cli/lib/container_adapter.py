@@ -250,7 +250,7 @@ def start_inference_container(
     )
     pull_image(image, use_local_images=use_local_images)
     print(f"Starting inference server container...")
-    ports = {"9001": port}
+    ports = {str(port): port}
     if development:
         ports["9002"] = 9002
     docker_client = docker.from_env()
@@ -358,7 +358,7 @@ def pull_image(image: str, use_local_images: bool = False) -> None:
     try:
         _ = docker_client.images.get(image)
         if use_local_images:
-            print(f"Using locally cached image: {use_local_images}")
+            print(f"Using locally cached image: {image}")
             return None
     except ImageNotFound:
         pass

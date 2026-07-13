@@ -65,6 +65,7 @@ nav:
           - EasyOCR: models/easyocr.md
           - TrOCR: models/trocr.md
           - GLM-OCR: models/glm-ocr.md
+          - PP-OCRv6: models/pp-ocrv6.md
       - Keypoint Detection:
           - YOLOv8: models/yolov8-keypoint-detection.md
           - YOLOv11: models/yolov11-keypoint-detection.md
@@ -143,6 +144,7 @@ nav:
                   - use_cuda_context: api-reference/developer-tools/cuda/use-cuda-context.md
               - ONNX:
                   - set_onnx_execution_provider_defaults: api-reference/developer-tools/onnx/set-onnx-execution-provider-defaults.md
+                  - align_device_with_onnx_session: api-reference/developer-tools/onnx/align-device-with-onnx-session.md
                   - run_onnx_session_with_batch_size_limit: api-reference/developer-tools/onnx/run-onnx-session-with-batch-size-limit.md
                   - run_onnx_session_via_iobinding: api-reference/developer-tools/onnx/run-onnx-session-via-iobinding.md
               - PyTorch:

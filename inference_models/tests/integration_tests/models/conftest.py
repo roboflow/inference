@@ -1756,3 +1756,75 @@ def sam3_package() -> str:
         model_package_zip_url=SAM3_PACKAGE_URL,
         package_name="sam3",
     )
+
+
+PP_OCRV6_TINY_DET_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-det-tiny.zip"
+PP_OCRV6_TINY_REC_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-rec-tiny.zip"
+PP_OCRV6_SMALL_DET_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-det-small.zip"
+PP_OCRV6_SMALL_REC_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-rec-small.zip"
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_tiny_det_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_TINY_DET_PACKAGE_URL,
+        package_name="pp-ocrv6-det-tiny",
+    )
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_tiny_rec_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_TINY_REC_PACKAGE_URL,
+        package_name="pp-ocrv6-rec-tiny",
+    )
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_small_det_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_SMALL_DET_PACKAGE_URL,
+        package_name="pp-ocrv6-det-small",
+    )
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_small_rec_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_SMALL_REC_PACKAGE_URL,
+        package_name="pp-ocrv6-rec-small",
+    )
+
+
+@pytest.fixture(autouse=True)
+def cuda_memory_probe(request):
+    # Per-test GPU memory telemetry for the integration suite: after each test, log
+    # this process's torch allocator state and device-wide free memory to a
+    # per-xdist-worker file (cuda_memory_probe_<worker>.log in the CWD). Kept
+    # permanently to make GPU OOMs and memory growth attributable to specific tests.
+    # Set CUDA_MEMORY_PROBE_EMPTY_CACHE=True to also flush the torch cache after
+    # each test (counterfactual run - proves/disproves cache-growth attribution).
+    yield
+    try:
+        from datetime import datetime, timezone
+
+        import torch
+
+        if not torch.cuda.is_available():
+            return
+        free, total = torch.cuda.mem_get_info()
+        line = (
+            f"{datetime.now(timezone.utc).isoformat()} | pid={os.getpid()} | "
+            f"{request.node.nodeid} | "
+            f"torch_reserved={torch.cuda.memory_reserved() >> 20}MiB | "
+            f"torch_allocated={torch.cuda.memory_allocated() >> 20}MiB | "
+            f"device_free={free >> 20}MiB | "
+            f"device_total={total >> 20}MiB"
+        )
+        if os.environ.get("CUDA_MEMORY_PROBE_EMPTY_CACHE", "False").lower() == "true":
+            torch.cuda.empty_cache()
+        worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+        with open(f"cuda_memory_probe_{worker}.log", "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass

@@ -399,6 +399,7 @@ def _send_slack_notification(
             channel=channel,
             text=message,
         )
+        return
     file_uploads = [
         {
             "title": name,

@@ -14,6 +14,7 @@ from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
 )
+from inference_models.developer_tools import align_device_with_onnx_session
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -33,6 +34,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
+from inference_models.models.common.streams import get_cuda_stream
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
@@ -130,6 +132,11 @@ class RFDetrForInstanceSegmentationOnnx(
             },
             max_allowed_input_size=rf_detr_max_input_resolution,
         )
+        session = onnxruntime.InferenceSession(
+            path_or_bytes=model_package_content["weights.onnx"],
+            providers=onnx_execution_providers,
+        )
+        device = align_device_with_onnx_session(session=session, device=device)
         classes_re_mapping = None
         if inference_config.class_names_operations:
             class_names, classes_re_mapping = prepare_class_remapping(
@@ -137,10 +144,6 @@ class RFDetrForInstanceSegmentationOnnx(
                 class_names_operations=inference_config.class_names_operations,
                 device=device,
             )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
-            providers=onnx_execution_providers,
-        )
         input_batch_size = session.get_inputs()[0].shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None
@@ -198,15 +201,20 @@ class RFDetrForInstanceSegmentationOnnx(
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            image_size_wh=image_size,
-            pre_processing_overrides=pre_processing_overrides,
-        )
+        pre_process_stream = self._pre_process_stream
+        with torch.cuda.stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
@@ -217,6 +225,7 @@ class RFDetrForInstanceSegmentationOnnx(
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._min_batch_size,
                 max_batch_size=self._max_batch_size,
+                stream=self._inference_stream,
             )
             return bboxes, logits, masks
 
@@ -243,25 +252,44 @@ class RFDetrForInstanceSegmentationOnnx(
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         )
-        bboxes, logits, masks = model_results
-        if mask_format == "dense":
-            results = post_process_instance_segmentation_results(
-                bboxes=bboxes,
-                logits=logits,
-                masks=masks,
-                pre_processing_meta=pre_processing_meta,
-                threshold=confidence_filter.get_threshold(self.class_names),
-                num_classes=len(self.class_names),
-                classes_re_mapping=self._classes_re_mapping,
-            )
-        else:
-            results = post_process_instance_segmentation_results_to_rle_masks(
-                bboxes=bboxes,
-                logits=logits,
-                masks=masks,
-                pre_processing_meta=pre_processing_meta,
-                threshold=confidence_filter.get_threshold(self.class_names),
-                num_classes=len(self.class_names),
-                classes_re_mapping=self._classes_re_mapping,
-            )
+        post_process_stream = self._post_process_stream
+        with torch.cuda.stream(post_process_stream):
+            if post_process_stream is not None:
+                for result_element in model_results:
+                    result_element.record_stream(post_process_stream)
+            bboxes, logits, masks = model_results
+            if mask_format == "dense":
+                results = post_process_instance_segmentation_results(
+                    bboxes=bboxes,
+                    logits=logits,
+                    masks=masks,
+                    pre_processing_meta=pre_processing_meta,
+                    threshold=confidence_filter.get_threshold(self.class_names),
+                    num_classes=len(self.class_names),
+                    classes_re_mapping=self._classes_re_mapping,
+                )
+            else:
+                results = post_process_instance_segmentation_results_to_rle_masks(
+                    bboxes=bboxes,
+                    logits=logits,
+                    masks=masks,
+                    pre_processing_meta=pre_processing_meta,
+                    threshold=confidence_filter.get_threshold(self.class_names),
+                    num_classes=len(self.class_names),
+                    classes_re_mapping=self._classes_re_mapping,
+                )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
         return results
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")

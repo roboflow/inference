@@ -1,4 +1,6 @@
+import os
 import random
+import shlex
 import string
 import tempfile
 
@@ -196,7 +198,7 @@ def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key
         return
 
     placeholder_string = (
-        f" --env ROBOFLOW_API_KEY={roboflow_api_key} "
+        f" --env ROBOFLOW_API_KEY={shlex.quote(roboflow_api_key)} "
         if roboflow_api_key is not None
         else ""
     )
@@ -208,11 +210,14 @@ def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key
 
     yaml_string = yaml_string.replace("PLACEHOLDER", placeholder_string)
 
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        file_path = f.name
-        f.write(yaml_string)
-        f.close()
+    tmp_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
+    file_path = tmp_file.name
+    try:
+        tmp_file.write(yaml_string)
+        tmp_file.close()
         task = sky.Task.from_yaml(file_path)
+    finally:
+        os.unlink(file_path)
 
     cluster_name = f"roboflow-inference-{provider}-{compute_type}-{_random_char(5)}"
 

@@ -1,12 +1,18 @@
+import threading
+import time
 import types
+from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Type
 
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     MODAL_ANONYMOUS_WORKSPACE_NAME,
+    WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.exceptions import WorkspaceLoadError
+from inference.core.logger import logger
 from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
     DynamicBlockCodeError,
@@ -53,6 +59,79 @@ IMPORTS_LINES = [
 
 # Shared globals dict for all custom python blocks in local mode
 _LOCAL_SHARED_GLOBALS = {}
+
+
+@dataclass
+class _ModalExecutorCacheEntry:
+    executor: Any
+    active_count: int
+    last_used_at: float
+
+
+_MODAL_EXECUTOR_CACHE: Dict[str, _ModalExecutorCacheEntry] = {}
+_MODAL_EXECUTOR_CACHE_LOCK = threading.RLock()
+
+
+def _close_modal_executor(executor: Any) -> None:
+    close = getattr(executor, "close", None)
+    if not callable(close):
+        return
+    try:
+        close()
+    except Exception:
+        logger.debug("Failed to close cached Modal executor", exc_info=True)
+
+
+def _pop_idle_modal_executors(now: float) -> List[Any]:
+    if WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS <= 0:
+        return []
+    evicted_executors = []
+    for workspace_id, entry in list(_MODAL_EXECUTOR_CACHE.items()):
+        if entry.active_count > 0:
+            continue
+        if now - entry.last_used_at <= WEBEXEC_MODAL_EXECUTOR_IDLE_TTL_SECONDS:
+            continue
+        evicted_executors.append(entry.executor)
+        del _MODAL_EXECUTOR_CACHE[workspace_id]
+    return evicted_executors
+
+
+def _close_modal_executors(executors: List[Any]) -> None:
+    for executor in executors:
+        _close_modal_executor(executor)
+
+
+@contextmanager
+def _acquire_modal_executor(workspace_id: str):
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+        get_modal_executor,
+    )
+
+    evicted_executors = []
+    with _MODAL_EXECUTOR_CACHE_LOCK:
+        now = time.monotonic()
+        evicted_executors = _pop_idle_modal_executors(now)
+        entry = _MODAL_EXECUTOR_CACHE.get(workspace_id)
+        if entry is None:
+            entry = _ModalExecutorCacheEntry(
+                executor=get_modal_executor(workspace_id),
+                active_count=0,
+                last_used_at=now,
+            )
+            _MODAL_EXECUTOR_CACHE[workspace_id] = entry
+        entry.active_count += 1
+
+    _close_modal_executors(evicted_executors)
+
+    try:
+        yield entry.executor
+    finally:
+        evicted_executors = []
+        with _MODAL_EXECUTOR_CACHE_LOCK:
+            entry.active_count -= 1
+            entry.last_used_at = time.monotonic()
+            evicted_executors = _pop_idle_modal_executors(entry.last_used_at)
+        _close_modal_executors(evicted_executors)
 
 
 def _current_workflow_execution_id() -> Optional[str]:
@@ -109,30 +188,23 @@ def assembly_custom_python_block(
     run_function = getattr(code_module, python_code.run_function_name)
 
     def run(self, *args, **kwargs) -> BlockResult:
-        # Check if we're using Modal remote execution
         if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
-            # Remote execution via Modal - allowed even if local execution is disabled
-            from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
-                ModalExecutor,
-            )
-
-            try:  # Get workspace_id from context if available
+            try:
                 workspace_id = get_roboflow_workspace(self._api_key)
             except WorkspaceLoadError:
                 workspace_id = None
 
-            # Fall back to "anonymous" for non-authenticated users
             if not workspace_id:
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
-            executor = ModalExecutor(workspace_id)
-            return executor.execute_remote(
-                block_type_name=block_type_name,
-                python_code=python_code,
-                inputs=kwargs,
-                workspace_id=workspace_id,
-                workflow_context=self.get_workflow_context(),
-            )
+            with _acquire_modal_executor(workspace_id) as executor:
+                return executor.execute_remote(
+                    block_type_name=block_type_name,
+                    python_code=python_code,
+                    inputs=kwargs,
+                    workspace_id=workspace_id,
+                    workflow_context=self.get_workflow_context(),
+                )
         else:
             # Local execution - check if allowed
             if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
