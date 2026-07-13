@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 from pydantic import Field, model_validator
 
@@ -13,6 +13,17 @@ PP_OCR_STAGE_VALUES = {"none", "tiny", "small", "medium"}
 # tell it apart from an explicit ``None`` (which disables the stage). An omitted
 # stage defaults to "small" (or is derived from pp_ocr_version_id).
 _STAGE_UNSET = "__unset__"
+
+
+def parse_pp_ocr_model_id(model_id: str) -> Tuple[str, str]:
+    """Resolve detection and recognition variants from a PP-OCR model ID."""
+    parts = model_id.split("/", 1)
+    version_id = parts[1] if len(parts) > 1 and parts[1] else "small"
+    stages = version_id.split("-", 1)
+    if len(stages) == 1:
+        return stages[0], stages[0]
+    text_detection, text_recognition = stages
+    return text_detection or "none", text_recognition or "none"
 
 
 class PPOCRInferenceRequest(BaseRequest):

@@ -73,6 +73,37 @@ class ModelManager:
             self.pingback = PingbackInfo(self)
             self.pingback.start()
 
+    def ensure_model_access(
+        self,
+        model_id: str,
+        api_key: str,
+        endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
+    ) -> None:
+        if not MODELS_CACHE_AUTH_ENABLED:
+            return
+        auth_targets = self.model_registry.get_model_auth_targets(
+            model_id=model_id,
+            endpoint_type=endpoint_type,
+            api_key=api_key,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
+        if not auth_targets:
+            auth_targets = [model_id]
+        for auth_target in auth_targets:
+            if not _check_if_api_key_has_access_to_model(
+                api_key=api_key,
+                model_id=auth_target,
+                endpoint_type=endpoint_type,
+                countinference=countinference,
+                service_secret=service_secret,
+            ):
+                raise RoboflowAPINotAuthorizedError(
+                    f"API key {api_key} does not have access to model {auth_target}"
+                )
+
     def add_model(
         self,
         model_id: str,
@@ -89,17 +120,13 @@ class ModelManager:
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if MODELS_CACHE_AUTH_ENABLED:
-            if not _check_if_api_key_has_access_to_model(
-                api_key=api_key,
-                model_id=model_id,
-                endpoint_type=endpoint_type,
-                countinference=countinference,
-                service_secret=service_secret,
-            ):
-                raise RoboflowAPINotAuthorizedError(
-                    f"API key {api_key} does not have access to model {model_id}"
-                )
+        self.ensure_model_access(
+            model_id=model_id,
+            api_key=api_key,
+            endpoint_type=endpoint_type,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
 
         logger.debug(
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"

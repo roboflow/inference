@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import List
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -84,6 +85,33 @@ def test_adapter_recognize_only_skips_detection() -> None:
     loaded = [call.args[0] for call in auto_model.call_args_list]
     assert loaded == ["pp-ocrv6-rec/medium"]
     assert pipeline_cls.call_args.kwargs == {"det_model": None, "rec_model": rec}
+
+
+@pytest.mark.parametrize(
+    "model_id, expected_auth_targets",
+    [
+        (
+            "pp_ocr/small-small",
+            ["pp-ocrv6-det/small", "pp-ocrv6-rec/small"],
+        ),
+        ("pp_ocr/medium-none", ["pp-ocrv6-det/medium"]),
+        ("pp_ocr/none-tiny", ["pp-ocrv6-rec/tiny"]),
+        (
+            "pp_ocr/small",
+            ["pp-ocrv6-det/small", "pp-ocrv6-rec/small"],
+        ),
+        ("pp_ocr/none-none", ["pp_ocr/none-none"]),
+    ],
+)
+def test_adapter_declares_stage_models_as_auth_targets(
+    model_id: str,
+    expected_auth_targets: List[str],
+) -> None:
+    result = pp_ocr_inference_models.InferenceModelsPPOCRAdapter.get_model_auth_targets(
+        model_id=model_id
+    )
+
+    assert result == expected_auth_targets
 
 
 def test_infer_from_request_builds_response_full_mode() -> None:

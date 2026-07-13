@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from cachetools.func import ttl_cache
 
@@ -129,6 +129,28 @@ class RoboflowModelRegistry(ModelRegistry):
                 f"Model type not supported, you may want to try a different inference server configuration or endpoint: {model_type}"
             )
         return self.registry_dict[model_type]
+
+    def get_model_auth_targets(
+        self,
+        model_id: ModelID,
+        endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
+        api_key: Optional[str] = None,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
+    ) -> List[ModelID]:
+        if endpoint_type != ModelEndpointType.CORE_MODEL:
+            return [model_id]
+        model_type = get_model_type(
+            model_id=model_id,
+            api_key=api_key,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
+        model_class = self.registry_dict.get(model_type)
+        auth_targets_resolver = getattr(model_class, "get_model_auth_targets", None)
+        if auth_targets_resolver is None:
+            return [model_id]
+        return auth_targets_resolver(model_id=model_id)
 
 
 @ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)

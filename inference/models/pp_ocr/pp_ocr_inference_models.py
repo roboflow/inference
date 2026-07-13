@@ -5,7 +5,10 @@ from typing import Any, List, Tuple, Union
 
 import numpy as np
 
-from inference.core.entities.requests.pp_ocr import PPOCRInferenceRequest
+from inference.core.entities.requests.pp_ocr import (
+    PPOCRInferenceRequest,
+    parse_pp_ocr_model_id,
+)
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionPrediction,
@@ -25,16 +28,17 @@ from inference_models.models.auto_loaders.core import AutoModel
 from inference_models.models.pp_ocrv6.pp_ocrv6_pipeline import PPOCRv6Pipeline
 
 
-def _parse_det_rec(model_id: str) -> Tuple[str, str]:
-    parts = model_id.split("/")
-    token = parts[1] if len(parts) > 1 and parts[1] else "small"
-    if "-" in token:
-        det, rec = token.split("-", 1)
-        return det or "none", rec or "none"
-    return token, token
-
-
 class InferenceModelsPPOCRAdapter(Model):
+    @classmethod
+    def get_model_auth_targets(cls, model_id: str) -> List[str]:
+        text_detection, text_recognition = parse_pp_ocr_model_id(model_id)
+        auth_targets = []
+        if text_detection != "none":
+            auth_targets.append(f"pp-ocrv6-det/{text_detection}")
+        if text_recognition != "none":
+            auth_targets.append(f"pp-ocrv6-rec/{text_recognition}")
+        return auth_targets or [model_id]
+
     def __init__(self, model_id: str, api_key: str = None, **kwargs):
         super().__init__()
 
@@ -44,7 +48,7 @@ class InferenceModelsPPOCRAdapter(Model):
 
         self.task_type = "ocr"
 
-        det, rec = _parse_det_rec(model_id)
+        det, rec = parse_pp_ocr_model_id(model_id)
 
         extra_weights_provider_headers = get_extra_weights_provider_headers(
             countinference=kwargs.get("countinference"),

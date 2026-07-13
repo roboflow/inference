@@ -10,21 +10,14 @@ from inference.core.env import (
     DISK_CACHE_CLEANUP,
     HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT,
     MEMORY_FREE_THRESHOLD,
-    MODELS_CACHE_AUTH_ENABLED,
     USE_INFERENCE_MODELS,
 )
-from inference.core.exceptions import (
-    ModelManagerLockAcquisitionError,
-    RoboflowAPINotAuthorizedError,
-)
+from inference.core.exceptions import ModelManagerLockAcquisitionError
 from inference.core.managers.base import Model, ModelManager, acquire_with_timeout
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.model_load_collector import request_model_ids
-from inference.core.registries.roboflow import (
-    ModelEndpointType,
-    _check_if_api_key_has_access_to_model,
-)
+from inference.core.registries.roboflow import ModelEndpointType
 
 
 class WithFixedSizeCache(ModelManagerDecorator):
@@ -66,17 +59,13 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-        if MODELS_CACHE_AUTH_ENABLED:
-            if not _check_if_api_key_has_access_to_model(
-                api_key=api_key,
-                model_id=model_id,
-                endpoint_type=endpoint_type,
-                countinference=countinference,
-                service_secret=service_secret,
-            ):
-                raise RoboflowAPINotAuthorizedError(
-                    f"API key {api_key} does not have access to model {model_id}"
-                )
+        self.model_manager.ensure_model_access(
+            model_id=model_id,
+            api_key=api_key,
+            endpoint_type=endpoint_type,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
 
         queue_id = self._resolve_queue_id(
             model_id=model_id, model_id_alias=model_id_alias

@@ -348,6 +348,53 @@ def test_get_model_type_when_generic_model_is_utilised(
     assert result == expected_result
 
 
+@mock.patch.object(roboflow, "get_model_type", return_value=("ocr", "pp_ocr"))
+def test_core_model_auth_targets_are_resolved_by_model_adapter(
+    get_model_type_mock: MagicMock,
+) -> None:
+    # given
+    model_adapter = MagicMock()
+    model_adapter.get_model_auth_targets.return_value = [
+        "pp-ocrv6-det/small",
+        "pp-ocrv6-rec/small",
+    ]
+    registry = RoboflowModelRegistry({("ocr", "pp_ocr"): model_adapter})
+
+    # when
+    result = registry.get_model_auth_targets(
+        model_id="pp_ocr/small-small",
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+        api_key="my-api-key",
+    )
+
+    # then
+    assert result == ["pp-ocrv6-det/small", "pp-ocrv6-rec/small"]
+    get_model_type_mock.assert_called_once_with(
+        model_id="pp_ocr/small-small",
+        api_key="my-api-key",
+        countinference=None,
+        service_secret=None,
+    )
+    model_adapter.get_model_auth_targets.assert_called_once_with(
+        model_id="pp_ocr/small-small"
+    )
+
+
+@mock.patch.object(roboflow, "get_model_type")
+def test_non_core_model_auth_target_preserves_requested_model(
+    get_model_type_mock: MagicMock,
+) -> None:
+    registry = RoboflowModelRegistry({})
+
+    result = registry.get_model_auth_targets(
+        model_id="some-model/1",
+        endpoint_type=ModelEndpointType.ORT,
+    )
+
+    assert result == ["some-model/1"]
+    get_model_type_mock.assert_not_called()
+
+
 @mock.patch.object(roboflow, "USE_INFERENCE_MODELS", True)
 @mock.patch.object(roboflow, "get_model_metadata_from_inference_models_registry")
 @mock.patch.object(roboflow, "get_roboflow_model_data")
