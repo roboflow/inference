@@ -284,7 +284,9 @@ RUN git clone https://github.com/dusty-nv/jetson-utils.git src && \
     # context setup and drop the removed getter call - the NPP code below the
     # return is dead but still compiles (nppiCFAToRGB_8u_C1C3R_Ctx is still
     # declared in CUDA 13, only the getter is gone).
-    sed -i 's|^\tNppStreamContext nppStreamContext;$|\treturn cudaErrorNotSupported; // CUDA 13: nppGetStreamContext() removed; Bayer-to-RGB unused by NVDEC decode\n\tNppStreamContext nppStreamContext;|' src/cuda/cudaBayer.cpp && \
+    # NOTE: the inserted C++ comment must not contain the removed getter's name
+    # verbatim - the assertion two lines down greps for its absence.
+    sed -i 's|^\tNppStreamContext nppStreamContext;$|\treturn cudaErrorNotSupported; // CUDA 13 removed the NPP stream-context getter; Bayer-to-RGB unused by NVDEC decode\n\tNppStreamContext nppStreamContext;|' src/cuda/cudaBayer.cpp && \
     sed -i '/nppGetStreamContext(&nppStreamContext);/d' src/cuda/cudaBayer.cpp && \
     grep -q 'cudaErrorNotSupported' src/cuda/cudaBayer.cpp && \
     ! grep -q 'nppGetStreamContext' src/cuda/cudaBayer.cpp
